@@ -60,19 +60,22 @@
   export let model_name: string | null = null
   export let provider_name: string | null = null
   let provider_display_name: string | null = null
-  $: get_model_provider(model)
 
   // Map of model value to provider display name, to correctly identify custom providers
   let model_value_to_provider_name: Map<string, string> = new Map()
+  $: get_model_provider(model, model_value_to_provider_name)
 
-  function get_model_provider(model_provider: string) {
+  function get_model_provider(
+    model_provider: string,
+    model_value_to_provider_name_map: Map<string, string>,
+  ) {
     model_name = model_provider
       ? model_provider.split("/").slice(1).join("/")
       : null
     provider_name = model_provider ? model_provider.split("/")[0] : null
     // Use the map to get the provider display name (for custom providers)
     provider_display_name =
-      model_value_to_provider_name.get(model_provider) || null
+      model_value_to_provider_name_map.get(model_provider) || null
   }
 
   $: addRecentModel(model_name, provider_name, provider_display_name)

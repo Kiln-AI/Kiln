@@ -27,8 +27,9 @@
 
   // Override form state (Advanced section)
   // Use "" for default/unset state so fancy_select shows the default option selected
+  const default_structured_output_mode = "json_schema"
   let override_supports_structured_output: string = ""
-  let override_structured_output_mode: string = "json_schema"
+  let override_structured_output_mode: string = default_structured_output_mode
   let override_supports_logprobs: string = ""
   let override_supports_function_calling: string = ""
   let override_supports_vision: string = ""
@@ -150,6 +151,7 @@
   const load_data = async () => {
     try {
       loading = true
+      error = null
 
       // Load available providers
       const { data: providers, error: providers_error } = await client.GET(
@@ -253,7 +255,7 @@
 
   function reset_overrides() {
     override_supports_structured_output = ""
-    override_structured_output_mode = ""
+    override_structured_output_mode = default_structured_output_mode
     override_supports_logprobs = ""
     override_supports_function_calling = ""
     override_supports_vision = ""
@@ -281,7 +283,10 @@
         },
       },
     )
-    if (delete_error) throw delete_error
+    if (delete_error) {
+      console.error("remove_model error", delete_error)
+      alert("There was an error deleting the model.")
+    }
 
     // Refresh list
     await load_data()

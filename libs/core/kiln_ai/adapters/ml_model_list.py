@@ -317,7 +317,7 @@ class KilnModelProvider(BaseModel):
     # not exact and real rate limit rules are much more complex
     max_parallel_requests: int | None = None
 
-    # For openai_compatible providers: the name of the custom provider
+    # For openai_compatible providers: the name of the custom provider (user specified)
     openai_compatible_provider_name: str | None = None
 
 
