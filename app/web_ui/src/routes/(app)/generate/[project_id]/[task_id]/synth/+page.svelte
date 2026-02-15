@@ -2,7 +2,7 @@
   import AppPage from "../../../../app_page.svelte"
   import { client } from "$lib/api_client"
   import { current_task } from "$lib/stores"
-  import type { RunConfigProperties, Task } from "$lib/types"
+  import type { KilnAgentRunConfigProperties, Task } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
@@ -493,7 +493,7 @@
   // Worker function that processes items until queue is empty
   async function generate_worker(
     queue: SampleData[],
-    run_config_properties: RunConfigProperties,
+    run_config_properties: KilnAgentRunConfigProperties,
   ) {
     while (queue.length > 0) {
       const sample = queue.shift()!
@@ -618,7 +618,7 @@
   async function generate_sample(
     sample: SampleData,
     topic_path: string[] | undefined,
-    run_config_properties: RunConfigProperties,
+    run_config_properties: KilnAgentRunConfigProperties,
   ): Promise<GenerateSampleResponse> {
     try {
       if (!$saved_state.session_id) {

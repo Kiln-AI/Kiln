@@ -7,7 +7,7 @@ import {
 } from "svelte/store"
 import { client } from "$lib/api_client"
 import { indexedDBStore } from "$lib/stores/index_db_store"
-import type { KilnDocument, RunConfigProperties } from "$lib/types"
+import type { KilnDocument, KilnAgentRunConfigProperties } from "$lib/types"
 import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 
 export type StepNumber = 1 | 2 | 3 | 4
@@ -79,7 +79,7 @@ type GenerationParams = {
   useFullDocuments: boolean
   chunkSizeTokens: number | null
   chunkOverlapTokens: number | null
-  runConfigProperties: RunConfigProperties
+  runConfigProperties: KilnAgentRunConfigProperties
 }
 
 export type ChunkingConfig = {
@@ -699,7 +699,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     partText: string,
     pairsPerPart: number,
     guidance: string,
-    runConfigProperties: RunConfigProperties,
+    runConfigProperties: KilnAgentRunConfigProperties,
   ): Promise<QnAPair[]> {
     const { data, error: apiError } = await client.POST(
       "/api/projects/{project_id}/tasks/{task_id}/generate_qna",
@@ -785,7 +785,7 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     parts: PartReference[],
     pairsPerPart: number,
     guidance: string,
-    runConfigProperties: RunConfigProperties,
+    runConfigProperties: KilnAgentRunConfigProperties,
     useFullDocuments: boolean,
     chunkSizeTokens: number | null,
     chunkOverlapTokens: number | null,

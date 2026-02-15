@@ -98,7 +98,10 @@ class TaskRunConfig(KilnParentedModel):
             config_type = run_config_props.get("type", "kiln_agent")
             if "type" not in run_config_props:
                 run_config_props["type"] = "kiln_agent"
-            if config_type == "kiln_agent" and "structured_output_mode" not in run_config_props:
+            if (
+                config_type == "kiln_agent"
+                and "structured_output_mode" not in run_config_props
+            ):
                 run_config_props["structured_output_mode"] = (
                     StructuredOutputMode.unknown
                 )

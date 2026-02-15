@@ -25,7 +25,7 @@ from kiln_ai.datamodel import (
 )
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
-from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.tools import KilnToolInterface
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config

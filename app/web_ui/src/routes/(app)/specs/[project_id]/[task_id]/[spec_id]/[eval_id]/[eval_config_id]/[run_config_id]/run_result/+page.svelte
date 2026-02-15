@@ -9,6 +9,7 @@
     EvalRun,
     TaskRunConfig,
   } from "$lib/types"
+  import { isKilnAgentRunConfig } from "$lib/types"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, tick } from "svelte"
@@ -88,19 +89,22 @@
     if (!run_config || !evaluator) {
       return {}
     }
+    const props = run_config.run_config_properties
+    if (isKilnAgentRunConfig(props)) {
+      return {
+        "Run Configuration Name": run_config.name,
+        Model: model_name(props.model_name, $model_info),
+        Provider: provider_name_from_id(props.model_provider_name),
+        Prompt: prompt_name_from_id(props.prompt_id, $current_task_prompts),
+        "Task Inputs From Dataset": evaluator.eval_set_filter_id,
+      }
+    }
+    // MCP config
     return {
       "Run Configuration Name": run_config.name,
-      Model: model_name(
-        run_config.run_config_properties?.model_name,
-        $model_info,
-      ),
-      Provider: provider_name_from_id(
-        run_config.run_config_properties?.model_provider_name,
-      ),
-      Prompt: prompt_name_from_id(
-        run_config.run_config_properties?.prompt_id,
-        $current_task_prompts,
-      ),
+      Model: "MCP Tool",
+      Provider: "MCP Tool",
+      Prompt: "MCP Tool",
       "Task Inputs From Dataset": evaluator.eval_set_filter_id,
     }
   }

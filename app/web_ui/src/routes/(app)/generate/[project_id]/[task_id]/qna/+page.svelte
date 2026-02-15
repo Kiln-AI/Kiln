@@ -29,7 +29,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import CheckmarkIcon from "$lib/ui/icons/checkmark_icon.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
-  import type { KilnDocument, RunConfigProperties } from "$lib/types"
+  import type { KilnDocument, KilnAgentRunConfigProperties } from "$lib/types"
   import posthog from "posthog-js"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
@@ -215,7 +215,7 @@
       split_documents_into_chunks: boolean
       chunk_size_tokens: number | null
       chunk_overlap_tokens: number | null
-      runConfigProperties: RunConfigProperties
+      runConfigProperties: KilnAgentRunConfigProperties
     }>,
   ) {
     show_generate_qna_dialog?.close()

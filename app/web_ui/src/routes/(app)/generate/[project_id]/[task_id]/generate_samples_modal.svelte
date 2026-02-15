@@ -8,7 +8,7 @@
   import type { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
   import posthog from "posthog-js"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
-  import type { RunConfigProperties } from "$lib/types"
+  import type { KilnAgentRunConfigProperties } from "$lib/types"
 
   export let guidance_data: SynthDataGuidanceDataModel
   // Local instance for dynamic reactive updates
@@ -85,7 +85,7 @@
   let sample_generating: boolean = false
   async function request_generate_samples(
     topic: TopicNodeWithPath,
-    run_config_properties: RunConfigProperties | null,
+    run_config_properties: KilnAgentRunConfigProperties | null,
   ): Promise<GenerateSampleResponse> {
     try {
       if (!run_config_properties) {
@@ -230,7 +230,7 @@
 
   async function worker(
     queue: TopicNodeWithPath[],
-    run_config_properties: RunConfigProperties | null,
+    run_config_properties: KilnAgentRunConfigProperties | null,
   ) {
     while (queue.length > 0) {
       const topic = queue.shift()!

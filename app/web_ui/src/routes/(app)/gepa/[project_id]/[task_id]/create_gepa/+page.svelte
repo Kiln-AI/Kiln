@@ -10,6 +10,7 @@
   import Completed from "$lib/ui/completed.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import type { Task, TaskRunConfig, Eval, EvalConfig } from "$lib/types"
+  import { isKilnAgentRunConfig } from "$lib/types"
   import {
     load_task_prompts,
     prompts_by_task_composite_id,
@@ -77,9 +78,12 @@
 
   $: prompt_text =
     selected_run_config?.prompt?.prompt ||
-    get_prompt_text_from_id(
-      selected_run_config?.run_config_properties.prompt_id,
-    )
+    (selected_run_config &&
+    isKilnAgentRunConfig(selected_run_config.run_config_properties)
+      ? get_prompt_text_from_id(
+          selected_run_config.run_config_properties.prompt_id,
+        )
+      : null)
 
   let create_job_error: KilnError | null = null
   let create_job_loading = false
@@ -390,9 +394,12 @@
         task_id,
       )
 
+      // Check if run config has tools (only KilnAgent configs have tools)
       if (
-        run_config?.run_config_properties.tools_config &&
-        run_config?.run_config_properties.tools_config.tools.length > 0
+        run_config &&
+        isKilnAgentRunConfig(run_config.run_config_properties) &&
+        run_config.run_config_properties.tools_config &&
+        run_config.run_config_properties.tools_config.tools.length > 0
       ) {
         run_config_validation_status = "invalid"
         run_config_validation_message =

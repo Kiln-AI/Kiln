@@ -9,12 +9,19 @@ from kiln_ai.adapters.provider_tools import (
     core_provider,
     lite_llm_core_config_for_provider,
 )
-from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.run_config import (
+    RunConfigProperties,
+)
 
 
 def litellm_core_provider_config(
     run_config_properties: RunConfigProperties,
 ) -> LiteLlmConfig:
+    # Only kiln_agent configs are supported by LiteLLM adapters
+    if run_config_properties.type != "kiln_agent":
+        raise ValueError(
+            f"LiteLLM adapters only support kiln_agent run configurations, got '{run_config_properties.type}'."
+        )
     # For things like the fine-tune provider, we want to run the underlying provider (e.g. openai)
     core_provider_name = core_provider(
         run_config_properties.model_name, run_config_properties.model_provider_name

@@ -20,6 +20,7 @@
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type { TaskRun, StructuredOutputMode } from "$lib/types"
+  import { isKilnAgentRunConfig } from "$lib/types"
   import {
     formatDate,
     structuredOutputModeToString,
@@ -48,8 +49,13 @@
   let tool_links: (string | null)[] | undefined
 
   $: {
+    const runConfig = run?.output?.source?.run_config
+    const toolIds =
+      runConfig && isKilnAgentRunConfig(runConfig)
+        ? (runConfig.tools_config?.tools ?? [])
+        : []
     const tools_property_info = get_tools_property_info(
-      run?.output?.source?.run_config?.tools_config?.tools ?? [],
+      toolIds,
       project_id,
       $available_tools,
     )

@@ -44,7 +44,27 @@ export type EvalConfigType = components["schemas"]["EvalConfigType"]
 export type EvalDataType = components["schemas"]["EvalDataType"]
 export type EvalConfig = components["schemas"]["EvalConfig"]
 export type TaskRunConfig = components["schemas"]["TaskRunConfig"]
-export type RunConfigProperties = components["schemas"]["RunConfigProperties"]
+export type KilnAgentRunConfigProperties =
+  components["schemas"]["KilnAgentRunConfigProperties"]
+export type McpRunConfigProperties =
+  components["schemas"]["McpRunConfigProperties"]
+export type RunConfigProperties =
+  | KilnAgentRunConfigProperties
+  | McpRunConfigProperties
+
+// Type guard to check if RunConfigProperties is a KilnAgent config
+export function isKilnAgentRunConfig(
+  config: RunConfigProperties,
+): config is KilnAgentRunConfigProperties {
+  return config.type === "kiln_agent"
+}
+
+// Type guard to check if RunConfigProperties is an MCP config
+export function isMcpRunConfig(
+  config: RunConfigProperties,
+): config is McpRunConfigProperties {
+  return config.type === "mcp"
+}
 export type EvalResultSummary = components["schemas"]["EvalResultSummary"]
 export type EvalRunResult = components["schemas"]["EvalRunResult"]
 export type EvalConfigCompareSummary =

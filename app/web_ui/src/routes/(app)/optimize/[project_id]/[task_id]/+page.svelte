@@ -20,6 +20,7 @@
   } from "$lib/stores/run_configs_store"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type { Task, TaskRunConfig } from "$lib/types"
+  import { isKilnAgentRunConfig } from "$lib/types"
   import { prompts_by_task_composite_id } from "$lib/stores/prompts_store"
   import {
     getDetailedModelName,
@@ -192,7 +193,10 @@
     value: string | string[]
     links: (string | null)[] | undefined
   } {
-    const tool_ids = config.run_config_properties.tools_config?.tools || []
+    const tool_ids =
+      isKilnAgentRunConfig(config.run_config_properties)
+        ? (config.run_config_properties.tools_config?.tools || [])
+        : []
     return $available_tools
       ? get_tools_property_info(tool_ids, project_id, $available_tools)
       : { value: "Loading...", links: undefined }

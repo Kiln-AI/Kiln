@@ -7,6 +7,7 @@
     ProviderModels,
     PromptResponse,
   } from "$lib/types"
+  import { isKilnAgentRunConfig } from "$lib/types"
   import {
     getDetailedModelName,
     getRunConfigPromptDisplayName,
@@ -186,9 +187,9 @@
 
             if (config) {
               const modelName = getDetailedModelName(config, model_info)
-              const providerName = provider_name_from_id(
-                config.run_config_properties?.model_provider_name,
-              )
+              const providerName = isKilnAgentRunConfig(config.run_config_properties)
+                ? provider_name_from_id(config.run_config_properties.model_provider_name)
+                : "MCP Tool"
               const promptName = getRunConfigPromptDisplayName(config, prompts)
 
               tooltipHtml = `<strong>${modelName}</strong>`

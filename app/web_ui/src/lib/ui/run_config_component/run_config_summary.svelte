@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { TaskRunConfig } from "$lib/types"
+  import { isKilnAgentRunConfig } from "$lib/types"
   import { model_info, get_task_composite_id } from "$lib/stores"
   import { getDetailedModelName } from "$lib/utils/run_config_formatters"
   import { getRunConfigPromptDisplayName } from "$lib/utils/run_config_formatters"
@@ -21,8 +22,9 @@
     $prompts_by_task_composite_id[get_task_composite_id(project_id, task_id)] ||
     null
 
-  $: tools_count =
-    task_run_config.run_config_properties.tools_config?.tools?.length ?? 0
+  $: tools_count = isKilnAgentRunConfig(task_run_config.run_config_properties)
+    ? task_run_config.run_config_properties.tools_config?.tools?.length ?? 0
+    : 0
 </script>
 
 <div class="flex items-center gap-2">

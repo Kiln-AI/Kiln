@@ -3,7 +3,7 @@
   import { createEventDispatcher } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
-  import type { RunConfigProperties } from "$lib/types"
+  import type { KilnAgentRunConfigProperties } from "$lib/types"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import ChunkingConfigForm from "./chunking_config_form.svelte"
   import QnAGuidance from "./qna_guidance.svelte"
@@ -15,7 +15,7 @@
     split_documents_into_chunks: boolean
     chunk_size_tokens: number | null
     chunk_overlap_tokens: number | null
-    runConfigProperties: RunConfigProperties
+    runConfigProperties: KilnAgentRunConfigProperties
   }
 
   export let project_id: string

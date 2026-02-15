@@ -14,11 +14,13 @@
   import { KilnError } from "$lib/utils/error_handlers"
   import type {
     RunConfigProperties,
+    KilnAgentRunConfigProperties,
     StructuredOutputMode,
     AvailableModels,
     Task,
     TaskRunConfig,
   } from "$lib/types"
+  import { isKilnAgentRunConfig } from "$lib/types"
   import AvailableModelsDropdown from "./available_models_dropdown.svelte"
   import PromptTypeSelector from "./prompt_type_selector.svelte"
   import ToolsSelector from "./tools_selector.svelte"
@@ -117,18 +119,18 @@
       return
     }
 
-    model =
-      selected_run_config.run_config_properties.model_provider_name +
-      "/" +
-      selected_run_config.run_config_properties.model_name
-    prompt_method = selected_run_config.run_config_properties.prompt_id
-    tools = [
-      ...(selected_run_config.run_config_properties.tools_config?.tools ?? []),
-    ]
-    temperature = selected_run_config.run_config_properties.temperature
-    top_p = selected_run_config.run_config_properties.top_p
-    structured_output_mode =
-      selected_run_config.run_config_properties.structured_output_mode
+    const props = selected_run_config.run_config_properties
+    if (!isKilnAgentRunConfig(props)) {
+      // MCP configs don't have the same properties, skip updating
+      return
+    }
+
+    model = props.model_provider_name + "/" + props.model_name
+    prompt_method = props.prompt_id
+    tools = [...(props.tools_config?.tools ?? [])]
+    temperature = props.temperature
+    top_p = props.top_p
+    structured_output_mode = props.structured_output_mode
   }
 
   // Main reactive statement. This class is a bit wild, as many changes are circular.
@@ -228,6 +230,10 @@
     }
 
     const config_properties = selected_run_config.run_config_properties
+    if (!isKilnAgentRunConfig(config_properties)) {
+      // MCP configs don't have the same properties, skip comparison
+      return
+    }
 
     // Check if any values have changed from the saved config properties
     let model_changed = false
@@ -260,8 +266,9 @@
   }
 
   // Helper function to convert run options to server run_config_properties format
-  export function run_options_as_run_config_properties(): RunConfigProperties {
+  export function run_options_as_run_config_properties(): KilnAgentRunConfigProperties {
     return {
+      type: "kiln_agent",
       model_name: model_name,
       // @ts-expect-error server will catch if enum is not valid
       model_provider_name: provider,

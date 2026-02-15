@@ -4,6 +4,7 @@ import type {
   ProviderModels,
   ToolSetApiDescription,
 } from "$lib/types"
+import { isKilnAgentRunConfig } from "$lib/types"
 import {
   model_name,
   prompt_name_from_id,
@@ -18,6 +19,9 @@ export function getDetailedModelName(
   config: TaskRunConfig,
   model_info: ProviderModels | null,
 ): string {
+  if (!isKilnAgentRunConfig(config.run_config_properties)) {
+    return "MCP Tool"
+  }
   return getDetailedModelNameFromParts(
     config.run_config_properties.model_name,
     config.run_config_properties.model_provider_name,
@@ -45,17 +49,17 @@ export function getRunConfigPromptDisplayName(
   task_run_config: TaskRunConfig,
   current_task_prompts: PromptResponse | null,
 ): string {
-  const prompt_name = prompt_name_from_id(
-    task_run_config?.run_config_properties?.prompt_id,
-    current_task_prompts,
-  )
+  const props = task_run_config?.run_config_properties
+  if (!isKilnAgentRunConfig(props)) {
+    return task_run_config.name || "MCP Run Config"
+  }
+
+  const prompt_name = prompt_name_from_id(props.prompt_id, current_task_prompts)
 
   // Special case: description for prompts frozen to the task run config. The name alone isn't that helpful, so we say where it comes from (eg "Basic (Zero Shot")) -->
   if (
     task_run_config.prompt?.generator_id &&
-    task_run_config?.run_config_properties?.prompt_id?.startsWith(
-      "task_run_config::",
-    )
+    props.prompt_id?.startsWith("task_run_config::")
   ) {
     return getStaticPromptDisplayName(
       prompt_name,
@@ -74,12 +78,14 @@ export function getRunConfigPromptDisplayName(
 export function getRunConfigPromptInfoText(
   task_run_config: TaskRunConfig,
 ): string | null {
+  const props = task_run_config?.run_config_properties
+  if (!isKilnAgentRunConfig(props)) {
+    return null
+  }
   // Special case: description for prompts frozen to the task run config. The name alone isn't that helpful, so we say where it comes from (eg "Basic (Zero Shot")) -->
   if (
     task_run_config.prompt?.generator_id &&
-    task_run_config?.run_config_properties?.prompt_id?.startsWith(
-      "task_run_config::",
-    )
+    props.prompt_id?.startsWith("task_run_config::")
   ) {
     return (
       'The exact prompt was saved under the name "' +
@@ -99,27 +105,32 @@ export function getRunConfigUiProperties(
   task_prompts: PromptResponse | null,
   available_tools: Record<string, ToolSetApiDescription[]> | null,
 ): UiProperty[] {
-  const model_value = model_info
-    ? `${model_name(run_config.run_config_properties.model_name, model_info)} (${provider_name_from_id(run_config.run_config_properties.model_provider_name)})`
-    : "Loading..."
+  const props = run_config.run_config_properties
+  const isKilnAgent = isKilnAgentRunConfig(props)
+
+  const model_value = isKilnAgent
+    ? model_info
+      ? `${model_name(props.model_name, model_info)} (${provider_name_from_id(props.model_provider_name)})`
+      : "Loading..."
+    : "MCP Tool"
 
   const prompt_value = task_prompts
     ? getRunConfigPromptDisplayName(run_config, task_prompts)
     : "Loading..."
 
-  const prompt_id = run_config.run_config_properties.prompt_id
+  const prompt_id = isKilnAgent ? props.prompt_id : undefined
   const prompt_link_value = prompt_id
     ? prompt_link(project_id, task_id, prompt_id)
     : undefined
 
   const prompt_info_text = getRunConfigPromptInfoText(run_config)
 
-  const tool_ids = run_config.run_config_properties.tools_config?.tools || []
+  const tool_ids = isKilnAgent ? props.tools_config?.tools || [] : []
   const tools_property_info = available_tools
     ? get_tools_property_info(tool_ids, project_id, available_tools)
     : { value: "Loading...", links: undefined }
 
-  return [
+  const base_properties: UiProperty[] = [
     {
       name: "ID",
       value: run_config.id || "N/A",
@@ -148,13 +159,21 @@ export function getRunConfigUiProperties(
       links: tools_property_info.links,
       badge: Array.isArray(tools_property_info.value) ? true : false,
     },
-    {
-      name: "Temperature",
-      value: run_config.run_config_properties.temperature.toString(),
-    },
-    {
-      name: "Top P",
-      value: run_config.run_config_properties.top_p.toString(),
-    },
   ]
+
+  // Only add Temperature and Top P for KilnAgent configs
+  if (isKilnAgent) {
+    base_properties.push(
+      {
+        name: "Temperature",
+        value: props.temperature.toString(),
+      },
+      {
+        name: "Top P",
+        value: props.top_p.toString(),
+      },
+    )
+  }
+
+  return base_properties
 }
