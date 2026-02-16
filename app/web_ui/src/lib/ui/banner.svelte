@@ -13,11 +13,11 @@
       <div class="flex-grow flex flex-col text-sm justify-center">
         <span class="font-medium text-base">{title}</span>
         <span class="text-sm font-light mt-1">{description}</span>
-        <button
+        <div
           class="btn btn-xs btn-outline w-fit px-6 mt-2 group-hover:bg-secondary group-hover:text-secondary-content"
         >
           {button_label}
-        </button>
+        </div>
       </div>
     </div>
   </div>

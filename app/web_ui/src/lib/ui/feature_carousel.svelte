@@ -23,6 +23,7 @@
 
   function balanced_cols(n: number, max_cols: number): number {
     if (n <= 1) return 1
+    if (max_cols <= 1) return 1
     if (n <= max_cols) return n
     let best_cols = 2
     let best_score = -Infinity
@@ -48,7 +49,7 @@
   >
     {#each features as feature}
       <div
-        class="card bg-base-100 shadow-md hover:shadow-lg hover:border-primary/50 border border-base-300 cursor-pointer transition-all duration-200 transform hover:-translate-y-1 hover:z-10 h-full flex flex-col p-4"
+        class="card bg-base-100 shadow-md hover:shadow-lg hover:border-primary/50 border border-base-300 cursor-pointer transition-all duration-200 transform hover:-translate-y-1 hover:z-10 h-full flex flex-col p-4 relative"
         on:click={feature.on_click}
         on:keydown={(e) => {
           if (e.key === "Enter" || e.key === " ") {

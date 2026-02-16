@@ -17,6 +17,10 @@
 
   $: tools_count =
     task_run_config.run_config_properties.tools_config?.tools?.length ?? 0
+
+  function openRunConfig() {
+    goto(`/optimize/${project_id}/${task_id}/run_config/${task_run_config.id}`)
+  }
 </script>
 
 <div
@@ -24,13 +28,11 @@
   tabindex="0"
   aria-label="Open Run Configuration"
   role="button"
-  on:click={() =>
-    goto(`/optimize/${project_id}/${task_id}/run_config/${task_run_config.id}`)}
+  on:click={openRunConfig}
   on:keydown={(e) => {
     if (e.key === "Enter" || e.key === " ") {
-      goto(
-        `/optimize/${project_id}/${task_id}/run_config/${task_run_config.id}`,
-      )
+      e.preventDefault()
+      openRunConfig()
     }
   }}
 >

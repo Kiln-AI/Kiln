@@ -4,7 +4,7 @@
   import { onMount, onDestroy } from "svelte"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import type { GepaJob, Eval } from "$lib/types"
+  import type { GepaJob, Eval, TaskRunConfig } from "$lib/types"
   import { formatDate } from "$lib/utils/formatters"
   import Output from "$lib/ui/output.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
@@ -15,7 +15,9 @@
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import { prompt_link } from "$lib/utils/link_builder"
+  import { DUMMY_GEPA_JOBS } from "$lib/dummy/gepa_jobs"
 
+  const USE_DUMMY_DATA = true
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: gepa_job_id = $page.params.job_id!
@@ -53,6 +55,19 @@
   }
 
   onMount(async () => {
+    if (USE_DUMMY_DATA) {
+      const dummy = DUMMY_GEPA_JOBS.find((j) => j.id === gepa_job_id)
+      if (dummy) {
+        gepa_job = dummy
+        build_properties()
+      } else {
+        gepa_job = DUMMY_GEPA_JOBS[0]
+        build_properties()
+      }
+      gepa_job_loading = false
+      return
+    }
+
     await Promise.all([
       load_task_run_configs(project_id, task_id),
       load_evals(),
@@ -109,7 +124,8 @@
       get_task_composite_id(project_id, task_id)
     ] || []
 
-  $: run_config_page_link = `/optimize/${project_id}/${task_id}/run_config/${gepa_job?.target_run_config_id}`
+  $: target_run_config_page_link = `/optimize/${project_id}/${task_id}/run_config/${gepa_job?.target_run_config_id}`
+  $: created_run_config_page_link = `/optimize/${project_id}/${task_id}/run_config/${gepa_job?.created_run_config_id}`
 
   $: is_terminal =
     gepa_job?.latest_status === "succeeded" ||
@@ -152,7 +168,10 @@
     }
   }
 
-  function get_run_config_name(run_config_id: string): string {
+  function get_run_config_name(
+    run_config_id: string,
+    run_configs: TaskRunConfig[],
+  ): string {
     const config = run_configs.find((rc) => rc.id === run_config_id)
     return config?.name || run_config_id
   }
@@ -186,16 +205,16 @@
       { name: "Name", value: gepa_job.name },
       {
         name: "Target Run Config",
-        value: get_run_config_name(gepa_job.target_run_config_id),
-        link: run_config_page_link,
+        value: get_run_config_name(gepa_job.target_run_config_id, run_configs),
+        link: target_run_config_page_link,
       },
     ]
 
     if (gepa_job.created_run_config_id) {
       base.push({
         name: "Optimized Run Config",
-        value: get_run_config_name(gepa_job.created_run_config_id),
-        link: run_config_page_link,
+        value: get_run_config_name(gepa_job.created_run_config_id, run_configs),
+        link: created_run_config_page_link,
       })
     }
 

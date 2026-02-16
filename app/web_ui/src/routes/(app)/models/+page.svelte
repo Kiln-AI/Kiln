@@ -534,10 +534,8 @@
   }
 
   function onClick(model: Model, provider?: Provider) {
-    const connectedProvider = provider || findFirstConnectedProvider(model)
+    const connectedProvider = getConnectedProvider(model, provider)
     if (!connectedProvider) {
-      connect_provider_model = model
-      connect_provider_dialog?.show()
       return
     }
     create_run_config_model_id = `${connectedProvider.name}/${model.name}`
@@ -545,15 +543,25 @@
   }
 
   function tryModel(model: Model) {
-    const connectedProvider = findFirstConnectedProvider(model)
+    const connectedProvider = getConnectedProvider(model)
     if (!connectedProvider) {
-      connect_provider_model = model
-      connect_provider_dialog?.show()
       return
     }
     const urlParams = new URLSearchParams()
     urlParams.set("model", `${connectedProvider.name}/${model.name}`)
     goto(`/run?${urlParams.toString()}`)
+  }
+
+  function getConnectedProvider(
+    model: Model,
+    provider?: Provider,
+  ): Provider | null {
+    const connectedProvider = provider || findFirstConnectedProvider(model)
+    if (!connectedProvider) {
+      connect_provider_model = model
+      connect_provider_dialog?.show()
+    }
+    return connectedProvider
   }
 </script>
 
