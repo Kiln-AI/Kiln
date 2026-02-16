@@ -538,7 +538,7 @@
 <div class="max-w-[1400px] overflow-x-hidden">
   <AppPage
     title="Model Library"
-    subtitle="Browse available models"
+    subtitle="Browse our built-in models"
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/models-and-ai-providers"
     breadcrumbs={project_id && task_id
@@ -550,6 +550,10 @@
         ]
       : []}
     action_buttons={[
+      {
+        label: "Custom Models",
+        href: "/settings/providers/add_models",
+      },
       {
         label: "Manage Providers",
         href: "/settings/providers",

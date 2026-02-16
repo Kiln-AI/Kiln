@@ -2,7 +2,7 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Literal
 
 import httpx
 import litellm
@@ -32,8 +32,14 @@ from kiln_ai.adapters.ollama_tools import (
     ollama_base_url,
     parse_ollama_tags,
 )
-from kiln_ai.adapters.provider_tools import provider_name_from_id, provider_warnings
+from kiln_ai.adapters.provider_tools import (
+    get_all_user_models,
+    get_legacy_custom_models,
+    provider_name_from_id,
+    provider_warnings,
+)
 from kiln_ai.adapters.reranker_list import built_in_rerankers
+from kiln_ai.adapters.user_model_entry import UserModelEntry
 from kiln_ai.datamodel.finetune import Finetune
 from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
@@ -211,6 +217,12 @@ class ProviderRerankerModels(BaseModel):
     models: Dict[str, ProviderModel]
 
 
+class AvailableProviderInfo(BaseModel):
+    id: str  # Provider identifier
+    name: str  # Display name
+    provider_type: Literal["builtin", "custom"]
+
+
 def connect_provider_api(app: FastAPI):
     @app.get("/api/providers/models")
     async def get_providers_models() -> ProviderModels:
@@ -297,13 +309,49 @@ def connect_provider_api(app: FastAPI):
         if fine_tuned_models:
             models.append(fine_tuned_models)
 
-        # Add any custom models
-        custom = custom_models()
-        if custom:
-            models.append(custom)
-
         # Add any openai compatible providers
         openai_compatible = openai_compatible_providers()
+
+        # Collect all custom models to merge into provider lists.
+        # Legacy custom_models and user_model_registry are handled separately
+        # but merged the same way (by provider key).
+        models_to_merge: Dict[str, List[ModelDetails]] = {}
+
+        # Legacy custom_models: keyed by kiln_custom_registry
+        for key, model_list in legacy_custom_models_as_available().items():
+            models_to_merge.setdefault(key, []).extend(model_list)
+
+        # New user_model_registry: keyed by provider_id (builtin) or provider name (custom)
+        for key, model_list in user_models_as_available().items():
+            models_to_merge.setdefault(key, []).extend(model_list)
+
+        # Merge custom models into their respective provider lists
+        if models_to_merge:
+            for provider in models:
+                provider_id_str = str(provider.provider_id)
+                if provider_id_str in models_to_merge:
+                    provider.models.extend(models_to_merge.pop(provider_id_str))
+
+            # Merge into openai compatible providers (by provider_name)
+            openai_compatible = [
+                AvailableModels(
+                    provider_name=provider.provider_name,
+                    provider_id=provider.provider_id,
+                    models=provider.models
+                    + models_to_merge.pop(provider.provider_name, []),
+                )
+                for provider in openai_compatible
+            ]
+            # Any remaining entries are custom providers with only user models
+            for provider_name, model_list in models_to_merge.items():
+                openai_compatible.append(
+                    AvailableModels(
+                        provider_name=provider_name,
+                        provider_id=ModelProviderName.openai_compatible,
+                        models=model_list,
+                    )
+                )
+
         models.extend(openai_compatible)
 
         return models
@@ -461,6 +509,183 @@ def connect_provider_api(app: FastAPI):
         return JSONResponse(
             status_code=200,
             content={"message": "OpenAI compatible provider deleted"},
+        )
+
+    @app.get("/api/settings/available_providers")
+    async def get_available_providers() -> List[AvailableProviderInfo]:
+        """Returns all providers that can have custom models added."""
+        providers = []
+
+        # Built-in providers with required API keys set
+        for provider, warning in provider_warnings.items():
+            has_keys = all(
+                Config.shared().get_value(key) is not None
+                for key in warning.required_config_keys
+            )
+            if has_keys:
+                providers.append(
+                    AvailableProviderInfo(
+                        id=str(provider.value),
+                        name=provider_name_from_id(provider),
+                        provider_type="builtin",
+                    )
+                )
+
+        # Custom OpenAI-compatible providers
+        openai_compat_providers = Config.shared().openai_compatible_providers or []
+        for provider in openai_compat_providers:
+            if provider.get("name"):
+                providers.append(
+                    AvailableProviderInfo(
+                        id=provider["name"],
+                        name=provider["name"],
+                        provider_type="custom",
+                    )
+                )
+
+        return providers
+
+    @app.get("/api/settings/user_models")
+    async def get_user_models() -> List[UserModelEntry]:
+        """Returns all user-defined models (new registry + legacy combined).
+
+        Includes both user_model_registry entries and legacy custom_models
+        (converted to UserModelEntry for display). Legacy models can be
+        deleted via the tuple method (provider_type/provider_id/model_id).
+        """
+        result = list(get_all_user_models())
+
+        # Include legacy custom_models for display on the management page
+        for provider_id, model_id in get_legacy_custom_models():
+            if not any(
+                m.provider_type == "builtin"
+                and m.provider_id == provider_id
+                and m.model_id == model_id
+                for m in result
+            ):
+                result.append(
+                    UserModelEntry(
+                        provider_type="builtin",
+                        provider_id=provider_id,
+                        model_id=model_id,
+                    )
+                )
+
+        return result
+
+    @app.post("/api/settings/user_models")
+    async def add_user_model(entry: UserModelEntry) -> JSONResponse:
+        """Add a user-defined model to the registry."""
+
+        # Validate provider exists
+        if entry.provider_type == "builtin":
+            if entry.provider_id not in ModelProviderName.__members__:
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid provider: {entry.provider_id}"
+                )
+            # Check if provider is configured
+            provider_warning = provider_warnings.get(
+                ModelProviderName(entry.provider_id)
+            )
+            if provider_warning:
+                for key in provider_warning.required_config_keys:
+                    if Config.shared().get_value(key) is None:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Provider {entry.provider_id} is not configured. Please set up API keys first.",
+                        )
+        else:
+            providers = Config.shared().openai_compatible_providers or []
+            if not any(p.get("name") == entry.provider_id for p in providers):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Custom provider not found: {entry.provider_id}",
+                )
+
+        # Add to registry
+        registry = Config.shared().user_model_registry or []
+
+        # Check for exact duplicate (all identifying fields must match)
+        if any(
+            e.get("provider_id") == entry.provider_id
+            and e.get("model_id") == entry.model_id
+            and e.get("name") == entry.name
+            and e.get("overrides") == (entry.overrides if entry.overrides else None)
+            for e in registry
+        ):
+            raise HTTPException(status_code=400, detail="Model already exists")
+
+        registry.append(entry.model_dump(exclude_none=True))
+        Config.shared().user_model_registry = registry
+
+        return JSONResponse(status_code=200, content={"message": "Model added"})
+
+    @app.delete("/api/settings/user_models")
+    async def delete_user_model(
+        provider_type: str | None = None,
+        provider_id: str | None = None,
+        model_id: str | None = None,
+        id: str | None = None,
+    ) -> JSONResponse:
+        """Delete a user-defined model from the registry.
+
+        Supports two deletion methods:
+        1. By ID (new): Pass `id` parameter to delete from user_model_registry
+        2. By tuple (legacy): Pass provider_type, provider_id, model_id to delete from
+           user_model_registry by matching those fields, or from legacy custom_models
+
+        Legacy models in custom_models don't have IDs and must use the tuple method.
+        """
+
+        # Method 1: Delete by ID (new format)
+        if id is not None:
+            registry = Config.shared().user_model_registry or []
+            original_len = len(registry)
+            registry = [e for e in registry if e.get("id") != id]
+
+            if len(registry) == original_len:
+                raise HTTPException(status_code=404, detail="Model not found")
+
+            Config.shared().user_model_registry = registry
+            return JSONResponse(status_code=200, content={"message": "Model deleted"})
+
+        # Method 2: Delete by tuple (legacy format, also supports user_model_registry)
+        if provider_type and provider_id and model_id:
+            registry = Config.shared().user_model_registry or []
+            original_len = len(registry)
+
+            # Try to delete from user_model_registry first
+            registry = [
+                e
+                for e in registry
+                if not (
+                    e.get("provider_type") == provider_type
+                    and e.get("provider_id") == provider_id
+                    and e.get("model_id") == model_id
+                )
+            ]
+
+            if len(registry) != original_len:
+                Config.shared().user_model_registry = registry
+                return JSONResponse(
+                    status_code=200, content={"message": "Model deleted"}
+                )
+
+            # If not found in registry, try legacy custom_models
+            legacy = Config.shared().custom_models or []
+            legacy_id = f"{provider_id}::{model_id}"
+            if legacy_id in legacy:
+                legacy.remove(legacy_id)
+                Config.shared().custom_models = legacy
+                return JSONResponse(
+                    status_code=200, content={"message": "Model deleted"}
+                )
+
+            raise HTTPException(status_code=404, detail="Model not found")
+
+        raise HTTPException(
+            status_code=400,
+            detail="Must specify either 'id' or provider_type+provider_id+model_id",
         )
 
     def parse_api_key(key_data: dict) -> str:
@@ -1420,47 +1645,125 @@ def embedding_models_from_ollama_tag(
     return models
 
 
-def custom_models() -> AvailableModels | None:
-    custom_model_ids = Config.shared().custom_models
-    if not custom_model_ids or len(custom_model_ids) == 0:
-        return None
+def legacy_custom_models_as_available() -> Dict[str, List[ModelDetails]]:
+    """
+    Returns legacy custom_models keyed by "kiln_custom_registry" for merging
+    into available_models.
+
+    Legacy custom_models are stored as "provider::model_id" strings in config.
+    They keep that full string as their model ID (for DB history compatibility).
+    They appear under the "Custom Models" provider group.
+
+    New custom models should use user_model_registry instead.
+    """
+    legacy_models = get_legacy_custom_models()
+    if not legacy_models:
+        return {}
 
     models: List[ModelDetails] = []
-    for model_id in custom_model_ids:
-        try:
-            provider_id = model_id.split("::", 1)[0]
-            model_name = model_id.split("::", 1)[1]
-            models.append(
-                ModelDetails(
-                    id=model_id,
-                    name=f"{provider_name_from_id(provider_id)}: {model_name}",
-                    supports_structured_output=False,
-                    supports_data_gen=False,
-                    supports_logprobs=False,
-                    supports_function_calling=False,
-                    untested_model=True,
-                    suggested_for_data_gen=False,
-                    suggested_for_evals=False,
-                    uncensored=False,
-                    suggested_for_uncensored_data_gen=False,
-                    # Custom models could be anything. JSON instructions is the only safe bet that works everywhere.
-                    structured_output_mode=StructuredOutputMode.json_instructions,
-                    supports_vision=False,
-                    supports_doc_extraction=False,
-                    suggested_for_doc_extraction=False,
-                    multimodal_capable=False,
-                    multimodal_mime_types=None,
-                )
+    for provider_id, model_name in legacy_models:
+        full_model_id = f"{provider_id}::{model_name}"
+        models.append(
+            ModelDetails(
+                id=full_model_id,
+                name=f"{model_name} (Custom)",
+                supports_structured_output=False,
+                supports_data_gen=False,
+                supports_logprobs=False,
+                supports_function_calling=False,
+                untested_model=True,
+                suggested_for_data_gen=False,
+                suggested_for_evals=False,
+                uncensored=False,
+                suggested_for_uncensored_data_gen=False,
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_vision=False,
+                supports_doc_extraction=False,
+                suggested_for_doc_extraction=False,
+                multimodal_capable=False,
+                multimodal_mime_types=None,
             )
-        except Exception:
-            # Continue on to the rest
-            logger.error("Error processing custom model %s", model_id, exc_info=True)
+        )
+    return {"kiln_custom_registry": models}
 
-    return AvailableModels(
-        provider_name="Custom Models",
-        provider_id=ModelProviderName.kiln_custom_registry,
-        models=models,
-    )
+
+def user_models_as_available() -> Dict[str, List[ModelDetails]]:
+    """
+    Returns user_model_registry entries keyed by provider_id for merging into
+    available_models.
+
+    These are the new-format custom models (not legacy custom_models).
+    Legacy custom_models are handled separately by legacy_custom_models_as_available().
+
+    Returns:
+        - Dict keyed by provider_id (enum value for builtin, provider name for custom)
+        - Each value is a list of ModelDetails with " (Custom)" suffix on names
+    """
+    user_models = get_all_user_models()
+    if not user_models:
+        return {}
+
+    # Group by provider
+    by_provider: Dict[str, List[ModelDetails]] = {}
+
+    for entry in user_models:
+        # Determine the key for this model
+        if entry.provider_type == "builtin":
+            key = entry.provider_id  # e.g., "openai"
+        else:
+            key = entry.provider_id  # e.g., "ABC"
+
+        if key not in by_provider:
+            by_provider[key] = []
+
+        # Build model ID for selection using the entry's unique ID
+        full_model_id = f"user_model::{entry.id}"
+
+        # Get display name with " (Custom)" suffix
+        display_name = (entry.name or entry.model_id) + " (Custom)"
+
+        # Determine capabilities from overrides
+        overrides = entry.overrides or {}
+
+        # Convert string structured_output_mode to enum if present
+        structured_output_mode_value = overrides.get(
+            "structured_output_mode", StructuredOutputMode.json_instructions
+        )
+        if isinstance(structured_output_mode_value, str):
+            try:
+                structured_output_mode_value = StructuredOutputMode(
+                    structured_output_mode_value
+                )
+            except ValueError:
+                structured_output_mode_value = StructuredOutputMode.json_instructions
+
+        by_provider[key].append(
+            ModelDetails(
+                id=full_model_id,
+                name=display_name,
+                supports_structured_output=overrides.get(
+                    "supports_structured_output", False
+                ),
+                supports_data_gen=overrides.get("supports_data_gen", False),
+                supports_logprobs=overrides.get("supports_logprobs", False),
+                supports_function_calling=overrides.get(
+                    "supports_function_calling", False
+                ),
+                untested_model=True,
+                suggested_for_data_gen=False,
+                suggested_for_evals=False,
+                uncensored=overrides.get("uncensored", False),
+                suggested_for_uncensored_data_gen=False,
+                structured_output_mode=structured_output_mode_value,
+                supports_vision=overrides.get("supports_vision", False),
+                supports_doc_extraction=overrides.get("supports_doc_extraction", False),
+                suggested_for_doc_extraction=False,
+                multimodal_capable=overrides.get("multimodal_capable", False),
+                multimodal_mime_types=overrides.get("multimodal_mime_types"),
+            )
+        )
+
+    return by_provider
 
 
 def fine_tune_model_structured_output_mode(
