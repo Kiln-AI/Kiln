@@ -635,7 +635,8 @@ def connect_prompt_optimization_job_api(app: FastAPI):
                                     job, server_client
                                 )
                                 for job in batch
-                            ]
+                            ],
+                            return_exceptions=True,
                         )
             except Exception as e:
                 logger.error(
