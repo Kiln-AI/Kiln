@@ -5,7 +5,7 @@
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
-  import AppPage from "../../../../app_page.svelte"
+  import AppPage from "../../../../../app_page.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { goto } from "$app/navigation"
   import Output from "$lib/ui/output.svelte"

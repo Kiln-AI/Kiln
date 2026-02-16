@@ -756,6 +756,7 @@
         api_name: "name",
         value: evaluator?.name || "",
         input_type: "input",
+        max_length: 120,
       },
       {
         label: "Description",

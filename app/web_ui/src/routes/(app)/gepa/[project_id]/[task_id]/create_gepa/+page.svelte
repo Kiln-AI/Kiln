@@ -18,6 +18,7 @@
     available_tools,
     get_task_composite_id,
     load_available_models,
+    load_available_tools,
     load_model_info,
     model_info,
   } from "$lib/stores"
@@ -268,6 +269,7 @@
     }
 
     if (kiln_copilot_connected && has_prompt_optimization_entitlement) {
+      load_available_tools(project_id)
       await Promise.all([load_model_info(), load_available_models()])
       await Promise.all([
         load_task(),

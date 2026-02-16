@@ -109,7 +109,7 @@
       get_task_composite_id(project_id, task_id)
     ] || []
 
-  $: optimize_page_link = `/optimize/${project_id}/${task_id}`
+  $: run_config_page_link = `/optimize/${project_id}/${task_id}/run_config/${gepa_job?.target_run_config_id}`
 
   $: is_terminal =
     gepa_job?.latest_status === "succeeded" ||
@@ -187,7 +187,7 @@
       {
         name: "Target Run Config",
         value: get_run_config_name(gepa_job.target_run_config_id),
-        link: optimize_page_link,
+        link: run_config_page_link,
       },
     ]
 
@@ -195,7 +195,7 @@
       base.push({
         name: "Optimized Run Config",
         value: get_run_config_name(gepa_job.created_run_config_id),
-        link: optimize_page_link,
+        link: run_config_page_link,
       })
     }
 

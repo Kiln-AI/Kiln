@@ -161,6 +161,7 @@ class CreateTaskRunConfigRequest(BaseModel):
 
 
 class UpdateRunConfigRequest(BaseModel):
+    name: str | None = None
     starred: bool | None = None
     prompt_name: str | None = None
 
@@ -489,6 +490,8 @@ def connect_evals_api(app: FastAPI):
                 status_code=400,
                 detail="Cannot update this run config.",
             )
+        if request.name is not None:
+            run_config.name = request.name
         if request.starred is not None:
             run_config.starred = request.starred
         if request.prompt_name is not None:

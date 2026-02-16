@@ -265,7 +265,7 @@
                               <button
                                 on:click={() =>
                                   goto(
-                                    `/optimize/${project_id}/${task_id}/create_run_config?prompt_id=${encodeURIComponent(prompt.id)}`,
+                                    `/optimize/${project_id}/${task_id}/run_config/create?prompt_id=${encodeURIComponent(prompt.id)}`,
                                   )}
                               >
                                 Create Run Configuration
