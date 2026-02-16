@@ -10,11 +10,11 @@ from attrs import field as _attrs_field
 from .. import types
 from ..types import File
 
-T = TypeVar("T", bound="BodyStartGepaJobV1JobsGepaJobStartPost")
+T = TypeVar("T", bound="BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost")
 
 
 @_attrs_define
-class BodyStartGepaJobV1JobsGepaJobStartPost:
+class BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost:
     """
     Attributes:
         task_id (str): The task ID
@@ -79,15 +79,15 @@ class BodyStartGepaJobV1JobsGepaJobStartPost:
 
         project_zip = File(payload=BytesIO(d.pop("project_zip")))
 
-        body_start_gepa_job_v1_jobs_gepa_job_start_post = cls(
+        body_start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post = cls(
             task_id=task_id,
             target_run_config_id=target_run_config_id,
             eval_ids=eval_ids,
             project_zip=project_zip,
         )
 
-        body_start_gepa_job_v1_jobs_gepa_job_start_post.additional_properties = d
-        return body_start_gepa_job_v1_jobs_gepa_job_start_post
+        body_start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post.additional_properties = d
+        return body_start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post
 
     @property
     def additional_keys(self) -> list[str]:

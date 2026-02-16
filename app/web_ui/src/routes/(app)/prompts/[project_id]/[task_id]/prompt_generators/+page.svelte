@@ -52,7 +52,9 @@
   function on_select(template: PromptGeneratorTemplate): () => void {
     return () => {
       if (template.generator_id === "kiln_prompt_optimizer") {
-        goto(`/gepa/${project_id}/${task_id}/create_gepa`)
+        goto(
+          `/prompt_optimization/${project_id}/${task_id}/create_prompt_optimization_job`,
+        )
         return
       }
 

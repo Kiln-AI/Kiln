@@ -123,7 +123,7 @@
     action_buttons={[
       {
         label: "Optimizer Jobs",
-        href: `/gepa/${project_id}/${task_id}`,
+        href: `/prompt_optimization/${project_id}/${task_id}`,
       },
       {
         label: "Create Prompt",
@@ -152,7 +152,7 @@
           title="Automatically Optimize Your Prompt"
           description="Use Kiln's state-of-the-art prompt optimizer to automatically improve your prompt."
           button_label="Create Optimized Prompt"
-          href={`/gepa/${project_id}/${task_id}/create_gepa`}
+          href={`/prompt_optimization/${project_id}/${task_id}/create_prompt_optimization_job`}
         >
           <div slot="icon" class="p-4 border rounded-lg">
             <div class="h-12 w-12">

@@ -6,12 +6,12 @@ from typing import Any, TypeVar
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-T = TypeVar("T", bound="GEPAJobOutput")
+T = TypeVar("T", bound="PromptOptimizationJobOutput")
 
 
 @_attrs_define
-class GEPAJobOutput:
-    """Output from the GEPA job.
+class PromptOptimizationJobOutput:
+    """Output from the prompt optimization job.
 
     Attributes:
         optimized_prompt (str):
@@ -38,12 +38,12 @@ class GEPAJobOutput:
         d = dict(src_dict)
         optimized_prompt = d.pop("optimized_prompt")
 
-        gepa_job_output = cls(
+        prompt_optimization_job_output = cls(
             optimized_prompt=optimized_prompt,
         )
 
-        gepa_job_output.additional_properties = d
-        return gepa_job_output
+        prompt_optimization_job_output.additional_properties = d
+        return prompt_optimization_job_output
 
     @property
     def additional_keys(self) -> list[str]:

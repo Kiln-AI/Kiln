@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
   import { client } from "$lib/api_client"
-  import type { GepaJob } from "$lib/types"
+  import type { PromptOptimizationJob } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { goto } from "$app/navigation"
@@ -19,20 +19,21 @@
 
   let loading = true
 
-  let gepa_jobs: GepaJob[] | null = null
-  let gepa_jobs_error: KilnError | null = null
+  let prompt_optimization_jobs: PromptOptimizationJob[] | null = null
+  let prompt_optimization_jobs_error: KilnError | null = null
 
   let kiln_copilot_connected: boolean | null = null
   let has_prompt_optimization_entitlement: boolean | null = null
   let copilot_check_error: KilnError | null = null
 
-  $: error = copilot_check_error || gepa_jobs_error
-  $: is_empty = !gepa_jobs || gepa_jobs.length === 0
+  $: error = copilot_check_error || prompt_optimization_jobs_error
+  $: is_empty =
+    !prompt_optimization_jobs || prompt_optimization_jobs.length === 0
 
   onMount(async () => {
-    await get_gepa_jobs()
+    await get_prompt_optimization_jobs()
 
-    if (!gepa_jobs || gepa_jobs.length === 0) {
+    if (!prompt_optimization_jobs || prompt_optimization_jobs.length === 0) {
       try {
         kiln_copilot_connected = await checkKilnCopilotAvailable()
       } catch (e) {
@@ -53,44 +54,46 @@
     loading = false
   })
 
-  async function get_gepa_jobs() {
+  async function get_prompt_optimization_jobs() {
     try {
-      gepa_jobs_error = null
+      prompt_optimization_jobs_error = null
       if (!project_id || !task_id) {
         throw new Error("Project or task ID not set.")
       }
-      const { data: gepa_jobs_response, error: get_error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs",
-        {
-          params: {
-            path: {
-              project_id,
-              task_id,
-            },
-            query: {
-              update_status: true,
+      const { data: prompt_optimization_jobs_response, error: get_error } =
+        await client.GET(
+          "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs",
+          {
+            params: {
+              path: {
+                project_id,
+                task_id,
+              },
+              query: {
+                update_status: true,
+              },
             },
           },
-        },
-      )
+        )
       if (get_error) {
         throw get_error
       }
-      const sorted_gepa_jobs = gepa_jobs_response.sort((a, b) => {
-        return (
-          new Date(b.created_at || "").getTime() -
-          new Date(a.created_at || "").getTime()
-        )
-      })
-      gepa_jobs = sorted_gepa_jobs
+      const sorted_prompt_optimization_jobs =
+        prompt_optimization_jobs_response.sort((a, b) => {
+          return (
+            new Date(b.created_at || "").getTime() -
+            new Date(a.created_at || "").getTime()
+          )
+        })
+      prompt_optimization_jobs = sorted_prompt_optimization_jobs
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
-        gepa_jobs_error = new KilnError(
-          "Could not load GEPA jobs. This task may belong to a project you don't have access to.",
+        prompt_optimization_jobs_error = new KilnError(
+          "Could not load Prompt Optimization jobs. This task may belong to a project you don't have access to.",
           null,
         )
       } else {
-        gepa_jobs_error = createKilnError(e)
+        prompt_optimization_jobs_error = createKilnError(e)
       }
     }
   }
@@ -138,7 +141,7 @@
     : [
         {
           label: "Create Optimized Prompt",
-          href: `/gepa/${project_id}/${task_id}/create_gepa`,
+          href: `/prompt_optimization/${project_id}/${task_id}/create_prompt_optimization_job`,
           primary: true,
         },
       ]}
@@ -171,7 +174,7 @@
           action_buttons={[
             {
               label: "Create Optimized Prompt",
-              href: `/gepa/${project_id}/${task_id}/create_gepa`,
+              href: `/prompt_optimization/${project_id}/${task_id}/create_prompt_optimization_job`,
               is_primary: true,
             },
           ]}
@@ -184,7 +187,7 @@
         </Intro>
       </div>
     {/if}
-  {:else if gepa_jobs}
+  {:else if prompt_optimization_jobs}
     <div class="overflow-x-auto rounded-lg border">
       <table class="table">
         <thead>
@@ -195,25 +198,29 @@
           </tr>
         </thead>
         <tbody>
-          {#each gepa_jobs as gepa_job}
-            {@const badge = get_status_badge(gepa_job.latest_status)}
+          {#each prompt_optimization_jobs as prompt_optimization_job}
+            {@const badge = get_status_badge(
+              prompt_optimization_job.latest_status,
+            )}
             <tr
               class="hover cursor-pointer"
               on:click={() => {
-                goto(`/gepa/${project_id}/${task_id}/gepa_job/${gepa_job.id}`)
+                goto(
+                  `/prompt_optimization/${project_id}/${task_id}/prompt_optimization_job/${prompt_optimization_job.id}`,
+                )
               }}
             >
-              <td> {gepa_job.name} </td>
+              <td> {prompt_optimization_job.name} </td>
               <td>
                 <div class="badge px-3 py-1 gap-1 {badge.badge_class}">
-                  {#if gepa_job.latest_status === "pending" || gepa_job.latest_status === "running"}
+                  {#if prompt_optimization_job.latest_status === "pending" || prompt_optimization_job.latest_status === "running"}
                     <span class="loading loading-spinner h-[12px] w-[12px]"
                     ></span>
                   {/if}
                   {badge.label}
                 </div>
               </td>
-              <td> {formatDate(gepa_job.created_at)} </td>
+              <td> {formatDate(prompt_optimization_job.created_at)} </td>
             </tr>
           {/each}
         </tbody>

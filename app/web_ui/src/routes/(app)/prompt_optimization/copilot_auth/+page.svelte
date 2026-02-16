@@ -13,6 +13,6 @@
     { label: "Optimize", href: `/optimize/${project_id}/${task_id}` },
     { label: "Prompts", href: `/prompts/${project_id}/${task_id}` },
   ]}
-  success_redirect_url={`/gepa/${project_id}/${task_id}/create_gepa`}
-  cancel_redirect_url={`/gepa/${project_id}/${task_id}/create_gepa`}
+  success_redirect_url={`/prompt_optimization/${project_id}/${task_id}/create_prompt_optimization_job`}
+  cancel_redirect_url={`/prompt_optimization/${project_id}/${task_id}/create_prompt_optimization_job`}
 />

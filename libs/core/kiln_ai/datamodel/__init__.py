@@ -31,7 +31,6 @@ from kiln_ai.datamodel.datamodel_enums import (
 from kiln_ai.datamodel.dataset_split import DatasetSplit, DatasetSplitDefinition
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.finetune import Finetune
-from kiln_ai.datamodel.gepa_job import GepaJob
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
 from kiln_ai.datamodel.prompt_id import (
@@ -39,6 +38,7 @@ from kiln_ai.datamodel.prompt_id import (
     PromptId,
     prompt_generator_values,
 )
+from kiln_ai.datamodel.prompt_optimization_job import PromptOptimizationJob
 from kiln_ai.datamodel.task import Task, TaskRequirement
 from kiln_ai.datamodel.task_output import (
     DataSource,
@@ -60,12 +60,12 @@ __all__ = [
     "ExternalToolServer",
     "FineTuneStatusType",
     "Finetune",
-    "GepaJob",
     "Priority",
     "Project",
     "Prompt",
     "PromptGenerators",
     "PromptId",
+    "PromptOptimizationJob",
     "RequirementRating",
     "StructuredOutputMode",
     "Task",

@@ -26,7 +26,7 @@ def _get_kwargs(
 
     _kwargs: dict[str, Any] = {
         "method": "get",
-        "url": "/v1/jobs/gepa_job/check_model_supported",
+        "url": "/v1/jobs/prompt_optimization_job/check_model_supported",
         "params": params,
     }
 
@@ -69,7 +69,7 @@ def sync_detailed(
     model_name: str,
     model_provider_name: str,
 ) -> Response[CheckModelSupportedResponse | HTTPValidationError]:
-    """Check Model Supported
+    """Check Prompt Optimization Model Supported
 
     Args:
         model_name (str):
@@ -101,7 +101,7 @@ def sync(
     model_name: str,
     model_provider_name: str,
 ) -> CheckModelSupportedResponse | HTTPValidationError | None:
-    """Check Model Supported
+    """Check Prompt Optimization Model Supported
 
     Args:
         model_name (str):
@@ -128,7 +128,7 @@ async def asyncio_detailed(
     model_name: str,
     model_provider_name: str,
 ) -> Response[CheckModelSupportedResponse | HTTPValidationError]:
-    """Check Model Supported
+    """Check Prompt Optimization Model Supported
 
     Args:
         model_name (str):
@@ -158,7 +158,7 @@ async def asyncio(
     model_name: str,
     model_provider_name: str,
 ) -> CheckModelSupportedResponse | HTTPValidationError | None:
-    """Check Model Supported
+    """Check Prompt Optimization Model Supported
 
     Args:
         model_name (str):

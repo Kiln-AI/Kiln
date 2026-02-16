@@ -8,12 +8,6 @@ import pytest
 from app.desktop.studio_server.api_client.kiln_ai_server_client.client import (
     AuthenticatedClient,
 )
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models.gepa_job_output import (
-    GEPAJobOutput,
-)
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models.gepa_job_result_response import (
-    GEPAJobResultResponse,
-)
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.http_validation_error import (
     HTTPValidationError,
 )
@@ -26,21 +20,27 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.job_statu
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.job_status_response import (
     JobStatusResponse,
 )
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.prompt_optimization_job_output import (
+    PromptOptimizationJobOutput,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.prompt_optimization_job_result_response import (
+    PromptOptimizationJobResultResponse,
+)
 from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
     Response as SdkResponse,
 )
-from app.desktop.studio_server.gepa_job_api import (
-    PublicGEPAJobResultResponse,
-    PublicGEPAJobStatusResponse,
-    connect_gepa_job_api,
-    gepa_job_from_id,
+from app.desktop.studio_server.prompt_optimization_job_api import (
+    PublicPromptOptimizationJobResultResponse,
+    PublicPromptOptimizationJobStatusResponse,
+    connect_prompt_optimization_job_api,
     is_job_status_final,
-    update_gepa_job_and_create_artifacts,
+    prompt_optimization_job_from_id,
+    update_prompt_optimization_job_and_create_artifacts,
 )
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.cli.commands.package_project import PackageForTrainingConfig
-from kiln_ai.datamodel import GepaJob, Project, Task
+from kiln_ai.datamodel import Project, PromptOptimizationJob, Task
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.datamodel.task import TaskRunConfig
@@ -71,7 +71,7 @@ def _make_sdk_response(
 @pytest.fixture
 def app():
     app = FastAPI()
-    connect_gepa_job_api(app)
+    connect_prompt_optimization_job_api(app)
     return app
 
 
@@ -83,7 +83,9 @@ def client(app):
 @pytest.fixture
 def mock_api_key():
     with (
-        patch("app.desktop.studio_server.gepa_job_api.Config.shared") as mock_config,
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.Config.shared"
+        ) as mock_config,
         patch("kiln_ai.datamodel.basemodel.Config.shared") as mock_basemodel_config,
     ):
         mock_config_instance = mock_config.return_value
@@ -96,79 +98,86 @@ def mock_api_key():
         yield mock_config_instance
 
 
-def test_get_gepa_job_result_success(client, mock_api_key):
-    """Test successfully getting a GEPA job result."""
+def test_get_prompt_optimization_job_result_success(client, mock_api_key):
+    """Test successfully getting a Prompt Optimization job result."""
     job_id = "test-job-123"
     expected_prompt = "This is the optimized prompt"
 
-    mock_output = GEPAJobOutput(optimized_prompt=expected_prompt)
-    mock_response = GEPAJobResultResponse(
+    mock_output = PromptOptimizationJobOutput(optimized_prompt=expected_prompt)
+    mock_response = PromptOptimizationJobResultResponse(
         status=JobStatus.SUCCEEDED, output=mock_output
     )
 
     with patch(
-        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
         new_callable=AsyncMock,
         return_value=mock_response,
     ):
-        response = client.get(f"/api/gepa_jobs/{job_id}/result")
+        response = client.get(f"/api/prompt_optimization_jobs/{job_id}/result")
 
         assert response.status_code == 200
         assert response.json() == {"optimized_prompt": expected_prompt}
 
-        result = PublicGEPAJobResultResponse(**response.json())
+        result = PublicPromptOptimizationJobResultResponse(**response.json())
         assert result.optimized_prompt == expected_prompt
 
 
-def test_get_gepa_job_result_not_found(client, mock_api_key):
-    """Test getting a GEPA job result that doesn't exist."""
+def test_get_prompt_optimization_job_result_not_found(client, mock_api_key):
+    """Test getting a Prompt Optimization job result that doesn't exist."""
     job_id = "nonexistent-job"
 
     with patch(
-        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
         new_callable=AsyncMock,
         return_value=None,
     ):
-        response = client.get(f"/api/gepa_jobs/{job_id}/result")
+        response = client.get(f"/api/prompt_optimization_jobs/{job_id}/result")
 
         assert response.status_code == 404
-        assert f"GEPA job {job_id} result not found" in response.json()["detail"]
+        assert (
+            f"Prompt Optimization job {job_id} result not found"
+            in response.json()["detail"]
+        )
 
 
-def test_get_gepa_job_result_no_output(client, mock_api_key):
-    """Test getting a GEPA job result that has no output."""
+def test_get_prompt_optimization_job_result_no_output(client, mock_api_key):
+    """Test getting a Prompt Optimization job result that has no output."""
     job_id = "test-job-no-output"
 
-    mock_response = GEPAJobResultResponse(status=JobStatus.RUNNING, output=None)
+    mock_response = PromptOptimizationJobResultResponse(
+        status=JobStatus.RUNNING, output=None
+    )
 
     with patch(
-        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
         new_callable=AsyncMock,
         return_value=mock_response,
     ):
-        response = client.get(f"/api/gepa_jobs/{job_id}/result")
+        response = client.get(f"/api/prompt_optimization_jobs/{job_id}/result")
 
         assert response.status_code == 500
         assert "has no output" in response.json()["detail"]
 
 
-def test_get_gepa_job_result_api_error(client, mock_api_key):
-    """Test handling of API errors when getting GEPA job result."""
+def test_get_prompt_optimization_job_result_api_error(client, mock_api_key):
+    """Test handling of API errors when getting Prompt Optimization job result."""
     job_id = "test-job-error"
 
     with patch(
-        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
         new_callable=AsyncMock,
         side_effect=Exception("API connection failed"),
     ):
-        response = client.get(f"/api/gepa_jobs/{job_id}/result")
+        response = client.get(f"/api/prompt_optimization_jobs/{job_id}/result")
 
         assert response.status_code == 500
-        assert "Failed to get GEPA job result" in response.json()["detail"]
+        assert (
+            "Failed to get Prompt Optimization job result" in response.json()["detail"]
+        )
 
 
-def test_get_gepa_job_status_success(client, mock_api_key):
-    """Test successfully getting GEPA job status."""
+def test_get_prompt_optimization_job_status_success(client, mock_api_key):
+    """Test successfully getting Prompt Optimization job status."""
     job_id = "test-job-123"
 
     mock_response = JobStatusResponse(job_id=job_id, status=JobStatus.RUNNING)
@@ -178,17 +187,17 @@ def test_get_gepa_job_status_success(client, mock_api_key):
         new_callable=AsyncMock,
         return_value=mock_response,
     ):
-        response = client.get(f"/api/gepa_jobs/{job_id}/status")
+        response = client.get(f"/api/prompt_optimization_jobs/{job_id}/status")
 
         assert response.status_code == 200
         assert response.json() == {"job_id": job_id, "status": "running"}
 
-        result = PublicGEPAJobStatusResponse(**response.json())
+        result = PublicPromptOptimizationJobStatusResponse(**response.json())
         assert result.job_id == job_id
         assert result.status == JobStatus.RUNNING
 
 
-def test_get_gepa_job_status_not_found(client, mock_api_key):
+def test_get_prompt_optimization_job_status_not_found(client, mock_api_key):
     """Test getting status for a job that doesn't exist."""
     job_id = "nonexistent-job"
 
@@ -197,46 +206,50 @@ def test_get_gepa_job_status_not_found(client, mock_api_key):
         new_callable=AsyncMock,
         return_value=None,
     ):
-        response = client.get(f"/api/gepa_jobs/{job_id}/status")
+        response = client.get(f"/api/prompt_optimization_jobs/{job_id}/status")
 
         assert response.status_code == 404
-        assert f"GEPA job {job_id} not found" in response.json()["detail"]
+        assert (
+            f"Prompt Optimization job {job_id} not found" in response.json()["detail"]
+        )
 
 
-def test_get_gepa_job_result_no_api_key(client):
-    """Test getting GEPA job result without API key configured."""
+def test_get_prompt_optimization_job_result_no_api_key(client):
+    """Test getting Prompt Optimization job result without API key configured."""
     job_id = "test-job-123"
 
-    with patch("app.desktop.studio_server.gepa_job_api.Config.shared") as mock_config:
+    with patch(
+        "app.desktop.studio_server.prompt_optimization_job_api.Config.shared"
+    ) as mock_config:
         mock_config_instance = mock_config.return_value
         mock_config_instance.kiln_copilot_api_key = None
 
-        response = client.get(f"/api/gepa_jobs/{job_id}/result")
+        response = client.get(f"/api/prompt_optimization_jobs/{job_id}/result")
 
         assert response.status_code == 401
         assert "API key not configured" in response.json()["detail"]
 
 
-def test_get_gepa_job_result_validation_error(client, mock_api_key):
-    """Test getting GEPA job result with validation error from server."""
+def test_get_prompt_optimization_job_result_validation_error(client, mock_api_key):
+    """Test getting Prompt Optimization job result with validation error from server."""
     job_id = "test-job-123"
 
     mock_error = HTTPValidationError(detail=[])
 
     with patch(
-        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
         new_callable=AsyncMock,
         return_value=mock_error,
     ):
-        response = client.get(f"/api/gepa_jobs/{job_id}/result")
+        response = client.get(f"/api/prompt_optimization_jobs/{job_id}/result")
 
         assert response.status_code == 404
 
 
-def test_public_gepa_job_result_response_model():
-    """Test the PublicGEPAJobResultResponse Pydantic model."""
+def test_public_prompt_optimization_job_result_response_model():
+    """Test the PublicPromptOptimizationJobResultResponse Pydantic model."""
     prompt = "Test optimized prompt"
-    model = PublicGEPAJobResultResponse(optimized_prompt=prompt)
+    model = PublicPromptOptimizationJobResultResponse(optimized_prompt=prompt)
 
     assert model.optimized_prompt == prompt
     assert model.model_dump() == {"optimized_prompt": prompt}
@@ -244,15 +257,15 @@ def test_public_gepa_job_result_response_model():
     json_str = model.model_dump_json()
     assert prompt in json_str
 
-    parsed = PublicGEPAJobResultResponse.model_validate_json(json_str)
+    parsed = PublicPromptOptimizationJobResultResponse.model_validate_json(json_str)
     assert parsed.optimized_prompt == prompt
 
 
-def test_public_gepa_job_status_response_model():
-    """Test the PublicGEPAJobStatusResponse Pydantic model."""
+def test_public_prompt_optimization_job_status_response_model():
+    """Test the PublicPromptOptimizationJobStatusResponse Pydantic model."""
     job_id = "test-job-123"
     status = JobStatus.RUNNING
-    model = PublicGEPAJobStatusResponse(job_id=job_id, status=status)
+    model = PublicPromptOptimizationJobStatusResponse(job_id=job_id, status=status)
 
     assert model.job_id == job_id
     assert model.status == JobStatus.RUNNING
@@ -262,19 +275,21 @@ def test_public_gepa_job_status_response_model():
     assert job_id in json_str
     assert "running" in json_str
 
-    parsed = PublicGEPAJobStatusResponse.model_validate_json(json_str)
+    parsed = PublicPromptOptimizationJobStatusResponse.model_validate_json(json_str)
     assert parsed.job_id == job_id
     assert parsed.status == JobStatus.RUNNING
 
 
-def test_start_gepa_job_creates_datamodel(client, mock_api_key, tmp_path):
-    """Test that starting a GEPA job creates and saves a GepaJob datamodel."""
+def test_start_prompt_optimization_job_creates_datamodel(
+    client, mock_api_key, tmp_path
+):
+    """Test that starting a Prompt Optimization job creates and saves a PromptOptimizationJob datamodel."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
@@ -288,19 +303,19 @@ def test_start_gepa_job_creates_datamodel(client, mock_api_key, tmp_path):
 
     with (
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=mock_run_config,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.package_project_for_training",
+            "app.desktop.studio_server.prompt_optimization_job_api.package_project_for_training",
             side_effect=_mock_package_project_for_training,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio_detailed",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post.asyncio_detailed",
             new_callable=AsyncMock,
             return_value=_make_sdk_response(
                 parsed=JobStartResponse(job_id="remote-job-123")
@@ -308,7 +323,7 @@ def test_start_gepa_job_creates_datamodel(client, mock_api_key, tmp_path):
         ),
     ):
         response = client.post(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start",
             json={
                 "target_run_config_id": "test-run-config-id",
                 "eval_ids": ["eval-1", "eval-2"],
@@ -324,22 +339,22 @@ def test_start_gepa_job_creates_datamodel(client, mock_api_key, tmp_path):
         assert "id" in result
         assert "name" in result
 
-        gepa_jobs = task.gepa_jobs()
-        assert len(gepa_jobs) == 1
-        assert gepa_jobs[0].job_id == "remote-job-123"
-        assert gepa_jobs[0].eval_ids == ["eval-1", "eval-2"]
+        prompt_optimization_jobs = task.prompt_optimization_jobs()
+        assert len(prompt_optimization_jobs) == 1
+        assert prompt_optimization_jobs[0].job_id == "remote-job-123"
+        assert prompt_optimization_jobs[0].eval_ids == ["eval-1", "eval-2"]
 
 
-def test_start_gepa_job_calls_package_with_correct_params(
+def test_start_prompt_optimization_job_calls_package_with_correct_params(
     client, mock_api_key, tmp_path
 ):
-    """Test that start_gepa_job calls package_project_for_training with the correct arguments."""
+    """Test that start_prompt_optimization_job calls package_project_for_training with the correct arguments."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
@@ -355,19 +370,19 @@ def test_start_gepa_job_calls_package_with_correct_params(
 
     with (
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=mock_run_config,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.package_project_for_training",
+            "app.desktop.studio_server.prompt_optimization_job_api.package_project_for_training",
             mock_packager,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio_detailed",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post.asyncio_detailed",
             new_callable=AsyncMock,
             return_value=_make_sdk_response(
                 parsed=JobStartResponse(job_id="remote-job-456")
@@ -375,7 +390,7 @@ def test_start_gepa_job_calls_package_with_correct_params(
         ),
     ):
         response = client.post(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start",
             json={
                 "target_run_config_id": "rc-123",
                 "eval_ids": ["eval-a", "eval-b"],
@@ -397,45 +412,46 @@ def test_start_gepa_job_calls_package_with_correct_params(
         assert call_kwargs["config"].exclude_eval_config_runs is True
 
 
-def test_list_gepa_jobs(client, mock_api_key, tmp_path):
-    """Test listing all GEPA jobs for a task."""
+def test_list_prompt_optimization_jobs(client, mock_api_key, tmp_path):
+    """Test listing all Prompt Optimization jobs for a task."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
     task.save_to_file()
 
-    gepa_job_1 = GepaJob(
+    prompt_optimization_job_1 = PromptOptimizationJob(
         name="Job 1",
         job_id="remote-job-1",
         target_run_config_id="config-1",
         latest_status="pending",
         parent=task,
     )
-    gepa_job_1.save_to_file()
+    prompt_optimization_job_1.save_to_file()
 
-    gepa_job_2 = GepaJob(
+    prompt_optimization_job_2 = PromptOptimizationJob(
         name="Job 2",
         job_id="remote-job-2",
         target_run_config_id="config-2",
         latest_status="succeeded",
         parent=task,
     )
-    gepa_job_2.save_to_file()
+    prompt_optimization_job_2.save_to_file()
 
     project_id = project.id
     task_id = task.id
 
     with patch(
-        "app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task
+        "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+        return_value=task,
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs",
             params={"update_status": False},
         )
 
@@ -448,38 +464,41 @@ def test_list_gepa_jobs(client, mock_api_key, tmp_path):
         assert job_ids == {"remote-job-1", "remote-job-2"}
 
 
-def test_get_gepa_job_detail(client, mock_api_key, tmp_path):
-    """Test getting GEPA job detail."""
+def test_get_prompt_optimization_job_detail(client, mock_api_key, tmp_path):
+    """Test getting Prompt Optimization job detail."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
     task.save_to_file()
 
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id="config-1",
         latest_status="pending",
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
     project_id = project.id
     task_id = task.id
-    gepa_job_id = gepa_job.id
+    prompt_optimization_job_id = prompt_optimization_job.id
 
     mock_status_response = JobStatusResponse(
         job_id="remote-job-123", status=JobStatus.RUNNING
     )
 
     with (
-        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
         patch(
             "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
             new_callable=AsyncMock,
@@ -487,7 +506,7 @@ def test_get_gepa_job_detail(client, mock_api_key, tmp_path):
         ),
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}"
         )
 
         assert response.status_code == 200
@@ -497,14 +516,16 @@ def test_get_gepa_job_detail(client, mock_api_key, tmp_path):
         assert result["latest_status"] == "running"
 
 
-def test_gepa_job_creates_prompt_on_success(client, mock_api_key, tmp_path):
-    """Test that a prompt is created when a GEPA job succeeds."""
+def test_prompt_optimization_job_creates_prompt_on_success(
+    client, mock_api_key, tmp_path
+):
+    """Test that a prompt is created when a Prompt Optimization job succeeds."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
@@ -522,47 +543,50 @@ def test_gepa_job_creates_prompt_on_success(client, mock_api_key, tmp_path):
     )
     target_run_config.save_to_file()
 
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id=target_run_config.id,
         latest_status="pending",
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
     project_id = project.id
     task_id = task.id
-    gepa_job_id = gepa_job.id
+    prompt_optimization_job_id = prompt_optimization_job.id
 
-    optimized_prompt = "This is the optimized prompt from GEPA"
+    optimized_prompt = "This is the optimized prompt from Prompt Optimization"
     mock_status_response = JobStatusResponse(
         job_id="remote-job-123", status=JobStatus.SUCCEEDED
     )
-    mock_result_response = GEPAJobResultResponse(
+    mock_result_response = PromptOptimizationJobResultResponse(
         status=JobStatus.SUCCEEDED,
-        output=GEPAJobOutput(optimized_prompt=optimized_prompt),
+        output=PromptOptimizationJobOutput(optimized_prompt=optimized_prompt),
     )
 
     with (
-        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
         patch(
             "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
             new_callable=AsyncMock,
             return_value=mock_status_response,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
             new_callable=AsyncMock,
             return_value=mock_result_response,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=target_run_config,
         ),
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}"
         )
 
         assert response.status_code == 200
@@ -573,18 +597,20 @@ def test_gepa_job_creates_prompt_on_success(client, mock_api_key, tmp_path):
         prompts = task.prompts()
         assert len(prompts) == 1
         assert prompts[0].prompt == optimized_prompt
-        assert prompts[0].name == gepa_job.name
+        assert prompts[0].name == prompt_optimization_job.name
         assert result["created_prompt_id"] == f"id::{prompts[0].id}"
 
 
-def test_gepa_job_only_creates_prompt_once(client, mock_api_key, tmp_path):
+def test_prompt_optimization_job_only_creates_prompt_once(
+    client, mock_api_key, tmp_path
+):
     """Test that a prompt is only created once even if status is checked multiple times."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
@@ -602,52 +628,55 @@ def test_gepa_job_only_creates_prompt_once(client, mock_api_key, tmp_path):
     )
     target_run_config.save_to_file()
 
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id=target_run_config.id,
         latest_status="pending",
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
     project_id = project.id
     task_id = task.id
-    gepa_job_id = gepa_job.id
+    prompt_optimization_job_id = prompt_optimization_job.id
 
-    optimized_prompt = "This is the optimized prompt from GEPA"
+    optimized_prompt = "This is the optimized prompt from Prompt Optimization"
     mock_status_response = JobStatusResponse(
         job_id="remote-job-123", status=JobStatus.SUCCEEDED
     )
-    mock_result_response = GEPAJobResultResponse(
+    mock_result_response = PromptOptimizationJobResultResponse(
         status=JobStatus.SUCCEEDED,
-        output=GEPAJobOutput(optimized_prompt=optimized_prompt),
+        output=PromptOptimizationJobOutput(optimized_prompt=optimized_prompt),
     )
 
     with (
-        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
         patch(
             "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
             new_callable=AsyncMock,
             return_value=mock_status_response,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
             new_callable=AsyncMock,
             return_value=mock_result_response,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=target_run_config,
         ),
     ):
         response_1 = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}"
         )
         assert response_1.status_code == 200
 
         response_2 = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}"
         )
         assert response_2.status_code == 200
 
@@ -655,20 +684,22 @@ def test_gepa_job_only_creates_prompt_once(client, mock_api_key, tmp_path):
         assert len(prompts) == 1
 
 
-def test_get_gepa_job_skips_update_when_succeeded(client, mock_api_key, tmp_path):
+def test_get_prompt_optimization_job_skips_update_when_succeeded(
+    client, mock_api_key, tmp_path
+):
     """Test that getting a job that's already succeeded skips the API status update."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
     task.save_to_file()
 
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id="config-1",
@@ -676,25 +707,28 @@ def test_get_gepa_job_skips_update_when_succeeded(client, mock_api_key, tmp_path
         optimized_prompt="Already optimized",
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
     project_id = project.id
     task_id = task.id
-    gepa_job_id = gepa_job.id
+    prompt_optimization_job_id = prompt_optimization_job.id
 
     with (
-        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
         patch(
             "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
             new_callable=AsyncMock,
         ) as mock_status,
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
             new_callable=AsyncMock,
         ) as mock_result,
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}"
         )
 
         assert response.status_code == 200
@@ -706,45 +740,50 @@ def test_get_gepa_job_skips_update_when_succeeded(client, mock_api_key, tmp_path
         mock_result.assert_not_called()
 
 
-def test_get_gepa_job_skips_update_when_failed(client, mock_api_key, tmp_path):
+def test_get_prompt_optimization_job_skips_update_when_failed(
+    client, mock_api_key, tmp_path
+):
     """Test that getting a job that's already failed skips the API status update."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
     task.save_to_file()
 
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id="config-1",
         latest_status="failed",
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
     project_id = project.id
     task_id = task.id
-    gepa_job_id = gepa_job.id
+    prompt_optimization_job_id = prompt_optimization_job.id
 
     with (
-        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
         patch(
             "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
             new_callable=AsyncMock,
         ) as mock_status,
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
             new_callable=AsyncMock,
         ) as mock_result,
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}"
         )
 
         assert response.status_code == 200
@@ -755,45 +794,50 @@ def test_get_gepa_job_skips_update_when_failed(client, mock_api_key, tmp_path):
         mock_result.assert_not_called()
 
 
-def test_get_gepa_job_skips_update_when_cancelled(client, mock_api_key, tmp_path):
+def test_get_prompt_optimization_job_skips_update_when_cancelled(
+    client, mock_api_key, tmp_path
+):
     """Test that getting a job that's already cancelled skips the API status update."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
     task.save_to_file()
 
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id="config-1",
         latest_status="cancelled",
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
     project_id = project.id
     task_id = task.id
-    gepa_job_id = gepa_job.id
+    prompt_optimization_job_id = prompt_optimization_job.id
 
     with (
-        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
         patch(
             "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
             new_callable=AsyncMock,
         ) as mock_status,
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
             new_callable=AsyncMock,
         ) as mock_result,
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}"
         )
 
         assert response.status_code == 200
@@ -820,16 +864,16 @@ def test_is_job_status_final():
     assert is_job_status_final("running") is False
 
 
-def test_list_gepa_jobs_updates_statuses_in_parallel_batches(
+def test_list_prompt_optimization_jobs_updates_statuses_in_parallel_batches(
     client, mock_api_key, tmp_path
 ):
-    """Test that list_gepa_jobs updates statuses in parallel batches of 5."""
+    """Test that list_prompt_optimization_jobs updates statuses in parallel batches of 5."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
@@ -837,7 +881,7 @@ def test_list_gepa_jobs_updates_statuses_in_parallel_batches(
 
     # Create 12 jobs with non-final statuses and 3 with final statuses
     for i in range(12):
-        GepaJob(
+        PromptOptimizationJob(
             name=f"Job {i}",
             job_id=f"remote-job-{i}",
             target_run_config_id="config-1",
@@ -848,7 +892,7 @@ def test_list_gepa_jobs_updates_statuses_in_parallel_batches(
         ).save_to_file()
 
     for i in range(12, 15):
-        GepaJob(
+        PromptOptimizationJob(
             name=f"Job {i}",
             job_id=f"remote-job-{i}",
             target_run_config_id="config-1",
@@ -862,20 +906,23 @@ def test_list_gepa_jobs_updates_statuses_in_parallel_batches(
     # Track calls to the update function
     update_calls = []
 
-    async def mock_update(gepa_job, client):
-        update_calls.append(gepa_job.job_id)
-        return gepa_job
+    async def mock_update(prompt_optimization_job, client):
+        update_calls.append(prompt_optimization_job.job_id)
+        return prompt_optimization_job
 
     with (
-        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
         patch(
-            "app.desktop.studio_server.gepa_job_api.update_gepa_job_and_create_artifacts",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.update_prompt_optimization_job_and_create_artifacts",
             new_callable=AsyncMock,
             side_effect=mock_update,
         ) as mock_update_fn,
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs",
             params={"update_status": True},
         )
 
@@ -893,21 +940,23 @@ def test_list_gepa_jobs_updates_statuses_in_parallel_batches(
             assert job_id not in succeeded_job_ids
 
 
-def test_list_gepa_jobs_skips_final_status_updates(client, mock_api_key, tmp_path):
-    """Test that list_gepa_jobs skips updating jobs with final statuses."""
+def test_list_prompt_optimization_jobs_skips_final_status_updates(
+    client, mock_api_key, tmp_path
+):
+    """Test that list_prompt_optimization_jobs skips updating jobs with final statuses."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
     task.save_to_file()
 
     # Create jobs with final statuses
-    GepaJob(
+    PromptOptimizationJob(
         name="Succeeded Job",
         job_id="remote-job-succeeded",
         target_run_config_id="config-1",
@@ -915,7 +964,7 @@ def test_list_gepa_jobs_skips_final_status_updates(client, mock_api_key, tmp_pat
         parent=task,
     ).save_to_file()
 
-    GepaJob(
+    PromptOptimizationJob(
         name="Failed Job",
         job_id="remote-job-failed",
         target_run_config_id="config-1",
@@ -923,7 +972,7 @@ def test_list_gepa_jobs_skips_final_status_updates(client, mock_api_key, tmp_pat
         parent=task,
     ).save_to_file()
 
-    GepaJob(
+    PromptOptimizationJob(
         name="Cancelled Job",
         job_id="remote-job-cancelled",
         target_run_config_id="config-1",
@@ -935,14 +984,17 @@ def test_list_gepa_jobs_skips_final_status_updates(client, mock_api_key, tmp_pat
     task_id = task.id
 
     with (
-        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
         patch(
-            "app.desktop.studio_server.gepa_job_api.update_gepa_job_and_create_artifacts",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.update_prompt_optimization_job_and_create_artifacts",
             new_callable=AsyncMock,
         ) as mock_update,
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs",
             params={"update_status": True},
         )
 
@@ -954,15 +1006,15 @@ def test_list_gepa_jobs_skips_final_status_updates(client, mock_api_key, tmp_pat
         mock_update.assert_not_called()
 
 
-def test_gepa_job_from_id_not_found(client, tmp_path):
-    """Test that gepa_job_from_id raises HTTPException when job not found."""
+def test_prompt_optimization_job_from_id_not_found(client, tmp_path):
+    """Test that prompt_optimization_job_from_id raises HTTPException when job not found."""
 
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
@@ -973,19 +1025,22 @@ def test_gepa_job_from_id_not_found(client, tmp_path):
     nonexistent_job_id = "nonexistent-job-id"
 
     with (
-        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
         pytest.raises(Exception) as exc_info,
     ):
-        gepa_job_from_id(project_id, task_id, nonexistent_job_id)
+        prompt_optimization_job_from_id(project_id, task_id, nonexistent_job_id)
 
     assert exc_info.value.status_code == 404
     assert "not found" in str(exc_info.value.detail)
 
 
-def test_update_gepa_job_status_no_parent_task(mock_api_key):
-    """Test update_gepa_job_and_create_artifacts when job has no parent task."""
+def test_update_prompt_optimization_job_status_no_parent_task(mock_api_key):
+    """Test update_prompt_optimization_job_and_create_artifacts when job has no parent task."""
 
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Orphan Job",
         job_id="remote-job-orphan",
         target_run_config_id="config-1",
@@ -995,40 +1050,49 @@ def test_update_gepa_job_status_no_parent_task(mock_api_key):
     mock_client = MagicMock(spec=AuthenticatedClient)
 
     with pytest.raises(Exception) as exc_info:
-        asyncio.run(update_gepa_job_and_create_artifacts(gepa_job, mock_client))
+        asyncio.run(
+            update_prompt_optimization_job_and_create_artifacts(
+                prompt_optimization_job, mock_client
+            )
+        )
 
     assert exc_info.value.status_code == 500
     assert "no parent task" in str(exc_info.value.detail)
 
 
-def test_update_gepa_job_status_response_none(client, mock_api_key, tmp_path):
-    """Test update_gepa_job_and_create_artifacts when status response is None."""
+def test_update_prompt_optimization_job_status_response_none(
+    client, mock_api_key, tmp_path
+):
+    """Test update_prompt_optimization_job_and_create_artifacts when status response is None."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
     task.save_to_file()
 
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id="config-1",
         latest_status="pending",
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
     project_id = project.id
     task_id = task.id
-    gepa_job_id = gepa_job.id
+    prompt_optimization_job_id = prompt_optimization_job.id
 
     with (
-        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
         patch(
             "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
             new_callable=AsyncMock,
@@ -1036,7 +1100,7 @@ def test_update_gepa_job_status_response_none(client, mock_api_key, tmp_path):
         ),
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}"
         )
 
         assert response.status_code == 200
@@ -1044,38 +1108,41 @@ def test_update_gepa_job_status_response_none(client, mock_api_key, tmp_path):
         assert result["latest_status"] == "pending"
 
 
-def test_update_gepa_job_status_response_validation_error(
+def test_update_prompt_optimization_job_status_response_validation_error(
     client, mock_api_key, tmp_path
 ):
-    """Test update_gepa_job_and_create_artifacts when status response is HTTPValidationError."""
+    """Test update_prompt_optimization_job_and_create_artifacts when status response is HTTPValidationError."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
     task.save_to_file()
 
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id="config-1",
         latest_status="pending",
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
     project_id = project.id
     task_id = task.id
-    gepa_job_id = gepa_job.id
+    prompt_optimization_job_id = prompt_optimization_job.id
 
     mock_error = HTTPValidationError(detail=[])
 
     with (
-        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
         patch(
             "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
             new_callable=AsyncMock,
@@ -1083,7 +1150,7 @@ def test_update_gepa_job_status_response_validation_error(
         ),
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}"
         )
 
         assert response.status_code == 200
@@ -1091,34 +1158,39 @@ def test_update_gepa_job_status_response_validation_error(
         assert result["latest_status"] == "pending"
 
 
-def test_update_gepa_job_status_exception_during_update(client, mock_api_key, tmp_path):
-    """Test that update_gepa_job_and_create_artifacts handles exceptions during status update."""
+def test_update_prompt_optimization_job_status_exception_during_update(
+    client, mock_api_key, tmp_path
+):
+    """Test that update_prompt_optimization_job_and_create_artifacts handles exceptions during status update."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
     task.save_to_file()
 
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id="config-1",
         latest_status="pending",
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
     project_id = project.id
     task_id = task.id
-    gepa_job_id = gepa_job.id
+    prompt_optimization_job_id = prompt_optimization_job.id
 
     with (
-        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
         patch(
             "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
             new_callable=AsyncMock,
@@ -1126,7 +1198,7 @@ def test_update_gepa_job_status_exception_during_update(client, mock_api_key, tm
         ),
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}"
         )
 
         assert response.status_code == 200
@@ -1134,41 +1206,46 @@ def test_update_gepa_job_status_exception_during_update(client, mock_api_key, tm
         assert result["latest_status"] == "pending"
 
 
-def test_list_gepa_jobs_exception_during_update(client, mock_api_key, tmp_path):
-    """Test that list_gepa_jobs handles exceptions during status updates gracefully."""
+def test_list_prompt_optimization_jobs_exception_during_update(
+    client, mock_api_key, tmp_path
+):
+    """Test that list_prompt_optimization_jobs handles exceptions during status updates gracefully."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
     task.save_to_file()
 
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id="config-1",
         latest_status="pending",
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
     project_id = project.id
     task_id = task.id
 
     with (
-        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
         patch(
-            "app.desktop.studio_server.gepa_job_api.update_gepa_job_and_create_artifacts",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.update_prompt_optimization_job_and_create_artifacts",
             new_callable=AsyncMock,
             side_effect=Exception("Update failed"),
         ),
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs",
             params={"update_status": True},
         )
 
@@ -1200,11 +1277,11 @@ def test_check_run_config_with_tools(client, mock_api_key, tmp_path):
     ]
 
     with patch(
-        "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+        "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
         return_value=mock_run_config,
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config",
             params={"run_config_id": run_config_id},
         )
 
@@ -1235,11 +1312,11 @@ def test_check_run_config_missing_model_name(client, mock_api_key, tmp_path):
     run_config_id = "test-config-id"
 
     with patch(
-        "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+        "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
         return_value=mock_run_config,
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config",
             params={"run_config_id": run_config_id},
         )
 
@@ -1270,11 +1347,11 @@ def test_check_run_config_missing_model_provider(client, mock_api_key, tmp_path)
     run_config_id = "test-config-id"
 
     with patch(
-        "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+        "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
         return_value=mock_run_config,
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config",
             params={"run_config_id": run_config_id},
         )
 
@@ -1309,17 +1386,17 @@ def test_check_run_config_server_validation_error(client, mock_api_key, tmp_path
 
     with (
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=mock_run_config,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_model_supported_v1_jobs_gepa_job_check_model_supported_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio",
             new_callable=AsyncMock,
             return_value=mock_error,
         ),
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config",
             params={"run_config_id": run_config_id},
         )
 
@@ -1350,17 +1427,17 @@ def test_check_run_config_server_none_response(client, mock_api_key, tmp_path):
 
     with (
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=mock_run_config,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_model_supported_v1_jobs_gepa_job_check_model_supported_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio",
             new_callable=AsyncMock,
             return_value=None,
         ),
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config",
             params={"run_config_id": run_config_id},
         )
 
@@ -1385,11 +1462,11 @@ def test_check_run_config_exception(client, mock_api_key, tmp_path):
     run_config_id = "test-config-id"
 
     with patch(
-        "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+        "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
         side_effect=Exception("Database error"),
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config",
             params={"run_config_id": run_config_id},
         )
 
@@ -1418,11 +1495,11 @@ def test_check_eval_no_current_config(client, mock_api_key, tmp_path):
     eval_id = "test-eval-id"
 
     with patch(
-        "app.desktop.studio_server.gepa_job_api.eval_from_id",
+        "app.desktop.studio_server.prompt_optimization_job_api.eval_from_id",
         return_value=mock_eval,
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval",
             params={"eval_id": eval_id},
         )
 
@@ -1456,16 +1533,16 @@ def test_check_eval_config_not_found(client, mock_api_key, tmp_path):
 
     with (
         patch(
-            "app.desktop.studio_server.gepa_job_api.eval_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_from_id",
             return_value=mock_eval,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.eval_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_config_from_id",
             side_effect=HTTPException(status_code=404, detail="Config not found"),
         ),
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval",
             params={"eval_id": eval_id},
         )
 
@@ -1502,16 +1579,16 @@ def test_check_eval_missing_model_name(client, mock_api_key, tmp_path):
 
     with (
         patch(
-            "app.desktop.studio_server.gepa_job_api.eval_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_from_id",
             return_value=mock_eval,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.eval_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_config_from_id",
             return_value=mock_config,
         ),
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval",
             params={"eval_id": eval_id},
         )
 
@@ -1548,16 +1625,16 @@ def test_check_eval_missing_model_provider(client, mock_api_key, tmp_path):
 
     with (
         patch(
-            "app.desktop.studio_server.gepa_job_api.eval_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_from_id",
             return_value=mock_eval,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.eval_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_config_from_id",
             return_value=mock_config,
         ),
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval",
             params={"eval_id": eval_id},
         )
 
@@ -1596,21 +1673,21 @@ def test_check_eval_server_validation_error(client, mock_api_key, tmp_path):
 
     with (
         patch(
-            "app.desktop.studio_server.gepa_job_api.eval_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_from_id",
             return_value=mock_eval,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.eval_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_config_from_id",
             return_value=mock_config,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_model_supported_v1_jobs_gepa_job_check_model_supported_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio",
             new_callable=AsyncMock,
             return_value=mock_error,
         ),
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval",
             params={"eval_id": eval_id},
         )
 
@@ -1643,21 +1720,21 @@ def test_check_eval_server_none_response(client, mock_api_key, tmp_path):
 
     with (
         patch(
-            "app.desktop.studio_server.gepa_job_api.eval_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_from_id",
             return_value=mock_eval,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.eval_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_config_from_id",
             return_value=mock_config,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_model_supported_v1_jobs_gepa_job_check_model_supported_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio",
             new_callable=AsyncMock,
             return_value=None,
         ),
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval",
             params={"eval_id": eval_id},
         )
 
@@ -1682,11 +1759,11 @@ def test_check_eval_exception(client, mock_api_key, tmp_path):
     eval_id = "test-eval-id"
 
     with patch(
-        "app.desktop.studio_server.gepa_job_api.eval_from_id",
+        "app.desktop.studio_server.prompt_optimization_job_api.eval_from_id",
         side_effect=Exception("Database error"),
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval",
             params={"eval_id": eval_id},
         )
 
@@ -1729,21 +1806,21 @@ def test_check_eval_success_train_set(
 
     with (
         patch(
-            "app.desktop.studio_server.gepa_job_api.eval_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_from_id",
             return_value=mock_eval,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.eval_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.eval_config_from_id",
             return_value=mock_config,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_model_supported_v1_jobs_gepa_job_check_model_supported_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio",
             new_callable=AsyncMock,
             return_value=mock_check_response,
         ),
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval",
             params={"eval_id": eval_id},
         )
 
@@ -1754,8 +1831,10 @@ def test_check_eval_success_train_set(
         assert result["model_is_supported"] is True
 
 
-def test_start_gepa_job_no_parent_project(client, mock_api_key, tmp_path):
-    """Test that start_gepa_job raises HTTPException when task has no parent."""
+def test_start_prompt_optimization_job_no_parent_project(
+    client, mock_api_key, tmp_path
+):
+    """Test that start_prompt_optimization_job raises HTTPException when task has no parent."""
     task = Task(
         name="Orphan Task",
         instruction="Test instruction",
@@ -1765,11 +1844,11 @@ def test_start_gepa_job_no_parent_project(client, mock_api_key, tmp_path):
     task_id = "test-task-id"
 
     with patch(
-        "app.desktop.studio_server.gepa_job_api.task_from_id",
+        "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
         return_value=task,
     ):
         response = client.post(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start",
             json={
                 "target_run_config_id": "test-run-config-id",
                 "eval_ids": [],
@@ -1780,8 +1859,10 @@ def test_start_gepa_job_no_parent_project(client, mock_api_key, tmp_path):
         assert "Project not found" in response.json()["detail"]
 
 
-def test_start_gepa_job_with_tools_in_run_config(client, mock_api_key, tmp_path):
-    """Test that start_gepa_job raises HTTPException when run config has tools."""
+def test_start_prompt_optimization_job_with_tools_in_run_config(
+    client, mock_api_key, tmp_path
+):
+    """Test that start_prompt_optimization_job raises HTTPException when run config has tools."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
@@ -1801,16 +1882,16 @@ def test_start_gepa_job_with_tools_in_run_config(client, mock_api_key, tmp_path)
 
     with (
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=mock_run_config,
         ),
     ):
         response = client.post(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start",
             json={
                 "target_run_config_id": "test-run-config-id",
                 "eval_ids": [],
@@ -1822,8 +1903,10 @@ def test_start_gepa_job_with_tools_in_run_config(client, mock_api_key, tmp_path)
         assert "tools" in response.json()["detail"]
 
 
-def test_start_gepa_job_server_not_authenticated(client, mock_api_key, tmp_path):
-    """Test that start_gepa_job raises HTTPException when server client is not authenticated."""
+def test_start_prompt_optimization_job_server_not_authenticated(
+    client, mock_api_key, tmp_path
+):
+    """Test that start_prompt_optimization_job raises HTTPException when server client is not authenticated."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
@@ -1842,20 +1925,20 @@ def test_start_gepa_job_server_not_authenticated(client, mock_api_key, tmp_path)
 
     with (
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=mock_run_config,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.get_authenticated_client",
+            "app.desktop.studio_server.prompt_optimization_job_api.get_authenticated_client",
             return_value=MagicMock(spec=str),
         ),
     ):
         response = client.post(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start",
             json={
                 "target_run_config_id": "test-run-config-id",
                 "eval_ids": [],
@@ -1866,8 +1949,10 @@ def test_start_gepa_job_server_not_authenticated(client, mock_api_key, tmp_path)
         assert "not authenticated" in response.json()["detail"]
 
 
-def test_start_gepa_job_server_validation_error(client, mock_api_key, tmp_path):
-    """Test that start_gepa_job surfaces upstream validation errors via check_response_error."""
+def test_start_prompt_optimization_job_server_validation_error(
+    client, mock_api_key, tmp_path
+):
+    """Test that start_prompt_optimization_job surfaces upstream validation errors via check_response_error."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
@@ -1886,19 +1971,19 @@ def test_start_gepa_job_server_validation_error(client, mock_api_key, tmp_path):
 
     with (
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=mock_run_config,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.package_project_for_training",
+            "app.desktop.studio_server.prompt_optimization_job_api.package_project_for_training",
             side_effect=_mock_package_project_for_training,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio_detailed",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post.asyncio_detailed",
             new_callable=AsyncMock,
             return_value=_make_sdk_response(
                 status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
@@ -1907,7 +1992,7 @@ def test_start_gepa_job_server_validation_error(client, mock_api_key, tmp_path):
         ),
     ):
         response = client.post(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start",
             json={
                 "target_run_config_id": "test-run-config-id",
                 "eval_ids": [],
@@ -1918,8 +2003,10 @@ def test_start_gepa_job_server_validation_error(client, mock_api_key, tmp_path):
         assert "Upstream validation error" in response.json()["detail"]
 
 
-def test_start_gepa_job_server_none_response(client, mock_api_key, tmp_path):
-    """Test that start_gepa_job handles None parsed response from server."""
+def test_start_prompt_optimization_job_server_none_response(
+    client, mock_api_key, tmp_path
+):
+    """Test that start_prompt_optimization_job handles None parsed response from server."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
@@ -1938,25 +2025,25 @@ def test_start_gepa_job_server_none_response(client, mock_api_key, tmp_path):
 
     with (
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=mock_run_config,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.package_project_for_training",
+            "app.desktop.studio_server.prompt_optimization_job_api.package_project_for_training",
             side_effect=_mock_package_project_for_training,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio_detailed",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post.asyncio_detailed",
             new_callable=AsyncMock,
             return_value=_make_sdk_response(parsed=None),
         ),
     ):
         response = client.post(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start",
             json={
                 "target_run_config_id": "test-run-config-id",
                 "eval_ids": [],
@@ -1967,8 +2054,8 @@ def test_start_gepa_job_server_none_response(client, mock_api_key, tmp_path):
         assert "unexpected response from server" in response.json()["detail"]
 
 
-def test_start_gepa_job_connection_error(client, mock_api_key, tmp_path):
-    """Test that start_gepa_job handles connection errors with specific message."""
+def test_start_prompt_optimization_job_connection_error(client, mock_api_key, tmp_path):
+    """Test that start_prompt_optimization_job handles connection errors with specific message."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
@@ -1990,25 +2077,25 @@ def test_start_gepa_job_connection_error(client, mock_api_key, tmp_path):
 
     with (
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=mock_run_config,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.package_project_for_training",
+            "app.desktop.studio_server.prompt_optimization_job_api.package_project_for_training",
             side_effect=_mock_package_project_for_training,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio_detailed",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post.asyncio_detailed",
             new_callable=AsyncMock,
             side_effect=ReadError("Connection lost"),
         ),
     ):
         response = client.post(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start",
             json={
                 "target_run_config_id": "test-run-config-id",
                 "eval_ids": [],
@@ -2020,8 +2107,8 @@ def test_start_gepa_job_connection_error(client, mock_api_key, tmp_path):
         assert "too large" in response.json()["detail"]
 
 
-def test_start_gepa_job_timeout_error(client, mock_api_key, tmp_path):
-    """Test that start_gepa_job handles timeout errors with specific message."""
+def test_start_prompt_optimization_job_timeout_error(client, mock_api_key, tmp_path):
+    """Test that start_prompt_optimization_job handles timeout errors with specific message."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
@@ -2040,25 +2127,25 @@ def test_start_gepa_job_timeout_error(client, mock_api_key, tmp_path):
 
     with (
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=mock_run_config,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.package_project_for_training",
+            "app.desktop.studio_server.prompt_optimization_job_api.package_project_for_training",
             side_effect=_mock_package_project_for_training,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_gepa_job_v1_jobs_gepa_job_start_post.asyncio_detailed",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post.asyncio_detailed",
             new_callable=AsyncMock,
             side_effect=Exception("Request timeout occurred"),
         ),
     ):
         response = client.post(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start",
             json={
                 "target_run_config_id": "test-run-config-id",
                 "eval_ids": [],
@@ -2069,8 +2156,10 @@ def test_start_gepa_job_timeout_error(client, mock_api_key, tmp_path):
         assert "Connection error" in response.json()["detail"]
 
 
-def test_start_gepa_job_general_exception(client, mock_api_key, tmp_path):
-    """Test that start_gepa_job handles general exceptions."""
+def test_start_prompt_optimization_job_general_exception(
+    client, mock_api_key, tmp_path
+):
+    """Test that start_prompt_optimization_job handles general exceptions."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
@@ -2089,20 +2178,20 @@ def test_start_gepa_job_general_exception(client, mock_api_key, tmp_path):
 
     with (
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=mock_run_config,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.package_project_for_training",
+            "app.desktop.studio_server.prompt_optimization_job_api.package_project_for_training",
             side_effect=Exception("Unexpected error"),
         ),
     ):
         response = client.post(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start",
             json={
                 "target_run_config_id": "test-run-config-id",
                 "eval_ids": [],
@@ -2110,17 +2199,19 @@ def test_start_gepa_job_general_exception(client, mock_api_key, tmp_path):
         )
 
         assert response.status_code == 500
-        assert "Failed to start GEPA job" in response.json()["detail"]
+        assert "Failed to start Prompt Optimization job" in response.json()["detail"]
 
 
-def test_gepa_job_creates_run_config_on_success(client, mock_api_key, tmp_path):
-    """Test that a run config is created when a GEPA job succeeds."""
+def test_prompt_optimization_job_creates_run_config_on_success(
+    client, mock_api_key, tmp_path
+):
+    """Test that a run config is created when a Prompt Optimization job succeeds."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
@@ -2141,32 +2232,35 @@ def test_gepa_job_creates_run_config_on_success(client, mock_api_key, tmp_path):
 
     assert target_run_config.id is not None
 
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id=target_run_config.id,
         latest_status="pending",
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
     project_id = project.id
     task_id = task.id
-    gepa_job_id = gepa_job.id
+    prompt_optimization_job_id = prompt_optimization_job.id
 
-    optimized_prompt = "This is the optimized prompt from GEPA"
+    optimized_prompt = "This is the optimized prompt from Prompt Optimization"
     mock_status_response = JobStatusResponse(
         job_id="remote-job-123", status=JobStatus.SUCCEEDED
     )
-    mock_result_response = GEPAJobResultResponse(
+    mock_result_response = PromptOptimizationJobResultResponse(
         status=JobStatus.SUCCEEDED,
-        output=GEPAJobOutput(optimized_prompt=optimized_prompt),
+        output=PromptOptimizationJobOutput(optimized_prompt=optimized_prompt),
     )
 
     with (
-        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=target_run_config,
         ),
         patch(
@@ -2175,13 +2269,13 @@ def test_gepa_job_creates_run_config_on_success(client, mock_api_key, tmp_path):
             return_value=mock_status_response,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
             new_callable=AsyncMock,
             return_value=mock_result_response,
         ),
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}"
         )
 
         assert response.status_code == 200
@@ -2193,7 +2287,7 @@ def test_gepa_job_creates_run_config_on_success(client, mock_api_key, tmp_path):
         prompts = task.prompts()
         assert len(prompts) == 1
         assert prompts[0].prompt == optimized_prompt
-        assert prompts[0].name == gepa_job.name
+        assert prompts[0].name == prompt_optimization_job.name
 
         # Check that exactly 1 new run config was created (2 total including target)
         run_configs = task.run_configs()
@@ -2217,18 +2311,20 @@ def test_gepa_job_creates_run_config_on_success(client, mock_api_key, tmp_path):
             == target_run_config.run_config_properties.model_provider_name
         )
 
-        # Check that the gepa job has the created run config ID
+        # Check that the prompt optimization job has the created run config ID
         assert result["created_run_config_id"] == new_run_config.id
 
 
-def test_gepa_job_only_creates_run_config_once(client, mock_api_key, tmp_path):
+def test_prompt_optimization_job_only_creates_run_config_once(
+    client, mock_api_key, tmp_path
+):
     """Test that a run config is only created once even if status is checked multiple times."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
@@ -2248,32 +2344,35 @@ def test_gepa_job_only_creates_run_config_once(client, mock_api_key, tmp_path):
 
     assert target_run_config.id is not None
 
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id=target_run_config.id,
         latest_status="pending",
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
     project_id = project.id
     task_id = task.id
-    gepa_job_id = gepa_job.id
+    prompt_optimization_job_id = prompt_optimization_job.id
 
-    optimized_prompt = "This is the optimized prompt from GEPA"
+    optimized_prompt = "This is the optimized prompt from Prompt Optimization"
     mock_status_response = JobStatusResponse(
         job_id="remote-job-123", status=JobStatus.SUCCEEDED
     )
-    mock_result_response = GEPAJobResultResponse(
+    mock_result_response = PromptOptimizationJobResultResponse(
         status=JobStatus.SUCCEEDED,
-        output=GEPAJobOutput(optimized_prompt=optimized_prompt),
+        output=PromptOptimizationJobOutput(optimized_prompt=optimized_prompt),
     )
 
     with (
-        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=target_run_config,
         ),
         patch(
@@ -2282,18 +2381,18 @@ def test_gepa_job_only_creates_run_config_once(client, mock_api_key, tmp_path):
             return_value=mock_status_response,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
             new_callable=AsyncMock,
             return_value=mock_result_response,
         ),
     ):
         response_1 = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}"
         )
         assert response_1.status_code == 200
 
         response_2 = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}"
         )
         assert response_2.status_code == 200
 
@@ -2305,7 +2404,7 @@ def test_gepa_job_only_creates_run_config_once(client, mock_api_key, tmp_path):
         assert len(run_configs) == 2
 
 
-def test_gepa_job_run_config_handles_missing_target_config(
+def test_prompt_optimization_job_run_config_handles_missing_target_config(
     client, mock_api_key, tmp_path
 ):
     """Test that run config creation handles missing target config gracefully."""
@@ -2314,49 +2413,52 @@ def test_gepa_job_run_config_handles_missing_target_config(
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
     task.save_to_file()
 
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id="nonexistent-config-id",
         latest_status="pending",
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
     project_id = project.id
     task_id = task.id
-    gepa_job_id = gepa_job.id
+    prompt_optimization_job_id = prompt_optimization_job.id
 
-    optimized_prompt = "This is the optimized prompt from GEPA"
+    optimized_prompt = "This is the optimized prompt from Prompt Optimization"
     mock_status_response = JobStatusResponse(
         job_id="remote-job-123", status=JobStatus.SUCCEEDED
     )
-    mock_result_response = GEPAJobResultResponse(
+    mock_result_response = PromptOptimizationJobResultResponse(
         status=JobStatus.SUCCEEDED,
-        output=GEPAJobOutput(optimized_prompt=optimized_prompt),
+        output=PromptOptimizationJobOutput(optimized_prompt=optimized_prompt),
     )
 
     with (
-        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
         patch(
             "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
             new_callable=AsyncMock,
             return_value=mock_status_response,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
             new_callable=AsyncMock,
             return_value=mock_result_response,
         ),
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}"
         )
 
         assert response.status_code == 200
@@ -2377,7 +2479,7 @@ def test_gepa_job_run_config_handles_missing_target_config(
 
 def test_cleanup_artifact_deletes_prompt_successfully(mock_api_key, tmp_path):
     """Test that _cleanup_artifact successfully deletes a prompt."""
-    from app.desktop.studio_server.gepa_job_api import _cleanup_artifact
+    from app.desktop.studio_server.prompt_optimization_job_api import _cleanup_artifact
 
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
@@ -2416,7 +2518,7 @@ def test_cleanup_artifact_deletes_prompt_successfully(mock_api_key, tmp_path):
 
 def test_cleanup_artifact_deletes_run_config_successfully(mock_api_key, tmp_path):
     """Test that _cleanup_artifact successfully deletes a run config."""
-    from app.desktop.studio_server.gepa_job_api import _cleanup_artifact
+    from app.desktop.studio_server.prompt_optimization_job_api import _cleanup_artifact
 
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
@@ -2435,7 +2537,7 @@ def test_cleanup_artifact_deletes_run_config_successfully(mock_api_key, tmp_path
         name="Test Config",
         run_config_properties=RunConfigProperties(
             model_name="gpt-4",
-            model_provider_name="openai",
+            model_provider_name=ModelProviderName.openai,
             prompt_id="simple_prompt_builder",
             structured_output_mode=StructuredOutputMode.default,
         ),
@@ -2456,7 +2558,7 @@ def test_cleanup_artifact_deletes_run_config_successfully(mock_api_key, tmp_path
 
 def test_cleanup_artifact_handles_none_gracefully(mock_api_key):
     """Test that _cleanup_artifact handles None without error."""
-    from app.desktop.studio_server.gepa_job_api import _cleanup_artifact
+    from app.desktop.studio_server.prompt_optimization_job_api import _cleanup_artifact
 
     # Should not raise an exception
     _cleanup_artifact(None, "prompt", "test-job-id")
@@ -2464,7 +2566,7 @@ def test_cleanup_artifact_handles_none_gracefully(mock_api_key):
 
 def test_cleanup_artifact_handles_deletion_error_gracefully(mock_api_key, tmp_path):
     """Test that _cleanup_artifact logs but doesn't raise when deletion fails."""
-    from app.desktop.studio_server.gepa_job_api import _cleanup_artifact
+    from app.desktop.studio_server.prompt_optimization_job_api import _cleanup_artifact
 
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
@@ -2497,7 +2599,7 @@ def test_cleanup_artifact_handles_deletion_error_gracefully(mock_api_key, tmp_pa
         _cleanup_artifact(prompt, "prompt", "test-job-id")
 
 
-def test_gepa_job_cleanup_prompt_when_prompt_creation_fails(
+def test_prompt_optimization_job_cleanup_prompt_when_prompt_creation_fails(
     client, mock_api_key, tmp_path
 ):
     """Test that artifacts are cleaned up when prompt creation fails."""
@@ -2506,53 +2608,56 @@ def test_gepa_job_cleanup_prompt_when_prompt_creation_fails(
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
     task.save_to_file()
 
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id="config-1",
         latest_status="pending",
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
     project_id = project.id
     task_id = task.id
-    gepa_job_id = gepa_job.id
+    prompt_optimization_job_id = prompt_optimization_job.id
 
-    optimized_prompt = "This is the optimized prompt from GEPA"
+    optimized_prompt = "This is the optimized prompt from Prompt Optimization"
     mock_status_response = JobStatusResponse(
         job_id="remote-job-123", status=JobStatus.SUCCEEDED
     )
-    mock_result_response = GEPAJobResultResponse(
+    mock_result_response = PromptOptimizationJobResultResponse(
         status=JobStatus.SUCCEEDED,
-        output=GEPAJobOutput(optimized_prompt=optimized_prompt),
+        output=PromptOptimizationJobOutput(optimized_prompt=optimized_prompt),
     )
 
     with (
-        patch("app.desktop.studio_server.gepa_job_api.task_from_id", return_value=task),
+        patch(
+            "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
+            return_value=task,
+        ),
         patch(
             "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
             new_callable=AsyncMock,
             return_value=mock_status_response,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
             new_callable=AsyncMock,
             return_value=mock_result_response,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.create_prompt_from_optimization",
+            "app.desktop.studio_server.prompt_optimization_job_api.create_prompt_from_optimization",
             side_effect=Exception("Prompt creation failed"),
         ),
     ):
         response = client.get(
-            f"/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}"
+            f"/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}"
         )
 
         assert response.status_code == 200
@@ -2571,7 +2676,7 @@ def test_gepa_job_cleanup_prompt_when_prompt_creation_fails(
         assert result["created_run_config_id"] is None
 
 
-def test_gepa_job_cleanup_both_artifacts_when_run_config_fails_after_prompt_created(
+def test_prompt_optimization_job_cleanup_both_artifacts_when_run_config_fails_after_prompt_created(
     mock_api_key, tmp_path
 ):
     """Test that both prompt and run config are cleaned up when run config creation fails."""
@@ -2580,7 +2685,7 @@ def test_gepa_job_cleanup_both_artifacts_when_run_config_fails_after_prompt_crea
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
@@ -2598,22 +2703,22 @@ def test_gepa_job_cleanup_both_artifacts_when_run_config_fails_after_prompt_crea
     )
     target_run_config.save_to_file()
 
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id=target_run_config.id,
         latest_status="pending",
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
-    optimized_prompt = "This is the optimized prompt from GEPA"
+    optimized_prompt = "This is the optimized prompt from Prompt Optimization"
     mock_status_response = JobStatusResponse(
         job_id="remote-job-123", status=JobStatus.SUCCEEDED
     )
-    mock_result_response = GEPAJobResultResponse(
+    mock_result_response = PromptOptimizationJobResultResponse(
         status=JobStatus.SUCCEEDED,
-        output=GEPAJobOutput(optimized_prompt=optimized_prompt),
+        output=PromptOptimizationJobOutput(optimized_prompt=optimized_prompt),
     )
 
     mock_client = MagicMock(spec=AuthenticatedClient)
@@ -2625,25 +2730,27 @@ def test_gepa_job_cleanup_both_artifacts_when_run_config_fails_after_prompt_crea
             return_value=mock_status_response,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
             new_callable=AsyncMock,
             return_value=mock_result_response,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=target_run_config,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.gepa_job_from_id",
-            return_value=gepa_job,
+            "app.desktop.studio_server.prompt_optimization_job_api.prompt_optimization_job_from_id",
+            return_value=prompt_optimization_job,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.create_run_config_from_optimization",
+            "app.desktop.studio_server.prompt_optimization_job_api.create_run_config_from_optimization",
             side_effect=Exception("Run config creation failed"),
         ),
     ):
         updated_job = asyncio.run(
-            update_gepa_job_and_create_artifacts(gepa_job, mock_client)
+            update_prompt_optimization_job_and_create_artifacts(
+                prompt_optimization_job, mock_client
+            )
         )
 
         # Job should show succeeded status
@@ -2661,14 +2768,14 @@ def test_gepa_job_cleanup_both_artifacts_when_run_config_fails_after_prompt_crea
         assert updated_job.created_run_config_id is None
 
 
-def test_gepa_job_retry_after_cleanup(mock_api_key, tmp_path):
+def test_prompt_optimization_job_retry_after_cleanup(mock_api_key, tmp_path):
     """Test that artifact creation can be retried after cleanup from a previous failure."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
@@ -2686,22 +2793,22 @@ def test_gepa_job_retry_after_cleanup(mock_api_key, tmp_path):
     )
     target_run_config.save_to_file()
 
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id=target_run_config.id,
         latest_status="pending",
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
-    optimized_prompt = "This is the optimized prompt from GEPA"
+    optimized_prompt = "This is the optimized prompt from Prompt Optimization"
     mock_status_response = JobStatusResponse(
         job_id="remote-job-123", status=JobStatus.SUCCEEDED
     )
-    mock_result_response = GEPAJobResultResponse(
+    mock_result_response = PromptOptimizationJobResultResponse(
         status=JobStatus.SUCCEEDED,
-        output=GEPAJobOutput(optimized_prompt=optimized_prompt),
+        output=PromptOptimizationJobOutput(optimized_prompt=optimized_prompt),
     )
 
     mock_client = MagicMock(spec=AuthenticatedClient)
@@ -2714,21 +2821,23 @@ def test_gepa_job_retry_after_cleanup(mock_api_key, tmp_path):
             return_value=mock_status_response,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
             new_callable=AsyncMock,
             return_value=mock_result_response,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=target_run_config,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.create_run_config_from_optimization",
+            "app.desktop.studio_server.prompt_optimization_job_api.create_run_config_from_optimization",
             side_effect=Exception("Temporary failure"),
         ),
     ):
         updated_job = asyncio.run(
-            update_gepa_job_and_create_artifacts(gepa_job, mock_client)
+            update_prompt_optimization_job_and_create_artifacts(
+                prompt_optimization_job, mock_client
+            )
         )
 
         # Verify cleanup happened
@@ -2738,8 +2847,10 @@ def test_gepa_job_retry_after_cleanup(mock_api_key, tmp_path):
         assert len(prompts) == 0
 
     # Reload job from disk to simulate a fresh invocation
-    gepa_job_reloaded = GepaJob.from_id_and_parent_path(gepa_job.id, task.path)
-    assert gepa_job_reloaded.created_prompt_id is None
+    prompt_optimization_job_reloaded = PromptOptimizationJob.from_id_and_parent_path(
+        prompt_optimization_job.id, task.path
+    )
+    assert prompt_optimization_job_reloaded.created_prompt_id is None
 
     # Second attempt: should succeed because cleanup cleared the IDs
     with (
@@ -2749,21 +2860,23 @@ def test_gepa_job_retry_after_cleanup(mock_api_key, tmp_path):
             return_value=mock_status_response,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
             new_callable=AsyncMock,
             return_value=mock_result_response,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=target_run_config,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.gepa_job_from_id",
-            return_value=gepa_job_reloaded,
+            "app.desktop.studio_server.prompt_optimization_job_api.prompt_optimization_job_from_id",
+            return_value=prompt_optimization_job_reloaded,
         ),
     ):
         updated_job = asyncio.run(
-            update_gepa_job_and_create_artifacts(gepa_job_reloaded, mock_client)
+            update_prompt_optimization_job_and_create_artifacts(
+                prompt_optimization_job_reloaded, mock_client
+            )
         )
 
         # Now artifacts should be created successfully
@@ -2778,14 +2891,16 @@ def test_gepa_job_retry_after_cleanup(mock_api_key, tmp_path):
         assert len(run_configs) == 2  # Original + new
 
 
-def test_gepa_job_prevents_race_condition_on_artifact_creation(mock_api_key, tmp_path):
+def test_prompt_optimization_job_prevents_race_condition_on_artifact_creation(
+    mock_api_key, tmp_path
+):
     """Test that concurrent updates don't create duplicate artifacts due to locking."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
@@ -2803,22 +2918,22 @@ def test_gepa_job_prevents_race_condition_on_artifact_creation(mock_api_key, tmp
     )
     target_run_config.save_to_file()
 
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id=target_run_config.id,
         latest_status="pending",
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
-    optimized_prompt = "This is the optimized prompt from GEPA"
+    optimized_prompt = "This is the optimized prompt from Prompt Optimization"
     mock_status_response = JobStatusResponse(
         job_id="remote-job-123", status=JobStatus.SUCCEEDED
     )
-    mock_result_response = GEPAJobResultResponse(
+    mock_result_response = PromptOptimizationJobResultResponse(
         status=JobStatus.SUCCEEDED,
-        output=GEPAJobOutput(optimized_prompt=optimized_prompt),
+        output=PromptOptimizationJobOutput(optimized_prompt=optimized_prompt),
     )
 
     mock_client = MagicMock(spec=AuthenticatedClient)
@@ -2832,23 +2947,27 @@ def test_gepa_job_prevents_race_condition_on_artifact_creation(mock_api_key, tmp
                 return_value=mock_status_response,
             ),
             patch(
-                "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+                "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
                 new_callable=AsyncMock,
                 return_value=mock_result_response,
             ),
             patch(
-                "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+                "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
                 return_value=target_run_config,
             ),
             patch(
-                "app.desktop.studio_server.gepa_job_api.gepa_job_from_id",
-                return_value=gepa_job,
+                "app.desktop.studio_server.prompt_optimization_job_api.prompt_optimization_job_from_id",
+                return_value=prompt_optimization_job,
             ),
         ):
-            # Call update_gepa_job_and_create_artifacts concurrently with asyncio.gather
+            # Call update_prompt_optimization_job_and_create_artifacts concurrently with asyncio.gather
             results = await asyncio.gather(
-                update_gepa_job_and_create_artifacts(gepa_job, mock_client),
-                update_gepa_job_and_create_artifacts(gepa_job, mock_client),
+                update_prompt_optimization_job_and_create_artifacts(
+                    prompt_optimization_job, mock_client
+                ),
+                update_prompt_optimization_job_and_create_artifacts(
+                    prompt_optimization_job, mock_client
+                ),
             )
             return results
 
@@ -2884,7 +3003,7 @@ def test_gepa_job_prevents_race_condition_on_artifact_creation(mock_api_key, tmp
         (JobStatus.PENDING, JobStatus.CANCELLED, False),
     ],
 )
-def test_update_gepa_job_status_transitions(
+def test_update_prompt_optimization_job_status_transitions(
     mock_api_key, tmp_path, previous_status, new_status, should_create_artifacts
 ):
     """Test that artifacts are only created when transitioning TO succeeded from non-succeeded status."""
@@ -2893,7 +3012,7 @@ def test_update_gepa_job_status_transitions(
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
@@ -2912,20 +3031,20 @@ def test_update_gepa_job_status_transitions(
     target_run_config.save_to_file()
 
     # Create job with the previous_status
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id=target_run_config.id,
         latest_status=previous_status.value,
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
-    optimized_prompt = "This is the optimized prompt from GEPA"
+    optimized_prompt = "This is the optimized prompt from Prompt Optimization"
     mock_status_response = JobStatusResponse(job_id="remote-job-123", status=new_status)
-    mock_result_response = GEPAJobResultResponse(
+    mock_result_response = PromptOptimizationJobResultResponse(
         status=new_status,
-        output=GEPAJobOutput(optimized_prompt=optimized_prompt),
+        output=PromptOptimizationJobOutput(optimized_prompt=optimized_prompt),
     )
 
     mock_client = MagicMock(spec=AuthenticatedClient)
@@ -2937,21 +3056,23 @@ def test_update_gepa_job_status_transitions(
             return_value=mock_status_response,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
             new_callable=AsyncMock,
             return_value=mock_result_response,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=target_run_config,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.gepa_job_from_id",
-            return_value=gepa_job,
+            "app.desktop.studio_server.prompt_optimization_job_api.prompt_optimization_job_from_id",
+            return_value=prompt_optimization_job,
         ),
     ):
         updated_job = asyncio.run(
-            update_gepa_job_and_create_artifacts(gepa_job, mock_client)
+            update_prompt_optimization_job_and_create_artifacts(
+                prompt_optimization_job, mock_client
+            )
         )
 
     # Verify status was updated
@@ -2985,14 +3106,16 @@ def test_update_gepa_job_status_transitions(
         assert updated_job.created_run_config_id is None
 
 
-def test_update_gepa_job_running_to_succeeded_creates_artifacts(mock_api_key, tmp_path):
+def test_update_prompt_optimization_job_running_to_succeeded_creates_artifacts(
+    mock_api_key, tmp_path
+):
     """Test that transitioning from running to succeeded creates artifacts."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
@@ -3011,22 +3134,22 @@ def test_update_gepa_job_running_to_succeeded_creates_artifacts(mock_api_key, tm
     target_run_config.save_to_file()
 
     # Job starts as RUNNING (not pending)
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id=target_run_config.id,
         latest_status=JobStatus.RUNNING.value,
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
     optimized_prompt = "Optimized from running state"
     mock_status_response = JobStatusResponse(
         job_id="remote-job-123", status=JobStatus.SUCCEEDED
     )
-    mock_result_response = GEPAJobResultResponse(
+    mock_result_response = PromptOptimizationJobResultResponse(
         status=JobStatus.SUCCEEDED,
-        output=GEPAJobOutput(optimized_prompt=optimized_prompt),
+        output=PromptOptimizationJobOutput(optimized_prompt=optimized_prompt),
     )
 
     mock_client = MagicMock(spec=AuthenticatedClient)
@@ -3038,21 +3161,23 @@ def test_update_gepa_job_running_to_succeeded_creates_artifacts(mock_api_key, tm
             return_value=mock_status_response,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
             new_callable=AsyncMock,
             return_value=mock_result_response,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.task_run_config_from_id",
+            "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=target_run_config,
         ),
         patch(
-            "app.desktop.studio_server.gepa_job_api.gepa_job_from_id",
-            return_value=gepa_job,
+            "app.desktop.studio_server.prompt_optimization_job_api.prompt_optimization_job_from_id",
+            return_value=prompt_optimization_job,
         ),
     ):
         updated_job = asyncio.run(
-            update_gepa_job_and_create_artifacts(gepa_job, mock_client)
+            update_prompt_optimization_job_and_create_artifacts(
+                prompt_optimization_job, mock_client
+            )
         )
 
     assert updated_job.latest_status == JobStatus.SUCCEEDED.value
@@ -3067,21 +3192,23 @@ def test_update_gepa_job_running_to_succeeded_creates_artifacts(mock_api_key, tm
     assert len(run_configs) == 2
 
 
-def test_update_gepa_job_succeeded_to_succeeded_no_artifacts(mock_api_key, tmp_path):
+def test_update_prompt_optimization_job_succeeded_to_succeeded_no_artifacts(
+    mock_api_key, tmp_path
+):
     """Test that job already succeeded does not recreate artifacts."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
     task.save_to_file()
 
     # Job is already succeeded with artifacts
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id="config-1",
@@ -3091,7 +3218,7 @@ def test_update_gepa_job_succeeded_to_succeeded_no_artifacts(mock_api_key, tmp_p
         created_run_config_id="existing-run-config",
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
     mock_status_response = JobStatusResponse(
         job_id="remote-job-123", status=JobStatus.SUCCEEDED
@@ -3106,12 +3233,14 @@ def test_update_gepa_job_succeeded_to_succeeded_no_artifacts(mock_api_key, tmp_p
             return_value=mock_status_response,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
             new_callable=AsyncMock,
         ) as mock_result,
     ):
         updated_job = asyncio.run(
-            update_gepa_job_and_create_artifacts(gepa_job, mock_client)
+            update_prompt_optimization_job_and_create_artifacts(
+                prompt_optimization_job, mock_client
+            )
         )
 
     # Should not fetch result since already succeeded
@@ -3131,27 +3260,29 @@ def test_update_gepa_job_succeeded_to_succeeded_no_artifacts(mock_api_key, tmp_p
     assert len(run_configs) == 0
 
 
-def test_update_gepa_job_pending_to_running_no_artifacts(mock_api_key, tmp_path):
+def test_update_prompt_optimization_job_pending_to_running_no_artifacts(
+    mock_api_key, tmp_path
+):
     """Test that transitioning from pending to running does not create artifacts."""
     project = Project(name="Test Project", path=tmp_path / "project.kiln")
     project.save_to_file()
 
     task = Task(
         name="Test Task",
-        description="Test task for GEPA",
+        description="Test task for Prompt Optimization",
         instruction="Test instruction",
         parent=project,
     )
     task.save_to_file()
 
-    gepa_job = GepaJob(
+    prompt_optimization_job = PromptOptimizationJob(
         name="Test Job",
         job_id="remote-job-123",
         target_run_config_id="config-1",
         latest_status=JobStatus.PENDING.value,
         parent=task,
     )
-    gepa_job.save_to_file()
+    prompt_optimization_job.save_to_file()
 
     mock_status_response = JobStatusResponse(
         job_id="remote-job-123", status=JobStatus.RUNNING
@@ -3166,12 +3297,14 @@ def test_update_gepa_job_pending_to_running_no_artifacts(mock_api_key, tmp_path)
             return_value=mock_status_response,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
             new_callable=AsyncMock,
         ) as mock_result,
     ):
         updated_job = asyncio.run(
-            update_gepa_job_and_create_artifacts(gepa_job, mock_client)
+            update_prompt_optimization_job_and_create_artifacts(
+                prompt_optimization_job, mock_client
+            )
         )
 
     # Should not fetch result since not succeeded

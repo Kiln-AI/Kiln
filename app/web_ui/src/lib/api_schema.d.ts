@@ -2264,7 +2264,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config": {
+    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config": {
         parameters: {
             query?: never;
             header?: never;
@@ -2273,9 +2273,9 @@ export interface paths {
         };
         /**
          * Check Run Config
-         * @description Check if a run config is valid for a GEPA job by validating the model is supported.
+         * @description Check if a run config is valid for a Prompt Optimization job by validating the model is supported.
          */
-        get: operations["check_run_config_api_projects__project_id__tasks__task_id__gepa_jobs_check_run_config_get"];
+        get: operations["check_run_config_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_run_config_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2284,7 +2284,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval": {
+    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval": {
         parameters: {
             query?: never;
             header?: never;
@@ -2293,10 +2293,10 @@ export interface paths {
         };
         /**
          * Check Eval
-         * @description Check if an eval is valid for a GEPA job.
+         * @description Check if an eval is valid for a Prompt Optimization job.
          *     Validates that the eval has a default config and that the model is supported.
          */
-        get: operations["check_eval_api_projects__project_id__tasks__task_id__gepa_jobs_check_eval_get"];
+        get: operations["check_eval_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_eval_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2305,7 +2305,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start": {
+    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start": {
         parameters: {
             query?: never;
             header?: never;
@@ -2315,18 +2315,18 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Start Gepa Job
-         * @description Start a GEPA job by zipping the project and sending it to the Kiln server.
-         *     Creates and saves a GepaJob datamodel to track the job.
+         * Start Prompt Optimization Job
+         * @description Start a prompt optimization job by zipping the project and sending it to the Kiln server.
+         *     Creates and saves a PromptOptimizationJob datamodel to track the job.
          */
-        post: operations["start_gepa_job_api_projects__project_id__tasks__task_id__gepa_jobs_start_post"];
+        post: operations["start_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_start_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs": {
+    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs": {
         parameters: {
             query?: never;
             header?: never;
@@ -2334,11 +2334,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List Gepa Jobs
-         * @description List all GEPA jobs for a task.
+         * List Prompt Optimization Jobs
+         * @description List all Prompt Optimization jobs for a task.
          *     Optionally update the status of non-final jobs from the remote server.
          */
-        get: operations["list_gepa_jobs_api_projects__project_id__tasks__task_id__gepa_jobs_get"];
+        get: operations["list_prompt_optimization_jobs_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2347,7 +2347,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}": {
+    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -2355,13 +2355,13 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Gepa Job
-         * @description Get a specific GEPA job and update its status from the remote server.
+         * Get Prompt Optimization Job
+         * @description Get a specific Prompt Optimization job and update its status from the remote server.
          *     If the job has succeeded, create a prompt if one doesn't exist yet.
          *     If the job is already in a settled state (succeeded, failed, cancelled),
          *     skip the status update and return the cached model.
          */
-        get: operations["get_gepa_job_api_projects__project_id__tasks__task_id__gepa_jobs__gepa_job_id__get"];
+        get: operations["get_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs__prompt_optimization_job_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2370,7 +2370,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/gepa_jobs/{job_id}/status": {
+    "/api/prompt_optimization_jobs/{job_id}/status": {
         parameters: {
             query?: never;
             header?: never;
@@ -2378,10 +2378,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Gepa Job Status
-         * @description Get the status of a GEPA job.
+         * Get Prompt Optimization Job Status
+         * @description Get the status of a Prompt Optimization job.
          */
-        get: operations["get_gepa_job_status_api_gepa_jobs__job_id__status_get"];
+        get: operations["get_prompt_optimization_job_status_api_prompt_optimization_jobs__job_id__status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2390,7 +2390,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/gepa_jobs/{job_id}/result": {
+    "/api/prompt_optimization_jobs/{job_id}/result": {
         parameters: {
             query?: never;
             header?: never;
@@ -2398,10 +2398,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Gepa Job Result
-         * @description Get the result of a GEPA job (includes status and output if completed).
+         * Get Prompt Optimization Job Result
+         * @description Get the result of a prompt optimization job (includes status and output if completed).
          */
-        get: operations["get_gepa_job_result_api_gepa_jobs__job_id__result_get"];
+        get: operations["get_prompt_optimization_job_result_api_prompt_optimization_jobs__job_id__result_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4769,76 +4769,6 @@ export interface components {
                 [key: string]: components["schemas"]["SampleApi"][];
             };
         };
-        /**
-         * GepaJob
-         * @description The Kiln GEPA job datamodel.
-         */
-        GepaJob: {
-            /**
-             * V
-             * @default 1
-             */
-            v: number;
-            /** Id */
-            id?: string | null;
-            /** Path */
-            path?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at?: string;
-            /** Created By */
-            created_by?: string;
-            /**
-             * Name
-             * @description The name of the GEPA job.
-             */
-            name: string;
-            /**
-             * Description
-             * @description A description of the GEPA job for you and your team.
-             */
-            description?: string | null;
-            /**
-             * Job Id
-             * @description The ID of the job on the remote Kiln server.
-             */
-            job_id: string;
-            /**
-             * Target Run Config Id
-             * @description The ID of the run configuration used for this job.
-             */
-            target_run_config_id: string;
-            /**
-             * Latest Status
-             * @description The latest known status of this GEPA job (pending, running, succeeded, failed, cancelled). Not updated in real time.
-             * @default pending
-             */
-            latest_status: string;
-            /**
-             * Optimized Prompt
-             * @description The optimized prompt result when the job succeeds.
-             */
-            optimized_prompt?: string | null;
-            /**
-             * Created Prompt Id
-             * @description The ID of the prompt created from this job's result, if any.
-             */
-            created_prompt_id?: string | null;
-            /**
-             * Created Run Config Id
-             * @description The ID of the run config created from this job's result, if any.
-             */
-            created_run_config_id?: string | null;
-            /**
-             * Eval Ids
-             * @description List of eval IDs used for this job.
-             */
-            eval_ids?: string[];
-            /** Model Type */
-            readonly model_type: string;
-        };
         /** GetRagConfigProgressRequest */
         GetRagConfigProgressRequest: {
             /**
@@ -5515,6 +5445,76 @@ export interface components {
             /** Leakage Examples */
             leakage_examples: string;
         };
+        /**
+         * PromptOptimizationJob
+         * @description The Kiln prompt optimization job datamodel.
+         */
+        PromptOptimizationJob: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description The name of the prompt optimization job.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description of the prompt optimization job for you and your team.
+             */
+            description?: string | null;
+            /**
+             * Job Id
+             * @description The ID of the job on the remote Kiln server.
+             */
+            job_id: string;
+            /**
+             * Target Run Config Id
+             * @description The ID of the run configuration used for this job.
+             */
+            target_run_config_id: string;
+            /**
+             * Latest Status
+             * @description The latest known status of this prompt optimization job (pending, running, succeeded, failed, cancelled). Not updated in real time.
+             * @default pending
+             */
+            latest_status: string;
+            /**
+             * Optimized Prompt
+             * @description The optimized prompt result when the job succeeds.
+             */
+            optimized_prompt?: string | null;
+            /**
+             * Created Prompt Id
+             * @description The ID of the prompt created from this job's result, if any.
+             */
+            created_prompt_id?: string | null;
+            /**
+             * Created Run Config Id
+             * @description The ID of the run config created from this job's result, if any.
+             */
+            created_run_config_id?: string | null;
+            /**
+             * Eval Ids
+             * @description List of eval IDs used for this job.
+             */
+            eval_ids?: string[];
+            /** Model Type */
+            readonly model_type: string;
+        };
         /** PromptResponse */
         PromptResponse: {
             /** Generators */
@@ -5558,18 +5558,18 @@ export interface components {
             };
         };
         /**
-         * PublicGEPAJobResultResponse
-         * @description Public response model for GEPA job result containing only the optimized prompt.
+         * PublicPromptOptimizationJobResultResponse
+         * @description Public response model for prompt optimization job result containing only the optimized prompt.
          */
-        PublicGEPAJobResultResponse: {
+        PublicPromptOptimizationJobResultResponse: {
             /** Optimized Prompt */
             optimized_prompt: string;
         };
         /**
-         * PublicGEPAJobStatusResponse
-         * @description Public response model for GEPA job status.
+         * PublicPromptOptimizationJobStatusResponse
+         * @description Public response model for prompt optimization job status.
          */
-        PublicGEPAJobStatusResponse: {
+        PublicPromptOptimizationJobStatusResponse: {
             /** Job Id */
             job_id: string;
             status: components["schemas"]["JobStatus"];
@@ -6353,8 +6353,8 @@ export interface components {
                 [key: string]: string;
             };
         };
-        /** StartGepaJobRequest */
-        StartGepaJobRequest: {
+        /** StartPromptOptimizationJobRequest */
+        StartPromptOptimizationJobRequest: {
             /** Target Run Config Id */
             target_run_config_id: string;
             /** Eval Ids */
@@ -12144,7 +12144,7 @@ export interface operations {
             };
         };
     };
-    check_run_config_api_projects__project_id__tasks__task_id__gepa_jobs_check_run_config_get: {
+    check_run_config_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_run_config_get: {
         parameters: {
             query: {
                 run_config_id: string;
@@ -12178,7 +12178,7 @@ export interface operations {
             };
         };
     };
-    check_eval_api_projects__project_id__tasks__task_id__gepa_jobs_check_eval_get: {
+    check_eval_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_eval_get: {
         parameters: {
             query: {
                 eval_id: string;
@@ -12212,7 +12212,7 @@ export interface operations {
             };
         };
     };
-    start_gepa_job_api_projects__project_id__tasks__task_id__gepa_jobs_start_post: {
+    start_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_start_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -12224,7 +12224,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["StartGepaJobRequest"];
+                "application/json": components["schemas"]["StartPromptOptimizationJobRequest"];
             };
         };
         responses: {
@@ -12234,7 +12234,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GepaJob"];
+                    "application/json": components["schemas"]["PromptOptimizationJob"];
                 };
             };
             /** @description Validation Error */
@@ -12248,7 +12248,7 @@ export interface operations {
             };
         };
     };
-    list_gepa_jobs_api_projects__project_id__tasks__task_id__gepa_jobs_get: {
+    list_prompt_optimization_jobs_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_get: {
         parameters: {
             query?: {
                 update_status?: boolean;
@@ -12268,7 +12268,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GepaJob"][];
+                    "application/json": components["schemas"]["PromptOptimizationJob"][];
                 };
             };
             /** @description Validation Error */
@@ -12282,14 +12282,14 @@ export interface operations {
             };
         };
     };
-    get_gepa_job_api_projects__project_id__tasks__task_id__gepa_jobs__gepa_job_id__get: {
+    get_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs__prompt_optimization_job_id__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 project_id: string;
                 task_id: string;
-                gepa_job_id: string;
+                prompt_optimization_job_id: string;
             };
             cookie?: never;
         };
@@ -12301,7 +12301,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GepaJob"];
+                    "application/json": components["schemas"]["PromptOptimizationJob"];
                 };
             };
             /** @description Validation Error */
@@ -12315,7 +12315,7 @@ export interface operations {
             };
         };
     };
-    get_gepa_job_status_api_gepa_jobs__job_id__status_get: {
+    get_prompt_optimization_job_status_api_prompt_optimization_jobs__job_id__status_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -12332,7 +12332,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PublicGEPAJobStatusResponse"];
+                    "application/json": components["schemas"]["PublicPromptOptimizationJobStatusResponse"];
                 };
             };
             /** @description Validation Error */
@@ -12346,7 +12346,7 @@ export interface operations {
             };
         };
     };
-    get_gepa_job_result_api_gepa_jobs__job_id__result_get: {
+    get_prompt_optimization_job_result_api_prompt_optimization_jobs__job_id__result_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -12363,7 +12363,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PublicGEPAJobResultResponse"];
+                    "application/json": components["schemas"]["PublicPromptOptimizationJobResultResponse"];
                 };
             };
             /** @description Validation Error */

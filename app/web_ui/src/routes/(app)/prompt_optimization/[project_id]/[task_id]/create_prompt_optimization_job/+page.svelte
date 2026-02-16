@@ -416,7 +416,7 @@
       }
 
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config",
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config",
         {
           params: {
             path: {
@@ -474,7 +474,7 @@
       evals_with_configs = [...evals_with_configs]
 
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval",
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval",
         {
           params: {
             path: {
@@ -655,7 +655,7 @@
     )
   }
 
-  async function create_gepa_job() {
+  async function create_prompt_optimization_job() {
     try {
       create_job_loading = true
       created_job = null
@@ -670,7 +670,7 @@
       }
 
       const { data: response, error: post_error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start",
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start",
         {
           params: {
             path: {
@@ -760,14 +760,14 @@
         title="Prompt Optimization Job Started"
         subtitle="Optimization may take up to several hours depending on the number of evaluators and training examples."
         button_text="View Optimizer Jobs"
-        link={`/gepa/${project_id}/${task_id}/gepa_job/${created_job.id}`}
+        link={`/prompt_optimization/${project_id}/${task_id}/prompt_optimization_job/${created_job.id}`}
       />
     {:else if current_task}
       <FormContainer
         submit_visible={true}
         submit_label="Run Optimization"
         {submit_disabled}
-        on:submit={create_gepa_job}
+        on:submit={create_prompt_optimization_job}
         bind:error={create_job_error}
         bind:submitting={create_job_loading}
         compact_button={true}

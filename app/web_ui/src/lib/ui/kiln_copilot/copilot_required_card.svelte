@@ -11,7 +11,7 @@
     action_buttons={[
       {
         label: "Connect Kiln Copilot",
-        href: "/gepa/copilot_auth",
+        href: "/prompt_optimization/copilot_auth",
         is_primary: true,
       },
     ]}
