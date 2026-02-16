@@ -13,12 +13,10 @@
   import { checkPromptOptimizationAccess } from "$lib/utils/entitlement_utils"
   import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
   import EntitlementRequiredCard from "$lib/ui/kiln_copilot/entitlement_required_card.svelte"
-  import { DUMMY_GEPA_JOBS } from "$lib/dummy/gepa_jobs"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
 
-  const USE_DUMMY_DATA = true
   let loading = true
 
   let gepa_jobs: GepaJob[] | null = null
@@ -32,17 +30,6 @@
   $: is_empty = !gepa_jobs || gepa_jobs.length === 0
 
   onMount(async () => {
-    if (USE_DUMMY_DATA) {
-      gepa_jobs = [...DUMMY_GEPA_JOBS].sort(
-        (a, b) =>
-          new Date(b.created_at || "").getTime() -
-          new Date(a.created_at || "").getTime(),
-      )
-      kiln_copilot_connected = true
-      loading = false
-      return
-    }
-
     await get_gepa_jobs()
 
     if (!gepa_jobs || gepa_jobs.length === 0) {

@@ -15,9 +15,7 @@
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import { prompt_link } from "$lib/utils/link_builder"
-  import { DUMMY_GEPA_JOBS } from "$lib/dummy/gepa_jobs"
 
-  const USE_DUMMY_DATA = true
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: gepa_job_id = $page.params.job_id!
@@ -55,19 +53,6 @@
   }
 
   onMount(async () => {
-    if (USE_DUMMY_DATA) {
-      const dummy = DUMMY_GEPA_JOBS.find((j) => j.id === gepa_job_id)
-      if (dummy) {
-        gepa_job = dummy
-        build_properties()
-      } else {
-        gepa_job = DUMMY_GEPA_JOBS[0]
-        build_properties()
-      }
-      gepa_job_loading = false
-      return
-    }
-
     await Promise.all([
       load_task_run_configs(project_id, task_id),
       load_evals(),
