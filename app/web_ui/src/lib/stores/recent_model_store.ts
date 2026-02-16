@@ -4,6 +4,7 @@ import { localStorageStore } from "./local_storage_store"
 export type RecentModel = {
   model_id: string
   model_provider: string
+  provider_display_name?: string | null
 }
 
 export const recent_model_store: Writable<RecentModel[]> = localStorageStore(
@@ -15,10 +16,12 @@ export const recent_model_store: Writable<RecentModel[]> = localStorageStore(
  * Add a model to the recent models list, maintaining MRU order, uniqueness and max length
  * @param model_id - The model identifier
  * @param model_provider - The model provider
+ * @param provider_display_name - The display name for the provider (e.g., custom provider name)
  */
 export function addRecentModel(
   model_id: string | null,
   model_provider: string | null,
+  provider_display_name: string | null = null,
 ): void {
   if (!model_id || !model_provider) {
     return
@@ -34,7 +37,10 @@ export function addRecentModel(
     )
 
     // Add the new model to the front of the list
-    const updated_models = [{ model_id, model_provider }, ...filtered_models]
+    const updated_models = [
+      { model_id, model_provider, provider_display_name },
+      ...filtered_models,
+    ]
 
     // Keep only the first 5 items (most recent)
     return updated_models.slice(0, 5)

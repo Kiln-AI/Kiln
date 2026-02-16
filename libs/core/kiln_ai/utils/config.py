@@ -145,7 +145,12 @@ class Config:
                 str,
                 env_var="WANDB_BASE_URL",
             ),
+            # Legacy custom models, replaced by user_model_registry below
             "custom_models": ConfigProperty(
+                list,
+                default_lambda=lambda: [],
+            ),
+            "user_model_registry": ConfigProperty(
                 list,
                 default_lambda=lambda: [],
             ),
