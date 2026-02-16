@@ -10,37 +10,37 @@ from ..models.job_status import JobStatus
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
-    from ..models.gepa_job_output import GEPAJobOutput
     from ..models.output_file_info import OutputFileInfo
+    from ..models.prompt_optimization_job_output import PromptOptimizationJobOutput
 
 
-T = TypeVar("T", bound="GEPAJobResultResponse")
+T = TypeVar("T", bound="PromptOptimizationJobResultResponse")
 
 
 @_attrs_define
-class GEPAJobResultResponse:
-    """Response model for GEPA job result.
+class PromptOptimizationJobResultResponse:
+    """Response model for prompt optimization job result.
 
     Attributes:
         status (JobStatus): Job execution status aligned with Google Cloud Run Job execution states.
-        output (GEPAJobOutput | None | Unset):
+        output (None | PromptOptimizationJobOutput | Unset):
         output_files (list[OutputFileInfo] | Unset):
     """
 
     status: JobStatus
-    output: GEPAJobOutput | None | Unset = UNSET
+    output: None | PromptOptimizationJobOutput | Unset = UNSET
     output_files: list[OutputFileInfo] | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.gepa_job_output import GEPAJobOutput
+        from ..models.prompt_optimization_job_output import PromptOptimizationJobOutput
 
         status = self.status.value
 
         output: dict[str, Any] | None | Unset
         if isinstance(self.output, Unset):
             output = UNSET
-        elif isinstance(self.output, GEPAJobOutput):
+        elif isinstance(self.output, PromptOptimizationJobOutput):
             output = self.output.to_dict()
         else:
             output = self.output
@@ -68,13 +68,13 @@ class GEPAJobResultResponse:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.gepa_job_output import GEPAJobOutput
         from ..models.output_file_info import OutputFileInfo
+        from ..models.prompt_optimization_job_output import PromptOptimizationJobOutput
 
         d = dict(src_dict)
         status = JobStatus(d.pop("status"))
 
-        def _parse_output(data: object) -> GEPAJobOutput | None | Unset:
+        def _parse_output(data: object) -> None | PromptOptimizationJobOutput | Unset:
             if data is None:
                 return data
             if isinstance(data, Unset):
@@ -82,12 +82,12 @@ class GEPAJobResultResponse:
             try:
                 if not isinstance(data, dict):
                     raise TypeError()
-                output_type_0 = GEPAJobOutput.from_dict(data)
+                output_type_0 = PromptOptimizationJobOutput.from_dict(data)
 
                 return output_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
-            return cast(GEPAJobOutput | None | Unset, data)
+            return cast(None | PromptOptimizationJobOutput | Unset, data)
 
         output = _parse_output(d.pop("output", UNSET))
 
@@ -100,14 +100,14 @@ class GEPAJobResultResponse:
 
                 output_files.append(output_files_item)
 
-        gepa_job_result_response = cls(
+        prompt_optimization_job_result_response = cls(
             status=status,
             output=output,
             output_files=output_files,
         )
 
-        gepa_job_result_response.additional_properties = d
-        return gepa_job_result_response
+        prompt_optimization_job_result_response.additional_properties = d
+        return prompt_optimization_job_result_response
 
     @property
     def additional_keys(self) -> list[str]:

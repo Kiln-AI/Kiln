@@ -8,15 +8,15 @@ if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
 
 
-class GepaJob(KilnParentedModel):
+class PromptOptimizationJob(KilnParentedModel):
     """
-    The Kiln GEPA job datamodel.
+    The Kiln prompt optimization job datamodel.
     """
 
-    name: FilenameString = Field(description="The name of the GEPA job.")
+    name: FilenameString = Field(description="The name of the prompt optimization job.")
     description: str | None = Field(
         default=None,
-        description="A description of the GEPA job for you and your team.",
+        description="A description of the prompt optimization job for you and your team.",
     )
     job_id: str = Field(description="The ID of the job on the remote Kiln server.")
     target_run_config_id: str = Field(
@@ -24,7 +24,7 @@ class GepaJob(KilnParentedModel):
     )
     latest_status: str = Field(
         default="pending",
-        description="The latest known status of this GEPA job (pending, running, succeeded, failed, cancelled). Not updated in real time.",
+        description="The latest known status of this prompt optimization job (pending, running, succeeded, failed, cancelled). Not updated in real time.",
     )
     optimized_prompt: str | None = Field(
         default=None,

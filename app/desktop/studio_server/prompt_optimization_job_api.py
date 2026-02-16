@@ -5,16 +5,16 @@ import tempfile
 from pathlib import Path
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs import (
-    check_model_supported_v1_jobs_gepa_job_check_model_supported_get,
-    get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get,
+    check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get,
     get_job_status_v1_jobs_job_type_job_id_status_get,
-    start_gepa_job_v1_jobs_gepa_job_start_post,
+    get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get,
+    start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.client import (
     AuthenticatedClient,
 )
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models.body_start_gepa_job_v1_jobs_gepa_job_start_post import (
-    BodyStartGepaJobV1JobsGepaJobStartPost,
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.body_start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post import (
+    BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.http_validation_error import (
     HTTPValidationError,
@@ -40,7 +40,7 @@ from kiln_ai.cli.commands.package_project import (
     PackageForTrainingConfig,
     package_project_for_training,
 )
-from kiln_ai.datamodel import GepaJob, Prompt
+from kiln_ai.datamodel import Prompt, PromptOptimizationJob
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.lock import shared_async_lock_manager
@@ -63,14 +63,14 @@ def is_job_status_final(status: str) -> bool:
     ]
 
 
-class PublicGEPAJobResultResponse(BaseModel):
-    """Public response model for GEPA job result containing only the optimized prompt."""
+class PublicPromptOptimizationJobResultResponse(BaseModel):
+    """Public response model for prompt optimization job result containing only the optimized prompt."""
 
     optimized_prompt: str
 
 
-class PublicGEPAJobStatusResponse(BaseModel):
-    """Public response model for GEPA job status."""
+class PublicPromptOptimizationJobStatusResponse(BaseModel):
+    """Public response model for prompt optimization job status."""
 
     job_id: str
     status: JobStatus
@@ -101,32 +101,36 @@ def _get_api_key() -> str:
     return api_key
 
 
-class StartGepaJobRequest(BaseModel):
+class StartPromptOptimizationJobRequest(BaseModel):
     target_run_config_id: str
     eval_ids: list[str]
 
 
-def gepa_job_from_id(project_id: str, task_id: str, gepa_job_id: str) -> GepaJob:
-    """Get a GepaJob from its ID, raising HTTPException if not found."""
+def prompt_optimization_job_from_id(
+    project_id: str, task_id: str, prompt_optimization_job_id: str
+) -> PromptOptimizationJob:
+    """Get a PromptOptimizationJob from its ID, raising HTTPException if not found."""
     task = task_from_id(project_id, task_id)
-    gepa_job = GepaJob.from_id_and_parent_path(gepa_job_id, task.path)
-    if gepa_job is None:
+    prompt_optimization_job = PromptOptimizationJob.from_id_and_parent_path(
+        prompt_optimization_job_id, task.path
+    )
+    if prompt_optimization_job is None:
         raise HTTPException(
             status_code=404,
-            detail=f"GEPA job with ID '{gepa_job_id}' not found",
+            detail=f"Prompt Optimization job with ID '{prompt_optimization_job_id}' not found",
         )
-    return gepa_job
+    return prompt_optimization_job
 
 
 def create_prompt_from_optimization(
-    gepa_job: GepaJob, task, optimized_prompt_text: str
+    prompt_optimization_job: PromptOptimizationJob, task, optimized_prompt_text: str
 ) -> Prompt:
     """
     Create a prompt from an optimization job result. Does not guarantee idempotence so
     make sure you have a proper locking mechanism around calling this function.
     """
     prompt = Prompt(
-        name=gepa_job.name,
+        name=prompt_optimization_job.name,
         generator_id="kiln_prompt_optimizer",
         prompt=optimized_prompt_text,
         parent=task,
@@ -137,7 +141,7 @@ def create_prompt_from_optimization(
 
 
 def create_run_config_from_optimization(
-    gepa_job: GepaJob, task, prompt: Prompt
+    prompt_optimization_job: PromptOptimizationJob, task, prompt: Prompt
 ) -> TaskRunConfig:
     """
     Create a run config from an optimization job result. Does not guarantee idempotence so
@@ -158,7 +162,7 @@ def create_run_config_from_optimization(
 
     # get the original target run config that we optimized for in the job
     target_run_config = task_run_config_from_id(
-        parent_project.id, task.id, gepa_job.target_run_config_id
+        parent_project.id, task.id, prompt_optimization_job.target_run_config_id
     )
 
     # create new run config with the same properties but new prompt
@@ -180,7 +184,9 @@ def create_run_config_from_optimization(
 
 
 def _cleanup_artifact(
-    artifact: Prompt | TaskRunConfig | None, artifact_type: str, gepa_job_id: str
+    artifact: Prompt | TaskRunConfig | None,
+    artifact_type: str,
+    prompt_optimization_job_id: str,
 ) -> None:
     """
     Attempt to delete an artifact, logging errors if deletion fails.
@@ -195,43 +201,48 @@ def _cleanup_artifact(
         artifact_id = getattr(artifact, "id", "unknown")
         logger.error(
             f"Failed to clean up {artifact_type} artifact {artifact_id} "
-            f"for GEPA job {gepa_job_id}: {cleanup_error}",
+            f"for Prompt Optimization job {prompt_optimization_job_id}: {cleanup_error}",
             exc_info=True,
         )
 
 
 async def _create_artifacts_for_succeeded_job(
-    gepa_job: GepaJob,
+    prompt_optimization_job: PromptOptimizationJob,
     task,
     server_client: AuthenticatedClient,
 ) -> None:
     """
-    Create prompt and run config artifacts for a newly succeeded GEPA job.
-    Assumes caller has acquired the job lock. Modifies gepa_job in place.
+    Create prompt and run config artifacts for a newly succeeded prompt optimization job.
+    Assumes caller has acquired the job lock. Modifies prompt_optimization_job in place.
     """
     parent_project = task.parent_project()
-    if not parent_project or not parent_project.id or not task.id or not gepa_job.id:
-        raise ValueError("Cannot reload GEPA job: missing required IDs")
+    if (
+        not parent_project
+        or not parent_project.id
+        or not task.id
+        or not prompt_optimization_job.id
+    ):
+        raise ValueError("Cannot reload Prompt Optimization job: missing required IDs")
 
     # reload the job in case artifacts were created by another request while waiting for the lock
-    reloaded_job = gepa_job_from_id(
+    reloaded_job = prompt_optimization_job_from_id(
         parent_project.id,
         task.id,
-        gepa_job.id,
+        prompt_optimization_job.id,
     )
 
     # check if artifacts already exist
     if reloaded_job.created_prompt_id:
-        gepa_job.created_prompt_id = reloaded_job.created_prompt_id
-        gepa_job.created_run_config_id = reloaded_job.created_run_config_id
-        gepa_job.optimized_prompt = reloaded_job.optimized_prompt
+        prompt_optimization_job.created_prompt_id = reloaded_job.created_prompt_id
+        prompt_optimization_job.created_run_config_id = (
+            reloaded_job.created_run_config_id
+        )
+        prompt_optimization_job.optimized_prompt = reloaded_job.optimized_prompt
         return
 
-    result_response = (
-        await get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio(
-            job_id=gepa_job.job_id,
-            client=server_client,
-        )
+    result_response = await get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio(
+        job_id=prompt_optimization_job.job_id,
+        client=server_client,
     )
 
     if (
@@ -241,84 +252,98 @@ async def _create_artifacts_for_succeeded_job(
         and hasattr(result_response.output, "optimized_prompt")
     ):
         optimized_prompt_text = result_response.output.optimized_prompt
-        gepa_job.optimized_prompt = optimized_prompt_text
+        prompt_optimization_job.optimized_prompt = optimized_prompt_text
 
         prompt: Prompt | None = None
         run_config: TaskRunConfig | None = None
 
         try:
             prompt = create_prompt_from_optimization(
-                gepa_job, task, optimized_prompt_text
+                prompt_optimization_job, task, optimized_prompt_text
             )
-            gepa_job.created_prompt_id = f"id::{prompt.id}"
+            prompt_optimization_job.created_prompt_id = f"id::{prompt.id}"
 
-            run_config = create_run_config_from_optimization(gepa_job, task, prompt)
-            gepa_job.created_run_config_id = run_config.id
+            run_config = create_run_config_from_optimization(
+                prompt_optimization_job, task, prompt
+            )
+            prompt_optimization_job.created_run_config_id = run_config.id
 
         except Exception as e:
             logger.error(
-                f"Failed to create artifacts for GEPA job {gepa_job.job_id}: {e}. "
+                f"Failed to create artifacts for Prompt Optimization job {prompt_optimization_job.job_id}: {e}. "
                 f"Cleaning up any created artifacts to allow retry on next invocation.",
                 exc_info=True,
             )
-            _cleanup_artifact(prompt, "prompt", gepa_job.job_id)
-            _cleanup_artifact(run_config, "run config", gepa_job.job_id)
-            gepa_job.created_prompt_id = None
-            gepa_job.created_run_config_id = None
+            _cleanup_artifact(prompt, "prompt", prompt_optimization_job.job_id)
+            _cleanup_artifact(run_config, "run config", prompt_optimization_job.job_id)
+            prompt_optimization_job.created_prompt_id = None
+            prompt_optimization_job.created_run_config_id = None
 
 
-async def update_gepa_job_and_create_artifacts(
-    gepa_job: GepaJob, server_client: AuthenticatedClient
-) -> GepaJob:
+async def update_prompt_optimization_job_and_create_artifacts(
+    prompt_optimization_job: PromptOptimizationJob, server_client: AuthenticatedClient
+) -> PromptOptimizationJob:
     """
-    Update the status of a GepaJob from the remote server.
+    Update the status of a PromptOptimizationJob from the remote server.
     If the job has succeeded for the first time, create a prompt and run config from the result.
     Uses per-job locking to ensure the success transition is handled atomically.
     """
-    task = gepa_job.parent_task()
+    task = prompt_optimization_job.parent_task()
     if task is None:
-        raise HTTPException(status_code=500, detail="GepaJob has no parent task")
+        raise HTTPException(
+            status_code=500, detail="PromptOptimizationJob has no parent task"
+        )
 
     try:
         status_response = (
             await get_job_status_v1_jobs_job_type_job_id_status_get.asyncio(
                 job_type=JobType.GEPA_JOB,
-                job_id=gepa_job.job_id,
+                job_id=prompt_optimization_job.job_id,
                 client=server_client,
             )
         )
 
         if status_response is None or isinstance(status_response, HTTPValidationError):
-            logger.warning(f"Could not fetch status for GEPA job {gepa_job.job_id}")
-            return gepa_job
+            logger.warning(
+                f"Could not fetch status for Prompt Optimization job {prompt_optimization_job.job_id}"
+            )
+            raise RuntimeError(
+                f"Could not fetch status for Prompt Optimization job {prompt_optimization_job.job_id}: {status_response}"
+            )
 
         new_status = str(status_response.status.value)
 
-        async with shared_async_lock_manager.acquire(gepa_job.job_id):
-            previous_status = gepa_job.latest_status
-            gepa_job.latest_status = new_status
+        async with shared_async_lock_manager.acquire(prompt_optimization_job.job_id):
+            previous_status = prompt_optimization_job.latest_status
+            prompt_optimization_job.latest_status = new_status
 
             if (
                 previous_status != JobStatus.SUCCEEDED
                 and new_status == JobStatus.SUCCEEDED
             ):
-                await _create_artifacts_for_succeeded_job(gepa_job, task, server_client)
+                await _create_artifacts_for_succeeded_job(
+                    prompt_optimization_job, task, server_client
+                )
 
-            gepa_job.save_to_file()
+            prompt_optimization_job.save_to_file()
 
     except Exception as e:
-        logger.error(f"Error updating GEPA job status: {e}", exc_info=True)
+        logger.error(
+            f"Error updating Prompt Optimization job status: {e}", exc_info=True
+        )
 
-    return gepa_job
+    return prompt_optimization_job
 
 
-def connect_gepa_job_api(app: FastAPI):
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_run_config")
+def connect_prompt_optimization_job_api(app: FastAPI):
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config"
+    )
     async def check_run_config(
         project_id: str, task_id: str, run_config_id: str
     ) -> CheckRunConfigResponse:
         """
-        Check if a run config is valid for a GEPA job by validating the model is supported.
+        Check if a run config is valid for a Prompt Optimization job by validating the model is supported.
         """
         try:
             run_config = task_run_config_from_id(project_id, task_id, run_config_id)
@@ -345,7 +370,7 @@ def connect_gepa_job_api(app: FastAPI):
                     status_code=500, detail="Server client not authenticated"
                 )
 
-            response = await check_model_supported_v1_jobs_gepa_job_check_model_supported_get.asyncio(
+            response = await check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio(
                 client=server_client,
                 model_name=model_name,
                 model_provider_name=model_provider.value,
@@ -375,12 +400,14 @@ def connect_gepa_job_api(app: FastAPI):
                 status_code=500, detail=f"Failed to check run config: {str(e)}"
             )
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/check_eval")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval"
+    )
     async def check_eval(
         project_id: str, task_id: str, eval_id: str
     ) -> CheckEvalResponse:
         """
-        Check if an eval is valid for a GEPA job.
+        Check if an eval is valid for a Prompt Optimization job.
         Validates that the eval has a default config and that the model is supported.
         """
         try:
@@ -424,7 +451,7 @@ def connect_gepa_job_api(app: FastAPI):
                 )
 
             # EvalConfig.model_provider is already a string, no need for .value
-            response = await check_model_supported_v1_jobs_gepa_job_check_model_supported_get.asyncio(
+            response = await check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio(
                 client=server_client,
                 model_name=model_name,
                 model_provider_name=model_provider,
@@ -458,15 +485,17 @@ def connect_gepa_job_api(app: FastAPI):
                 status_code=500, detail=f"Failed to check eval: {str(e)}"
             )
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/start")
-    async def start_gepa_job(
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start"
+    )
+    async def start_prompt_optimization_job(
         project_id: str,
         task_id: str,
-        request: StartGepaJobRequest,
-    ) -> GepaJob:
+        request: StartPromptOptimizationJobRequest,
+    ) -> PromptOptimizationJob:
         """
-        Start a GEPA job by zipping the project and sending it to the Kiln server.
-        Creates and saves a GepaJob datamodel to track the job.
+        Start a prompt optimization job by zipping the project and sending it to the Kiln server.
+        Creates and saves a PromptOptimizationJob datamodel to track the job.
         """
         task = task_from_id(project_id, task_id)
         project = task.parent_project()
@@ -485,7 +514,7 @@ def connect_gepa_job_api(app: FastAPI):
             ):
                 raise HTTPException(
                     status_code=400,
-                    detail="GEPA does not support run configurations with tools",
+                    detail="Prompt Optimization does not support run configurations with tools",
                 )
             server_client = get_authenticated_client(_get_api_key())
             if not isinstance(server_client, AuthenticatedClient):
@@ -493,8 +522,10 @@ def connect_gepa_job_api(app: FastAPI):
                     status_code=500, detail="Server client not authenticated"
                 )
 
-            with tempfile.TemporaryDirectory(prefix="kiln_gepa_") as tmpdir:
-                tmp_file = Path(tmpdir) / "kiln_gepa_project.zip"
+            with tempfile.TemporaryDirectory(
+                prefix="kiln_prompt_optimization_"
+            ) as tmpdir:
+                tmp_file = Path(tmpdir) / "kiln_prompt_optimization_project.zip"
                 package_project_for_training(
                     project=project,
                     task_ids=[task_id],
@@ -519,31 +550,29 @@ def connect_gepa_job_api(app: FastAPI):
                 )
 
             # Create the request body
-            body = BodyStartGepaJobV1JobsGepaJobStartPost(
+            body = BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost(
                 task_id=task_id,
                 target_run_config_id=request.target_run_config_id,
                 project_zip=project_zip_file,
                 eval_ids=request.eval_ids,
             )
 
-            detailed_response = (
-                await start_gepa_job_v1_jobs_gepa_job_start_post.asyncio_detailed(
-                    client=server_client, body=body
-                )
+            detailed_response = await start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post.asyncio_detailed(
+                client=server_client, body=body
             )
             check_response_error(
                 detailed_response,
-                default_detail="Failed to start GEPA job: unexpected error from server",
+                default_detail="Failed to start Prompt Optimization job: unexpected error from server",
             )
 
             response = detailed_response.parsed
             if response is None or isinstance(response, HTTPValidationError):
                 raise HTTPException(
                     status_code=500,
-                    detail="Failed to start GEPA job: unexpected response from server",
+                    detail="Failed to start Prompt Optimization job: unexpected response from server",
                 )
 
-            gepa_job = GepaJob(
+            prompt_optimization_job = PromptOptimizationJob(
                 name=generate_memorable_name(),
                 job_id=response.job_id,
                 target_run_config_id=request.target_run_config_id,
@@ -551,14 +580,14 @@ def connect_gepa_job_api(app: FastAPI):
                 eval_ids=request.eval_ids,
                 parent=task,
             )
-            gepa_job.save_to_file()
+            prompt_optimization_job.save_to_file()
 
-            return gepa_job
+            return prompt_optimization_job
 
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error starting GEPA job: {e}", exc_info=True)
+            logger.error(f"Error starting Prompt Optimization job: {e}", exc_info=True)
 
             # Provide more specific error messages
             if "ReadError" in str(type(e).__name__) or "timeout" in str(e).lower():
@@ -568,19 +597,20 @@ def connect_gepa_job_api(app: FastAPI):
                 )
 
             raise HTTPException(
-                status_code=500, detail=f"Failed to start GEPA job: {str(e)}"
+                status_code=500,
+                detail=f"Failed to start Prompt Optimization job: {str(e)}",
             )
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/gepa_jobs")
-    async def list_gepa_jobs(
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs")
+    async def list_prompt_optimization_jobs(
         project_id: str, task_id: str, update_status: bool = False
-    ) -> list[GepaJob]:
+    ) -> list[PromptOptimizationJob]:
         """
-        List all GEPA jobs for a task.
+        List all Prompt Optimization jobs for a task.
         Optionally update the status of non-final jobs from the remote server.
         """
         task = task_from_id(project_id, task_id)
-        gepa_jobs = task.gepa_jobs()
+        prompt_optimization_jobs = task.prompt_optimization_jobs()
 
         if update_status:
             try:
@@ -589,7 +619,7 @@ def connect_gepa_job_api(app: FastAPI):
                     # Filter jobs that need status updates
                     jobs_to_update = [
                         job
-                        for job in gepa_jobs
+                        for job in prompt_optimization_jobs
                         if not is_job_status_final(job.latest_status)
                     ]
 
@@ -597,46 +627,66 @@ def connect_gepa_job_api(app: FastAPI):
                     batch_size = 5
                     for i in range(0, len(jobs_to_update), batch_size):
                         batch = jobs_to_update[i : i + batch_size]
+
+                        # this swallows the exceptions from each call, which is fine
                         await asyncio.gather(
                             *[
-                                update_gepa_job_and_create_artifacts(job, server_client)
+                                update_prompt_optimization_job_and_create_artifacts(
+                                    job, server_client
+                                )
                                 for job in batch
-                            ]
+                            ],
+                            return_exceptions=True,
                         )
             except Exception as e:
-                logger.error(f"Error updating GEPA job statuses: {e}", exc_info=True)
+                logger.error(
+                    f"Error updating Prompt Optimization job statuses: {e}",
+                    exc_info=True,
+                )
 
-        return gepa_jobs
+        return prompt_optimization_jobs
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/gepa_jobs/{gepa_job_id}")
-    async def get_gepa_job(project_id: str, task_id: str, gepa_job_id: str) -> GepaJob:
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}"
+    )
+    async def get_prompt_optimization_job(
+        project_id: str, task_id: str, prompt_optimization_job_id: str
+    ) -> PromptOptimizationJob:
         """
-        Get a specific GEPA job and update its status from the remote server.
+        Get a specific Prompt Optimization job and update its status from the remote server.
         If the job has succeeded, create a prompt if one doesn't exist yet.
         If the job is already in a settled state (succeeded, failed, cancelled),
         skip the status update and return the cached model.
         """
-        gepa_job = gepa_job_from_id(project_id, task_id, gepa_job_id)
+        prompt_optimization_job = prompt_optimization_job_from_id(
+            project_id, task_id, prompt_optimization_job_id
+        )
 
         # Skip status update if job is already in a final state
-        if is_job_status_final(gepa_job.latest_status):
-            return gepa_job
+        if is_job_status_final(prompt_optimization_job.latest_status):
+            return prompt_optimization_job
 
         try:
             server_client = get_authenticated_client(_get_api_key())
             if isinstance(server_client, AuthenticatedClient):
-                gepa_job = await update_gepa_job_and_create_artifacts(
-                    gepa_job, server_client
+                prompt_optimization_job = (
+                    await update_prompt_optimization_job_and_create_artifacts(
+                        prompt_optimization_job, server_client
+                    )
                 )
         except Exception as e:
-            logger.error(f"Error updating GEPA job status: {e}", exc_info=True)
+            logger.error(
+                f"Error updating Prompt Optimization job status: {e}", exc_info=True
+            )
 
-        return gepa_job
+        return prompt_optimization_job
 
-    @app.get("/api/gepa_jobs/{job_id}/status")
-    async def get_gepa_job_status(job_id: str) -> PublicGEPAJobStatusResponse:
+    @app.get("/api/prompt_optimization_jobs/{job_id}/status")
+    async def get_prompt_optimization_job_status(
+        job_id: str,
+    ) -> PublicPromptOptimizationJobStatusResponse:
         """
-        Get the status of a GEPA job.
+        Get the status of a Prompt Optimization job.
         """
         try:
             server_client = get_authenticated_client(_get_api_key())
@@ -653,26 +703,31 @@ def connect_gepa_job_api(app: FastAPI):
 
             if response is None or isinstance(response, HTTPValidationError):
                 raise HTTPException(
-                    status_code=404, detail=f"GEPA job {job_id} not found"
+                    status_code=404,
+                    detail=f"Prompt Optimization job {job_id} not found",
                 )
 
-            return PublicGEPAJobStatusResponse(
+            return PublicPromptOptimizationJobStatusResponse(
                 job_id=response.job_id, status=response.status
             )
 
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error getting GEPA job status: {e}", exc_info=True)
+            logger.error(
+                f"Error getting prompt optimization job status: {e}", exc_info=True
+            )
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to get GEPA job status: {str(e)}",
+                detail=f"Failed to get Prompt Optimization job status: {str(e)}",
             )
 
-    @app.get("/api/gepa_jobs/{job_id}/result")
-    async def get_gepa_job_result(job_id: str) -> PublicGEPAJobResultResponse:
+    @app.get("/api/prompt_optimization_jobs/{job_id}/result")
+    async def get_prompt_optimization_job_result(
+        job_id: str,
+    ) -> PublicPromptOptimizationJobResultResponse:
         """
-        Get the result of a GEPA job (includes status and output if completed).
+        Get the result of a prompt optimization job (includes status and output if completed).
         """
         try:
             server_client = get_authenticated_client(_get_api_key())
@@ -681,33 +736,34 @@ def connect_gepa_job_api(app: FastAPI):
                     status_code=500, detail="Server client not authenticated"
                 )
 
-            response = (
-                await get_gepa_job_result_v1_jobs_gepa_job_job_id_result_get.asyncio(
-                    job_id=job_id,
-                    client=server_client,
-                )
+            response = await get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio(
+                job_id=job_id,
+                client=server_client,
             )
 
             if response is None or isinstance(response, HTTPValidationError):
                 raise HTTPException(
-                    status_code=404, detail=f"GEPA job {job_id} result not found"
+                    status_code=404,
+                    detail=f"Prompt Optimization job {job_id} result not found",
                 )
 
             if not response.output or not hasattr(response.output, "optimized_prompt"):
                 raise HTTPException(
                     status_code=500,
-                    detail=f"GEPA job {job_id} completed but has no output",
+                    detail=f"Prompt Optimization job {job_id} completed but has no output",
                 )
 
-            return PublicGEPAJobResultResponse(
+            return PublicPromptOptimizationJobResultResponse(
                 optimized_prompt=response.output.optimized_prompt
             )
 
         except HTTPException:
             raise
         except Exception as e:
-            logger.error(f"Error getting GEPA job result: {e}", exc_info=True)
+            logger.error(
+                f"Error getting prompt optimization job result: {e}", exc_info=True
+            )
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to get GEPA job result: {str(e)}",
+                detail=f"Failed to get Prompt Optimization job result: {str(e)}",
             )

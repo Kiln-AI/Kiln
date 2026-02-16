@@ -164,9 +164,10 @@ export type QuestionWithAnswer = components["schemas"]["QuestionWithAnswer"]
 export type AnswerOptionWithSelection =
   components["schemas"]["AnswerOptionWithSelection"]
 
-export type PublicGEPAJobStatusResponse =
-  components["schemas"]["PublicGEPAJobStatusResponse"]
-export type GepaJob = components["schemas"]["GepaJob"]
+export type PublicPromptOptimizationJobStatusResponse =
+  components["schemas"]["PublicPromptOptimizationJobStatusResponse"]
+export type PromptOptimizationJob =
+  components["schemas"]["PromptOptimizationJob"]
 export type JobStatus = components["schemas"]["JobStatus"]
 
 // Type helpers for ExternalToolServerApiDescription properties

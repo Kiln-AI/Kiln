@@ -6,8 +6,8 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.gepa_job_result_response import GEPAJobResultResponse
 from ...models.http_validation_error import HTTPValidationError
+from ...models.prompt_optimization_job_result_response import PromptOptimizationJobResultResponse
 from ...types import Response
 
 
@@ -17,7 +17,7 @@ def _get_kwargs(
 
     _kwargs: dict[str, Any] = {
         "method": "get",
-        "url": "/v1/jobs/gepa_job/{job_id}/result".format(
+        "url": "/v1/jobs/prompt_optimization_job/{job_id}/result".format(
             job_id=quote(str(job_id), safe=""),
         ),
     }
@@ -27,9 +27,9 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> GEPAJobResultResponse | HTTPValidationError | None:
+) -> HTTPValidationError | PromptOptimizationJobResultResponse | None:
     if response.status_code == 200:
-        response_200 = GEPAJobResultResponse.from_dict(response.json())
+        response_200 = PromptOptimizationJobResultResponse.from_dict(response.json())
 
         return response_200
 
@@ -46,7 +46,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[GEPAJobResultResponse | HTTPValidationError]:
+) -> Response[HTTPValidationError | PromptOptimizationJobResultResponse]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -59,8 +59,8 @@ def sync_detailed(
     job_id: str,
     *,
     client: AuthenticatedClient,
-) -> Response[GEPAJobResultResponse | HTTPValidationError]:
-    """Get Gepa Job Result
+) -> Response[HTTPValidationError | PromptOptimizationJobResultResponse]:
+    """Get Prompt Optimization Job Result
 
     Args:
         job_id (str):
@@ -70,7 +70,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[GEPAJobResultResponse | HTTPValidationError]
+        Response[HTTPValidationError | PromptOptimizationJobResultResponse]
     """
 
     kwargs = _get_kwargs(
@@ -88,8 +88,8 @@ def sync(
     job_id: str,
     *,
     client: AuthenticatedClient,
-) -> GEPAJobResultResponse | HTTPValidationError | None:
-    """Get Gepa Job Result
+) -> HTTPValidationError | PromptOptimizationJobResultResponse | None:
+    """Get Prompt Optimization Job Result
 
     Args:
         job_id (str):
@@ -99,7 +99,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        GEPAJobResultResponse | HTTPValidationError
+        HTTPValidationError | PromptOptimizationJobResultResponse
     """
 
     return sync_detailed(
@@ -112,8 +112,8 @@ async def asyncio_detailed(
     job_id: str,
     *,
     client: AuthenticatedClient,
-) -> Response[GEPAJobResultResponse | HTTPValidationError]:
-    """Get Gepa Job Result
+) -> Response[HTTPValidationError | PromptOptimizationJobResultResponse]:
+    """Get Prompt Optimization Job Result
 
     Args:
         job_id (str):
@@ -123,7 +123,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[GEPAJobResultResponse | HTTPValidationError]
+        Response[HTTPValidationError | PromptOptimizationJobResultResponse]
     """
 
     kwargs = _get_kwargs(
@@ -139,8 +139,8 @@ async def asyncio(
     job_id: str,
     *,
     client: AuthenticatedClient,
-) -> GEPAJobResultResponse | HTTPValidationError | None:
-    """Get Gepa Job Result
+) -> HTTPValidationError | PromptOptimizationJobResultResponse | None:
+    """Get Prompt Optimization Job Result
 
     Args:
         job_id (str):
@@ -150,7 +150,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        GEPAJobResultResponse | HTTPValidationError
+        HTTPValidationError | PromptOptimizationJobResultResponse
     """
 
     return (
