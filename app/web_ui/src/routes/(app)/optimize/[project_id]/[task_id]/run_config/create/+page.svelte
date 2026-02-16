@@ -5,7 +5,7 @@
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
-  import AppPage from "../../../../app_page.svelte"
+  import AppPage from "../../../../../app_page.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { goto } from "$app/navigation"
   import Output from "$lib/ui/output.svelte"
@@ -83,11 +83,7 @@
 <div class="max-w-[900px]">
   <AppPage
     title="Create Run Configuration"
-    subtitle="Create a new run configuration for your task{prompt_info
-      ? ' with your new prompt'
-      : model
-        ? ' with your selected model'
-        : ''}."
+    subtitle="Create a configuration to run your task."
     breadcrumbs={model
       ? [
           {

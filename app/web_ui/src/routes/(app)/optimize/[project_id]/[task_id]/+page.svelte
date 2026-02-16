@@ -28,9 +28,7 @@
   import { formatDate } from "$lib/utils/formatters"
   import { get_tools_property_info } from "$lib/stores/tools_store"
   import { goto } from "$app/navigation"
-  import { tick } from "svelte"
   import TableButton from "../../../generate/[project_id]/[task_id]/table_button.svelte"
-  import RunConfigDetailsDialog from "$lib/ui/run_config_component/run_config_details_dialog.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import { client } from "$lib/api_client"
   import StarIcon from "$lib/ui/icons/star_icon.svelte"
@@ -53,8 +51,6 @@
   let sortColumn: SortableColumn = "created_at"
   let sortDirection: "asc" | "desc" = "desc"
 
-  let selected_run_config: TaskRunConfig | null = null
-  let run_config_details_dialog: RunConfigDetailsDialog | null = null
   let create_run_config_dialog: CreateNewRunConfigDialog | null = null
 
   const MAX_SELECTIONS = 6
@@ -89,10 +85,10 @@
 
   onMount(async () => {
     loading = true
+    load_available_tools(project_id)
     try {
       await Promise.all([
         load_model_info(),
-        load_available_tools(project_id),
         load_task_prompts(project_id, task_id),
 
         // some run configs are created server-side as a result of async jobs
@@ -196,12 +192,6 @@
     return $available_tools
       ? get_tools_property_info(tool_ids, project_id, $available_tools)
       : { value: "Loading...", links: undefined }
-  }
-
-  async function handleRowClick(config: TaskRunConfig) {
-    selected_run_config = config
-    await tick()
-    run_config_details_dialog?.show()
   }
 
   function handleClone(config: TaskRunConfig, event: Event) {
@@ -388,7 +378,9 @@
                     if (select_mode && config.id) {
                       toggle_selection(config.id)
                     } else {
-                      handleRowClick(config)
+                      goto(
+                        `/optimize/${project_id}/${task_id}/run_config/${config.id}`,
+                      )
                     }
                   }}
                 >
@@ -487,15 +479,6 @@
     </div>
   {/if}
 </AppPage>
-
-{#if selected_run_config}
-  <RunConfigDetailsDialog
-    bind:this={run_config_details_dialog}
-    {project_id}
-    {task_id}
-    task_run_config={selected_run_config}
-  />
-{/if}
 
 <CreateNewRunConfigDialog
   bind:this={create_run_config_dialog}

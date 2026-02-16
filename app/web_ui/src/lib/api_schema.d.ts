@@ -7067,6 +7067,8 @@ export interface components {
         };
         /** UpdateRunConfigRequest */
         UpdateRunConfigRequest: {
+            /** Name */
+            name?: string | null;
             /** Starred */
             starred?: boolean | null;
             /** Prompt Name */

@@ -15,6 +15,8 @@
   import type { Task } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { getPromptType } from "./prompt_generators/prompt_generators"
+  import Banner from "$lib/ui/banner.svelte"
+  import Collapse from "$lib/ui/collapse.svelte"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -146,34 +148,57 @@
       </div>
     {:else}
       <div class="flex flex-col gap-8">
-        <div>
-          <div class="flex items-center justify-between mb-2">
-            <div>
-              <h2 class="text-lg font-medium text-gray-900">Base Prompt</h2>
-              <p class="text-sm text-gray-500">
-                The base prompt used by prompt generators (Few Shot, Chain of
-                Thought, etc.).
-              </p>
+        <Banner
+          title="Automatically Optimize Your Prompt"
+          description="Use Kiln's state-of-the-art prompt optimizer to automatically improve your prompt."
+          button_label="Create Optimized Prompt"
+          href={`/gepa/${project_id}/${task_id}/create_gepa`}
+        >
+          <div slot="icon" class="p-4 border rounded-lg">
+            <div class="h-12 w-12">
+              <img src="/images/animated_logo.svg" alt="Kiln Copilot" />
             </div>
+          </div>
+        </Banner>
+        <Collapse
+          title="Base Task Instructions"
+          description="The base prompt and thinking instructions used by prompt generators."
+        >
+          <div>
+            <div class="text-sm font-medium mb-1">Prompt</div>
+            {#if task?.instruction}
+              <Output raw_output={task.instruction} background_color="white" />
+            {:else}
+              <div class="text-gray-400 text-xs italic">
+                No base prompt set. Click Edit to add one.
+              </div>
+            {/if}
+          </div>
+          <div>
+            <div class="text-sm font-medium mb-1">Thinking Instructions</div>
+            {#if task?.thinking_instruction}
+              <Output
+                raw_output={task.thinking_instruction}
+                background_color="white"
+              />
+            {:else}
+              <div class="text-gray-400 text-xs italic">
+                No thinking instructions set. Click Edit to add one.
+              </div>
+            {/if}
+          </div>
+          <div class="flex justify-end mt-2">
             <button
-              class="btn btn-mid"
+              class="btn btn-sm btn-outline"
               on:click={() =>
                 goto(`/prompts/${project_id}/${task_id}/edit_base_prompt`)}
+              >Edit</button
             >
-              Edit
-            </button>
           </div>
-          {#if task?.instruction}
-            <Output raw_output={task.instruction} max_height="200px" />
-          {:else}
-            <div class="text-gray-400 text-sm italic">
-              No base prompt set. Click Edit to add one.
-            </div>
-          {/if}
-        </div>
+        </Collapse>
 
         <div>
-          <h2 class="text-lg font-medium text-gray-900 mb-2">Saved Prompts</h2>
+          <div class="text-lg font-medium mb-2">Saved Prompts</div>
           {#if !has_prompts}
             <div class="text-gray-500 rounded-lg border p-4 text-sm">
               No saved prompts yet. Create one by clicking "Create Prompt"
@@ -221,10 +246,8 @@
                         {getPromptType(prompt.id, prompt.generator_id)}
                       </td>
                       <td>
-                        <div class="max-w-[400px] truncate">
-                          {prompt.prompt.length > 200
-                            ? prompt.prompt.slice(0, 200) + "..."
-                            : prompt.prompt}
+                        <div class="truncate w-0 min-w-full">
+                          {prompt.prompt}
                         </div>
                       </td>
                       <td class="text-sm text-gray-500 whitespace-nowrap">
@@ -242,7 +265,7 @@
                               <button
                                 on:click={() =>
                                   goto(
-                                    `/optimize/${project_id}/${task_id}/create_run_config?prompt_id=${encodeURIComponent(prompt.id)}`,
+                                    `/optimize/${project_id}/${task_id}/run_config/create?prompt_id=${encodeURIComponent(prompt.id)}`,
                                   )}
                               >
                                 Create Run Configuration

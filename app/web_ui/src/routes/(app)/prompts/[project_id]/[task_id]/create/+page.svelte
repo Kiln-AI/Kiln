@@ -10,12 +10,13 @@
   import posthog from "posthog-js"
   import { onMount } from "svelte"
   import { prompt_generator_categories } from "../prompt_generators/prompt_generators"
+  import { generate_memorable_name } from "$lib/utils/name_generator"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
 
   let generator_name = ""
-  let prompt_name = ""
+  let prompt_name = generate_memorable_name()
   let prompt = ""
   let is_chain_of_thought = false
   let chain_of_thought_instructions =
@@ -119,7 +120,7 @@
       const from = $page.url.searchParams.get("from")
       if (from === "optimize") {
         goto(
-          `/optimize/${project_id}/${task_id}/create_run_config?prompt_id=${encodeURIComponent(`id::${data.id}`)}`,
+          `/optimize/${project_id}/${task_id}/run_config/create?prompt_id=${encodeURIComponent(`id::${data.id}`)}`,
         )
       } else {
         goto(`/prompts/${project_id}/${task_id}/saved/id::${data.id}`)
@@ -173,8 +174,8 @@
             label="Prompt Name"
             id="prompt_name"
             bind:value={prompt_name}
-            description="A short name to uniquely identify this prompt."
-            max_length={60}
+            description="A name to identify this prompt."
+            max_length={120}
           />
 
           <FormElement

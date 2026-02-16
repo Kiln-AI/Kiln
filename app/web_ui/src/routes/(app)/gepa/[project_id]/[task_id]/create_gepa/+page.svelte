@@ -18,6 +18,7 @@
     available_tools,
     get_task_composite_id,
     load_available_models,
+    load_available_tools,
     load_model_info,
     model_info,
   } from "$lib/stores"
@@ -268,6 +269,7 @@
     }
 
     if (kiln_copilot_connected && has_prompt_optimization_entitlement) {
+      load_available_tools(project_id)
       await Promise.all([load_model_info(), load_available_models()])
       await Promise.all([
         load_task(),
@@ -722,415 +724,421 @@
     : null
 </script>
 
-<AppPage
-  title="Create Optimized Prompt"
-  subtitle="Create a prompt optimized for your evals using training data."
-  sub_subtitle="Read the Docs"
-  sub_subtitle_link="https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer"
-  breadcrumbs={[
-    {
-      label: "Optimize",
-      href: `/optimize/${project_id}/${task_id}`,
-    },
-    {
-      label: "Prompts",
-      href: `/prompts/${project_id}/${task_id}`,
-    },
-  ]}
->
-  {#if loading}
-    <div class="w-full min-h-[50vh] flex justify-center items-center">
-      <div class="loading loading-spinner loading-lg"></div>
-    </div>
-  {:else if error}
-    <div class="w-full min-h-[50vh] flex justify-center items-center">
-      <div class="text-error text-sm">
-        {error.getMessage() || "An unknown error occurred"}
+<div class="max-w-[1400px]">
+  <AppPage
+    title="Create Optimized Prompt"
+    subtitle="Create a prompt optimized for your evals using training data."
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer"
+    breadcrumbs={[
+      {
+        label: "Optimize",
+        href: `/optimize/${project_id}/${task_id}`,
+      },
+      {
+        label: "Prompts",
+        href: `/prompts/${project_id}/${task_id}`,
+      },
+    ]}
+  >
+    {#if loading}
+      <div class="w-full min-h-[50vh] flex justify-center items-center">
+        <div class="loading loading-spinner loading-lg"></div>
       </div>
-    </div>
-  {:else if kiln_copilot_connected === false}
-    <CopilotRequiredCard />
-  {:else if has_prompt_optimization_entitlement === false}
-    <EntitlementRequiredCard feature_name="Prompt Optimization" />
-  {:else if created_job}
-    <Completed
-      title="Prompt Optimization Job Started"
-      subtitle="Optimization may take up to several hours depending on the number of evaluators and training examples."
-      button_text="View Optimizer Jobs"
-      link={`/gepa/${project_id}/${task_id}/gepa_job/${created_job.id}`}
-    />
-  {:else if current_task}
-    <FormContainer
-      submit_visible={true}
-      submit_label="Run Optimization"
-      {submit_disabled}
-      on:submit={create_gepa_job}
-      bind:error={create_job_error}
-      bind:submitting={create_job_loading}
-      compact_button={true}
-      warn_before_unload={selected_run_config !== null}
-    >
-      <div class="flex flex-col gap-8">
-        <div>
-          <div class="flex flex-col gap-1">
-            <div class="text-xl font-bold flex justify-between items-center">
-              <div class="text-xl font-bold">
-                Step 1: Select Run Configuration
-              </div>
-              <span class="font-normal">
-                <InfoTooltip
-                  tooltip_text="Kiln Prompt Optimization only supports OpenRouter, OpenAI, Gemini, and Anthropic providers."
-                />
-              </span>
-            </div>
-            <div class="text-xs text-gray-500 font-medium">
-              The task run configuration to use during optimization.
-            </div>
-          </div>
-          <SavedRunConfigurationsDropdown
-            title=""
-            {project_id}
-            {current_task}
-            bind:selected_run_config_id={target_run_config_id}
-            run_page={false}
-            auto_select_default={false}
-          />
-
-          {#if selected_run_config}
-            {#if run_config_validation_status === "checking"}
-              <div class="flex items-center gap-2 text-sm text-gray-500 mt-4">
-                <span class="loading loading-spinner loading-xs"></span>
-                <span>Validating run configuration...</span>
-              </div>
-            {:else if run_config_validation_status === "invalid"}
-              <div class="mt-3">
-                <Warning warning_color="error" outline={true}>
-                  <div>
-                    <div class="text-error font-medium">
-                      {run_config_validation_message}
-                    </div>
-                    {#if run_config_blocking_reason !== "other"}
-                      <div class="mt-2 text-gray-600">
-                        {#if run_config_blocking_reason === "has_tools"}
-                          Please select a different run configuration or
-                          <button
-                            type="button"
-                            class="link underline"
-                            on:click={() =>
-                              create_new_run_config_dialog?.show()}
-                          >
-                            create a new run config
-                          </button>
-                          without tools configured.
-                        {:else if run_config_blocking_reason === "unsupported_model"}
-                          Supported providers are OpenRouter, OpenAI, Gemini,
-                          and Anthropic. Please select a different run
-                          configuration or
-                          <button
-                            type="button"
-                            class="link underline"
-                            on:click={() =>
-                              create_new_run_config_dialog?.show()}
-                          >
-                            create a new run config
-                          </button>
-                          with a supported provider.
-                        {/if}
-                      </div>
-                    {/if}
-                  </div>
-                </Warning>
-              </div>
-            {:else if run_config_properties}
-              <div class="mt-6 flex flex-row gap-6">
-                <div class="flex-1 min-w-0">
-                  <div class="text-md font-semibold text-left">
-                    Run Configuration Prompt
-                  </div>
-                  <div class="text-xs text-gray-500 mt-1 mb-1">
-                    Your selected run configuration's prompt. Will be used as
-                    the starting point for optimization.
-                  </div>
-                  <Output raw_output={prompt_text || ""} />
-                </div>
-                <div class="flex-shrink-0 flex-row">
-                  <div class="text-md font-semibold text-left mb-4">
-                    Run Configuration Details
-                  </div>
-                  <PropertyList properties={run_config_properties} />
-                </div>
-              </div>
-            {/if}
-          {/if}
+    {:else if error}
+      <div class="w-full min-h-[50vh] flex justify-center items-center">
+        <div class="text-error text-sm">
+          {error.getMessage() || "An unknown error occurred"}
         </div>
-
-        {#if review_visible && selected_run_config}
+      </div>
+    {:else if kiln_copilot_connected === false}
+      <CopilotRequiredCard />
+    {:else if has_prompt_optimization_entitlement === false}
+      <EntitlementRequiredCard feature_name="Prompt Optimization" />
+    {:else if created_job}
+      <Completed
+        title="Prompt Optimization Job Started"
+        subtitle="Optimization may take up to several hours depending on the number of evaluators and training examples."
+        button_text="View Optimizer Jobs"
+        link={`/gepa/${project_id}/${task_id}/gepa_job/${created_job.id}`}
+      />
+    {:else if current_task}
+      <FormContainer
+        submit_visible={true}
+        submit_label="Run Optimization"
+        {submit_disabled}
+        on:submit={create_gepa_job}
+        bind:error={create_job_error}
+        bind:submitting={create_job_loading}
+        compact_button={true}
+        warn_before_unload={selected_run_config !== null}
+      >
+        <div class="flex flex-col gap-8">
           <div>
-            <div>
-              <div class="flex flex-col gap-1">
-                <div class="text-xl font-bold">Step 2: Select Evals</div>
-                <div class="text-xs text-gray-500 font-medium">
-                  Your prompt will be optimized to maximize performance across
-                  these evaluators using their tagged training data.
+            <div class="flex flex-col gap-1">
+              <div class="text-xl font-bold flex justify-between items-center">
+                <div class="text-xl font-bold">
+                  Step 1: Select Run Configuration
                 </div>
+                <span class="font-normal">
+                  <InfoTooltip
+                    tooltip_text="Kiln Prompt Optimization only supports OpenRouter, OpenAI, Gemini, and Anthropic providers."
+                  />
+                </span>
+              </div>
+              <div class="text-xs text-gray-500 font-medium">
+                The task run configuration to use during optimization.
               </div>
             </div>
+            <SavedRunConfigurationsDropdown
+              title=""
+              {project_id}
+              {current_task}
+              bind:selected_run_config_id={target_run_config_id}
+              run_page={false}
+              auto_select_default={false}
+            />
 
-            <div>
-              <div
-                class="text-sm font-medium text-gray-700 mt-2 mb-2 flex items-center justify-between"
-              >
-                <div class="flex items-center gap-2">
-                  {#if evals_with_configs.length > 0}
-                    <span
-                      >{selected_eval_ids.size} of {evals_with_configs.length} selected</span
-                    >
-                  {/if}
+            {#if selected_run_config}
+              {#if run_config_validation_status === "checking"}
+                <div class="flex items-center gap-2 text-sm text-gray-500 mt-4">
+                  <span class="loading loading-spinner loading-xs"></span>
+                  <span>Validating run configuration...</span>
                 </div>
-                {#if evals_with_configs.length > 0}
-                  <button
-                    type="button"
-                    class="btn btn-xs btn-outline"
-                    on:click={refresh_evaluators}
-                    disabled={is_validating}
-                  >
-                    {#if is_validating}
-                      <span class="loading loading-spinner loading-xs"></span>
-                    {:else}
-                      ↻
-                    {/if}
-                    Refresh
-                  </button>
-                {/if}
-              </div>
-
-              {#if evals_loading}
-                <div class="flex justify-center items-center py-8">
-                  <div class="loading loading-spinner loading-md"></div>
-                </div>
-              {:else if evals_error}
-                <div class="bg-error/10 border border-error/20 rounded-lg p-4">
-                  <div class="text-error text-sm">
-                    {evals_error.getMessage() || "Failed to load Evals"}
-                  </div>
-                </div>
-              {:else if evals_with_configs.length === 0}
-                <div
-                  class="bg-base-200 rounded-lg p-4 text-center text-gray-500"
-                >
-                  No evals configured for this task.
-                </div>
-              {:else}
-                <div
-                  class="overflow-x-auto overflow-y-hidden rounded-lg border"
-                >
-                  <table class="table">
-                    <thead>
-                      <tr>
-                        <th style="width: 40px;"></th>
-                        <th
-                          on:click={() => handleEvalSort("name")}
-                          class="hover:bg-base-200 cursor-pointer"
-                        >
-                          Name
-                          <span class="inline-block w-3 text-center">
-                            {evalSortColumn === "name"
-                              ? evalSortDirection === "asc"
-                                ? "▲"
-                                : "▼"
-                              : "\u200B"}
-                          </span>
-                        </th>
-                        <th>Judge</th>
-                        <th>Training Dataset</th>
-                        <th
-                          on:click={() => handleEvalSort("status")}
-                          class="hover:bg-base-200 cursor-pointer"
-                        >
-                          Status
-                          <span class="inline-block w-3 text-center">
-                            {evalSortColumn === "status"
-                              ? evalSortDirection === "asc"
-                                ? "▲"
-                                : "▼"
-                              : "\u200B"}
-                          </span>
-                        </th>
-                        <th
-                          on:click={() => handleEvalSort("created_at")}
-                          class="hover:bg-base-200 cursor-pointer"
-                        >
-                          Created
-                          <span class="inline-block w-3 text-center">
-                            {evalSortColumn === "created_at"
-                              ? evalSortDirection === "asc"
-                                ? "▲"
-                                : "▼"
-                              : "\u200B"}
-                          </span>
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {#each sorted_evals_with_configs as { eval: evalItem, current_config, train_set_size, validation_status, judge_error, train_error, other_error }}
-                        {@const spec_id = "legacy"}
-                        {@const eval_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}`}
-                        {@const is_selected = evalItem.id
-                          ? selected_eval_ids.has(evalItem.id)
-                          : false}
-                        <tr
-                          class="hover:bg-base-200 cursor-pointer {!is_selected
-                            ? 'opacity-70 text-base-content/70'
-                            : ''}"
-                          on:click={() =>
-                            eval_url && window.open(eval_url, "_blank")}
-                        >
-                          <td on:click|stopPropagation>
-                            <input
-                              type="checkbox"
-                              class="checkbox checkbox-sm"
-                              checked={is_selected}
-                              disabled={validation_status === "invalid"}
-                              on:change={(e) => {
-                                if (evalItem.id) {
-                                  const newSet = new Set(selected_eval_ids)
-                                  if (e.currentTarget.checked) {
-                                    newSet.add(evalItem.id)
-                                  } else {
-                                    newSet.delete(evalItem.id)
-                                  }
-                                  selected_eval_ids = newSet
-                                }
-                              }}
-                            />
-                          </td>
-                          <td class="font-medium">
-                            {evalItem.name}
-                          </td>
-                          <td class="text-sm">
-                            {#if current_config}
-                              <div class="text-gray-600">
-                                {current_config.name}
-                              </div>
-                              <div class="text-xs text-gray-500">
-                                {getDetailedModelNameFromParts(
-                                  current_config.model_name,
-                                  current_config.model_provider,
-                                  $model_info,
-                                )}
-                              </div>
-                            {:else}
-                              <span class="text-gray-400">—</span>
-                            {/if}
-                            {#if judge_error}
-                              <div class="text-xs text-error mt-1">
-                                {judge_error}
-                              </div>
-                            {/if}
-                          </td>
-                          <td
-                            class="text-sm whitespace-nowrap"
-                            on:click|stopPropagation
-                          >
-                            {#if train_set_size !== null}
-                              {@const train_tag = tagFromFilterId(
-                                evalItem.train_set_filter_id || "",
-                              )}
-                              {@const dataset_link = train_tag
-                                ? `/dataset/${project_id}/${task_id}?tags=${train_tag}`
-                                : undefined}
-                              {#if dataset_link}
-                                <a
-                                  href={dataset_link}
-                                  target="_blank"
-                                  class="link text-gray-600 hover:text-secondary"
-                                >
-                                  {train_set_size}
-                                  {train_set_size === 1 ? "item" : "items"}
-                                </a>
-                              {:else}
-                                <span class="text-gray-500">
-                                  {train_set_size}
-                                  {train_set_size === 1 ? "item" : "items"}
-                                </span>
-                              {/if}
-                            {/if}
-                            {#if train_error}
-                              <div class="text-xs text-error mt-1">
-                                {train_error}
-                              </div>
-                            {/if}
-                          </td>
-                          <td on:click|stopPropagation>
-                            {#if validation_status === "checking"}
-                              <span class="loading loading-spinner loading-xs"
-                              ></span>
-                            {:else if validation_status === "valid"}
-                              <div
-                                class="badge badge-outline badge-sm badge-success"
-                              >
-                                Ready
-                              </div>
-                            {:else if validation_status === "invalid"}
-                              <div
-                                class="badge badge-outline badge-sm badge-error"
-                              >
-                                Not Ready
-                              </div>
-                              {#if other_error}
-                                <div class="text-xs text-error mt-1">
-                                  {other_error}
-                                </div>
-                              {/if}
-                            {/if}
-                          </td>
-                          <td class="text-sm text-gray-500 whitespace-nowrap">
-                            {formatDate(evalItem.created_at || undefined)}
-                          </td>
-                        </tr>
-                      {/each}
-                    </tbody>
-                  </table>
-                </div>
-              {/if}
-
-              {#if selected_eval_ids.size === 0}
-                <div class="mt-4 text-sm text-error text-end">
-                  No evaluators selected. Please select at least one evaluator.
-                </div>
-              {:else if selected_eval_ids.size < evals_with_configs.length}
-                <div class="mt-4 flex justify-end">
-                  <Warning
-                    warning_color="warning"
-                    warning_icon="exclaim"
-                    tight={true}
-                  >
-                    <div class="text-sm text-gray-600">
-                      Some evaluators are not selected. Your prompt will not be
-                      optimized for these evaluators.
+              {:else if run_config_validation_status === "invalid"}
+                <div class="mt-3">
+                  <Warning warning_color="error" outline={true}>
+                    <div>
+                      <div class="text-error font-medium">
+                        {run_config_validation_message}
+                      </div>
+                      {#if run_config_blocking_reason !== "other"}
+                        <div class="mt-2 text-gray-600">
+                          {#if run_config_blocking_reason === "has_tools"}
+                            Please select a different run configuration or
+                            <button
+                              type="button"
+                              class="link underline"
+                              on:click={() =>
+                                create_new_run_config_dialog?.show()}
+                            >
+                              create a new run config
+                            </button>
+                            without tools configured.
+                          {:else if run_config_blocking_reason === "unsupported_model"}
+                            Supported providers are OpenRouter, OpenAI, Gemini,
+                            and Anthropic. Please select a different run
+                            configuration or
+                            <button
+                              type="button"
+                              class="link underline"
+                              on:click={() =>
+                                create_new_run_config_dialog?.show()}
+                            >
+                              create a new run config
+                            </button>
+                            with a supported provider.
+                          {/if}
+                        </div>
+                      {/if}
                     </div>
                   </Warning>
                 </div>
+              {:else if run_config_properties}
+                <div class="mt-6 flex flex-col md:flex-row gap-6">
+                  <div class="flex-1 min-w-0">
+                    <div class="text-md font-semibold text-left">
+                      Run Configuration Prompt
+                    </div>
+                    <div class="text-xs text-gray-500 mt-1 mb-1">
+                      Your selected run configuration's prompt. Will be used as
+                      the starting point for optimization.
+                    </div>
+                    <Output raw_output={prompt_text || ""} />
+                  </div>
+                  <div class="flex-shrink-0 flex-row">
+                    <div class="text-md font-semibold text-left mb-4">
+                      Run Configuration Details
+                    </div>
+                    <PropertyList properties={run_config_properties} />
+                  </div>
+                </div>
               {/if}
-            </div>
+            {/if}
           </div>
-        {/if}
-      </div>
-    </FormContainer>
-  {/if}
-</AppPage>
 
-<CreateNewRunConfigDialog
-  bind:this={create_new_run_config_dialog}
-  {project_id}
-  task={current_task}
-  new_run_config_created={(run_config) => {
-    target_run_config_id = run_config.id || null
-  }}
-  hide_tools_selector={true}
-  on:close={() => {
-    if (target_run_config_id === "__create_new_run_config__") {
-      target_run_config_id = null
-    }
-  }}
-/>
+          {#if review_visible && selected_run_config}
+            <div>
+              <div>
+                <div class="flex flex-col gap-1">
+                  <div class="text-xl font-bold">Step 2: Select Evals</div>
+                  <div class="text-xs text-gray-500 font-medium">
+                    Your prompt will be optimized to maximize performance across
+                    these evaluators using their tagged training data.
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div
+                  class="text-sm font-medium text-gray-700 mt-2 mb-2 flex items-center justify-between"
+                >
+                  <div class="flex items-center gap-2">
+                    {#if evals_with_configs.length > 0}
+                      <span
+                        >{selected_eval_ids.size} of {evals_with_configs.length}
+                        selected</span
+                      >
+                    {/if}
+                  </div>
+                  {#if evals_with_configs.length > 0}
+                    <button
+                      type="button"
+                      class="btn btn-xs btn-outline"
+                      on:click={refresh_evaluators}
+                      disabled={is_validating}
+                    >
+                      {#if is_validating}
+                        <span class="loading loading-spinner loading-xs"></span>
+                      {:else}
+                        ↻
+                      {/if}
+                      Refresh
+                    </button>
+                  {/if}
+                </div>
+
+                {#if evals_loading}
+                  <div class="flex justify-center items-center py-8">
+                    <div class="loading loading-spinner loading-md"></div>
+                  </div>
+                {:else if evals_error}
+                  <div
+                    class="bg-error/10 border border-error/20 rounded-lg p-4"
+                  >
+                    <div class="text-error text-sm">
+                      {evals_error.getMessage() || "Failed to load Evals"}
+                    </div>
+                  </div>
+                {:else if evals_with_configs.length === 0}
+                  <div
+                    class="bg-base-200 rounded-lg p-4 text-center text-gray-500"
+                  >
+                    No evals configured for this task.
+                  </div>
+                {:else}
+                  <div
+                    class="overflow-x-auto overflow-y-hidden rounded-lg border"
+                  >
+                    <table class="table">
+                      <thead>
+                        <tr>
+                          <th style="width: 40px;"></th>
+                          <th
+                            on:click={() => handleEvalSort("name")}
+                            class="hover:bg-base-200 cursor-pointer"
+                          >
+                            Name
+                            <span class="inline-block w-3 text-center">
+                              {evalSortColumn === "name"
+                                ? evalSortDirection === "asc"
+                                  ? "▲"
+                                  : "▼"
+                                : "\u200B"}
+                            </span>
+                          </th>
+                          <th>Judge</th>
+                          <th>Training Dataset</th>
+                          <th
+                            on:click={() => handleEvalSort("status")}
+                            class="hover:bg-base-200 cursor-pointer"
+                          >
+                            Status
+                            <span class="inline-block w-3 text-center">
+                              {evalSortColumn === "status"
+                                ? evalSortDirection === "asc"
+                                  ? "▲"
+                                  : "▼"
+                                : "\u200B"}
+                            </span>
+                          </th>
+                          <th
+                            on:click={() => handleEvalSort("created_at")}
+                            class="hover:bg-base-200 cursor-pointer"
+                          >
+                            Created
+                            <span class="inline-block w-3 text-center">
+                              {evalSortColumn === "created_at"
+                                ? evalSortDirection === "asc"
+                                  ? "▲"
+                                  : "▼"
+                                : "\u200B"}
+                            </span>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {#each sorted_evals_with_configs as { eval: evalItem, current_config, train_set_size, validation_status, judge_error, train_error, other_error }}
+                          {@const spec_id = "legacy"}
+                          {@const eval_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}`}
+                          {@const is_selected = evalItem.id
+                            ? selected_eval_ids.has(evalItem.id)
+                            : false}
+                          <tr
+                            class="hover:bg-base-200 cursor-pointer {!is_selected
+                              ? 'opacity-70 text-base-content/70'
+                              : ''}"
+                            on:click={() =>
+                              eval_url && window.open(eval_url, "_blank")}
+                          >
+                            <td on:click|stopPropagation>
+                              <input
+                                type="checkbox"
+                                class="checkbox checkbox-sm"
+                                checked={is_selected}
+                                disabled={validation_status === "invalid"}
+                                on:change={(e) => {
+                                  if (evalItem.id) {
+                                    const newSet = new Set(selected_eval_ids)
+                                    if (e.currentTarget.checked) {
+                                      newSet.add(evalItem.id)
+                                    } else {
+                                      newSet.delete(evalItem.id)
+                                    }
+                                    selected_eval_ids = newSet
+                                  }
+                                }}
+                              />
+                            </td>
+                            <td class="font-medium">
+                              {evalItem.name}
+                            </td>
+                            <td class="text-sm">
+                              {#if current_config}
+                                <div class="text-gray-600">
+                                  {current_config.name}
+                                </div>
+                                <div class="text-xs text-gray-500">
+                                  {getDetailedModelNameFromParts(
+                                    current_config.model_name,
+                                    current_config.model_provider,
+                                    $model_info,
+                                  )}
+                                </div>
+                              {:else}
+                                <span class="text-gray-400">—</span>
+                              {/if}
+                              {#if judge_error}
+                                <div class="text-xs text-error mt-1">
+                                  {judge_error}
+                                </div>
+                              {/if}
+                            </td>
+                            <td
+                              class="text-sm whitespace-nowrap"
+                              on:click|stopPropagation
+                            >
+                              {#if train_set_size !== null}
+                                {@const train_tag = tagFromFilterId(
+                                  evalItem.train_set_filter_id || "",
+                                )}
+                                {@const dataset_link = train_tag
+                                  ? `/dataset/${project_id}/${task_id}?tags=${train_tag}`
+                                  : undefined}
+                                {#if dataset_link}
+                                  <a
+                                    href={dataset_link}
+                                    target="_blank"
+                                    class="link text-gray-600 hover:text-secondary"
+                                  >
+                                    {train_set_size}
+                                    {train_set_size === 1 ? "item" : "items"}
+                                  </a>
+                                {:else}
+                                  <span class="text-gray-500">
+                                    {train_set_size}
+                                    {train_set_size === 1 ? "item" : "items"}
+                                  </span>
+                                {/if}
+                              {/if}
+                              {#if train_error}
+                                <div class="text-xs text-error mt-1">
+                                  {train_error}
+                                </div>
+                              {/if}
+                            </td>
+                            <td on:click|stopPropagation>
+                              {#if validation_status === "checking"}
+                                <span class="loading loading-spinner loading-xs"
+                                ></span>
+                              {:else if validation_status === "valid"}
+                                <div
+                                  class="badge badge-outline badge-sm badge-success"
+                                >
+                                  Ready
+                                </div>
+                              {:else if validation_status === "invalid"}
+                                <div
+                                  class="badge badge-outline badge-sm badge-error"
+                                >
+                                  Not Ready
+                                </div>
+                                {#if other_error}
+                                  <div class="text-xs text-error mt-1">
+                                    {other_error}
+                                  </div>
+                                {/if}
+                              {/if}
+                            </td>
+                            <td class="text-sm text-gray-500 whitespace-nowrap">
+                              {formatDate(evalItem.created_at || undefined)}
+                            </td>
+                          </tr>
+                        {/each}
+                      </tbody>
+                    </table>
+                  </div>
+                {/if}
+
+                {#if selected_eval_ids.size === 0}
+                  <div class="mt-4 text-sm text-error text-end">
+                    No evaluators selected. Please select at least one
+                    evaluator.
+                  </div>
+                {:else if selected_eval_ids.size < evals_with_configs.length}
+                  <div class="mt-4 flex justify-end">
+                    <Warning
+                      warning_color="warning"
+                      warning_icon="exclaim"
+                      tight={true}
+                    >
+                      <div class="text-sm text-gray-600">
+                        Some evaluators are not selected. Your prompt will not
+                        be optimized for these evaluators.
+                      </div>
+                    </Warning>
+                  </div>
+                {/if}
+              </div>
+            </div>
+          {/if}
+        </div>
+      </FormContainer>
+    {/if}
+  </AppPage>
+
+  <CreateNewRunConfigDialog
+    bind:this={create_new_run_config_dialog}
+    {project_id}
+    task={current_task}
+    new_run_config_created={(run_config) => {
+      target_run_config_id = run_config.id || null
+    }}
+    hide_tools_selector={true}
+    on:close={() => {
+      if (target_run_config_id === "__create_new_run_config__") {
+        target_run_config_id = null
+      }
+    }}
+  />
+</div>

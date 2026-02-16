@@ -12,6 +12,7 @@
     | ((run_config: TaskRunConfig) => void)
     | null = null
   export let hide_tools_selector: boolean = false
+  export let model: string | undefined = undefined
 
   type DialogMode = "create" | "clone"
   let mode: DialogMode = "create"
@@ -85,6 +86,7 @@
             hide_create_kiln_task_tool_button: true,
           }}
           {hide_tools_selector}
+          {model}
           selected_run_config_id={source_run_config?.id || null}
         />
       {/if}
