@@ -160,48 +160,42 @@
             </div>
           </div>
         </Banner>
-        <div>
-          <div class="flex flex-row items-center justify-between mb-4">
-            <div class="text-lg font-medium">Base Task Instructions</div>
+        <Collapse
+          title="Base Task Instructions"
+          description="The base prompt and thinking instructions used by prompt generators."
+        >
+          <div>
+            <div class="text-sm font-medium mb-1">Prompt</div>
+            {#if task?.instruction}
+              <Output raw_output={task.instruction} background_color="white" />
+            {:else}
+              <div class="text-gray-400 text-xs italic">
+                No base prompt set. Click Edit to add one.
+              </div>
+            {/if}
+          </div>
+          <div>
+            <div class="text-sm font-medium mb-1">Thinking Instructions</div>
+            {#if task?.thinking_instruction}
+              <Output
+                raw_output={task.thinking_instruction}
+                background_color="white"
+              />
+            {:else}
+              <div class="text-gray-400 text-xs italic">
+                No thinking instructions set. Click Edit to add one.
+              </div>
+            {/if}
+          </div>
+          <div class="flex justify-end mt-2">
             <button
-              class="btn btn-mid"
+              class="btn btn-sm btn-outline"
               on:click={() =>
                 goto(`/prompts/${project_id}/${task_id}/edit_base_prompt`)}
               >Edit</button
             >
           </div>
-          <div class="flex items-center justify-between mb-2">
-            <div>
-              <div class="text-sm font-medium">Base Prompt</div>
-              <p class="text-xs text-gray-500">
-                The base prompt used by prompt generators (Few Shot, Chain of
-                Thought, etc.).
-              </p>
-            </div>
-          </div>
-          {#if task?.instruction}
-            <Output raw_output={task.instruction} />
-          {:else}
-            <div class="text-gray-400 text-sm italic">
-              No base prompt set. Click Edit to add one.
-            </div>
-          {/if}
-          {#if task?.thinking_instruction}
-            <div>
-              <div class="flex items-center justify-between mb-2 mt-4">
-                <div>
-                  <div class="text-sm font-medium">Thinking Instructions</div>
-                  <p class="text-xs text-gray-500">
-                    Instructions for how the model should 'think' about the task
-                    prior to answering. Used for chain of thought style
-                    prompting.
-                  </p>
-                </div>
-              </div>
-              <Output raw_output={task.thinking_instruction} />
-            </div>
-          {/if}
-        </div>
+        </Collapse>
 
         <div>
           <div class="text-lg font-medium mb-2">Saved Prompts</div>
@@ -252,10 +246,8 @@
                         {getPromptType(prompt.id, prompt.generator_id)}
                       </td>
                       <td>
-                        <div class="max-w-[400px] truncate">
-                          {prompt.prompt.length > 200
-                            ? prompt.prompt.slice(0, 200) + "..."
-                            : prompt.prompt}
+                        <div class="truncate w-0 min-w-full">
+                          {prompt.prompt}
                         </div>
                       </td>
                       <td class="text-sm text-gray-500 whitespace-nowrap">

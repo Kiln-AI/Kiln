@@ -89,10 +89,10 @@
 
   onMount(async () => {
     loading = true
+    load_available_tools(project_id)
     try {
       await Promise.all([
         load_model_info(),
-        load_available_tools(project_id),
         load_task_prompts(project_id, task_id),
 
         // some run configs are created server-side as a result of async jobs
