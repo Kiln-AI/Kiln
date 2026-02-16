@@ -51,6 +51,7 @@
   // Model-specific suggested run config, such as fine-tuned models. If a model like that is selected, this will be set to the run config ID.
   export let selected_model_specific_run_config_id: string | null = null
   export let run_config_name: string = generate_memorable_name()
+  export let show_name_field: boolean = true
 
   export let model: string = $ui_state.selected_model
   export let prompt_method: string = "simple_prompt_builder"
@@ -361,12 +362,14 @@
 </script>
 
 <div class="w-full flex flex-col gap-4">
-  <FormElement
-    label="Name"
-    id="run_config_name"
-    bind:value={run_config_name}
-    max_length={120}
-  />
+  {#if show_name_field}
+    <FormElement
+      label="Name"
+      id="run_config_name"
+      bind:value={run_config_name}
+      max_length={120}
+    />
+  {/if}
   {#if !hide_model_selector}
     <AvailableModelsDropdown
       task_id={current_task?.id ?? null}

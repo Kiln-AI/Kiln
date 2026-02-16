@@ -543,6 +543,18 @@
     create_run_config_model_id = `${connectedProvider.name}/${model.name}`
     create_run_config_dialog?.show()
   }
+
+  function tryModel(model: Model) {
+    const connectedProvider = findFirstConnectedProvider(model)
+    if (!connectedProvider) {
+      connect_provider_model = model
+      connect_provider_dialog?.show()
+      return
+    }
+    const urlParams = new URLSearchParams()
+    urlParams.set("model", `${connectedProvider.name}/${model.name}`)
+    goto(`/run?${urlParams.toString()}`)
+  }
 </script>
 
 <svelte:head>
@@ -834,9 +846,26 @@
                 <div class="p-6 border-b border-gray-100">
                   <div class="flex items-start justify-between">
                     <div class="flex-1">
-                      <h3 class="text-lg font-semibold text-gray-900 break-all">
-                        {model.friendly_name}
-                      </h3>
+                      <div
+                        class="flex flex-row items-center justify-between gap-1"
+                      >
+                        <h3
+                          class="text-lg font-semibold text-gray-900 break-all"
+                        >
+                          {model.friendly_name}
+                        </h3>
+                        <button
+                          class="btn btn-xs"
+                          tabindex="0"
+                          on:click|stopPropagation={() => tryModel(model)}
+                          on:keydown|stopPropagation={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault()
+                              tryModel(model)
+                            }
+                          }}>Try</button
+                        >
+                      </div>
                       {#if model.editorial_notes}
                         <p class="text-sm text-gray-500 mt-1">
                           {model.editorial_notes}

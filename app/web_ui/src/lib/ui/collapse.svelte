@@ -6,6 +6,8 @@
   export let badge_position: "left" | "right" = "left"
   export let badge_data_tip: string | null = null
   export let open: boolean = false
+  export let button_label: string | null = null
+  export let button_href: string | null = null
 </script>
 
 <div
@@ -35,6 +37,16 @@
       {/if}
       {#if badge_position === "left"}
         {title}
+      {/if}
+      {#if button_label && button_href}
+        <div class="flex-1 flex justify-end mr-6">
+          <a
+            href={button_href}
+            class="btn btn-sm btn-outline relative z-10 pointer-events-auto"
+          >
+            {button_label}
+          </a>
+        </div>
       {/if}
     </div>
     {#if description}
