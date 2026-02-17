@@ -15,6 +15,7 @@
         label: "Contact Sales",
         href: "https://kiln.tech/contact_sales",
         is_primary: true,
+        new_tab: true,
       },
     ]}
   >
