@@ -6,7 +6,6 @@
   import { formatDate } from "$lib/utils/formatters"
   import { prompt_link } from "$lib/utils/link_builder"
   import TableButton from "../../../generate/[project_id]/[task_id]/table_button.svelte"
-  import Output from "$lib/ui/output.svelte"
   import {
     load_task_prompts,
     prompts_by_task_composite_id,
@@ -16,7 +15,6 @@
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { getPromptType } from "./prompt_generators/prompt_generators"
   import Banner from "$lib/ui/banner.svelte"
-  import Collapse from "$lib/ui/collapse.svelte"
   import Float from "$lib/ui/float.svelte"
 
   $: project_id = $page.params.project_id!
@@ -148,55 +146,52 @@
         prompts.
       </div>
     {:else}
-      <div class="flex flex-col gap-8">
+      <div class="flex flex-col gap-6">
         <Banner
           title="Automatically Optimize Your Prompt"
           description="Use Kiln's state-of-the-art prompt optimizer to automatically improve your prompt."
           button_label="Create Optimized Prompt"
           href={`/prompt_optimization/${project_id}/${task_id}/create_prompt_optimization_job`}
         >
-          <div slot="icon" class="p-4 border rounded-lg">
+          <div slot="icon" class="p-4 border rounded-lg bg-base-100">
             <div class="h-12 w-12">
               <img src="/images/animated_logo.svg" alt="Kiln Copilot" />
             </div>
           </div>
         </Banner>
-        <Collapse
-          title="Base Task Instructions"
-          description="The base prompt and thinking instructions used by prompt generators."
+        <a
+          class="group text-left"
+          href={`/prompts/${project_id}/${task_id}/edit_base_prompt`}
         >
-          <div>
-            <div class="text-sm font-medium mb-1">Prompt</div>
-            {#if task?.instruction}
-              <Output raw_output={task.instruction} background_color="white" />
-            {:else}
-              <div class="text-gray-400 text-xs italic">
-                No base prompt set. Click Edit to add one.
+          <div
+            class="bg-base-200 px-4 py-2 rounded-lg transition-transform duration-150 group-hover:-translate-y-0.5"
+          >
+            <div class="flex flex-row gap-4">
+              <div class="flex-grow">
+                <div class="text-sm font-medium">Base Task Prompt</div>
+                <div class="text-xs text-gray-500 mb-1 font-medium">
+                  The prompt used by prompt generators.
+                </div>
               </div>
-            {/if}
-          </div>
-          <div>
-            <div class="text-sm font-medium mb-1">Thinking Instructions</div>
-            {#if task?.thinking_instruction}
-              <Output
-                raw_output={task.thinking_instruction}
-                background_color="white"
-              />
-            {:else}
-              <div class="text-gray-400 text-xs italic">
-                No thinking instructions set. Click Edit to add one.
+              <div class="btn btn-sm btn-outline group-hover:btn-active">
+                View &amp; Edit
               </div>
-            {/if}
+            </div>
+            <div>
+              {#if task?.instruction}
+                <div
+                  class="my-1 font-mono truncate w-full bg-base-100 px-2 py-1 rounded-lg text-xs font-light"
+                >
+                  {task.instruction}
+                </div>
+              {:else}
+                <div class="text-gray-500 text-xs italic">
+                  No base prompt set. Click to add one.
+                </div>
+              {/if}
+            </div>
           </div>
-          <div class="flex justify-end mt-2">
-            <button
-              class="btn btn-sm btn-outline"
-              on:click={() =>
-                goto(`/prompts/${project_id}/${task_id}/edit_base_prompt`)}
-              >Edit</button
-            >
-          </div>
-        </Collapse>
+        </a>
 
         <div>
           <div class="text-lg font-medium mb-2">Saved Prompts</div>
