@@ -17,6 +17,7 @@
   import { getPromptType } from "./prompt_generators/prompt_generators"
   import Banner from "$lib/ui/banner.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
+  import Float from "$lib/ui/float.svelte"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -205,7 +206,7 @@
               above.
             </div>
           {:else}
-            <div class="overflow-x-auto rounded-lg border">
+            <div class="overflow-x-auto rounded-lg border overflow-y-hidden">
               <table class="table">
                 <thead>
                   <tr>
@@ -256,30 +257,32 @@
                       <td class="p-0" on:click|stopPropagation>
                         <div class="dropdown dropdown-end dropdown-hover">
                           <TableButton />
-                          <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-                          <ul
-                            tabindex="0"
-                            class="dropdown-content menu bg-base-100 rounded-box z-[1] w-56 p-2 shadow"
-                          >
-                            <li>
-                              <button
-                                on:click={() =>
-                                  goto(
-                                    `/optimize/${project_id}/${task_id}/run_config/create?prompt_id=${encodeURIComponent(prompt.id)}`,
-                                  )}
-                              >
-                                Create Run Configuration
-                              </button>
-                            </li>
-                            <li>
-                              <button
-                                on:click={() =>
-                                  handleSetBasePrompt(prompt.prompt)}
-                              >
-                                Set as Base Prompt
-                              </button>
-                            </li>
-                          </ul>
+                          <Float>
+                            <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+                            <ul
+                              tabindex="0"
+                              class="dropdown-content menu bg-base-100 rounded-box z-[1] w-56 p-2 shadow"
+                            >
+                              <li>
+                                <button
+                                  on:click={() =>
+                                    goto(
+                                      `/optimize/${project_id}/${task_id}/run_config/create?prompt_id=${encodeURIComponent(prompt.id)}`,
+                                    )}
+                                >
+                                  Create Run Configuration
+                                </button>
+                              </li>
+                              <li>
+                                <button
+                                  on:click={() =>
+                                    handleSetBasePrompt(prompt.prompt)}
+                                >
+                                  Set as Base Prompt
+                                </button>
+                              </li>
+                            </ul>
+                          </Float>
                         </div>
                       </td>
                     </tr>
