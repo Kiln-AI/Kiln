@@ -205,7 +205,7 @@
               above.
             </div>
           {:else}
-            <div class="overflow-x-auto overflow-y-hidden rounded-lg border">
+            <div class="overflow-x-auto rounded-lg border">
               <table class="table">
                 <thead>
                   <tr>
