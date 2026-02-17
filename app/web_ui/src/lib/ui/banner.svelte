@@ -5,7 +5,7 @@
   export let button_label: string
 </script>
 
-<a {href} class="group block mb-4">
+<a {href} class="group block">
   <div class="card border p-3 rounded-md hover:bg-gray-50">
     <div class="flex flex-row gap-4 items-center">
       <slot name="icon" />
