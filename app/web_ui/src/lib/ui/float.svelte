@@ -67,6 +67,10 @@
   })
 </script>
 
-<div bind:this={contentElement} class="fixed z-50" {role}>
+<div
+  bind:this={contentElement}
+  class="z-50 {strategy === 'fixed' ? 'fixed' : 'absolute'}"
+  {role}
+>
   <slot />
 </div>
