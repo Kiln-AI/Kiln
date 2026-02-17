@@ -848,9 +848,7 @@
               {:else if run_config_properties}
                 <div class="mt-6 flex flex-col md:flex-row gap-6">
                   <div class="flex-1 min-w-0">
-                    <div class="text-md font-semibold text-left">
-                      Prompt
-                    </div>
+                    <div class="text-md font-semibold text-left">Prompt</div>
                     <div class="text-xs text-gray-500 font-medium mt-1 mb-1">
                       Will be used as the starting point for optimization.
                     </div>
@@ -871,7 +869,9 @@
             <div>
               <div>
                 <div class="flex flex-col gap-1">
-                  <div class="text-xl font-bold flex justify-between items-center">
+                  <div
+                    class="text-xl font-bold flex justify-between items-center"
+                  >
                     <div>Step 2: Select Optimization Evals</div>
                     <span class="font-normal">
                       <InfoTooltip
