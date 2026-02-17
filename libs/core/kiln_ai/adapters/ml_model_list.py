@@ -166,6 +166,8 @@ class ModelName(str, Enum):
     grok_3_mini = "grok_3_mini"
     grok_4_1_fast = "grok_4_1_fast"
     grok_4 = "grok_4"
+    qwen_3p5_plus = "qwen_3p5_plus"
+    qwen_3p5_397b_a17b = "qwen_3p5_397b_a17b"
     qwen_3_next_80b_a3b = "qwen_3_next_80b_a3b"
     qwen_3_next_80b_a3b_thinking = "qwen_3_next_80b_a3b_thinking"
     qwen_3_max = "qwen_3_max"
@@ -4142,6 +4144,58 @@ built_in_models: List[KilnModel] = [
                 supports_function_calling=True,
                 reasoning_capable=True,
                 siliconflow_enable_thinking=True,
+            ),
+        ],
+    ),
+    # Qwen 3.5 Plus
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p5_plus,
+        friendly_name="Qwen 3.5 Plus",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.5-plus-02-15",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Qwen 3.5 397B (17B Active)
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p5_397b_a17b,
+        friendly_name="Qwen 3.5 397B (17B Active)",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.5-397b-a17b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
             ),
         ],
     ),
