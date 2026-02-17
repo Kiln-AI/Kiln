@@ -204,6 +204,7 @@ class ModelName(str, Enum):
     kimi_k2_thinking = "kimi_k2_thinking"
     kimi_k2_5 = "kimi_k2_5"
     kimi_dev_72b = "kimi_dev_72b"
+    glm_5 = "glm_5"
     glm_4_7 = "glm_4_7"
     glm_4_7_flash = "glm_4_7_flash"
     glm_4_6 = "glm_4_6"
@@ -336,6 +337,10 @@ class KilnModel(BaseModel):
     friendly_name: str
     providers: List[KilnModelProvider]
 
+    # Editorial
+    featured_rank: int | None = None
+    editorial_notes: str | None = None
+
 
 built_in_models: List[KilnModel] = [
     # GPT 5.2
@@ -343,6 +348,8 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_2,
         friendly_name="GPT-5.2",
+        featured_rank=1,
+        editorial_notes="OpenAI's latest GPT model. Powerful and capable.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -610,6 +617,8 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_nano,
         friendly_name="GPT-5 Nano",
+        featured_rank=10,
+        editorial_notes="OpenAI on a budget. 3% the cost of GPT 5. Great for easier tasks.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -1136,6 +1145,8 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gpt,
         name=ModelName.gpt_oss_120b,
         friendly_name="GPT OSS 120B",
+        featured_rank=7,
+        editorial_notes="OpenAI's capable open-weight model. Speeds of >1,000 tokens/s on Cerebras and Groq.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -1260,6 +1271,8 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.claude,
         name=ModelName.claude_4_5_haiku,
         friendly_name="Claude 4.5 Haiku",
+        featured_rank=11,
+        editorial_notes="Claude on a budget. 20% the cost of Claude Opus. Great for easier tasks.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -1407,6 +1420,8 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.claude,
         name=ModelName.claude_opus_4_6,
         friendly_name="Claude Opus 4.6",
+        featured_rank=2,
+        editorial_notes="Anthropic's best Claude model. Expensive, but often the best.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -1525,6 +1540,8 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemini,
         name=ModelName.gemini_3_pro_preview,
         friendly_name="Gemini 3 Pro Preview",
+        featured_rank=3,
+        editorial_notes="Google's state-of-the-art model. Great for tough problems.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -1603,6 +1620,8 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.gemini,
         name=ModelName.gemini_3_flash,
         friendly_name="Gemini 3 Flash",
+        featured_rank=8,
+        editorial_notes="Google's faster and cheaper model. 25% the cost of Gemini 3 Pro.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -3562,6 +3581,8 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.deepseek,
         name=ModelName.deepseek_3_2,
         friendly_name="DeepSeek 3.2",
+        featured_rank=5,
+        editorial_notes="Open and powerful. A fraction of the cost of other large models.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -3974,6 +3995,8 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.grok,
         name=ModelName.grok_4,
         friendly_name="Grok 4",
+        featured_rank=12,
+        editorial_notes="xAI's flagship model. Less censorship and unfiltered by design.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -5263,6 +5286,29 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # GLM 5
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5,
+        friendly_name="GLM 5",
+        featured_rank=4,
+        editorial_notes="Open, state-of-the-art model from Z.ai. Quality close to the big names, at a fraction of the cost.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-5",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Pro/zai-org/GLM-5",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                reasoning_optional_for_structured_output=True,
+            ),
+        ],
+    ),
     # GLM 4.7
     KilnModel(
         family=ModelFamily.glm,
@@ -5295,6 +5341,8 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.glm,
         name=ModelName.glm_4_7_flash,
         friendly_name="GLM 4.7 Flash",
+        featured_rank=9,
+        editorial_notes="Cost-effective, fast, and open model from Z.ai.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -5495,6 +5543,8 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.kimi,
         name=ModelName.kimi_k2_5,
         friendly_name="Kimi K2.5",
+        featured_rank=6,
+        editorial_notes="Open, state-of-the-art model from Moonshot AI. Excellent price-to-performance ratio.",
         providers=[
             # Fireworks provider commented out due to immutable parameter requirements:
             # top_p must be exactly 0.95 (thinking mode) or temperature must be 0.6 (non-thinking mode)
