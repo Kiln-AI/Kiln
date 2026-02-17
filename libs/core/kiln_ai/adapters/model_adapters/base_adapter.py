@@ -35,6 +35,7 @@ from kiln_ai.run_context import (
     set_agent_run_id,
 )
 from kiln_ai.tools import KilnToolInterface
+from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
@@ -225,10 +226,6 @@ class BaseAdapter(metaclass=ABCMeta):
                 try:
                     run_id = get_agent_run_id()
                     if run_id:
-                        from kiln_ai.tools.mcp_session_manager import (
-                            MCPSessionManager,
-                        )
-
                         await MCPSessionManager.shared().cleanup_session(run_id)
                 finally:
                     clear_agent_run_id()

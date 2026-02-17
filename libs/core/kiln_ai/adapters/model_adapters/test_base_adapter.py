@@ -907,7 +907,7 @@ class TestAgentRunContextLifecycle:
                 "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
             ),
             patch(
-                "kiln_ai.tools.mcp_session_manager.MCPSessionManager"
+                "kiln_ai.adapters.model_adapters.base_adapter.MCPSessionManager"
             ) as mock_manager_class,
         ):
             mock_parser_factory.return_value = parser
