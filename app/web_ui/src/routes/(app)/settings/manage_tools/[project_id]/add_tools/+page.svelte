@@ -69,29 +69,20 @@
         },
       ],
     },
-    {
-      name: "Stock Quotes",
-      subtitle: "by Twelve Data",
-      description: "Real-time quotes and historical data.",
-      server_url: "https://mcp.twelvedata.com/mcp/",
-      headers: [
-        {
-          key: "Authorization",
-          value: "apikey REPLACE_WITH_TWELVE_DATA_API_KEY",
-          placeholder: "Format: 'apikey your-api-key-here'",
-          is_secret: true,
-        },
-        {
-          key: "X-OpenAPI-Key",
-          value: "",
-          placeholder: "Your OpenAI API Key",
-          is_secret: true,
-        },
-      ],
-    },
   ]
 
   const sampleLocalMcpServers: LocalMcpServer[] = [
+    {
+      name: "Linux Sandbox",
+      subtitle: "by Kiln",
+      description:
+        "Give your agents the ability to run Linux commands in a sandboxed environment.",
+      command: "uvx",
+      args: ["kilntainers"],
+      env_vars: [],
+      installation_instruction:
+        "**You must have Docker desktop and uv installed.** Instructions: [Docker](https://www.docker.com), [uv](https://docs.astral.sh/uv/getting-started/installation/). If you had to install uv, restart Kiln before connecting the server.\nSee [Kilntainer docs](https://github.com/Kiln-AI/kilntainers) for advanced options like using Podman or cloud-hosted containers from Modal or E2B.",
+    },
     {
       name: "Web Search & Scrape",
       subtitle: "by Firecrawl",
@@ -107,7 +98,7 @@
         },
       ],
       installation_instruction:
-        "You must have Node.js installed: https://nodejs.org. If you had to install node, restart Kiln before connecting the server.",
+        "**You must have Node.js installed.** [Instructions](https://nodejs.org).\nIf you had to install node, restart Kiln before connecting the server.",
     },
     {
       name: "Run Python Code",
@@ -125,27 +116,23 @@
       ],
       env_vars: [],
       installation_instruction:
-        "You must have deno, a JavaScript runtime, installed: https://deno.com. If you had to install deno, restart Kiln before connecting the server.",
+        "**You must have Deno, a JavaScript runtime, installed.** [Instructions](https://deno.com).\nIf you had to install Deno, restart Kiln before connecting the server.",
     },
     {
-      name: "Access Files",
+      name: "Memory Server",
       subtitle: "by Anthropic",
-      description: "Read, write, and manipulate local files on your machine.",
+      description: "Save and retrieve information to a local knowledge graph.",
       command: "npx",
-      args: [
-        "-y",
-        "@modelcontextprotocol/server-filesystem",
-        "REPLACE_WITH_LIST_OF_ALLOWED_DIRECTORIES",
-      ],
+      args: ["-y", "@modelcontextprotocol/server-memory"],
       env_vars: [],
       installation_instruction:
-        "You must have Node.js installed: https://nodejs.org. If you had to install node, restart Kiln before connecting the server.",
+        "**You must have Node.js installed.** [Instructions](https://nodejs.org).\nIf you had to install Node.js, restart Kiln before connecting the server.",
     },
   ]
 
   const sample_tools = [
     {
-      name: "Math Tools",
+      name: "Math Tools Demo",
       subtitle: "by Kiln",
       description:
         "One click to try out tool calling, for simple math operations.",
