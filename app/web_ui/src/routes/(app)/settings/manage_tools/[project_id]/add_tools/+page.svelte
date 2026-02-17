@@ -119,7 +119,7 @@
         "**You must have Deno, a JavaScript runtime, installed.** [Instructions](https://deno.com).\nIf you had to install Deno, restart Kiln before connecting the server.",
     },
     {
-      name: "Memory Server",
+      name: "Memory",
       subtitle: "by Anthropic",
       description: "Save and retrieve information to a local knowledge graph.",
       command: "npx",
