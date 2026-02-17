@@ -240,11 +240,16 @@ async def _create_artifacts_for_succeeded_job(
         prompt_optimization_job.optimized_prompt = reloaded_job.optimized_prompt
         return
 
-    result_response = await get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio(
+    detailed_response = await get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed(
         job_id=prompt_optimization_job.job_id,
         client=server_client,
     )
+    check_response_error(
+        detailed_response,
+        default_detail="Failed to get Prompt Optimization job result.",
+    )
 
+    result_response = detailed_response.parsed
     if (
         result_response
         and not isinstance(result_response, HTTPValidationError)
@@ -295,14 +300,19 @@ async def update_prompt_optimization_job_and_create_artifacts(
         )
 
     try:
-        status_response = (
-            await get_job_status_v1_jobs_job_type_job_id_status_get.asyncio(
+        detailed_response = (
+            await get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed(
                 job_type=JobType.GEPA_JOB,
                 job_id=prompt_optimization_job.job_id,
                 client=server_client,
             )
         )
+        check_response_error(
+            detailed_response,
+            default_detail=f"Could not fetch status for Prompt Optimization job {prompt_optimization_job.job_id}",
+        )
 
+        status_response = detailed_response.parsed
         if status_response is None or isinstance(status_response, HTTPValidationError):
             logger.warning(
                 f"Could not fetch status for Prompt Optimization job {prompt_optimization_job.job_id}"
@@ -370,21 +380,18 @@ def connect_prompt_optimization_job_api(app: FastAPI):
                     status_code=500, detail="Server client not authenticated"
                 )
 
-            response = await check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio(
+            detailed_response = await check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio_detailed(
                 client=server_client,
                 model_name=model_name,
                 model_provider_name=model_provider.value,
             )
+            check_response_error(
+                detailed_response,
+                default_detail="Failed to check run config: No response from server",
+            )
 
-            if isinstance(response, HTTPValidationError):
-                error_detail = (
-                    str(response.detail)
-                    if hasattr(response, "detail")
-                    else "Validation error"
-                )
-                raise HTTPException(status_code=422, detail=error_detail)
-
-            if response is None:
+            response = detailed_response.parsed
+            if response is None or isinstance(response, HTTPValidationError):
                 raise HTTPException(
                     status_code=500,
                     detail="Failed to check run config: No response from server",
@@ -451,21 +458,18 @@ def connect_prompt_optimization_job_api(app: FastAPI):
                 )
 
             # EvalConfig.model_provider is already a string, no need for .value
-            response = await check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio(
+            detailed_response = await check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio_detailed(
                 client=server_client,
                 model_name=model_name,
                 model_provider_name=model_provider,
             )
+            check_response_error(
+                detailed_response,
+                default_detail="Failed to check eval: No response from server",
+            )
 
-            if isinstance(response, HTTPValidationError):
-                error_detail = (
-                    str(response.detail)
-                    if hasattr(response, "detail")
-                    else "Validation error"
-                )
-                raise HTTPException(status_code=422, detail=error_detail)
-
-            if response is None:
+            response = detailed_response.parsed
+            if response is None or isinstance(response, HTTPValidationError):
                 raise HTTPException(
                     status_code=500,
                     detail="Failed to check eval: No response from server",
@@ -695,12 +699,17 @@ def connect_prompt_optimization_job_api(app: FastAPI):
                     status_code=500, detail="Server client not authenticated"
                 )
 
-            response = await get_job_status_v1_jobs_job_type_job_id_status_get.asyncio(
+            detailed_response = await get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed(
                 job_type=JobType.GEPA_JOB,
                 job_id=job_id,
                 client=server_client,
             )
+            check_response_error(
+                detailed_response,
+                default_detail=f"Prompt Optimization job {job_id} not found",
+            )
 
+            response = detailed_response.parsed
             if response is None or isinstance(response, HTTPValidationError):
                 raise HTTPException(
                     status_code=404,
@@ -736,11 +745,16 @@ def connect_prompt_optimization_job_api(app: FastAPI):
                     status_code=500, detail="Server client not authenticated"
                 )
 
-            response = await get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio(
+            detailed_response = await get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed(
                 job_id=job_id,
                 client=server_client,
             )
+            check_response_error(
+                detailed_response,
+                default_detail=f"Prompt Optimization job {job_id} result not found",
+            )
 
+            response = detailed_response.parsed
             if response is None or isinstance(response, HTTPValidationError):
                 raise HTTPException(
                     status_code=404,
