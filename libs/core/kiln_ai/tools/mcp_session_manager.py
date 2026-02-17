@@ -22,6 +22,7 @@ from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 logger = logging.getLogger(__name__)
 
 LOCAL_MCP_ERROR_INSTRUCTION = "Please verify your command, arguments, and environment variables, and consult the server's documentation for the correct setup."
+MCP_SESSION_CACHE_KEY_DELIMITER = "::"
 
 
 class MCPSessionManager:
@@ -33,7 +34,7 @@ class MCPSessionManager:
 
     def __init__(self):
         self._shell_path = None
-        # Session cache: key = "{server_id}:{session_id}" → (ClientSession, AsyncExitStack)
+        # Session cache: key = "{server_id}::{session_id}" → (ClientSession, AsyncExitStack)
         self._session_cache: dict[str, tuple[ClientSession, AsyncExitStack]] = {}
         self._cache_lock = asyncio.Lock()
 
@@ -81,7 +82,7 @@ class MCPSessionManager:
             ValueError: If the server configuration is invalid
             RuntimeError: If connection to the server fails
         """
-        cache_key = f"{tool_server.id}:{session_id}"
+        cache_key = build_mcp_session_cache_key(tool_server.id, session_id)
 
         async with self._cache_lock:
             if cache_key in self._session_cache:
@@ -118,7 +119,9 @@ class MCPSessionManager:
 
         async with self._cache_lock:
             keys_to_remove = [
-                key for key in self._session_cache if key.split(":", 1)[1] == session_id
+                key
+                for key in self._session_cache
+                if parse_mcp_session_cache_session_id(key) == session_id
             ]
             for key in keys_to_remove:
                 _, exit_stack = self._session_cache.pop(key)
@@ -508,3 +511,11 @@ class MCPSessionManager:
     def clear_shell_path_cache(self):
         """Clear the cached shell path. Typically used when adding a new tool, which might have just been installed."""
         self._shell_path = None
+
+
+def build_mcp_session_cache_key(server_id: str | None, session_id: str) -> str:
+    return f"{server_id}{MCP_SESSION_CACHE_KEY_DELIMITER}{session_id}"
+
+
+def parse_mcp_session_cache_session_id(cache_key: str) -> str:
+    return cache_key.rsplit(MCP_SESSION_CACHE_KEY_DELIMITER, 1)[1]

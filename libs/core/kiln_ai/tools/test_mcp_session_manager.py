@@ -14,7 +14,10 @@ from kiln_ai.datamodel.external_tool_server import (
 )
 from kiln_ai.tools.mcp_session_manager import (
     LOCAL_MCP_ERROR_INSTRUCTION,
+    MCP_SESSION_CACHE_KEY_DELIMITER,
     MCPSessionManager,
+    build_mcp_session_cache_key,
+    parse_mcp_session_cache_session_id,
 )
 from kiln_ai.utils.config import MCP_SECRETS_KEY
 
@@ -1630,7 +1633,9 @@ class TestMCPSessionCaching:
             mock_session_instance.initialize.assert_called_once()
 
         # Verify the session was cached
-        cache_key = f"{cached_remote_tool_server.id}:{session_id}"
+        cache_key = build_mcp_session_cache_key(
+            cached_remote_tool_server.id, session_id
+        )
         assert cache_key in manager._session_cache
 
     @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
@@ -1798,7 +1803,9 @@ class TestMCPSessionCaching:
             await manager.get_or_create_session(cached_remote_tool_server, session_id)
 
             # Verify it's cached
-            cache_key = f"{cached_remote_tool_server.id}:{session_id}"
+            cache_key = build_mcp_session_cache_key(
+                cached_remote_tool_server.id, session_id
+            )
             assert cache_key in manager._session_cache
 
             # Get the exit stack before cleanup and mock its aclose method
@@ -1878,8 +1885,8 @@ class TestMCPSessionCaching:
             await manager.get_or_create_session(server2, session_id_2)
 
             # Verify both are cached
-            cache_key_1 = f"{server1.id}:{session_id_1}"
-            cache_key_2 = f"{server2.id}:{session_id_2}"
+            cache_key_1 = build_mcp_session_cache_key(server1.id, session_id_1)
+            cache_key_2 = build_mcp_session_cache_key(server2.id, session_id_2)
             assert cache_key_1 in manager._session_cache
             assert cache_key_2 in manager._session_cache
 
@@ -1945,3 +1952,23 @@ class TestMCPSessionCaching:
             assert all(r is mock_session_instance for r in results)
             assert creation_count > 1, "Delay should cause multiple creation attempts"
             assert len(manager._session_cache) == 1
+
+
+class TestMCPSessionCacheKeyHelpers:
+    def test_build_mcp_session_cache_key_uses_expected_delimiter(self):
+        cache_key = build_mcp_session_cache_key("server_id", "session_id")
+        assert cache_key == f"server_id{MCP_SESSION_CACHE_KEY_DELIMITER}session_id"
+
+    @pytest.mark.parametrize(
+        "cache_key,expected_session_id",
+        [
+            ("server_id::session_id", "session_id"),
+            ("server::session::id", "id"),
+            ("prefix:value::session", "session"),
+            ("prefix::value::session", "session"),
+        ],
+    )
+    def test_parse_mcp_session_cache_session_id_uses_last_delimiter(
+        self, cache_key, expected_session_id
+    ):
+        assert parse_mcp_session_cache_session_id(cache_key) == expected_session_id
