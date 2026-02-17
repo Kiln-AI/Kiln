@@ -53,6 +53,42 @@
 
   let create_run_config_dialog: CreateNewRunConfigDialog | null = null
 
+  let open_menu_config_id: string | null = null
+  let menu_position = { top: 0, left: 0 }
+
+  function toggleMenu(
+    config_id: string | null | undefined,
+    event: MouseEvent | KeyboardEvent,
+  ) {
+    if (!config_id) return
+    event.stopPropagation()
+    if (open_menu_config_id === config_id) {
+      open_menu_config_id = null
+      return
+    }
+    const trigger = (event.currentTarget as HTMLElement).closest(
+      ".menu-trigger",
+    ) as HTMLElement
+    if (!trigger) return
+    const rect = trigger.getBoundingClientRect()
+    const menuWidth = 224
+    const menuHeight = 100
+    const left = Math.max(8, rect.right - menuWidth)
+    const fitsBelow = rect.bottom + menuHeight < window.innerHeight
+    const top = fitsBelow ? rect.bottom + 4 : rect.top - menuHeight - 4
+    menu_position = { top, left }
+    open_menu_config_id = config_id
+  }
+
+  function closeMenu() {
+    open_menu_config_id = null
+  }
+
+  $: open_menu_config = open_menu_config_id
+    ? sorted_run_configs.find((c) => c.id === open_menu_config_id) ?? null
+    : null
+  $: open_menu_is_default = open_menu_config?.id === task?.default_run_config_id
+
   const MAX_SELECTIONS = 6
   let select_mode: boolean = false
   let selected_run_configs: Set<string> = new Set()
@@ -365,7 +401,7 @@
               </tr>
             </thead>
             <tbody>
-              {#each sorted_run_configs as config, i}
+              {#each sorted_run_configs as config}
                 {@const tools_info = getToolsDisplay(config)}
                 {@const is_default = config.id === task?.default_run_config_id}
                 {@const is_selected =
@@ -446,33 +482,16 @@
                     {formatDate(config.created_at)}
                   </td>
                   <td class="p-0" on:click|stopPropagation>
+                    <!-- svelte-ignore a11y-no-static-element-interactions -->
                     <div
-                      class="dropdown dropdown-end dropdown-hover {i >=
-                      sorted_run_configs.length - 2
-                        ? 'dropdown-top'
-                        : ''}"
+                      class="menu-trigger"
+                      on:click={(e) => toggleMenu(config.id, e)}
+                      on:keydown={(e) => {
+                        if (e.key === "Enter" || e.key === " ")
+                          toggleMenu(config.id, e)
+                      }}
                     >
                       <TableButton />
-                      <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-                      <ul
-                        tabindex="0"
-                        class="dropdown-content menu bg-base-100 rounded-box z-[1] w-56 p-2 shadow"
-                      >
-                        <li>
-                          <button on:click={(e) => handleClone(config, e)}>
-                            Clone
-                          </button>
-                        </li>
-                        {#if !is_default}
-                          <li>
-                            <button
-                              on:click={(e) => handleSetDefault(config, e)}
-                            >
-                              Set as Task Default
-                            </button>
-                          </li>
-                        {/if}
-                      </ul>
                     </div>
                   </td>
                 </tr>
@@ -484,6 +503,49 @@
     </div>
   {/if}
 </AppPage>
+
+{#if open_menu_config_id && open_menu_config}
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div class="fixed inset-0 z-50" on:click={closeMenu}>
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+    <ul
+      class="menu bg-base-100 rounded-box w-56 p-2 shadow-lg border fixed z-[51]"
+      style="top: {menu_position.top}px; left: {menu_position.left}px;"
+      on:click|stopPropagation
+    >
+      <li>
+        <button
+          on:click={(e) => {
+            handleClone(open_menu_config, e)
+            closeMenu()
+          }}
+        >
+          Clone
+        </button>
+      </li>
+      {#if !open_menu_is_default}
+        <li>
+          <button
+            on:click={(e) => {
+              handleSetDefault(open_menu_config, e)
+              closeMenu()
+            }}
+          >
+            Set as Task Default
+          </button>
+        </li>
+      {/if}
+    </ul>
+  </div>
+{/if}
+
+<svelte:window
+  on:keydown={(e) => {
+    if (e.key === "Escape") closeMenu()
+  }}
+/>
 
 <CreateNewRunConfigDialog
   bind:this={create_run_config_dialog}
