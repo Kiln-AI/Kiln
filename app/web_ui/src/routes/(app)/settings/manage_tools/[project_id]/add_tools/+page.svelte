@@ -81,7 +81,7 @@
       args: ["kilntainers"],
       env_vars: [],
       installation_instruction:
-        "You must have uv installed: https://docs.astral.sh/uv/installation/. If you had to install uv, restart Kiln before connecting the server.",
+        "**You must have Docker desktop and uv installed.** Instructions: [Docker](https://www.docker.com), [uv](https://docs.astral.sh/uv/getting-started/installation/). If you had to install uv, restart Kiln before connecting the server.\nSee [Kilntainer docs](https://github.com/Kiln-AI/kilntainers) for advanced options like using Podman or cloud-hosted containers from Modal or E2B.",
     },
     {
       name: "Web Search & Scrape",
@@ -98,7 +98,7 @@
         },
       ],
       installation_instruction:
-        "You must have Node.js installed: https://nodejs.org. If you had to install node, restart Kiln before connecting the server.",
+        "**You must have Node.js installed.** [Instructions](https://nodejs.org).\nIf you had to install node, restart Kiln before connecting the server.",
     },
     {
       name: "Run Python Code",
@@ -116,7 +116,7 @@
       ],
       env_vars: [],
       installation_instruction:
-        "You must have deno, a JavaScript runtime, installed: https://deno.com. If you had to install deno, restart Kiln before connecting the server.",
+        "**You must have Deno, a JavaScript runtime, installed.** [Instructions](https://deno.com).\nIf you had to install Deno, restart Kiln before connecting the server.",
     },
     {
       name: "Memory Server",
@@ -126,7 +126,7 @@
       args: ["-y", "@modelcontextprotocol/server-memory"],
       env_vars: [],
       installation_instruction:
-        "You must have Node.js installed: https://nodejs.org. If you had to install node, restart Kiln before connecting the server.",
+        "**You must have Node.js installed.** [Instructions](https://nodejs.org).\nIf you had to install Node.js, restart Kiln before connecting the server.",
     },
   ]
 
