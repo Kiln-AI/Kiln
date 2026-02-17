@@ -158,10 +158,9 @@
             </div>
           </div>
         </Banner>
-        <button
+        <a
           class="group text-left"
-          on:click={() =>
-            goto(`/prompts/${project_id}/${task_id}/edit_base_prompt`)}
+          href={`/prompts/${project_id}/${task_id}/edit_base_prompt`}
         >
           <div
             class="bg-base-200 px-4 py-2 rounded-lg transition-transform duration-150 group-hover:-translate-y-0.5"
@@ -191,7 +190,7 @@
               {/if}
             </div>
           </div>
-        </button>
+        </a>
 
         <div>
           <div class="text-lg font-medium mb-2">Saved Prompts</div>
