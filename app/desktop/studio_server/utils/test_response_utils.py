@@ -3,14 +3,24 @@ from http import HTTPStatus
 from unittest.mock import MagicMock
 
 import pytest
-from app.desktop.studio_server.utils.response_utils import check_response_error
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    HTTPValidationError,
+)
+from app.desktop.studio_server.utils.response_utils import (
+    check_response_error,
+    unwrap_response,
+    unwrap_response_allow_none,
+)
 from fastapi import HTTPException
 
 
-def _make_response(status_code: HTTPStatus, content: bytes) -> MagicMock:
+def _make_response(
+    status_code: HTTPStatus, content: bytes, parsed: object = None
+) -> MagicMock:
     resp = MagicMock()
     resp.status_code = status_code
     resp.content = content
+    resp.parsed = parsed
     return resp
 
 
@@ -73,3 +83,67 @@ def test_non_200_with_non_json_content_uses_default():
         check_response_error(resp)
 
     assert exc_info.value.detail == "Unknown error."
+
+
+# -- unwrap_response_allow_none tests --
+
+
+def test_unwrap_allow_none_returns_parsed_value():
+    resp = _make_response(HTTPStatus.OK, b"", parsed={"key": "value"})
+    assert unwrap_response_allow_none(resp) == {"key": "value"}
+
+
+def test_unwrap_allow_none_returns_none_when_parsed_is_none():
+    resp = _make_response(HTTPStatus.OK, b"", parsed=None)
+    assert unwrap_response_allow_none(resp) is None
+
+
+def test_unwrap_allow_none_raises_on_error_status():
+    body = json.dumps({"message": "bad request"}).encode()
+    resp = _make_response(HTTPStatus.BAD_REQUEST, body, parsed=None)
+
+    with pytest.raises(HTTPException) as exc_info:
+        unwrap_response_allow_none(resp)
+
+    assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
+    assert exc_info.value.detail == "bad request"
+
+
+def test_unwrap_allow_none_raises_on_validation_error():
+    resp = _make_response(HTTPStatus.OK, b"", parsed=HTTPValidationError())
+
+    with pytest.raises(RuntimeError, match="unknown error"):
+        unwrap_response_allow_none(resp)
+
+
+# -- unwrap_response tests --
+
+
+def test_unwrap_returns_parsed_value():
+    resp = _make_response(HTTPStatus.OK, b"", parsed="hello")
+    assert unwrap_response(resp) == "hello"
+
+
+def test_unwrap_raises_on_none_parsed():
+    resp = _make_response(HTTPStatus.OK, b"", parsed=None)
+
+    with pytest.raises(RuntimeError, match="unknown error"):
+        unwrap_response(resp)
+
+
+def test_unwrap_raises_on_error_status():
+    body = json.dumps({"message": "forbidden"}).encode()
+    resp = _make_response(HTTPStatus.FORBIDDEN, body, parsed=None)
+
+    with pytest.raises(HTTPException) as exc_info:
+        unwrap_response(resp)
+
+    assert exc_info.value.status_code == HTTPStatus.FORBIDDEN
+    assert exc_info.value.detail == "forbidden"
+
+
+def test_unwrap_raises_on_validation_error():
+    resp = _make_response(HTTPStatus.OK, b"", parsed=HTTPValidationError())
+
+    with pytest.raises(RuntimeError, match="unknown error"):
+        unwrap_response(resp)
