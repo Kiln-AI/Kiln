@@ -5,7 +5,6 @@ evals, eval configs, and task runs as part of the copilot-assisted
 spec creation workflow.
 """
 
-import json
 import random
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
@@ -16,7 +15,6 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     GenerateBatchOutput,
     HTTPValidationError,
 )
-from app.desktop.studio_server.api_client.kiln_ai_server_client.types import Response
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
@@ -26,6 +24,7 @@ from app.desktop.studio_server.api_models.copilot_models import (
     SyntheticDataGenerationSessionConfigApi,
     TaskInfoApi,
 )
+from app.desktop.studio_server.utils.response_utils import check_response_error
 from fastapi import HTTPException
 from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
@@ -278,23 +277,3 @@ def create_dataset_task_runs(
         task_runs.append(create_task_run_from_sample(example, train_tag, extra_tags))
 
     return task_runs
-
-
-def check_response_error(
-    response: Response, default_detail: str = "Unknown error."
-) -> None:
-    """Check if the response is an error with user centric message."""
-    if response.status_code != 200:
-        # response.content is a bytes object
-        # We check if it's a JSON object with a user message field
-        detail = default_detail
-        if response.content.startswith(b"{"):
-            try:
-                json_data = json.loads(response.content)
-                detail = json_data.get("message", default_detail)
-            except json.JSONDecodeError:
-                pass
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=detail,
-        )

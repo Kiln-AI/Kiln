@@ -34,7 +34,7 @@ from app.desktop.studio_server.eval_api import (
     eval_from_id,
     task_run_config_from_id,
 )
-from app.desktop.studio_server.utils.copilot_utils import check_response_error
+from app.desktop.studio_server.utils.response_utils import check_response_error
 from fastapi import FastAPI, HTTPException
 from kiln_ai.cli.commands.package_project import (
     PackageForTrainingConfig,

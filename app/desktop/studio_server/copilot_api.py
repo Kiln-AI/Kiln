@@ -43,11 +43,11 @@ from app.desktop.studio_server.api_models.copilot_models import (
     TaskInfoApi,
 )
 from app.desktop.studio_server.utils.copilot_utils import (
-    check_response_error,
     create_dataset_task_runs,
     generate_copilot_examples,
     get_copilot_api_key,
 )
+from app.desktop.studio_server.utils.response_utils import check_response_error
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.basemodel import FilenameString

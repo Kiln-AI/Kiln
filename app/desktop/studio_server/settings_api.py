@@ -7,10 +7,8 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.api.auth import 
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
-from app.desktop.studio_server.utils.copilot_utils import (
-    check_response_error,
-    get_copilot_api_key,
-)
+from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
+from app.desktop.studio_server.utils.response_utils import check_response_error
 from fastapi import FastAPI, HTTPException
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.filesystem import open_folder
