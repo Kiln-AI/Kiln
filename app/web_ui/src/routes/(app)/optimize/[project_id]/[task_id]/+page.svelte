@@ -32,6 +32,7 @@
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import { client } from "$lib/api_client"
   import StarIcon from "$lib/ui/icons/star_icon.svelte"
+  import Float from "$lib/ui/float.svelte"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -330,7 +331,7 @@
           above.
         </div>
       {:else}
-        <div class="overflow-x-auto rounded-lg border">
+        <div class="overflow-x-auto overflow-y-hidden rounded-lg border">
           <table class="table">
             <thead>
               <tr>
@@ -448,26 +449,28 @@
                   <td class="p-0" on:click|stopPropagation>
                     <div class="dropdown dropdown-end dropdown-hover">
                       <TableButton />
-                      <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-                      <ul
-                        tabindex="0"
-                        class="dropdown-content menu bg-base-100 rounded-box z-[1] w-56 p-2 shadow"
-                      >
-                        <li>
-                          <button on:click={(e) => handleClone(config, e)}>
-                            Clone
-                          </button>
-                        </li>
-                        {#if !is_default}
+                      <Float>
+                        <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+                        <ul
+                          tabindex="0"
+                          class="dropdown-content menu bg-base-100 rounded-box z-[1] w-56 p-2 shadow"
+                        >
                           <li>
-                            <button
-                              on:click={(e) => handleSetDefault(config, e)}
-                            >
-                              Set as Task Default
+                            <button on:click={(e) => handleClone(config, e)}>
+                              Clone
                             </button>
                           </li>
-                        {/if}
-                      </ul>
+                          {#if !is_default}
+                            <li>
+                              <button
+                                on:click={(e) => handleSetDefault(config, e)}
+                              >
+                                Set as Task Default
+                              </button>
+                            </li>
+                          {/if}
+                        </ul>
+                      </Float>
                     </div>
                   </td>
                 </tr>
