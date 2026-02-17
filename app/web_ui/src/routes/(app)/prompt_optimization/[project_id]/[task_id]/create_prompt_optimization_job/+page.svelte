@@ -984,7 +984,7 @@
                                 : "\u200B"}
                             </span>
                           </th>
-                          <th style="width: 100px;"></th>
+                          <th class="w-[100px]"></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1061,6 +1061,7 @@
                                   <a
                                     href={dataset_link}
                                     target="_blank"
+                                    rel="noopener noreferrer"
                                     class="link text-gray-600 hover:text-secondary"
                                     on:click|stopPropagation
                                   >
@@ -1147,7 +1148,11 @@
                                     class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
                                   >
                                     <li>
-                                      <a href={eval_url} target="_blank">
+                                      <a
+                                        href={eval_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                      >
                                         View Eval
                                       </a>
                                     </li>
