@@ -41,11 +41,19 @@ describe("recent_model_store", () => {
     it("should work with the store after initialization", () => {
       // This test just verifies the store is working
       recent_model_store.set([
-        { model_id: "test", model_provider: "test-provider" },
+        {
+          model_id: "test",
+          model_provider: "test-provider",
+          provider_display_name: null,
+        },
       ])
       const models = get(recent_model_store)
       expect(models).toEqual([
-        { model_id: "test", model_provider: "test-provider" },
+        {
+          model_id: "test",
+          model_provider: "test-provider",
+          provider_display_name: null,
+        },
       ])
     })
   })
@@ -60,7 +68,13 @@ describe("recent_model_store", () => {
       addRecentModel("gpt-4", "openai")
 
       const models = get(recent_model_store)
-      expect(models).toEqual([{ model_id: "gpt-4", model_provider: "openai" }])
+      expect(models).toEqual([
+        {
+          model_id: "gpt-4",
+          model_provider: "openai",
+          provider_display_name: null,
+        },
+      ])
     })
 
     it("should add multiple models in MRU order (most recent first)", () => {
@@ -70,9 +84,21 @@ describe("recent_model_store", () => {
 
       const models = get(recent_model_store)
       expect(models).toEqual([
-        { model_id: "gemini-pro", model_provider: "google" },
-        { model_id: "claude-3", model_provider: "anthropic" },
-        { model_id: "gpt-4", model_provider: "openai" },
+        {
+          model_id: "gemini-pro",
+          model_provider: "google",
+          provider_display_name: null,
+        },
+        {
+          model_id: "claude-3",
+          model_provider: "anthropic",
+          provider_display_name: null,
+        },
+        {
+          model_id: "gpt-4",
+          model_provider: "openai",
+          provider_display_name: null,
+        },
       ])
     })
 
@@ -87,9 +113,21 @@ describe("recent_model_store", () => {
 
       const models = get(recent_model_store)
       expect(models).toEqual([
-        { model_id: "gpt-4", model_provider: "openai" }, // Moved to front
-        { model_id: "gemini-pro", model_provider: "google" },
-        { model_id: "claude-3", model_provider: "anthropic" },
+        {
+          model_id: "gpt-4",
+          model_provider: "openai",
+          provider_display_name: null,
+        }, // Moved to front
+        {
+          model_id: "gemini-pro",
+          model_provider: "google",
+          provider_display_name: null,
+        },
+        {
+          model_id: "claude-3",
+          model_provider: "anthropic",
+          provider_display_name: null,
+        },
       ])
       expect(models).toHaveLength(3) // No duplicate entries
     })
@@ -100,8 +138,16 @@ describe("recent_model_store", () => {
 
       const models = get(recent_model_store)
       expect(models).toEqual([
-        { model_id: "gpt-4", model_provider: "azure" },
-        { model_id: "gpt-4", model_provider: "openai" },
+        {
+          model_id: "gpt-4",
+          model_provider: "azure",
+          provider_display_name: null,
+        },
+        {
+          model_id: "gpt-4",
+          model_provider: "openai",
+          provider_display_name: null,
+        },
       ])
       expect(models).toHaveLength(2) // Both should be kept as they have different providers
     })
@@ -118,11 +164,31 @@ describe("recent_model_store", () => {
       const models = get(recent_model_store)
       expect(models).toHaveLength(5)
       expect(models).toEqual([
-        { model_id: "model-6", model_provider: "provider-6" },
-        { model_id: "model-5", model_provider: "provider-5" },
-        { model_id: "model-4", model_provider: "provider-4" },
-        { model_id: "model-3", model_provider: "provider-3" },
-        { model_id: "model-2", model_provider: "provider-2" },
+        {
+          model_id: "model-6",
+          model_provider: "provider-6",
+          provider_display_name: null,
+        },
+        {
+          model_id: "model-5",
+          model_provider: "provider-5",
+          provider_display_name: null,
+        },
+        {
+          model_id: "model-4",
+          model_provider: "provider-4",
+          provider_display_name: null,
+        },
+        {
+          model_id: "model-3",
+          model_provider: "provider-3",
+          provider_display_name: null,
+        },
+        {
+          model_id: "model-2",
+          model_provider: "provider-2",
+          provider_display_name: null,
+        },
       ])
       // model-1 should be removed as it was the oldest
     })
@@ -141,11 +207,31 @@ describe("recent_model_store", () => {
       const models = get(recent_model_store)
       expect(models).toHaveLength(5)
       expect(models).toEqual([
-        { model_id: "model-3", model_provider: "provider-3" }, // Moved to front
-        { model_id: "model-5", model_provider: "provider-5" },
-        { model_id: "model-4", model_provider: "provider-4" },
-        { model_id: "model-2", model_provider: "provider-2" },
-        { model_id: "model-1", model_provider: "provider-1" },
+        {
+          model_id: "model-3",
+          model_provider: "provider-3",
+          provider_display_name: null,
+        }, // Moved to front
+        {
+          model_id: "model-5",
+          model_provider: "provider-5",
+          provider_display_name: null,
+        },
+        {
+          model_id: "model-4",
+          model_provider: "provider-4",
+          provider_display_name: null,
+        },
+        {
+          model_id: "model-2",
+          model_provider: "provider-2",
+          provider_display_name: null,
+        },
+        {
+          model_id: "model-1",
+          model_provider: "provider-1",
+          provider_display_name: null,
+        },
       ])
     })
 
@@ -178,7 +264,11 @@ describe("recent_model_store", () => {
       // we can verify the data is in the store
       const models = get(recent_model_store)
       expect(models).toHaveLength(1)
-      expect(models[0]).toEqual({ model_id: "gpt-4", model_provider: "openai" })
+      expect(models[0]).toEqual({
+        model_id: "gpt-4",
+        model_provider: "openai",
+        provider_display_name: null,
+      })
     })
   })
 
@@ -202,11 +292,31 @@ describe("recent_model_store", () => {
 
       const models = get(recent_model_store)
       expect(models).toEqual([
-        { model_id: "claude-3-opus", model_provider: "anthropic" },
-        { model_id: "gemini-pro", model_provider: "google" },
-        { model_id: "gpt-4", model_provider: "openai" }, // Moved up from being reused
-        { model_id: "claude-3-sonnet", model_provider: "anthropic" },
-        { model_id: "gpt-3.5-turbo", model_provider: "openai" },
+        {
+          model_id: "claude-3-opus",
+          model_provider: "anthropic",
+          provider_display_name: null,
+        },
+        {
+          model_id: "gemini-pro",
+          model_provider: "google",
+          provider_display_name: null,
+        },
+        {
+          model_id: "gpt-4",
+          model_provider: "openai",
+          provider_display_name: null,
+        }, // Moved up from being reused
+        {
+          model_id: "claude-3-sonnet",
+          model_provider: "anthropic",
+          provider_display_name: null,
+        },
+        {
+          model_id: "gpt-3.5-turbo",
+          model_provider: "openai",
+          provider_display_name: null,
+        },
       ])
     })
 
@@ -234,11 +344,31 @@ describe("recent_model_store", () => {
 
       models = get(recent_model_store)
       expect(models).toEqual([
-        { model_id: "model-4", model_provider: "provider-4" }, // Moved to front
-        { model_id: "model-7", model_provider: "provider-7" },
-        { model_id: "model-6", model_provider: "provider-6" },
-        { model_id: "model-5", model_provider: "provider-5" },
-        { model_id: "model-3", model_provider: "provider-3" },
+        {
+          model_id: "model-4",
+          model_provider: "provider-4",
+          provider_display_name: null,
+        }, // Moved to front
+        {
+          model_id: "model-7",
+          model_provider: "provider-7",
+          provider_display_name: null,
+        },
+        {
+          model_id: "model-6",
+          model_provider: "provider-6",
+          provider_display_name: null,
+        },
+        {
+          model_id: "model-5",
+          model_provider: "provider-5",
+          provider_display_name: null,
+        },
+        {
+          model_id: "model-3",
+          model_provider: "provider-3",
+          provider_display_name: null,
+        },
       ])
     })
   })
