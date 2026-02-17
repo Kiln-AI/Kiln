@@ -398,6 +398,6 @@
     padding: 0;
   }
   :global(.menu li > ul) {
-    margin-inline-start: 1.95em;
+    margin-inline-start: 1.9em;
   }
 </style>
