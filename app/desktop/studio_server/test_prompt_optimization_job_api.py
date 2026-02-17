@@ -8,9 +8,6 @@ import pytest
 from app.desktop.studio_server.api_client.kiln_ai_server_client.client import (
     AuthenticatedClient,
 )
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models.http_validation_error import (
-    HTTPValidationError,
-)
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.job_start_response import (
     JobStartResponse,
 )
@@ -109,9 +106,9 @@ def test_get_prompt_optimization_job_result_success(client, mock_api_key):
     )
 
     with patch(
-        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
         new_callable=AsyncMock,
-        return_value=mock_response,
+        return_value=_make_sdk_response(parsed=mock_response),
     ):
         response = client.get(f"/api/prompt_optimization_jobs/{job_id}/result")
 
@@ -127,17 +124,16 @@ def test_get_prompt_optimization_job_result_not_found(client, mock_api_key):
     job_id = "nonexistent-job"
 
     with patch(
-        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
         new_callable=AsyncMock,
-        return_value=None,
+        return_value=_make_sdk_response(
+            status_code=HTTPStatus.NOT_FOUND,
+            content=b'{"message": "Not found"}',
+        ),
     ):
         response = client.get(f"/api/prompt_optimization_jobs/{job_id}/result")
 
         assert response.status_code == 404
-        assert (
-            f"Prompt Optimization job {job_id} result not found"
-            in response.json()["detail"]
-        )
 
 
 def test_get_prompt_optimization_job_result_no_output(client, mock_api_key):
@@ -149,9 +145,9 @@ def test_get_prompt_optimization_job_result_no_output(client, mock_api_key):
     )
 
     with patch(
-        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
         new_callable=AsyncMock,
-        return_value=mock_response,
+        return_value=_make_sdk_response(parsed=mock_response),
     ):
         response = client.get(f"/api/prompt_optimization_jobs/{job_id}/result")
 
@@ -164,7 +160,7 @@ def test_get_prompt_optimization_job_result_api_error(client, mock_api_key):
     job_id = "test-job-error"
 
     with patch(
-        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
         new_callable=AsyncMock,
         side_effect=Exception("API connection failed"),
     ):
@@ -183,9 +179,9 @@ def test_get_prompt_optimization_job_status_success(client, mock_api_key):
     mock_response = JobStatusResponse(job_id=job_id, status=JobStatus.RUNNING)
 
     with patch(
-        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
         new_callable=AsyncMock,
-        return_value=mock_response,
+        return_value=_make_sdk_response(parsed=mock_response),
     ):
         response = client.get(f"/api/prompt_optimization_jobs/{job_id}/status")
 
@@ -202,16 +198,16 @@ def test_get_prompt_optimization_job_status_not_found(client, mock_api_key):
     job_id = "nonexistent-job"
 
     with patch(
-        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
         new_callable=AsyncMock,
-        return_value=None,
+        return_value=_make_sdk_response(
+            status_code=HTTPStatus.NOT_FOUND,
+            content=b'{"message": "Not found"}',
+        ),
     ):
         response = client.get(f"/api/prompt_optimization_jobs/{job_id}/status")
 
         assert response.status_code == 404
-        assert (
-            f"Prompt Optimization job {job_id} not found" in response.json()["detail"]
-        )
 
 
 def test_get_prompt_optimization_job_result_no_api_key(client):
@@ -234,16 +230,17 @@ def test_get_prompt_optimization_job_result_validation_error(client, mock_api_ke
     """Test getting Prompt Optimization job result with validation error from server."""
     job_id = "test-job-123"
 
-    mock_error = HTTPValidationError(detail=[])
-
     with patch(
-        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+        "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
         new_callable=AsyncMock,
-        return_value=mock_error,
+        return_value=_make_sdk_response(
+            status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+            content=b'{"message": "Validation error"}',
+        ),
     ):
         response = client.get(f"/api/prompt_optimization_jobs/{job_id}/result")
 
-        assert response.status_code == 404
+        assert response.status_code == 422
 
 
 def test_public_prompt_optimization_job_result_response_model():
@@ -500,9 +497,9 @@ def test_get_prompt_optimization_job_detail(client, mock_api_key, tmp_path):
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_status_response,
+            return_value=_make_sdk_response(parsed=mock_status_response),
         ),
     ):
         response = client.get(
@@ -571,14 +568,14 @@ def test_prompt_optimization_job_creates_prompt_on_success(
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_status_response,
+            return_value=_make_sdk_response(parsed=mock_status_response),
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_result_response,
+            return_value=_make_sdk_response(parsed=mock_result_response),
         ),
         patch(
             "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
@@ -656,14 +653,14 @@ def test_prompt_optimization_job_only_creates_prompt_once(
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_status_response,
+            return_value=_make_sdk_response(parsed=mock_status_response),
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_result_response,
+            return_value=_make_sdk_response(parsed=mock_result_response),
         ),
         patch(
             "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
@@ -719,11 +716,11 @@ def test_get_prompt_optimization_job_skips_update_when_succeeded(
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
         ) as mock_status,
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
             new_callable=AsyncMock,
         ) as mock_result,
     ):
@@ -774,11 +771,11 @@ def test_get_prompt_optimization_job_skips_update_when_failed(
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
         ) as mock_status,
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
             new_callable=AsyncMock,
         ) as mock_result,
     ):
@@ -828,11 +825,11 @@ def test_get_prompt_optimization_job_skips_update_when_cancelled(
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
         ) as mock_status,
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
             new_callable=AsyncMock,
         ) as mock_result,
     ):
@@ -1094,9 +1091,12 @@ def test_update_prompt_optimization_job_status_response_none(
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=None,
+            return_value=_make_sdk_response(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                content=b'{"message": "Server error"}',
+            ),
         ),
     ):
         response = client.get(
@@ -1136,17 +1136,18 @@ def test_update_prompt_optimization_job_status_response_validation_error(
     task_id = task.id
     prompt_optimization_job_id = prompt_optimization_job.id
 
-    mock_error = HTTPValidationError(detail=[])
-
     with (
         patch(
             "app.desktop.studio_server.prompt_optimization_job_api.task_from_id",
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_error,
+            return_value=_make_sdk_response(
+                status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+                content=b'{"message": "Validation error"}',
+            ),
         ),
     ):
         response = client.get(
@@ -1192,7 +1193,7 @@ def test_update_prompt_optimization_job_status_exception_during_update(
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
             side_effect=Exception("Network error"),
         ),
@@ -1382,17 +1383,18 @@ def test_check_run_config_server_validation_error(client, mock_api_key, tmp_path
     task_id = task.id
     run_config_id = "test-config-id"
 
-    mock_error = HTTPValidationError(detail="Invalid model")
-
     with (
         patch(
             "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
             return_value=mock_run_config,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_error,
+            return_value=_make_sdk_response(
+                status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+                content=b'{"message": "Invalid model"}',
+            ),
         ),
     ):
         response = client.get(
@@ -1431,9 +1433,9 @@ def test_check_run_config_server_none_response(client, mock_api_key, tmp_path):
             return_value=mock_run_config,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=None,
+            return_value=_make_sdk_response(parsed=None),
         ),
     ):
         response = client.get(
@@ -1442,7 +1444,7 @@ def test_check_run_config_server_none_response(client, mock_api_key, tmp_path):
         )
 
         assert response.status_code == 500
-        assert "No response from server" in response.json()["detail"]
+        assert "unknown error" in response.json()["detail"].lower()
 
 
 def test_check_run_config_exception(client, mock_api_key, tmp_path):
@@ -1669,8 +1671,6 @@ def test_check_eval_server_validation_error(client, mock_api_key, tmp_path):
     task_id = task.id
     eval_id = "test-eval-id"
 
-    mock_error = HTTPValidationError(detail="Invalid model")
-
     with (
         patch(
             "app.desktop.studio_server.prompt_optimization_job_api.eval_from_id",
@@ -1681,9 +1681,12 @@ def test_check_eval_server_validation_error(client, mock_api_key, tmp_path):
             return_value=mock_config,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_error,
+            return_value=_make_sdk_response(
+                status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+                content=b'{"message": "Invalid model"}',
+            ),
         ),
     ):
         response = client.get(
@@ -1728,9 +1731,9 @@ def test_check_eval_server_none_response(client, mock_api_key, tmp_path):
             return_value=mock_config,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=None,
+            return_value=_make_sdk_response(parsed=None),
         ),
     ):
         response = client.get(
@@ -1739,7 +1742,7 @@ def test_check_eval_server_none_response(client, mock_api_key, tmp_path):
         )
 
         assert response.status_code == 500
-        assert "No response from server" in response.json()["detail"]
+        assert "unknown error" in response.json()["detail"].lower()
 
 
 def test_check_eval_exception(client, mock_api_key, tmp_path):
@@ -1814,9 +1817,9 @@ def test_check_eval_success_train_set(
             return_value=mock_config,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_check_response,
+            return_value=_make_sdk_response(parsed=mock_check_response),
         ),
     ):
         response = client.get(
@@ -2051,7 +2054,7 @@ def test_start_prompt_optimization_job_server_none_response(
         )
 
         assert response.status_code == 500
-        assert "unexpected response from server" in response.json()["detail"]
+        assert "unknown error" in response.json()["detail"].lower()
 
 
 def test_start_prompt_optimization_job_connection_error(client, mock_api_key, tmp_path):
@@ -2264,14 +2267,14 @@ def test_prompt_optimization_job_creates_run_config_on_success(
             return_value=target_run_config,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_status_response,
+            return_value=_make_sdk_response(parsed=mock_status_response),
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_result_response,
+            return_value=_make_sdk_response(parsed=mock_result_response),
         ),
     ):
         response = client.get(
@@ -2376,14 +2379,14 @@ def test_prompt_optimization_job_only_creates_run_config_once(
             return_value=target_run_config,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_status_response,
+            return_value=_make_sdk_response(parsed=mock_status_response),
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_result_response,
+            return_value=_make_sdk_response(parsed=mock_result_response),
         ),
     ):
         response_1 = client.get(
@@ -2447,14 +2450,14 @@ def test_prompt_optimization_job_run_config_handles_missing_target_config(
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_status_response,
+            return_value=_make_sdk_response(parsed=mock_status_response),
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_result_response,
+            return_value=_make_sdk_response(parsed=mock_result_response),
         ),
     ):
         response = client.get(
@@ -2642,14 +2645,14 @@ def test_prompt_optimization_job_cleanup_prompt_when_prompt_creation_fails(
             return_value=task,
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_status_response,
+            return_value=_make_sdk_response(parsed=mock_status_response),
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_result_response,
+            return_value=_make_sdk_response(parsed=mock_result_response),
         ),
         patch(
             "app.desktop.studio_server.prompt_optimization_job_api.create_prompt_from_optimization",
@@ -2725,14 +2728,14 @@ def test_prompt_optimization_job_cleanup_both_artifacts_when_run_config_fails_af
 
     with (
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_status_response,
+            return_value=_make_sdk_response(parsed=mock_status_response),
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_result_response,
+            return_value=_make_sdk_response(parsed=mock_result_response),
         ),
         patch(
             "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
@@ -2816,14 +2819,14 @@ def test_prompt_optimization_job_retry_after_cleanup(mock_api_key, tmp_path):
     # First attempt: run config creation fails
     with (
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_status_response,
+            return_value=_make_sdk_response(parsed=mock_status_response),
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_result_response,
+            return_value=_make_sdk_response(parsed=mock_result_response),
         ),
         patch(
             "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
@@ -2855,14 +2858,14 @@ def test_prompt_optimization_job_retry_after_cleanup(mock_api_key, tmp_path):
     # Second attempt: should succeed because cleanup cleared the IDs
     with (
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_status_response,
+            return_value=_make_sdk_response(parsed=mock_status_response),
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_result_response,
+            return_value=_make_sdk_response(parsed=mock_result_response),
         ),
         patch(
             "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
@@ -2942,14 +2945,14 @@ def test_prompt_optimization_job_prevents_race_condition_on_artifact_creation(
         """Run two concurrent update calls to test locking."""
         with (
             patch(
-                "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+                "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
                 new_callable=AsyncMock,
-                return_value=mock_status_response,
+                return_value=_make_sdk_response(parsed=mock_status_response),
             ),
             patch(
-                "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+                "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
                 new_callable=AsyncMock,
-                return_value=mock_result_response,
+                return_value=_make_sdk_response(parsed=mock_result_response),
             ),
             patch(
                 "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
@@ -3051,14 +3054,14 @@ def test_update_prompt_optimization_job_status_transitions(
 
     with (
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_status_response,
+            return_value=_make_sdk_response(parsed=mock_status_response),
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_result_response,
+            return_value=_make_sdk_response(parsed=mock_result_response),
         ),
         patch(
             "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
@@ -3156,14 +3159,14 @@ def test_update_prompt_optimization_job_running_to_succeeded_creates_artifacts(
 
     with (
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_status_response,
+            return_value=_make_sdk_response(parsed=mock_status_response),
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_result_response,
+            return_value=_make_sdk_response(parsed=mock_result_response),
         ),
         patch(
             "app.desktop.studio_server.prompt_optimization_job_api.task_run_config_from_id",
@@ -3228,12 +3231,12 @@ def test_update_prompt_optimization_job_succeeded_to_succeeded_no_artifacts(
 
     with (
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_status_response,
+            return_value=_make_sdk_response(parsed=mock_status_response),
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
             new_callable=AsyncMock,
         ) as mock_result,
     ):
@@ -3292,12 +3295,12 @@ def test_update_prompt_optimization_job_pending_to_running_no_artifacts(
 
     with (
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_job_status_v1_jobs_job_type_job_id_status_get.asyncio_detailed",
             new_callable=AsyncMock,
-            return_value=mock_status_response,
+            return_value=_make_sdk_response(parsed=mock_status_response),
         ),
         patch(
-            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio",
+            "app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs.get_prompt_optimization_job_result_v1_jobs_prompt_optimization_job_job_id_result_get.asyncio_detailed",
             new_callable=AsyncMock,
         ) as mock_result,
     ):
