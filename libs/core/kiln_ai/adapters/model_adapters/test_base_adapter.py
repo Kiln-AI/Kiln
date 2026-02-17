@@ -764,20 +764,29 @@ class TestAgentRunContextLifecycle:
 
         adapter._run = mock_run
 
-        with pytest.raises(ValueError, match="Test error"):
-            await adapter.invoke_returning_run_output({"test": "input"})
+        provider = MagicMock()
+        provider.parser = "test_parser"
+        provider.formatter = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
 
-        # After error, run ID should be cleared
-        assert get_agent_run_id() is None
+        with (
+            patch("kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"),
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
+            ),
+        ):
+            with pytest.raises(ValueError, match="Test error"):
+                await adapter.invoke_returning_run_output({"test": "input"})
+
+            # After error, run ID should be cleared
+            assert get_agent_run_id() is None
 
     @pytest.mark.asyncio
     async def test_sub_agent_inherits_run(self, adapter, clear_context):
         """Test that sub-agent inherits parent's run ID."""
         from kiln_ai.adapters.run_output import RunOutput
-        from kiln_ai.run_context import (
-            get_agent_run_id,
-            set_agent_run_id,
-        )
+        from kiln_ai.run_context import get_agent_run_id, set_agent_run_id
 
         # Simulate parent agent setting the run context
         parent_run_id = "parent_agent_run"
@@ -824,10 +833,7 @@ class TestAgentRunContextLifecycle:
     async def test_sub_agent_does_not_create_new_run(self, adapter, clear_context):
         """Test that sub-agent doesn't create a new run ID."""
         from kiln_ai.adapters.run_output import RunOutput
-        from kiln_ai.run_context import (
-            get_agent_run_id,
-            set_agent_run_id,
-        )
+        from kiln_ai.run_context import get_agent_run_id, set_agent_run_id
 
         # Simulate parent agent setting the run context
         parent_run_id = "parent_agent_run"
