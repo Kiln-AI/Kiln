@@ -330,7 +330,7 @@
           above.
         </div>
       {:else}
-        <div class="overflow-x-auto rounded-lg border">
+        <div class="overflow-x-auto overflow-y-hidden rounded-lg border">
           <table class="table">
             <thead>
               <tr>
@@ -365,7 +365,7 @@
               </tr>
             </thead>
             <tbody>
-              {#each sorted_run_configs as config, i}
+              {#each sorted_run_configs as config}
                 {@const tools_info = getToolsDisplay(config)}
                 {@const is_default = config.id === task?.default_run_config_id}
                 {@const is_selected =
@@ -446,12 +446,7 @@
                     {formatDate(config.created_at)}
                   </td>
                   <td class="p-0" on:click|stopPropagation>
-                    <div
-                      class="dropdown dropdown-end dropdown-hover {i >=
-                      sorted_run_configs.length - 2
-                        ? 'dropdown-top'
-                        : ''}"
-                    >
+                    <div class="dropdown dropdown-end dropdown-hover">
                       <TableButton />
                       <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
                       <ul
