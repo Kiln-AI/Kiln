@@ -152,7 +152,7 @@
           button_label="Create Optimized Prompt"
           href={`/prompt_optimization/${project_id}/${task_id}/create_prompt_optimization_job`}
         >
-          <div slot="icon" class="p-4 border rounded-lg">
+          <div slot="icon" class="p-4 border rounded-lg bg-base-100">
             <div class="h-12 w-12">
               <img src="/images/animated_logo.svg" alt="Kiln Copilot" />
             </div>
@@ -180,7 +180,7 @@
             <div>
               {#if task?.instruction}
                 <div
-                  class="my-1 font-mono truncate w-full bg-white px-2 py-1 rounded-lg text-xs font-light"
+                  class="my-1 font-mono truncate w-full bg-base-100 px-2 py-1 rounded-lg text-xs font-light"
                 >
                   {task.instruction}
                 </div>
