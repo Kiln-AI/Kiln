@@ -12,9 +12,8 @@
   export let position: "left" | "right" | "bottom" | "top" = "left"
   export let no_pad = false
   export let symbol: "exclaim" | "info" = "info"
-  export let wrapper = false
 
-  let triggerElement: HTMLButtonElement | HTMLDivElement
+  let triggerElement: HTMLButtonElement
   let tooltipElement: HTMLDivElement
   let isVisible = false
   let cleanupAutoUpdate: (() => void) | null = null
@@ -115,46 +114,29 @@
   })
 </script>
 
-{#if wrapper}
-  <!-- Wrapper mode: wraps custom content -->
-  <div
-    bind:this={triggerElement}
-    on:mouseenter={showTooltip}
-    on:mouseleave={hideTooltip}
-    on:focus={showTooltip}
-    on:blur={hideTooltip}
-    class="inline-block"
-    aria-label="Tooltip"
-    role="tooltip"
+<button
+  bind:this={triggerElement}
+  on:mouseenter={showTooltip}
+  on:mouseleave={hideTooltip}
+  on:focus={showTooltip}
+  on:blur={hideTooltip}
+>
+  <svg
+    fill="currentColor"
+    class="w-6 h-6 inline {no_pad ? 'mt-[-3px] ml-[-3px]' : ''} {symbol ===
+    'exclaim'
+      ? 'rotate-180'
+      : ''}"
+    viewBox="0 0 1024 1024"
+    version="1"
+    xmlns="http://www.w3.org/2000/svg"
+    ><path
+      d="M512 717a205 205 0 1 0 0-410 205 205 0 0 0 0 410zm0 51a256 256 0 1 1 0-512 256 256 0 0 1 0 512z"
+    /><path
+      d="M485 364c7-7 16-11 27-11s20 4 27 11c8 8 11 17 11 28 0 10-3 19-11 27-7 7-16 11-27 11s-20-4-27-11c-8-8-11-17-11-27 0-11 3-20 11-28zM479 469h66v192h-66z"
+    /></svg
   >
-    <slot />
-  </div>
-{:else}
-  <!-- Icon mode: renders info icon button -->
-  <button
-    bind:this={triggerElement}
-    on:mouseenter={showTooltip}
-    on:mouseleave={hideTooltip}
-    on:focus={showTooltip}
-    on:blur={hideTooltip}
-  >
-    <svg
-      fill="currentColor"
-      class="w-6 h-6 inline {no_pad ? 'mt-[-3px] ml-[-3px]' : ''} {symbol ===
-      'exclaim'
-        ? 'rotate-180'
-        : ''}"
-      viewBox="0 0 1024 1024"
-      version="1"
-      xmlns="http://www.w3.org/2000/svg"
-      ><path
-        d="M512 717a205 205 0 1 0 0-410 205 205 0 0 0 0 410zm0 51a256 256 0 1 1 0-512 256 256 0 0 1 0 512z"
-      /><path
-        d="M485 364c7-7 16-11 27-11s20 4 27 11c8 8 11 17 11 28 0 10-3 19-11 27-7 7-16 11-27 11s-20-4-27-11c-8-8-11-17-11-27 0-11 3-20 11-28zM479 469h66v192h-66z"
-      /></svg
-    >
-  </button>
-{/if}
+</button>
 
 <!-- Custom Floating Tooltip -->
 <div
@@ -166,28 +148,24 @@
   on:mouseenter={showTooltip}
   on:mouseleave={hideTooltip}
 >
-  {#each tooltip_text.replace(/\\n/g, "\n").split("\n") as line}
-    {#if line.trim() !== ""}
-      <p>
-        {#each parseLineToSegments(line) as segment}
-          {#if segment.type === "text"}
-            {segment.content}
-          {:else if segment.type === "bold"}
-            <strong>{segment.content}</strong>
-          {:else if segment.type === "link"}
-            <a
-              href={segment.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="link"
-            >
-              {segment.text}
-            </a>
-          {/if}
-        {/each}
-      </p>
-    {:else}
-      <p class="h-2"></p>
-    {/if}
+  {#each tooltip_text.split("\n") as line}
+    <p>
+      {#each parseLineToSegments(line) as segment}
+        {#if segment.type === "text"}
+          {segment.content}
+        {:else if segment.type === "bold"}
+          <strong>{segment.content}</strong>
+        {:else if segment.type === "link"}
+          <a
+            href={segment.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="link"
+          >
+            {segment.text}
+          </a>
+        {/if}
+      {/each}
+    </p>
   {/each}
 </div>

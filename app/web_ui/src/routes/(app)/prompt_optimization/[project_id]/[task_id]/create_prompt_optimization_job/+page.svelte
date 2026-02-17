@@ -1095,7 +1095,7 @@
                                   train_tag &&
                                   `/dataset/${project_id}/${task_id}/add_data?tags=${train_tag}`}
                                 {@const tooltip_parts = [
-                                  "**Eval Not Ready**\n\nFix the following issues and click Refresh to update this eval's status.",
+                                  "Fix the following issues and click Refresh to update this eval's status.",
                                   judge_error === "No judge configured"
                                     ? "**No judge configured** — This eval doesn't have a default judge. To fix, [set default judge](" +
                                       eval_configs_link +
@@ -1120,17 +1120,19 @@
                                 ].filter((x) => x !== null)}
                                 {@const combined_tooltip =
                                   tooltip_parts.join("\n\n")}
-                                <InfoTooltip
-                                  tooltip_text={combined_tooltip}
-                                  position="left"
-                                  wrapper={true}
-                                >
+                                <div class="flex flex-row items-center gap-1">
                                   <div
                                     class="badge badge-outline badge-sm badge-error"
                                   >
                                     Not Ready
                                   </div>
-                                </InfoTooltip>
+                                  <div class="text-gray-500">
+                                    <InfoTooltip
+                                      tooltip_text={combined_tooltip}
+                                      position="right"
+                                    />
+                                  </div>
+                                </div>
                               {/if}
                             </td>
                             <td class="text-sm text-gray-500 whitespace-nowrap">
