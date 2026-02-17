@@ -33,13 +33,14 @@ T = TypeVar("T")
 
 def unwrap_response_allow_none(
     response: Response[T | HTTPValidationError],
+    default_detail: str = "Unknown error.",
 ) -> T | None:
     """
     Raise an error if the response is not 2xx or a validation error, and return the parsed response.
 
     The returned value is of the type T.
     """
-    check_response_error(response)
+    check_response_error(response, default_detail=default_detail)
 
     parsed_response = response.parsed
     # we must check for this to narrow down the type, but this should never
@@ -50,7 +51,11 @@ def unwrap_response_allow_none(
     return parsed_response
 
 
-def unwrap_response(response: Response[T | HTTPValidationError]) -> T:
+def unwrap_response(
+    response: Response[T | HTTPValidationError],
+    default_detail: str = "Unknown error.",
+    none_detail: str = "An unknown error occurred.",
+) -> T:
     """
     Raise an error if the response is not 2xx or a validation error or None, and return the parsed response.
 
@@ -58,8 +63,8 @@ def unwrap_response(response: Response[T | HTTPValidationError]) -> T:
 
     The returned value is of the type T.
     """
-    parsed = unwrap_response_allow_none(response)
+    parsed = unwrap_response_allow_none(response, default_detail=default_detail)
     if parsed is None:
-        raise RuntimeError("An unknown error occurred.")
+        raise HTTPException(status_code=500, detail=none_detail)
 
     return parsed

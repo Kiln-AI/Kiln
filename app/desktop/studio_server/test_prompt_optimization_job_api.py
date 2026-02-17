@@ -1444,7 +1444,7 @@ def test_check_run_config_server_none_response(client, mock_api_key, tmp_path):
         )
 
         assert response.status_code == 500
-        assert "No response from server" in response.json()["detail"]
+        assert "unknown error" in response.json()["detail"].lower()
 
 
 def test_check_run_config_exception(client, mock_api_key, tmp_path):
@@ -1742,7 +1742,7 @@ def test_check_eval_server_none_response(client, mock_api_key, tmp_path):
         )
 
         assert response.status_code == 500
-        assert "No response from server" in response.json()["detail"]
+        assert "unknown error" in response.json()["detail"].lower()
 
 
 def test_check_eval_exception(client, mock_api_key, tmp_path):
@@ -2054,7 +2054,7 @@ def test_start_prompt_optimization_job_server_none_response(
         )
 
         assert response.status_code == 500
-        assert "unexpected response from server" in response.json()["detail"]
+        assert "unknown error" in response.json()["detail"].lower()
 
 
 def test_start_prompt_optimization_job_connection_error(client, mock_api_key, tmp_path):

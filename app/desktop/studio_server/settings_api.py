@@ -8,7 +8,7 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
-from app.desktop.studio_server.utils.response_utils import check_response_error
+from app.desktop.studio_server.utils.response_utils import unwrap_response
 from fastapi import FastAPI, HTTPException
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.filesystem import open_folder
@@ -77,13 +77,9 @@ def connect_settings(app: FastAPI):
                 feature_codes=feature_codes,
             )
         )
-        check_response_error(detailed_result)
-
-        result = detailed_result.parsed
-        if result is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to check entitlements. Please try again.",
-            )
+        result = unwrap_response(
+            detailed_result,
+            none_detail="Failed to check entitlements. Please try again.",
+        )
 
         return result.additional_properties

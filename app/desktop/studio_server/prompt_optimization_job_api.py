@@ -16,9 +16,6 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.client import (
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.body_start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post import (
     BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost,
 )
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models.http_validation_error import (
-    HTTPValidationError,
-)
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.job_status import (
     JobStatus,
 )
@@ -34,7 +31,7 @@ from app.desktop.studio_server.eval_api import (
     eval_from_id,
     task_run_config_from_id,
 )
-from app.desktop.studio_server.utils.response_utils import check_response_error
+from app.desktop.studio_server.utils.response_utils import unwrap_response
 from fastapi import FastAPI, HTTPException
 from kiln_ai.cli.commands.package_project import (
     PackageForTrainingConfig,
@@ -244,18 +241,12 @@ async def _create_artifacts_for_succeeded_job(
         job_id=prompt_optimization_job.job_id,
         client=server_client,
     )
-    check_response_error(
+    result_response = unwrap_response(
         detailed_response,
         default_detail="Failed to get Prompt Optimization job result.",
     )
 
-    result_response = detailed_response.parsed
-    if (
-        result_response
-        and not isinstance(result_response, HTTPValidationError)
-        and result_response.output
-        and hasattr(result_response.output, "optimized_prompt")
-    ):
+    if result_response.output and result_response.output.optimized_prompt:
         optimized_prompt_text = result_response.output.optimized_prompt
         prompt_optimization_job.optimized_prompt = optimized_prompt_text
 
@@ -307,19 +298,10 @@ async def update_prompt_optimization_job_and_create_artifacts(
                 client=server_client,
             )
         )
-        check_response_error(
+        status_response = unwrap_response(
             detailed_response,
             default_detail=f"Could not fetch status for Prompt Optimization job {prompt_optimization_job.job_id}",
         )
-
-        status_response = detailed_response.parsed
-        if status_response is None or isinstance(status_response, HTTPValidationError):
-            logger.warning(
-                f"Could not fetch status for Prompt Optimization job {prompt_optimization_job.job_id}"
-            )
-            raise RuntimeError(
-                f"Could not fetch status for Prompt Optimization job {prompt_optimization_job.job_id}: {status_response}"
-            )
 
         new_status = str(status_response.status.value)
 
@@ -385,17 +367,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
                 model_name=model_name,
                 model_provider_name=model_provider.value,
             )
-            check_response_error(
-                detailed_response,
-                default_detail="Failed to check run config: No response from server",
-            )
-
-            response = detailed_response.parsed
-            if response is None or isinstance(response, HTTPValidationError):
-                raise HTTPException(
-                    status_code=500,
-                    detail="Failed to check run config: No response from server",
-                )
+            response = unwrap_response(detailed_response)
 
             return CheckRunConfigResponse(is_supported=response.is_model_supported)
 
@@ -463,17 +435,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
                 model_name=model_name,
                 model_provider_name=model_provider,
             )
-            check_response_error(
-                detailed_response,
-                default_detail="Failed to check eval: No response from server",
-            )
-
-            response = detailed_response.parsed
-            if response is None or isinstance(response, HTTPValidationError):
-                raise HTTPException(
-                    status_code=500,
-                    detail="Failed to check eval: No response from server",
-                )
+            response = unwrap_response(detailed_response)
 
             return CheckEvalResponse(
                 has_default_config=True,
@@ -564,17 +526,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             detailed_response = await start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post.asyncio_detailed(
                 client=server_client, body=body
             )
-            check_response_error(
-                detailed_response,
-                default_detail="Failed to start Prompt Optimization job: unexpected error from server",
-            )
-
-            response = detailed_response.parsed
-            if response is None or isinstance(response, HTTPValidationError):
-                raise HTTPException(
-                    status_code=500,
-                    detail="Failed to start Prompt Optimization job: unexpected response from server",
-                )
+            response = unwrap_response(detailed_response)
 
             prompt_optimization_job = PromptOptimizationJob(
                 name=generate_memorable_name(),
@@ -704,17 +656,10 @@ def connect_prompt_optimization_job_api(app: FastAPI):
                 job_id=job_id,
                 client=server_client,
             )
-            check_response_error(
+            response = unwrap_response(
                 detailed_response,
                 default_detail=f"Prompt Optimization job {job_id} not found",
             )
-
-            response = detailed_response.parsed
-            if response is None or isinstance(response, HTTPValidationError):
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Prompt Optimization job {job_id} not found",
-                )
 
             return PublicPromptOptimizationJobStatusResponse(
                 job_id=response.job_id, status=response.status
@@ -749,17 +694,10 @@ def connect_prompt_optimization_job_api(app: FastAPI):
                 job_id=job_id,
                 client=server_client,
             )
-            check_response_error(
+            response = unwrap_response(
                 detailed_response,
                 default_detail=f"Prompt Optimization job {job_id} result not found",
             )
-
-            response = detailed_response.parsed
-            if response is None or isinstance(response, HTTPValidationError):
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Prompt Optimization job {job_id} result not found",
-                )
 
             if not response.output or not hasattr(response.output, "optimized_prompt"):
                 raise HTTPException(

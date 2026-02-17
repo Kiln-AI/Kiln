@@ -12,7 +12,6 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
     ClarifySpecOutput,
     GenerateBatchInput,
     GenerateBatchOutput,
-    HTTPValidationError,
     RefineSpecInput,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
@@ -47,7 +46,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
     generate_copilot_examples,
     get_copilot_api_key,
 )
-from app.desktop.studio_server.utils.response_utils import check_response_error
+from app.desktop.studio_server.utils.response_utils import unwrap_response
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.basemodel import FilenameString
@@ -127,19 +126,10 @@ def connect_copilot_api(app: FastAPI):
                 body=clarify_input,
             )
         )
-        check_response_error(detailed_result)
-
-        result = detailed_result.parsed
-        if result is None:
-            raise HTTPException(
-                status_code=500, detail="Failed to analyze spec. Please try again."
-            )
-
-        if isinstance(result, HTTPValidationError):
-            raise HTTPException(
-                status_code=422,
-                detail="Validation error.",
-            )
+        result = unwrap_response(
+            detailed_result,
+            none_detail="Failed to analyze spec. Please try again.",
+        )
 
         if isinstance(result, ClarifySpecOutput):
             return ClarifySpecApiOutput.model_validate(result.to_dict())
@@ -162,20 +152,10 @@ def connect_copilot_api(app: FastAPI):
                 body=refine_input,
             )
         )
-        check_response_error(detailed_result)
-
-        result = detailed_result.parsed
-        if result is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to refine spec with feedback. Please try again.",
-            )
-
-        if isinstance(result, HTTPValidationError):
-            raise HTTPException(
-                status_code=422,
-                detail="Validation error.",
-            )
+        result = unwrap_response(
+            detailed_result,
+            none_detail="Failed to refine spec with feedback. Please try again.",
+        )
 
         if isinstance(result, RefineSpecApiOutputClient):
             return RefineSpecApiOutput.model_validate(result.to_dict())
@@ -198,20 +178,10 @@ def connect_copilot_api(app: FastAPI):
                 body=generate_input,
             )
         )
-        check_response_error(detailed_result)
-
-        result = detailed_result.parsed
-        if result is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to generate synthetic data for spec. Please try again.",
-            )
-
-        if isinstance(result, HTTPValidationError):
-            raise HTTPException(
-                status_code=422,
-                detail="Validation error.",
-            )
+        result = unwrap_response(
+            detailed_result,
+            none_detail="Failed to generate synthetic data for spec. Please try again.",
+        )
 
         if isinstance(result, GenerateBatchOutput):
             return GenerateBatchApiOutput.model_validate(result.to_dict())
@@ -236,20 +206,10 @@ def connect_copilot_api(app: FastAPI):
                 body=questioner_input,
             )
         )
-        check_response_error(detailed_result)
-
-        result = detailed_result.parsed
-        if result is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to generate clarifying questions for spec. Please try again.",
-            )
-
-        if isinstance(result, HTTPValidationError):
-            raise HTTPException(
-                status_code=422,
-                detail="Validation error.",
-            )
+        result = unwrap_response(
+            detailed_result,
+            none_detail="Failed to generate clarifying questions for spec. Please try again.",
+        )
 
         if isinstance(result, QuestionSetServerApi):
             return QuestionSet.model_validate(result.to_dict())
@@ -272,20 +232,10 @@ def connect_copilot_api(app: FastAPI):
             client=client,
             body=submit_input,
         )
-        check_response_error(detailed_result)
-
-        result = detailed_result.parsed
-        if result is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to refine spec with question answers. Please try again.",
-            )
-
-        if isinstance(result, HTTPValidationError):
-            raise HTTPException(
-                status_code=422,
-                detail="Validation error.",
-            )
+        result = unwrap_response(
+            detailed_result,
+            none_detail="Failed to refine spec with question answers. Please try again.",
+        )
 
         if isinstance(result, RefineSpecApiOutputClient):
             return RefineSpecApiOutput.model_validate(result.to_dict())

@@ -109,6 +109,15 @@ def test_unwrap_allow_none_raises_on_error_status():
     assert exc_info.value.detail == "bad request"
 
 
+def test_unwrap_allow_none_uses_custom_default_detail():
+    resp = _make_response(HTTPStatus.BAD_REQUEST, b"not json", parsed=None)
+
+    with pytest.raises(HTTPException) as exc_info:
+        unwrap_response_allow_none(resp, default_detail="Custom detail")
+
+    assert exc_info.value.detail == "Custom detail"
+
+
 def test_unwrap_allow_none_raises_on_validation_error():
     resp = _make_response(HTTPStatus.OK, b"", parsed=HTTPValidationError())
 
@@ -127,8 +136,11 @@ def test_unwrap_returns_parsed_value():
 def test_unwrap_raises_on_none_parsed():
     resp = _make_response(HTTPStatus.OK, b"", parsed=None)
 
-    with pytest.raises(RuntimeError, match="unknown error"):
+    with pytest.raises(HTTPException) as exc_info:
         unwrap_response(resp)
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == "An unknown error occurred."
 
 
 def test_unwrap_raises_on_error_status():
@@ -140,6 +152,25 @@ def test_unwrap_raises_on_error_status():
 
     assert exc_info.value.status_code == HTTPStatus.FORBIDDEN
     assert exc_info.value.detail == "forbidden"
+
+
+def test_unwrap_uses_custom_default_detail():
+    resp = _make_response(HTTPStatus.BAD_REQUEST, b"not json", parsed=None)
+
+    with pytest.raises(HTTPException) as exc_info:
+        unwrap_response(resp, default_detail="Custom detail")
+
+    assert exc_info.value.detail == "Custom detail"
+
+
+def test_unwrap_uses_custom_none_detail():
+    resp = _make_response(HTTPStatus.OK, b"", parsed=None)
+
+    with pytest.raises(HTTPException) as exc_info:
+        unwrap_response(resp, none_detail="No data returned")
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.detail == "No data returned"
 
 
 def test_unwrap_raises_on_validation_error():
