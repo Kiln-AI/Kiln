@@ -14,8 +14,12 @@ def _make_response(status_code: HTTPStatus, content: bytes) -> MagicMock:
     return resp
 
 
-def test_success_does_not_raise():
-    resp = _make_response(HTTPStatus.OK, b"")
+@pytest.mark.parametrize(
+    "status_code",
+    [HTTPStatus.OK, HTTPStatus.CREATED, HTTPStatus.ACCEPTED, HTTPStatus.NO_CONTENT],
+)
+def test_2xx_does_not_raise(status_code: HTTPStatus):
+    resp = _make_response(status_code, b"")
     check_response_error(resp)
 
 

@@ -8,7 +8,7 @@ def check_response_error(
     response: Response, default_detail: str = "Unknown error."
 ) -> None:
     """Check if the response is an error with user centric message."""
-    if response.status_code != 200:
+    if not (200 <= response.status_code < 300):
         # response.content is a bytes object
         # We check if it's a JSON object with a user message field
         detail = default_detail
