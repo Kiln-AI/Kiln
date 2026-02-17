@@ -727,7 +727,7 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Create Optimized Prompt"
-    subtitle="Create a prompt optimized for your evals using training data."
+    subtitle="Automatically optimize your prompt, maximizing its quality using evals."
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer"
     breadcrumbs={[
@@ -778,16 +778,17 @@
             <div class="flex flex-col gap-1">
               <div class="text-xl font-bold flex justify-between items-center">
                 <div class="text-xl font-bold">
-                  Step 1: Select Run Configuration
+                  Step 1: Select Target Run Configuration
                 </div>
                 <span class="font-normal">
                   <InfoTooltip
-                    tooltip_text="Kiln Prompt Optimization only supports OpenRouter, OpenAI, Gemini, and Anthropic providers."
+                    tooltip_text="The selected run configuration is used for two things:\n\n**1. Target model** — the model we'll optimize the prompt for. Different models respond differently, so the best prompt is model-specific.\n\n**2. Starting prompt** — we'll begin from this prompt and iterate. Choose your best prompt so the optimizer can build on your work.\n\nKiln Prompt Optimization only supports OpenRouter, OpenAI, Gemini, and Anthropic providers."
                   />
                 </span>
               </div>
               <div class="text-xs text-gray-500 font-medium">
-                The task run configuration to use during optimization.
+                We'll tune the prompt for this model. Different models respond
+                differently, so the best prompt is model-specific.
               </div>
             </div>
             <SavedRunConfigurationsDropdown
@@ -848,17 +849,16 @@
                 <div class="mt-6 flex flex-col md:flex-row gap-6">
                   <div class="flex-1 min-w-0">
                     <div class="text-md font-semibold text-left">
-                      Run Configuration Prompt
+                      Prompt
                     </div>
-                    <div class="text-xs text-gray-500 mt-1 mb-1">
-                      Your selected run configuration's prompt. Will be used as
-                      the starting point for optimization.
+                    <div class="text-xs text-gray-500 font-medium mt-1 mb-1">
+                      Will be used as the starting point for optimization.
                     </div>
                     <Output raw_output={prompt_text || ""} />
                   </div>
                   <div class="flex-shrink-0 flex-row">
                     <div class="text-md font-semibold text-left mb-4">
-                      Run Configuration Details
+                      Details
                     </div>
                     <PropertyList properties={run_config_properties} />
                   </div>
@@ -871,10 +871,17 @@
             <div>
               <div>
                 <div class="flex flex-col gap-1">
-                  <div class="text-xl font-bold">Step 2: Select Evals</div>
+                  <div class="text-xl font-bold flex justify-between items-center">
+                    <div>Step 2: Select Optimization Evals</div>
+                    <span class="font-normal">
+                      <InfoTooltip
+                        tooltip_text="Your prompt will be optimized to maximize performance across these evals.\n\nOur prompt optimizer will iteratively update your prompt.\n\n**Evals** — We use these evals to measure whether each new prompt is an improvement or regression.\n\n**Training Data** — We use the training dataset associated with each eval during optimization, so eval data is never seen by the optimizer.\n\n[Learn more](https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer)"
+                      />
+                    </span>
+                  </div>
                   <div class="text-xs text-gray-500 font-medium">
                     Your prompt will be optimized to maximize performance across
-                    these evaluators using their tagged training data.
+                    these evals.
                   </div>
                 </div>
               </div>
@@ -975,6 +982,7 @@
                                 : "\u200B"}
                             </span>
                           </th>
+                          <th style="width: 100px;"></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -988,10 +996,8 @@
                             class="hover:bg-base-200 cursor-pointer {!is_selected
                               ? 'opacity-70 text-base-content/70'
                               : ''}"
-                            on:click={() =>
-                              eval_url && window.open(eval_url, "_blank")}
                           >
-                            <td on:click|stopPropagation>
+                            <td>
                               <input
                                 type="checkbox"
                                 class="checkbox checkbox-sm"
@@ -1093,6 +1099,17 @@
                             <td class="text-sm text-gray-500 whitespace-nowrap">
                               {formatDate(evalItem.created_at || undefined)}
                             </td>
+                            <td class="text-right">
+                              {#if eval_url}
+                                <a
+                                  href={eval_url}
+                                  target="_blank"
+                                  class="btn btn-xs btn-outline"
+                                >
+                                  View Eval
+                                </a>
+                              {/if}
+                            </td>
                           </tr>
                         {/each}
                       </tbody>
@@ -1101,20 +1118,15 @@
                 {/if}
 
                 {#if selected_eval_ids.size === 0}
-                  <div class="mt-4 text-sm text-error text-end">
-                    No evaluators selected. Please select at least one
-                    evaluator.
-                  </div>
-                {:else if selected_eval_ids.size < evals_with_configs.length}
                   <div class="mt-4 flex justify-end">
                     <Warning
-                      warning_color="warning"
+                      warning_color="error"
                       warning_icon="exclaim"
                       tight={true}
                     >
                       <div class="text-sm text-gray-600">
-                        Some evaluators are not selected. Your prompt will not
-                        be optimized for these evaluators.
+                        No evaluators selected. Please select at least one
+                        evaluator.
                       </div>
                     </Warning>
                   </div>
