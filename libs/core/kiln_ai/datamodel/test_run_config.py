@@ -137,12 +137,10 @@ class TestMcpRunConfigProperties:
             McpRunConfigProperties(type="mcp")  # type: ignore
 
     def test_missing_type_raises(self):
-        with pytest.raises(ValidationError):
-            McpRunConfigProperties(  # type: ignore
-                tool_reference=MCPToolReference(
-                    tool_id="mcp::local::server_id::tool_name"
-                )
-            )
+        config = McpRunConfigProperties(
+            tool_reference=MCPToolReference(tool_id="mcp::local::server_id::tool_name")
+        )
+        assert config.type == "mcp"
 
 
 class TestDiscriminatedUnion:

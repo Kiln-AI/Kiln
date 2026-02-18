@@ -16,6 +16,7 @@ from kiln_ai.adapters.chat.chat_utils import build_tool_call_messages
 from kiln_ai.adapters.fine_tune.vertex_formatter import generate_vertex_gemini
 from kiln_ai.datamodel import DatasetSplit, TaskRun
 from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES, ChatStrategy
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.tools.base_tool import ToolCallDefinition
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -414,7 +415,9 @@ class DatasetFormatter:
             return None
 
         run_config = task_run.output.source.run_config
-        if run_config is None:
+        if run_config is None or not isinstance(
+            run_config, KilnAgentRunConfigProperties
+        ):
             return None
 
         tools_config = run_config.tools_config

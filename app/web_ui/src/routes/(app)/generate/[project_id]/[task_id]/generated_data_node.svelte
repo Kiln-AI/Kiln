@@ -11,6 +11,7 @@
   import { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
   import { get } from "svelte/store"
   import posthog from "posthog-js"
+  import { isKilnAgentRunConfig } from "$lib/types"
   import TableButton from "./table_button.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
@@ -166,6 +167,12 @@
       }
       if (!run_config_properties) {
         throw new KilnError("No run config properties.", null)
+      }
+      if (!isKilnAgentRunConfig(run_config_properties)) {
+        throw new KilnError(
+          "Synthetic data generation requires a kiln_agent run config.",
+          null,
+        )
       }
       if (
         !run_config_properties.model_name ||

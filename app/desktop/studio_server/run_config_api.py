@@ -3,11 +3,8 @@ from typing import Any, Dict
 
 from app.desktop.studio_server.tool_api import tool_server_from_id
 from fastapi import FastAPI, HTTPException
-from kiln_ai.adapters.ml_model_list import ModelProviderName
-from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
 from kiln_ai.datamodel.json_schema import single_string_field_name
-from kiln_ai.datamodel.prompt_id import PromptGenerators
-from kiln_ai.datamodel.run_config import MCPToolReference, RunConfigKind
+from kiln_ai.datamodel.run_config import MCPToolReference, McpRunConfigProperties
 from kiln_ai.datamodel.task import RunConfigProperties, Task, TaskRunConfig
 from kiln_ai.datamodel.tool_id import mcp_server_and_tool_name_from_id
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
@@ -167,18 +164,13 @@ def _create_mcp_run_config_properties(
     Returns:
         RunConfigProperties configured for the MCP tool
     """
-    return RunConfigProperties(
-        kind=RunConfigKind.mcp,
-        mcp_tool=MCPToolReference(
+    return McpRunConfigProperties(
+        tool_reference=MCPToolReference(
             tool_id=tool_id,
             tool_name=tool_name,
             input_schema=tool_input_schema,
             output_schema=tool_output_schema,
         ),
-        model_name="mcp_tool",
-        model_provider_name=ModelProviderName.mcp_provider,
-        prompt_id=PromptGenerators.SIMPLE,
-        structured_output_mode=StructuredOutputMode.default,
     )
 
 

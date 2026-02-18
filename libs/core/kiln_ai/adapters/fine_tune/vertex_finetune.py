@@ -14,6 +14,7 @@ from kiln_ai.adapters.fine_tune.base_finetune import (
 )
 from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetFormatter
 from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.utils.config import Config
 
 logger = logging.getLogger(__name__)
@@ -119,7 +120,9 @@ class VertexFinetune(BaseFinetuneAdapter):
 
         # Use chat format for unstructured output, and JSON for formatted output
         format = DatasetFormat.VERTEX_GEMINI
-        if task.output_json_schema and self.datamodel.run_config is not None:
+        if task.output_json_schema and isinstance(
+            self.datamodel.run_config, KilnAgentRunConfigProperties
+        ):
             self.datamodel.run_config.structured_output_mode = (
                 StructuredOutputMode.json_mode
             )

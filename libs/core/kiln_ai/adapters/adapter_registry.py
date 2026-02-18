@@ -11,15 +11,13 @@ from kiln_ai.adapters.provider_tools import (
     find_user_model,
     lite_llm_core_config_for_provider,
 )
-from kiln_ai.datamodel.run_config import RunConfigKind
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import RunConfigProperties
 
 
 def litellm_core_provider_config(
-    run_config_properties: RunConfigProperties,
+    run_config_properties: KilnAgentRunConfigProperties,
 ) -> LiteLlmConfig:
-    if run_config_properties.kind != RunConfigKind.kiln_agent:
-        raise ValueError("litellm config requested for non-llm run config")
     # For things like the fine-tune provider, we want to run the underlying provider (e.g. openai)
     core_provider_name = core_provider(
         run_config_properties.model_name, run_config_properties.model_provider_name
@@ -75,13 +73,15 @@ def adapter_for_task(
     base_adapter_config: AdapterConfig | None = None,
 ) -> BaseAdapter:
     # for MCP run config, use MCPAdapter to call the MCP server
-    if run_config_properties.kind == RunConfigKind.mcp:
+    if run_config_properties.type == "mcp":
         return MCPAdapter(
             task=kiln_task,
             run_config=run_config_properties,
             config=base_adapter_config,
         )
 
+    if not isinstance(run_config_properties, KilnAgentRunConfigProperties):
+        raise ValueError("Kiln agent run config is required for LiteLlmAdapter")
     return LiteLlmAdapter(
         kiln_task=kiln_task,
         config=litellm_core_provider_config(run_config_properties),

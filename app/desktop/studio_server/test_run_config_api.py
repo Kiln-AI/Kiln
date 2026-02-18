@@ -369,11 +369,10 @@ def test_create_task_from_tool_plaintext(client, tmp_path):
     run_configs = created_task.run_configs()
     assert len(run_configs) == 1
     rc = run_configs[0]
-    assert rc.run_config_properties.kind == "mcp"
-    assert rc.run_config_properties.mcp_tool is not None
-    assert rc.run_config_properties.mcp_tool.tool_name == "fake_tool"
-    assert rc.run_config_properties.mcp_tool.input_schema == tool_input_schema
-    assert rc.run_config_properties.mcp_tool.output_schema is None
+    assert rc.run_config_properties.type == "mcp"
+    assert rc.run_config_properties.tool_reference.tool_name == "fake_tool"
+    assert rc.run_config_properties.tool_reference.input_schema == tool_input_schema
+    assert rc.run_config_properties.tool_reference.output_schema is None
 
 
 def test_create_task_from_tool_structured(client, tmp_path):
@@ -436,11 +435,10 @@ def test_create_task_from_tool_structured(client, tmp_path):
     run_configs = created_task.run_configs()
     assert len(run_configs) == 1
     rc = run_configs[0]
-    assert rc.run_config_properties.kind == "mcp"
-    assert rc.run_config_properties.mcp_tool is not None
-    assert rc.run_config_properties.mcp_tool.tool_name == "fake_tool"
-    assert rc.run_config_properties.mcp_tool.input_schema == tool_input_schema
-    assert rc.run_config_properties.mcp_tool.output_schema == tool_output_schema
+    assert rc.run_config_properties.type == "mcp"
+    assert rc.run_config_properties.tool_reference.tool_name == "fake_tool"
+    assert rc.run_config_properties.tool_reference.input_schema == tool_input_schema
+    assert rc.run_config_properties.tool_reference.output_schema == tool_output_schema
 
 
 def test_create_task_from_tool_invalid_tool(client, tmp_path):
@@ -516,17 +514,16 @@ def test_create_mcp_run_config_success(client, tmp_path):
 
     assert response.status_code == 200
     data = response.json()
-    assert data["run_config_properties"]["kind"] == "mcp"
-    assert data["run_config_properties"]["mcp_tool"]["tool_name"] == "fake_tool"
+    assert data["run_config_properties"]["type"] == "mcp"
+    assert data["run_config_properties"]["tool_reference"]["tool_name"] == "fake_tool"
 
     run_configs = task.run_configs()
     assert len(run_configs) == 1
     rc = run_configs[0]
-    assert rc.run_config_properties.kind == "mcp"
-    assert rc.run_config_properties.mcp_tool is not None
-    assert rc.run_config_properties.mcp_tool.tool_name == "fake_tool"
-    assert rc.run_config_properties.mcp_tool.input_schema == task_input_schema
-    assert rc.run_config_properties.mcp_tool.output_schema is None
+    assert rc.run_config_properties.type == "mcp"
+    assert rc.run_config_properties.tool_reference.tool_name == "fake_tool"
+    assert rc.run_config_properties.tool_reference.input_schema == task_input_schema
+    assert rc.run_config_properties.tool_reference.output_schema is None
 
 
 def test_create_mcp_run_config_plaintext_success(client, tmp_path):
@@ -577,22 +574,21 @@ def test_create_mcp_run_config_plaintext_success(client, tmp_path):
     result = response.json()
     assert result["name"] == "Plaintext MCP Config"
     assert result["description"] == "A test description"
-    assert result["run_config_properties"]["kind"] == "mcp"
-    assert result["run_config_properties"]["mcp_tool"]["tool_name"] == "test_tool"
+    assert result["run_config_properties"]["type"] == "mcp"
+    assert result["run_config_properties"]["tool_reference"]["tool_name"] == "test_tool"
 
     # Verify the run config was created with the correct input and output schemas
     run_configs = task.run_configs()
     assert len(run_configs) == 1
     rc = run_configs[0]
     assert rc.description == "A test description"
-    assert rc.run_config_properties.kind == "mcp"
-    assert rc.run_config_properties.mcp_tool is not None
-    assert rc.run_config_properties.mcp_tool.tool_name == "test_tool"
-    assert rc.run_config_properties.mcp_tool.input_schema == {
+    assert rc.run_config_properties.type == "mcp"
+    assert rc.run_config_properties.tool_reference.tool_name == "test_tool"
+    assert rc.run_config_properties.tool_reference.input_schema == {
         "type": "object",
         "properties": {"message": {"type": "string"}},
     }
-    assert rc.run_config_properties.mcp_tool.output_schema is None
+    assert rc.run_config_properties.tool_reference.output_schema is None
 
 
 def test_create_mcp_run_config_input_schema_mismatch(client, tmp_path):
@@ -927,15 +923,11 @@ def test_create_mcp_run_config_properties():
         tool_output_schema=tool_output_schema,
     )
 
-    assert result.kind == "mcp"
-    assert result.model_name == "mcp_tool"
-    assert result.model_provider_name == "mcp_provider"
-    assert result.prompt_id == "simple_prompt_builder"
-    assert result.mcp_tool is not None
-    assert result.mcp_tool.tool_id == "mcp::local::server::my_tool"
-    assert result.mcp_tool.tool_name == "my_tool"
-    assert result.mcp_tool.input_schema == tool_input_schema
-    assert result.mcp_tool.output_schema == tool_output_schema
+    assert result.type == "mcp"
+    assert result.tool_reference.tool_id == "mcp::local::server::my_tool"
+    assert result.tool_reference.tool_name == "my_tool"
+    assert result.tool_reference.input_schema == tool_input_schema
+    assert result.tool_reference.output_schema == tool_output_schema
 
 
 def test_create_mcp_run_config_properties_no_output_schema():
@@ -951,6 +943,5 @@ def test_create_mcp_run_config_properties_no_output_schema():
         tool_output_schema=None,
     )
 
-    assert result.kind == "mcp"
-    assert result.mcp_tool is not None
-    assert result.mcp_tool.output_schema is None
+    assert result.type == "mcp"
+    assert result.tool_reference.output_schema is None

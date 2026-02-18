@@ -4,7 +4,7 @@ import type {
   ProviderModels,
   ToolSetApiDescription,
 } from "$lib/types"
-import { is_mcp_run_config } from "$lib/utils/run_config_kind"
+import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
 import {
   model_name,
   prompt_name_from_id,
@@ -22,8 +22,8 @@ export function getRunConfigDisplayName(
   config: TaskRunConfig,
   model_info: ProviderModels | null,
 ): string {
-  if (is_mcp_run_config(config)) {
-    return config.run_config_properties.mcp_tool?.tool_name ?? "MCP Tool"
+  if (isMcpRunConfig(config.run_config_properties)) {
+    return config.run_config_properties.tool_reference.tool_name ?? "MCP Tool"
   }
   return getDetailedModelNameFromParts(
     config.run_config_properties.model_name,
@@ -52,6 +52,9 @@ export function getRunConfigPromptDisplayName(
   task_run_config: TaskRunConfig,
   current_task_prompts: PromptResponse | null,
 ): string {
+  if (!isKilnAgentRunConfig(task_run_config.run_config_properties)) {
+    return task_run_config.name || "Unnamed Run Config"
+  }
   const prompt_name = prompt_name_from_id(
     task_run_config?.run_config_properties?.prompt_id,
     current_task_prompts,
@@ -81,6 +84,9 @@ export function getRunConfigPromptDisplayName(
 export function getRunConfigPromptInfoText(
   task_run_config: TaskRunConfig,
 ): string | null {
+  if (!isKilnAgentRunConfig(task_run_config.run_config_properties)) {
+    return null
+  }
   // Special case: description for prompts frozen to the task run config. The name alone isn't that helpful, so we say where it comes from (eg "Basic (Zero Shot")) -->
   if (
     task_run_config.prompt?.generator_id &&
@@ -106,10 +112,11 @@ export function getRunConfigUiProperties(
   task_prompts: PromptResponse | null,
   available_tools: Record<string, ToolSetApiDescription[]> | null,
 ): UiProperty[] {
-  if (is_mcp_run_config(run_config)) {
-    const tool_id = run_config.run_config_properties.mcp_tool?.tool_id ?? null
+  if (isMcpRunConfig(run_config.run_config_properties)) {
+    const tool_id =
+      run_config.run_config_properties.tool_reference.tool_id ?? null
     const tool_name =
-      run_config.run_config_properties.mcp_tool?.tool_name ?? "Unknown"
+      run_config.run_config_properties.tool_reference.tool_name ?? "Unknown"
     const tool_server_link = tool_id ? tool_link(project_id, tool_id) : null
     const tool_server_name = available_tools
       ? get_tool_server_name(available_tools, project_id, tool_id)
@@ -149,6 +156,23 @@ export function getRunConfigUiProperties(
       {
         name: "Tool ID",
         value: tool_id ?? "Unknown",
+      },
+    ]
+  }
+
+  if (!isKilnAgentRunConfig(run_config.run_config_properties)) {
+    return [
+      {
+        name: "ID",
+        value: run_config.id || "N/A",
+      },
+      {
+        name: "Name",
+        value: run_config.name || "N/A",
+      },
+      {
+        name: "Created At",
+        value: formatDate(run_config.created_at),
       },
     ]
   }

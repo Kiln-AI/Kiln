@@ -7,7 +7,7 @@ from openai.types.chat import ChatCompletionMessageToolCallParam
 from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import EvalTraceFormatter
 from kiln_ai.adapters.eval.eval_utils.eval_utils import EvalUtils
 from kiln_ai.datamodel import DataSource, Task, TaskOutput, TaskRun
-from kiln_ai.datamodel.run_config import RunConfigProperties, ToolsRunConfig
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 
@@ -482,7 +482,7 @@ class TestEvalUtils:
         task_run.parent_task.return_value = task
         task_run.output = MagicMock(spec=TaskOutput)
         task_run.output.source = MagicMock(spec=DataSource)
-        task_run.output.source.run_config = MagicMock(spec=RunConfigProperties)
+        task_run.output.source.run_config = MagicMock(spec=KilnAgentRunConfigProperties)
         task_run.output.source.run_config.tools_config = None
 
         result = await EvalUtils.formatted_available_tools_from_task_run(task_run)
@@ -495,7 +495,7 @@ class TestEvalUtils:
         task_run.parent_task.return_value = task
         task_run.output = MagicMock(spec=TaskOutput)
         task_run.output.source = MagicMock(spec=DataSource)
-        task_run.output.source.run_config = MagicMock(spec=RunConfigProperties)
+        task_run.output.source.run_config = MagicMock(spec=KilnAgentRunConfigProperties)
         task_run.output.source.run_config.tools_config = MagicMock(spec=ToolsRunConfig)
         task_run.output.source.run_config.tools_config.tools = []
 
@@ -509,7 +509,7 @@ class TestEvalUtils:
         task_run.parent_task.return_value = task
         task_run.output = MagicMock(spec=TaskOutput)
         task_run.output.source = MagicMock(spec=DataSource)
-        task_run.output.source.run_config = MagicMock(spec=RunConfigProperties)
+        task_run.output.source.run_config = MagicMock(spec=KilnAgentRunConfigProperties)
         task_run.output.source.run_config.tools_config = MagicMock(spec=ToolsRunConfig)
         task_run.output.source.run_config.tools_config.tools = ["add_numbers"]
 
@@ -577,7 +577,7 @@ Add two numbers together and return the result</tool_description>
         task_run.parent_task.return_value = task
         task_run.output = MagicMock(spec=TaskOutput)
         task_run.output.source = MagicMock(spec=DataSource)
-        task_run.output.source.run_config = MagicMock(spec=RunConfigProperties)
+        task_run.output.source.run_config = MagicMock(spec=KilnAgentRunConfigProperties)
         task_run.output.source.run_config.tools_config = MagicMock(spec=ToolsRunConfig)
         task_run.output.source.run_config.tools_config.tools = [
             "add_numbers",
@@ -656,7 +656,7 @@ Add two numbers together and return the result</tool_description>
         task_run.parent_task.return_value = task
         task_run.output = MagicMock(spec=TaskOutput)
         task_run.output.source = MagicMock(spec=DataSource)
-        task_run.output.source.run_config = MagicMock(spec=RunConfigProperties)
+        task_run.output.source.run_config = MagicMock(spec=KilnAgentRunConfigProperties)
         task_run.output.source.run_config.tools_config = MagicMock(spec=ToolsRunConfig)
         task_run.output.source.run_config.tools_config.tools = [
             "add_numbers",

@@ -24,7 +24,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
-from kiln_ai.datamodel.run_config import RunConfigKind
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
@@ -405,23 +405,20 @@ def connect_evals_api(app: FastAPI):
 
         frozen_prompt: BasePrompt | None = None
         run_config_properties = request.run_config_properties
-        prompt_id = run_config_properties.prompt_id
-        if (
-            run_config_properties.kind == RunConfigKind.kiln_agent
-            and not is_frozen_prompt(prompt_id)
-        ):
-            # For dynamic prompts, we "freeze" a copy of this prompt into the task run config so we don't accidentially invalidate evals if the user changes something that impacts the prompt (example: chanding data for multi-shot, or chanding task for basic-prompt)
-            # We then point the task_run_config.run_properties.prompt_id to this new frozen prompt
-            prompt_builder = prompt_builder_from_id(prompt_id, task)
-            prompt_name = generate_memorable_name()
-            frozen_prompt = BasePrompt(
-                name=prompt_name,
-                description=f"Frozen copy of prompt '{prompt_id}'.",
-                generator_id=prompt_id,
-                prompt=prompt_builder.build_base_prompt(),
-                chain_of_thought_instructions=prompt_builder.chain_of_thought_prompt(),
-            )
-
+        if isinstance(run_config_properties, KilnAgentRunConfigProperties):
+            prompt_id = run_config_properties.prompt_id
+            if not is_frozen_prompt(prompt_id):
+                # For dynamic prompts, we "freeze" a copy of this prompt into the task run config so we don't accidentially invalidate evals if the user changes something that impacts the prompt (example: chanding data for multi-shot, or chanding task for basic-prompt)
+                # We then point the task_run_config.run_properties.prompt_id to this new frozen prompt
+                prompt_builder = prompt_builder_from_id(prompt_id, task)
+                prompt_name = generate_memorable_name()
+                frozen_prompt = BasePrompt(
+                    name=prompt_name,
+                    description=f"Frozen copy of prompt '{prompt_id}'.",
+                    generator_id=prompt_id,
+                    prompt=prompt_builder.build_base_prompt(),
+                    chain_of_thought_instructions=prompt_builder.chain_of_thought_prompt(),
+                )
         task_run_config = TaskRunConfig(
             parent=task,
             name=name,
@@ -431,9 +428,10 @@ def connect_evals_api(app: FastAPI):
         )
         if frozen_prompt is not None:
             # Set after, because the ID isn't known until the TaskRunConfig is created
-            task_run_config.run_config_properties.prompt_id = (
-                f"task_run_config::{parent_project.id}::{task.id}::{task_run_config.id}"
-            )
+            if isinstance(
+                task_run_config.run_config_properties, KilnAgentRunConfigProperties
+            ):
+                task_run_config.run_config_properties.prompt_id = f"task_run_config::{parent_project.id}::{task.id}::{task_run_config.id}"
         task_run_config.save_to_file()
         return task_run_config
 

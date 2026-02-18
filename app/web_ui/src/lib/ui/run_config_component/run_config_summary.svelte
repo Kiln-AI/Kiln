@@ -1,11 +1,11 @@
 <script lang="ts">
   import type { TaskRunConfig } from "$lib/types"
+  import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
   import { model_info, get_task_composite_id } from "$lib/stores"
   import { getRunConfigDisplayName } from "$lib/utils/run_config_formatters"
   import { getRunConfigPromptDisplayName } from "$lib/utils/run_config_formatters"
   import { prompts_by_task_composite_id } from "$lib/stores/prompts_store"
   import RunConfigDetailsDialog from "./run_config_details_dialog.svelte"
-  import { is_mcp_run_config } from "$lib/utils/run_config_kind"
 
   export let project_id: string
   export let task_id: string
@@ -22,9 +22,14 @@
     $prompts_by_task_composite_id[get_task_composite_id(project_id, task_id)] ||
     null
 
-  $: tools_count =
-    task_run_config.run_config_properties.tools_config?.tools?.length ?? 0
-  $: is_mcp = is_mcp_run_config(task_run_config)
+  $: mcp_props = isMcpRunConfig(task_run_config.run_config_properties)
+    ? task_run_config.run_config_properties
+    : null
+  $: kiln_props = isKilnAgentRunConfig(task_run_config.run_config_properties)
+    ? task_run_config.run_config_properties
+    : null
+  $: is_mcp = mcp_props !== null
+  $: tools_count = kiln_props?.tools_config?.tools?.length ?? 0
 </script>
 
 <div class="flex items-center gap-2">
@@ -39,8 +44,7 @@
   {#if is_mcp}
     <div>Type: MCP Tool (No Agent)</div>
     <div>
-      Tool: {task_run_config.run_config_properties.mcp_tool?.tool_name ??
-        "Unknown"}
+      Tool: {mcp_props?.tool_reference?.tool_name ?? "Unknown"}
     </div>
   {:else}
     <div>
