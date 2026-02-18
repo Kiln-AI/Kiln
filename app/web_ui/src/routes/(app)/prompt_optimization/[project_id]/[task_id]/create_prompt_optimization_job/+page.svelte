@@ -39,6 +39,7 @@
   import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
   import EntitlementRequiredCard from "$lib/ui/kiln_copilot/entitlement_required_card.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
+  import TableButton from "../../../../generate/[project_id]/[task_id]/table_button.svelte"
 
   function tagFromFilterId(filter_id: string): string | undefined {
     if (filter_id.startsWith("tag::")) {
@@ -727,7 +728,7 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Create Optimized Prompt"
-    subtitle="Create a prompt optimized for your evals using training data."
+    subtitle="Automatically optimize your prompt, maximizing its quality using evals."
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer"
     breadcrumbs={[
@@ -778,16 +779,17 @@
             <div class="flex flex-col gap-1">
               <div class="text-xl font-bold flex justify-between items-center">
                 <div class="text-xl font-bold">
-                  Step 1: Select Run Configuration
+                  Step 1: Select Target Run Configuration
                 </div>
                 <span class="font-normal">
                   <InfoTooltip
-                    tooltip_text="Kiln Prompt Optimization only supports OpenRouter, OpenAI, Gemini, and Anthropic providers."
+                    tooltip_text="The selected run configuration is used for two things:\n\n**1. Target model** — the model we'll optimize the prompt for. Different models respond differently, so the best prompt is model-specific.\n\n**2. Starting prompt** — we'll begin from this prompt and iterate. Choose your best prompt so the optimizer can build on your work.\n\nKiln Prompt Optimization only supports OpenRouter, OpenAI, Gemini, and Anthropic providers."
                   />
                 </span>
               </div>
               <div class="text-xs text-gray-500 font-medium">
-                The task run configuration to use during optimization.
+                We'll tune the prompt for this model. Different models respond
+                differently, so the best prompt is model-specific.
               </div>
             </div>
             <SavedRunConfigurationsDropdown
@@ -809,7 +811,7 @@
                 <div class="mt-3">
                   <Warning warning_color="error" outline={true}>
                     <div>
-                      <div class="text-error font-medium">
+                      <div class="font-medium">
                         {run_config_validation_message}
                       </div>
                       {#if run_config_blocking_reason !== "other"}
@@ -845,20 +847,20 @@
                   </Warning>
                 </div>
               {:else if run_config_properties}
-                <div class="mt-6 flex flex-col md:flex-row gap-6">
+                <div
+                  class="mt-6 grid grid-cols-1 xl:grid-cols-[1fr,auto] gap-6 items-start"
+                >
                   <div class="flex-1 min-w-0">
-                    <div class="text-md font-semibold text-left">
-                      Run Configuration Prompt
-                    </div>
-                    <div class="text-xs text-gray-500 mt-1 mb-1">
+                    <div class="text-md font-semibold text-left">Prompt</div>
+                    <div class="text-xs text-gray-500 font-medium mt-1 mb-1">
                       Your selected run configuration's prompt. Will be used as
                       the starting point for optimization.
                     </div>
-                    <Output raw_output={prompt_text || ""} />
+                    <Output raw_output={prompt_text || ""} max_height="220px" />
                   </div>
-                  <div class="flex-shrink-0 flex-row">
+                  <div class="flex-shrink-0 flex-row max-w-[400px]">
                     <div class="text-md font-semibold text-left mb-4">
-                      Run Configuration Details
+                      Details
                     </div>
                     <PropertyList properties={run_config_properties} />
                   </div>
@@ -871,10 +873,19 @@
             <div>
               <div>
                 <div class="flex flex-col gap-1">
-                  <div class="text-xl font-bold">Step 2: Select Evals</div>
+                  <div
+                    class="text-xl font-bold flex justify-between items-center"
+                  >
+                    <div>Step 2: Select Optimization Evals</div>
+                    <span class="font-normal">
+                      <InfoTooltip
+                        tooltip_text="Our prompt optimizer will iteratively update your prompt.\n\n**Evals** — We use these evals to measure whether each new prompt is an improvement or regression.\n\n**Training Data** — We use the training dataset associated with each eval during optimization, so eval data is never seen by the optimizer.\n\n[Learn more](https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer)"
+                      />
+                    </span>
+                  </div>
                   <div class="text-xs text-gray-500 font-medium">
                     Your prompt will be optimized to maximize performance across
-                    these evaluators using their tagged training data.
+                    these evals.
                   </div>
                 </div>
               </div>
@@ -891,21 +902,19 @@
                       >
                     {/if}
                   </div>
-                  {#if evals_with_configs.length > 0}
-                    <button
-                      type="button"
-                      class="btn btn-xs btn-outline"
-                      on:click={refresh_evaluators}
-                      disabled={is_validating}
-                    >
-                      {#if is_validating}
-                        <span class="loading loading-spinner loading-xs"></span>
-                      {:else}
-                        ↻
-                      {/if}
-                      Refresh
-                    </button>
-                  {/if}
+                  <button
+                    type="button"
+                    class="btn btn-xs btn-outline"
+                    on:click={refresh_evaluators}
+                    disabled={is_validating}
+                  >
+                    {#if is_validating}
+                      <span class="loading loading-spinner loading-xs"></span>
+                    {:else}
+                      ↻
+                    {/if}
+                    Refresh
+                  </button>
                 </div>
 
                 {#if evals_loading}
@@ -922,9 +931,17 @@
                   </div>
                 {:else if evals_with_configs.length === 0}
                   <div
-                    class="bg-base-200 rounded-lg p-4 text-center text-gray-500"
+                    class="bg-base-200 rounded-lg p-4 text-center text-gray-500 flex flex-col items-center gap-2"
                   >
                     No evals configured for this task.
+                    <a
+                      class="btn btn-sm btn-primary"
+                      href={`/specs/${project_id}/${task_id}/`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Create Eval & Spec
+                    </a>
                   </div>
                 {:else}
                   <div
@@ -975,21 +992,34 @@
                                 : "\u200B"}
                             </span>
                           </th>
+                          <th class="w-[100px]"></th>
                         </tr>
                       </thead>
                       <tbody>
                         {#each sorted_evals_with_configs as { eval: evalItem, current_config, train_set_size, validation_status, judge_error, train_error, other_error }}
                           {@const spec_id = "legacy"}
-                          {@const eval_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}`}
+                          {@const eval_url = evalItem.id
+                            ? `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}`
+                            : undefined}
                           {@const is_selected = evalItem.id
                             ? selected_eval_ids.has(evalItem.id)
                             : false}
                           <tr
-                            class="hover:bg-base-200 cursor-pointer {!is_selected
-                              ? 'opacity-70 text-base-content/70'
-                              : ''}"
-                            on:click={() =>
-                              eval_url && window.open(eval_url, "_blank")}
+                            class="hover:bg-base-200 cursor-pointer"
+                            on:click={() => {
+                              if (
+                                evalItem.id &&
+                                validation_status !== "invalid"
+                              ) {
+                                const newSet = new Set(selected_eval_ids)
+                                if (is_selected) {
+                                  newSet.delete(evalItem.id)
+                                } else {
+                                  newSet.add(evalItem.id)
+                                }
+                                selected_eval_ids = newSet
+                              }
+                            }}
                           >
                             <td on:click|stopPropagation>
                               <input
@@ -1028,16 +1058,8 @@
                               {:else}
                                 <span class="text-gray-400">—</span>
                               {/if}
-                              {#if judge_error}
-                                <div class="text-xs text-error mt-1">
-                                  {judge_error}
-                                </div>
-                              {/if}
                             </td>
-                            <td
-                              class="text-sm whitespace-nowrap"
-                              on:click|stopPropagation
-                            >
+                            <td class="text-sm whitespace-nowrap">
                               {#if train_set_size !== null}
                                 {@const train_tag = tagFromFilterId(
                                   evalItem.train_set_filter_id || "",
@@ -1049,7 +1071,9 @@
                                   <a
                                     href={dataset_link}
                                     target="_blank"
+                                    rel="noopener noreferrer"
                                     class="link text-gray-600 hover:text-secondary"
+                                    on:click|stopPropagation
                                   >
                                     {train_set_size}
                                     {train_set_size === 1 ? "item" : "items"}
@@ -1061,13 +1085,8 @@
                                   </span>
                                 {/if}
                               {/if}
-                              {#if train_error}
-                                <div class="text-xs text-error mt-1">
-                                  {train_error}
-                                </div>
-                              {/if}
                             </td>
-                            <td on:click|stopPropagation>
+                            <td>
                               {#if validation_status === "checking"}
                                 <span class="loading loading-spinner loading-xs"
                                 ></span>
@@ -1078,46 +1097,93 @@
                                   Ready
                                 </div>
                               {:else if validation_status === "invalid"}
-                                <div
-                                  class="badge badge-outline badge-sm badge-error"
-                                >
-                                  Not Ready
-                                </div>
-                                {#if other_error}
-                                  <div class="text-xs text-error mt-1">
-                                    {other_error}
+                                {@const eval_configs_link = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}/eval_configs`}
+                                {@const train_tag = tagFromFilterId(
+                                  evalItem.train_set_filter_id || "",
+                                )}
+                                {@const dataset_add_link =
+                                  train_tag &&
+                                  `/dataset/${project_id}/${task_id}/add_data?reason=generic&splits=${train_tag}:1.0`}
+                                {@const tooltip_parts = [
+                                  "Fix the following issues and click Refresh to update this eval's status.",
+                                  judge_error === "No judge configured"
+                                    ? `**No judge configured** — This eval doesn't have a default judge. To fix, [set default judge](${eval_configs_link}) for this eval.`
+                                    : null,
+                                  judge_error === "Model not supported"
+                                    ? `**Model not supported** — This eval's default judge model is not supported. Kiln Prompt Optimization only supports OpenRouter, OpenAI, Gemini, and Anthropic providers. To fix, [change your default judge](${eval_configs_link}) for this eval.`
+                                    : null,
+                                  train_error === "Training set required" ||
+                                  train_error === "Training set is empty"
+                                    ? `**Training set is empty** — This eval doesn't have any training data. To fix, ${dataset_add_link ? `[add samples to your dataset](${dataset_add_link})` : `add samples to your dataset`} with the tag '${train_tag}'.`
+                                    : null,
+                                  other_error
+                                    ? "**Error**\n\n" + other_error
+                                    : null,
+                                ].filter((x) => x !== null)}
+                                {@const combined_tooltip =
+                                  tooltip_parts.join("\n\n")}
+                                <div class="flex flex-row items-center gap-1">
+                                  <div
+                                    class="badge badge-outline badge-sm badge-error whitespace-nowrap"
+                                  >
+                                    Not Ready
                                   </div>
-                                {/if}
+                                  <div class="text-gray-500">
+                                    <InfoTooltip
+                                      tooltip_text={combined_tooltip}
+                                      position="right"
+                                    />
+                                  </div>
+                                </div>
                               {/if}
                             </td>
                             <td class="text-sm text-gray-500 whitespace-nowrap">
                               {formatDate(evalItem.created_at || undefined)}
+                            </td>
+                            <td class="p-0" on:click|stopPropagation>
+                              {#if eval_url}
+                                <div
+                                  class="dropdown dropdown-end dropdown-hover"
+                                >
+                                  <TableButton />
+                                  <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+                                  <ul
+                                    tabindex="0"
+                                    class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
+                                  >
+                                    <li>
+                                      <a
+                                        href={eval_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                      >
+                                        View Eval
+                                      </a>
+                                    </li>
+                                  </ul>
+                                </div>
+                              {/if}
                             </td>
                           </tr>
                         {/each}
                       </tbody>
                     </table>
                   </div>
-                {/if}
 
-                {#if selected_eval_ids.size === 0}
-                  <div class="mt-4 text-sm text-error text-end">
-                    No evaluators selected. Please select at least one
-                    evaluator.
-                  </div>
-                {:else if selected_eval_ids.size < evals_with_configs.length}
-                  <div class="mt-4 flex justify-end">
-                    <Warning
-                      warning_color="warning"
-                      warning_icon="exclaim"
-                      tight={true}
-                    >
-                      <div class="text-sm text-gray-600">
-                        Some evaluators are not selected. Your prompt will not
-                        be optimized for these evaluators.
-                      </div>
-                    </Warning>
-                  </div>
+                  {#if selected_eval_ids.size === 0}
+                    <div class="mt-4 flex justify-end">
+                      <Warning
+                        warning_color="error"
+                        warning_icon="exclaim"
+                        tight={true}
+                      >
+                        <div class="text-sm text-gray-600">
+                          No evaluators selected. Please select at least one
+                          evaluator.
+                        </div>
+                      </Warning>
+                    </div>
+                  {/if}
                 {/if}
               </div>
             </div>

@@ -148,24 +148,28 @@
   on:mouseenter={showTooltip}
   on:mouseleave={hideTooltip}
 >
-  {#each tooltip_text.split("\n") as line}
-    <p>
-      {#each parseLineToSegments(line) as segment}
-        {#if segment.type === "text"}
-          {segment.content}
-        {:else if segment.type === "bold"}
-          <strong>{segment.content}</strong>
-        {:else if segment.type === "link"}
-          <a
-            href={segment.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            class="link"
-          >
-            {segment.text}
-          </a>
-        {/if}
-      {/each}
-    </p>
+  {#each tooltip_text.replace(/\\n/g, "\n").split("\n") as line}
+    {#if line.trim() !== ""}
+      <p>
+        {#each parseLineToSegments(line) as segment}
+          {#if segment.type === "text"}
+            {segment.content}
+          {:else if segment.type === "bold"}
+            <strong>{segment.content}</strong>
+          {:else if segment.type === "link"}
+            <a
+              href={segment.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="link"
+            >
+              {segment.text}
+            </a>
+          {/if}
+        {/each}
+      </p>
+    {:else}
+      <p class="h-2"></p>
+    {/if}
   {/each}
 </div>

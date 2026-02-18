@@ -4,6 +4,7 @@
   import RunConfigComponent from "./run_config_component.svelte"
   import type { Task, TaskRunConfig } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import { generate_memorable_name } from "$lib/utils/name_generator"
 
   export let subtitle: string | null = null
   export let project_id: string
@@ -21,6 +22,7 @@
   let submitting: boolean
   let save_config_error: KilnError | null = null
   let run_config_component: RunConfigComponent | null = null
+  let run_config_name: string = generate_memorable_name()
   let dialog: Dialog | null = null
 
   $: dialog_title =
@@ -32,6 +34,7 @@
     mode = "create"
     source_run_config = null
     save_config_error = null
+    run_config_name = generate_memorable_name()
     dialog?.show()
   }
 
@@ -39,6 +42,7 @@
     mode = "clone"
     source_run_config = run_config
     save_config_error = null
+    run_config_name = generate_memorable_name()
     dialog?.show()
   }
 
@@ -87,6 +91,7 @@
           }}
           {hide_tools_selector}
           {model}
+          {run_config_name}
           selected_run_config_id={source_run_config?.id || null}
         />
       {/if}
