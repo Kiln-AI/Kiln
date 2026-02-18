@@ -811,7 +811,7 @@
                 <div class="mt-3">
                   <Warning warning_color="error" outline={true}>
                     <div>
-                      <div class="text-error font-medium">
+                      <div class="font-medium">
                         {run_config_validation_message}
                       </div>
                       {#if run_config_blocking_reason !== "other"}
@@ -900,21 +900,19 @@
                       >
                     {/if}
                   </div>
-                  {#if evals_with_configs.length > 0}
-                    <button
-                      type="button"
-                      class="btn btn-xs btn-outline"
-                      on:click={refresh_evaluators}
-                      disabled={is_validating}
-                    >
-                      {#if is_validating}
-                        <span class="loading loading-spinner loading-xs"></span>
-                      {:else}
-                        ↻
-                      {/if}
-                      Refresh
-                    </button>
-                  {/if}
+                  <button
+                    type="button"
+                    class="btn btn-xs btn-outline"
+                    on:click={refresh_evaluators}
+                    disabled={is_validating}
+                  >
+                    {#if is_validating}
+                      <span class="loading loading-spinner loading-xs"></span>
+                    {:else}
+                      ↻
+                    {/if}
+                    Refresh
+                  </button>
                 </div>
 
                 {#if evals_loading}
@@ -931,9 +929,17 @@
                   </div>
                 {:else if evals_with_configs.length === 0}
                   <div
-                    class="bg-base-200 rounded-lg p-4 text-center text-gray-500"
+                    class="bg-base-200 rounded-lg p-4 text-center text-gray-500 flex flex-col items-center gap-2"
                   >
                     No evals configured for this task.
+                    <a
+                      class="btn btn-sm btn-primary"
+                      href={`/specs/${project_id}/${task_id}/`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Create Eval & Spec
+                    </a>
                   </div>
                 {:else}
                   <div
@@ -1159,21 +1165,21 @@
                       </tbody>
                     </table>
                   </div>
-                {/if}
 
-                {#if selected_eval_ids.size === 0}
-                  <div class="mt-4 flex justify-end">
-                    <Warning
-                      warning_color="error"
-                      warning_icon="exclaim"
-                      tight={true}
-                    >
-                      <div class="text-sm text-gray-600">
-                        No evaluators selected. Please select at least one
-                        evaluator.
-                      </div>
-                    </Warning>
-                  </div>
+                  {#if selected_eval_ids.size === 0}
+                    <div class="mt-4 flex justify-end">
+                      <Warning
+                        warning_color="error"
+                        warning_icon="exclaim"
+                        tight={true}
+                      >
+                        <div class="text-sm text-gray-600">
+                          No evaluators selected. Please select at least one
+                          evaluator.
+                        </div>
+                      </Warning>
+                    </div>
+                  {/if}
                 {/if}
               </div>
             </div>
