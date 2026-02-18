@@ -46,10 +46,9 @@
     const available = $available_tools[project_id]
     if (!available) return false
 
-    const available_tool_ids = new Set(
-      available.flatMap((tool_set) => tool_set.tools.map((tool) => tool.id)),
+    return available.some((tool_set) =>
+      tool_set.tools.some((tool) => tool.id === tool_id),
     )
-    return available_tool_ids.has(tool_id)
   }
 
   async function load_tools(project_id: string, task_id: string | null) {
@@ -87,20 +86,6 @@
     ) {
       const next_tools = [...new Set([...tools, pending_tool_id])]
       tools = next_tools
-      if (task_id && tools_store_loaded_task_id === task_id) {
-        tools_store.update((state) => ({
-          ...state,
-          selected_tool_ids_by_task_id: {
-            ...state.selected_tool_ids_by_task_id,
-            [task_id]: [
-              ...new Set([
-                ...(state.selected_tool_ids_by_task_id[task_id] || []),
-                ...next_tools,
-              ]),
-            ],
-          },
-        }))
-      }
     }
   }
 
