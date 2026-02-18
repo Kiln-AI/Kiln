@@ -82,6 +82,38 @@ class TestMCPServerTool:
     @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id")
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
+    async def test_run_structured_content(self, mock_session_manager, mock_get_run_id):
+        """Test run() uses structuredContent when present."""
+        mock_get_run_id.return_value = "test_run_123"
+        mock_session = AsyncMock()
+        mock_session_manager.shared.return_value.get_or_create_session = AsyncMock(
+            return_value=mock_session
+        )
+
+        call_result = CallToolResult(
+            content=[],
+            structuredContent={"status": "ok"},
+            isError=False,
+        )
+        mock_session.call_tool.return_value = call_result
+
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com",
+                "is_archived": False,
+            },
+        )
+        tool = MCPServerTool(server, "test_tool")
+
+        result = await tool.run()
+
+        assert result.output == '{"status": "ok"}'
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id")
+    @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
     async def test_run_empty_content(self, mock_session_manager, mock_get_run_id):
         """Test run() with empty content raises ValueError."""
         mock_get_run_id.return_value = "test_run_123"
@@ -387,6 +419,37 @@ class TestMCPServerTool:
 
         # Should be empty object for now, our JSON schema validation will fail if properties are missing
         assert tool._parameters_schema == {"type": "object", "properties": {}}
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
+    async def test_output_schema(self, mock_session_manager):
+        """Test output_schema() returns MCP outputSchema."""
+        mock_session = AsyncMock()
+        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+
+        tool_schema = {"type": "object", "properties": {"status": {"type": "string"}}}
+        tool_def = Tool(
+            name="test_tool",
+            description="Test tool",
+            inputSchema={"type": "object", "properties": {}},
+            outputSchema=tool_schema,
+        )
+        tools_result = ListToolsResult(tools=[tool_def])
+        mock_session.list_tools.return_value = tools_result
+
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com",
+                "is_archived": False,
+            },
+        )
+        tool = MCPServerTool(server, "test_tool")
+
+        result = await tool.output_schema()
+
+        assert result == tool_schema
 
     @pytest.mark.asyncio
     async def test_toolcall_definition(self):

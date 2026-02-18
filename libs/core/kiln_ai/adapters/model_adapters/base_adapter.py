@@ -360,6 +360,7 @@ class BaseAdapter(metaclass=ABCMeta):
         props["structured_output_mode"] = self.run_config.structured_output_mode
         props["temperature"] = self.run_config.temperature
         props["top_p"] = self.run_config.top_p
+        props["kind"] = self.run_config.kind
 
         return props
 

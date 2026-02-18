@@ -12,6 +12,7 @@ from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.datamodel import BasePrompt, Task, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
+from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
 from kiln_ai.datamodel.eval import (
     Eval,
@@ -22,10 +23,17 @@ from kiln_ai.datamodel.eval import (
     EvalRun,
     EvalTemplateId,
 )
-from kiln_ai.datamodel.json_schema import string_to_json_key
-from kiln_ai.datamodel.prompt_id import is_frozen_prompt
+from kiln_ai.datamodel.json_schema import (
+    schemas_compatible,
+    single_string_field_name,
+    string_to_json_key,
+)
+from kiln_ai.datamodel.prompt_id import PromptGenerators, is_frozen_prompt
+from kiln_ai.datamodel.run_config import MCPToolReference, RunConfigKind
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
+from kiln_ai.tools.mcp_server_tool import MCPServerTool
+from kiln_ai.tools.tool_registry import is_mcp_tool_id, tool_from_id
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
 from pydantic import BaseModel
@@ -86,6 +94,64 @@ def get_all_run_configs(project_id: str, task_id: str) -> list[TaskRunConfig]:
             )
 
     return configs
+
+
+def _validate_mcp_input_schema(task: Task, tool_input_schema: dict) -> None:
+    """Validate that the task input schema matches the MCP tool input schema"""
+    # If the task is plaintext, put the input into the tools string field
+    if task.input_json_schema is None:
+        field_name = single_string_field_name(tool_input_schema)
+        if field_name is None:
+            raise ValueError(
+                "Plaintext tasks require the MCP tool to have exactly one string input field."
+            )
+        return
+
+    task_schema = task.input_schema()
+    if task_schema is None:
+        raise ValueError("Task input schema must be set for structured input tasks.")
+    if not schemas_compatible(task_schema, tool_input_schema):
+        raise ValueError("Task input schema must be compatible with the MCP tool.")
+
+
+def _validate_mcp_output_schema(task: Task, tool_output_schema: dict | None) -> None:
+    """Validate that the task output schema matches the MCP tool output schema"""
+    # If either doesn't have an output schema, no validation needed
+    if task.output_json_schema is None or tool_output_schema is None:
+        return
+
+    task_output_schema = task.output_schema()
+    if task_output_schema is None:
+        raise ValueError("Task output schema must be set for structured output tasks.")
+    if not schemas_compatible(task_output_schema, tool_output_schema):
+        raise ValueError("Task output schema must be compatible with the MCP tool.")
+
+
+def _load_mcp_tool(tool_id: str, task: Task) -> MCPServerTool:
+    if not is_mcp_tool_id(tool_id):
+        raise ValueError("Tool selected is not an MCP tool.")
+    tool = tool_from_id(tool_id, task)
+    if not isinstance(tool, MCPServerTool):
+        raise ValueError("Failed to load MCP tool.")
+    return tool
+
+
+async def _load_mcp_input_schema(tool: MCPServerTool) -> dict:
+    try:
+        tool_input_schema = await tool.input_schema()
+    except ValueError:
+        raise ValueError("MCP tool definition is missing a valid input schema.")
+    if not isinstance(tool_input_schema, dict):
+        raise ValueError("MCP tool definition is missing a valid input schema.")
+    return tool_input_schema
+
+
+async def _load_mcp_output_schema(tool: MCPServerTool) -> dict | None:
+    """Load the MCP tool output schema, it's optional"""
+    try:
+        return await tool.output_schema()
+    except ValueError:
+        raise ValueError("MCP tool definition has an invalid output schema.")
 
 
 def task_run_config_from_id(
@@ -158,6 +224,12 @@ class CreateTaskRunConfigRequest(BaseModel):
     name: str | None = None
     description: str | None = None
     run_config_properties: RunConfigProperties
+
+
+class CreateMcpRunConfigRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    tool_id: str
 
 
 class RunEvalConfigRequest(BaseModel):
@@ -403,8 +475,12 @@ def connect_evals_api(app: FastAPI):
             )
 
         frozen_prompt: BasePrompt | None = None
-        prompt_id = request.run_config_properties.prompt_id
-        if not is_frozen_prompt(prompt_id):
+        run_config_properties = request.run_config_properties
+        prompt_id = run_config_properties.prompt_id
+        if (
+            run_config_properties.kind == RunConfigKind.kiln_agent
+            and not is_frozen_prompt(prompt_id)
+        ):
             # For dynamic prompts, we "freeze" a copy of this prompt into the task run config so we don't accidentially invalidate evals if the user changes something that impacts the prompt (example: chanding data for multi-shot, or chanding task for basic-prompt)
             # We then point the task_run_config.run_properties.prompt_id to this new frozen prompt
             prompt_builder = prompt_builder_from_id(prompt_id, task)
@@ -416,8 +492,6 @@ def connect_evals_api(app: FastAPI):
                 prompt=prompt_builder.build_base_prompt(),
                 chain_of_thought_instructions=prompt_builder.chain_of_thought_prompt(),
             )
-
-        run_config_properties = request.run_config_properties
 
         task_run_config = TaskRunConfig(
             parent=task,
@@ -431,6 +505,50 @@ def connect_evals_api(app: FastAPI):
             task_run_config.run_config_properties.prompt_id = (
                 f"task_run_config::{parent_project.id}::{task.id}::{task_run_config.id}"
             )
+        task_run_config.save_to_file()
+        return task_run_config
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/mcp_run_config")
+    async def create_mcp_run_config(
+        project_id: str,
+        task_id: str,
+        request: CreateMcpRunConfigRequest,
+    ) -> TaskRunConfig:
+        task = task_from_id(project_id, task_id)
+        name = request.name or generate_memorable_name()
+
+        try:
+            tool_id = request.tool_id
+            tool = _load_mcp_tool(tool_id, task)
+            tool_input_schema = await _load_mcp_input_schema(tool)
+            tool_output_schema = await _load_mcp_output_schema(tool)
+            _validate_mcp_input_schema(task, tool_input_schema)
+            _validate_mcp_output_schema(task, tool_output_schema)
+            tool_name = await tool.name()
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        run_config_properties = RunConfigProperties(
+            kind=RunConfigKind.mcp,
+            mcp_tool=MCPToolReference(
+                tool_id=tool_id,
+                tool_name=tool_name,
+                input_schema=tool_input_schema,
+                output_schema=tool_output_schema,
+            ),
+            model_name="mcp_tool",
+            model_provider_name=ModelProviderName.mcp_provider,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.default,
+        )
+
+        task_run_config = TaskRunConfig(
+            parent=task,
+            name=name,
+            run_config_properties=run_config_properties,
+            description=request.description,
+        )
+        # Save the config
         task_run_config.save_to_file()
         return task_run_config
 

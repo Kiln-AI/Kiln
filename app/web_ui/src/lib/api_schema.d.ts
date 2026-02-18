@@ -1816,6 +1816,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/mcp_run_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Mcp Run Config */
+        post: operations["create_mcp_run_config_api_projects__project_id__tasks__task_id__mcp_run_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/create_eval_config": {
         parameters: {
             query?: never;
@@ -3006,6 +3023,15 @@ export interface components {
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
             run_config_properties?: components["schemas"]["RunConfigProperties"] | null;
+        };
+        /** CreateMcpRunConfigRequest */
+        CreateMcpRunConfigRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Tool Id */
+            tool_id: string;
         };
         /** CreateRagConfigRequest */
         CreateRagConfigRequest: {
@@ -4898,6 +4924,38 @@ export interface components {
              */
             message: string;
         };
+        /** MCPToolReference */
+        MCPToolReference: {
+            /**
+             * Tool Id
+             * @description The MCP tool ID to call (mcp::local|remote::<server_id>::<tool_name>).
+             */
+            tool_id: string;
+            /**
+             * Tool Server Id
+             * @description The MCP tool server ID.
+             */
+            tool_server_id?: string | null;
+            /**
+             * Tool Name
+             * @description The MCP tool name.
+             */
+            tool_name?: string | null;
+            /**
+             * Input Schema
+             * @description Snapshot of the MCP tool input schema.
+             */
+            input_schema?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Output Schema
+             * @description Snapshot of the MCP tool output schema.
+             */
+            output_schema?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /** MaliciousnessProperties */
         MaliciousnessProperties: {
             /**
@@ -4972,7 +5030,7 @@ export interface components {
          * @description Enumeration of supported AI model providers.
          * @enum {string}
          */
-        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner";
+        ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner" | "mcp_provider";
         /**
          * NewProposedSpecEditApi
          * @description A proposed edit to a spec field.
@@ -5718,12 +5776,24 @@ export interface components {
             mean_usage?: components["schemas"]["MeanUsage"] | null;
         };
         /**
+         * RunConfigKind
+         * @enum {string}
+         */
+        RunConfigKind: "kiln_agent" | "mcp";
+        /**
          * RunConfigProperties
          * @description A configuration for running a task.
          *
          *     This includes everything needed to run a task, except the input and task ID. Running the same RunConfig with the same input should make identical calls to the model (output may vary as models are non-deterministic).
          */
         RunConfigProperties: {
+            /**
+             * @description The type of run config (kiln_agent or mcp).
+             * @default kiln_agent
+             */
+            kind: components["schemas"]["RunConfigKind"];
+            /** @description MCP tool reference used when kind is mcp. */
+            mcp_tool?: components["schemas"]["MCPToolReference"] | null;
             /**
              * Model Name
              * @description The model to use for this run config.
@@ -10851,6 +10921,42 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CreateTaskRunConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRunConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_mcp_run_config_api_projects__project_id__tasks__task_id__mcp_run_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateMcpRunConfigRequest"];
             };
         };
         responses: {
