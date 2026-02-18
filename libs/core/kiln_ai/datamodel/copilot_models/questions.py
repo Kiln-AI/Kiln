@@ -4,7 +4,7 @@ Data models for asking questions about a specification to refine it.
 Copilot models are in /lib so they can be shared across lib, server, and client.
 """
 
-from typing import Optional
+from typing import Any, Optional
 
 from kiln_ai.datamodel.copilot_models.copilot_api_models import SpecificationInput
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -151,3 +151,7 @@ class SubmitAnswersRequest(BaseModel):
         description="Questions about the specification with user-provided answers",
         title="questions_and_answers",
     )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Compatibility method for SDK client."""
+        return self.model_dump()

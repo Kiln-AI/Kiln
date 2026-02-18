@@ -7,6 +7,13 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot impo
     refine_spec_v1_copilot_refine_spec_post,
     refine_spec_with_answers_v1_copilot_refine_spec_with_answers_post,
 )
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    ClarifySpecInput as ApiClarifySpecInput,
+    GenerateBatchInput as ApiGenerateBatchInput,
+    RefineSpecInput as ApiRefineSpecInput,
+    SpecQuestionerApiInput as ApiSpecQuestionerApiInput,
+    SubmitAnswersRequest as ApiSubmitAnswersRequest,
+)
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
@@ -103,10 +110,11 @@ def connect_copilot_api(app: FastAPI):
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
+        clarify_input = ApiClarifySpecInput.from_dict(input.model_dump())
         detailed_result = (
             await clarify_spec_v1_copilot_clarify_spec_post.asyncio_detailed(
                 client=client,
-                body=input.model_dump(),
+                body=clarify_input,
             )
         )
         result = unwrap_response(
@@ -121,10 +129,11 @@ def connect_copilot_api(app: FastAPI):
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
+        refine_input = ApiRefineSpecInput.from_dict(input.model_dump())
         detailed_result = (
             await refine_spec_v1_copilot_refine_spec_post.asyncio_detailed(
                 client=client,
-                body=input.model_dump(),
+                body=refine_input,
             )
         )
         result = unwrap_response(
@@ -139,10 +148,11 @@ def connect_copilot_api(app: FastAPI):
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
+        generate_input = ApiGenerateBatchInput.from_dict(input.model_dump())
         detailed_result = (
             await generate_batch_v1_copilot_generate_batch_post.asyncio_detailed(
                 client=client,
-                body=input.model_dump(),
+                body=generate_input,
             )
         )
         result = unwrap_response(
@@ -159,10 +169,11 @@ def connect_copilot_api(app: FastAPI):
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
+        question_input = ApiSpecQuestionerApiInput.from_dict(input.model_dump())
         detailed_result = (
             await question_spec_v1_copilot_question_spec_post.asyncio_detailed(
                 client=client,
-                body=input.model_dump(),
+                body=question_input,
             )
         )
         result = unwrap_response(
@@ -179,9 +190,10 @@ def connect_copilot_api(app: FastAPI):
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
 
+        answers_request = ApiSubmitAnswersRequest.from_dict(request.model_dump())
         detailed_result = await refine_spec_with_answers_v1_copilot_refine_spec_with_answers_post.asyncio_detailed(
             client=client,
-            body=request.model_dump(),
+            body=answers_request,
         )
         result = unwrap_response(
             detailed_result,

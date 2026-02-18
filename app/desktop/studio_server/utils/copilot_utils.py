@@ -102,10 +102,9 @@ async def generate_copilot_examples(
 
     # Convert result to flat list of SampleApi
     examples: list[Sample] = []
-    data_dict = result.to_dict().get("data_by_topic", {})
-    for topic_examples in data_dict.values():
+    for topic_examples in result.data_by_topic.additional_properties.values():
         for ex in topic_examples:
-            examples.append(Sample(input=ex.input, output=ex.output))
+            examples.append(Sample(input=ex.input_, output=ex.output))
 
     return examples
 
