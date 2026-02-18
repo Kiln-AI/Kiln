@@ -4,6 +4,7 @@
   import RunConfigComponent from "./run_config_component.svelte"
   import type { Task, TaskRunConfig } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import { generate_memorable_name } from "$lib/utils/name_generator"
 
   export let subtitle: string | null = null
   export let project_id: string
@@ -11,14 +12,37 @@
   export let new_run_config_created:
     | ((run_config: TaskRunConfig) => void)
     | null = null
+  export let hide_tools_selector: boolean = false
+  export let model: string | undefined = undefined
+
+  type DialogMode = "create" | "clone"
+  let mode: DialogMode = "create"
+  let source_run_config: TaskRunConfig | null = null
 
   let submitting: boolean
   let save_config_error: KilnError | null = null
   let run_config_component: RunConfigComponent | null = null
+  let run_config_name: string = generate_memorable_name()
   let dialog: Dialog | null = null
 
+  $: dialog_title =
+    mode === "create"
+      ? "Create New Run Configuration"
+      : "Clone Run Configuration"
+
   export function show() {
+    mode = "create"
+    source_run_config = null
     save_config_error = null
+    run_config_name = generate_memorable_name()
+    dialog?.show()
+  }
+
+  export function showClone(run_config: TaskRunConfig) {
+    mode = "clone"
+    source_run_config = run_config
+    save_config_error = null
+    run_config_name = generate_memorable_name()
     dialog?.show()
   }
 
@@ -46,12 +70,7 @@
   }
 </script>
 
-<Dialog
-  bind:this={dialog}
-  title="Create New Run Configuration"
-  {subtitle}
-  on:close
->
+<Dialog bind:this={dialog} title={dialog_title} {subtitle} on:close>
   <FormContainer
     submit_visible={true}
     submit_label="Create"
@@ -70,6 +89,10 @@
           tools_selector_settings={{
             hide_create_kiln_task_tool_button: true,
           }}
+          {hide_tools_selector}
+          {model}
+          {run_config_name}
+          selected_run_config_id={source_run_config?.id || null}
         />
       {/if}
 

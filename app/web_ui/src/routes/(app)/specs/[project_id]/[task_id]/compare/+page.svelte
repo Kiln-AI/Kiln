@@ -39,6 +39,10 @@
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: fromOptimize = $page.url.searchParams.get("from") === "optimize"
+  $: breadcrumbs = fromOptimize
+    ? [{ label: "Optimize", href: `/optimize/${project_id}/${task_id}` }]
+    : [{ label: "Specs & Evals", href: `/specs/${project_id}/${task_id}` }]
 
   // State management
   let columns = 2 // Start with 2 columns
@@ -591,9 +595,7 @@
 <AppPage
   title="Compare Run Configurations"
   subtitle="Find the optimal run configuration for your task using evals"
-  breadcrumbs={[
-    { label: "Specs & Evals", href: `/specs/${project_id}/${task_id}` },
-  ]}
+  {breadcrumbs}
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">

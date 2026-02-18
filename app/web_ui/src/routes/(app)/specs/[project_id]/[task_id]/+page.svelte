@@ -19,9 +19,10 @@
   import {
     updateSpecPriority as updateSpecPriorityUtil,
     updateSpecStatus as updateSpecStatusUtil,
-    checkKilnCopilotAvailable,
   } from "./spec_utils"
+  import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
+  import Banner from "$lib/ui/banner.svelte"
   import posthog from "posthog-js"
 
   // ### Spec Table ###
@@ -770,75 +771,59 @@
         </Intro>
       </div>
     {:else if sorted_specs}
-      <a
+      <Banner
         href={`/specs/${project_id}/${task_id}/compare`}
-        class="group block mb-4"
+        title="Compare Models, Prompts, Tools and Fine-Tunes"
+        description="Find the best way to run this task by comparing models, prompts, tools and fine-tunes using evals, cost and performance."
+        button_label="Compare Run Configurations"
       >
-        <div class="card border p-3 rounded-md hover:bg-gray-50">
-          <div class="flex flex-row gap-4 items-center">
-            <div class="rounded-lg bg-blue-50 p-4">
-              <svg
-                class="h-12 aspect-760/621"
-                viewBox="0 0 760 621"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <g clip-path="url(#clip0_1603_4)">
-                  <rect
-                    x="10"
-                    y="10"
-                    width="740"
-                    height="601"
-                    rx="25"
-                    fill="white"
-                    stroke="#628BD9"
-                    stroke-width="20"
-                  />
-                  <line
-                    x1="137"
-                    y1="90.9778"
-                    x2="137.999"
-                    y2="541.978"
-                    stroke="#628BD9"
-                    stroke-width="20"
-                  />
-                  <line
-                    x1="656"
-                    y1="490"
-                    x2="82"
-                    y2="490"
-                    stroke="#628BD9"
-                    stroke-width="20"
-                  />
-                  <circle cx="352" cy="241" r="28" fill="#628BD9" />
-                  <circle cx="473" cy="317" r="28" fill="#628BD9" />
-                  <circle cx="564" cy="153" r="28" fill="#628BD9" />
-                  <circle cx="232" cy="384" r="28" fill="#628BD9" />
-                </g>
-                <defs>
-                  <clipPath id="clip0_1603_4">
-                    <rect width="760" height="621" fill="white" />
-                  </clipPath>
-                </defs>
-              </svg>
-            </div>
-
-            <div class="flex-grow flex flex-col text-sm justify-center">
-              <span class="font-medium text-base"
-                >Compare Models, Prompts, Tools and Fine-Tunes</span
-              >
-              <span class="text-sm font-light mt-1"
-                >Find the best way to run this task by comparing models,
-                prompts, tools and fine-tunes using evals, cost and performance.</span
-              >
-              <button
-                class="btn btn-xs btn-outline w-fit px-6 mt-2 group-hover:bg-secondary group-hover:text-secondary-content"
-                >Compare Run Configurations</button
-              >
-            </div>
-          </div>
+        <div slot="icon" class="rounded-lg bg-blue-50 p-4">
+          <svg
+            class="h-12 aspect-760/621"
+            viewBox="0 0 760 621"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <g clip-path="url(#clip0_1603_4)">
+              <rect
+                x="10"
+                y="10"
+                width="740"
+                height="601"
+                rx="25"
+                fill="white"
+                stroke="#628BD9"
+                stroke-width="20"
+              />
+              <line
+                x1="137"
+                y1="90.9778"
+                x2="137.999"
+                y2="541.978"
+                stroke="#628BD9"
+                stroke-width="20"
+              />
+              <line
+                x1="656"
+                y1="490"
+                x2="82"
+                y2="490"
+                stroke="#628BD9"
+                stroke-width="20"
+              />
+              <circle cx="352" cy="241" r="28" fill="#628BD9" />
+              <circle cx="473" cy="317" r="28" fill="#628BD9" />
+              <circle cx="564" cy="153" r="28" fill="#628BD9" />
+              <circle cx="232" cy="384" r="28" fill="#628BD9" />
+            </g>
+            <defs>
+              <clipPath id="clip0_1603_4">
+                <rect width="760" height="621" fill="white" />
+              </clipPath>
+            </defs>
+          </svg>
         </div>
-      </a>
+      </Banner>
 
       <div class="mb-4">
         <div class="-mb-4">

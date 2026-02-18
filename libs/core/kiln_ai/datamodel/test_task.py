@@ -401,3 +401,58 @@ def test_task_specs_readonly(tmp_path):
     specs_default = task.specs(readonly=False)
     assert len(specs_default) == 1
     assert specs_default[0].name == "Readonly Spec"
+
+
+def test_task_prompt_optimization_jobs_relationship(tmp_path):
+    """Test that prompt_optimization_jobs can be created, saved, and retrieved through the task parent."""
+    from kiln_ai.datamodel import PromptOptimizationJob
+
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+
+    prompt_optimization_job = PromptOptimizationJob(
+        name="Test Prompt Optimization Job",
+        job_id="remote-job-123",
+        target_run_config_id="config-123",
+        latest_status="pending",
+        parent=task,
+    )
+    prompt_optimization_job.save_to_file()
+
+    prompt_optimization_jobs = task.prompt_optimization_jobs()
+    assert len(prompt_optimization_jobs) == 1
+    assert prompt_optimization_jobs[0].name == "Test Prompt Optimization Job"
+    assert prompt_optimization_jobs[0].job_id == "remote-job-123"
+
+
+def test_task_prompt_optimization_jobs_readonly(tmp_path):
+    """Test that prompt_optimization_jobs can be retrieved with readonly parameter."""
+    from kiln_ai.datamodel import PromptOptimizationJob
+
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+
+    prompt_optimization_job = PromptOptimizationJob(
+        name="Readonly Prompt Optimization Job",
+        job_id="remote-job-456",
+        target_run_config_id="config-456",
+        latest_status="succeeded",
+        parent=task,
+    )
+    prompt_optimization_job.save_to_file()
+
+    prompt_optimization_jobs_readonly = task.prompt_optimization_jobs(readonly=True)
+    assert len(prompt_optimization_jobs_readonly) == 1
+    assert (
+        prompt_optimization_jobs_readonly[0].name == "Readonly Prompt Optimization Job"
+    )
+
+    prompt_optimization_jobs_default = task.prompt_optimization_jobs(readonly=False)
+    assert len(prompt_optimization_jobs_default) == 1
+    assert (
+        prompt_optimization_jobs_default[0].name == "Readonly Prompt Optimization Job"
+    )

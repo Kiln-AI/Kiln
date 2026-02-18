@@ -619,6 +619,7 @@
       api_name: "name",
       value: spec?.name || "",
       input_type: "input",
+      max_length: 120,
     },
   ]}
 />

@@ -199,6 +199,23 @@
         ),
       })
     }
+    if (evaluator.train_set_filter_id) {
+      let train_dataset_size = ""
+      if (eval_progress) {
+        train_dataset_size = " (" + eval_progress.train_dataset_size + " items)"
+      }
+      properties.push({
+        name: "Training Dataset",
+        value: evaluator.train_set_filter_id + train_dataset_size,
+        tooltip:
+          "The dataset used as training examples during prompt optimization.",
+        link: linkFromFilterId(
+          project_id,
+          task_id,
+          evaluator.train_set_filter_id,
+        ),
+      })
+    }
 
     if (eval_progress?.current_eval_method) {
       properties.push({
@@ -739,6 +756,7 @@
         api_name: "name",
         value: evaluator?.name || "",
         input_type: "input",
+        max_length: 120,
       },
       {
         label: "Description",

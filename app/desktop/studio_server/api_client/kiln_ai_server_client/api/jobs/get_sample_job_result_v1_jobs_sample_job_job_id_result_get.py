@@ -14,6 +14,7 @@ from ...types import Response
 def _get_kwargs(
     job_id: str,
 ) -> dict[str, Any]:
+
     _kwargs: dict[str, Any] = {
         "method": "get",
         "url": "/v1/jobs/sample_job/{job_id}/result".format(

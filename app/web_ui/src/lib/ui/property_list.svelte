@@ -21,7 +21,7 @@
         {/if}
       </div>
       <div
-        class="flex items-center overflow-x-hidden {property.error
+        class="flex items-center overflow-x-hidden flex-wrap {property.error
           ? 'text-error'
           : 'text-gray-500'}"
       >
@@ -45,7 +45,7 @@
                     : null
                   : null}
                 <button
-                  class="badge badge-outline"
+                  class="badge badge-outline h-auto"
                   on:click={() => {
                     if (link) {
                       goto(link)
@@ -75,7 +75,7 @@
           {/if}
         {:else if property.badge}
           <button
-            class="badge badge-outline"
+            class="badge badge-outline h-auto"
             on:click={() => {
               if (property.link) {
                 goto(property.link)

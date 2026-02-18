@@ -1464,6 +1464,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/check_entitlements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Entitlements
+         * @description Check whether the authenticated user has the given entitlements.
+         *
+         *     Args:
+         *         feature_codes: Comma-separated entitlement feature codes to check
+         *
+         *     Returns:
+         *         Dict mapping each feature code to a boolean indicating if user has that entitlement
+         */
+        get: operations["check_entitlements_api_check_entitlements_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/generate_categories": {
         parameters: {
             query?: never;
@@ -1745,7 +1771,8 @@ export interface paths {
         delete: operations["delete_eval_api_projects__project_id__tasks__task_id__eval__eval_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update Eval */
+        patch: operations["update_eval_api_projects__project_id__tasks__task_id__eval__eval_id__patch"];
         trace?: never;
     };
     "/api/projects/{project_id}/tasks/{task_id}/evals": {
@@ -1814,6 +1841,23 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Run Config */
+        patch: operations["update_run_config_api_projects__project_id__tasks__task_id__run_config__run_config_id__patch"];
         trace?: never;
     };
     "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/create_eval_config": {
@@ -2212,6 +2256,152 @@ export interface paths {
          *         tool_id: The tool ID to get the definition for
          */
         get: operations["get_tool_definition_api_projects__project_id__tasks__task_id__tools__tool_id__definition_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Run Config
+         * @description Check if a run config is valid for a Prompt Optimization job by validating the model is supported.
+         */
+        get: operations["check_run_config_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_run_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Eval
+         * @description Check if an eval is valid for a Prompt Optimization job.
+         *     Validates that the eval has a default config and that the model is supported.
+         */
+        get: operations["check_eval_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_eval_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Prompt Optimization Job
+         * @description Start a prompt optimization job by zipping the project and sending it to the Kiln server.
+         *     Creates and saves a PromptOptimizationJob datamodel to track the job.
+         */
+        post: operations["start_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Prompt Optimization Jobs
+         * @description List all Prompt Optimization jobs for a task.
+         *     Optionally update the status of non-final jobs from the remote server.
+         */
+        get: operations["list_prompt_optimization_jobs_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Prompt Optimization Job
+         * @description Get a specific Prompt Optimization job and update its status from the remote server.
+         *     If the job has succeeded, create a prompt if one doesn't exist yet.
+         *     If the job is already in a settled state (succeeded, failed, cancelled),
+         *     skip the status update and return the cached model.
+         */
+        get: operations["get_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs__prompt_optimization_job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/prompt_optimization_jobs/{job_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Prompt Optimization Job Status
+         * @description Get the status of a Prompt Optimization job.
+         */
+        get: operations["get_prompt_optimization_job_status_api_prompt_optimization_jobs__job_id__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/prompt_optimization_jobs/{job_id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Prompt Optimization Job Result
+         * @description Get the result of a prompt optimization job (includes status and output if completed).
+         */
+        get: operations["get_prompt_optimization_job_result_api_prompt_optimization_jobs__job_id__result_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2750,6 +2940,26 @@ export interface components {
          * @enum {string}
          */
         ChatStrategy: "final_only" | "final_and_intermediate" | "two_message_cot" | "final_and_intermediate_r1_compatible";
+        /**
+         * CheckEvalResponse
+         * @description Response model for check_eval endpoint.
+         */
+        CheckEvalResponse: {
+            /** Has Default Config */
+            has_default_config: boolean;
+            /** Has Train Set */
+            has_train_set: boolean;
+            /** Model Is Supported */
+            model_is_supported: boolean;
+        };
+        /**
+         * CheckRunConfigResponse
+         * @description Response model for check_run_config endpoint.
+         */
+        CheckRunConfigResponse: {
+            /** Is Supported */
+            is_supported: boolean;
+        };
         /** ChunkerConfig */
         ChunkerConfig: {
             /**
@@ -3852,6 +4062,8 @@ export interface components {
             golden_dataset_partially_rated_count: number;
             /** Golden Dataset Fully Rated Count */
             golden_dataset_fully_rated_count: number;
+            /** Train Dataset Size */
+            train_dataset_size: number;
             current_eval_method: components["schemas"]["EvalConfig"] | null;
         };
         /** EvalResultSummary */
@@ -4634,6 +4846,11 @@ export interface components {
             /** Jailbroken Examples */
             jailbroken_examples: string;
         };
+        /**
+         * JobStatus
+         * @enum {string}
+         */
+        JobStatus: "cancelled" | "failed" | "pending" | "running" | "succeeded";
         KilnAttachmentModel: {
             [key: string]: string;
         } | null;
@@ -5064,7 +5281,7 @@ export interface components {
         };
         /**
          * Priority
-         * @description Defines priority levels for tasks and requirements, where P0 is highest priority.
+         * @description Priority levels, where P0 is highest priority.
          * @enum {integer}
          */
         Priority: 0 | 1 | 2 | 3;
@@ -5198,6 +5415,8 @@ export interface components {
         };
         /** PromptCreateRequest */
         PromptCreateRequest: {
+            /** Generator Id */
+            generator_id?: string | null;
             /** Name */
             name: string;
             /** Description */
@@ -5231,6 +5450,76 @@ export interface components {
             core_requirement: string;
             /** Leakage Examples */
             leakage_examples: string;
+        };
+        /**
+         * PromptOptimizationJob
+         * @description The Kiln prompt optimization job datamodel.
+         */
+        PromptOptimizationJob: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description The name of the prompt optimization job.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description of the prompt optimization job for you and your team.
+             */
+            description?: string | null;
+            /**
+             * Job Id
+             * @description The ID of the job on the remote Kiln server.
+             */
+            job_id: string;
+            /**
+             * Target Run Config Id
+             * @description The ID of the run configuration used for this job.
+             */
+            target_run_config_id: string;
+            /**
+             * Latest Status
+             * @description The latest known status of this prompt optimization job (pending, running, succeeded, failed, cancelled). Not updated in real time.
+             * @default pending
+             */
+            latest_status: string;
+            /**
+             * Optimized Prompt
+             * @description The optimized prompt result when the job succeeds.
+             */
+            optimized_prompt?: string | null;
+            /**
+             * Created Prompt Id
+             * @description The ID of the prompt created from this job's result, if any.
+             */
+            created_prompt_id?: string | null;
+            /**
+             * Created Run Config Id
+             * @description The ID of the run config created from this job's result, if any.
+             */
+            created_run_config_id?: string | null;
+            /**
+             * Eval Ids
+             * @description List of eval IDs used for this job.
+             */
+            eval_ids?: string[];
+            /** Model Type */
+            readonly model_type: string;
         };
         /** PromptResponse */
         PromptResponse: {
@@ -5273,6 +5562,23 @@ export interface components {
             models: {
                 [key: string]: components["schemas"]["ProviderModel"];
             };
+        };
+        /**
+         * PublicPromptOptimizationJobResultResponse
+         * @description Public response model for prompt optimization job result containing only the optimized prompt.
+         */
+        PublicPromptOptimizationJobResultResponse: {
+            /** Optimized Prompt */
+            optimized_prompt: string;
+        };
+        /**
+         * PublicPromptOptimizationJobStatusResponse
+         * @description Public response model for prompt optimization job status.
+         */
+        PublicPromptOptimizationJobStatusResponse: {
+            /** Job Id */
+            job_id: string;
+            status: components["schemas"]["JobStatus"];
         };
         /** Question */
         Question: {
@@ -6026,6 +6332,13 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** StartPromptOptimizationJobRequest */
+        StartPromptOptimizationJobRequest: {
+            /** Target Run Config Id */
+            target_run_config_id: string;
+            /** Eval Ids */
+            eval_ids: string[];
+        };
         /**
          * StructuredOutputMode
          * @description Enumeration of supported structured output modes.
@@ -6146,6 +6459,7 @@ export interface components {
             instruction: string;
             /**
              * Requirements
+             * @description Deprecated: Use specs and prompts instead.
              * @default []
              */
             requirements: components["schemas"]["TaskRequirement"][];
@@ -6543,6 +6857,12 @@ export interface components {
             run_config_properties: components["schemas"]["RunConfigProperties"];
             /** @description A prompt to use for run config. */
             prompt?: components["schemas"]["BasePrompt"] | null;
+            /**
+             * Starred
+             * @description Whether this run config is starred/favourited by the user.
+             * @default false
+             */
+            starred: boolean;
             /** Model Type */
             readonly model_type: string;
         };
@@ -6646,6 +6966,15 @@ export interface components {
             /** Toxicity Examples */
             toxicity_examples: string;
         };
+        /** UpdateEvalRequest */
+        UpdateEvalRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Train Set Filter Id */
+            train_set_filter_id?: string | null;
+        };
         /**
          * UpdateFinetuneRequest
          * @description Request to update a finetune
@@ -6664,6 +6993,15 @@ export interface components {
             description?: string | null;
             /** Is Archived */
             is_archived?: boolean | null;
+        };
+        /** UpdateRunConfigRequest */
+        UpdateRunConfigRequest: {
+            /** Name */
+            name?: string | null;
+            /** Starred */
+            starred?: boolean | null;
+            /** Prompt Name */
+            prompt_name?: string | null;
         };
         /** UpdateSpecRequest */
         UpdateSpecRequest: {
@@ -7382,7 +7720,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Prompt"];
+                    "application/json": components["schemas"]["ApiPrompt"];
                 };
             };
             /** @description Validation Error */
@@ -10031,6 +10369,39 @@ export interface operations {
             };
         };
     };
+    check_entitlements_api_check_entitlements_get: {
+        parameters: {
+            query: {
+                feature_codes: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     generate_categories_api_projects__project_id__tasks__task_id__generate_categories_post: {
         parameters: {
             query?: never;
@@ -10719,6 +11090,43 @@ export interface operations {
             };
         };
     };
+    update_eval_api_projects__project_id__tasks__task_id__eval__eval_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                eval_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateEvalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Eval"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_evals_api_projects__project_id__tasks__task_id__evals_get: {
         parameters: {
             query?: never;
@@ -10831,6 +11239,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CreateTaskRunConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRunConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_run_config_api_projects__project_id__tasks__task_id__run_config__run_config_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                run_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRunConfigRequest"];
             };
         };
         responses: {
@@ -11666,6 +12111,239 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ToolDefinitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_run_config_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_run_config_get: {
+        parameters: {
+            query: {
+                run_config_id: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckRunConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_eval_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_eval_get: {
+        parameters: {
+            query: {
+                eval_id: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckEvalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartPromptOptimizationJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptOptimizationJob"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_prompt_optimization_jobs_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_get: {
+        parameters: {
+            query?: {
+                update_status?: boolean;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptOptimizationJob"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs__prompt_optimization_job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                prompt_optimization_job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptOptimizationJob"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_prompt_optimization_job_status_api_prompt_optimization_jobs__job_id__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicPromptOptimizationJobStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_prompt_optimization_job_result_api_prompt_optimization_jobs__job_id__result_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicPromptOptimizationJobResultResponse"];
                 };
             };
             /** @description Validation Error */
