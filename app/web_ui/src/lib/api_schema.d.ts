@@ -1251,6 +1251,65 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/available_providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Available Providers
+         * @description Returns all providers that can have custom models added.
+         */
+        get: operations["get_available_providers_api_settings_available_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/user_models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get User Models
+         * @description Returns all user-defined models (new registry + legacy combined).
+         *
+         *     Includes both user_model_registry entries and legacy custom_models
+         *     (converted to UserModelEntry for display). Legacy models can be
+         *     deleted via the tuple method (provider_type/provider_id/model_id).
+         */
+        get: operations["get_user_models_api_settings_user_models_get"];
+        put?: never;
+        /**
+         * Add User Model
+         * @description Add a user-defined model to the registry.
+         */
+        post: operations["add_user_model_api_settings_user_models_post"];
+        /**
+         * Delete User Model
+         * @description Delete a user-defined model from the registry.
+         *
+         *     Supports two deletion methods:
+         *     1. By ID (new): Pass `id` parameter to delete from user_model_registry
+         *     2. By tuple (legacy): Pass provider_type, provider_id, model_id to delete from
+         *        user_model_registry by matching those fields, or from legacy custom_models
+         *
+         *     Legacy models in custom_models don't have IDs and must use the tuple method.
+         */
+        delete: operations["delete_user_model_api_settings_user_models_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/provider/connect_api_key": {
         parameters: {
             query?: never;
@@ -2433,6 +2492,18 @@ export interface components {
             provider_id: string;
             /** Models */
             models: components["schemas"]["ModelDetails"][];
+        };
+        /** AvailableProviderInfo */
+        AvailableProviderInfo: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Provider Type
+             * @enum {string}
+             */
+            provider_type: "builtin" | "custom";
         };
         /**
          * BasePrompt
@@ -6829,6 +6900,44 @@ export interface components {
              */
             cost?: number | null;
         };
+        /**
+         * UserModelEntry
+         * @description A user-defined custom model entry.
+         *
+         *     Attributes:
+         *         id: Unique identifier for this entry (auto-generated if not provided)
+         *         provider_type: "builtin" for ModelProviderName enum providers, "custom" for openai_compatible
+         *         provider_id: For builtin: enum value like "openai". For custom: the custom provider name
+         *         model_id: The model ID to use with the provider's API
+         *         name: Display name (optional, defaults to model_id)
+         *         overrides: Property overrides from KilnModelProvider (optional)
+         *
+         *     Note on overrides:
+         *         The overrides field accepts any keys for forward compatibility. When a UserModelEntry
+         *         is converted to a KilnModelProvider via user_model_to_provider(), only valid
+         *         KilnModelProvider fields are applied. Unknown fields are silently ignored.
+         *         This allows new fields to be added to KilnModelProvider without breaking existing
+         *         UserModelEntry data.
+         */
+        UserModelEntry: {
+            /**
+             * Provider Type
+             * @enum {string}
+             */
+            provider_type: "builtin" | "custom";
+            /** Provider Id */
+            provider_id: string;
+            /** Model Id */
+            model_id: string;
+            /** Name */
+            name?: string | null;
+            /** Overrides */
+            overrides?: {
+                [key: string]: unknown;
+            } | null;
+            /** Id */
+            id?: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -9624,6 +9733,113 @@ export interface operations {
         parameters: {
             query: {
                 name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_available_providers_api_settings_available_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailableProviderInfo"][];
+                };
+            };
+        };
+    };
+    get_user_models_api_settings_user_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserModelEntry"][];
+                };
+            };
+        };
+    };
+    add_user_model_api_settings_user_models_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserModelEntry"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_user_model_api_settings_user_models_delete: {
+        parameters: {
+            query?: {
+                provider_type?: string | null;
+                provider_id?: string | null;
+                model_id?: string | null;
+                id?: string | null;
             };
             header?: never;
             path?: never;

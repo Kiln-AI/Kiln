@@ -127,6 +127,7 @@
 
   // When a run config is selected, update the current run options to match the selected config
   let prior_selected_run_config_id: string | null = null
+  let run_config_just_loaded = false
   async function update_current_run_options_for_selected_run_config() {
     // Only run once immediately after a run config selection, not every reactive update
     if (prior_selected_run_config_id === selected_run_config_id) {
@@ -155,6 +156,7 @@
     top_p = selected_run_config.run_config_properties.top_p
     structured_output_mode =
       selected_run_config.run_config_properties.structured_output_mode
+    run_config_just_loaded = true
   }
 
   // Main reactive statement. This class is a bit wild, as many changes are circular.
@@ -209,14 +211,19 @@
     await apply_pending_run_config_if_needed()
 
     // Check if they selected a new model, in which case we want to update the run config to the finetune run config if needed
-    process_model_change()
+    const model_changed = process_model_change()
 
-    // Update the structured output mode to match the selected model, if needed
-    update_structured_output_mode_if_needed(
-      model_name,
-      provider,
-      $available_models,
-    )
+    // Only apply model-default overrides for user-initiated model changes.
+    // When a run config was just loaded (which may have changed the model),
+    // the run config's values should take priority.
+    if (model_changed && !run_config_just_loaded) {
+      update_structured_output_mode_if_needed(
+        model_name,
+        provider,
+        $available_models,
+      )
+    }
+    run_config_just_loaded = false
 
     // Update all the run options if they have changed the run config
     await update_current_run_options_for_selected_run_config()
@@ -241,10 +248,10 @@
   }
 
   let prior_model: string | null = null
-  async function process_model_change() {
+  function process_model_change(): boolean {
     // only run once immediately after a model change, not every reactive update
     if (prior_model === model) {
-      return
+      return false
     }
     prior_model = model
 
@@ -256,12 +263,15 @@
       $available_models,
     )
     if (model_details?.model_specific_run_config) {
-      selected_run_config_id = model_details.model_specific_run_config
+      if (!run_config_just_loaded) {
+        selected_run_config_id = model_details.model_specific_run_config
+      }
       selected_model_specific_run_config_id =
         model_details.model_specific_run_config
     } else {
       selected_model_specific_run_config_id = null
     }
+    return true
   }
 
   async function reset_to_custom_options_if_needed() {
@@ -336,7 +346,7 @@
         run_options_as_run_config_properties(),
       )
       // Reload prompts to update the dropdown with the new static prompt that is made from saving a new run config
-      await load_task_prompts(project_id, current_task.id)
+      await load_task_prompts(project_id, current_task.id, true)
       if (!saved_config || !saved_config.id) {
         throw new Error("Saved config id not found")
       }

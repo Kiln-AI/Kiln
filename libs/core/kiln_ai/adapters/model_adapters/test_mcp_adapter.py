@@ -47,7 +47,9 @@ def local_mcp_tool_id(project_with_local_mcp_server):
 
 def _mock_mcp_call(mock_session_manager, text_output: str):
     mock_session = AsyncMock()
-    mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+    mock_session_manager.shared.return_value.get_or_create_session = AsyncMock(
+        return_value=mock_session
+    )
     mock_session.call_tool.return_value = CallToolResult(
         content=[TextContent(type="text", text=text_output)],
         isError=False,  # type: ignore[arg-type]
@@ -56,9 +58,10 @@ def _mock_mcp_call(mock_session_manager, text_output: str):
 
 
 @pytest.mark.asyncio
+@patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value="test_run_id")
 @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
 async def test_mcp_adapter_struct_in_string_out(
-    mock_session_manager, project_with_local_mcp_server, local_mcp_tool_id
+    mock_session_manager, _mock_run_id, project_with_local_mcp_server, local_mcp_tool_id
 ):
     project, _ = project_with_local_mcp_server
     task = Task(
@@ -94,9 +97,10 @@ async def test_mcp_adapter_struct_in_string_out(
 
 
 @pytest.mark.asyncio
+@patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value="test_run_id")
 @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
 async def test_mcp_adapter_string_in_struct_out(
-    mock_session_manager, project_with_local_mcp_server, local_mcp_tool_id
+    mock_session_manager, _mock_run_id, project_with_local_mcp_server, local_mcp_tool_id
 ):
     project, _ = project_with_local_mcp_server
     task = Task(
@@ -130,9 +134,10 @@ async def test_mcp_adapter_string_in_struct_out(
 
 
 @pytest.mark.asyncio
+@patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value="test_run_id")
 @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
 async def test_mcp_adapter_string_in_string_out(
-    mock_session_manager, project_with_local_mcp_server, local_mcp_tool_id
+    mock_session_manager, _mock_run_id, project_with_local_mcp_server, local_mcp_tool_id
 ):
     project, _ = project_with_local_mcp_server
     task = Task(
@@ -159,9 +164,10 @@ async def test_mcp_adapter_string_in_string_out(
 
 
 @pytest.mark.asyncio
+@patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value="test_run_id")
 @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
 async def test_mcp_adapter_struct_in_struct_out(
-    mock_session_manager, project_with_local_mcp_server, local_mcp_tool_id
+    mock_session_manager, _mock_run_id, project_with_local_mcp_server, local_mcp_tool_id
 ):
     project, _ = project_with_local_mcp_server
     task = Task(
@@ -204,9 +210,10 @@ async def test_mcp_adapter_struct_in_struct_out(
 
 
 @pytest.mark.asyncio
+@patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value="test_run_id")
 @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
 async def test_mcp_adapter_emits_single_turn_trace(
-    mock_session_manager, project_with_local_mcp_server, local_mcp_tool_id
+    mock_session_manager, _mock_run_id, project_with_local_mcp_server, local_mcp_tool_id
 ):
     project, _ = project_with_local_mcp_server
     task = Task(

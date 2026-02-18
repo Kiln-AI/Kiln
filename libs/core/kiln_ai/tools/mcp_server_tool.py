@@ -6,6 +6,7 @@ from mcp.types import Tool as MCPTool
 
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, ToolId
+from kiln_ai.run_context import get_agent_run_id
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
     ToolCallContext,
@@ -96,14 +97,20 @@ class MCPServerTool(KilnToolInterface):
 
     #  Call the MCP Tool
     async def _call_tool(self, **kwargs) -> CallToolResult:
-        async with MCPSessionManager.shared().mcp_client(
-            self._tool_server_model
-        ) as session:
-            result = await session.call_tool(
-                name=await self.name(),
-                arguments=kwargs,
+        session_id = get_agent_run_id()
+        if not session_id:
+            raise RuntimeError(
+                "MCP tool call attempted without an agent run context. "
+                "This is a bug — tool calls should only happen during an agent run."
             )
-            return result
+
+        session = await MCPSessionManager.shared().get_or_create_session(
+            self._tool_server_model, session_id
+        )
+        return await session.call_tool(
+            name=await self.name(),
+            arguments=kwargs,
+        )
 
     async def _load_tool_properties(self):
         if self._tool is not None:
@@ -119,10 +126,18 @@ class MCPServerTool(KilnToolInterface):
 
     #  Get the MCP Tool from the server
     async def _get_tool(self, tool_name: str) -> MCPTool:
-        async with MCPSessionManager.shared().mcp_client(
-            self._tool_server_model
-        ) as session:
+        session_id = get_agent_run_id()
+
+        if session_id:
+            session = await MCPSessionManager.shared().get_or_create_session(
+                self._tool_server_model, session_id
+            )
             tools = await session.list_tools()
+        else:
+            async with MCPSessionManager.shared().mcp_client(
+                self._tool_server_model
+            ) as session:
+                tools = await session.list_tools()
 
         tool = next((tool for tool in tools.tools if tool.name == tool_name), None)
         if tool is None:

@@ -110,6 +110,9 @@ export type KilnTaskServerProperties =
   components["schemas"]["KilnTaskServerProperties"]
 export type TaskToolCompatibility =
   components["schemas"]["TaskToolCompatibility"]
+export type UserModelEntry = components["schemas"]["UserModelEntry"]
+export type AvailableProviderInfo =
+  components["schemas"]["AvailableProviderInfo"]
 
 export type TraceMessage =
   | components["schemas"]["ChatCompletionDeveloperMessageParam"]

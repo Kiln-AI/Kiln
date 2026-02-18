@@ -14,7 +14,10 @@ from kiln_ai.datamodel.external_tool_server import (
 )
 from kiln_ai.tools.mcp_session_manager import (
     LOCAL_MCP_ERROR_INSTRUCTION,
+    MCP_SESSION_CACHE_KEY_DELIMITER,
     MCPSessionManager,
+    build_mcp_session_cache_key,
+    parse_mcp_session_cache_session_id,
 )
 from kiln_ai.utils.config import MCP_SECRETS_KEY
 
@@ -1558,3 +1561,414 @@ class TestMCPServerIntegration:
         assert tools is not None
         assert len(tools.tools) > 0
         assert "firecrawl_scrape" in [tool.name for tool in tools.tools]
+
+
+@pytest.fixture
+def mock_mcp_streams():
+    """Mock read/write streams for MCP client connections."""
+    return (MagicMock(), MagicMock())
+
+
+@pytest.fixture
+def cached_remote_tool_server():
+    """Remote MCP server for caching tests with ID pre-set."""
+    server = ExternalToolServer(
+        name="test_server",
+        type=ToolServerType.remote_mcp,
+        description="Test server",
+        properties={
+            "server_url": "http://example.com/mcp",
+            "is_archived": False,
+        },
+    )
+    server.id = "test_server_id"
+    return server
+
+
+@pytest.fixture
+def mock_session_instance():
+    """Mock ClientSession instance for testing."""
+    return AsyncMock()
+
+
+class TestMCPSessionCaching:
+    """Unit tests for MCP session caching functionality."""
+
+    def setup_method(self):
+        """Reset the session manager before each test."""
+        MCPSessionManager._shared_instance = None
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    @pytest.mark.asyncio
+    async def test_get_or_create_session_creates_new(
+        self,
+        mock_client,
+        mock_mcp_streams,
+        cached_remote_tool_server,
+        mock_session_instance,
+    ):
+        """Test that get_or_create_session creates a new session on first call."""
+        mock_read_stream, mock_write_stream = mock_mcp_streams
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            session_id = "test_session_123"
+            session = await manager.get_or_create_session(
+                cached_remote_tool_server, session_id
+            )
+
+            assert session is mock_session_instance
+            mock_session_instance.initialize.assert_called_once()
+
+        # Verify the session was cached
+        cache_key = build_mcp_session_cache_key(
+            cached_remote_tool_server.id, session_id
+        )
+        assert cache_key in manager._session_cache
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    @pytest.mark.asyncio
+    async def test_get_or_create_session_returns_cached(
+        self,
+        mock_client,
+        mock_mcp_streams,
+        cached_remote_tool_server,
+        mock_session_instance,
+    ):
+        """Test that get_or_create_session returns cached session on second call."""
+        mock_read_stream, mock_write_stream = mock_mcp_streams
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            session_id = "test_session_123"
+
+            # First call should create and cache
+            session1 = await manager.get_or_create_session(
+                cached_remote_tool_server, session_id
+            )
+            # Second call should return cached
+            session2 = await manager.get_or_create_session(
+                cached_remote_tool_server, session_id
+            )
+
+            assert session1 is session2
+            # Initialize should only be called once (on creation)
+            mock_session_instance.initialize.assert_called_once()
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    @pytest.mark.asyncio
+    async def test_get_or_create_session_different_servers(
+        self, mock_client, mock_mcp_streams
+    ):
+        """Test that different servers get different cached sessions."""
+        mock_read_stream, mock_write_stream = mock_mcp_streams
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        server1 = ExternalToolServer(
+            name="server1",
+            type=ToolServerType.remote_mcp,
+            description="Test server 1",
+            properties={
+                "server_url": "http://example1.com/mcp",
+                "is_archived": False,
+            },
+        )
+        server1.id = "server1_id"
+
+        server2 = ExternalToolServer(
+            name="server2",
+            type=ToolServerType.remote_mcp,
+            description="Test server 2",
+            properties={
+                "server_url": "http://example2.com/mcp",
+                "is_archived": False,
+            },
+        )
+        server2.id = "server2_id"
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance1 = AsyncMock()
+            mock_session_instance2 = AsyncMock()
+            mock_session_class.return_value.__aenter__.side_effect = [
+                mock_session_instance1,
+                mock_session_instance2,
+            ]
+
+            session_id = "test_session_123"
+
+            session1 = await manager.get_or_create_session(server1, session_id)
+            session2 = await manager.get_or_create_session(server2, session_id)
+
+            assert session1 is mock_session_instance1
+            assert session2 is mock_session_instance2
+            assert session1 is not session2
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    @pytest.mark.asyncio
+    async def test_get_or_create_session_different_session_ids(
+        self, mock_client, mock_mcp_streams, cached_remote_tool_server
+    ):
+        """Test that different session IDs get different cached sessions."""
+        mock_read_stream, mock_write_stream = mock_mcp_streams
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance1 = AsyncMock()
+            mock_session_instance2 = AsyncMock()
+            mock_session_class.return_value.__aenter__.side_effect = [
+                mock_session_instance1,
+                mock_session_instance2,
+            ]
+
+            session1 = await manager.get_or_create_session(
+                cached_remote_tool_server, "session_1"
+            )
+            session2 = await manager.get_or_create_session(
+                cached_remote_tool_server, "session_2"
+            )
+
+            assert session1 is mock_session_instance1
+            assert session2 is mock_session_instance2
+            assert session1 is not session2
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    @pytest.mark.asyncio
+    async def test_cleanup_session_closes_stacks(
+        self,
+        mock_client,
+        mock_mcp_streams,
+        cached_remote_tool_server,
+        mock_session_instance,
+    ):
+        """Test that cleanup_session properly closes exit stacks."""
+        mock_read_stream, mock_write_stream = mock_mcp_streams
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            session_id = "test_session_123"
+
+            # Create a session
+            await manager.get_or_create_session(cached_remote_tool_server, session_id)
+
+            # Verify it's cached
+            cache_key = build_mcp_session_cache_key(
+                cached_remote_tool_server.id, session_id
+            )
+            assert cache_key in manager._session_cache
+
+            # Get the exit stack before cleanup and mock its aclose method
+            _, exit_stack = manager._session_cache[cache_key]
+            original_aclose = exit_stack.aclose
+
+            # Track if aclose was called
+            aclose_called = False
+
+            async def mock_aclose():
+                nonlocal aclose_called
+                aclose_called = True
+                # Call the original to properly clean up
+                return await original_aclose()
+
+            exit_stack.aclose = mock_aclose
+
+            # Cleanup the session
+            await manager.cleanup_session(session_id)
+
+            # Verify cache is empty
+            assert cache_key not in manager._session_cache
+
+            # Verify aclose was called on the exit stack
+            assert aclose_called
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    @pytest.mark.asyncio
+    async def test_cleanup_ignores_other_sessions(self, mock_client, mock_mcp_streams):
+        """Test that cleanup only removes sessions matching the session ID."""
+        mock_read_stream, mock_write_stream = mock_mcp_streams
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        server1 = ExternalToolServer(
+            name="server1",
+            type=ToolServerType.remote_mcp,
+            description="Test server 1",
+            properties={
+                "server_url": "http://example1.com/mcp",
+                "is_archived": False,
+            },
+        )
+        server1.id = "server1_id"
+
+        server2 = ExternalToolServer(
+            name="server2",
+            type=ToolServerType.remote_mcp,
+            description="Test server 2",
+            properties={
+                "server_url": "http://example2.com/mcp",
+                "is_archived": False,
+            },
+        )
+        server2.id = "server2_id"
+
+        manager = MCPSessionManager.shared()
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance1 = AsyncMock()
+            mock_session_instance2 = AsyncMock()
+            mock_session_class.return_value.__aenter__.side_effect = [
+                mock_session_instance1,
+                mock_session_instance2,
+            ]
+
+            session_id_1 = "session_1"
+            session_id_2 = "session_2"
+
+            # Create sessions for different server/session combinations
+            await manager.get_or_create_session(server1, session_id_1)
+            await manager.get_or_create_session(server2, session_id_2)
+
+            # Verify both are cached
+            cache_key_1 = build_mcp_session_cache_key(server1.id, session_id_1)
+            cache_key_2 = build_mcp_session_cache_key(server2.id, session_id_2)
+            assert cache_key_1 in manager._session_cache
+            assert cache_key_2 in manager._session_cache
+
+            # Cleanup only session_1
+            await manager.cleanup_session(session_id_1)
+
+            # Verify only session_1 was removed
+            assert cache_key_1 not in manager._session_cache
+            assert cache_key_2 in manager._session_cache
+
+    @patch("kiln_ai.tools.mcp_session_manager.streamablehttp_client")
+    @pytest.mark.asyncio
+    async def test_concurrent_get_or_create(
+        self,
+        mock_client,
+        mock_mcp_streams,
+        cached_remote_tool_server,
+    ):
+        """Test that concurrent get_or_create calls safely handle race conditions.
+
+        Injects a delay into session creation so multiple coroutines get past the
+        initial cache-miss check before any of them finish creating a session,
+        exercising the double-check locking and loser-closes-its-stack logic.
+        """
+        import asyncio
+
+        mock_read_stream, mock_write_stream = mock_mcp_streams
+        mock_client.return_value.__aenter__.return_value = (
+            mock_read_stream,
+            mock_write_stream,
+            None,
+        )
+
+        manager = MCPSessionManager.shared()
+        creation_count = 0
+
+        original_create = manager._create_cached_session
+
+        async def slow_create(tool_server):
+            nonlocal creation_count
+            creation_count += 1
+            await asyncio.sleep(0.05)
+            return await original_create(tool_server)
+
+        manager._create_cached_session = slow_create
+
+        with patch(
+            "kiln_ai.tools.mcp_session_manager.ClientSession"
+        ) as mock_session_class:
+            mock_session_instance = AsyncMock()
+            mock_session_class.return_value.__aenter__.return_value = (
+                mock_session_instance
+            )
+
+            session_id = "test_session_123"
+
+            results = await asyncio.gather(
+                manager.get_or_create_session(cached_remote_tool_server, session_id),
+                manager.get_or_create_session(cached_remote_tool_server, session_id),
+                manager.get_or_create_session(cached_remote_tool_server, session_id),
+            )
+
+            assert all(r is mock_session_instance for r in results)
+            assert creation_count > 1, "Delay should cause multiple creation attempts"
+            assert len(manager._session_cache) == 1
+
+
+class TestMCPSessionCacheKeyHelpers:
+    def test_build_mcp_session_cache_key_uses_expected_delimiter(self):
+        cache_key = build_mcp_session_cache_key("server_id", "session_id")
+        assert cache_key == f"server_id{MCP_SESSION_CACHE_KEY_DELIMITER}session_id"
+
+    @pytest.mark.parametrize(
+        "cache_key,expected_session_id",
+        [
+            ("server_id::session_id", "session_id"),
+            ("server::session::id", "id"),
+            ("prefix:value::session", "session"),
+            ("prefix::value::session", "session"),
+        ],
+    )
+    def test_parse_mcp_session_cache_session_id_uses_last_delimiter(
+        self, cache_key, expected_session_id
+    ):
+        assert parse_mcp_session_cache_session_id(cache_key) == expected_session_id
