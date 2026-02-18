@@ -10,7 +10,7 @@ from kiln_ai.datamodel.json_schema import (
     single_string_field_name,
     validate_schema_with_value_error,
 )
-from kiln_ai.datamodel.run_config import RunConfigKind
+from kiln_ai.datamodel.run_config import McpRunConfigProperties
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
@@ -28,26 +28,27 @@ class MCPAdapter(BaseAdapter):
         run_config: RunConfigProperties,
         config: AdapterConfig | None = None,
     ):
-        if run_config.kind != RunConfigKind.mcp:
-            raise ValueError("MCPAdapter requires a run config with kind mcp")
+        if run_config.type != "mcp":
+            raise ValueError("MCPAdapter requires a run config with type mcp")
         super().__init__(task=task, run_config=run_config, config=config)
 
     def adapter_name(self) -> str:
         return "mcp_adapter"
 
     async def _run(self, input: InputType) -> Tuple[RunOutput, Usage | None]:
-        if self.run_config.mcp_tool is None:
-            raise ValueError("mcp_tool is required for MCPAdapter")
+        run_config = self.run_config
+        if not isinstance(run_config, McpRunConfigProperties):
+            raise ValueError("MCPAdapter requires McpRunConfigProperties")
 
         # Get the actual tool from tool registry
-        tool = tool_from_id(self.run_config.mcp_tool.tool_id, self.task)
+        tool = tool_from_id(run_config.tool_reference.tool_id, self.task)
 
         tool_kwargs: dict[str, object]
         if self.input_schema is None:
             if not isinstance(input, str):
                 raise ValueError("Plaintext task input must be a string")
             field_name = "input"
-            tool_schema = self.run_config.mcp_tool.input_schema
+            tool_schema = run_config.tool_reference.input_schema
             if tool_schema is not None:
                 field_name = single_string_field_name(tool_schema)
                 if field_name is None:

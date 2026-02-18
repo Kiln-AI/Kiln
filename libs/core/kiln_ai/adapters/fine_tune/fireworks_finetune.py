@@ -13,6 +13,7 @@ from kiln_ai.adapters.fine_tune.base_finetune import (
 )
 from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetFormatter
 from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.wandb_utils import AuthenticationError, get_wandb_default_entity
 
@@ -132,7 +133,7 @@ class FireworksFinetune(BaseFinetuneAdapter):
             # This formatter will check it's valid JSON, and normalize the output (chat format just uses exact string).
             format = DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL
             # Fireworks doesn't support function calls or json schema, so we'll use json mode at call time
-            if self.datamodel.run_config is not None:
+            if isinstance(self.datamodel.run_config, KilnAgentRunConfigProperties):
                 self.datamodel.run_config.structured_output_mode = (
                     StructuredOutputMode.json_mode
                 )

@@ -7,7 +7,7 @@ from kiln_ai.adapters.repair.repair_task import RepairTaskRun
 from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
 from kiln_ai.datamodel.prompt_id import PromptGenerators
-from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType
 from kiln_ai.utils.config import Config
 from kiln_server.run_api import model_provider_from_string, task_and_run_from_id
@@ -72,7 +72,7 @@ def connect_repair_api(app: FastAPI):
             else:
                 sdm = StructuredOutputMode(sdm)
 
-            run_config_properties = RunConfigProperties(
+            run_config_properties = KilnAgentRunConfigProperties(
                 model_name=model_name,
                 model_provider_name=provider,
                 prompt_id=PromptGenerators.SIMPLE,

@@ -8,6 +8,7 @@ import {
 import { client } from "$lib/api_client"
 import { indexedDBStore } from "$lib/stores/index_db_store"
 import type { KilnDocument, RunConfigProperties } from "$lib/types"
+import { isKilnAgentRunConfig } from "$lib/types"
 import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 
 export type StepNumber = 1 | 2 | 3 | 4
@@ -726,6 +727,10 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     const generated = Array.isArray(response.generated_qna_pairs)
       ? response.generated_qna_pairs
       : []
+
+    if (!isKilnAgentRunConfig(runConfigProperties)) {
+      throw new Error("Q&A generation requires a kiln_agent run config")
+    }
 
     const modelProvider = runConfigProperties.model_provider_name
     const modelName = runConfigProperties.model_name

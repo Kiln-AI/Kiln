@@ -32,7 +32,7 @@ from kiln_ai.adapters.provider_tools import (
 )
 from kiln_ai.datamodel import Finetune, StructuredOutputMode, Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
-from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
 
 @pytest.fixture(autouse=True)
@@ -646,7 +646,7 @@ def test_openai_compatible_provider_config(mock_shared_config):
     model_id = "test_provider::gpt-4"
 
     config = litellm_core_provider_config(
-        RunConfigProperties(
+        KilnAgentRunConfigProperties(
             model_name=model_id,
             model_provider_name=ModelProviderName.openai_compatible,
             prompt_id="simple_prompt_builder",
@@ -681,7 +681,7 @@ def test_lite_llm_config_no_api_key(mock_shared_config):
     model_id = "no_key_provider::gpt-4"
 
     config = litellm_core_provider_config(
-        RunConfigProperties(
+        KilnAgentRunConfigProperties(
             model_name=model_id,
             model_provider_name=ModelProviderName.openai_compatible,
             prompt_id="simple_prompt_builder",
@@ -702,7 +702,7 @@ def test_lite_llm_config_invalid_id():
     """Test handling of invalid model ID format"""
     with pytest.raises(ValueError) as exc_info:
         litellm_core_provider_config(
-            RunConfigProperties(
+            KilnAgentRunConfigProperties(
                 model_name="invalid-id-format",
                 model_provider_name=ModelProviderName.openai_compatible,
                 prompt_id="simple_prompt_builder",
@@ -720,7 +720,7 @@ def test_lite_llm_config_no_providers(mock_shared_config):
 
     with pytest.raises(ValueError) as exc_info:
         litellm_core_provider_config(
-            RunConfigProperties(
+            KilnAgentRunConfigProperties(
                 model_name="test_provider::gpt-4",
                 model_provider_name=ModelProviderName.openai_compatible,
                 prompt_id="simple_prompt_builder",
@@ -734,7 +734,7 @@ def test_lite_llm_config_provider_not_found(mock_shared_config):
     """Test handling of non-existent provider"""
     with pytest.raises(ValueError) as exc_info:
         litellm_core_provider_config(
-            RunConfigProperties(
+            KilnAgentRunConfigProperties(
                 model_name="unknown_provider::gpt-4",
                 model_provider_name=ModelProviderName.openai_compatible,
                 prompt_id="simple_prompt_builder",
@@ -757,7 +757,7 @@ def test_lite_llm_config_no_base_url(mock_shared_config):
 
     with pytest.raises(ValueError) as exc_info:
         litellm_core_provider_config(
-            RunConfigProperties(
+            KilnAgentRunConfigProperties(
                 model_name="test_provider::gpt-4",
                 model_provider_name=ModelProviderName.openai_compatible,
                 prompt_id="simple_prompt_builder",

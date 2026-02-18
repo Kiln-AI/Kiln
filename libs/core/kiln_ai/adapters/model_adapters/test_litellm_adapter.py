@@ -10,7 +10,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel import Project, Task, Usage
-from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
     DivideTool,
@@ -47,7 +47,7 @@ def mock_task(tmp_path):
 def config():
     return LiteLlmConfig(
         base_url="https://api.test.com",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="test-model",
             model_provider_name="openrouter",
             prompt_id="simple_prompt_builder",
@@ -556,8 +556,8 @@ async def test_build_completion_kwargs(
     assert kwargs["api_base"] == config.base_url
 
     # Verify temperature and top_p are included with default values
-    assert kwargs["temperature"] == 1.0  # Default from RunConfigProperties
-    assert kwargs["top_p"] == 1.0  # Default from RunConfigProperties
+    assert kwargs["temperature"] == 1.0  # Default from KilnAgentRunConfigProperties
+    assert kwargs["top_p"] == 1.0  # Default from KilnAgentRunConfigProperties
 
     # Verify drop_params is set correctly
     assert kwargs["drop_params"] is True

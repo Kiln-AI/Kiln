@@ -15,7 +15,7 @@ from kiln_ai.adapters.model_adapters.litellm_adapter import (
 from kiln_ai.adapters.ollama_tools import ollama_online
 from kiln_ai.datamodel import PromptGenerators, PromptId, StructuredOutputMode
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
-from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
 
 def get_all_models_and_providers():
@@ -120,7 +120,7 @@ async def test_mock_returning_run(tmp_path):
             choices=[{"message": {"content": "mock response"}}],
         )
 
-        run_config = RunConfigProperties(
+        run_config = KilnAgentRunConfigProperties(
             model_name="custom_model",
             model_provider_name=ModelProviderName.ollama,
             prompt_id=PromptGenerators.SIMPLE,
@@ -148,7 +148,7 @@ async def test_mock_returning_run(tmp_path):
     assert run.output.source is not None
     assert run.output.source.properties == {
         "adapter_name": "kiln_openai_compatible_adapter",
-        "kind": "kiln_agent",
+        "type": "kiln_agent",
         "model_name": "custom_model",
         "model_provider": ModelProviderName.ollama,
         "prompt_id": PromptGenerators.SIMPLE,
@@ -226,7 +226,7 @@ async def run_simple_task(
 ) -> datamodel.TaskRun:
     adapter = adapter_for_task(
         task,
-        RunConfigProperties(
+        KilnAgentRunConfigProperties(
             structured_output_mode="json_schema",
             model_name=model_name,
             model_provider_name=provider,

@@ -36,7 +36,8 @@ from kiln_ai.datamodel import (
     Usage,
 )
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
-from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.task import TaskRunConfig
 
 logger = logging.getLogger(__name__)
 
@@ -601,7 +602,7 @@ def test_task_run_config_prompt_builder(tmp_path):
     run_config = TaskRunConfig(
         name="test_run_config",
         parent=task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",

@@ -5,7 +5,7 @@ import pytest
 from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
-from kiln_ai.datamodel.run_config import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType
 from kiln_ai.tools.base_tool import ToolCallContext
@@ -198,7 +198,7 @@ class TestKilnTaskTool:
                 "test input",
                 input_source=DataSource(
                     type=DataSourceType.tool_call,
-                    run_config=RunConfigProperties(
+                    run_config=KilnAgentRunConfigProperties(
                         model_name="gpt-4",
                         model_provider_name=ModelProviderName.openai,
                         prompt_id="simple_prompt_builder",
@@ -252,7 +252,7 @@ class TestKilnTaskTool:
                 {"param1": "value1", "param2": "value2"},
                 input_source=DataSource(
                     type=DataSourceType.tool_call,
-                    run_config=RunConfigProperties(
+                    run_config=KilnAgentRunConfigProperties(
                         model_name="gpt-4",
                         model_provider_name=ModelProviderName.openai,
                         prompt_id="simple_prompt_builder",

@@ -25,6 +25,10 @@ from kiln_ai.datamodel import (
 )
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    McpRunConfigProperties,
+)
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.tools import KilnToolInterface
 from kiln_ai.tools.tool_registry import tool_from_id
@@ -72,13 +76,16 @@ class BaseAdapter(metaclass=ABCMeta):
     ):
         self.task = task
         self.run_config: RunConfigProperties = run_config
-        self.update_run_config_unknown_structured_output_mode()
         self.base_adapter_config = config or AdapterConfig()
 
-        self.prompt_builder = (
-            self.base_adapter_config.prompt_builder
-            or prompt_builder_from_id(run_config.prompt_id, task)
-        )
+        if isinstance(run_config, KilnAgentRunConfigProperties):
+            self.update_run_config_unknown_structured_output_mode()
+            self.prompt_builder = (
+                self.base_adapter_config.prompt_builder
+                or prompt_builder_from_id(run_config.prompt_id, task)
+            )
+        else:
+            self.prompt_builder = None
         self._model_provider: KilnModelProvider | None = None
 
         self.output_schema = task.output_json_schema
@@ -90,14 +97,15 @@ class BaseAdapter(metaclass=ABCMeta):
         """
         if self._model_provider is not None:
             return self._model_provider
-        if not self.run_config.model_name or not self.run_config.model_provider_name:
+        run_config = self._kiln_agent_run_config()
+        if not run_config.model_name or not run_config.model_provider_name:
             raise ValueError("model_name and model_provider_name must be provided")
         self._model_provider = kiln_model_provider_from(
-            self.run_config.model_name, self.run_config.model_provider_name
+            run_config.model_name, run_config.model_provider_name
         )
         if not self._model_provider:
             raise ValueError(
-                f"model_provider_name {self.run_config.model_provider_name} not found for model {self.run_config.model_name}"
+                f"model_provider_name {run_config.model_provider_name} not found for model {run_config.model_name}"
             )
         return self._model_provider
 
@@ -210,8 +218,10 @@ class BaseAdapter(metaclass=ABCMeta):
         pass
 
     def build_prompt(self) -> str:
+        if self.prompt_builder is None:
+            raise ValueError("Prompt builder is not available for MCP run config")
         # The prompt builder needs to know if we want to inject formatting instructions
-        structured_output_mode = self.run_config.structured_output_mode
+        structured_output_mode = self._kiln_agent_run_config().structured_output_mode
         add_json_instructions = self.has_structured_output() and (
             structured_output_mode == StructuredOutputMode.json_instructions
             or structured_output_mode
@@ -223,6 +233,8 @@ class BaseAdapter(metaclass=ABCMeta):
         )
 
     def build_chat_formatter(self, input: InputType) -> ChatFormatter:
+        if self.prompt_builder is None:
+            raise ValueError("Prompt builder is not available for MCP run config")
         # Determine the chat strategy to use based on the prompt the user selected, the model's capabilities, and if the model was finetuned with a specific chat strategy.
 
         cot_prompt = self.prompt_builder.chain_of_thought_prompt()
@@ -320,34 +332,51 @@ class BaseAdapter(metaclass=ABCMeta):
 
         props["adapter_name"] = self.adapter_name()
 
+        if self.run_config.type == "mcp":
+            if not isinstance(self.run_config, McpRunConfigProperties):
+                raise ValueError("McpRunConfigProperties is required for MCP runs")
+            run_config = self.run_config
+            props["type"] = "mcp"
+            props["model_name"] = "mcp_tool"
+            props["model_provider"] = "mcp_provider"
+            props["tool_id"] = run_config.tool_reference.tool_id
+            return props
+
+        run_config = self._kiln_agent_run_config()
+
         # Legacy properties where we save the run_config details into custom properties.
         # These are now also be saved in the run_config field.
-        props["model_name"] = self.run_config.model_name
-        props["model_provider"] = self.run_config.model_provider_name
-        props["prompt_id"] = self.run_config.prompt_id
-        props["structured_output_mode"] = self.run_config.structured_output_mode
-        props["temperature"] = self.run_config.temperature
-        props["top_p"] = self.run_config.top_p
-        props["kind"] = self.run_config.kind
+        props["model_name"] = run_config.model_name
+        props["model_provider"] = run_config.model_provider_name
+        props["prompt_id"] = run_config.prompt_id
+        props["structured_output_mode"] = run_config.structured_output_mode
+        props["temperature"] = run_config.temperature
+        props["top_p"] = run_config.top_p
+        props["type"] = run_config.type
 
         return props
 
     def update_run_config_unknown_structured_output_mode(self) -> None:
-        structured_output_mode = self.run_config.structured_output_mode
+        if self.run_config.type != "kiln_agent":
+            return
+        run_config = self._kiln_agent_run_config()
+        structured_output_mode = run_config.structured_output_mode
 
         # Old datamodels didn't save the structured output mode. Some clients (tests, end users) might not set it.
         # Look up our recommended mode from ml_model_list if we have one
         if structured_output_mode == StructuredOutputMode.unknown:
-            new_run_config = self.run_config.model_copy(deep=True)
+            new_run_config = run_config.model_copy(deep=True)
             structured_output_mode = default_structured_output_mode_for_model_provider(
-                self.run_config.model_name,
-                self.run_config.model_provider_name,
+                run_config.model_name,
+                run_config.model_provider_name,
             )
             new_run_config.structured_output_mode = structured_output_mode
             self.run_config = new_run_config
 
     async def available_tools(self) -> list[KilnToolInterface]:
-        tool_config = self.run_config.tools_config
+        if self.run_config.type != "kiln_agent":
+            return []
+        tool_config = self._kiln_agent_run_config().tools_config
         if tool_config is None or tool_config.tools is None:
             return []
 
@@ -369,3 +398,8 @@ class BaseAdapter(metaclass=ABCMeta):
             )
 
         return tools
+
+    def _kiln_agent_run_config(self) -> KilnAgentRunConfigProperties:
+        if not isinstance(self.run_config, KilnAgentRunConfigProperties):
+            raise ValueError("Kiln agent run config is required for this operation")
+        return self.run_config

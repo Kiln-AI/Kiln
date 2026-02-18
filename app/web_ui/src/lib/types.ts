@@ -44,7 +44,13 @@ export type EvalConfigType = components["schemas"]["EvalConfigType"]
 export type EvalDataType = components["schemas"]["EvalDataType"]
 export type EvalConfig = components["schemas"]["EvalConfig"]
 export type TaskRunConfig = components["schemas"]["TaskRunConfig"]
-export type RunConfigProperties = components["schemas"]["RunConfigProperties"]
+export type KilnAgentRunConfigProperties =
+  components["schemas"]["KilnAgentRunConfigProperties"]
+export type McpRunConfigProperties =
+  components["schemas"]["McpRunConfigProperties"]
+export type RunConfigProperties =
+  | KilnAgentRunConfigProperties
+  | McpRunConfigProperties
 export type EvalResultSummary = components["schemas"]["EvalResultSummary"]
 export type EvalRunResult = components["schemas"]["EvalRunResult"]
 export type EvalConfigCompareSummary =
@@ -127,6 +133,36 @@ export type DocumentLibraryState = components["schemas"]["DocumentLibraryState"]
 export type Spec = components["schemas"]["Spec"]
 export type SpecStatus = components["schemas"]["SpecStatus"]
 export type Priority = components["schemas"]["Priority"]
+
+export function isKilnAgentRunConfig(
+  config: RunConfigProperties | null | undefined,
+): config is KilnAgentRunConfigProperties {
+  return config?.type === "kiln_agent"
+}
+
+export function isMcpRunConfig(
+  config: RunConfigProperties | null | undefined,
+): config is McpRunConfigProperties {
+  return config?.type === "mcp"
+}
+
+export function requireKilnAgentRunConfig(
+  config: RunConfigProperties | null | undefined,
+): KilnAgentRunConfigProperties {
+  if (!isKilnAgentRunConfig(config)) {
+    throw new Error("Expected kiln_agent run config properties")
+  }
+  return config
+}
+
+export function requireMcpRunConfig(
+  config: RunConfigProperties | null | undefined,
+): McpRunConfigProperties {
+  if (!isMcpRunConfig(config)) {
+    throw new Error("Expected mcp run config properties")
+  }
+  return config
+}
 
 // Copilot API types
 export type SyntheticDataGenerationStepConfigApi =

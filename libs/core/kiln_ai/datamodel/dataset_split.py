@@ -14,6 +14,7 @@ from kiln_ai.datamodel.dataset_filters import (
     DatasetFilterId,
     dataset_filter_from_id,
 )
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task_run import TaskRun
 
 if TYPE_CHECKING:
@@ -232,7 +233,9 @@ class DatasetSplit(KilnParentedModel):
             # Extract tools from run config, treating missing source/run_config/tools_config as empty tools
             run_tools: set[str] = set()
             source = run.output.source if run.output else None
-            if source is not None and source.run_config is not None:
+            if source is not None and isinstance(
+                source.run_config, KilnAgentRunConfigProperties
+            ):
                 tools_config = source.run_config.tools_config
                 if tools_config is not None:
                     run_tools = set(tools_config.tools)

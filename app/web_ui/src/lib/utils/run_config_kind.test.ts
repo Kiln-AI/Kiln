@@ -8,8 +8,11 @@ import {
 describe("run_config_kind", () => {
   it("should detect MCP run config properties", () => {
     const props = {
-      kind: "mcp",
-      mcp_tool: { tool_id: "mcp::local::server::tool", tool_name: "Tool" },
+      type: "mcp",
+      tool_reference: {
+        tool_id: "mcp::local::server::tool",
+        tool_name: "Tool",
+      },
     } as RunConfigProperties
 
     expect(is_mcp_run_config_properties(props)).toBe(true)
@@ -19,7 +22,7 @@ describe("run_config_kind", () => {
 
   it("should detect MCP run config", () => {
     const config = {
-      run_config_properties: { kind: "mcp" },
+      run_config_properties: { type: "mcp" },
     } as TaskRunConfig
 
     expect(is_mcp_run_config(config)).toBe(true)

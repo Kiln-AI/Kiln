@@ -21,7 +21,7 @@ from kiln_ai.datamodel.basemodel import (
     string_to_valid_name,
 )
 from kiln_ai.datamodel.model_cache import ModelCache
-from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
 
 @pytest.fixture
@@ -878,7 +878,7 @@ def base_task():
 def adapter(base_task):
     return MockAdapter(
         task=base_task,
-        run_config=RunConfigProperties(
+        run_config=KilnAgentRunConfigProperties(
             model_name="test_model",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",

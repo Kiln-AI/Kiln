@@ -19,13 +19,13 @@
     Task,
     TaskRunConfig,
   } from "$lib/types"
+  import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
   import AvailableModelsDropdown from "./available_models_dropdown.svelte"
   import PromptTypeSelector from "./prompt_type_selector.svelte"
   import ToolsSelector from "./tools_selector.svelte"
   import AdvancedRunOptions from "./advanced_run_options.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import McpRunConfigPanel from "$lib/ui/run_config_component/mcp_run_config_panel.svelte"
-  import { is_mcp_run_config } from "$lib/utils/run_config_kind"
   import { tick, onMount } from "svelte"
   import { ui_state } from "$lib/stores"
   import { load_task_prompts } from "$lib/stores/prompts_store"
@@ -92,7 +92,7 @@
         get_task_composite_id(project_id, current_task.id)
       ] ?? []
     const config = all_configs.find((c) => c.id === selected_run_config_id)
-    return is_mcp_run_config(config)
+    return isMcpRunConfig(config?.run_config_properties)
   })()
 
   $: selected_mcp_config = (() => {
@@ -139,22 +139,21 @@
       // No need to update selected_run_config_id, it's already custom or unset
       return
     }
-    if (is_mcp_run_config(selected_run_config)) {
+    if (isMcpRunConfig(selected_run_config.run_config_properties)) {
       return
     }
 
+    const config_properties = selected_run_config.run_config_properties
+    if (!isKilnAgentRunConfig(config_properties)) {
+      return
+    }
     model =
-      selected_run_config.run_config_properties.model_provider_name +
-      "/" +
-      selected_run_config.run_config_properties.model_name
-    prompt_method = selected_run_config.run_config_properties.prompt_id
-    tools = [
-      ...(selected_run_config.run_config_properties.tools_config?.tools ?? []),
-    ]
-    temperature = selected_run_config.run_config_properties.temperature
-    top_p = selected_run_config.run_config_properties.top_p
-    structured_output_mode =
-      selected_run_config.run_config_properties.structured_output_mode
+      config_properties.model_provider_name + "/" + config_properties.model_name
+    prompt_method = config_properties.prompt_id
+    tools = [...(config_properties.tools_config?.tools ?? [])]
+    temperature = config_properties.temperature
+    top_p = config_properties.top_p
+    structured_output_mode = config_properties.structured_output_mode
   }
 
   // Main reactive statement. This class is a bit wild, as many changes are circular.
@@ -269,11 +268,14 @@
     if (!selected_run_config || selected_run_config === "custom") {
       return
     }
-    if (is_mcp_run_config(selected_run_config)) {
+    if (isMcpRunConfig(selected_run_config.run_config_properties)) {
       return
     }
 
     const config_properties = selected_run_config.run_config_properties
+    if (!isKilnAgentRunConfig(config_properties)) {
+      return
+    }
 
     // Check if any values have changed from the saved config properties
     let model_changed = false
@@ -311,6 +313,7 @@
       return selected_mcp_config.run_config_properties
     }
     return {
+      type: "kiln_agent",
       model_name: model_name,
       // @ts-expect-error server will catch if enum is not valid
       model_provider_name: provider,

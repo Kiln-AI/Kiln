@@ -13,6 +13,7 @@ from kiln_ai.adapters.fine_tune.base_finetune import (
 from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetFormatter
 from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
 from kiln_ai.datamodel import Finetune as FinetuneModel
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.utils.config import Config
 
 _pending_statuses = [
@@ -117,7 +118,7 @@ class TogetherFinetune(BaseFinetuneAdapter):
             # Instead we augment the system message with custom JSON instructions for a fine-tune (see augment_system_message). A nice simple instructions.
             # Why: Fine-tunes tend to need less coaching to get JSON format correct, as they have seen examples. And they are often on smaller models that have trouble following longer/complex JSON-schema prompts so our default is a poor choice.
             # We save json_custom_instructions mode so it knows what to do at call time.
-            if self.datamodel.run_config is not None:
+            if isinstance(self.datamodel.run_config, KilnAgentRunConfigProperties):
                 self.datamodel.run_config.structured_output_mode = (
                     StructuredOutputMode.json_custom_instructions
                 )

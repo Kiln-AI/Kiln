@@ -1,4 +1,3 @@
-from enum import Enum
 from typing import Annotated, Any, List, Literal, Union
 
 from pydantic import BaseModel, Discriminator, Field, Tag, model_validator
@@ -10,11 +9,6 @@ from kiln_ai.datamodel.datamodel_enums import (
 )
 from kiln_ai.datamodel.prompt_id import PromptId
 from kiln_ai.datamodel.tool_id import ToolId
-
-
-class RunConfigKind(str, Enum):
-    kiln_agent = "kiln_agent"
-    mcp = "mcp"
 
 
 class MCPToolReference(BaseModel):
@@ -90,7 +84,7 @@ class McpRunConfigProperties(BaseModel):
     A configuration for running a task via an MCP tool.
     """
 
-    type: Literal["mcp"]
+    type: Literal["mcp"] = "mcp"
     tool_reference: MCPToolReference = Field(
         description="The MCP tool to use for this run config."
     )

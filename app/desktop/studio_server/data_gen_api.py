@@ -14,6 +14,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun, generate_model_id
 from kiln_ai.datamodel.extraction import Document
 from kiln_ai.datamodel.prompt_id import PromptGenerators
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.task_output import TaskOutput
 from kiln_ai.utils.open_ai_types import (
@@ -142,6 +143,11 @@ def connect_data_gen_api(app: FastAPI):
         )
 
         run_config_properties = input.run_config_properties.model_copy()
+        if not isinstance(run_config_properties, KilnAgentRunConfigProperties):
+            raise HTTPException(
+                status_code=400,
+                detail="Data generation requires a kiln_agent run config",
+            )
         # Override prompt id to simple just in case we change the default in the UI in the future.
         run_config_properties.prompt_id = PromptGenerators.SIMPLE
         adapter = adapter_for_task(
@@ -172,6 +178,11 @@ def connect_data_gen_api(app: FastAPI):
         )
 
         run_config_properties = input.run_config_properties.model_copy()
+        if not isinstance(run_config_properties, KilnAgentRunConfigProperties):
+            raise HTTPException(
+                status_code=400,
+                detail="Data generation requires a kiln_agent run config",
+            )
         # Override prompt id to simple just in case we change the default in the UI in the future.
         run_config_properties.prompt_id = PromptGenerators.SIMPLE
         adapter = adapter_for_task(

@@ -9,7 +9,10 @@ from kiln_ai.datamodel.datamodel_enums import (
     ChatStrategy,
     ModelProviderName,
 )
-from kiln_ai.datamodel.run_config import RunConfigProperties
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    RunConfigProperties,
+)
 from kiln_ai.utils.name_generator import generate_memorable_name
 
 
@@ -90,6 +93,8 @@ class BaseFinetuneAdapter(ABC):
         # Raise exception if run config is none
         if run_config is None:
             raise ValueError("Run config is required")
+        if run_config.type != "kiln_agent":
+            raise ValueError("Fine-tune requires a kiln_agent run config")
 
         # Default name if not provided
         if name is None:
@@ -117,9 +122,10 @@ class BaseFinetuneAdapter(ABC):
         )
 
         # Update the run config properties for fine-tuning
-        run_config.model_provider_name = ModelProviderName.kiln_fine_tune
-        run_config.model_name = datamodel.nested_id()
-        run_config.prompt_id = f"fine_tune_prompt::{datamodel.nested_id()}"
+        if isinstance(run_config, KilnAgentRunConfigProperties):
+            run_config.model_provider_name = ModelProviderName.kiln_fine_tune
+            run_config.model_name = datamodel.nested_id()
+            run_config.prompt_id = f"fine_tune_prompt::{datamodel.nested_id()}"
 
         adapter = cls(datamodel)
         await adapter._start(dataset)

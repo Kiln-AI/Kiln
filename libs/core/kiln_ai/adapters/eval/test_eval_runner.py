@@ -22,11 +22,8 @@ from kiln_ai.datamodel.eval import (
     EvalRun,
     EvalScores,
 )
-from kiln_ai.datamodel.task import (
-    RunConfigProperties,
-    StructuredOutputMode,
-    TaskRunConfig,
-)
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 
@@ -97,7 +94,7 @@ def mock_run_config(
     rc = TaskRunConfig(
         name="test",
         description="test",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id="simple_prompt_builder",
@@ -214,7 +211,7 @@ def test_collect_tasks_filtering(
     rc = TaskRunConfig(
         name="test2",
         description="test2",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id="simple_prompt_builder",
@@ -425,7 +422,7 @@ def test_collect_tasks_multiple_run_configs(
     second_config = TaskRunConfig(
         name="test2",
         description="test2",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-3.5",
             model_provider_name=ModelProviderName.openai,
             prompt_id="simple_prompt_builder",

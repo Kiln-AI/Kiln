@@ -14,20 +14,13 @@ describe("run_config_formatters (MCP)", () => {
     name: "MCP Config",
     description: null,
     run_config_properties: {
-      kind: "mcp",
-      mcp_tool: {
+      type: "mcp",
+      tool_reference: {
         tool_id: "mcp::local::server::tool",
         tool_name: "Demo Tool",
         input_schema: { type: "object", properties: {} },
         output_schema: null,
       },
-      model_name: "mcp_tool",
-      model_provider_name: "mcp_provider",
-      prompt_id: "simple_prompt_builder",
-      top_p: 1,
-      temperature: 1,
-      structured_output_mode: "default",
-      tools_config: null,
     },
     prompt: null,
     model_type: "task_run_config",

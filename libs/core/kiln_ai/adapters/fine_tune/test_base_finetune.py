@@ -15,7 +15,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
 )
-from kiln_ai.datamodel.run_config import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
 
 class MockFinetune(BaseFinetuneAdapter):
@@ -78,7 +78,7 @@ def basic_finetune(sample_task):
 
 @pytest.fixture
 def basic_run_config():
-    return RunConfigProperties(
+    return KilnAgentRunConfigProperties(
         model_name="gpt-4o-mini-2024-07-18",
         model_provider_name=ModelProviderName.openai,
         prompt_id="simple_prompt_builder",
@@ -234,7 +234,7 @@ async def test_create_and_start_with_all_params(mock_dataset, basic_run_config):
 
 
 async def test_create_and_start_with_run_config(mock_dataset):
-    run_config = RunConfigProperties(
+    run_config = KilnAgentRunConfigProperties(
         model_name="gpt-4o-mini-2024-07-18",
         model_provider_name=ModelProviderName.openai,
         prompt_id="simple_prompt_builder",

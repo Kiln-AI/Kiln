@@ -35,7 +35,10 @@ from kiln_ai.datamodel.dataset_split import (
     Train80Test20SplitDefinition,
     Train80Val20SplitDefinition,
 )
-from kiln_ai.datamodel.run_config import RunConfigProperties, ToolsRunConfig
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    ToolsRunConfig,
+)
 from pydantic import BaseModel
 
 from app.desktop.studio_server.finetune_api import (
@@ -1776,7 +1779,7 @@ def task_with_tools(tmp_path):
                         "adapter_name": "test",
                         "prompt_id": "simple_prompt_builder",
                     },
-                    "run_config": RunConfigProperties(
+                    "run_config": KilnAgentRunConfigProperties(
                         model_name="gpt-4",
                         model_provider_name="openai",
                         prompt_id="simple_prompt_builder",
@@ -1805,7 +1808,7 @@ def task_with_tools(tmp_path):
                         "adapter_name": "test",
                         "prompt_id": "simple_prompt_builder",
                     },
-                    "run_config": RunConfigProperties(
+                    "run_config": KilnAgentRunConfigProperties(
                         model_name="gpt-4",
                         model_provider_name="openai",
                         prompt_id="simple_prompt_builder",

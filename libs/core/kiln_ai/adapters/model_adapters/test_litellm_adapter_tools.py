@@ -17,7 +17,7 @@ from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel import PromptId
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
-from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.tool_id import ToolId
 from kiln_ai.tools.base_tool import ToolCallContext, ToolCallResult
 from kiln_ai.tools.built_in_tools.math_tools import (
@@ -72,7 +72,7 @@ async def run_simple_task_with_tools(
 ) -> datamodel.TaskRun:
     adapter = adapter_for_task(
         task,
-        RunConfigProperties(
+        KilnAgentRunConfigProperties(
             structured_output_mode=StructuredOutputMode.json_schema,
             model_name=model_name,
             model_provider_name=ModelProviderName(provider),
@@ -407,7 +407,7 @@ async def test_run_model_turn_parallel_tools(tmp_path):
     task = build_test_task(tmp_path)
     # Cast to LiteLlmAdapter to access _run_model_turn
     config = LiteLlmConfig(
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             structured_output_mode=StructuredOutputMode.json_schema,
             model_name="gpt_4_1_mini",
             model_provider_name=ModelProviderName.openai,
@@ -514,7 +514,7 @@ async def test_run_model_turn_sequential_tools(tmp_path):
     task = build_test_task(tmp_path)
     # Cast to LiteLlmAdapter to access _run_model_turn
     config = LiteLlmConfig(
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             structured_output_mode=StructuredOutputMode.json_schema,
             model_name="gpt_4_1_mini",
             model_provider_name=ModelProviderName.openai,
@@ -635,7 +635,7 @@ async def test_run_model_turn_max_tool_calls_exceeded(tmp_path):
     task = build_test_task(tmp_path)
     # Cast to LiteLlmAdapter to access _run_model_turn
     config = LiteLlmConfig(
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             structured_output_mode=StructuredOutputMode.json_schema,
             model_name="gpt_4_1_mini",
             model_provider_name=ModelProviderName.openai,
@@ -702,7 +702,7 @@ async def test_run_model_turn_no_tool_calls(tmp_path):
     task = build_test_task(tmp_path)
     # Cast to LiteLlmAdapter to access _run_model_turn
     config = LiteLlmConfig(
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             structured_output_mode=StructuredOutputMode.json_schema,
             model_name="gpt_4_1_mini",
             model_provider_name=ModelProviderName.openai,
@@ -840,7 +840,7 @@ async def test_process_tool_calls_none_input(tmp_path):
     """Test process_tool_calls with None input"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             structured_output_mode=StructuredOutputMode.json_schema,
             model_name="gpt_4_1_mini",
             model_provider_name=ModelProviderName.openai,
@@ -859,7 +859,7 @@ async def test_process_tool_calls_empty_list(tmp_path):
     """Test process_tool_calls with empty tool calls list"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             structured_output_mode=StructuredOutputMode.json_schema,
             model_name="gpt_4_1_mini",
             model_provider_name=ModelProviderName.openai,
@@ -878,7 +878,7 @@ async def test_process_tool_calls_task_response_only(tmp_path):
     """Test process_tool_calls with only task_response tool call"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             structured_output_mode=StructuredOutputMode.json_schema,
             model_name="gpt_4_1_mini",
             model_provider_name=ModelProviderName.openai,
@@ -901,7 +901,7 @@ async def test_process_tool_calls_multiple_task_response(tmp_path):
     """Test process_tool_calls with multiple task_response calls - should keep the last one"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             structured_output_mode=StructuredOutputMode.json_schema,
             model_name="gpt_4_1_mini",
             model_provider_name=ModelProviderName.openai,
@@ -928,7 +928,7 @@ async def test_process_tool_calls_normal_tool_success(tmp_path):
     """Test process_tool_calls with successful normal tool call"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             structured_output_mode=StructuredOutputMode.json_schema,
             model_name="gpt_4_1_mini",
             model_provider_name=ModelProviderName.openai,
@@ -961,7 +961,7 @@ async def test_process_tool_calls_multiple_normal_tools(tmp_path):
     """Test process_tool_calls with multiple normal tool calls"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             structured_output_mode=StructuredOutputMode.json_schema,
             model_name="gpt_4_1_mini",
             model_provider_name=ModelProviderName.openai,
@@ -1000,7 +1000,7 @@ async def test_process_tool_calls_tool_not_found(tmp_path):
     """Test process_tool_calls when tool is not found"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             structured_output_mode=StructuredOutputMode.json_schema,
             model_name="gpt_4_1_mini",
             model_provider_name=ModelProviderName.openai,
@@ -1023,7 +1023,7 @@ async def test_process_tool_calls_invalid_json_arguments(tmp_path):
     """Test process_tool_calls with invalid JSON arguments"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             structured_output_mode=StructuredOutputMode.json_schema,
             model_name="gpt_4_1_mini",
             model_provider_name=ModelProviderName.openai,
@@ -1048,7 +1048,7 @@ async def test_process_tool_calls_empty_arguments(tmp_path):
     """Test process_tool_calls with empty arguments string"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             structured_output_mode=StructuredOutputMode.json_schema,
             model_name="gpt_4_1_mini",
             model_provider_name=ModelProviderName.openai,
@@ -1073,7 +1073,7 @@ async def test_process_tool_calls_schema_validation_error(tmp_path):
     """Test process_tool_calls with schema validation error"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             structured_output_mode=StructuredOutputMode.json_schema,
             model_name="gpt_4_1_mini",
             model_provider_name=ModelProviderName.openai,
@@ -1099,7 +1099,7 @@ async def test_process_tool_calls_tool_execution_error(tmp_path):
     """Test process_tool_calls when tool execution raises exception"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             structured_output_mode=StructuredOutputMode.json_schema,
             model_name="gpt_4_1_mini",
             model_provider_name=ModelProviderName.openai,
@@ -1124,7 +1124,7 @@ async def test_process_tool_calls_complex_result(tmp_path):
     """Test process_tool_calls when tool returns complex object"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             structured_output_mode=StructuredOutputMode.json_schema,
             model_name="gpt_4_1_mini",
             model_provider_name=ModelProviderName.openai,
@@ -1156,7 +1156,7 @@ async def test_process_tool_calls_task_response_with_normal_tools_error(tmp_path
     """Test process_tool_calls raises error when mixing task_response with normal tools"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             structured_output_mode=StructuredOutputMode.json_schema,
             model_name="gpt_4_1_mini",
             model_provider_name=ModelProviderName.openai,
@@ -1185,7 +1185,7 @@ async def test_process_tool_calls_kiln_task_tool_result(tmp_path):
     """Test process_tool_calls with KilnTaskToolResult - tests the new if statement branch"""
     task = build_test_task(tmp_path)
     config = LiteLlmConfig(
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             structured_output_mode=StructuredOutputMode.json_schema,
             model_name="gpt_4_1_mini",
             model_provider_name=ModelProviderName.openai,

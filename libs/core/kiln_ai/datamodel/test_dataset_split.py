@@ -15,12 +15,15 @@ from kiln_ai.datamodel import (
     TaskOutputRatingType,
     TaskRun,
 )
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.dataset_split import (
     AllSplitDefinition,
     Train60Test20Val20SplitDefinition,
     Train80Test20SplitDefinition,
     Train80Val20SplitDefinition,
 )
+from kiln_ai.datamodel.prompt_id import PromptGenerators
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.test_dataset_filters import (
     AllDatasetFilter,
     HighRatingDatasetFilter,
@@ -370,12 +373,16 @@ def mock_run_with_tools():
 
     def _create_mock_run(tools):
         run = Mock()
-        if tools is None:
-            run.output.source.run_config.tools_config = None
-        else:
-            tools_config = Mock()
-            tools_config.tools = tools if tools else []
-            run.output.source.run_config.tools_config.tools = tools
+        tools_config = None
+        if tools is not None:
+            tools_config = ToolsRunConfig(tools=tools if tools else [])
+        run.output.source.run_config = KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+            tools_config=tools_config,
+        )
         return run
 
     return _create_mock_run
