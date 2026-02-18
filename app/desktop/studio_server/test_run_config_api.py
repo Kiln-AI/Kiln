@@ -17,6 +17,7 @@ from app.desktop.studio_server.run_config_api import (
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel.basemodel import string_to_valid_name
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
 
 
@@ -439,6 +440,72 @@ def test_create_task_from_tool_structured(client, tmp_path):
     assert rc.run_config_properties.tool_reference.tool_name == "fake_tool"
     assert rc.run_config_properties.tool_reference.input_schema == tool_input_schema
     assert rc.run_config_properties.tool_reference.output_schema == tool_output_schema
+
+
+def test_create_task_from_tool_sanitizes_names(client, tmp_path):
+    project = Project(
+        id="project_sanitize",
+        name="Sanitize Project",
+        path=tmp_path / "project_sanitize.kiln",
+    )
+    project.save_to_file()
+
+    tool_input_schema = {
+        "type": "object",
+        "properties": {"text": {"type": "string"}},
+        "required": ["text"],
+    }
+
+    class FakeMcpToolWithInvalidName(FakeMcpTool):
+        async def name(self) -> str:
+            return "mcp_tool__sample"
+
+    fake_tool = FakeMcpToolWithInvalidName(tool_input_schema, None)
+
+    with (
+        patch(
+            "app.desktop.studio_server.run_config_api.project_from_id"
+        ) as mock_project_from_id,
+        patch(
+            "app.desktop.studio_server.run_config_api._resolve_mcp_tool_from_id",
+            return_value=fake_tool,
+        ),
+        patch(
+            "app.desktop.studio_server.run_config_api.generate_memorable_name",
+            return_value="Dazzling Panther",
+        ),
+    ):
+        mock_project_from_id.return_value = project
+        response = client.post(
+            "/api/projects/project_sanitize/create_task_from_tool",
+            json={
+                "tool_id": "mcp::local::server::fake_tool",
+                "task_name": "mcp_tool__sample",
+                "instruction": "Use the tool to complete the task.",
+            },
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    expected_task_name = string_to_valid_name(
+        "mcp_tool__sample", truncate_to_max_length=True
+    )
+    assert data["name"] == expected_task_name
+    assert string_to_valid_name(data["name"]) == data["name"]
+
+    created_task = next(
+        (task for task in project.tasks() if task.name == expected_task_name),
+        None,
+    )
+    assert created_task is not None
+    run_configs = created_task.run_configs()
+    assert len(run_configs) == 1
+    expected_run_config_name = string_to_valid_name(
+        "MCP mcp_tool__sample - Dazzling Panther",
+        truncate_to_max_length=True,
+    )
+    assert run_configs[0].name == expected_run_config_name
+    assert string_to_valid_name(run_configs[0].name) == run_configs[0].name
 
 
 def test_create_task_from_tool_invalid_tool(client, tmp_path):
