@@ -16,9 +16,8 @@
   import { load_available_tools } from "$lib/stores"
   import Warning from "$lib/ui/warning.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
-  import { selected_tool_for_task } from "$lib/stores/tool_store"
+  import { selected_tool_for_task } from "$lib/stores/tools_store"
   import TableButton from "../../../../../generate/[project_id]/[task_id]/table_button.svelte"
-  import { MCP_RUN_CONFIGS_DOCS_LINK } from "$lib/utils/docs_links"
 
   $: project_id = $page.params.project_id!
   $: tool_server_id = $page.params.tool_server_id!
@@ -409,7 +408,7 @@
     title={"Tool Server"}
     subtitle={`Name: ${tool_server?.name || ""}`}
     sub_subtitle="Read the Docs"
-    sub_subtitle_link={MCP_RUN_CONFIGS_DOCS_LINK}
+    sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp#mcp-run-configs"
     breadcrumbs={[
       {
         label: "Settings",
@@ -435,7 +434,7 @@
       bind:this={dialog}
       title="Run Task with Tool"
       sub_subtitle="Read the Docs"
-      sub_subtitle_link={MCP_RUN_CONFIGS_DOCS_LINK}
+      sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp#mcp-run-configs"
     >
       <div class="flex flex-col gap-4">
         <div

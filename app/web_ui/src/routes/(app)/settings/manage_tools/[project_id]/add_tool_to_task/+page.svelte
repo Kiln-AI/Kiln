@@ -17,8 +17,7 @@
     save_new_mcp_run_config,
     update_task_default_run_config,
   } from "$lib/stores/run_configs_store"
-  import { selected_tool_for_task } from "$lib/stores/tool_store"
-  import { MCP_RUN_CONFIGS_DOCS_LINK } from "$lib/utils/docs_links"
+  import { selected_tool_for_task } from "$lib/stores/tools_store"
 
   $: project_id = $page.params.project_id!
   $: tool_id = $page.url.searchParams.get("tool_id")
@@ -175,7 +174,7 @@
     title="Add MCP Tool As Run Config"
     subtitle="Allow one of your existing tasks to invoke this MCP tool directly, without a wrapper agent."
     sub_subtitle="Read the Docs"
-    sub_subtitle_link={MCP_RUN_CONFIGS_DOCS_LINK}
+    sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp#mcp-run-configs"
     breadcrumbs={[
       { label: "Settings", href: "/settings" },
       { label: "Manage Tools", href: `/settings/manage_tools/${project_id}` },

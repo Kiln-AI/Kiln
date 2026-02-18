@@ -5,14 +5,13 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Output from "$lib/ui/output.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
-  import { MCP_RUN_CONFIGS_DOCS_LINK } from "$lib/utils/docs_links"
   import { onDestroy, onMount } from "svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { get } from "svelte/store"
   import { client } from "$lib/api_client"
   import { goto } from "$app/navigation"
   import { ui_state } from "$lib/stores"
-  import { selected_tool_for_task } from "$lib/stores/tool_store"
+  import { selected_tool_for_task } from "$lib/stores/tools_store"
   import type { ExternalToolApiDescription } from "$lib/types"
 
   $: project_id = $page.params.project_id!
@@ -145,7 +144,7 @@
   <AppPage
     title="New task from tool"
     sub_subtitle="Read the Docs"
-    sub_subtitle_link={MCP_RUN_CONFIGS_DOCS_LINK}
+    sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp#mcp-run-configs"
     breadcrumbs={[
       { label: "Settings", href: "/settings" },
       { label: "Manage Tools", href: `/settings/manage_tools/${project_id}` },

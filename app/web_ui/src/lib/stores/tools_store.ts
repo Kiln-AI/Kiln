@@ -1,4 +1,8 @@
-import type { ToolSetApiDescription } from "$lib/types"
+import type {
+  ExternalToolApiDescription,
+  ToolSetApiDescription,
+} from "$lib/types"
+import { writable } from "svelte/store"
 import { tool_link } from "$lib/utils/link_builder"
 import { indexedDBStore } from "./index_db_store"
 import { client } from "$lib/api_client"
@@ -12,6 +16,9 @@ export const { store: tools_store, initialized: tools_store_initialized } =
   indexedDBStore<ToolsStore>(tools_store_key, {
     selected_tool_ids_by_task_id: {},
   })
+
+export const selected_tool_for_task =
+  writable<ExternalToolApiDescription | null>(null)
 
 export function get_tools_property_info(
   tool_ids: string[],
