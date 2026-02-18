@@ -7,26 +7,6 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot impo
     refine_spec_v1_copilot_refine_spec_post,
     refine_spec_with_answers_v1_copilot_refine_spec_with_answers_post,
 )
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
-    ClarifySpecInput,
-    ClarifySpecOutput,
-    GenerateBatchInput,
-    GenerateBatchOutput,
-    HTTPValidationError,
-    RefineSpecInput,
-)
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
-    QuestionSet as QuestionSetServerApi,
-)
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
-    RefineSpecApiOutput as RefineSpecApiOutputClient,
-)
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
-    SpecQuestionerApiInput as SpecQuestionerApiInputServerApi,
-)
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
-    SubmitAnswersRequest as SubmitAnswersRequestServerApi,
-)
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
@@ -36,7 +16,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
     get_copilot_api_key,
 )
 from app.desktop.studio_server.utils.response_utils import unwrap_response
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.basemodel import FilenameString
 from kiln_ai.datamodel.copilot_models.copilot_api_models import (
@@ -75,7 +55,7 @@ from kiln_server.utils.spec_utils import (
     spec_eval_output_score,
     spec_eval_template,
 )
-from libs.core.kiln_ai.datamodel.copilot_models.questions import (
+from kiln_ai.datamodel.copilot_models.questions import (
     QuestionSet,
     SubmitAnswersRequest,
 )

@@ -11,25 +11,16 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot impo
     generate_batch_v1_copilot_generate_batch_post,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
-    GenerateBatchInput,
-    GenerateBatchOutput,
-    HTTPValidationError,
+    GenerateBatchOutput as ApiGenerateBatchOutput,
 )
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
-)
-from app.desktop.studio_server.api_models.copilot_models import (
-    ReviewedExample,
-    SampleApi,
-    SyntheticDataGenerationSessionConfigApi,
-    TaskInfoApi,
 )
 from app.desktop.studio_server.utils.response_utils import unwrap_response
 from fastapi import HTTPException
 from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.copilot_models.copilot_api_models import (
     GenerateBatchInput,
-    GenerateBatchOutput,
     ReviewedExample,
     Sample,
     SyntheticDataGenerationSessionConfigInput,
@@ -103,7 +94,7 @@ async def generate_copilot_examples(
         none_detail="Failed to generate synthetic data for spec. Please try again.",
     )
 
-    if not isinstance(result, GenerateBatchOutput):
+    if not isinstance(result, ApiGenerateBatchOutput):
         raise HTTPException(
             status_code=500,
             detail="Unknown error.",
