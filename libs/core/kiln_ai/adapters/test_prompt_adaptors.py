@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from litellm.utils import ModelResponse
@@ -113,13 +113,15 @@ async def test_amazon_bedrock(tmp_path):
 
 async def test_mock_returning_run(tmp_path):
     task = build_test_task(tmp_path)
-    with patch("litellm.acompletion") as mock_acompletion:
-        # Configure the mock to return a properly structured response
-        mock_acompletion.return_value = ModelResponse(
-            model="custom_model",
-            choices=[{"message": {"content": "mock response"}}],
-        )
-
+    mock_response = ModelResponse(
+        model="custom_model",
+        choices=[{"message": {"content": "mock response"}}],
+    )
+    with patch.object(
+        LiteLlmAdapter,
+        "acompletion_checking_response",
+        new=AsyncMock(return_value=(mock_response, mock_response.choices[0])),
+    ):
         run_config = RunConfigProperties(
             model_name="custom_model",
             model_provider_name=ModelProviderName.ollama,

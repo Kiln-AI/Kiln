@@ -1,7 +1,10 @@
 import json
 from abc import ABCMeta, abstractmethod
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Dict, Tuple
+
+from litellm.types.utils import ModelResponseStream
 
 from kiln_ai.adapters.chat.chat_formatter import ChatFormatter, get_chat_formatter
 from kiln_ai.adapters.ml_model_list import (
@@ -39,6 +42,8 @@ from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+
+StreamCallback = Callable[[ModelResponseStream], Awaitable[None]]
 
 
 @dataclass
@@ -114,14 +119,18 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        on_chunk: StreamCallback | None = None,
     ) -> TaskRun:
-        run_output, _ = await self.invoke_returning_run_output(input, input_source)
+        run_output, _ = await self.invoke_returning_run_output(
+            input, input_source, on_chunk=on_chunk
+        )
         return run_output
 
     async def _run_returning_run_output(
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        on_chunk: StreamCallback | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # validate input, allowing arrays
         if self.input_schema is not None:
@@ -140,7 +149,7 @@ class BaseAdapter(metaclass=ABCMeta):
             formatted_input = formatter.format_input(input)
 
         # Run
-        run_output, usage = await self._run(formatted_input)
+        run_output, usage = await self._run(formatted_input, on_chunk=on_chunk)
 
         # Parse
         provider = self.model_provider()
@@ -211,6 +220,7 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        on_chunk: StreamCallback | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # Determine if this is the root agent (no existing run context)
         is_root_agent = get_agent_run_id() is None
@@ -220,7 +230,9 @@ class BaseAdapter(metaclass=ABCMeta):
             set_agent_run_id(run_id)
 
         try:
-            return await self._run_returning_run_output(input, input_source)
+            return await self._run_returning_run_output(
+                input, input_source, on_chunk=on_chunk
+            )
         finally:
             if is_root_agent:
                 try:
@@ -238,7 +250,9 @@ class BaseAdapter(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    async def _run(self, input: InputType) -> Tuple[RunOutput, Usage | None]:
+    async def _run(
+        self, input: InputType, on_chunk: StreamCallback | None = None
+    ) -> Tuple[RunOutput, Usage | None]:
         pass
 
     def build_prompt(self) -> str:

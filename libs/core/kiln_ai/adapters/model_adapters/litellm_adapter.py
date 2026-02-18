@@ -5,7 +5,6 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple, TypeAlias, Union
 
-import litellm
 from litellm.types.utils import (
     ChatCompletionMessageToolCall,
     ChoiceLogprobs,
@@ -19,6 +18,7 @@ from openai.types.chat.chat_completion_message_tool_call_param import (
 )
 
 import kiln_ai.datamodel as datamodel
+from kiln_ai.adapters.litellm_utils.litellm_streaming import StreamingCompletion
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     ModelProviderName,
@@ -28,6 +28,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterConfig,
     BaseAdapter,
     RunOutput,
+    StreamCallback,
     Usage,
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
@@ -92,6 +93,7 @@ class LiteLlmAdapter(BaseAdapter):
         prior_messages: list[ChatCompletionMessageIncludingLiteLLM],
         top_logprobs: int | None,
         skip_response_format: bool,
+        on_chunk: StreamCallback | None = None,
     ) -> ModelTurnResult:
         """
         Call the model for a single top level turn: from user message to agent message.
@@ -115,7 +117,7 @@ class LiteLlmAdapter(BaseAdapter):
 
             # Make the completion call
             model_response, response_choice = await self.acompletion_checking_response(
-                **completion_kwargs
+                on_chunk=on_chunk, **completion_kwargs
             )
 
             # count the usage
@@ -178,7 +180,9 @@ class LiteLlmAdapter(BaseAdapter):
             f"Too many tool calls ({tool_calls_count}). Stopping iteration to avoid using too many tokens."
         )
 
-    async def _run(self, input: InputType) -> tuple[RunOutput, Usage | None]:
+    async def _run(
+        self, input: InputType, on_chunk: StreamCallback | None = None
+    ) -> tuple[RunOutput, Usage | None]:
         usage = Usage()
 
         provider = self.model_provider()
@@ -217,6 +221,7 @@ class LiteLlmAdapter(BaseAdapter):
                 messages,
                 self.base_adapter_config.top_logprobs if turn.final_call else None,
                 skip_response_format,
+                on_chunk=on_chunk,
             )
 
             usage += turn_result.usage
@@ -285,9 +290,14 @@ class LiteLlmAdapter(BaseAdapter):
                     intermediate_outputs["reasoning"] = stripped_reasoning_content
 
     async def acompletion_checking_response(
-        self, **kwargs
+        self, on_chunk: StreamCallback | None = None, **kwargs
     ) -> Tuple[ModelResponse, Choices]:
-        response = await litellm.acompletion(**kwargs)
+        stream = StreamingCompletion(**kwargs)
+        async for chunk in stream:
+            if on_chunk is not None:
+                await on_chunk(chunk)
+        response = stream.response
+
         if (
             not isinstance(response, ModelResponse)
             or not response.choices
