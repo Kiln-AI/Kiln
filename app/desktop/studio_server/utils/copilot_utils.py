@@ -11,6 +11,7 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot impo
     generate_batch_v1_copilot_generate_batch_post,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    GenerateBatchInput as ApiGenerateBatchInput,
     GenerateBatchOutput as ApiGenerateBatchOutput,
 )
 from app.desktop.studio_server.api_client.kiln_server_client import (
@@ -82,11 +83,12 @@ async def generate_copilot_examples(
         num_samples_per_topic=NUM_SAMPLES_PER_TOPIC,
         num_topics=NUM_TOPICS,
     )
+    api_generate_input = ApiGenerateBatchInput.from_dict(generate_input.model_dump())
 
     detailed_result = (
         await generate_batch_v1_copilot_generate_batch_post.asyncio_detailed(
             client=client,
-            body=generate_input.model_dump(),
+            body=api_generate_input,
         )
     )
     result = unwrap_response(

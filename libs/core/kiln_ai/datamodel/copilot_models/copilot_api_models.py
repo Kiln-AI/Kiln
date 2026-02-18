@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from pydantic import BaseModel, ConfigDict, Field
@@ -96,8 +96,8 @@ class TaskInfo(BaseModel):
     """Shared information about a task"""
 
     task_prompt: str
-    task_input_schema: str
-    task_output_schema: str
+    task_input_schema: Optional[str] = None
+    task_output_schema: Optional[str] = None
 
 
 class DynamicInputBatchOutput(BaseModel):

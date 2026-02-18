@@ -6488,9 +6488,9 @@ export interface components {
             /** Task Prompt */
             task_prompt: string;
             /** Task Input Schema */
-            task_input_schema: string;
+            task_input_schema?: string | null;
             /** Task Output Schema */
-            task_output_schema: string;
+            task_output_schema?: string | null;
         };
         /**
          * TaskMetadata

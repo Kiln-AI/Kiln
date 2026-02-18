@@ -35,9 +35,15 @@ class TestTaskInfo:
     def test_missing_required_field_raises_error(self):
         with pytest.raises(ValidationError):
             TaskInfo(
-                task_prompt="Test prompt",
                 task_input_schema='{"type": "string"}',
             )
+
+    def test_optional_schemas_default_to_none(self):
+        info = TaskInfo(
+            task_prompt="Test prompt",
+        )
+        assert info.task_input_schema is None
+        assert info.task_output_schema is None
 
 
 class TestTaskMetadata:
