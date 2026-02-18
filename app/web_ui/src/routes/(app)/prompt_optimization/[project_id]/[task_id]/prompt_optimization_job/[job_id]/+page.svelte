@@ -9,12 +9,13 @@
   import Output from "$lib/ui/output.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
-  import { get_task_composite_id } from "$lib/stores"
+  import { get_task_composite_id, model_info } from "$lib/stores"
   import {
     load_task_run_configs,
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import { prompt_link } from "$lib/utils/link_builder"
+  import { getDetailedModelNameFromParts } from "$lib/utils/run_config_formatters"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -120,16 +121,6 @@
 
   $: view_prompt_action_buttons = (() => {
     const buttons: { label: string; href?: string; handler?: () => void }[] = []
-    if (prompt_optimization_job?.created_prompt_id) {
-      const href = prompt_link(
-        project_id,
-        task_id,
-        prompt_optimization_job.created_prompt_id,
-      )
-      if (href) {
-        buttons.push({ label: "View Optimized Prompt", href })
-      }
-    }
     if (!is_terminal) {
       buttons.push({
         label: "Refresh Status",
@@ -158,12 +149,21 @@
     }
   }
 
-  function get_run_config_name(
+  function get_run_config_info(
     run_config_id: string,
     run_configs: TaskRunConfig[],
-  ): string {
+  ): { name: string; model: string } {
     const config = run_configs.find((rc) => rc.id === run_config_id)
-    return config?.name || run_config_id
+    return {
+      name: config?.name || run_config_id,
+      model: config
+        ? getDetailedModelNameFromParts(
+            config.run_config_properties.model_name,
+            config.run_config_properties.model_provider_name,
+            $model_info,
+          )
+        : "Unknown",
+    }
   }
 
   function get_eval_name(eval_id: string): string {
@@ -186,33 +186,47 @@
       return
     }
 
+    const target_run_config_info = get_run_config_info(
+      prompt_optimization_job.target_run_config_id,
+      run_configs,
+    )
+
     let base: UiProperty[] = [
       {
         name: "Status",
         value: format_status(prompt_optimization_job.latest_status),
+        error: prompt_optimization_job.latest_status === "failed",
+        use_custom_slot:
+          prompt_optimization_job.latest_status === "pending" ||
+          prompt_optimization_job.latest_status === "running",
       },
       { name: "ID", value: prompt_optimization_job.id || "" },
       { name: "Name", value: prompt_optimization_job.name },
-      {
-        name: "Target Run Config",
-        value: get_run_config_name(
-          prompt_optimization_job.target_run_config_id,
-          run_configs,
-        ),
-        link: target_run_config_page_link,
-      },
     ]
 
     if (prompt_optimization_job.created_run_config_id) {
       base.push({
         name: "Optimized Run Config",
-        value: get_run_config_name(
+        value: get_run_config_info(
           prompt_optimization_job.created_run_config_id,
           run_configs,
-        ),
+        ).name,
         link: created_run_config_page_link,
+        tooltip:
+          "The run configuration that was automatically created with the optimized prompt and target model.",
       })
     }
+
+    base.push(
+      { name: "Target Model", value: target_run_config_info.model },
+      {
+        name: "Starting Run Config",
+        value: target_run_config_info.name,
+        link: target_run_config_page_link,
+        tooltip:
+          "The run configuration that was used as the starting point for prompt optimization.",
+      },
+    )
 
     if (
       prompt_optimization_job.eval_ids &&
@@ -223,6 +237,7 @@
         value: prompt_optimization_job.eval_ids.map((id) => get_eval_name(id)),
         links: prompt_optimization_job.eval_ids.map((id) => eval_link(id)),
         badge: true,
+        tooltip: "The evaluators that were used to optimize the prompt.",
       })
     } else {
       base.push({ name: "Evals", value: "None" })
@@ -241,6 +256,14 @@
     )
 
     properties = base
+  }
+
+  function no_optimized_prompt_status_message(status: string): string {
+    if (status === "failed") return "Prompt optimization failed."
+    if (status === "cancelled") return "Prompt optimization was cancelled."
+    if (status === "pending" || status === "running")
+      return "Prompt optimization in progress. Click 'Refresh Status' to check for updates."
+    return "Failed to find optimized prompt."
   }
 </script>
 
@@ -282,29 +305,44 @@
         </div>
       </div>
     {:else}
-      <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-10">
-        {#if prompt_optimization_job.optimized_prompt}
-          <div class="flex flex-col gap-1">
-            <div class="flex flex-row justify-between items-center mb-4">
-              <div class="text-xl font-bold">Optimized Prompt</div>
-              {#if prompt_optimization_job.created_prompt_id}
-                {@const created_prompt_href = prompt_link(
-                  project_id,
-                  task_id,
-                  prompt_optimization_job.created_prompt_id,
+      <div class="grid grid-cols-1 xl:grid-cols-[1fr,auto] gap-12 items-start">
+        <div class="flex flex-col gap-1">
+          <div class="text-xl font-bold">Optimized Prompt</div>
+          {#if prompt_optimization_job.created_prompt_id}
+            {@const created_prompt_href = prompt_link(
+              project_id,
+              task_id,
+              prompt_optimization_job.created_prompt_id,
+            )}
+            <a href={created_prompt_href} class="link text-gray-500 text-sm">
+              View Prompt Details
+            </a>
+          {/if}
+          {#if prompt_optimization_job.optimized_prompt}
+            <div class="mt-4">
+              <Output raw_output={prompt_optimization_job.optimized_prompt} />
+            </div>
+          {:else}
+            <div class="mt-4">
+              <div class="text-gray-500 text-xs italic">
+                {no_optimized_prompt_status_message(
+                  prompt_optimization_job.latest_status,
                 )}
-                <div class="flex items-center text-gray-500 text-xs">
-                  <a href={created_prompt_href} class="link">
-                    View Prompt Details
-                  </a>
+              </div>
+            </div>
+          {/if}
+        </div>
+        <div class="xl:max-w-[400px]">
+          <PropertyList title="Details" {properties}>
+            <svelte:fragment slot="custom_value" let:property>
+              {#if property.name === "Status"}
+                <div class="flex items-center gap-2">
+                  <div class="loading loading-spinner loading-xs"></div>
+                  {format_status(prompt_optimization_job.latest_status)}
                 </div>
               {/if}
-            </div>
-            <Output raw_output={prompt_optimization_job.optimized_prompt} />
-          </div>
-        {/if}
-        <div class="max-w-md">
-          <PropertyList title="Details" {properties} />
+            </svelte:fragment>
+          </PropertyList>
         </div>
       </div>
     {/if}
