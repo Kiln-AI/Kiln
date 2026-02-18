@@ -12,7 +12,7 @@
   import { tick } from "svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
-  import { is_mcp_run_config_properties } from "$lib/utils/run_config_kind"
+  import { isMcpRunConfig } from "$lib/types"
   import { page } from "$app/stores"
 
   let run_error: KilnError | null = null
@@ -57,7 +57,7 @@
       run_config_component.clear_model_dropdown_error()
       const run_config_properties =
         run_config_component.run_options_as_run_config_properties()
-      const is_mcp_run = is_mcp_run_config_properties(run_config_properties)
+      const is_mcp_run = isMcpRunConfig(run_config_properties)
       // mcp run configs don't need a model
       if (!is_mcp_run && !run_config_component.get_selected_model()) {
         run_config_component.set_model_dropdown_error("Required")
