@@ -277,12 +277,12 @@ def check_response_error(
     """Check if the response is an error with user centric message."""
     if response.status_code != 200:
         # response.content is a bytes object
-        # We check if it's a JSON object with a user_message field
+        # We check if it's a JSON object with a user message field
         detail = default_detail
         if response.content.startswith(b"{"):
             try:
                 json_data = json.loads(response.content)
-                detail = json_data.get("user_message", default_detail)
+                detail = json_data.get("message", default_detail)
             except json.JSONDecodeError:
                 pass
         raise HTTPException(
