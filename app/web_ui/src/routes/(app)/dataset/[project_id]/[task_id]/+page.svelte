@@ -59,6 +59,7 @@
     { key: "created_at", label: "Created At" },
     { key: "inputPreview", label: "Input Preview" },
     { key: "outputPreview", label: "Output Preview" },
+    { key: "tags", label: "Tags" },
   ]
 
   onMount(async () => {
@@ -179,6 +180,28 @@
   }
 
   let filter_tags_dialog: FilterTagsDialog | null = null
+  let tags_dialog: Dialog | null = null
+  let selected_run_tags: string[] = []
+
+  function formatTagsDisplay(tags: string[]): {
+    firstTag: string
+    othersCount: number
+  } {
+    if (tags.length === 0) {
+      return { firstTag: "", othersCount: 0 }
+    }
+    const sortedTags = [...tags].sort()
+    return {
+      firstTag: sortedTags[0],
+      othersCount: sortedTags.length - 1,
+    }
+  }
+
+  function showTagsDialog(tags: string[], event: Event) {
+    event.stopPropagation()
+    selected_run_tags = [...tags].sort()
+    tags_dialog?.show()
+  }
 
   function remove_filter_tag(tag: string) {
     const newTags = filter_tags.filter((t) => t !== tag)
@@ -569,11 +592,13 @@
               {/if}
               {#each columns as { key, label }}
                 <th
-                  on:click={() => handleSort(key)}
-                  class="hover:bg-base-200 cursor-pointer"
+                  on:click={() => key !== "tags" && handleSort(key)}
+                  class="hover:bg-base-200 {key === 'tags'
+                    ? ''
+                    : 'cursor-pointer'}"
                 >
                   {label}
-                  {sortColumn === key
+                  {key !== "tags" && sortColumn === key
                     ? sortDirection === "asc"
                       ? "▲"
                       : "▼"
@@ -624,6 +649,34 @@
                 <td class="break-words max-w-48">
                   {run.output_preview || "No output"}
                 </td>
+                <td>
+                  {#if run.tags && run.tags.length > 0}
+                    {@const runTags = run.tags}
+                    {@const tagDisplay = formatTagsDisplay(runTags)}
+                    <div
+                      class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full cursor-pointer hover:bg-gray-300"
+                      on:click={(e) => showTagsDialog(runTags, e)}
+                      role="button"
+                      tabindex="0"
+                      on:keydown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault()
+                          showTagsDialog(runTags, e)
+                        }
+                      }}
+                    >
+                      <span class="truncate">{tagDisplay.firstTag}</span>
+                      {#if tagDisplay.othersCount > 0}
+                        <span class="ml-1 font-medium text-nowrap">
+                          +{tagDisplay.othersCount}
+                          {tagDisplay.othersCount === 1 ? "other" : "others"}
+                        </span>
+                      {/if}
+                    </div>
+                  {:else}
+                    <span class="text-gray-500">None</span>
+                  {/if}
+                </td>
               </tr>
             {/each}
           </tbody>
@@ -665,6 +718,25 @@
   onRemoveFilterTag={remove_filter_tag}
   onAddFilterTag={add_filter_tag}
 />
+
+<Dialog
+  bind:this={tags_dialog}
+  title="Tags"
+  action_buttons={[
+    {
+      label: "Close",
+      isCancel: true,
+    },
+  ]}
+>
+  <div class="flex flex-row flex-wrap gap-2">
+    {#each selected_run_tags as tag}
+      <div class="badge bg-gray-200 text-gray-500 py-3 px-3 max-w-full">
+        <span class="truncate">{tag}</span>
+      </div>
+    {/each}
+  </div>
+</Dialog>
 
 <Dialog
   bind:this={delete_dialog}

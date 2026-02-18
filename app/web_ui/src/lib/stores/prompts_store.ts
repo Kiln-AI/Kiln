@@ -28,7 +28,7 @@ export async function load_task_prompts(
   task_id: string,
   force_refresh: boolean = false,
 ): Promise<void> {
-  await load_available_prompts() // For the case task_id = current task id and other clients use load_available_prompts still
+  await load_available_prompts(force_refresh) // For the case task_id = current task id and other clients use load_available_prompts still
 
   const composite_key = get_task_composite_id(project_id, task_id)
 
