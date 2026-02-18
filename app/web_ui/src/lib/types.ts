@@ -146,24 +146,6 @@ export function isMcpRunConfig(
   return config?.type === "mcp"
 }
 
-export function requireKilnAgentRunConfig(
-  config: RunConfigProperties | null | undefined,
-): KilnAgentRunConfigProperties {
-  if (!isKilnAgentRunConfig(config)) {
-    throw new Error("Expected kiln_agent run config properties")
-  }
-  return config
-}
-
-export function requireMcpRunConfig(
-  config: RunConfigProperties | null | undefined,
-): McpRunConfigProperties {
-  if (!isMcpRunConfig(config)) {
-    throw new Error("Expected mcp run config properties")
-  }
-  return config
-}
-
 // Copilot API types
 export type SyntheticDataGenerationStepConfigApi =
   components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"]
