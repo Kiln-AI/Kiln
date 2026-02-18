@@ -14,6 +14,8 @@ def guess_mime_type(filename: str) -> str | None:
         return "audio/wav"
     elif filename_normalized.endswith(".mp4"):
         return "video/mp4"
+    elif filename_normalized.endswith(".md"):
+        return "text/markdown"
 
     mime_type, _ = mimetypes.guess_type(filename_normalized)
     return mime_type
