@@ -1011,7 +1011,7 @@
                               }
                             }}
                           >
-                            <td>
+                            <td on:click|stopPropagation>
                               <input
                                 type="checkbox"
                                 class="checkbox checkbox-sm"
@@ -1093,26 +1093,18 @@
                                 )}
                                 {@const dataset_add_link =
                                   train_tag &&
-                                  `/dataset/${project_id}/${task_id}/add_data?tags=${train_tag}`}
+                                  `/dataset/${project_id}/${task_id}/add_data?reason=generic&splits=${train_tag}:1.0`}
                                 {@const tooltip_parts = [
                                   "Fix the following issues and click Refresh to update this eval's status.",
                                   judge_error === "No judge configured"
-                                    ? "**No judge configured** — This eval doesn't have a default judge. To fix, [set default judge](" +
-                                      eval_configs_link +
-                                      ") for this eval."
+                                    ? `**No judge configured** — This eval doesn't have a default judge. To fix, [set default judge](${eval_configs_link}) for this eval.`
                                     : null,
                                   judge_error === "Model not supported"
-                                    ? "**Model not supported** — This eval's default judge model is not supported. Kiln Prompt Optimization only supports OpenRouter, OpenAI, Gemini, and Anthropic providers. To fix, [change your default judge](" +
-                                      eval_configs_link +
-                                      ") for this eval."
+                                    ? `**Model not supported** — This eval's default judge model is not supported. Kiln Prompt Optimization only supports OpenRouter, OpenAI, Gemini, and Anthropic providers. To fix, [change your default judge](${eval_configs_link}) for this eval.`
                                     : null,
                                   train_error === "Training set required" ||
                                   train_error === "Training set is empty"
-                                    ? "**Training set is empty** — This eval doesn't have any training data. To fix, [add samples to your dataset](" +
-                                      dataset_add_link +
-                                      ") with the tag " +
-                                      `'${train_tag}'` +
-                                      "."
+                                    ? `**Training set is empty** — This eval doesn't have any training data. To fix, ${dataset_add_link ? `[add samples to your dataset](${dataset_add_link})` : `add samples to your dataset`} with the tag '${train_tag}'.`
                                     : null,
                                   other_error
                                     ? "**Error**\n\n" + other_error
