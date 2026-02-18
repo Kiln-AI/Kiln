@@ -862,7 +862,7 @@ def test_from_ids_and_parent_path_benchmark(
 class MockAdapter(BaseAdapter):
     """Implementation of BaseAdapter for testing"""
 
-    async def _run(self, input):
+    async def _run(self, input, **kwargs):
         return RunOutput(output="test output", intermediate_outputs=None), None
 
     def adapter_name(self) -> str:
