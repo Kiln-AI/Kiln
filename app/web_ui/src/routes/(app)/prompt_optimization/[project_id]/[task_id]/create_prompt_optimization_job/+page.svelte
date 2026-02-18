@@ -809,42 +809,17 @@
                 </div>
               {:else if run_config_validation_status === "invalid"}
                 <div class="mt-3">
-                  <Warning warning_color="error" outline={true}>
-                    <div>
-                      <div class="font-medium">
-                        {run_config_validation_message}
-                      </div>
-                      {#if run_config_blocking_reason !== "other"}
-                        <div class="mt-2 text-gray-600">
-                          {#if run_config_blocking_reason === "has_tools"}
-                            Please select a different run configuration or
-                            <button
-                              type="button"
-                              class="link underline"
-                              on:click={() =>
-                                create_new_run_config_dialog?.show()}
-                            >
-                              create a new run config
-                            </button>
-                            without tools configured.
-                          {:else if run_config_blocking_reason === "unsupported_model"}
-                            Supported providers are OpenRouter, OpenAI, Gemini,
-                            and Anthropic. Please select a different run
-                            configuration or
-                            <button
-                              type="button"
-                              class="link underline"
-                              on:click={() =>
-                                create_new_run_config_dialog?.show()}
-                            >
-                              create a new run config
-                            </button>
-                            with a supported provider.
-                          {/if}
-                        </div>
-                      {/if}
-                    </div>
-                  </Warning>
+                  <Warning
+                    warning_color="error"
+                    outline={true}
+                    warning_message={run_config_blocking_reason === "has_tools"
+                      ? `**${run_config_validation_message}**\nPlease select a different run configuration or create a new one without tools configured.`
+                      : run_config_blocking_reason === "unsupported_model"
+                        ? `**${run_config_validation_message}**\nSupported providers are OpenRouter, OpenAI, Gemini, and Anthropic. Please select a different run configuration or create a new one with a supported provider.`
+                        : run_config_validation_message}
+                    markdown={true}
+                    trusted={true}
+                  />
                 </div>
               {:else if run_config_properties}
                 <div
@@ -1176,12 +1151,8 @@
                         warning_color="error"
                         warning_icon="exclaim"
                         tight={true}
-                      >
-                        <div class="text-sm text-gray-600">
-                          No evaluators selected. Please select at least one
-                          evaluator.
-                        </div>
-                      </Warning>
+                        warning_message="No evaluators selected. Please select at least one evaluator."
+                      />
                     </div>
                   {/if}
                 {/if}

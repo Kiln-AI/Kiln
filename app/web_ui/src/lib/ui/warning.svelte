@@ -1,5 +1,6 @@
 <script lang="ts">
   export let warning_message: string | undefined | null = undefined
+  export let markdown: boolean = false
   export let warning_color:
     | "error"
     | "warning"
@@ -12,7 +13,7 @@
   export let tight: boolean = false
   export let trusted: boolean = false
   export let outline: boolean = false
-
+  import MarkdownBlock from "./markdown_block.svelte"
   // Default to error if no color is provided
   $: color = warning_color || "error"
 
@@ -51,7 +52,7 @@
   }
 </script>
 
-{#if warning_message || $$slots.default}
+{#if warning_message}
   <div
     class="text-sm text-gray-500 flex flex-row items-center {outline
       ? `border-2 ${get_color('border')} rounded-lg px-4 py-2 mb-6`
@@ -98,8 +99,8 @@
     {/if}
 
     <div class="{tight ? 'pl-1' : 'pl-4'} flex flex-col gap-2">
-      {#if $$slots.default}
-        <slot />
+      {#if markdown && trusted}
+        <MarkdownBlock markdown_text={warning_message} />
       {:else if trusted}
         <!-- eslint-disable-next-line svelte/no-at-html-tags -->
         {@html html_warning_message()}

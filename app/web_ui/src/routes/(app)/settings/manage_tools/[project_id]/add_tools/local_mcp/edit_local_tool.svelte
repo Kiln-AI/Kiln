@@ -256,6 +256,8 @@
         warning_color="warning"
         warning_icon="info"
         large_icon={true}
+        trusted={true}
+        markdown={true}
         warning_message={installation_instruction}
       />
     </div>
