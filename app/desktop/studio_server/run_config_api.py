@@ -3,8 +3,9 @@ from typing import Any, Dict
 
 from app.desktop.studio_server.tool_api import tool_server_from_id
 from fastapi import FastAPI, HTTPException
+from kiln_ai.datamodel.basemodel import string_to_valid_name
 from kiln_ai.datamodel.json_schema import single_string_field_name
-from kiln_ai.datamodel.run_config import MCPToolReference, McpRunConfigProperties
+from kiln_ai.datamodel.run_config import McpRunConfigProperties, MCPToolReference
 from kiln_ai.datamodel.task import RunConfigProperties, Task, TaskRunConfig
 from kiln_ai.datamodel.tool_id import mcp_server_and_tool_name_from_id
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
@@ -273,8 +274,12 @@ def connect_run_config_api(app: FastAPI):
             json.dumps(tool_output_schema) if tool_output_schema else None
         )
 
+        task_name = string_to_valid_name(request.task_name, truncate_to_max_length=True)
+        if not task_name:
+            task_name = generate_memorable_name()
+
         task = Task(
-            name=request.task_name,
+            name=task_name,
             instruction=request.instruction,
             input_json_schema=input_json_schema,
             output_json_schema=output_json_schema,
@@ -294,9 +299,13 @@ def connect_run_config_api(app: FastAPI):
                 tool_output_schema=tool_output_schema,
             )
 
+            run_config_name = string_to_valid_name(
+                f"MCP {tool_name} - {generate_memorable_name()}",
+                truncate_to_max_length=True,
+            )
             task_run_config = TaskRunConfig(
                 parent=task,
-                name=f"MCP {tool_name} - {generate_memorable_name()}",
+                name=run_config_name,
                 run_config_properties=run_config_properties,
             )
             task_run_config.save_to_file()
