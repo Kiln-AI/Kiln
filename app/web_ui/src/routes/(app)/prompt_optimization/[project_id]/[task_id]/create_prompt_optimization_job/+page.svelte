@@ -847,7 +847,9 @@
                   </Warning>
                 </div>
               {:else if run_config_properties}
-                <div class="mt-6 flex flex-col md:flex-row gap-6">
+                <div
+                  class="mt-6 grid grid-cols-1 xl:grid-cols-[1fr,auto] gap-6 items-start"
+                >
                   <div class="flex-1 min-w-0">
                     <div class="text-md font-semibold text-left">Prompt</div>
                     <div class="text-xs text-gray-500 font-medium mt-1 mb-1">
@@ -856,7 +858,7 @@
                     </div>
                     <Output raw_output={prompt_text || ""} max_height="220px" />
                   </div>
-                  <div class="flex-shrink-0 flex-row">
+                  <div class="flex-shrink-0 flex-row max-w-[400px]">
                     <div class="text-md font-semibold text-left mb-4">
                       Details
                     </div>
@@ -996,7 +998,9 @@
                       <tbody>
                         {#each sorted_evals_with_configs as { eval: evalItem, current_config, train_set_size, validation_status, judge_error, train_error, other_error }}
                           {@const spec_id = "legacy"}
-                          {@const eval_url = `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}`}
+                          {@const eval_url = evalItem.id
+                            ? `/specs/${project_id}/${task_id}/${spec_id}/${evalItem.id}`
+                            : undefined}
                           {@const is_selected = evalItem.id
                             ? selected_eval_ids.has(evalItem.id)
                             : false}
@@ -1120,7 +1124,7 @@
                                   tooltip_parts.join("\n\n")}
                                 <div class="flex flex-row items-center gap-1">
                                   <div
-                                    class="badge badge-outline badge-sm badge-error"
+                                    class="badge badge-outline badge-sm badge-error whitespace-nowrap"
                                   >
                                     Not Ready
                                   </div>
