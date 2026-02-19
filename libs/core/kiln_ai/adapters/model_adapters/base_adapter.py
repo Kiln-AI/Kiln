@@ -27,7 +27,6 @@ from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
-    McpRunConfigProperties,
     as_kiln_agent_run_config,
 )
 from kiln_ai.datamodel.task import RunConfigProperties
@@ -43,6 +42,7 @@ from kiln_ai.tools import KilnToolInterface
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 
@@ -341,15 +341,22 @@ class BaseAdapter(metaclass=ABCMeta):
                 properties={"created_by": Config.shared().user_id},
             )
 
+        # Synthetic since an adapter, not a human, is creating this
+        # Special case for MCP run configs which calls a mcp tool
+        output_source_type = (
+            DataSourceType.tool_call
+            if self.run_config.type == "mcp"
+            else DataSourceType.synthetic
+        )
+
         new_task_run = TaskRun(
             parent=self.task,
             input=input_str,
             input_source=input_source,
             output=TaskOutput(
                 output=output_str,
-                # Synthetic since an adapter, not a human, is creating this
                 source=DataSource(
-                    type=DataSourceType.synthetic,
+                    type=output_source_type,
                     properties=self._properties_for_task_output(),
                     run_config=self.run_config,
                 ),
@@ -363,33 +370,28 @@ class BaseAdapter(metaclass=ABCMeta):
         return new_task_run
 
     def _properties_for_task_output(self) -> Dict[str, str | int | float]:
-        props = {}
+        match self.run_config.type:
+            case "mcp":
+                return {}
+            case "kiln_agent":
+                if not isinstance(self.run_config, KilnAgentRunConfigProperties):
+                    raise ValueError("Kiln agent run config is required")
+                run_config = self.run_config
 
-        props["adapter_name"] = self.adapter_name()
+                props: Dict[str, str | int | float] = {}
+                props["adapter_name"] = self.adapter_name()
+                # Legacy properties where we save the run_config details into custom properties.
+                # These are now also be saved in the run_config field.
+                props["model_name"] = run_config.model_name
+                props["model_provider"] = run_config.model_provider_name
+                props["prompt_id"] = run_config.prompt_id
+                props["structured_output_mode"] = run_config.structured_output_mode
+                props["temperature"] = run_config.temperature
+                props["top_p"] = run_config.top_p
 
-        if self.run_config.type == "mcp":
-            if not isinstance(self.run_config, McpRunConfigProperties):
-                raise ValueError("McpRunConfigProperties is required for MCP runs")
-            run_config = self.run_config
-            props["type"] = "mcp"
-            props["model_name"] = "mcp_tool"
-            props["model_provider"] = "mcp_provider"
-            props["tool_id"] = run_config.tool_reference.tool_id
-            return props
-
-        run_config = as_kiln_agent_run_config(self.run_config)
-
-        # Legacy properties where we save the run_config details into custom properties.
-        # These are now also be saved in the run_config field.
-        props["model_name"] = run_config.model_name
-        props["model_provider"] = run_config.model_provider_name
-        props["prompt_id"] = run_config.prompt_id
-        props["structured_output_mode"] = run_config.structured_output_mode
-        props["temperature"] = run_config.temperature
-        props["top_p"] = run_config.top_p
-        props["type"] = run_config.type
-
-        return props
+                return props
+            case _:
+                raise_exhaustive_enum_error(self.run_config.type)
 
     def update_run_config_unknown_structured_output_mode(self) -> None:
         if self.run_config.type != "kiln_agent":

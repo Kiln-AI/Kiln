@@ -6,7 +6,7 @@ import pytest
 from mcp.types import CallToolResult, TextContent
 
 from kiln_ai.adapters.model_adapters.mcp_adapter import MCPAdapter
-from kiln_ai.datamodel import Task
+from kiln_ai.datamodel import DataSourceType, Task
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import (
@@ -15,6 +15,7 @@ from kiln_ai.datamodel.run_config import (
     MCPToolReference,
 )
 from kiln_ai.datamodel.tool_id import MCP_LOCAL_TOOL_ID_PREFIX
+from kiln_ai.run_context import get_agent_run_id
 
 
 @pytest.fixture
@@ -178,6 +179,7 @@ async def test_mcp_adapter_string_in_string_out(
 
     assert run_output.output == "ok"
     assert run.output.output == "ok"
+    assert run.output.source.type == DataSourceType.tool_call
     mock_session.call_tool.assert_called_once_with(
         name="test_file_python",
         arguments={"input": "input"},
@@ -300,3 +302,29 @@ async def test_mcp_adapter_hooks_mcp_integration():
     assert run_output.output.strip()
     assert isinstance(run.output.output, str)
     assert run.output.output.strip()
+
+
+@pytest.mark.asyncio
+@patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
+async def test_mcp_adapter_sets_and_clears_run_context(
+    mock_session_manager, project_with_local_mcp_server, local_mcp_tool_id
+):
+    project, _ = project_with_local_mcp_server
+    task = Task(
+        name="Run Context Task",
+        parent=project,
+        instruction="Echo input",
+    )
+
+    run_config = McpRunConfigProperties(
+        tool_reference=MCPToolReference(tool_id=local_mcp_tool_id)
+    )
+
+    _mock_mcp_call(mock_session_manager, "ok")
+
+    adapter = MCPAdapter(task=task, run_config=run_config)
+    assert get_agent_run_id() is None
+
+    await adapter.invoke_returning_run_output("input")
+
+    assert get_agent_run_id() is None

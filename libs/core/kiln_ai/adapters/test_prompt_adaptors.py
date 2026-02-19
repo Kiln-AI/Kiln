@@ -148,7 +148,6 @@ async def test_mock_returning_run(tmp_path):
     assert run.output.source is not None
     assert run.output.source.properties == {
         "adapter_name": "kiln_openai_compatible_adapter",
-        "type": "kiln_agent",
         "model_name": "custom_model",
         "model_provider": ModelProviderName.ollama,
         "prompt_id": PromptGenerators.SIMPLE,

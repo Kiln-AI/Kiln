@@ -272,7 +272,7 @@ async def test_properties_for_task_output_includes_all_run_config_properties(ada
         "temperature": "temperature",
         "top_p": "top_p",
         "structured_output_mode": "structured_output_mode",
-        "type": "type",
+        "type": None,
         "tools_config": None,
     }
 
@@ -321,7 +321,7 @@ async def test_properties_for_task_output_catches_missing_new_property(adapter):
             "temperature": "temperature",
             "top_p": "top_p",
             "structured_output_mode": "structured_output_mode",
-            "type": "type",
+            "type": None,
             "tools_config": None,
         }
 
