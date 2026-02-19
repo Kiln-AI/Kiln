@@ -168,6 +168,8 @@ Only add a new family if the vendor is completely new.
 
 Tests call real LLMs and cost money. Just execute commands directly — Cursor prompts for approval.
 
+**Vertex AI authentication:** Vertex tests require active gcloud credentials. If you see `Reauthentication is needed` errors on vertex tests, ask the user to run `gcloud auth application-default login` before retrying. These failures are auth issues, not model config problems.
+
 **`-k` filter syntax:** Always use bracket notation for model+provider filtering, never `and`:
 - Good: `-k "test_name[glm_5-fireworks_ai]"` or `-k "glm_5"`
 - Bad: `-k "glm_5 and fireworks"` — `and` is a pytest keyword expression that can match wrong tests

@@ -135,6 +135,7 @@ class ModelName(str, Enum):
     gemini_2_5_pro = "gemini_2_5_pro"
     gemini_2_5_flash = "gemini_2_5_flash"
     gemini_2_5_flash_lite = "gemini_2_5_flash_lite"
+    gemini_3_1_pro_preview = "gemini_3_1_pro_preview"
     gemini_3_pro_preview = "gemini_3_pro_preview"
     gemini_3_flash = "gemini_3_flash"
     nemotron_70b = "nemotron_70b"
@@ -1583,20 +1584,18 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Gemini 3 Pro Preview
+    # Gemini 3.1 Pro Preview
     KilnModel(
         family=ModelFamily.gemini,
-        name=ModelName.gemini_3_pro_preview,
-        friendly_name="Gemini 3 Pro Preview",
+        name=ModelName.gemini_3_1_pro_preview,
+        friendly_name="Gemini 3.1 Pro Preview",
         featured_rank=3,
         editorial_notes="Google's state-of-the-art model. Great for tough problems.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                model_id="google/gemini-3-pro-preview",
+                model_id="google/gemini-3.1-pro-preview",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                # while the model is capable of reasoning, it doesn't always return it in the response
-                # reasoning_capable=True,
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
@@ -1604,13 +1603,75 @@ built_in_models: List[KilnModel] = [
                 multimodal_capable=True,
                 supports_vision=True,
                 multimodal_mime_types=[
-                    # documents
                     KilnMimeType.PDF,
                     KilnMimeType.CSV,
                     KilnMimeType.TXT,
                     KilnMimeType.HTML,
                     KilnMimeType.MD,
-                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-3.1-pro-preview",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                suggested_for_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                gemini_reasoning_enabled=True,
+                max_parallel_requests=2,
+                thinking_level="medium",
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-3.1-pro-preview",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                gemini_reasoning_enabled=True,
+                thinking_level="medium",
+            ),
+        ],
+    ),
+    # Gemini 3 Pro Preview
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_3_pro_preview,
+        friendly_name="Gemini 3 Pro Preview",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-3-pro-preview",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
@@ -1620,32 +1681,23 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.gemini_api,
                 model_id="gemini-3-pro-preview",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
-                suggested_for_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
                 multimodal_mime_types=[
-                    # documents
                     KilnMimeType.PDF,
                     KilnMimeType.CSV,
                     KilnMimeType.TXT,
                     KilnMimeType.HTML,
                     KilnMimeType.MD,
-                    # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
-                    # audio
                     KilnMimeType.MP3,
                     KilnMimeType.WAV,
                     KilnMimeType.OGG,
-                    # video
                     KilnMimeType.MP4,
                     KilnMimeType.MOV,
                 ],
-                # while the model is capable of reasoning, it doesn't always return it in the response
-                # reasoning_capable=True,
                 gemini_reasoning_enabled=True,
                 max_parallel_requests=2,
                 thinking_level="medium",
@@ -1654,10 +1706,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.vertex,
                 model_id="gemini-3-pro-preview",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
-                # while the model is capable of reasoning, it doesn't always return it in the response
-                # reasoning_capable=True,
                 gemini_reasoning_enabled=True,
                 thinking_level="medium",
             ),
