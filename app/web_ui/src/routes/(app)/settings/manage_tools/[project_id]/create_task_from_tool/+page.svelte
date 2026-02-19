@@ -135,7 +135,7 @@
   <AppPage
     title="New task from tool"
     sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp#mcp-run-configs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp/running-tools-as-tasks"
     breadcrumbs={[
       { label: "Settings", href: "/settings" },
       { label: "Manage Tools", href: `/settings/manage_tools/${project_id}` },
@@ -164,8 +164,8 @@
           <ToolSchemaViewer
             inputSchema={tool.inputSchema}
             outputSchema={tool.outputSchema}
-            inputTitle="Input Schema (from tool)"
-            outputTitle="Output Schema (from tool)"
+            inputTitle="Input Schema (From Tool)"
+            outputTitle="Output Schema (From Tool)"
           />
         </div>
         <Collapse title="Advanced">

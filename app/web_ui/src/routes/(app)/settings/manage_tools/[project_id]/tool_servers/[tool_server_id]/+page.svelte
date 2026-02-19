@@ -24,7 +24,7 @@
   $: is_archived = tool_server?.properties?.is_archived ?? false
 
   let tool_server: ExternalToolServerApiDescription | null = null
-  let dialog: Dialog
+  let tool_action_dialog: Dialog
   let selected_tool_name = ""
   let loading = true
   let loading_error: KilnError | null = null
@@ -77,9 +77,9 @@
     goto(`/settings/manage_tools/${project_id}`)
   }
 
-  function open_modal(tool_name: string) {
+  function open_tool_action_dialog(tool_name: string) {
     selected_tool_name = tool_name
-    dialog.show()
+    tool_action_dialog.show()
   }
 
   function handleCreateTask(tool_name: string) {
@@ -98,7 +98,7 @@
     }
     const tool_id = build_tool_id(selected_tool_name)
     set_tool_store()
-    dialog.close()
+    tool_action_dialog.close()
     goto(`/run?tool_id=${encodeURIComponent(tool_id)}`)
   }
 
@@ -107,7 +107,7 @@
       return
     }
     set_tool_store()
-    dialog.close()
+    tool_action_dialog.close()
     goto(
       `/settings/manage_tools/${project_id}/add_tool_to_task?tool_id=${encodeURIComponent(
         build_tool_id(selected_tool_name),
@@ -431,7 +431,7 @@
     ]}
   >
     <Dialog
-      bind:this={dialog}
+      bind:this={tool_action_dialog}
       title="Run Task with Tool"
       sub_subtitle="Read the Docs"
       sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp#mcp-run-configs"
@@ -629,7 +629,10 @@
                             class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow"
                           >
                             <li>
-                              <button on:click={() => open_modal(tool.name)}>
+                              <button
+                                on:click={() =>
+                                  open_tool_action_dialog(tool.name)}
+                              >
                                 Run task with tool
                               </button>
                             </li>

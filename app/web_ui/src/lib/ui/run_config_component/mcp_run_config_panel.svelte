@@ -1,9 +1,10 @@
 <script lang="ts">
-  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import type { TaskRunConfig } from "$lib/types"
   import { available_tools } from "$lib/stores"
   import { get_tool_server_name } from "$lib/stores/tools_store"
   import { tool_link } from "$lib/utils/link_builder"
+  import PropertyList from "$lib/ui/property_list.svelte"
+  import type { UiProperty } from "$lib/ui/property_list"
 
   export let run_config: TaskRunConfig
   export let project_id: string
@@ -17,28 +18,18 @@
     project_id,
     tool_id,
   )
+
+  $: properties = [
+    {
+      name: "MCP Tool",
+      value: mcp_tool_name,
+      link: tool_server_link || undefined,
+      tooltip: `This run configuration will invoke the MCP tool "${mcp_tool_name}" directly, without any wrapper agent.`,
+    },
+    ...(tool_server_name
+      ? [{ name: "Tool Server", value: tool_server_name }]
+      : []),
+  ] as UiProperty[]
 </script>
 
-<div class="flex flex-col gap-4">
-  <div>
-    <div class="text-sm font-medium mb-2 flex items-center gap-1">
-      MCP Tool
-      <InfoTooltip
-        tooltip_text={`This run configuration will invoke the MCP tool "${mcp_tool_name}" directly, without any wrapper agent.`}
-      />
-    </div>
-    {#if tool_server_link}
-      <a href={tool_server_link} class="text-sm text-gray-500 link">
-        {mcp_tool_name}
-      </a>
-    {:else}
-      <div class="text-sm text-gray-500">{mcp_tool_name}</div>
-    {/if}
-  </div>
-  {#if tool_server_name}
-    <div>
-      <div class="text-sm font-medium mb-2">Tool Server</div>
-      <div class="text-sm text-gray-500">{tool_server_name}</div>
-    </div>
-  {/if}
-</div>
+<PropertyList {properties} />

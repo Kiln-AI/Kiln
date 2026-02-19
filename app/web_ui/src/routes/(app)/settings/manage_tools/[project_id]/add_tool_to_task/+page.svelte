@@ -189,7 +189,7 @@
     title="Add MCP Tool As Run Config"
     subtitle="Allow one of your existing tasks to invoke this MCP tool directly, without a wrapper agent."
     sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp#mcp-run-configs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp/running-tools-as-tasks"
     breadcrumbs={[
       { label: "Settings", href: "/settings" },
       { label: "Manage Tools", href: `/settings/manage_tools/${project_id}` },
@@ -218,13 +218,27 @@
                 warning_message={no_compatible_tasks
                   ? `${incompatible_count} task${
                       incompatible_count === 1 ? "" : "s"
-                    } aren't compatible with this tool because their input/output schema doesn't match.`
+                    } aren't compatible with this tool because their input/output schema doesn't match.${
+                      tool_id
+                        ? ` [Create a new task using this tool's schema](/settings/manage_tools/${project_id}/create_task_from_tool?tool_id=${encodeURIComponent(
+                            tool_id,
+                          )})`
+                        : ""
+                    }`
                   : `${incompatible_count} task${
                       incompatible_count === 1 ? "" : "s"
-                    } aren't compatible with this tool because their input/output schema doesn't match.`}
+                    } aren't compatible with this tool because their input/output schema doesn't match.${
+                      tool_id
+                        ? ` [Create a new task using this tool's schema](/settings/manage_tools/${project_id}/create_task_from_tool?tool_id=${encodeURIComponent(
+                            tool_id,
+                          )})`
+                        : ""
+                    }`}
                 warning_color={no_compatible_tasks ? "error" : "warning"}
                 large_icon={true}
                 outline={true}
+                markdown={true}
+                trusted={true}
               />
               {#if no_compatible_tasks && tool_schema_ready}
                 <details class="text-sm text-gray-600">
@@ -238,16 +252,6 @@
                     />
                   </div>
                 </details>
-              {/if}
-              {#if tool_id}
-                <a
-                  class="link text-sm text-gray-500"
-                  href={`/settings/manage_tools/${project_id}/create_task_from_tool?tool_id=${encodeURIComponent(
-                    tool_id,
-                  )}`}
-                >
-                  Create a new task using this tool's schema
-                </a>
               {/if}
             {/if}
             {#if !no_compatible_tasks}
