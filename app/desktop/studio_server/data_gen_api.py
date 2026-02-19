@@ -14,6 +14,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun, generate_model_id
 from kiln_ai.datamodel.extraction import Document
 from kiln_ai.datamodel.prompt_id import PromptGenerators
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.task_output import TaskOutput
 from kiln_ai.utils.open_ai_types import (
@@ -45,7 +46,7 @@ class DataGenCategoriesApiInput(BaseModel):
         description="Optional list of existing topics to avoid",
         default=None,
     )
-    run_config_properties: RunConfigProperties = Field(
+    run_config_properties: KilnAgentRunConfigProperties = Field(
         description="The run config properties to use for topic generation"
     )
 
@@ -60,7 +61,7 @@ class DataGenSampleApiInput(BaseModel):
         description="Optional custom guidance for generation",
         default=None,
     )
-    run_config_properties: RunConfigProperties = Field(
+    run_config_properties: KilnAgentRunConfigProperties = Field(
         description="The run config properties to use for input generation"
     )
 
@@ -95,7 +96,7 @@ class DataGenQnaApiInput(BaseModel):
     num_samples: int = Field(
         description="Number of Q&A pairs to generate for this part", default=10
     )
-    run_config_properties: RunConfigProperties = Field(
+    run_config_properties: KilnAgentRunConfigProperties = Field(
         description="The run config properties to use for the output"
     )
     guidance: str | None = Field(

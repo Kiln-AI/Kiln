@@ -14,7 +14,7 @@ from kiln_ai.adapters.ollama_tools import ollama_online
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel import PromptId
 from kiln_ai.datamodel.datamodel_enums import InputType
-from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.test_json_schema import json_joke_schema, json_triangle_schema
 
 
@@ -44,7 +44,7 @@ class MockAdapter(BaseAdapter):
     def __init__(self, kiln_task: datamodel.Task, response: InputType | None):
         super().__init__(
             task=kiln_task,
-            run_config=RunConfigProperties(
+            run_config=KilnAgentRunConfigProperties(
                 model_name="phi_3_5",
                 model_provider_name="ollama",
                 prompt_id="simple_chain_of_thought_prompt_builder",
@@ -148,7 +148,7 @@ async def run_structured_output_test(tmp_path: Path, model_name: str, provider: 
     task = build_structured_output_test_task(tmp_path)
     a = adapter_for_task(
         task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name=model_name,
             model_provider_name=provider,
             prompt_id="simple_prompt_builder",
@@ -230,7 +230,7 @@ async def run_structured_input_task_no_validation(
 ):
     a = adapter_for_task(
         task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name=model_name,
             model_provider_name=provider,
             prompt_id=prompt_id,

@@ -7,8 +7,8 @@ import pytest
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalOutputScore, EvalScores
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import (
-    RunConfigProperties,
     StructuredOutputMode,
     Task,
     TaskOutputRatingType,
@@ -303,7 +303,7 @@ async def test_run_method():
 
     run_config = TaskRunConfig(
         name="Test Run Config",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="llama_3_1_8b",
             model_provider_name=ModelProviderName.groq,
             prompt_id="simple_prompt_builder",
@@ -377,7 +377,7 @@ async def test_run_task_and_eval():
 
     run_config = TaskRunConfig(
         name="Test Run Config",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="llama_3_1_8b",
             model_provider_name=ModelProviderName.groq,
             prompt_id="simple_prompt_builder",

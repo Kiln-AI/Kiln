@@ -9,6 +9,7 @@
   import posthog from "posthog-js"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import type { RunConfigProperties } from "$lib/types"
+  import { isKilnAgentRunConfig } from "$lib/types"
 
   export let guidance_data: SynthDataGuidanceDataModel
   // Local instance for dynamic reactive updates
@@ -90,6 +91,12 @@
     try {
       if (!run_config_properties) {
         throw new KilnError("No run config properties.", null)
+      }
+      if (!isKilnAgentRunConfig(run_config_properties)) {
+        throw new KilnError(
+          "Synthetic data generation requires a kiln_agent run config.",
+          null,
+        )
       }
       if (!guidance_data.gen_type) {
         throw new KilnError("No generation type selected.", null)

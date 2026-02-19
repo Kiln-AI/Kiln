@@ -9,7 +9,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     ChatStrategy,
     ModelProviderName,
 )
-from kiln_ai.datamodel.run_config import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.utils.name_generator import generate_memorable_name
 
 
@@ -67,7 +67,7 @@ class BaseFinetuneAdapter(ABC):
         name: str | None = None,
         description: str | None = None,
         validation_split_name: str | None = None,
-        run_config: RunConfigProperties | None = None,
+        run_config: KilnAgentRunConfigProperties | None = None,
     ) -> tuple["BaseFinetuneAdapter", FinetuneModel]:
         """
         Create and start a fine-tune.

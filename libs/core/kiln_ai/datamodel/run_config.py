@@ -1,7 +1,6 @@
-from enum import Enum
-from typing import List
+from typing import Annotated, Any, List, Literal, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Discriminator, Field, Tag, model_validator
 from typing_extensions import Self
 
 from kiln_ai.datamodel.datamodel_enums import (
@@ -10,11 +9,6 @@ from kiln_ai.datamodel.datamodel_enums import (
 )
 from kiln_ai.datamodel.prompt_id import PromptId
 from kiln_ai.datamodel.tool_id import ToolId
-
-
-class RunConfigKind(str, Enum):
-    kiln_agent = "kiln_agent"
-    mcp = "mcp"
 
 
 class MCPToolReference(BaseModel):
@@ -43,21 +37,14 @@ class ToolsRunConfig(BaseModel):
     )
 
 
-class RunConfigProperties(BaseModel):
+class KilnAgentRunConfigProperties(BaseModel):
     """
-    A configuration for running a task.
+    A configuration for running a task using a Kiln AI agent.
 
     This includes everything needed to run a task, except the input and task ID. Running the same RunConfig with the same input should make identical calls to the model (output may vary as models are non-deterministic).
     """
 
-    kind: RunConfigKind = Field(
-        default=RunConfigKind.kiln_agent,
-        description="The type of run config (kiln_agent or mcp).",
-    )
-    mcp_tool: MCPToolReference | None = Field(
-        default=None,
-        description="MCP tool reference used when kind is mcp.",
-    )
+    type: Literal["kiln_agent"] = "kiln_agent"
     model_name: str = Field(description="The model to use for this run config.")
     model_provider_name: ModelProviderName = Field(
         description="The provider to use for this run config."
@@ -81,62 +68,6 @@ class RunConfigProperties(BaseModel):
         description="The tools config to use for this run config, defining which tools are available to the model.",
     )
 
-    @model_validator(mode="before")
-    def apply_mcp_defaults(cls, data: dict) -> dict:
-        if not isinstance(data, dict):
-            return data
-
-        # set the defaults
-        kind = data.get("kind")
-        if kind in (RunConfigKind.mcp, RunConfigKind.mcp.value):
-            data.setdefault("model_name", "mcp_tool")
-            data.setdefault("model_provider_name", ModelProviderName.mcp_provider)
-            data.setdefault("prompt_id", "simple_prompt_builder")
-            data.setdefault("structured_output_mode", StructuredOutputMode.default)
-            data.setdefault("top_p", 1.0)
-            data.setdefault("temperature", 1.0)
-
-        return data
-
-    @model_validator(mode="after")
-    def validate_mcp(self) -> Self:
-        if self.kind != RunConfigKind.mcp:
-            return self
-
-        if self.mcp_tool is None:
-            raise ValueError("mcp_tool is required when kind is mcp")
-
-        if self.model_name != "mcp_tool":
-            raise ValueError("model_name must be 'mcp_tool' when kind is mcp")
-        if self.model_provider_name != ModelProviderName.mcp_provider:
-            raise ValueError(
-                "model_provider_name must be 'mcp_provider' when kind is mcp"
-            )
-        if self.prompt_id != "simple_prompt_builder":
-            raise ValueError(
-                "prompt_id must be 'simple_prompt_builder' when kind is mcp"
-            )
-        if self.structured_output_mode != StructuredOutputMode.default:
-            raise ValueError("structured_output_mode must be default when kind is mcp")
-        if self.top_p != 1.0:
-            raise ValueError("top_p must be 1.0 when kind is mcp")
-        if self.temperature != 1.0:
-            raise ValueError("temperature must be 1.0 when kind is mcp")
-        if self.tools_config is not None:
-            raise ValueError("tools_config must not be set when kind is mcp")
-
-        return self
-
-    @model_validator(mode="after")
-    def validate_kiln_agent(self) -> Self:
-        if self.kind != RunConfigKind.kiln_agent:
-            return self
-
-        if self.mcp_tool is not None:
-            raise ValueError("mcp_tool must not be set when kind is kiln_agent")
-
-        return self
-
     @model_validator(mode="after")
     def validate_sampling(self) -> Self:
         if not (0 <= self.top_p <= 1):
@@ -146,3 +77,45 @@ class RunConfigProperties(BaseModel):
             raise ValueError("temperature must be between 0 and 2")
 
         return self
+
+
+class McpRunConfigProperties(BaseModel):
+    """
+    A configuration for running a task via an MCP tool.
+    """
+
+    type: Literal["mcp"] = "mcp"
+    tool_reference: MCPToolReference = Field(
+        description="The MCP tool to use for this run config."
+    )
+
+
+def _get_run_config_type(data: Any) -> str:
+    if isinstance(data, dict):
+        return data.get("type", "kiln_agent")
+    return getattr(data, "type", "kiln_agent")
+
+
+RunConfigProperties = Annotated[
+    Union[
+        Annotated[KilnAgentRunConfigProperties, Tag("kiln_agent")],
+        Annotated[McpRunConfigProperties, Tag("mcp")],
+    ],
+    Discriminator(_get_run_config_type),
+]
+
+
+def as_kiln_agent_run_config(
+    run_config: RunConfigProperties,
+) -> KilnAgentRunConfigProperties:
+    """Centralize KilnAgentRunConfigProperties narrowing so callers don't repeat isinstance checks."""
+    if not isinstance(run_config, KilnAgentRunConfigProperties):
+        raise ValueError("Kiln agent run config is required for this operation")
+    return run_config
+
+
+def as_mcp_run_config(run_config: RunConfigProperties) -> McpRunConfigProperties:
+    """Centralize McpRunConfigProperties narrowing so callers don't repeat isinstance checks."""
+    if not isinstance(run_config, McpRunConfigProperties):
+        raise ValueError("MCP run config is required for this operation")
+    return run_config

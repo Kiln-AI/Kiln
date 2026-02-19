@@ -33,7 +33,10 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
-from kiln_ai.datamodel.run_config import RunConfigKind
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    as_kiln_agent_run_config,
+)
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
     ToolCallContext,
@@ -74,10 +77,8 @@ class LiteLlmAdapter(BaseAdapter):
         kiln_task: datamodel.Task,
         base_adapter_config: AdapterConfig | None = None,
     ):
-        if config.run_config_properties.kind != RunConfigKind.kiln_agent:
-            raise ValueError(
-                "LiteLlmAdapter requires a run config with kind kiln_agent"
-            )
+        if not isinstance(config.run_config_properties, KilnAgentRunConfigProperties):
+            raise ValueError("LiteLlmAdapter requires KilnAgentRunConfigProperties")
         self.config = config
         self._additional_body_options = config.additional_body_options
         self._api_base = config.base_url
@@ -312,9 +313,8 @@ class LiteLlmAdapter(BaseAdapter):
         if not self.has_structured_output():
             return {}
 
-        structured_output_mode: StructuredOutputMode = (
-            self.run_config.structured_output_mode
-        )
+        run_config = as_kiln_agent_run_config(self.run_config)
+        structured_output_mode: StructuredOutputMode = run_config.structured_output_mode
 
         match structured_output_mode:
             case StructuredOutputMode.json_mode:
@@ -335,7 +335,7 @@ class LiteLlmAdapter(BaseAdapter):
                 # We set response_format to json_object and also set json instructions in the prompt
                 return {"response_format": {"type": "json_object"}}
             case StructuredOutputMode.default:
-                provider_name = self.run_config.model_provider_name
+                provider_name = run_config.model_provider_name
                 if provider_name == ModelProviderName.ollama:
                     # Ollama added json_schema to all models: https://ollama.com/blog/structured-outputs
                     return self.json_schema_response_format()
@@ -351,7 +351,7 @@ class LiteLlmAdapter(BaseAdapter):
                 # See above, but this case should never happen.
                 raise ValueError("Structured output mode is unknown.")
             case _:
-                raise_exhaustive_enum_error(structured_output_mode)
+                raise_exhaustive_enum_error(structured_output_mode)  # type: ignore[arg-type]
 
     def json_schema_response_format(self) -> dict[str, Any]:
         output_schema = self.task.output_schema()
@@ -493,6 +493,7 @@ class LiteLlmAdapter(BaseAdapter):
         top_logprobs: int | None,
         skip_response_format: bool = False,
     ) -> dict[str, Any]:
+        run_config = as_kiln_agent_run_config(self.run_config)
         extra_body = self.build_extra_body(provider)
 
         # Merge all parameters into a single kwargs dict for litellm
@@ -501,8 +502,8 @@ class LiteLlmAdapter(BaseAdapter):
             "messages": messages,
             "api_base": self._api_base,
             "headers": self._headers,
-            "temperature": self.run_config.temperature,
-            "top_p": self.run_config.top_p,
+            "temperature": run_config.temperature,
+            "top_p": run_config.top_p,
             # This drops params that are not supported by the model. Only openai params like top_p, temperature -- not litellm params like model, etc.
             # Not all models and providers support all openai params (for example, o3 doesn't support top_p)
             # Better to ignore them than to fail the model call.

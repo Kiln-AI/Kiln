@@ -19,10 +19,10 @@
     prompts_by_task_composite_id,
   } from "$lib/stores/prompts_store"
   import {
-    getRunConfigPromptDisplayName,
     getRunConfigDisplayName,
+    getRunConfigPromptDisplayName,
   } from "$lib/utils/run_config_formatters"
-  import { is_mcp_run_config } from "$lib/utils/run_config_kind"
+  import { isMcpRunConfig } from "$lib/types"
   import { onMount } from "svelte"
   import {
     load_task_run_configs,
@@ -183,14 +183,17 @@
       )
 
       if (default_config) {
-        const is_mcp = is_mcp_run_config(default_config)
+        const mcp_props = isMcpRunConfig(default_config.run_config_properties)
+          ? default_config.run_config_properties
+          : null
+        const description = mcp_props
+          ? `MCP Tool: ${mcp_props.tool_reference?.tool_name ?? "Unknown"}`
+          : `Model: ${getRunConfigDisplayName(default_config, model_info)}
+            Prompt: ${getRunConfigPromptDisplayName(default_config, current_task_prompts)}`
         saved_configuration_options.push({
           value: default_run_config_id,
           label: `${default_config.name} (Default)`,
-          description: is_mcp
-            ? `MCP Tool: ${default_config.run_config_properties.mcp_tool?.tool_name ?? "Unknown"}`
-            : `Model: ${getRunConfigDisplayName(default_config, model_info)}
-            Prompt: ${getRunConfigPromptDisplayName(default_config, current_task_prompts)}`,
+          description,
         })
       }
     }
@@ -208,14 +211,17 @@
     if (other_task_run_configs.length > 0) {
       saved_configuration_options.push(
         ...other_task_run_configs.map((config) => {
-          const is_mcp = is_mcp_run_config(config)
+          const mcp_props = isMcpRunConfig(config.run_config_properties)
+            ? config.run_config_properties
+            : null
+          const description = mcp_props
+            ? `MCP Tool: ${mcp_props.tool_reference?.tool_name ?? "Unknown"}`
+            : `Model: ${getRunConfigDisplayName(config, model_info)}
+            Prompt: ${getRunConfigPromptDisplayName(config, current_task_prompts)}`
           return {
             value: config.id ?? "",
             label: config.name,
-            description: is_mcp
-              ? `MCP Tool: ${config.run_config_properties.mcp_tool?.tool_name ?? "Unknown"}`
-              : `Model: ${getRunConfigDisplayName(config, model_info)}
-            Prompt: ${getRunConfigPromptDisplayName(config, current_task_prompts)}`,
+            description,
           }
         }),
       )

@@ -4,6 +4,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import type { RunConfigProperties } from "$lib/types"
+  import { isKilnAgentRunConfig } from "$lib/types"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import ChunkingConfigForm from "./chunking_config_form.svelte"
   import QnAGuidance from "./qna_guidance.svelte"
@@ -52,6 +53,9 @@
 
       const run_config_properties =
         run_config_component.run_options_as_run_config_properties()
+      if (!isKilnAgentRunConfig(run_config_properties)) {
+        throw new Error("Q&A generation requires a kiln_agent run config")
+      }
       if (!run_config_properties.model_name) {
         throw new Error("Please select a model to generate Q&A pairs")
       }

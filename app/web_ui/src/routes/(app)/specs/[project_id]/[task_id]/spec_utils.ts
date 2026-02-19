@@ -6,6 +6,7 @@ import type {
   Task,
   TaskRunConfig,
 } from "$lib/types"
+import { isKilnAgentRunConfig } from "$lib/types"
 import { spec_field_configs } from "./select_template/spec_templates"
 import {
   load_task_run_configs,
@@ -105,7 +106,9 @@ export async function checkDefaultRunConfigHasTools(
     return false
   }
 
-  const tools = default_config.run_config_properties?.tools_config?.tools ?? []
+  const tools = isKilnAgentRunConfig(default_config.run_config_properties)
+    ? default_config.run_config_properties.tools_config?.tools ?? []
+    : []
   return tools.length > 0
 }
 

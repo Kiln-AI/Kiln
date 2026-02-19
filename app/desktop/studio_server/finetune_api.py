@@ -42,7 +42,7 @@ from kiln_ai.datamodel.dataset_split import (
     Train80Test20SplitDefinition,
     Train80Val20SplitDefinition,
 )
-from kiln_ai.datamodel.run_config import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
@@ -139,7 +139,7 @@ class CreateFinetuneRequest(BaseModel):
     custom_system_message: str | None = None
     custom_thinking_instructions: str | None = None
     data_strategy: ChatStrategy
-    run_config_properties: RunConfigProperties | None = None
+    run_config_properties: KilnAgentRunConfigProperties | None = None
 
     @model_validator(mode="after")
     def validate_data_strategy(self):
@@ -208,6 +208,9 @@ def compute_finetune_tag_info(
             if (
                 sample.output.source
                 and sample.output.source.run_config
+                and isinstance(
+                    sample.output.source.run_config, KilnAgentRunConfigProperties
+                )
                 and sample.output.source.run_config.tools_config
             ):
                 run_tools_set = set(sample.output.source.run_config.tools_config.tools)

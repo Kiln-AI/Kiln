@@ -10,9 +10,9 @@ from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    McpRunConfigProperties,
     MCPToolReference,
-    RunConfigKind,
-    RunConfigProperties,
 )
 from kiln_ai.datamodel.tool_id import MCP_LOCAL_TOOL_ID_PREFIX
 
@@ -57,6 +57,27 @@ def _mock_mcp_call(mock_session_manager, text_output: str):
     return mock_session
 
 
+def test_mcp_adapter_rejects_non_mcp_run_config(project_with_local_mcp_server):
+    project, _ = project_with_local_mcp_server
+    task = Task(
+        name="Test Task",
+        parent=project,
+        instruction="Run tests",
+    )
+
+    run_config = KilnAgentRunConfigProperties(
+        model_name="gpt-4o-mini",
+        model_provider_name="openai",
+        prompt_id="simple_prompt_builder",
+        structured_output_mode="json_schema",
+    )
+
+    with pytest.raises(
+        ValueError, match="MCPAdapter requires a run config with type mcp"
+    ):
+        MCPAdapter(task=task, run_config=run_config)
+
+
 @pytest.mark.asyncio
 @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value="test_run_id")
 @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
@@ -77,8 +98,8 @@ async def test_mcp_adapter_struct_in_string_out(
         ),
     )
 
-    run_config = RunConfigProperties(
-        kind=RunConfigKind.mcp, mcp_tool=MCPToolReference(tool_id=local_mcp_tool_id)
+    run_config = McpRunConfigProperties(
+        tool_reference=MCPToolReference(tool_id=local_mcp_tool_id)
     )
 
     mock_session = _mock_mcp_call(mock_session_manager, "ok")
@@ -116,8 +137,8 @@ async def test_mcp_adapter_string_in_struct_out(
         ),
     )
 
-    run_config = RunConfigProperties(
-        kind=RunConfigKind.mcp, mcp_tool=MCPToolReference(tool_id=local_mcp_tool_id)
+    run_config = McpRunConfigProperties(
+        tool_reference=MCPToolReference(tool_id=local_mcp_tool_id)
     )
 
     mock_session = _mock_mcp_call(mock_session_manager, '{"status":"ok"}')
@@ -146,8 +167,8 @@ async def test_mcp_adapter_string_in_string_out(
         instruction="Echo input",
     )
 
-    run_config = RunConfigProperties(
-        kind=RunConfigKind.mcp, mcp_tool=MCPToolReference(tool_id=local_mcp_tool_id)
+    run_config = McpRunConfigProperties(
+        tool_reference=MCPToolReference(tool_id=local_mcp_tool_id)
     )
 
     mock_session = _mock_mcp_call(mock_session_manager, "ok")
@@ -190,8 +211,8 @@ async def test_mcp_adapter_struct_in_struct_out(
         ),
     )
 
-    run_config = RunConfigProperties(
-        kind=RunConfigKind.mcp, mcp_tool=MCPToolReference(tool_id=local_mcp_tool_id)
+    run_config = McpRunConfigProperties(
+        tool_reference=MCPToolReference(tool_id=local_mcp_tool_id)
     )
 
     mock_session = _mock_mcp_call(mock_session_manager, '{"status":"ok"}')
@@ -222,8 +243,8 @@ async def test_mcp_adapter_emits_single_turn_trace(
         instruction="Echo input",
     )
 
-    run_config = RunConfigProperties(
-        kind=RunConfigKind.mcp, mcp_tool=MCPToolReference(tool_id=local_mcp_tool_id)
+    run_config = McpRunConfigProperties(
+        tool_reference=MCPToolReference(tool_id=local_mcp_tool_id)
     )
 
     _mock_mcp_call(mock_session_manager, "ok")
@@ -266,8 +287,8 @@ async def test_mcp_adapter_hooks_mcp_integration():
     )
 
     tool_id = f"{MCP_LOCAL_TOOL_ID_PREFIX}444800067879::test_file_python"
-    run_config = RunConfigProperties(
-        kind=RunConfigKind.mcp, mcp_tool=MCPToolReference(tool_id=tool_id)
+    run_config = McpRunConfigProperties(
+        tool_reference=MCPToolReference(tool_id=tool_id)
     )
 
     adapter = MCPAdapter(task=task, run_config=run_config)

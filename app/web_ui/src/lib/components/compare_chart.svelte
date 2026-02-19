@@ -7,6 +7,7 @@
     ProviderModels,
     PromptResponse,
   } from "$lib/types"
+  import { isKilnAgentRunConfig } from "$lib/types"
   import {
     getRunConfigDisplayName,
     getRunConfigPromptDisplayName,
@@ -188,14 +189,18 @@
 
             if (config) {
               const modelName = getRunConfigDisplayName(config, model_info)
-              const providerName = provider_name_from_id(
-                config.run_config_properties?.model_provider_name,
-              )
-              const promptName = getRunConfigPromptDisplayName(config, prompts)
-
               tooltipHtml = `<strong>${modelName}</strong>`
-              tooltipHtml += `<br/><span style="color: #666;">Provider:</span> ${providerName}`
-              tooltipHtml += `<br/><span style="color: #666;">Prompt:</span> ${promptName}`
+              if (isKilnAgentRunConfig(config.run_config_properties)) {
+                const providerName = provider_name_from_id(
+                  config.run_config_properties.model_provider_name,
+                )
+                const promptName = getRunConfigPromptDisplayName(
+                  config,
+                  prompts,
+                )
+                tooltipHtml += `<br/><span style="color: #666;">Provider:</span> ${providerName}`
+                tooltipHtml += `<br/><span style="color: #666;">Prompt:</span> ${promptName}`
+              }
             }
 
             tooltipHtml += `<br/><br/><span style="color: #666;">${xLabel}:</span> ${formatValue(params.value[0] as number, xAxis)}`

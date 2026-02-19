@@ -26,9 +26,10 @@
     DatasetSplit,
     Finetune,
     FineTuneParameter,
-    RunConfigProperties,
+    KilnAgentRunConfigProperties,
     ModelProviderName,
   } from "$lib/types"
+  import { isKilnAgentRunConfig } from "$lib/types"
   import SelectFinetuneDataset from "./select_finetune_dataset.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
@@ -447,10 +448,12 @@
       // Create a run config object based on the UI
       // Extract just the model name from the full path (e.g., "accounts/fireworks/models/qwen3-1p7b" -> "qwen3-1p7b")
       const model_name = base_model_id?.split("/").pop() || base_model_id
-      const run_config_properties: RunConfigProperties | undefined =
-        run_config_component && model_name && provider_id
+      const base_run_config =
+        run_config_component?.run_options_as_run_config_properties()
+      const run_config_properties: KilnAgentRunConfigProperties | undefined =
+        base_run_config && isKilnAgentRunConfig(base_run_config) && model_name
           ? {
-              ...run_config_component.run_options_as_run_config_properties(),
+              ...base_run_config,
               model_name: model_name,
               model_provider_name: provider_id,
             }

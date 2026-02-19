@@ -11,7 +11,7 @@ from kiln_ai.adapters.fine_tune.vertex_formatter import (
     generate_vertex_gemini,
 )
 from kiln_ai.datamodel import TaskRun
-from kiln_ai.datamodel.run_config import RunConfigProperties, ToolsRunConfig
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.tool_registry import tool_definitions_from_ids
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
@@ -66,7 +66,7 @@ def create_mock_task_run(
     output_mock.output = "Test output"
 
     if tool_ids:
-        run_config = RunConfigProperties(
+        run_config = KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",

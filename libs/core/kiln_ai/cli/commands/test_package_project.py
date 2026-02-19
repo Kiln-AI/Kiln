@@ -13,7 +13,7 @@ from kiln_ai.datamodel.external_tool_server import (
 )
 from kiln_ai.datamodel.prompt import Prompt
 from kiln_ai.datamodel.prompt_id import PromptGenerators
-from kiln_ai.datamodel.run_config import RunConfigProperties, ToolsRunConfig
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.tool_id import (
     KILN_TASK_TOOL_ID_PREFIX,
@@ -63,7 +63,7 @@ def temp_project(tmp_path: Path):
     run_config = TaskRunConfig(
         name="Test Run Config",
         parent=task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4o",
             model_provider_name="openai",
             prompt_id=PromptGenerators.SIMPLE.value,
@@ -102,7 +102,7 @@ def temp_project_with_multiple_tasks(tmp_path: Path):
         run_config = TaskRunConfig(
             name=f"Run Config {i + 1}",
             parent=task,
-            run_config_properties=RunConfigProperties(
+            run_config_properties=KilnAgentRunConfigProperties(
                 model_name="gpt-4o",
                 model_provider_name="openai",
                 prompt_id=PromptGenerators.SIMPLE.value,
@@ -157,7 +157,7 @@ def temp_project_with_tools(tmp_path: Path):
     run_config = TaskRunConfig(
         name="Config With Tools",
         parent=task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4o",
             model_provider_name="openai",
             prompt_id=PromptGenerators.SIMPLE.value,
@@ -194,7 +194,7 @@ def temp_project_with_dynamic_prompt(tmp_path: Path):
     run_config = TaskRunConfig(
         name="Config With Dynamic Prompt",
         parent=task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4o",
             model_provider_name="openai",
             prompt_id=PromptGenerators.FEW_SHOT.value,
@@ -231,7 +231,7 @@ def temp_project_with_kiln_task_tool(tmp_path: Path):
     subtask_run_config = TaskRunConfig(
         name="Sub Task Run Config",
         parent=subtask,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4o",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE.value,
@@ -273,7 +273,7 @@ def temp_project_with_kiln_task_tool(tmp_path: Path):
     main_run_config = TaskRunConfig(
         name="Main Run Config",
         parent=main_task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4o",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE.value,
@@ -329,7 +329,7 @@ def temp_project_with_mcp_local_tool(tmp_path: Path):
     run_config = TaskRunConfig(
         name="Config With MCP Local",
         parent=task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4o",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE.value,
@@ -382,7 +382,7 @@ def temp_project_with_mcp_remote_tool(tmp_path: Path):
     run_config = TaskRunConfig(
         name="Config With MCP Remote",
         parent=task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4o",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE.value,
@@ -422,7 +422,7 @@ def temp_project_with_rag_tool(tmp_path: Path):
     run_config = TaskRunConfig(
         name="Config With RAG",
         parent=task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4o",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE.value,
@@ -459,7 +459,7 @@ def temp_project_with_builtin_tool(tmp_path: Path):
     run_config = TaskRunConfig(
         name="Config With Builtin",
         parent=task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4o",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE.value,

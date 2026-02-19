@@ -14,6 +14,7 @@ from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.prompt import Prompt
 from kiln_ai.datamodel.prompt_id import PromptGenerators
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.tool_id import (
     KILN_TASK_TOOL_ID_PREFIX,
@@ -141,6 +142,8 @@ def get_default_run_config(task: Task) -> TaskRunConfig:
 
 def get_tools_from_run_config(run_config: TaskRunConfig) -> list[str]:
     """Get the list of tool IDs from a run config."""
+    if not isinstance(run_config.run_config_properties, KilnAgentRunConfigProperties):
+        return []
     if (
         run_config.run_config_properties.tools_config
         and run_config.run_config_properties.tools_config.tools
@@ -375,6 +378,13 @@ def validate_and_build_prompts(
     # First pass: check for dynamic prompts
     for task in tasks:
         run_config = run_configs[task.id]  # type: ignore
+        if not isinstance(
+            run_config.run_config_properties, KilnAgentRunConfigProperties
+        ):
+            console.print(
+                f"[red]Error:[/red] Task '{task.name}' uses a non-kiln_agent run config. Project export requires kiln_agent run configs."
+            )
+            raise typer.Exit(1)
         prompt_id = run_config.run_config_properties.prompt_id
 
         if is_dynamic_prompt(prompt_id):
@@ -397,6 +407,13 @@ def validate_and_build_prompts(
     # Second pass: build prompts
     for task in tasks:
         run_config = run_configs[task.id]  # type: ignore
+        if not isinstance(
+            run_config.run_config_properties, KilnAgentRunConfigProperties
+        ):
+            console.print(
+                f"[red]Error:[/red] Task '{task.name}' uses a non-kiln_agent run config. Project export requires kiln_agent run configs."
+            )
+            raise typer.Exit(1)
         prompt_id = run_config.run_config_properties.prompt_id
 
         try:
@@ -492,7 +509,10 @@ def save_prompt_to_task(
             f"Prompt saved to incorrect location: {prompt.path} != {exported_task_prompt.path}"
         )
 
-    exported_run_config.run_config_properties.prompt_id = f"id::{prompt.id}"
+    if isinstance(
+        exported_run_config.run_config_properties, KilnAgentRunConfigProperties
+    ):
+        exported_run_config.run_config_properties.prompt_id = f"id::{prompt.id}"
     exported_run_config.save_to_file()
 
     return prompt

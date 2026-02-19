@@ -1,231 +1,325 @@
-import pytest
-from pydantic import ValidationError
+import json
 
-from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
+import pytest
+from pydantic import BaseModel, TypeAdapter, ValidationError
+
+from kiln_ai.datamodel.datamodel_enums import (
+    ModelProviderName,
+    StructuredOutputMode,
+)
+from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    McpRunConfigProperties,
     MCPToolReference,
-    RunConfigKind,
     RunConfigProperties,
+    ToolsRunConfig,
 )
 
-
-def _valid_llm_run_config() -> RunConfigProperties:
-    return RunConfigProperties(
-        kind=RunConfigKind.kiln_agent,
-        model_name="gpt-4o",
-        model_provider_name=ModelProviderName.openai,
-        prompt_id="simple_prompt_builder",
-        structured_output_mode=StructuredOutputMode.json_mode,
-        top_p=1.0,
-        temperature=1.0,
-    )
+run_config_adapter = TypeAdapter(RunConfigProperties)
 
 
-def test_run_config_defaults_to_llm() -> None:
-    run_config = RunConfigProperties(
-        model_name="gpt-4o",
-        model_provider_name=ModelProviderName.openai,
-        prompt_id="simple_prompt_builder",
-        structured_output_mode=StructuredOutputMode.json_mode,
-        top_p=1.0,
-        temperature=1.0,
-    )
-
-    assert run_config.kind == RunConfigKind.kiln_agent
+class RunConfigWrapper(BaseModel):
+    run_config_properties: RunConfigProperties
 
 
-def test_run_config_llm_requires_fields() -> None:
-    with pytest.raises(ValidationError, match="Field required"):
-        RunConfigProperties(
-            kind=RunConfigKind.kiln_agent,
+LEGACY_KILN_AGENT_JSON = {
+    "model_name": "gpt-4",
+    "model_provider_name": "openai",
+    "prompt_id": "simple_prompt_builder",
+    "structured_output_mode": "json_schema",
+}
+
+KILN_AGENT_JSON = {
+    "type": "kiln_agent",
+    "model_name": "gpt-4",
+    "model_provider_name": "openai",
+    "prompt_id": "simple_prompt_builder",
+    "structured_output_mode": "json_schema",
+}
+
+MCP_JSON = {
+    "type": "mcp",
+    "tool_reference": {
+        "tool_id": "mcp::local::server_id::tool_name",
+    },
+}
+
+
+class TestKilnAgentRunConfigProperties:
+    def test_direct_construction(self):
+        config = KilnAgentRunConfigProperties(
+            model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
-            prompt_id="simple_prompt_builder",
-            structured_output_mode=StructuredOutputMode.json_mode,
-            top_p=1.0,
-            temperature=1.0,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
         )
+        assert config.type == "kiln_agent"
+        assert config.model_name == "gpt-4"
+        assert config.model_provider_name == ModelProviderName.openai
+        assert config.top_p == 1.0
+        assert config.temperature == 1.0
+        assert config.tools_config is None
 
-
-def test_run_config_llm_forbids_mcp_tool() -> None:
-    with pytest.raises(
-        ValueError, match="mcp_tool must not be set when kind is kiln_agent"
-    ):
-        RunConfigProperties(
-            kind=RunConfigKind.kiln_agent,
-            model_name="gpt-4o",
+    def test_type_defaults_to_kiln_agent(self):
+        config = KilnAgentRunConfigProperties(
+            model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
-            prompt_id="simple_prompt_builder",
-            structured_output_mode=StructuredOutputMode.json_mode,
-            top_p=1.0,
-            temperature=1.0,
-            mcp_tool=MCPToolReference(
-                tool_id="mcp::local::server_id::tool_name",
-            ),
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
         )
+        assert config.type == "kiln_agent"
 
-
-def test_run_config_mcp_requires_tool() -> None:
-    with pytest.raises(ValueError, match="mcp_tool is required when kind is mcp"):
-        RunConfigProperties(kind=RunConfigKind.mcp)
-
-
-def test_run_config_mcp_enforces_model_name() -> None:
-    with pytest.raises(
-        ValueError, match="model_name must be 'mcp_tool' when kind is mcp"
-    ):
-        RunConfigProperties(
-            kind=RunConfigKind.mcp,
-            mcp_tool=MCPToolReference(
-                tool_id="mcp::local::server_id::tool_name",
-            ),
-            model_name="custom_model",
-            model_provider_name=ModelProviderName.mcp_provider,
-            prompt_id="simple_prompt_builder",
-            structured_output_mode=StructuredOutputMode.default,
-            top_p=1.0,
-            temperature=1.0,
-        )
-
-
-def test_run_config_mcp_enforces_model_provider() -> None:
-    with pytest.raises(
-        ValueError,
-        match="model_provider_name must be 'mcp_provider' when kind is mcp",
-    ):
-        RunConfigProperties(
-            kind=RunConfigKind.mcp,
-            mcp_tool=MCPToolReference(
-                tool_id="mcp::local::server_id::tool_name",
-            ),
-            model_name="mcp_tool",
+    def test_type_serialized_in_output(self):
+        config = KilnAgentRunConfigProperties(
+            model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
-            prompt_id="simple_prompt_builder",
-            structured_output_mode=StructuredOutputMode.default,
-            top_p=1.0,
-            temperature=1.0,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
         )
+        data = config.model_dump()
+        assert data["type"] == "kiln_agent"
+
+    def test_validation_top_p(self):
+        with pytest.raises(ValidationError, match="top_p must be between 0 and 1"):
+            KilnAgentRunConfigProperties(
+                model_name="gpt-4",
+                model_provider_name=ModelProviderName.openai,
+                prompt_id=PromptGenerators.SIMPLE,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                top_p=1.5,
+            )
+
+    def test_validation_temperature(self):
+        with pytest.raises(
+            ValidationError, match="temperature must be between 0 and 2"
+        ):
+            KilnAgentRunConfigProperties(
+                model_name="gpt-4",
+                model_provider_name=ModelProviderName.openai,
+                prompt_id=PromptGenerators.SIMPLE,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temperature=3.0,
+            )
+
+    def test_with_tools_config(self):
+        config = KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+            tools_config=ToolsRunConfig(tools=["kiln_tool::add_numbers"]),
+        )
+        assert config.tools_config is not None
+        assert config.tools_config.tools == ["kiln_tool::add_numbers"]
 
 
-def test_run_config_mcp_enforces_prompt_id() -> None:
-    with pytest.raises(
-        ValueError,
-        match="prompt_id must be 'simple_prompt_builder' when kind is mcp",
-    ):
-        RunConfigProperties(
-            kind=RunConfigKind.mcp,
-            mcp_tool=MCPToolReference(
-                tool_id="mcp::local::server_id::tool_name",
+class TestMcpRunConfigProperties:
+    def test_direct_construction(self):
+        config = McpRunConfigProperties(
+            type="mcp",
+            tool_reference=MCPToolReference(tool_id="mcp::local::server_id::tool_name"),
+        )
+        assert config.type == "mcp"
+        assert config.tool_reference.tool_id == "mcp::local::server_id::tool_name"
+
+    def test_type_serialized_in_output(self):
+        config = McpRunConfigProperties(
+            type="mcp",
+            tool_reference=MCPToolReference(tool_id="mcp::local::server_id::tool_name"),
+        )
+        data = config.model_dump()
+        assert data["type"] == "mcp"
+        assert data["tool_reference"]["tool_id"] == "mcp::local::server_id::tool_name"
+
+    def test_missing_tool_reference_raises(self):
+        with pytest.raises(ValidationError):
+            McpRunConfigProperties(type="mcp")  # type: ignore
+
+    def test_missing_type_raises(self):
+        config = McpRunConfigProperties(
+            tool_reference=MCPToolReference(tool_id="mcp::local::server_id::tool_name")
+        )
+        assert config.type == "mcp"
+
+
+class TestDiscriminatedUnion:
+    def test_kiln_agent_via_type_adapter(self):
+        config = run_config_adapter.validate_python(KILN_AGENT_JSON)
+        assert isinstance(config, KilnAgentRunConfigProperties)
+        assert config.type == "kiln_agent"
+        assert config.model_name == "gpt-4"
+
+    def test_mcp_via_type_adapter(self):
+        config = run_config_adapter.validate_python(MCP_JSON)
+        assert isinstance(config, McpRunConfigProperties)
+        assert config.type == "mcp"
+        assert config.tool_reference.tool_id == "mcp::local::server_id::tool_name"
+
+    def test_kiln_agent_via_wrapper_model(self):
+        wrapper = RunConfigWrapper(run_config_properties=KILN_AGENT_JSON)
+        assert isinstance(wrapper.run_config_properties, KilnAgentRunConfigProperties)
+
+    def test_mcp_via_wrapper_model(self):
+        wrapper = RunConfigWrapper(run_config_properties=MCP_JSON)
+        assert isinstance(wrapper.run_config_properties, McpRunConfigProperties)
+
+    def test_invalid_type_raises(self):
+        with pytest.raises(ValidationError):
+            run_config_adapter.validate_python({"type": "unknown_type"})
+
+
+class TestBackwardCompatibility:
+    def test_legacy_json_via_type_adapter(self):
+        config = run_config_adapter.validate_python(LEGACY_KILN_AGENT_JSON)
+        assert isinstance(config, KilnAgentRunConfigProperties)
+        assert config.type == "kiln_agent"
+        assert config.model_name == "gpt-4"
+        assert config.model_provider_name == ModelProviderName.openai
+
+    def test_legacy_json_via_wrapper_model(self):
+        wrapper = RunConfigWrapper(run_config_properties=LEGACY_KILN_AGENT_JSON)
+        assert isinstance(wrapper.run_config_properties, KilnAgentRunConfigProperties)
+        assert wrapper.run_config_properties.model_name == "gpt-4"
+
+    def test_legacy_json_roundtrip(self):
+        config = run_config_adapter.validate_python(LEGACY_KILN_AGENT_JSON)
+        dumped = config.model_dump()
+        assert dumped["type"] == "kiln_agent"
+        reloaded = run_config_adapter.validate_python(dumped)
+        assert isinstance(reloaded, KilnAgentRunConfigProperties)
+        assert reloaded.model_name == config.model_name
+
+    def test_legacy_json_string_roundtrip(self):
+        config = run_config_adapter.validate_python(LEGACY_KILN_AGENT_JSON)
+        json_str = json.dumps(config.model_dump())
+        reloaded = run_config_adapter.validate_python(json.loads(json_str))
+        assert isinstance(reloaded, KilnAgentRunConfigProperties)
+        assert reloaded.model_name == "gpt-4"
+        assert reloaded.type == "kiln_agent"
+
+
+class TestTaskRunConfigDecode:
+    def test_mcp_task_run_config_from_dict(self):
+        from kiln_ai.datamodel.task import Task, TaskRunConfig
+
+        task = Task(name="Test Task", instruction="Test instruction")
+        config = TaskRunConfig(
+            name="MCP Config",
+            run_config_properties=McpRunConfigProperties(
+                type="mcp",
+                tool_reference=MCPToolReference(
+                    tool_id="mcp::local::server_id::tool_name"
+                ),
             ),
-            model_name="mcp_tool",
-            model_provider_name=ModelProviderName.mcp_provider,
-            prompt_id="short_prompt_builder",
-            structured_output_mode=StructuredOutputMode.default,
-            top_p=1.0,
-            temperature=1.0,
+            parent=task,
+        )
+        assert isinstance(config.run_config_properties, McpRunConfigProperties)
+        assert config.run_config_properties.type == "mcp"
+        assert (
+            config.run_config_properties.tool_reference.tool_id
+            == "mcp::local::server_id::tool_name"
+        )
+
+    def test_mcp_task_run_config_loading_from_file(self):
+        from kiln_ai.datamodel.task import TaskRunConfig
+
+        raw_data = {
+            "v": 1,
+            "name": "MCP Config",
+            "run_config_properties": {
+                "type": "mcp",
+                "tool_reference": {
+                    "tool_id": "mcp::local::server_id::tool_name",
+                },
+            },
+        }
+        config = TaskRunConfig.model_validate(
+            raw_data, context={"loading_from_file": True}
+        )
+        assert isinstance(config.run_config_properties, McpRunConfigProperties)
+        assert config.run_config_properties.type == "mcp"
+        assert (
+            config.run_config_properties.tool_reference.tool_id
+            == "mcp::local::server_id::tool_name"
+        )
+        dumped = config.run_config_properties.model_dump()
+        assert "structured_output_mode" not in dumped
+
+    def test_legacy_kiln_agent_task_run_config_loading_from_file(self):
+        from kiln_ai.datamodel.task import TaskRunConfig
+
+        raw_data = {
+            "v": 1,
+            "name": "Legacy Config",
+            "run_config_properties": {
+                "model_name": "gpt-4",
+                "model_provider_name": "openai",
+                "prompt_id": "simple_prompt_builder",
+            },
+        }
+        config = TaskRunConfig.model_validate(
+            raw_data, context={"loading_from_file": True}
+        )
+        assert isinstance(config.run_config_properties, KilnAgentRunConfigProperties)
+        assert config.run_config_properties.type == "kiln_agent"
+        assert (
+            config.run_config_properties.structured_output_mode
+            == StructuredOutputMode.unknown
         )
 
 
-def test_run_config_mcp_enforces_structured_output_mode() -> None:
-    with pytest.raises(
-        ValueError,
-        match="structured_output_mode must be default when kind is mcp",
-    ):
-        RunConfigProperties(
-            kind=RunConfigKind.mcp,
-            mcp_tool=MCPToolReference(
-                tool_id="mcp::local::server_id::tool_name",
-            ),
-            model_name="mcp_tool",
-            model_provider_name=ModelProviderName.mcp_provider,
-            prompt_id="simple_prompt_builder",
-            structured_output_mode=StructuredOutputMode.json_mode,
-            top_p=1.0,
-            temperature=1.0,
+class TestSaveLoadBothTypes:
+    def test_kiln_agent_roundtrip(self):
+        original = KilnAgentRunConfigProperties(
+            model_name="claude-3.5-sonnet",
+            model_provider_name=ModelProviderName.anthropic,
+            prompt_id=PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT,
+            structured_output_mode=StructuredOutputMode.json_instructions,
+            top_p=0.9,
+            temperature=0.7,
         )
+        dumped = json.loads(json.dumps(original.model_dump()))
+        restored = run_config_adapter.validate_python(dumped)
+        assert isinstance(restored, KilnAgentRunConfigProperties)
+        assert restored.type == "kiln_agent"
+        assert restored.model_name == "claude-3.5-sonnet"
+        assert restored.top_p == 0.9
+        assert restored.temperature == 0.7
 
-
-def test_run_config_mcp_enforces_sampling_defaults() -> None:
-    with pytest.raises(ValueError, match=r"top_p must be 1\.0 when kind is mcp"):
-        RunConfigProperties(
-            kind=RunConfigKind.mcp,
-            mcp_tool=MCPToolReference(
-                tool_id="mcp::local::server_id::tool_name",
-            ),
-            model_name="mcp_tool",
-            model_provider_name=ModelProviderName.mcp_provider,
-            prompt_id="simple_prompt_builder",
-            structured_output_mode=StructuredOutputMode.default,
-            top_p=0.5,
-            temperature=1.0,
+    def test_mcp_roundtrip(self):
+        original = McpRunConfigProperties(
+            type="mcp",
+            tool_reference=MCPToolReference(tool_id="mcp::local::server_id::tool_name"),
         )
+        dumped = json.loads(json.dumps(original.model_dump()))
+        restored = run_config_adapter.validate_python(dumped)
+        assert isinstance(restored, McpRunConfigProperties)
+        assert restored.type == "mcp"
+        assert restored.tool_reference.tool_id == "mcp::local::server_id::tool_name"
 
-    with pytest.raises(ValueError, match=r"temperature must be 1\.0 when kind is mcp"):
-        RunConfigProperties(
-            kind=RunConfigKind.mcp,
-            mcp_tool=MCPToolReference(
-                tool_id="mcp::local::server_id::tool_name",
-            ),
-            model_name="mcp_tool",
-            model_provider_name=ModelProviderName.mcp_provider,
-            prompt_id="simple_prompt_builder",
-            structured_output_mode=StructuredOutputMode.default,
-            top_p=1.0,
-            temperature=0.5,
+    def test_wrapper_kiln_agent_roundtrip(self):
+        wrapper = RunConfigWrapper(
+            run_config_properties=KilnAgentRunConfigProperties(
+                model_name="gpt-4",
+                model_provider_name=ModelProviderName.openai,
+                prompt_id=PromptGenerators.SIMPLE,
+                structured_output_mode=StructuredOutputMode.json_schema,
+            )
         )
+        dumped = json.loads(wrapper.model_dump_json())
+        restored = RunConfigWrapper.model_validate(dumped)
+        assert isinstance(restored.run_config_properties, KilnAgentRunConfigProperties)
 
-
-def test_run_config_mcp_forbids_tools_config() -> None:
-    with pytest.raises(
-        ValueError, match="tools_config must not be set when kind is mcp"
-    ):
-        RunConfigProperties(
-            kind=RunConfigKind.mcp,
-            mcp_tool=MCPToolReference(
-                tool_id="mcp::local::server_id::tool_name",
-            ),
-            model_name="mcp_tool",
-            model_provider_name=ModelProviderName.mcp_provider,
-            prompt_id="simple_prompt_builder",
-            structured_output_mode=StructuredOutputMode.default,
-            top_p=1.0,
-            temperature=1.0,
-            tools_config={"tools": ["kiln_tool::add_numbers"]},
+    def test_wrapper_mcp_roundtrip(self):
+        wrapper = RunConfigWrapper(
+            run_config_properties=McpRunConfigProperties(
+                type="mcp",
+                tool_reference=MCPToolReference(
+                    tool_id="mcp::local::server_id::tool_name"
+                ),
+            )
         )
-
-
-def test_run_config_mcp_success() -> None:
-    run_config = RunConfigProperties(
-        kind=RunConfigKind.mcp,
-        mcp_tool=MCPToolReference(
-            tool_id="mcp::local::server_id::tool_name",
-        ),
-    )
-    assert run_config.kind == RunConfigKind.mcp
-
-
-def test_run_config_mcp_defaults_applied() -> None:
-    run_config = RunConfigProperties(
-        kind=RunConfigKind.mcp,
-        mcp_tool=MCPToolReference(
-            tool_id="mcp::local::server_id::tool_name",
-        ),
-    )
-
-    assert run_config.model_name == "mcp_tool"
-    assert run_config.model_provider_name == ModelProviderName.mcp_provider
-    assert run_config.prompt_id == "simple_prompt_builder"
-    assert run_config.structured_output_mode == StructuredOutputMode.default
-    assert run_config.top_p == 1.0
-    assert run_config.temperature == 1.0
-
-
-def test_run_config_llm_enforces_numeric_bounds() -> None:
-    config = _valid_llm_run_config()
-    config.top_p = 2.0
-    with pytest.raises(ValueError, match="top_p must be between 0 and 1"):
-        RunConfigProperties.model_validate(config.model_dump())
-
-    config = _valid_llm_run_config()
-    config.temperature = 3.0
-    with pytest.raises(ValueError, match="temperature must be between 0 and 2"):
-        RunConfigProperties.model_validate(config.model_dump())
+        dumped = json.loads(wrapper.model_dump_json())
+        restored = RunConfigWrapper.model_validate(dumped)
+        assert isinstance(restored.run_config_properties, McpRunConfigProperties)
