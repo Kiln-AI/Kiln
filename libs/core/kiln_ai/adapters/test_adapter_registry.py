@@ -862,7 +862,7 @@ def test_user_model_builtin_provider_adapter_creation(basic_task):
 
             adapter = adapter_for_task(
                 kiln_task=basic_task,
-                run_config_properties=RunConfigProperties(
+                run_config_properties=KilnAgentRunConfigProperties(
                     model_name="user_model::test-um-builtin",
                     model_provider_name=ModelProviderName.openai,
                     prompt_id="simple_prompt_builder",
@@ -911,7 +911,7 @@ def test_user_model_custom_provider_adapter_creation(basic_task):
 
             adapter = adapter_for_task(
                 kiln_task=basic_task,
-                run_config_properties=RunConfigProperties(
+                run_config_properties=KilnAgentRunConfigProperties(
                     model_name="user_model::test-um-custom",
                     model_provider_name=ModelProviderName.openai_compatible,
                     prompt_id="simple_prompt_builder",

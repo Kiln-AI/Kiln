@@ -19,8 +19,8 @@
     prompts_by_task_composite_id,
   } from "$lib/stores/prompts_store"
   import {
-    getRunConfigPromptDisplayName,
     getRunConfigDisplayName,
+    getRunConfigPromptDisplayName,
   } from "$lib/utils/run_config_formatters"
   import { isMcpRunConfig } from "$lib/types"
   import { onMount } from "svelte"
@@ -188,7 +188,7 @@
           : null
         const description = mcp_props
           ? `MCP Tool: ${mcp_props.tool_reference?.tool_name ?? "Unknown"}`
-          : `Model: ${getDetailedModelName(default_config, model_info)}
+          : `Model: ${getRunConfigDisplayName(default_config, model_info)}
             Prompt: ${getRunConfigPromptDisplayName(default_config, current_task_prompts)}`
         saved_configuration_options.push({
           value: default_run_config_id,
@@ -216,7 +216,7 @@
             : null
           const description = mcp_props
             ? `MCP Tool: ${mcp_props.tool_reference?.tool_name ?? "Unknown"}`
-            : `Model: ${getDetailedModelName(config, model_info)}
+            : `Model: ${getRunConfigDisplayName(config, model_info)}
             Prompt: ${getRunConfigPromptDisplayName(config, current_task_prompts)}`
           return {
             value: config.id ?? "",
