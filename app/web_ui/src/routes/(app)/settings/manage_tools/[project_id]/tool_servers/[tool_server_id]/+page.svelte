@@ -92,29 +92,6 @@
     )
   }
 
-  function handleRunWithToolAccess() {
-    if (!selected_tool_name) {
-      return
-    }
-    const tool_id = build_tool_id(selected_tool_name)
-    set_tool_store()
-    tool_action_dialog.close()
-    goto(`/run?tool_id=${encodeURIComponent(tool_id)}`)
-  }
-
-  function handleDirectMcp() {
-    if (!selected_tool_name) {
-      return
-    }
-    set_tool_store()
-    tool_action_dialog.close()
-    goto(
-      `/settings/manage_tools/${project_id}/add_tool_to_task?tool_id=${encodeURIComponent(
-        build_tool_id(selected_tool_name),
-      )}`,
-    )
-  }
-
   function set_tool_store(tool_name?: string) {
     const name = tool_name ?? selected_tool_name
     if (!name) {
@@ -132,6 +109,15 @@
     const type_prefix = tool_server?.type === "remote_mcp" ? "remote" : "local"
     return `mcp::${type_prefix}::${tool_server_id}::${tool_name}`
   }
+
+  $: run_with_tool_href = selected_tool_name
+    ? `/run?tool_id=${encodeURIComponent(build_tool_id(selected_tool_name))}`
+    : null
+  $: direct_mcp_href = selected_tool_name
+    ? `/settings/manage_tools/${project_id}/add_tool_to_task?tool_id=${encodeURIComponent(
+        build_tool_id(selected_tool_name),
+      )}`
+    : null
 
   function getDetailsProperties(tool: ExternalToolServerApiDescription) {
     const properties = [
@@ -408,7 +394,7 @@
     title={"Tool Server"}
     subtitle={`Name: ${tool_server?.name || ""}`}
     sub_subtitle="Read the Docs"
-    sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp#mcp-run-configs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp/running-tools-as-tasks"
     breadcrumbs={[
       {
         label: "Settings",
@@ -434,19 +420,15 @@
       bind:this={tool_action_dialog}
       title="Run Task with Tool"
       sub_subtitle="Read the Docs"
-      sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp#mcp-run-configs"
+      sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp/running-tools-as-tasks"
     >
       <div class="flex flex-col gap-4">
-        <div
+        <a
           class="card border transition-all duration-200 hover:shadow-md hover:border-primary cursor-pointer {selected_tool_name
             ? ''
             : 'opacity-60 pointer-events-none'}"
-          on:click={handleRunWithToolAccess}
-          on:keydown={(e) => {
-            if (e.key === "Enter" || e.key === " ") handleRunWithToolAccess()
-          }}
-          tabindex={selected_tool_name ? 0 : undefined}
-          role="button"
+          href={run_with_tool_href || undefined}
+          on:click={() => set_tool_store()}
         >
           <div class="card-body p-4">
             <div class="text-lg font-semibold">
@@ -456,17 +438,13 @@
               Run the current task, giving the agent access to this tool.
             </div>
           </div>
-        </div>
-        <div
+        </a>
+        <a
           class="card border transition-all duration-200 hover:shadow-md hover:border-primary cursor-pointer {selected_tool_name
             ? ''
             : 'opacity-60 pointer-events-none'}"
-          on:click={handleDirectMcp}
-          on:keydown={(e) => {
-            if (e.key === "Enter" || e.key === " ") handleDirectMcp()
-          }}
-          tabindex={selected_tool_name ? 0 : undefined}
-          role="button"
+          href={direct_mcp_href || undefined}
+          on:click={() => set_tool_store()}
         >
           <div class="card-body p-4">
             <div class="text-lg font-semibold">
@@ -477,7 +455,7 @@
               Useful for evaluating external APIs or agents.
             </div>
           </div>
-        </div>
+        </a>
       </div>
     </Dialog>
     {#if archive_error}
