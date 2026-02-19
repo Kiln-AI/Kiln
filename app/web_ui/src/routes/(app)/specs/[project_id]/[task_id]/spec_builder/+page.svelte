@@ -12,8 +12,8 @@
     SubmitAnswersRequest,
     QuestionWithAnswer,
     SpecProperties,
-    SyntheticDataGenerationStepConfigApi,
-    SyntheticDataGenerationSessionConfigApi,
+    SyntheticDataGenerationStepConfigInput,
+    SyntheticDataGenerationSessionConfigInput,
     ReviewedExample,
   } from "$lib/types"
   import { goto } from "$app/navigation"
@@ -125,8 +125,9 @@
   let review_rows: ReviewRow[] = []
   let reviewed_examples: ReviewedExample[] = []
 
-  let judge_info: SyntheticDataGenerationStepConfigApi | null = null
-  let sdg_session_config: SyntheticDataGenerationSessionConfigApi | null = null
+  let judge_info: SyntheticDataGenerationStepConfigInput | null = null
+  let sdg_session_config: SyntheticDataGenerationSessionConfigInput | null =
+    null
 
   // Refine state
   let refined_property_values: Record<string, string | null> = {}
