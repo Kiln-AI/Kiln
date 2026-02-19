@@ -338,15 +338,22 @@ class BaseAdapter(metaclass=ABCMeta):
                 properties={"created_by": Config.shared().user_id},
             )
 
+        # Synthetic since an adapter, not a human, is creating this
+        # Special case for MCP run configs which calls a mcp tool
+        output_source_type = (
+            DataSourceType.tool_call
+            if self.run_config.type == "mcp"
+            else DataSourceType.synthetic
+        )
+
         new_task_run = TaskRun(
             parent=self.task,
             input=input_str,
             input_source=input_source,
             output=TaskOutput(
                 output=output_str,
-                # Synthetic since an adapter, not a human, is creating this
                 source=DataSource(
-                    type=DataSourceType.synthetic,
+                    type=output_source_type,
                     properties=self._properties_for_task_output(),
                     run_config=self.run_config,
                 ),
@@ -360,21 +367,16 @@ class BaseAdapter(metaclass=ABCMeta):
         return new_task_run
 
     def _properties_for_task_output(self) -> Dict[str, str | int | float]:
-        props = {}
-
-        props["adapter_name"] = self.adapter_name()
-
         match self.run_config.type:
             case "mcp":
-                run_config = self.run_config
-                props["model_name"] = "mcp_tool"
-                props["model_provider"] = "mcp_provider"
-                return props
+                return {}
             case "kiln_agent":
                 if not isinstance(self.run_config, KilnAgentRunConfigProperties):
                     raise ValueError("Kiln agent run config is required")
                 run_config = self.run_config
 
+                props: Dict[str, str | int | float] = {}
+                props["adapter_name"] = self.adapter_name()
                 # Legacy properties where we save the run_config details into custom properties.
                 # These are now also be saved in the run_config field.
                 props["model_name"] = run_config.model_name

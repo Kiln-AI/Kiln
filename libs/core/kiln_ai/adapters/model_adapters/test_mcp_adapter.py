@@ -6,7 +6,7 @@ import pytest
 from mcp.types import CallToolResult, TextContent
 
 from kiln_ai.adapters.model_adapters.mcp_adapter import MCPAdapter
-from kiln_ai.datamodel import Task
+from kiln_ai.datamodel import DataSourceType, Task
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import McpRunConfigProperties, MCPToolReference
@@ -154,6 +154,7 @@ async def test_mcp_adapter_string_in_string_out(
 
     assert run_output.output == "ok"
     assert run.output.output == "ok"
+    assert run.output.source.type == DataSourceType.tool_call
     mock_session.call_tool.assert_called_once_with(
         name="test_file_python",
         arguments={"input": "input"},
