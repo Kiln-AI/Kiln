@@ -6,7 +6,7 @@
     PromptResponse,
   } from "$lib/types"
   import {
-    getDetailedModelName,
+    getRunConfigDisplayName,
     getRunConfigPromptDisplayName,
   } from "$lib/utils/run_config_formatters"
   import ChartNoData from "$lib/components/chart_no_data.svelte"
@@ -97,8 +97,10 @@
   }
 
   // Get simple display name for the series (used as the internal name/key)
-  function getRunConfigDisplayName(config: TaskRunConfig): string {
-    return config.name || getDetailedModelName(config, model_info) || "Unknown"
+  function getSeriesDisplayName(config: TaskRunConfig): string {
+    return (
+      config.name || getRunConfigDisplayName(config, model_info) || "Unknown"
+    )
   }
 
   // Build a map from display name to full legend text (name, model, prompt)
@@ -108,8 +110,8 @@
       const config = run_configs.find((c) => c.id === configId)
       if (!config) continue
 
-      const displayName = getRunConfigDisplayName(config)
-      const modelName = getDetailedModelName(config, model_info) || "Unknown"
+      const displayName = getSeriesDisplayName(config)
+      const modelName = getRunConfigDisplayName(config, model_info) || "Unknown"
       const promptName = getRunConfigPromptDisplayName(config, prompts)
 
       // Multi-line legend: display name on first line, model and prompt on 2nd/3rd
@@ -121,9 +123,9 @@
 
   // Build full tooltip HTML for a run config (reused by chart tooltip and legend tooltip)
   function buildRunConfigTooltip(name: string, allCosts: number[]): string {
-    const config = run_configs.find((c) => getRunConfigDisplayName(c) === name)
+    const config = run_configs.find((c) => getSeriesDisplayName(c) === name)
     const modelName = config
-      ? getDetailedModelName(config, model_info) || "Unknown"
+      ? getRunConfigDisplayName(config, model_info) || "Unknown"
       : "Unknown"
     const promptName = config
       ? getRunConfigPromptDisplayName(config, prompts)
@@ -215,7 +217,7 @@
 
       // Only include if at least one value is available
       if (hasAnyValue) {
-        const name = getRunConfigDisplayName(config)
+        const name = getSeriesDisplayName(config)
         legend.push(name)
         series.push({ value: values, name })
       }

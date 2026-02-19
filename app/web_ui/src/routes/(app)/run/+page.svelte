@@ -12,6 +12,8 @@
   import { tick } from "svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
+  import { is_mcp_run_config_properties } from "$lib/utils/run_config_kind"
+  import { page } from "$app/stores"
 
   let run_error: KilnError | null = null
   let submitting = false
@@ -35,6 +37,8 @@
   $: project_id = $current_project?.id ?? ""
   $: task_id = $current_task?.id ?? ""
   $: input_schema = $current_task?.input_json_schema
+  $: pending_tool_id = $page.url.searchParams.get("tool_id")
+  $: pending_run_config_id = $page.url.searchParams.get("run_config_id")
 
   $: subtitle = $current_task ? "Task: " + $current_task.name : ""
 
@@ -51,7 +55,11 @@
       }
       run_config_component.clear_run_options_errors()
       run_config_component.clear_model_dropdown_error()
-      if (!run_config_component.get_selected_model()) {
+      const run_config_properties =
+        run_config_component.run_options_as_run_config_properties()
+      const is_mcp_run = is_mcp_run_config_properties(run_config_properties)
+      // mcp run configs don't need a model
+      if (!is_mcp_run && !run_config_component.get_selected_model()) {
         run_config_component.set_model_dropdown_error("Required")
         throw new Error("You must select a model before running")
       }
@@ -66,8 +74,7 @@
           },
         },
         body: {
-          run_config_properties:
-            run_config_component.run_options_as_run_config_properties(),
+          run_config_properties: run_config_properties,
           plaintext_input: input_form.get_plaintext_input_data(),
           // @ts-expect-error - let the server verify the type. TS isn't ideal for runtime type checking.
           structured_input: input_form.get_structured_input_data(),
@@ -211,6 +218,8 @@
             bind:save_config_error
             bind:set_default_error
             bind:selected_model_specific_run_config_id
+            {pending_tool_id}
+            {pending_run_config_id}
           />
         </div>
       {/if}

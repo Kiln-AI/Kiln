@@ -4,20 +4,27 @@ import type {
   ProviderModels,
   ToolSetApiDescription,
 } from "$lib/types"
+import { is_mcp_run_config } from "$lib/utils/run_config_kind"
 import {
   model_name,
   prompt_name_from_id,
   provider_name_from_id,
 } from "$lib/stores"
-import { get_tools_property_info } from "$lib/stores/tools_store"
-import { prompt_link } from "$lib/utils/link_builder"
+import {
+  get_tools_property_info,
+  get_tool_server_name,
+} from "$lib/stores/tools_store"
+import { prompt_link, tool_link } from "$lib/utils/link_builder"
 import type { UiProperty } from "$lib/ui/property_list"
 import { formatDate } from "./formatters"
 
-export function getDetailedModelName(
+export function getRunConfigDisplayName(
   config: TaskRunConfig,
   model_info: ProviderModels | null,
 ): string {
+  if (is_mcp_run_config(config)) {
+    return config.run_config_properties.mcp_tool?.tool_name ?? "MCP Tool"
+  }
   return getDetailedModelNameFromParts(
     config.run_config_properties.model_name,
     config.run_config_properties.model_provider_name,
@@ -99,6 +106,53 @@ export function getRunConfigUiProperties(
   task_prompts: PromptResponse | null,
   available_tools: Record<string, ToolSetApiDescription[]> | null,
 ): UiProperty[] {
+  if (is_mcp_run_config(run_config)) {
+    const tool_id = run_config.run_config_properties.mcp_tool?.tool_id ?? null
+    const tool_name =
+      run_config.run_config_properties.mcp_tool?.tool_name ?? "Unknown"
+    const tool_server_link = tool_id ? tool_link(project_id, tool_id) : null
+    const tool_server_name = available_tools
+      ? get_tool_server_name(available_tools, project_id, tool_id)
+      : null
+
+    return [
+      {
+        name: "ID",
+        value: run_config.id || "N/A",
+      },
+      {
+        name: "Name",
+        value: run_config.name || "N/A",
+      },
+      {
+        name: "Created At",
+        value: formatDate(run_config.created_at),
+      },
+      {
+        name: "Type",
+        value: "MCP Tool (No Agent)",
+      },
+      {
+        name: "MCP Tool",
+        value: tool_name,
+        link: tool_server_link || undefined,
+        tooltip: `This run configuration will invoke the MCP tool "${tool_name}" directly, without any wrapper agent.`,
+      },
+      ...(tool_server_name
+        ? [
+            {
+              name: "Tool Server",
+              value: tool_server_name,
+            },
+          ]
+        : []),
+      {
+        name: "Tool ID",
+        value: tool_id ?? "Unknown",
+      },
+    ]
+  }
+
   const model_value = model_info
     ? `${model_name(run_config.run_config_properties.model_name, model_info)} (${provider_name_from_id(run_config.run_config_properties.model_provider_name)})`
     : "Loading..."

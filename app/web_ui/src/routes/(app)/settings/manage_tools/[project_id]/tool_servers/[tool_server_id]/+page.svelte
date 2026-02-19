@@ -15,12 +15,17 @@
   import type { UiProperty } from "$lib/ui/property_list"
   import { load_available_tools } from "$lib/stores"
   import Warning from "$lib/ui/warning.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
+  import { selected_tool_for_task } from "$lib/stores/tools_store"
+  import TableButton from "../../../../../generate/[project_id]/[task_id]/table_button.svelte"
 
   $: project_id = $page.params.project_id!
   $: tool_server_id = $page.params.tool_server_id!
   $: is_archived = tool_server?.properties?.is_archived ?? false
 
   let tool_server: ExternalToolServerApiDescription | null = null
+  let tool_action_dialog: Dialog
+  let selected_tool_name = ""
   let loading = true
   let loading_error: KilnError | null = null
   let archive_error: KilnError | null = null
@@ -71,6 +76,48 @@
   function goBack() {
     goto(`/settings/manage_tools/${project_id}`)
   }
+
+  function open_tool_action_dialog(tool_name: string) {
+    selected_tool_name = tool_name
+    tool_action_dialog.show()
+  }
+
+  function handleCreateTask(tool_name: string) {
+    selected_tool_name = tool_name
+    set_tool_store(tool_name)
+    goto(
+      `/settings/manage_tools/${project_id}/create_task_from_tool?tool_id=${encodeURIComponent(
+        build_tool_id(tool_name),
+      )}`,
+    )
+  }
+
+  function set_tool_store(tool_name?: string) {
+    const name = tool_name ?? selected_tool_name
+    if (!name) {
+      return
+    }
+    const tool = tool_server?.available_tools?.find(
+      (available_tool) => available_tool.name === name,
+    )
+    if (tool) {
+      selected_tool_for_task.set(tool)
+    }
+  }
+
+  function build_tool_id(tool_name: string): string {
+    const type_prefix = tool_server?.type === "remote_mcp" ? "remote" : "local"
+    return `mcp::${type_prefix}::${tool_server_id}::${tool_name}`
+  }
+
+  $: run_with_tool_href = selected_tool_name
+    ? `/run?tool_id=${encodeURIComponent(build_tool_id(selected_tool_name))}`
+    : null
+  $: direct_mcp_href = selected_tool_name
+    ? `/settings/manage_tools/${project_id}/add_tool_to_task?tool_id=${encodeURIComponent(
+        build_tool_id(selected_tool_name),
+      )}`
+    : null
 
   function getDetailsProperties(tool: ExternalToolServerApiDescription) {
     const properties = [
@@ -346,6 +393,8 @@
   <AppPage
     title={"Tool Server"}
     subtitle={`Name: ${tool_server?.name || ""}`}
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp/running-tools-as-tasks"
     breadcrumbs={[
       {
         label: "Settings",
@@ -367,6 +416,48 @@
       },
     ]}
   >
+    <Dialog
+      bind:this={tool_action_dialog}
+      title="Run Task with Tool"
+      sub_subtitle="Read the Docs"
+      sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp/running-tools-as-tasks"
+    >
+      <div class="flex flex-col gap-4">
+        <a
+          class="card border transition-all duration-200 hover:shadow-md hover:border-primary cursor-pointer {selected_tool_name
+            ? ''
+            : 'opacity-60 pointer-events-none'}"
+          href={run_with_tool_href || undefined}
+          on:click={() => set_tool_store()}
+        >
+          <div class="card-body p-4">
+            <div class="text-lg font-semibold">
+              Run Current Task with Tool Access
+            </div>
+            <div class="text-sm text-gray-500">
+              Run the current task, giving the agent access to this tool.
+            </div>
+          </div>
+        </a>
+        <a
+          class="card border transition-all duration-200 hover:shadow-md hover:border-primary cursor-pointer {selected_tool_name
+            ? ''
+            : 'opacity-60 pointer-events-none'}"
+          href={direct_mcp_href || undefined}
+          on:click={() => set_tool_store()}
+        >
+          <div class="card-body p-4">
+            <div class="text-lg font-semibold">
+              Task Runs Tool Directly (No Agent)
+            </div>
+            <div class="text-sm text-gray-500">
+              The task will call the tool directly, without a wrapping agent.
+              Useful for evaluating external APIs or agents.
+            </div>
+          </div>
+        </a>
+      </div>
+    </Dialog>
     {#if archive_error}
       <Warning
         warning_message={archive_error.getMessage() ||
@@ -465,6 +556,9 @@
                   <th>Name</th>
                   <th>Description</th>
                   <th>Arguments</th>
+                  {#if tool_server?.type === "remote_mcp" || tool_server?.type === "local_mcp"}
+                    <th></th>
+                  {/if}
                 </tr>
               </thead>
               <tbody>
@@ -503,6 +597,34 @@
                         <span class="text-gray-500">None</span>
                       {/if}
                     </td>
+                    {#if tool_server?.type === "remote_mcp" || tool_server?.type === "local_mcp"}
+                      <td class="p-0">
+                        <div class="dropdown dropdown-end dropdown-hover">
+                          <TableButton />
+                          <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+                          <ul
+                            tabindex="0"
+                            class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow"
+                          >
+                            <li>
+                              <button
+                                on:click={() =>
+                                  open_tool_action_dialog(tool.name)}
+                              >
+                                Run task with tool
+                              </button>
+                            </li>
+                            <li>
+                              <button
+                                on:click={() => handleCreateTask(tool.name)}
+                              >
+                                Create task from tool
+                              </button>
+                            </li>
+                          </ul>
+                        </div>
+                      </td>
+                    {/if}
                   </tr>
                 {/each}
               </tbody>
@@ -510,7 +632,7 @@
           </div>
         {:else}
           <div class="text-lg mb-4 text-gray-500">
-            This server does not expose any tools
+            This server has no tools.
           </div>
         {/if}
       </div>

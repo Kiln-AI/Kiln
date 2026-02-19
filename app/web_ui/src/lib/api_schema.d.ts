@@ -1816,23 +1816,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/mcp_run_config": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create Mcp Run Config */
-        post: operations["create_mcp_run_config_api_projects__project_id__tasks__task_id__mcp_run_config_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/create_eval_config": {
         parameters: {
             query?: never;
@@ -1980,6 +1963,57 @@ export interface paths {
         get: operations["get_run_config_eval_scores_api_projects__project_id__tasks__task_id__run_config__run_config_id__eval_scores_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks_compatible_with_tool": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tasks Compatible With Tool */
+        get: operations["tasks_compatible_with_tool_api_projects__project_id__tasks_compatible_with_tool_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/mcp_run_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Mcp Run Config */
+        post: operations["create_mcp_run_config_api_projects__project_id__tasks__task_id__mcp_run_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/create_task_from_tool": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Task From Tool */
+        post: operations["create_task_from_tool_api_projects__project_id__create_task_from_tool_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3168,6 +3202,15 @@ export interface components {
             task_prompt_with_example: string;
             task_sample?: components["schemas"]["TaskSample"] | null;
         };
+        /** CreateTaskFromToolRequest */
+        CreateTaskFromToolRequest: {
+            /** Tool Id */
+            tool_id: string;
+            /** Task Name */
+            task_name: string;
+            /** Instruction */
+            instruction: string;
+        };
         /** CreateTaskRunConfigRequest */
         CreateTaskRunConfigRequest: {
             /** Name */
@@ -4026,6 +4069,10 @@ export interface components {
             inputSchema?: {
                 [key: string]: unknown;
             };
+            /** Outputschema */
+            outputSchema?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * ExternalToolServer
@@ -6702,6 +6749,17 @@ export interface components {
              * @description The expected output for the task.
              */
             output: string;
+        };
+        /** TaskToolCompatibility */
+        TaskToolCompatibility: {
+            /** Task Id */
+            task_id: string;
+            /** Task Name */
+            task_name: string;
+            /** Compatible */
+            compatible: boolean;
+            /** Incompatibility Reason */
+            incompatibility_reason?: string | null;
         };
         /** ToneProperties */
         ToneProperties: {
@@ -10944,42 +11002,6 @@ export interface operations {
             };
         };
     };
-    create_mcp_run_config_api_projects__project_id__tasks__task_id__mcp_run_config_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateMcpRunConfigRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskRunConfig"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     create_eval_config_api_projects__project_id__tasks__task_id__eval__eval_id__create_eval_config_post: {
         parameters: {
             query?: never;
@@ -11276,6 +11298,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunConfigEvalScoresSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tasks_compatible_with_tool_api_projects__project_id__tasks_compatible_with_tool_get: {
+        parameters: {
+            query: {
+                tool_id: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskToolCompatibility"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_mcp_run_config_api_projects__project_id__tasks__task_id__mcp_run_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateMcpRunConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRunConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_task_from_tool_api_projects__project_id__create_task_from_tool_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTaskFromToolRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Task"];
                 };
             };
             /** @description Validation Error */

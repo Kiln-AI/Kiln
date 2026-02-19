@@ -95,6 +95,8 @@ export type KilnTaskToolDescription =
 export type ExternalToolServer = components["schemas"]["ExternalToolServer"]
 export type ExternalToolServerApiDescription =
   components["schemas"]["ExternalToolServerApiDescription"]
+export type ExternalToolApiDescription =
+  components["schemas"]["ExternalToolApiDescription"]
 export type ToolServerType = components["schemas"]["ToolServerType"]
 export type ToolSetType = components["schemas"]["ToolSetType"]
 export type ToolApiDescription = components["schemas"]["ToolApiDescription"]
@@ -106,6 +108,8 @@ export type RemoteServerProperties =
   components["schemas"]["RemoteServerProperties"]
 export type KilnTaskServerProperties =
   components["schemas"]["KilnTaskServerProperties"]
+export type TaskToolCompatibility =
+  components["schemas"]["TaskToolCompatibility"]
 export type UserModelEntry = components["schemas"]["UserModelEntry"]
 export type AvailableProviderInfo =
   components["schemas"]["AvailableProviderInfo"]

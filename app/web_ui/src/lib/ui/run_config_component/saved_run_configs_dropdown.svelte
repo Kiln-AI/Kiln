@@ -20,8 +20,9 @@
   } from "$lib/stores/prompts_store"
   import {
     getRunConfigPromptDisplayName,
-    getDetailedModelName,
+    getRunConfigDisplayName,
   } from "$lib/utils/run_config_formatters"
+  import { is_mcp_run_config } from "$lib/utils/run_config_kind"
   import { onMount } from "svelte"
   import {
     load_task_run_configs,
@@ -182,10 +183,13 @@
       )
 
       if (default_config) {
+        const is_mcp = is_mcp_run_config(default_config)
         saved_configuration_options.push({
           value: default_run_config_id,
           label: `${default_config.name} (Default)`,
-          description: `Model: ${getDetailedModelName(default_config, model_info)}
+          description: is_mcp
+            ? `MCP Tool: ${default_config.run_config_properties.mcp_tool?.tool_name ?? "Unknown"}`
+            : `Model: ${getRunConfigDisplayName(default_config, model_info)}
             Prompt: ${getRunConfigPromptDisplayName(default_config, current_task_prompts)}`,
         })
       }
@@ -203,12 +207,17 @@
     )
     if (other_task_run_configs.length > 0) {
       saved_configuration_options.push(
-        ...other_task_run_configs.map((config) => ({
-          value: config.id ?? "",
-          label: config.name,
-          description: `Model: ${getDetailedModelName(config, model_info)}
+        ...other_task_run_configs.map((config) => {
+          const is_mcp = is_mcp_run_config(config)
+          return {
+            value: config.id ?? "",
+            label: config.name,
+            description: is_mcp
+              ? `MCP Tool: ${config.run_config_properties.mcp_tool?.tool_name ?? "Unknown"}`
+              : `Model: ${getRunConfigDisplayName(config, model_info)}
             Prompt: ${getRunConfigPromptDisplayName(config, current_task_prompts)}`,
-        })),
+          }
+        }),
       )
     }
 

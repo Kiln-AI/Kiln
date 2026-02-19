@@ -8,7 +8,7 @@
     PromptResponse,
   } from "$lib/types"
   import {
-    getDetailedModelName,
+    getRunConfigDisplayName,
     getRunConfigPromptDisplayName,
   } from "$lib/utils/run_config_formatters"
   import { provider_name_from_id } from "$lib/stores"
@@ -71,8 +71,10 @@
   }
 
   // Get simple display name for the series (used as the internal name/key)
-  function getRunConfigDisplayName(config: TaskRunConfig): string {
-    return config.name || getDetailedModelName(config, model_info) || "Unknown"
+  function getSeriesDisplayName(config: TaskRunConfig): string {
+    return (
+      config.name || getRunConfigDisplayName(config, model_info) || "Unknown"
+    )
   }
 
   // Build a map from display name to full legend text (name, model, prompt)
@@ -81,8 +83,8 @@
     for (const config of run_configs) {
       if (!config.id) continue
 
-      const displayName = getRunConfigDisplayName(config)
-      const modelName = getDetailedModelName(config, model_info) || "Unknown"
+      const displayName = getSeriesDisplayName(config)
+      const modelName = getRunConfigDisplayName(config, model_info) || "Unknown"
       const promptName = getRunConfigPromptDisplayName(config, prompts)
 
       // Multi-line legend: display name on first line, model and prompt on 2nd/3rd
@@ -143,7 +145,7 @@
 
       // Only include if both values are available
       if (xValue !== null && yValue !== null) {
-        const name = getRunConfigDisplayName(config)
+        const name = getSeriesDisplayName(config)
         legend.push(name)
 
         series.push({
@@ -185,7 +187,7 @@
             let tooltipHtml = `<strong>${params.seriesName}</strong>`
 
             if (config) {
-              const modelName = getDetailedModelName(config, model_info)
+              const modelName = getRunConfigDisplayName(config, model_info)
               const providerName = provider_name_from_id(
                 config.run_config_properties?.model_provider_name,
               )
