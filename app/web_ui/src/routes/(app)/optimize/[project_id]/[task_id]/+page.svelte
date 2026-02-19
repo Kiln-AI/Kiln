@@ -207,8 +207,7 @@
       await update_task_default_run_config(project_id, task_id, config.id)
       task = await load_task(project_id, task_id)
     } catch (e) {
-      // TODO: Show error in UI instead of log error
-      console.error("Failed to set default run config:", e)
+      alert(createKilnError(e).getMessage() || "An unknown error occurred")
     }
   }
 
