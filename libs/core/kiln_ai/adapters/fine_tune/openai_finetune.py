@@ -11,7 +11,6 @@ from kiln_ai.adapters.fine_tune.base_finetune import (
 )
 from kiln_ai.adapters.fine_tune.dataset_formatter import DatasetFormat, DatasetFormatter
 from kiln_ai.datamodel import DatasetSplit, StructuredOutputMode, Task
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.utils.config import Config
 
 
@@ -137,7 +136,7 @@ class OpenAIFinetune(BaseFinetuneAdapter):
         format = DatasetFormat.OPENAI_CHAT_JSONL
         if task.output_json_schema:
             format = DatasetFormat.OPENAI_CHAT_JSON_SCHEMA_JSONL
-            if isinstance(self.datamodel.run_config, KilnAgentRunConfigProperties):
+            if self.datamodel.run_config is not None:
                 self.datamodel.run_config.structured_output_mode = (
                     StructuredOutputMode.json_schema
                 )

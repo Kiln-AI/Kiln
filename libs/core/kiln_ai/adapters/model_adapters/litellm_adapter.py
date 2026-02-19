@@ -33,7 +33,10 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    as_kiln_agent_run_config,
+)
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
     ToolCallContext,
@@ -310,7 +313,7 @@ class LiteLlmAdapter(BaseAdapter):
         if not self.has_structured_output():
             return {}
 
-        run_config = self._kiln_agent_run_config()
+        run_config = as_kiln_agent_run_config(self.run_config)
         structured_output_mode: StructuredOutputMode = run_config.structured_output_mode
 
         match structured_output_mode:
@@ -348,7 +351,7 @@ class LiteLlmAdapter(BaseAdapter):
                 # See above, but this case should never happen.
                 raise ValueError("Structured output mode is unknown.")
             case _:
-                raise_exhaustive_enum_error(structured_output_mode)
+                raise_exhaustive_enum_error(structured_output_mode)  # type: ignore[arg-type]
 
     def json_schema_response_format(self) -> dict[str, Any]:
         output_schema = self.task.output_schema()
@@ -490,7 +493,7 @@ class LiteLlmAdapter(BaseAdapter):
         top_logprobs: int | None,
         skip_response_format: bool = False,
     ) -> dict[str, Any]:
-        run_config = self._kiln_agent_run_config()
+        run_config = as_kiln_agent_run_config(self.run_config)
         extra_body = self.build_extra_body(provider)
 
         # Merge all parameters into a single kwargs dict for litellm

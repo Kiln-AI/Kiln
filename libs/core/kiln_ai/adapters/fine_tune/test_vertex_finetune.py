@@ -32,6 +32,14 @@ def vertex_finetune(tmp_path):
             fine_tune_model_id="ft-123",
             path=tmp_file,
             data_strategy=ChatStrategy.single_turn,
+            run_config=KilnAgentRunConfigProperties(
+                model_name="gemini-2.0-pro",
+                model_provider_name=ModelProviderName.vertex,
+                prompt_id="simple_prompt_builder",
+                temperature=0.7,
+                top_p=0.9,
+                structured_output_mode=StructuredOutputMode.default,
+            ),
         ),
     )
     return finetune
@@ -273,6 +281,14 @@ async def test_generate_and_upload_jsonl(
             path=tmp_path / "test-finetune.kiln",
             data_strategy=data_strategy,
             thinking_instructions=thinking_instructions,
+            run_config=KilnAgentRunConfigProperties(
+                model_name="gemini-2.0-pro",
+                model_provider_name=ModelProviderName.vertex,
+                prompt_id="simple_prompt_builder",
+                temperature=0.7,
+                top_p=0.9,
+                structured_output_mode=StructuredOutputMode.default,
+            ),
         ),
     )
 

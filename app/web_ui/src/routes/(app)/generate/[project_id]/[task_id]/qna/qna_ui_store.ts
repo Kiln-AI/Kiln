@@ -702,6 +702,10 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     guidance: string,
     runConfigProperties: RunConfigProperties,
   ): Promise<QnAPair[]> {
+    if (!isKilnAgentRunConfig(runConfigProperties)) {
+      throw new Error("Q&A generation requires a kiln_agent run config")
+    }
+
     const { data, error: apiError } = await client.POST(
       "/api/projects/{project_id}/tasks/{task_id}/generate_qna",
       {
@@ -727,10 +731,6 @@ export function createQnaStore(projectId: string, taskId: string): QnaStore {
     const generated = Array.isArray(response.generated_qna_pairs)
       ? response.generated_qna_pairs
       : []
-
-    if (!isKilnAgentRunConfig(runConfigProperties)) {
-      throw new Error("Q&A generation requires a kiln_agent run config")
-    }
 
     const modelProvider = runConfigProperties.model_provider_name
     const modelName = runConfigProperties.model_name

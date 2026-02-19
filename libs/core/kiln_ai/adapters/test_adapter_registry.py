@@ -11,13 +11,18 @@ from kiln_ai.adapters.model_adapters.litellm_adapter import (
     LiteLlmAdapter,
     LiteLlmConfig,
 )
+from kiln_ai.adapters.model_adapters.mcp_adapter import MCPAdapter
 from kiln_ai.adapters.provider_tools import (
     Config,
     LiteLlmCoreConfig,
     lite_llm_core_config_for_provider,
 )
 from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    McpRunConfigProperties,
+    MCPToolReference,
+)
 
 
 @pytest.fixture
@@ -783,6 +788,17 @@ def test_docker_model_runner_adapter_creation(mock_config, basic_task):
     assert adapter.config.default_headers is None
 
 
+def test_mcp_adapter_creation(basic_task):
+    run_config = McpRunConfigProperties(
+        tool_reference=MCPToolReference(tool_id="mcp::local::server_id::tool_name")
+    )
+    adapter = adapter_for_task(
+        kiln_task=basic_task,
+        run_config_properties=run_config,
+    )
+    assert isinstance(adapter, MCPAdapter)
+
+
 def test_docker_model_runner_adapter_creation_with_custom_url(mock_config, basic_task):
     """Test Docker Model Runner adapter creation with custom base URL."""
     mock_config.shared.return_value.docker_model_runner_base_url = (
@@ -925,3 +941,17 @@ def test_user_model_custom_provider_adapter_creation(basic_task):
                 ModelProviderName.openai_compatible, "MyProvider"
             )
             assert adapter.config.base_url == "https://my-provider.com/v1"
+
+
+def test_adapter_for_task_rejects_kiln_agent_non_instance(basic_task):
+    class FakeRunConfig:
+        type = "kiln_agent"
+
+    with pytest.raises(
+        ValueError,
+        match="KilnAgentRunConfigProperties is required for LiteLlmAdapter",
+    ):
+        adapter_for_task(
+            kiln_task=basic_task,
+            run_config_properties=FakeRunConfig(),  # type: ignore[arg-type]
+        )

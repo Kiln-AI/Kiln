@@ -306,6 +306,12 @@
       )
       return
     }
+    if (!isKilnAgentRunConfig(run_config_properties)) {
+      nested_topics_error = new KilnError(
+        "Synthetic data generation requires a kiln_agent run config.",
+      )
+      return
+    }
 
     if (!guidance_data.gen_type) {
       nested_topics_error = new KilnError("No generation type selected.")

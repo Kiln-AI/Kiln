@@ -56,6 +56,14 @@ def openai_finetune(tmp_path):
             fine_tune_model_id="ft-123",
             path=tmp_file,
             data_strategy=ChatStrategy.single_turn,
+            run_config=KilnAgentRunConfigProperties(
+                model_name="gpt-4o",
+                model_provider_name=ModelProviderName.openai,
+                prompt_id="simple_prompt_builder",
+                temperature=0.7,
+                top_p=0.9,
+                structured_output_mode=StructuredOutputMode.default,
+            ),
         ),
     )
     return finetune

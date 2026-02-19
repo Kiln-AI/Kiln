@@ -46,7 +46,7 @@ class DataGenCategoriesApiInput(BaseModel):
         description="Optional list of existing topics to avoid",
         default=None,
     )
-    run_config_properties: RunConfigProperties = Field(
+    run_config_properties: KilnAgentRunConfigProperties = Field(
         description="The run config properties to use for topic generation"
     )
 
@@ -61,7 +61,7 @@ class DataGenSampleApiInput(BaseModel):
         description="Optional custom guidance for generation",
         default=None,
     )
-    run_config_properties: RunConfigProperties = Field(
+    run_config_properties: KilnAgentRunConfigProperties = Field(
         description="The run config properties to use for input generation"
     )
 
@@ -96,7 +96,7 @@ class DataGenQnaApiInput(BaseModel):
     num_samples: int = Field(
         description="Number of Q&A pairs to generate for this part", default=10
     )
-    run_config_properties: RunConfigProperties = Field(
+    run_config_properties: KilnAgentRunConfigProperties = Field(
         description="The run config properties to use for the output"
     )
     guidance: str | None = Field(
@@ -143,11 +143,6 @@ def connect_data_gen_api(app: FastAPI):
         )
 
         run_config_properties = input.run_config_properties.model_copy()
-        if not isinstance(run_config_properties, KilnAgentRunConfigProperties):
-            raise HTTPException(
-                status_code=400,
-                detail="Data generation requires a kiln_agent run config",
-            )
         # Override prompt id to simple just in case we change the default in the UI in the future.
         run_config_properties.prompt_id = PromptGenerators.SIMPLE
         adapter = adapter_for_task(
@@ -178,11 +173,6 @@ def connect_data_gen_api(app: FastAPI):
         )
 
         run_config_properties = input.run_config_properties.model_copy()
-        if not isinstance(run_config_properties, KilnAgentRunConfigProperties):
-            raise HTTPException(
-                status_code=400,
-                detail="Data generation requires a kiln_agent run config",
-            )
         # Override prompt id to simple just in case we change the default in the UI in the future.
         run_config_properties.prompt_id = PromptGenerators.SIMPLE
         adapter = adapter_for_task(

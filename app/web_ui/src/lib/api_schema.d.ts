@@ -3056,8 +3056,7 @@ export interface components {
             /** Custom Thinking Instructions */
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
-            /** Run Config Properties */
-            run_config_properties?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
+            run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
         };
         /** CreateMcpRunConfigRequest */
         CreateMcpRunConfigRequest: {
@@ -3310,11 +3309,8 @@ export interface components {
              * @description Optional list of existing topics to avoid
              */
             existing_topics?: string[] | null;
-            /**
-             * Run Config Properties
-             * @description The run config properties to use for topic generation
-             */
-            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
+            /** @description The run config properties to use for topic generation */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
         };
         /** DataGenQnaApiInput */
         DataGenQnaApiInput: {
@@ -3335,11 +3331,8 @@ export interface components {
              * @default 10
              */
             num_samples: number;
-            /**
-             * Run Config Properties
-             * @description The run config properties to use for the output
-             */
-            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
+            /** @description The run config properties to use for the output */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
             /**
              * Guidance
              * @description Optional custom guidance for generation
@@ -3376,11 +3369,8 @@ export interface components {
              * @description Optional custom guidance for generation
              */
             guidance?: string | null;
-            /**
-             * Run Config Properties
-             * @description The run config properties to use for input generation
-             */
-            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
+            /** @description The run config properties to use for input generation */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
         };
         /** DataGenSaveSamplesApiInput */
         DataGenSaveSamplesApiInput: {
@@ -4490,11 +4480,8 @@ export interface components {
              * @default final_only
              */
             data_strategy: components["schemas"]["ChatStrategy"];
-            /**
-             * Run Config
-             * @description The run configuration for this fine-tune.
-             */
-            run_config?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
+            /** @description The run configuration for this fine-tune. */
+            run_config?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
             /** Model Type */
             readonly model_type: string;
         };

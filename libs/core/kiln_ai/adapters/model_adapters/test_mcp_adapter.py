@@ -9,7 +9,11 @@ from kiln_ai.adapters.model_adapters.mcp_adapter import MCPAdapter
 from kiln_ai.datamodel import DataSourceType, Task
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.project import Project
-from kiln_ai.datamodel.run_config import McpRunConfigProperties, MCPToolReference
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    McpRunConfigProperties,
+    MCPToolReference,
+)
 from kiln_ai.datamodel.tool_id import MCP_LOCAL_TOOL_ID_PREFIX
 from kiln_ai.run_context import get_agent_run_id
 
@@ -52,6 +56,27 @@ def _mock_mcp_call(mock_session_manager, text_output: str):
         isError=False,  # type: ignore[arg-type]
     )
     return mock_session
+
+
+def test_mcp_adapter_rejects_non_mcp_run_config(project_with_local_mcp_server):
+    project, _ = project_with_local_mcp_server
+    task = Task(
+        name="Test Task",
+        parent=project,
+        instruction="Run tests",
+    )
+
+    run_config = KilnAgentRunConfigProperties(
+        model_name="gpt-4o-mini",
+        model_provider_name="openai",
+        prompt_id="simple_prompt_builder",
+        structured_output_mode="json_schema",
+    )
+
+    with pytest.raises(
+        ValueError, match="MCPAdapter requires a run config with type mcp"
+    ):
+        MCPAdapter(task=task, run_config=run_config)
 
 
 @pytest.mark.asyncio

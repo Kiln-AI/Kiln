@@ -27,6 +27,8 @@ from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
+    McpRunConfigProperties,
+    as_kiln_agent_run_config,
 )
 from kiln_ai.datamodel.task import RunConfigProperties
 
@@ -106,7 +108,7 @@ class BaseAdapter(metaclass=ABCMeta):
         """
         if self._model_provider is not None:
             return self._model_provider
-        run_config = self._kiln_agent_run_config()
+        run_config = as_kiln_agent_run_config(self.run_config)
         if not run_config.model_name or not run_config.model_provider_name:
             raise ValueError("model_name and model_provider_name must be provided")
         self._model_provider = kiln_model_provider_from(
@@ -253,7 +255,9 @@ class BaseAdapter(metaclass=ABCMeta):
         if self.prompt_builder is None:
             raise ValueError("Prompt builder is not available for MCP run config")
         # The prompt builder needs to know if we want to inject formatting instructions
-        structured_output_mode = self._kiln_agent_run_config().structured_output_mode
+        structured_output_mode = as_kiln_agent_run_config(
+            self.run_config
+        ).structured_output_mode
         add_json_instructions = self.has_structured_output() and (
             structured_output_mode == StructuredOutputMode.json_instructions
             or structured_output_mode
@@ -393,7 +397,7 @@ class BaseAdapter(metaclass=ABCMeta):
     def update_run_config_unknown_structured_output_mode(self) -> None:
         if self.run_config.type != "kiln_agent":
             return
-        run_config = self._kiln_agent_run_config()
+        run_config = as_kiln_agent_run_config(self.run_config)
         structured_output_mode = run_config.structured_output_mode
 
         # Old datamodels didn't save the structured output mode. Some clients (tests, end users) might not set it.
@@ -410,7 +414,7 @@ class BaseAdapter(metaclass=ABCMeta):
     async def available_tools(self) -> list[KilnToolInterface]:
         if self.run_config.type != "kiln_agent":
             return []
-        tool_config = self._kiln_agent_run_config().tools_config
+        tool_config = as_kiln_agent_run_config(self.run_config).tools_config
         if tool_config is None or tool_config.tools is None:
             return []
 
@@ -432,8 +436,3 @@ class BaseAdapter(metaclass=ABCMeta):
             )
 
         return tools
-
-    def _kiln_agent_run_config(self) -> KilnAgentRunConfigProperties:
-        if not isinstance(self.run_config, KilnAgentRunConfigProperties):
-            raise ValueError("Kiln agent run config is required for this operation")
-        return self.run_config
