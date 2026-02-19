@@ -4,6 +4,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
+  import ToolSchemaViewer from "$lib/ui/tool_schema_viewer.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import { onDestroy } from "svelte"
   import { page } from "$app/stores"
@@ -25,6 +26,8 @@
   let selected_task_id: string | null = null
   let run_config_name = ""
   let tool_name: string | null = null
+  let tool_input_schema: Record<string, unknown> | null = null
+  let tool_output_schema: Record<string, unknown> | null = null
   let make_default = false
   let submitting = false
   let error: KilnError | null = null
@@ -62,6 +65,9 @@
   $: if (tool_name && !run_config_name) {
     run_config_name = `MCP ${tool_name}`
   }
+  $: tool_schema_ready =
+    tool_name !== null &&
+    (tool_input_schema !== null || tool_output_schema !== null)
 
   onDestroy(() => {
     selected_tool_for_task.set(null)
@@ -103,6 +109,12 @@
       const cached_tool = get(selected_tool_for_task)
       if (cached_tool?.name) {
         tool_name = cached_tool.name
+        tool_input_schema =
+          (cached_tool as { inputSchema?: Record<string, unknown> })
+            .inputSchema ?? null
+        tool_output_schema =
+          (cached_tool as { outputSchema?: Record<string, unknown> })
+            .outputSchema ?? null
         return
       }
       const parts = tool_id.split("::")
@@ -124,6 +136,9 @@
         (available_tool) => available_tool.name === tool_name_part,
       )
       tool_name = tool?.name ?? tool_name_part
+      tool_input_schema = (tool?.inputSchema as Record<string, unknown>) ?? null
+      tool_output_schema =
+        (tool?.outputSchema as Record<string, unknown>) ?? null
     } catch {
       // Ignore; prefill will fall back to null
     }
@@ -211,6 +226,19 @@
                 large_icon={true}
                 outline={true}
               />
+              {#if no_compatible_tasks && tool_schema_ready}
+                <details class="text-sm text-gray-600">
+                  <summary class="cursor-pointer">View tool schema</summary>
+                  <div class="mt-2">
+                    <ToolSchemaViewer
+                      inputSchema={tool_input_schema}
+                      outputSchema={tool_output_schema}
+                      inputTitle="Input"
+                      outputTitle="Output"
+                    />
+                  </div>
+                </details>
+              {/if}
               {#if tool_id}
                 <a
                   class="link text-sm text-gray-500"

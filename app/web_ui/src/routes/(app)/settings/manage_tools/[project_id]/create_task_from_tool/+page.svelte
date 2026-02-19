@@ -3,8 +3,8 @@
   import AppPage from "../../../../app_page.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
-  import Output from "$lib/ui/output.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
+  import ToolSchemaViewer from "$lib/ui/tool_schema_viewer.svelte"
   import { onDestroy, onMount } from "svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { get } from "svelte/store"
@@ -129,15 +129,6 @@
       submitting = false
     }
   }
-
-  $: input_schema_output =
-    tool?.inputSchema && Object.keys(tool.inputSchema).length > 0
-      ? JSON.stringify(tool.inputSchema, null, 2)
-      : "Plain text"
-  $: output_schema_output =
-    tool?.outputSchema && Object.keys(tool.outputSchema).length > 0
-      ? JSON.stringify(tool.outputSchema, null, 2)
-      : "Plain text"
 </script>
 
 <div class="max-w-[900px]">
@@ -169,12 +160,13 @@
           bind:value={task_name}
         />
         <div>
-          <div class="text-sm font-medium mb-2">Input Schema (from tool)</div>
-          <Output raw_output={input_schema_output} />
-        </div>
-        <div>
-          <div class="text-sm font-medium mb-2">Output Schema (from tool)</div>
-          <Output raw_output={output_schema_output} />
+          <div class="text-sm font-medium mb-2">Tool Schema</div>
+          <ToolSchemaViewer
+            inputSchema={tool.inputSchema}
+            outputSchema={tool.outputSchema}
+            inputTitle="Input Schema (from tool)"
+            outputTitle="Output Schema (from tool)"
+          />
         </div>
         <Collapse title="Advanced">
           <FormElement
