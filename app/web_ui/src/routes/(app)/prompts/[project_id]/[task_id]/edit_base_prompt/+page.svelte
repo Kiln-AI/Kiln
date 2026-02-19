@@ -8,35 +8,39 @@
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { goto } from "$app/navigation"
   import { onMount } from "svelte"
+  import type { Task } from "$lib/types"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
 
+  let task: Task | null = null
   let instruction = ""
   let initial_instruction = ""
   let thinking_instruction = ""
   let initial_thinking_instruction = ""
   let loading = true
   let save_error: KilnError | null = null
+  let loading_error: KilnError | null = null
   let saving = false
   let warn_before_unload = false
 
   onMount(async () => {
     try {
-      const task = await load_task(project_id, task_id)
-      if (task) {
-        instruction = task.instruction || ""
-        initial_instruction = instruction
-        thinking_instruction = task.thinking_instruction || ""
-        initial_thinking_instruction = thinking_instruction
+      task = await load_task(project_id, task_id)
+      if (!task) {
+        throw new Error("Task not found")
       }
+      instruction = task.instruction || ""
+      initial_instruction = instruction
+      thinking_instruction = task.thinking_instruction || ""
+      initial_thinking_instruction = thinking_instruction
       const pending = sessionStorage.getItem("pending_base_prompt")
       if (pending !== null) {
         instruction = pending
         sessionStorage.removeItem("pending_base_prompt")
       }
     } catch (e) {
-      save_error = createKilnError(e)
+      loading_error = createKilnError(e)
     } finally {
       loading = false
     }
@@ -64,7 +68,7 @@
       if (err) {
         throw err
       }
-      const task = await load_task(project_id, task_id)
+      task = await load_task(project_id, task_id)
       current_task.set(task)
       warn_before_unload = false
       goto(`/prompts/${project_id}/${task_id}`)
@@ -74,6 +78,8 @@
       saving = false
     }
   }
+
+  $: task_has_requirements = task ? task.requirements.length > 0 : false
 </script>
 
 <div class="max-w-[1400px]">
@@ -95,6 +101,10 @@
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
+    {:else if loading_error}
+      <div class="text-error text-sm">
+        {loading_error.getMessage() || "An unknown error occurred"}
+      </div>
     {:else}
       <div class="max-w-[900px]">
         <div class="mt-6">
@@ -111,7 +121,9 @@
               inputType="textarea"
               height="xl"
               bind:value={instruction}
-              description="The base prompt used by prompt generators (Basic, Few-shot, etc.)."
+              description="The base prompt used by prompt generators (Basic, Few-shot, etc.).{task_has_requirements
+                ? ' Requirements from your task definition are appended to this.'
+                : ''}"
             />
             <FormElement
               label="'Thinking' Instructions"

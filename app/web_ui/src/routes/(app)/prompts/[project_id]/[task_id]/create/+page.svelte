@@ -29,6 +29,7 @@
   let loading_generator = false
   let is_custom = true
 
+  let initial_prompt_name = ""
   let initial_prompt = ""
   let initial_loaded = false
 
@@ -60,8 +61,6 @@
           .flatMap((c) => c.templates)
           .find((t) => t.generator_id === generator_id)
         generator_name = template?.name || generator_id
-
-        initial_prompt = prompt
       } catch (e) {
         create_error = createKilnError(e)
       } finally {
@@ -73,9 +72,10 @@
       if ($current_task?.instruction) {
         prompt = $current_task.instruction
       }
-      initial_prompt = prompt
     }
 
+    initial_prompt_name = prompt_name
+    initial_prompt = prompt
     initial_loaded = true
   })
 
@@ -135,7 +135,7 @@
   $: if (initial_loaded) {
     warn_before_unload =
       prompt !== initial_prompt ||
-      !!prompt_name ||
+      prompt_name !== initial_prompt_name ||
       (is_custom && is_chain_of_thought)
   }
 </script>

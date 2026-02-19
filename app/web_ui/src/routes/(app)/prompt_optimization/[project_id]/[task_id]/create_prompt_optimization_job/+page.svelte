@@ -1078,7 +1078,7 @@
                                 )}
                                 {@const dataset_add_link =
                                   train_tag &&
-                                  `/dataset/${project_id}/${task_id}/add_data?reason=generic&splits=${train_tag}:1.0`}
+                                  `/dataset/${project_id}/${task_id}/add_data?reason=eval&splits=${train_tag}:1.0`}
                                 {@const tooltip_parts = [
                                   "Fix the following issues and click Refresh to update this eval's status.",
                                   judge_error === "No judge configured"
