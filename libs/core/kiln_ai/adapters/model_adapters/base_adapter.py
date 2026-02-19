@@ -27,7 +27,6 @@ from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
-    McpRunConfigProperties,
 )
 from kiln_ai.datamodel.task import RunConfigProperties
 
@@ -42,6 +41,7 @@ from kiln_ai.tools import KilnToolInterface
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 
@@ -364,29 +364,29 @@ class BaseAdapter(metaclass=ABCMeta):
 
         props["adapter_name"] = self.adapter_name()
 
-        if self.run_config.type == "mcp":
-            if not isinstance(self.run_config, McpRunConfigProperties):
-                raise ValueError("McpRunConfigProperties is required for MCP runs")
-            run_config = self.run_config
-            props["type"] = "mcp"
-            props["model_name"] = "mcp_tool"
-            props["model_provider"] = "mcp_provider"
-            props["tool_id"] = run_config.tool_reference.tool_id
-            return props
+        match self.run_config.type:
+            case "mcp":
+                run_config = self.run_config
+                props["model_name"] = "mcp_tool"
+                props["model_provider"] = "mcp_provider"
+                return props
+            case "kiln_agent":
+                if not isinstance(self.run_config, KilnAgentRunConfigProperties):
+                    raise ValueError("Kiln agent run config is required")
+                run_config = self.run_config
 
-        run_config = self._kiln_agent_run_config()
+                # Legacy properties where we save the run_config details into custom properties.
+                # These are now also be saved in the run_config field.
+                props["model_name"] = run_config.model_name
+                props["model_provider"] = run_config.model_provider_name
+                props["prompt_id"] = run_config.prompt_id
+                props["structured_output_mode"] = run_config.structured_output_mode
+                props["temperature"] = run_config.temperature
+                props["top_p"] = run_config.top_p
 
-        # Legacy properties where we save the run_config details into custom properties.
-        # These are now also be saved in the run_config field.
-        props["model_name"] = run_config.model_name
-        props["model_provider"] = run_config.model_provider_name
-        props["prompt_id"] = run_config.prompt_id
-        props["structured_output_mode"] = run_config.structured_output_mode
-        props["temperature"] = run_config.temperature
-        props["top_p"] = run_config.top_p
-        props["type"] = run_config.type
-
-        return props
+                return props
+            case _:
+                raise_exhaustive_enum_error(self.run_config.type)
 
     def update_run_config_unknown_structured_output_mode(self) -> None:
         if self.run_config.type != "kiln_agent":
