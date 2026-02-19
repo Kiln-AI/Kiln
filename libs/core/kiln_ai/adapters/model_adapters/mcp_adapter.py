@@ -12,6 +12,13 @@ from kiln_ai.datamodel.json_schema import (
 )
 from kiln_ai.datamodel.run_config import McpRunConfigProperties
 from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.run_context import (
+    clear_agent_run_id,
+    generate_agent_run_id,
+    get_agent_run_id,
+    set_agent_run_id,
+)
+from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.open_ai_types import (
@@ -77,6 +84,35 @@ class MCPAdapter(BaseAdapter):
         input: InputType,
         input_source: DataSource | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
+        """
+        Runs the task and returns both the persisted TaskRun and raw RunOutput.
+        If this call is the root of a run, it creates an agent run context, ensures MCP tool calls have a valid session scope, and cleans up the session/context on completion.
+        """
+        is_root_agent = get_agent_run_id() is None
+
+        if is_root_agent:
+            run_id = generate_agent_run_id()
+            set_agent_run_id(run_id)
+
+        try:
+            return await self._run_and_validate_output(input, input_source)
+        finally:
+            if is_root_agent:
+                try:
+                    run_id = get_agent_run_id()
+                    if run_id:
+                        await MCPSessionManager.shared().cleanup_session(run_id)
+                finally:
+                    clear_agent_run_id()
+
+    async def _run_and_validate_output(
+        self,
+        input: InputType,
+        input_source: DataSource | None,
+    ) -> Tuple[TaskRun, RunOutput]:
+        """
+        Run the MCP task and validate the output.
+        """
         if self.input_schema is not None:
             validate_schema_with_value_error(
                 input,
