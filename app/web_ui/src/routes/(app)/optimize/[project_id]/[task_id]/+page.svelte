@@ -125,6 +125,33 @@
     default_run_config_id,
   )
 
+  const tool_loading_placeholder = {
+    value: "Loading..." as const,
+    links: undefined as undefined,
+  }
+
+  $: tools_display_by_config_id = ((): Record<
+    string,
+    {
+      value: string | "Loading..."
+      links: (string | null)[] | undefined
+    }
+  > => {
+    // change in available_tools should trigger a re-run of this function
+    const tools = $available_tools
+
+    const entries = sorted_run_configs.map((config) => {
+      const tool_ids = config.run_config_properties.tools_config?.tools || []
+      const info =
+        tools && tools[project_id]
+          ? get_tools_property_info(tool_ids, project_id, tools)
+          : { ...tool_loading_placeholder }
+      return [config.id, info] as const
+    })
+
+    return Object.fromEntries(entries)
+  })()
+
   function sortRunConfigs(
     configs: TaskRunConfig[],
     column: SortableColumn,
@@ -183,16 +210,6 @@
       sortColumn = column
       sortDirection = "desc"
     }
-  }
-
-  function getToolsDisplay(config: TaskRunConfig): {
-    value: string | string[]
-    links: (string | null)[] | undefined
-  } {
-    const tool_ids = config.run_config_properties.tools_config?.tools || []
-    return $available_tools
-      ? get_tools_property_info(tool_ids, project_id, $available_tools)
-      : { value: "Loading...", links: undefined }
   }
 
   function handleClone(config: TaskRunConfig, event: Event) {
@@ -366,7 +383,9 @@
             </thead>
             <tbody>
               {#each sorted_run_configs as config}
-                {@const tools_info = getToolsDisplay(config)}
+                {@const tools_info =
+                  (config.id && tools_display_by_config_id[config.id]) ||
+                  tool_loading_placeholder}
                 {@const is_default = config.id === task?.default_run_config_id}
                 {@const is_selected =
                   config.id && selected_run_configs.has(config.id)}
