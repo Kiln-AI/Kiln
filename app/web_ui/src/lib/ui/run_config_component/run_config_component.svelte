@@ -202,12 +202,14 @@
 
   // Progress step by step, stopping if any step asks to. It could be missing data, and the remaining steps aren't valid.
   async function update_for_state_changes() {
-    // All steps need available_models to be loaded. Don't set run_again as it would be tight loop, we're reactive to $available_models.
+    // Apply URL-driven intent first so it is not blocked by model loading.
+    apply_pending_tool_selection_if_needed()
+    await apply_pending_run_config_if_needed()
+
+    // All steps below need available_models to be loaded. Don't set run_again as it would be tight loop, we're reactive to $available_models.
     if ($available_models.length === 0) {
       return
     }
-
-    await apply_pending_run_config_if_needed()
 
     // Check if they selected a new model, in which case we want to update the run config to the finetune run config if needed
     const model_changed = process_model_change()
@@ -244,6 +246,22 @@
     if (exists) {
       selected_run_config_id = pending_run_config_id
     }
+  }
+
+  let pending_tool_selection_applied = false
+  function apply_pending_tool_selection_if_needed() {
+    if (pending_tool_selection_applied) {
+      return
+    }
+    if (!pending_tool_id) {
+      return
+    }
+
+    if (selected_run_config_id !== "custom") {
+      selected_run_config_id = "custom"
+      selected_model_specific_run_config_id = null
+    }
+    pending_tool_selection_applied = true
   }
 
   let prior_model: string | null = null
