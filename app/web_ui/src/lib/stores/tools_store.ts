@@ -60,7 +60,7 @@ export function get_tool_server_name(
   return null
 }
 
-function get_tool_names_from_ids(
+export function get_tool_names_from_ids(
   tool_ids: string[],
   project_tools: ToolSetApiDescription[],
 ): string[] {
