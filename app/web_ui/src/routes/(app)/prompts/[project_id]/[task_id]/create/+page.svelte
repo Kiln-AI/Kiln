@@ -61,9 +61,6 @@
           .flatMap((c) => c.templates)
           .find((t) => t.generator_id === generator_id)
         generator_name = template?.name || generator_id
-
-        initial_prompt_name = prompt_name
-        initial_prompt = prompt
       } catch (e) {
         create_error = createKilnError(e)
       } finally {
@@ -75,9 +72,10 @@
       if ($current_task?.instruction) {
         prompt = $current_task.instruction
       }
-      initial_prompt = prompt
     }
 
+    initial_prompt_name = prompt_name
+    initial_prompt = prompt
     initial_loaded = true
   })
 
