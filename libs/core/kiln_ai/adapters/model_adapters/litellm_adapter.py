@@ -416,6 +416,11 @@ class LiteLlmAdapter(BaseAdapter):
         if provider.thinking_level is not None:
             extra_body["reasoning_effort"] = provider.thinking_level
 
+            # anthropic does not need allowed_openai_params, and we get an error if we pass it in
+            # but openrouter for example does need it or throws an error
+            if provider.name == ModelProviderName.openrouter:
+                extra_body["allowed_openai_params"] = ["reasoning_effort"]
+
         if provider.require_openrouter_reasoning:
             # https://openrouter.ai/docs/use-cases/reasoning-tokens
             extra_body["reasoning"] = {
