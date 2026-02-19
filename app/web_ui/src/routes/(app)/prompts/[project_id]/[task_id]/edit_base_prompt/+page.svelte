@@ -68,6 +68,7 @@
       if (err) {
         throw err
       }
+      task = await load_task(project_id, task_id)
       current_task.set(task)
       warn_before_unload = false
       goto(`/prompts/${project_id}/${task_id}`)
