@@ -268,7 +268,9 @@ Rules:
 - [ ] `ModelFamily` enum updated (only if new family)
 - [ ] All provider slugs verified from authoritative sources
 - [ ] Flags inherited from predecessor and adjusted for quirks
+- [ ] Preserve existing comments from predecessor (e.g. reasoning notes, MIME type groupings)
 - [ ] Zero-sum applied if model is suggested for evals/data gen
+- [ ] RAG config templates updated if the new model replaces one used in `app/web_ui/src/routes/(app)/docs/rag_configs/[project_id]/add_search_tool/rag_config_templates.ts`
 - [ ] Smoke test passed
 - [ ] Full test suite passed
 - [ ] Discord announcement drafted
