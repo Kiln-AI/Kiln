@@ -10,7 +10,11 @@ from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel import Project, Task, Usage
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    McpRunConfigProperties,
+    MCPToolReference,
+)
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
     DivideTool,
@@ -56,6 +60,22 @@ def config():
         default_headers={"X-Test": "test"},
         additional_body_options={"api_key": "test_key"},
     )
+
+
+def test_initialization_rejects_non_kiln_agent_run_config(mock_task):
+    bad_config = LiteLlmConfig(
+        base_url="https://api.test.com",
+        run_config_properties=McpRunConfigProperties(
+            tool_reference=MCPToolReference(tool_id="mcp::local::server_id::tool_name")
+        ),  # type: ignore[arg-type]
+        default_headers=None,
+        additional_body_options={},
+    )
+
+    with pytest.raises(
+        ValueError, match="LiteLlmAdapter requires KilnAgentRunConfigProperties"
+    ):
+        LiteLlmAdapter(config=bad_config, kiln_task=mock_task)
 
 
 def test_initialization(config, mock_task):
