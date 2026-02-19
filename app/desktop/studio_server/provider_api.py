@@ -41,7 +41,6 @@ from kiln_ai.adapters.provider_tools import (
 from kiln_ai.adapters.reranker_list import built_in_rerankers
 from kiln_ai.adapters.user_model_entry import UserModelEntry
 from kiln_ai.datamodel.finetune import Finetune
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -1773,11 +1772,7 @@ def fine_tune_model_structured_output_mode(
     fine_tune: Finetune,
 ) -> StructuredOutputMode:
     # Current field
-    if (
-        fine_tune.run_config
-        and isinstance(fine_tune.run_config, KilnAgentRunConfigProperties)
-        and fine_tune.run_config.structured_output_mode is not None
-    ):
+    if fine_tune.run_config and fine_tune.run_config.structured_output_mode is not None:
         return fine_tune.run_config.structured_output_mode
     # Legacy field
     legacy_structured_output_mode = fine_tune.structured_output_mode

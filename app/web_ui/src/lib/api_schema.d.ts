@@ -3056,8 +3056,7 @@ export interface components {
             /** Custom Thinking Instructions */
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
-            /** Run Config Properties */
-            run_config_properties?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
+            run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
         };
         /** CreateMcpRunConfigRequest */
         CreateMcpRunConfigRequest: {
@@ -4481,11 +4480,8 @@ export interface components {
              * @default final_only
              */
             data_strategy: components["schemas"]["ChatStrategy"];
-            /**
-             * Run Config
-             * @description The run configuration for this fine-tune.
-             */
-            run_config?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
+            /** @description The run configuration for this fine-tune. */
+            run_config?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
             /** Model Type */
             readonly model_type: string;
         };

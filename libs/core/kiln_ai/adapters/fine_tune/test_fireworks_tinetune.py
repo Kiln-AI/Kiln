@@ -35,6 +35,14 @@ def fireworks_finetune(tmp_path):
             dataset_split_id="dataset-123",
             system_message="Test system message",
             path=tmp_file,
+            run_config=KilnAgentRunConfigProperties(
+                model_name="llama-v2-7b",
+                model_provider_name=ModelProviderName.fireworks_ai,
+                prompt_id="simple_prompt_builder",
+                temperature=0.7,
+                top_p=0.9,
+                structured_output_mode=StructuredOutputMode.default,
+            ),
         ),
     )
     return finetune
