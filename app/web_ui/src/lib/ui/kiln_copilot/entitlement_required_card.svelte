@@ -6,15 +6,21 @@
 
 <div class="flex flex-col items-center justify-center min-h-[60vh]">
   <Intro
-    title="{feature_name} Requires Upgrade"
+    title="{feature_name} Requires Account Upgrade"
     description_paragraphs={[
-      `${feature_name} is available with an enterprise plan. Contact our sales team to learn more about upgrading your account.`,
+      `${feature_name} is available with an enterprise plan. Contact our sales team to learn more about upgrading your Kiln Copilot account.`,
     ]}
     action_buttons={[
       {
         label: "Contact Sales",
         href: "https://kiln.tech/contact_sales",
         is_primary: true,
+        new_tab: true,
+      },
+      {
+        label: "Learn More",
+        href: "https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer",
+        is_primary: false,
         new_tab: true,
       },
     ]}
