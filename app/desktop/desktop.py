@@ -111,7 +111,12 @@ class DesktopApp:
 
         # Use default on Windows to get "left click to open" behaviour.
         # It looks ugly on MacOS (just a bold effect Apple never uses), so don't use it there
-        make_open_studio_default = sys.platform in ("win32", "Windows")
+        # Linux also needs default=True to enable click-to-open menu
+        make_open_studio_default = sys.platform in ("win32", "Windows", "linux")
+
+        # On Linux, scale the icon to 24x24 for better rendering
+        if sys.platform == "linux":
+            tray_image = tray_image.resize((24, 24), Image.Resampling.LANCZOS)
 
         menu = (
             KilnMenuItem(
@@ -158,7 +163,7 @@ if __name__ == "__main__":
     app = DesktopApp()
 
     # Create and run the server
-    # run the server in a thread, and shut down server when main thread (tk mainloop) exits
+    # run the server in a thread, and shut down server when the server exits (quit menu item usually)
     config = server_config(tk_root=app.root, port=app.port)
     uni_server = DesktopServer(app=app, config=config)
     with uni_server.run_in_thread():
