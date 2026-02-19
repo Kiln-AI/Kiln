@@ -139,10 +139,6 @@ class GenerateBatchInput(BaseModel):
     num_topics: int
     sdg_session_config: SyntheticDataGenerationSessionConfigInput
 
-    def to_dict(self) -> dict[str, Any]:
-        """Compatibility method for SDK client."""
-        return self.model_dump()
-
 
 class GenerateBatchOutput(BaseModel):
     """Output from batch generation, organized by topic."""
@@ -160,10 +156,6 @@ class ClarifySpecInput(BaseModel):
     num_topics: int
     num_exemplars: int = 10
     providers: list[ModelProviderName]
-
-    def to_dict(self) -> dict[str, Any]:
-        """Compatibility method for SDK client."""
-        return self.model_dump()
 
 
 class ClarifySpecOutput(BaseModel):
@@ -207,10 +199,6 @@ class RefineSpecInput(BaseModel):
     target_specification: SpecificationInput
     examples_with_feedback: list[ExamplesWithFeedbackItem]
 
-    def to_dict(self) -> dict[str, Any]:
-        """Compatibility method for SDK client."""
-        return self.model_dump()
-
 
 class RefineSpecOutput(BaseModel):
     new_proposed_spec_edits: list[NewProposedSpecEdit]
@@ -223,7 +211,3 @@ class RefineSpecOutput(BaseModel):
 class SpecQuestionerApiInput(BaseModel):
     target_task_info: TaskInfo
     target_specification: str
-
-    def to_dict(self) -> dict[str, Any]:
-        """Compatibility method for SDK client."""
-        return self.model_dump()
