@@ -1663,15 +1663,19 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="google/gemini-3-pro-preview",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
                 multimodal_mime_types=[
+                    # documents
                     KilnMimeType.PDF,
                     KilnMimeType.CSV,
                     KilnMimeType.TXT,
                     KilnMimeType.HTML,
                     KilnMimeType.MD,
+                    # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
@@ -1685,19 +1689,25 @@ built_in_models: List[KilnModel] = [
                 multimodal_capable=True,
                 supports_vision=True,
                 multimodal_mime_types=[
+                    # documents
                     KilnMimeType.PDF,
                     KilnMimeType.CSV,
                     KilnMimeType.TXT,
                     KilnMimeType.HTML,
                     KilnMimeType.MD,
+                    # images
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
+                    # audio
                     KilnMimeType.MP3,
                     KilnMimeType.WAV,
                     KilnMimeType.OGG,
+                    # video
                     KilnMimeType.MP4,
                     KilnMimeType.MOV,
                 ],
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
                 gemini_reasoning_enabled=True,
                 max_parallel_requests=2,
                 thinking_level="medium",
@@ -1706,6 +1716,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.vertex,
                 model_id="gemini-3-pro-preview",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                # while the model is capable of reasoning, it doesn't always return it in the response
+                # reasoning_capable=True,
                 gemini_reasoning_enabled=True,
                 thinking_level="medium",
             ),
