@@ -20,7 +20,7 @@
   } from "$lib/stores/prompts_store"
   import {
     getRunConfigPromptDisplayName,
-    getDetailedModelName,
+    getRunConfigDisplayName,
   } from "$lib/utils/run_config_formatters"
   import { is_mcp_run_config } from "$lib/utils/run_config_kind"
   import { onMount } from "svelte"
@@ -189,7 +189,7 @@
           label: `${default_config.name} (Default)`,
           description: is_mcp
             ? `MCP Tool: ${default_config.run_config_properties.mcp_tool?.tool_name ?? "Unknown"}`
-            : `Model: ${getDetailedModelName(default_config, model_info)}
+            : `Model: ${getRunConfigDisplayName(default_config, model_info)}
             Prompt: ${getRunConfigPromptDisplayName(default_config, current_task_prompts)}`,
         })
       }
@@ -214,7 +214,7 @@
             label: config.name,
             description: is_mcp
               ? `MCP Tool: ${config.run_config_properties.mcp_tool?.tool_name ?? "Unknown"}`
-              : `Model: ${getDetailedModelName(config, model_info)}
+              : `Model: ${getRunConfigDisplayName(config, model_info)}
             Prompt: ${getRunConfigPromptDisplayName(config, current_task_prompts)}`,
           }
         }),

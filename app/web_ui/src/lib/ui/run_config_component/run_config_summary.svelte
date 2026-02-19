@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { TaskRunConfig } from "$lib/types"
   import { model_info, get_task_composite_id } from "$lib/stores"
-  import { getDetailedModelName } from "$lib/utils/run_config_formatters"
+  import { getRunConfigDisplayName } from "$lib/utils/run_config_formatters"
   import { getRunConfigPromptDisplayName } from "$lib/utils/run_config_formatters"
   import { prompts_by_task_composite_id } from "$lib/stores/prompts_store"
   import RunConfigDetailsDialog from "./run_config_details_dialog.svelte"
@@ -44,7 +44,7 @@
     </div>
   {:else}
     <div>
-      Model: {getDetailedModelName(task_run_config, $model_info)}
+      Model: {getRunConfigDisplayName(task_run_config, $model_info)}
     </div>
     <div>
       Prompt: {getRunConfigPromptDisplayName(task_run_config, task_prompts)}

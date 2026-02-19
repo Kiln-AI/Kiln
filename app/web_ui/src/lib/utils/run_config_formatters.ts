@@ -18,7 +18,7 @@ import { prompt_link, tool_link } from "$lib/utils/link_builder"
 import type { UiProperty } from "$lib/ui/property_list"
 import { formatDate } from "./formatters"
 
-export function getDetailedModelName(
+export function getRunConfigDisplayName(
   config: TaskRunConfig,
   model_info: ProviderModels | null,
 ): string {

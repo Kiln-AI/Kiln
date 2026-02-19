@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import type { TaskRunConfig } from "$lib/types"
 import {
-  getDetailedModelName,
+  getRunConfigDisplayName,
   getRunConfigUiProperties,
 } from "./run_config_formatters"
 
@@ -33,8 +33,8 @@ describe("run_config_formatters (MCP)", () => {
     model_type: "task_run_config",
   }
 
-  it("getDetailedModelName should return MCP tool name", () => {
-    expect(getDetailedModelName(mcp_config, null)).toBe("Demo Tool")
+  it("getRunConfigDisplayName should return MCP tool name", () => {
+    expect(getRunConfigDisplayName(mcp_config, null)).toBe("Demo Tool")
   })
 
   it("getRunConfigUiProperties should return MCP-specific fields", () => {

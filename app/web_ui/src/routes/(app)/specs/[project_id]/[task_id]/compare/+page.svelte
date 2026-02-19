@@ -28,7 +28,7 @@
     prompts_by_task_composite_id,
   } from "$lib/stores/prompts_store"
   import {
-    getDetailedModelName,
+    getRunConfigDisplayName,
     getRunConfigPromptDisplayName,
     getRunConfigPromptInfoText,
   } from "$lib/utils/run_config_formatters"
@@ -693,7 +693,7 @@
                     )}
                     <div class="mt-3 text-center">
                       <div class="font-semibold text-gray-900 text-sm">
-                        {getDetailedModelName(selectedConfig, $model_info) ||
+                        {getRunConfigDisplayName(selectedConfig, $model_info) ||
                           "Unknown Model"}
                       </div>
                       <div class="text-xs text-gray-500 font-normal mt-1">
