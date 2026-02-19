@@ -3310,11 +3310,8 @@ export interface components {
              * @description Optional list of existing topics to avoid
              */
             existing_topics?: string[] | null;
-            /**
-             * Run Config Properties
-             * @description The run config properties to use for topic generation
-             */
-            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
+            /** @description The run config properties to use for topic generation */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
         };
         /** DataGenQnaApiInput */
         DataGenQnaApiInput: {
@@ -3335,11 +3332,8 @@ export interface components {
              * @default 10
              */
             num_samples: number;
-            /**
-             * Run Config Properties
-             * @description The run config properties to use for the output
-             */
-            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
+            /** @description The run config properties to use for the output */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
             /**
              * Guidance
              * @description Optional custom guidance for generation
@@ -3376,11 +3370,8 @@ export interface components {
              * @description Optional custom guidance for generation
              */
             guidance?: string | null;
-            /**
-             * Run Config Properties
-             * @description The run config properties to use for input generation
-             */
-            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
+            /** @description The run config properties to use for input generation */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
         };
         /** DataGenSaveSamplesApiInput */
         DataGenSaveSamplesApiInput: {

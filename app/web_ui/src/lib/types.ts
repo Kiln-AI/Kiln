@@ -137,18 +137,6 @@ export type Spec = components["schemas"]["Spec"]
 export type SpecStatus = components["schemas"]["SpecStatus"]
 export type Priority = components["schemas"]["Priority"]
 
-export function isKilnAgentRunConfig(
-  config: RunConfigProperties | null | undefined,
-): config is KilnAgentRunConfigProperties {
-  return config?.type === "kiln_agent"
-}
-
-export function isMcpRunConfig(
-  config: RunConfigProperties | null | undefined,
-): config is McpRunConfigProperties {
-  return config?.type === "mcp"
-}
-
 // Copilot API types
 export type SyntheticDataGenerationStepConfigApi =
   components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"]
@@ -215,4 +203,16 @@ export function isToolType<T extends keyof ToolPropsByType>(
   // Throw an error if the tool is not of the given type
   toolIsType(x, t)
   return true
+}
+
+export function isKilnAgentRunConfig(
+  config: RunConfigProperties | null | undefined,
+): config is KilnAgentRunConfigProperties {
+  return config?.type === "kiln_agent"
+}
+
+export function isMcpRunConfig(
+  config: RunConfigProperties | null | undefined,
+): config is McpRunConfigProperties {
+  return config?.type === "mcp"
 }
