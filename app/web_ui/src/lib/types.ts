@@ -164,6 +164,12 @@ export type QuestionWithAnswer = components["schemas"]["QuestionWithAnswer"]
 export type AnswerOptionWithSelection =
   components["schemas"]["AnswerOptionWithSelection"]
 
+export type PublicPromptOptimizationJobStatusResponse =
+  components["schemas"]["PublicPromptOptimizationJobStatusResponse"]
+export type PromptOptimizationJob =
+  components["schemas"]["PromptOptimizationJob"]
+export type JobStatus = components["schemas"]["JobStatus"]
+
 // Type helpers for ExternalToolServerApiDescription properties
 
 type ToolPropsByType = {

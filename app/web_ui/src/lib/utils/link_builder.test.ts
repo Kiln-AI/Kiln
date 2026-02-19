@@ -77,26 +77,6 @@ describe("prompt_link", () => {
     })
   })
 
-  describe("generator prompts (non-ID style)", () => {
-    it("links to generator_details for prompts without double colons", () => {
-      const promptId = "987654321"
-      const result = prompt_link(mockProjectId, mockTaskId, promptId)
-
-      expect(result).toBe(
-        `/prompts/${mockProjectId}/${mockTaskId}/generator_details/987654321`,
-      )
-    })
-
-    it("URL encodes generator prompt IDs with special characters", () => {
-      const promptId = "456789123"
-      const result = prompt_link(mockProjectId, mockTaskId, promptId)
-
-      expect(result).toBe(
-        `/prompts/${mockProjectId}/${mockTaskId}/generator_details/456789123`,
-      )
-    })
-  })
-
   describe("saved prompts (ID style)", () => {
     it("links to saved prompts for prompts with double colons", () => {
       const promptId = "111222::333444::555666"
@@ -130,21 +110,12 @@ describe("prompt_link", () => {
     it("handles project and task IDs that need URL encoding", () => {
       const projectWithSpaces = "project with spaces"
       const taskWithSymbols = "task&symbols"
-      const promptId = "555777999"
+      const promptId = "777888::999000"
 
       const result = prompt_link(projectWithSpaces, taskWithSymbols, promptId)
 
       expect(result).toBe(
-        `/prompts/project with spaces/task&symbols/generator_details/555777999`,
-      )
-    })
-
-    it("distinguishes between fine-tune and regular prompts with similar prefixes", () => {
-      const regularPrompt = "111333555"
-      const result = prompt_link(mockProjectId, mockTaskId, regularPrompt)
-
-      expect(result).toBe(
-        `/prompts/${mockProjectId}/${mockTaskId}/generator_details/111333555`,
+        `/prompts/project with spaces/task&symbols/saved/777888%3A%3A999000`,
       )
     })
   })

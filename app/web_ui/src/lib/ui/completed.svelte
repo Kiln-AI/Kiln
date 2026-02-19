@@ -1,5 +1,6 @@
 <script lang="ts">
   import CheckmarkIcon from "./icons/checkmark_icon.svelte"
+  import Intro from "./intro.svelte"
 
   export let title: string
   export let subtitle: string
@@ -7,19 +8,23 @@
   export let button_text: string
 </script>
 
-<div
-  class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
->
-  <div class="w-10 h-10 text-success mb-2">
-    <CheckmarkIcon />
-  </div>
-  <div class="font-medium mb-2">{title}</div>
-  <div class="max-w-96 text-center font-light">
-    {subtitle}
-    <div class="mt-8">
-      <a href={link} class="btn btn-primary btn-wide">
-        {button_text}
-      </a>
+<div class="flex flex-col items-center justify-center min-h-[60vh]">
+  <Intro
+    {title}
+    align_title_left={true}
+    description_paragraphs={[subtitle]}
+    action_buttons={[
+      {
+        label: button_text,
+        href: link,
+        is_primary: true,
+      },
+    ]}
+  >
+    <div slot="icon">
+      <div class="h-12 w-12 text-success">
+        <CheckmarkIcon />
+      </div>
     </div>
-  </div>
+  </Intro>
 </div>
