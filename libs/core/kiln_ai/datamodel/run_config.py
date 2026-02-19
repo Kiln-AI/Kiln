@@ -103,3 +103,19 @@ RunConfigProperties = Annotated[
     ],
     Discriminator(_get_run_config_type),
 ]
+
+
+def as_kiln_agent_run_config(
+    run_config: RunConfigProperties,
+) -> KilnAgentRunConfigProperties:
+    """Centralize KilnAgentRunConfigProperties narrowing so callers don't repeat isinstance checks."""
+    if not isinstance(run_config, KilnAgentRunConfigProperties):
+        raise ValueError("Kiln agent run config is required for this operation")
+    return run_config
+
+
+def as_mcp_run_config(run_config: RunConfigProperties) -> McpRunConfigProperties:
+    """Centralize McpRunConfigProperties narrowing so callers don't repeat isinstance checks."""
+    if not isinstance(run_config, McpRunConfigProperties):
+        raise ValueError("MCP run config is required for this operation")
+    return run_config

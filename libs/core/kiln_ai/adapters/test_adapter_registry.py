@@ -949,7 +949,7 @@ def test_adapter_for_task_rejects_kiln_agent_non_instance(basic_task):
 
     with pytest.raises(
         ValueError,
-        match="Kiln agent run config is required for LiteLlmAdapter",
+        match="KilnAgentRunConfigProperties is required for LiteLlmAdapter",
     ):
         adapter_for_task(
             kiln_task=basic_task,
