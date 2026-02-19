@@ -152,6 +152,8 @@ async def run_g_eval_test(
     # Run the evaluation
     eval_result, intermediate_outputs = await g_eval.run_eval(test_task_run)
 
+    # "chain_of_thought" comes from the multi-turn COT prompt strategy, "reasoning"
+    # comes from native model reasoning (e.g. Gemini thinking). Both can be present.
     assert intermediate_outputs is not None
     assert (
         "chain_of_thought" in intermediate_outputs
@@ -211,6 +213,8 @@ async def test_run_g_eval_e2e(
     # Verify the evaluation results
     assert isinstance(scores, dict)
 
+    # "chain_of_thought" comes from the multi-turn COT prompt strategy, "reasoning"
+    # comes from native model reasoning (e.g. Gemini thinking). Both can be present.
     assert intermediate_outputs is not None
     assert (
         "chain_of_thought" in intermediate_outputs
