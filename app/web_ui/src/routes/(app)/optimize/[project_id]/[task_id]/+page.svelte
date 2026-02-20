@@ -418,6 +418,7 @@
                 {@const is_default = config.id === task?.default_run_config_id}
                 {@const is_selected =
                   config.id && selected_run_configs.has(config.id)}
+                {@const is_mcp = isMcpRunConfig(config.run_config_properties)}
                 <tr
                   class="{select_mode ? '' : 'hover'} cursor-pointer {is_default
                     ? 'bg-base-200'
@@ -502,31 +503,37 @@
                     {formatDate(config.created_at)}
                   </td>
                   <td class="p-0" on:click|stopPropagation>
-                    <div class="dropdown dropdown-end dropdown-hover">
-                      <TableButton />
-                      <Float>
-                        <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-                        <ul
-                          tabindex="0"
-                          class="dropdown-content menu bg-base-100 rounded-box z-[1] w-56 p-2 shadow"
-                        >
-                          <li>
-                            <button on:click={(e) => handleClone(config, e)}>
-                              Clone
-                            </button>
-                          </li>
-                          {#if !is_default}
-                            <li>
-                              <button
-                                on:click={(e) => handleSetDefault(config, e)}
-                              >
-                                Set as Task Default
-                              </button>
-                            </li>
-                          {/if}
-                        </ul>
-                      </Float>
-                    </div>
+                    {#if !is_mcp || !is_default}
+                      <div class="dropdown dropdown-end dropdown-hover">
+                        <TableButton />
+                        <Float>
+                          <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+                          <ul
+                            tabindex="0"
+                            class="dropdown-content menu bg-base-100 rounded-box z-[1] w-56 p-2 shadow"
+                          >
+                            {#if !is_mcp}
+                              <li>
+                                <button
+                                  on:click={(e) => handleClone(config, e)}
+                                >
+                                  Clone
+                                </button>
+                              </li>
+                            {/if}
+                            {#if !is_default}
+                              <li>
+                                <button
+                                  on:click={(e) => handleSetDefault(config, e)}
+                                >
+                                  Set as Task Default
+                                </button>
+                              </li>
+                            {/if}
+                          </ul>
+                        </Float>
+                      </div>
+                    {/if}
                   </td>
                 </tr>
               {/each}
