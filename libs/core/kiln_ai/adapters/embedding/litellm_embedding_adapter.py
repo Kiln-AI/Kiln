@@ -31,6 +31,10 @@ class EmbeddingOptions(BaseModel):
         default=None,
         description="The number of dimensions to return for embeddings. Some models support requesting vectors of different dimensions.",
     )
+    instructions: str | None = Field(
+        default=None,
+        description="Custom instructions for embedding generation. Some models support custom instructions to guide the embedding process.",
+    )
 
 
 def validate_map_to_embeddings(
@@ -132,6 +136,17 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
             usage=combined_usage,
         )
 
+    def _apply_instructions_to_texts(
+        self, input_texts: List[str], instructions: str | None
+    ) -> List[str]:
+        """Apply instructions to input texts in the format expected by the model."""
+        if not instructions:
+            return input_texts
+
+        # Format according to Qwen3-Embedding documentation
+        # "Instruct: [instructions]\nQuery: [text]"
+        return [f"Instruct: {instructions}\nQuery: {text}" for text in input_texts]
+
     async def _generate_embeddings_for_batch(
         self, input_texts: List[str]
     ) -> EmbeddingResult:
@@ -139,6 +154,13 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
             raise ValueError(
                 f"Too many input texts, max batch size is {MAX_BATCH_SIZE}, got {len(input_texts)}"
             )
+
+        # Validate once and reuse the same instructions everywhere
+        options = self.build_options()
+        # Apply instructions to input texts if present (validated)
+        processed_texts = self._apply_instructions_to_texts(
+            input_texts, options.instructions
+        )
 
         completion_kwargs: Dict[str, Any] = {}
         if self.litellm_core_config.additional_body_options:
@@ -152,10 +174,15 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
                 self.litellm_core_config.default_headers
             )
 
+        # Get options excluding instructions since they're applied to text
+        embedding_options = options.model_dump(
+            exclude_none=True, exclude={"instructions"}
+        )
+
         response = await litellm.aembedding(
             model=self.litellm_model_id,
-            input=input_texts,
-            **self.build_options().model_dump(exclude_none=True),
+            input=processed_texts,
+            **embedding_options,
             **completion_kwargs,
         )
 
@@ -174,8 +201,16 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
             if not isinstance(dimensions, int) or dimensions <= 0:
                 raise ValueError("Dimensions must be a positive integer")
 
+        instructions = self.embedding_config.properties.get("instructions", None)
+        if instructions is not None:
+            if not isinstance(instructions, str) or len(instructions.strip()) == 0:
+                raise ValueError("Instructions must be a non-empty string")
+            if len(instructions) > 1000:
+                raise ValueError("Instructions must be less than 1000 characters")
+
         return EmbeddingOptions(
             dimensions=dimensions,
+            instructions=instructions,
         )
 
     @cached_property
