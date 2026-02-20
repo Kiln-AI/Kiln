@@ -92,6 +92,7 @@ All changes go in `libs/core/kiln_ai/adapters/ml_model_list.py`.
 
 - Place **before** predecessor entry (newer = higher in list)
 - Copy predecessor's structure and modify: `name`, `friendly_name`, `model_id` per provider, flags
+- **`friendly_name` must follow the existing naming pattern** of sibling models in the same family. Check the predecessor. For example, Claude Sonnets use `"Claude {version} Sonnet"` (e.g. "Claude 4.5 Sonnet"), not `"Claude Sonnet {version}"`. Do NOT use the vendor's marketing name if it differs from Kiln's established convention.
 
 **Provider `model_id` formats:**
 
@@ -265,6 +266,7 @@ Rules:
 
 - [ ] `ModelName` enum entry added (before predecessor)
 - [ ] `KilnModel` entry added to `built_in_models` (before predecessor)
+- [ ] `friendly_name` matches the naming pattern of sibling models in the same family
 - [ ] `ModelFamily` enum updated (only if new family)
 - [ ] All provider slugs verified from authoritative sources
 - [ ] Flags inherited from predecessor and adjusted for quirks
