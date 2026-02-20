@@ -1,8 +1,12 @@
+import json
+from typing import Any
+
 from mcp.types import CallToolResult, TextContent
 from mcp.types import Tool as MCPTool
 
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.tool_id import MCP_REMOTE_TOOL_ID_PREFIX, ToolId
+from kiln_ai.run_context import get_agent_run_id
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
     ToolCallContext,
@@ -51,6 +55,14 @@ class MCPServerTool(KilnToolInterface):
                 f"Tool {await self.name()} returned an error: {result.content}"
             )
 
+        # If the tool returns structured content, return it as a JSON string
+        if result.structuredContent is not None:
+            if not isinstance(result.structuredContent, dict):
+                raise ValueError("Tool returned invalid structured content")
+            return ToolCallResult(
+                output=json.dumps(result.structuredContent, ensure_ascii=False)
+            )
+
         if not result.content:
             raise ValueError("Tool returned no content")
 
@@ -64,16 +76,41 @@ class MCPServerTool(KilnToolInterface):
 
         return ToolCallResult(output=result.content[0].text)
 
+    async def input_schema(self) -> dict[str, Any]:
+        # input schema is required
+        await self._load_tool_properties()
+        if not isinstance(self._parameters_schema, dict):
+            raise ValueError("Tool input schema is invalid.")
+        return self._parameters_schema
+
+    async def output_schema(self) -> dict[str, Any] | None:
+        # output schema is optional
+        await self._load_tool_properties()
+        if self._tool is None:
+            raise ValueError("Tool output schema is invalid.")
+        output_schema = self._tool.outputSchema
+        if output_schema is None:
+            return None
+        if not isinstance(output_schema, dict):
+            raise ValueError("Tool output schema is invalid.")
+        return output_schema
+
     #  Call the MCP Tool
     async def _call_tool(self, **kwargs) -> CallToolResult:
-        async with MCPSessionManager.shared().mcp_client(
-            self._tool_server_model
-        ) as session:
-            result = await session.call_tool(
-                name=await self.name(),
-                arguments=kwargs,
+        session_id = get_agent_run_id()
+        if not session_id:
+            raise RuntimeError(
+                "MCP tool call attempted without an agent run context. "
+                "This is a bug — tool calls should only happen during an agent run."
             )
-            return result
+
+        session = await MCPSessionManager.shared().get_or_create_session(
+            self._tool_server_model, session_id
+        )
+        return await session.call_tool(
+            name=await self.name(),
+            arguments=kwargs,
+        )
 
     async def _load_tool_properties(self):
         if self._tool is not None:
@@ -89,10 +126,18 @@ class MCPServerTool(KilnToolInterface):
 
     #  Get the MCP Tool from the server
     async def _get_tool(self, tool_name: str) -> MCPTool:
-        async with MCPSessionManager.shared().mcp_client(
-            self._tool_server_model
-        ) as session:
+        session_id = get_agent_run_id()
+
+        if session_id:
+            session = await MCPSessionManager.shared().get_or_create_session(
+                self._tool_server_model, session_id
+            )
             tools = await session.list_tools()
+        else:
+            async with MCPSessionManager.shared().mcp_client(
+                self._tool_server_model
+            ) as session:
+                tools = await session.list_tools()
 
         tool = next((tool for tool in tools.tools if tool.name == tool_name), None)
         if tool is None:

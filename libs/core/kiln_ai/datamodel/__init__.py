@@ -38,6 +38,7 @@ from kiln_ai.datamodel.prompt_id import (
     PromptId,
     prompt_generator_values,
 )
+from kiln_ai.datamodel.prompt_optimization_job import PromptOptimizationJob
 from kiln_ai.datamodel.task import Task, TaskRequirement
 from kiln_ai.datamodel.task_output import (
     DataSource,
@@ -64,6 +65,7 @@ __all__ = [
     "Prompt",
     "PromptGenerators",
     "PromptId",
+    "PromptOptimizationJob",
     "RequirementRating",
     "StructuredOutputMode",
     "Task",

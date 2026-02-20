@@ -17,9 +17,12 @@ from kiln_ai.adapters.provider_tools import (
     builtin_model_from,
     check_provider_warnings,
     core_provider,
+    find_user_model,
     finetune_cache,
     finetune_from_id,
     finetune_provider_model,
+    get_all_user_models,
+    get_legacy_custom_models,
     get_model_and_provider,
     kiln_model_provider_from,
     lite_llm_core_config_for_provider,
@@ -29,10 +32,11 @@ from kiln_ai.adapters.provider_tools import (
     provider_enabled,
     provider_name_from_id,
     provider_warnings,
+    user_model_to_provider,
 )
 from kiln_ai.datamodel import Finetune, StructuredOutputMode, Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
-from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
 
 @pytest.fixture(autouse=True)
@@ -646,7 +650,7 @@ def test_openai_compatible_provider_config(mock_shared_config):
     model_id = "test_provider::gpt-4"
 
     config = litellm_core_provider_config(
-        RunConfigProperties(
+        KilnAgentRunConfigProperties(
             model_name=model_id,
             model_provider_name=ModelProviderName.openai_compatible,
             prompt_id="simple_prompt_builder",
@@ -681,7 +685,7 @@ def test_lite_llm_config_no_api_key(mock_shared_config):
     model_id = "no_key_provider::gpt-4"
 
     config = litellm_core_provider_config(
-        RunConfigProperties(
+        KilnAgentRunConfigProperties(
             model_name=model_id,
             model_provider_name=ModelProviderName.openai_compatible,
             prompt_id="simple_prompt_builder",
@@ -702,7 +706,7 @@ def test_lite_llm_config_invalid_id():
     """Test handling of invalid model ID format"""
     with pytest.raises(ValueError) as exc_info:
         litellm_core_provider_config(
-            RunConfigProperties(
+            KilnAgentRunConfigProperties(
                 model_name="invalid-id-format",
                 model_provider_name=ModelProviderName.openai_compatible,
                 prompt_id="simple_prompt_builder",
@@ -720,7 +724,7 @@ def test_lite_llm_config_no_providers(mock_shared_config):
 
     with pytest.raises(ValueError) as exc_info:
         litellm_core_provider_config(
-            RunConfigProperties(
+            KilnAgentRunConfigProperties(
                 model_name="test_provider::gpt-4",
                 model_provider_name=ModelProviderName.openai_compatible,
                 prompt_id="simple_prompt_builder",
@@ -734,7 +738,7 @@ def test_lite_llm_config_provider_not_found(mock_shared_config):
     """Test handling of non-existent provider"""
     with pytest.raises(ValueError) as exc_info:
         litellm_core_provider_config(
-            RunConfigProperties(
+            KilnAgentRunConfigProperties(
                 model_name="unknown_provider::gpt-4",
                 model_provider_name=ModelProviderName.openai_compatible,
                 prompt_id="simple_prompt_builder",
@@ -757,7 +761,7 @@ def test_lite_llm_config_no_base_url(mock_shared_config):
 
     with pytest.raises(ValueError) as exc_info:
         litellm_core_provider_config(
-            RunConfigProperties(
+            KilnAgentRunConfigProperties(
                 model_name="test_provider::gpt-4",
                 model_provider_name=ModelProviderName.openai_compatible,
                 prompt_id="simple_prompt_builder",
@@ -1273,3 +1277,334 @@ def test_parser_from_finetune_no_parser(mock_config):
     parser = parser_from_finetune(finetune)
 
     assert parser is None
+
+
+# =============================================================================
+# Tests for User Model Registry (Custom Models v2)
+# =============================================================================
+
+
+@pytest.fixture
+def mock_config_with_user_models():
+    """Mock config with user models in the registry"""
+    with patch("kiln_ai.adapters.provider_tools.Config") as mock:
+        config_instance = Mock()
+        config_instance.user_model_registry = [
+            {
+                "id": "test-id-1",
+                "provider_type": "builtin",
+                "provider_id": "openai",
+                "model_id": "gpt-custom-model",
+                "name": "My Custom GPT Model",
+                "overrides": {
+                    "supports_structured_output": True,
+                    "supports_data_gen": True,
+                    "structured_output_mode": "json_schema",
+                },
+            },
+            {
+                "id": "test-id-2",
+                "provider_type": "custom",
+                "provider_id": "MyCustomProvider",
+                "model_id": "custom-model-1",
+                "overrides": {
+                    "supports_vision": True,
+                },
+            },
+        ]
+        config_instance.custom_models = ["groq::legacy-custom-model"]
+        mock.shared.return_value = config_instance
+        yield config_instance
+
+
+@pytest.fixture
+def mock_config_empty_user_models():
+    """Mock config with no user models"""
+    with patch("kiln_ai.adapters.provider_tools.Config") as mock:
+        config_instance = Mock()
+        config_instance.user_model_registry = []
+        config_instance.custom_models = []
+        mock.shared.return_value = config_instance
+        yield config_instance
+
+
+def test_get_all_user_models_with_config(mock_config_with_user_models):
+    """Test get_all_user_models returns only user_model_registry entries (not legacy)"""
+
+    models = get_all_user_models()
+
+    # Only user_model_registry entries, not legacy custom_models
+    assert len(models) == 2
+
+    # Check builtin user model
+    builtin_model = next(m for m in models if m.provider_id == "openai")
+    assert builtin_model.provider_type == "builtin"
+    assert builtin_model.id == "test-id-1"
+    assert builtin_model.model_id == "gpt-custom-model"
+    assert builtin_model.name == "My Custom GPT Model"
+    assert builtin_model.overrides is not None
+    assert builtin_model.overrides["supports_structured_output"] is True
+
+    # Check custom provider user model
+    custom_model = next(m for m in models if m.provider_id == "MyCustomProvider")
+    assert custom_model.provider_type == "custom"
+    assert custom_model.id == "test-id-2"
+    assert custom_model.model_id == "custom-model-1"
+
+
+def test_get_legacy_custom_models(mock_config_with_user_models):
+    """Test get_legacy_custom_models returns parsed legacy custom_models"""
+
+    models = get_legacy_custom_models()
+
+    assert len(models) == 1
+    provider_id, model_id = models[0]
+    assert provider_id == "groq"
+    assert model_id == "legacy-custom-model"
+
+
+def test_get_legacy_custom_models_empty(mock_config_empty_user_models):
+    """Test get_legacy_custom_models returns empty list when no legacy models"""
+    models = get_legacy_custom_models()
+    assert models == []
+
+
+def test_get_all_user_models_empty(mock_config_empty_user_models):
+    """Test get_all_user_models returns empty list when no models configured"""
+    models = get_all_user_models()
+    assert models == []
+
+
+def test_user_model_to_provider_builtin():
+    """Test user_model_to_provider for builtin provider"""
+    from kiln_ai.adapters.user_model_entry import UserModelEntry
+
+    entry = UserModelEntry(
+        provider_type="builtin",
+        provider_id="openai",
+        model_id="gpt-custom",
+        name="Custom GPT",
+        overrides={"supports_structured_output": True, "supports_data_gen": True},
+    )
+
+    provider = user_model_to_provider(entry)
+
+    assert provider.name == ModelProviderName.openai
+    assert provider.model_id == "gpt-custom"
+    assert provider.untested_model is True
+    assert provider.supports_structured_output is True
+    assert provider.supports_data_gen is True
+
+
+def test_user_model_to_provider_custom():
+    """Test user_model_to_provider for custom provider"""
+    from kiln_ai.adapters.user_model_entry import UserModelEntry
+
+    entry = UserModelEntry(
+        provider_type="custom",
+        provider_id="MyProvider",
+        model_id="my-model",
+        overrides={"supports_vision": True},
+    )
+
+    provider = user_model_to_provider(entry)
+
+    assert provider.name == ModelProviderName.openai_compatible
+    assert provider.openai_compatible_provider_name == "MyProvider"
+    assert provider.model_id == "my-model"
+    assert provider.supports_vision is True
+
+
+def test_user_model_to_provider_filters_unknown_fields():
+    """Test that user_model_to_provider filters unknown fields from overrides for forward compatibility"""
+    from kiln_ai.adapters.user_model_entry import UserModelEntry
+
+    entry = UserModelEntry(
+        provider_type="builtin",
+        provider_id="openai",
+        model_id="gpt-custom",
+        overrides={
+            "supports_structured_output": True,
+            # Unknown field that doesn't exist in KilnModelProvider
+            "future_field_not_yet_implemented": True,
+        },
+    )
+
+    provider = user_model_to_provider(entry)
+
+    # Valid override is applied
+    assert provider.supports_structured_output is True
+    # Unknown field is not applied (no error, just silently ignored)
+    assert not hasattr(provider, "future_field_not_yet_implemented")
+
+
+def test_user_model_to_provider_cannot_override_name_or_model_id():
+    """Test that 'name' and 'model_id' in overrides are filtered out"""
+    from kiln_ai.adapters.user_model_entry import UserModelEntry
+
+    entry = UserModelEntry(
+        provider_type="builtin",
+        provider_id="openai",
+        model_id="original-model",
+        overrides={
+            "name": "different_provider",
+            "model_id": "different-model",
+            "supports_structured_output": True,
+        },
+    )
+
+    provider = user_model_to_provider(entry)
+
+    # name and model_id cannot be overridden - the original values are used
+    assert provider.name == ModelProviderName.openai
+    assert provider.model_id == "original-model"
+    # But other valid overrides are applied
+    assert provider.supports_structured_output is True
+
+
+def test_user_model_to_provider_invalid_builtin():
+    """Test user_model_to_provider raises error for invalid builtin provider"""
+    from kiln_ai.adapters.user_model_entry import UserModelEntry
+
+    entry = UserModelEntry(
+        provider_type="builtin", provider_id="invalid_provider", model_id="model"
+    )
+
+    with pytest.raises(ValueError, match="Invalid built-in provider"):
+        user_model_to_provider(entry)
+
+
+def test_find_user_model():
+    """Test find_user_model finds user model by ID"""
+    with patch("kiln_ai.adapters.provider_tools.Config") as mock:
+        config_instance = Mock()
+        config_instance.user_model_registry = [
+            {
+                "id": "test-model-id",
+                "provider_type": "builtin",
+                "provider_id": "openai",
+                "model_id": "gpt-custom",
+                "overrides": {"supports_structured_output": True},
+            }
+        ]
+        config_instance.custom_models = []
+        mock.shared.return_value = config_instance
+
+        provider = find_user_model("user_model::test-model-id")
+
+        assert provider is not None
+        assert provider.name == ModelProviderName.openai
+        assert provider.model_id == "gpt-custom"
+        assert provider.supports_structured_output is True
+
+
+def test_find_user_model_not_found():
+    """Test find_user_model returns None for non-existent model"""
+    with patch("kiln_ai.adapters.provider_tools.Config") as mock:
+        config_instance = Mock()
+        config_instance.user_model_registry = []
+        config_instance.custom_models = []
+        mock.shared.return_value = config_instance
+
+        provider = find_user_model("user_model::nonexistent-id")
+
+        assert provider is None
+
+
+def test_find_user_model_invalid_format():
+    """Test find_user_model returns None for invalid format"""
+    provider = find_user_model("not-a-user-model")
+    assert provider is None
+
+
+def test_core_provider_user_model_builtin():
+    """Test core_provider extracts builtin provider from user model ID"""
+    with patch("kiln_ai.adapters.provider_tools.Config") as mock:
+        config_instance = Mock()
+        config_instance.user_model_registry = [
+            {
+                "id": "test-um-id",
+                "provider_type": "builtin",
+                "provider_id": "openai",
+                "model_id": "custom-model",
+            }
+        ]
+        config_instance.custom_models = []
+        mock.shared.return_value = config_instance
+
+        provider = core_provider("user_model::test-um-id", ModelProviderName.openai)
+
+        assert provider == ModelProviderName.openai
+
+
+def test_core_provider_user_model_custom():
+    """Test core_provider returns openai_compatible for custom user models"""
+    with patch("kiln_ai.adapters.provider_tools.Config") as mock:
+        config_instance = Mock()
+        config_instance.user_model_registry = [
+            {
+                "id": "test-custom-id",
+                "provider_type": "custom",
+                "provider_id": "MyProvider",
+                "model_id": "model",
+            }
+        ]
+        config_instance.custom_models = []
+        mock.shared.return_value = config_instance
+
+        provider = core_provider(
+            "user_model::test-custom-id", ModelProviderName.openai_compatible
+        )
+
+        assert provider == ModelProviderName.openai_compatible
+
+
+def test_core_provider_user_model_not_found():
+    """Test core_provider raises error for non-existent user model"""
+    with patch("kiln_ai.adapters.provider_tools.Config") as mock:
+        config_instance = Mock()
+        config_instance.user_model_registry = []
+        config_instance.custom_models = []
+        mock.shared.return_value = config_instance
+
+        with pytest.raises(ValueError, match=r"User model .* not found"):
+            core_provider(
+                "user_model::non-existent-id",
+                ModelProviderName.openai_compatible,
+            )
+
+
+def test_kiln_model_provider_from_user_model():
+    """Test kiln_model_provider_from checks user models first"""
+    with patch("kiln_ai.adapters.provider_tools.Config") as mock:
+        config_instance = Mock()
+        config_instance.user_model_registry = [
+            {
+                "id": "test-kiln-id",
+                "provider_type": "builtin",
+                "provider_id": "openai",
+                "model_id": "my-custom-model",
+                "overrides": {"supports_structured_output": True},
+            }
+        ]
+        config_instance.custom_models = []
+        mock.shared.return_value = config_instance
+
+        provider = kiln_model_provider_from("user_model::test-kiln-id")
+
+        assert provider is not None
+        assert provider.name == ModelProviderName.openai
+        assert provider.model_id == "my-custom-model"
+        assert provider.supports_structured_output is True
+
+
+def test_kiln_model_provider_from_legacy_under_custom_registry(mock_config):
+    """Test kiln_model_provider_from handles legacy 'provider::model' format under kiln_custom_registry."""
+    provider = kiln_model_provider_from(
+        "openai::custom-model", ModelProviderName.kiln_custom_registry
+    )
+
+    assert provider.name == ModelProviderName.openai
+    assert provider.model_id == "custom-model"
+    assert provider.untested_model is True
+    assert provider.supports_structured_output is False

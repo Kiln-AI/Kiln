@@ -20,6 +20,7 @@
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type { TaskRun, StructuredOutputMode } from "$lib/types"
+  import { isMcpRunConfig } from "$lib/types"
   import {
     formatDate,
     structuredOutputModeToString,
@@ -27,11 +28,16 @@
   import { goto } from "$app/navigation"
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
+  import type { UiProperty } from "$lib/ui/property_list"
   import { prompt_link } from "$lib/utils/link_builder"
   import type { ProviderModels, PromptResponse } from "$lib/types"
   import { isMacOS } from "$lib/utils/platform"
   import type { Writable } from "svelte/store"
-  import { get_tools_property_info } from "$lib/stores/tools_store"
+  import {
+    get_tools_property_info,
+    get_tool_names_from_ids,
+    get_tool_server_name,
+  } from "$lib/stores/tools_store"
 
   $: run_id = $page.params.run_id!
   $: task_id = $page.params.task_id!
@@ -48,8 +54,27 @@
   let tool_links: (string | null)[] | undefined
 
   $: {
+    const run_config = run?.output?.source?.run_config
+    let tool_ids: string[] = []
+    if (!run_config) {
+      tool_ids = []
+    } else {
+      const run_config_type = run_config.type
+      switch (run_config_type) {
+        case "mcp":
+          tool_ids = []
+          break
+        case "kiln_agent":
+          tool_ids = run_config.tools_config?.tools ?? []
+          break
+        default: {
+          const _exhaustive: never = run_config_type
+          throw new Error(`Unknown run config type: ${_exhaustive}`)
+        }
+      }
+    }
     const tools_property_info = get_tools_property_info(
-      run?.output?.source?.run_config?.tools_config?.tools ?? [],
+      tool_ids,
       project_id,
       $available_tools,
     )
@@ -57,29 +82,12 @@
     tool_links = tools_property_info.links
   }
 
-  function get_properties(
+  function get_kiln_agent_properties(
     run: TaskRun | null,
     current_task_prompts: PromptResponse | null,
     model_info: ProviderModels | null,
-  ) {
-    let properties = []
-
-    if (run?.id) {
-      properties.push({
-        name: "ID",
-        value: run.id,
-      })
-    }
-
-    if (run?.input_source?.type) {
-      properties.push({
-        name: "Input Source",
-        value:
-          run.input_source.type.charAt(0).toUpperCase() +
-          run.input_source.type.slice(1),
-      })
-    }
-
+  ): UiProperty[] {
+    const properties: UiProperty[] = []
     const model_id = run?.output?.source?.properties?.model_name
     if (model_id && typeof model_id === "string") {
       properties.push({
@@ -112,37 +120,49 @@
       links: tool_links,
       badge: Array.isArray(tools_property_value) ? true : false,
     })
+    return properties
+  }
 
-    if (run?.created_at) {
-      properties.push({
-        name: "Created At",
-        value: formatDate(run.created_at),
-      })
-    }
+  function get_mcp_properties(run: TaskRun | null): UiProperty[] {
+    const run_config = run?.output?.source?.run_config
+    const tool_id =
+      (isMcpRunConfig(run_config)
+        ? run_config.tool_reference?.tool_id
+        : null) || run?.output?.source?.properties?.tool_id
 
-    let topic_path: string | undefined = undefined
-    if (
-      run?.input_source?.properties?.topic_path &&
-      typeof run?.input_source?.properties?.topic_path === "string"
-    ) {
-      topic_path = run?.input_source?.properties?.topic_path?.replaceAll(
-        ">>>>>",
-        " > ",
-      )
-    }
-    if (topic_path) {
+    const tool_name =
+      typeof tool_id === "string"
+        ? get_tool_names_from_ids(
+            [tool_id],
+            $available_tools[project_id] || [],
+          )[0]
+        : null
+    const tool_server_name =
+      typeof tool_id === "string"
+        ? get_tool_server_name($available_tools, project_id, tool_id)
+        : null
+
+    const properties: UiProperty[] = [
+      {
+        name: "MCP Tool",
+        value: tool_name || "Unknown",
+      },
+    ]
+
+    if (tool_server_name) {
       properties.push({
-        name: "Topic",
-        value: topic_path,
+        name: "Tool Server",
+        value: tool_server_name,
       })
     }
 
     return properties
   }
 
-  function get_advanced_properties(run: TaskRun | null) {
-    let properties = []
-
+  function get_kiln_agent_advanced_properties(
+    run: TaskRun | null,
+  ): UiProperty[] {
+    const properties: UiProperty[] = []
     if (run?.output?.source?.properties?.model_provider) {
       properties.push({
         name: "Model Provider",
@@ -177,6 +197,105 @@
             name: "JSON Mode",
             value: json_mode,
           })
+        }
+      }
+    }
+    return properties
+  }
+
+  function get_properties(
+    run: TaskRun | null,
+    current_task_prompts: PromptResponse | null,
+    model_info: ProviderModels | null,
+  ) {
+    let properties: UiProperty[] = []
+    const run_config = run?.output?.source?.run_config
+
+    if (run?.id) {
+      properties.push({
+        name: "ID",
+        value: run.id,
+      })
+    }
+
+    if (run?.input_source?.type) {
+      properties.push({
+        name: "Input Source",
+        value:
+          run.input_source.type.charAt(0).toUpperCase() +
+          run.input_source.type.slice(1),
+      })
+    }
+
+    if (!run_config) {
+      // if run_config is null, render the kiln agent properties
+      properties.push(
+        ...get_kiln_agent_properties(run, current_task_prompts, model_info),
+      )
+    } else {
+      const run_config_type = run_config.type
+      switch (run_config_type) {
+        case "mcp": {
+          properties.push(...get_mcp_properties(run))
+          break
+        }
+        case "kiln_agent":
+          // if run_config is kiln_agent, render the kiln agent properties
+          properties.push(
+            ...get_kiln_agent_properties(run, current_task_prompts, model_info),
+          )
+          break
+        default: {
+          const _exhaustive: never = run_config_type
+          throw new Error(`Unknown run config type: ${_exhaustive}`)
+        }
+      }
+    }
+
+    if (run?.created_at) {
+      properties.push({
+        name: "Created At",
+        value: formatDate(run.created_at),
+      })
+    }
+
+    let topic_path: string | undefined = undefined
+    if (
+      run?.input_source?.properties?.topic_path &&
+      typeof run?.input_source?.properties?.topic_path === "string"
+    ) {
+      topic_path = run?.input_source?.properties?.topic_path?.replaceAll(
+        ">>>>>",
+        " > ",
+      )
+    }
+    if (topic_path) {
+      properties.push({
+        name: "Topic",
+        value: topic_path,
+      })
+    }
+
+    return properties
+  }
+
+  function get_advanced_properties(run: TaskRun | null) {
+    let properties: UiProperty[] = []
+    const run_config = run?.output?.source?.run_config
+    if (!run_config) {
+      properties.push(...get_kiln_agent_advanced_properties(run))
+    } else {
+      const run_config_type = run_config.type
+      switch (run_config_type) {
+        case "mcp":
+          break
+        case "kiln_agent": {
+          properties.push(...get_kiln_agent_advanced_properties(run))
+          break
+        }
+        default: {
+          const _exhaustive: never = run_config_type
+          throw new Error(`Unknown run config type: ${_exhaustive}`)
         }
       }
     }

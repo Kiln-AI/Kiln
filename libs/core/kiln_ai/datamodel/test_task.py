@@ -7,18 +7,19 @@ from kiln_ai.datamodel.datamodel_enums import (
     TaskOutputRatingType,
 )
 from kiln_ai.datamodel.prompt_id import PromptGenerators
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.spec_properties import (
     DesiredBehaviourProperties,
     SpecType,
     ToxicityProperties,
 )
-from kiln_ai.datamodel.task import RunConfigProperties, Task, TaskRunConfig
+from kiln_ai.datamodel.task import Task, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 
 
 def test_runconfig_valid_creation():
-    config = RunConfigProperties(
+    config = KilnAgentRunConfigProperties(
         model_name="gpt-4",
         model_provider_name=ModelProviderName.openai,
         prompt_id=PromptGenerators.SIMPLE,
@@ -32,7 +33,7 @@ def test_runconfig_valid_creation():
 
 def test_runconfig_missing_required_fields():
     with pytest.raises(ValidationError) as exc_info:
-        RunConfigProperties()  # type: ignore
+        KilnAgentRunConfigProperties()  # type: ignore
 
     errors = exc_info.value.errors()
     assert (
@@ -45,7 +46,7 @@ def test_runconfig_missing_required_fields():
 
 
 def test_runconfig_custom_prompt_id():
-    config = RunConfigProperties(
+    config = KilnAgentRunConfigProperties(
         model_name="gpt-4",
         model_provider_name=ModelProviderName.openai,
         prompt_id=PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT,
@@ -62,7 +63,7 @@ def sample_task():
 
 @pytest.fixture
 def sample_run_config_props(sample_task):
-    return RunConfigProperties(
+    return KilnAgentRunConfigProperties(
         model_name="gpt-4",
         model_provider_name=ModelProviderName.openai,
         prompt_id=PromptGenerators.SIMPLE,
@@ -101,7 +102,7 @@ def test_task_run_config_missing_required_fields(sample_task):
     # Test missing name
     with pytest.raises(ValidationError) as exc_info:
         TaskRunConfig(
-            run_config_properties=RunConfigProperties(
+            run_config_properties=KilnAgentRunConfigProperties(
                 model_name="gpt-4", model_provider_name="openai"
             ),  # type: ignore
             parent=sample_task,
@@ -156,7 +157,7 @@ def test_normalize_rating_errors(rating_type, rating):
 def test_run_config_defaults():
     """RunConfig should require top_p, temperature, and structured_output_mode to be set."""
 
-    config = RunConfigProperties(
+    config = KilnAgentRunConfigProperties(
         model_name="gpt-4",
         model_provider_name=ModelProviderName.openai,
         prompt_id=PromptGenerators.SIMPLE,
@@ -170,7 +171,7 @@ def test_run_config_valid_ranges():
     """RunConfig should accept valid ranges for top_p and temperature."""
 
     # Test valid values
-    config = RunConfigProperties(
+    config = KilnAgentRunConfigProperties(
         model_name="gpt-4",
         model_provider_name=ModelProviderName.openai,
         prompt_id=PromptGenerators.SIMPLE,
@@ -188,7 +189,7 @@ def test_run_config_valid_ranges():
 def test_run_config_valid_top_p(top_p):
     """Test that RunConfig accepts valid top_p values (0-1)."""
 
-    config = RunConfigProperties(
+    config = KilnAgentRunConfigProperties(
         model_name="gpt-4",
         model_provider_name=ModelProviderName.openai,
         prompt_id=PromptGenerators.SIMPLE,
@@ -205,7 +206,7 @@ def test_run_config_invalid_top_p(top_p):
     """Test that RunConfig rejects invalid top_p values."""
 
     with pytest.raises(ValueError, match="top_p must be between 0 and 1"):
-        RunConfigProperties(
+        KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE,
@@ -219,7 +220,7 @@ def test_run_config_invalid_top_p(top_p):
 def test_run_config_valid_temperature(temperature):
     """Test that RunConfig accepts valid temperature values (0-2)."""
 
-    config = RunConfigProperties(
+    config = KilnAgentRunConfigProperties(
         model_name="gpt-4",
         model_provider_name=ModelProviderName.openai,
         prompt_id=PromptGenerators.SIMPLE,
@@ -236,7 +237,7 @@ def test_run_config_invalid_temperature(temperature):
     """Test that RunConfig rejects invalid temperature values."""
 
     with pytest.raises(ValueError, match="temperature must be between 0 and 2"):
-        RunConfigProperties(
+        KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE,
@@ -320,7 +321,7 @@ def test_task_default_run_config_id_property(tmp_path):
     # Create a run config for the task
     run_config = TaskRunConfig(
         name="Test Config",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE,
@@ -401,3 +402,58 @@ def test_task_specs_readonly(tmp_path):
     specs_default = task.specs(readonly=False)
     assert len(specs_default) == 1
     assert specs_default[0].name == "Readonly Spec"
+
+
+def test_task_prompt_optimization_jobs_relationship(tmp_path):
+    """Test that prompt_optimization_jobs can be created, saved, and retrieved through the task parent."""
+    from kiln_ai.datamodel import PromptOptimizationJob
+
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+
+    prompt_optimization_job = PromptOptimizationJob(
+        name="Test Prompt Optimization Job",
+        job_id="remote-job-123",
+        target_run_config_id="config-123",
+        latest_status="pending",
+        parent=task,
+    )
+    prompt_optimization_job.save_to_file()
+
+    prompt_optimization_jobs = task.prompt_optimization_jobs()
+    assert len(prompt_optimization_jobs) == 1
+    assert prompt_optimization_jobs[0].name == "Test Prompt Optimization Job"
+    assert prompt_optimization_jobs[0].job_id == "remote-job-123"
+
+
+def test_task_prompt_optimization_jobs_readonly(tmp_path):
+    """Test that prompt_optimization_jobs can be retrieved with readonly parameter."""
+    from kiln_ai.datamodel import PromptOptimizationJob
+
+    task = Task(
+        name="Test Task", instruction="Test instruction", path=tmp_path / "task.kiln"
+    )
+    task.save_to_file()
+
+    prompt_optimization_job = PromptOptimizationJob(
+        name="Readonly Prompt Optimization Job",
+        job_id="remote-job-456",
+        target_run_config_id="config-456",
+        latest_status="succeeded",
+        parent=task,
+    )
+    prompt_optimization_job.save_to_file()
+
+    prompt_optimization_jobs_readonly = task.prompt_optimization_jobs(readonly=True)
+    assert len(prompt_optimization_jobs_readonly) == 1
+    assert (
+        prompt_optimization_jobs_readonly[0].name == "Readonly Prompt Optimization Job"
+    )
+
+    prompt_optimization_jobs_default = task.prompt_optimization_jobs(readonly=False)
+    assert len(prompt_optimization_jobs_default) == 1
+    assert (
+        prompt_optimization_jobs_default[0].name == "Readonly Prompt Optimization Job"
+    )

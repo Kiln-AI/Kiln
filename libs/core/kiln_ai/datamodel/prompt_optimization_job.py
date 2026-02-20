@@ -1,0 +1,50 @@
+from typing import TYPE_CHECKING
+
+from pydantic import Field
+
+from kiln_ai.datamodel.basemodel import FilenameString, KilnParentedModel
+
+if TYPE_CHECKING:
+    from kiln_ai.datamodel.task import Task
+
+
+class PromptOptimizationJob(KilnParentedModel):
+    """
+    The Kiln prompt optimization job datamodel.
+    """
+
+    name: FilenameString = Field(description="The name of the prompt optimization job.")
+    description: str | None = Field(
+        default=None,
+        description="A description of the prompt optimization job for you and your team.",
+    )
+    job_id: str = Field(description="The ID of the job on the remote Kiln server.")
+    target_run_config_id: str = Field(
+        description="The ID of the run configuration used for this job."
+    )
+    latest_status: str = Field(
+        default="pending",
+        description="The latest known status of this prompt optimization job (pending, running, succeeded, failed, cancelled). Not updated in real time.",
+    )
+    optimized_prompt: str | None = Field(
+        default=None,
+        description="The optimized prompt result when the job succeeds.",
+    )
+    created_prompt_id: str | None = Field(
+        default=None,
+        description="The ID of the prompt created from this job's result, if any.",
+    )
+    created_run_config_id: str | None = Field(
+        default=None,
+        description="The ID of the run config created from this job's result, if any.",
+    )
+    eval_ids: list[str] = Field(
+        default_factory=list,
+        description="List of eval IDs used for this job.",
+    )
+
+    def parent_task(self) -> "Task | None":
+        """Get the parent task, with proper typing."""
+        if self.parent is None or self.parent.__class__.__name__ != "Task":
+            return None
+        return self.parent  # type: ignore

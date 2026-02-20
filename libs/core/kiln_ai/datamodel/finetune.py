@@ -9,7 +9,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     FineTuneStatusType,
     StructuredOutputMode,
 )
-from kiln_ai.datamodel.run_config import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
@@ -85,7 +85,7 @@ class Finetune(KilnParentedModel):
         default=ChatStrategy.single_turn,
         description="The strategy to use for training the model. 'final_only' will only train on the final response. 'final_and_intermediate' will train on the final response and intermediate outputs (chain of thought or reasoning).",
     )
-    run_config: RunConfigProperties | None = Field(
+    run_config: KilnAgentRunConfigProperties | None = Field(
         default=None,
         description="The run configuration for this fine-tune.",
     )

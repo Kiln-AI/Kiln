@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from kiln_ai.datamodel.json_schema import (
     JsonObjectSchema,
     schema_from_json_str,
+    single_string_field_name,
     string_to_json_key,
     validate_schema,
     validate_schema_with_value_error,
@@ -190,3 +191,32 @@ def test_array_schema_validation():
 
     # Arrays are valid if we don't require an object
     validate_schema(value, schema_str, require_object=False)
+
+
+@pytest.mark.parametrize(
+    "schema,expected",
+    [
+        # Returns field name when exactly one string property
+        ({"properties": {"message": {"type": "string"}}}, "message"),
+        (
+            {
+                "properties": {
+                    "content": {"type": "string", "description": "The content"}
+                }
+            },
+            "content",
+        ),
+        # Returns None for empty or multiple properties
+        ({"properties": {}}, None),
+        ({"properties": {"name": {"type": "string"}, "age": {"type": "number"}}}, None),
+        # Returns None when single property is not a string
+        ({"properties": {"count": {"type": "number"}}}, None),
+        ({"properties": {"user": {"type": "object"}}}, None),
+        ({"properties": {"items": {"type": "array"}}}, None),
+        # Returns None for invalid schemas
+        ({}, None),
+        ({"properties": "invalid"}, None),
+    ],
+)
+def test_single_string_field_name(schema, expected):
+    assert single_string_field_name(schema) == expected

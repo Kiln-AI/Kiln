@@ -24,6 +24,7 @@ from kiln_ai.datamodel.json_schema import (
     schema_from_json_str,
 )
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
+from kiln_ai.datamodel.prompt_optimization_job import PromptOptimizationJob
 from kiln_ai.datamodel.run_config import RunConfigProperties
 from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.task_run import TaskRun
@@ -71,6 +72,10 @@ class TaskRunConfig(KilnParentedModel):
         default=None,
         description="A prompt to use for run config.",
     )
+    starred: bool = Field(
+        default=False,
+        description="Whether this run config is starred/favourited by the user.",
+    )
 
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:
@@ -88,14 +93,21 @@ class TaskRunConfig(KilnParentedModel):
         if not isinstance(data, dict):
             return data
 
-        structured_output_mode = data.get("run_config_properties", {}).get(
-            "structured_output_mode", None
-        )
-        if structured_output_mode is None and "run_config_properties" in data:
-            # Default to unknown. Adapter will have to guess at runtime.
-            data["run_config_properties"]["structured_output_mode"] = (
-                StructuredOutputMode.unknown
+        run_config_properties = data.get("run_config_properties")
+        if not isinstance(run_config_properties, dict):
+            return data
+
+        run_config_properties.setdefault("type", "kiln_agent")
+
+        if run_config_properties.get("type") == "kiln_agent":
+            structured_output_mode = run_config_properties.get(
+                "structured_output_mode", None
             )
+            if structured_output_mode is None:
+                # Default to unknown. Adapter will have to guess at runtime.
+                run_config_properties["structured_output_mode"] = (
+                    StructuredOutputMode.unknown
+                )
 
         return data
 
@@ -107,6 +119,7 @@ class Task(
         "runs": TaskRun,
         "dataset_splits": DatasetSplit,
         "finetunes": Finetune,
+        "prompt_optimization_jobs": PromptOptimizationJob,
         "prompts": Prompt,
         "evals": Eval,
         "specs": Spec,
@@ -129,7 +142,10 @@ class Task(
         min_length=1,
         description="The instructions for the task. Will be used in prompts/training/validation.",
     )
-    requirements: List[TaskRequirement] = Field(default=[])
+    requirements: List[TaskRequirement] = Field(
+        default=[],
+        description="Deprecated: Use specs and prompts instead.",
+    )
     # Output must be an object schema, as things like tool calls only allow objects
     output_json_schema: JsonObjectSchema | None = None
     # Inputs are more flexible, allowing arrays
@@ -176,6 +192,11 @@ class Task(
 
     def specs(self, readonly: bool = False) -> list[Spec]:
         return super().specs(readonly=readonly)  # type: ignore
+
+    def prompt_optimization_jobs(
+        self, readonly: bool = False
+    ) -> list[PromptOptimizationJob]:
+        return super().prompt_optimization_jobs(readonly=readonly)  # type: ignore
 
     # Workaround to return typed parent without importing Task
     def parent_project(self) -> Union["Project", None]:

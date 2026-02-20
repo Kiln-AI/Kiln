@@ -136,3 +136,21 @@ def validate_schema_dict(v: Dict, require_object: bool = True):
 def string_to_json_key(s: str) -> str:
     """Convert a string to a valid JSON key."""
     return re.sub(r"[^a-z0-9_]", "", s.strip().lower().replace(" ", "_"))
+
+
+def single_string_field_name(schema: Dict) -> str | None:
+    """
+    Return the field name if schema has exactly one string property, otherwise None.
+
+    i.e. {"properties": {"message": {"type": "string"}}} returns "message".
+    """
+    properties = schema.get("properties", {})
+    # Must have exactly one property
+    if not isinstance(properties, dict) or len(properties) != 1:
+        return None
+    # Get the single property name and schema
+    field_name, field_schema = next(iter(properties.items()))
+    # Return the field name only if it's a string type
+    if isinstance(field_schema, dict) and field_schema.get("type") == "string":
+        return field_name
+    return None

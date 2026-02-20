@@ -5,24 +5,45 @@ from kiln_ai.adapters.model_adapters.litellm_adapter import (
     LiteLlmAdapter,
     LiteLlmConfig,
 )
+from kiln_ai.adapters.model_adapters.mcp_adapter import MCPAdapter
 from kiln_ai.adapters.provider_tools import (
     core_provider,
+    find_user_model,
     lite_llm_core_config_for_provider,
 )
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    McpRunConfigProperties,
+)
 from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
 def litellm_core_provider_config(
-    run_config_properties: RunConfigProperties,
+    run_config_properties: KilnAgentRunConfigProperties,
 ) -> LiteLlmConfig:
     # For things like the fine-tune provider, we want to run the underlying provider (e.g. openai)
     core_provider_name = core_provider(
         run_config_properties.model_name, run_config_properties.model_provider_name
     )
 
-    # For OpenAI compatible providers, we want to retrieve the underlying provider and update the run config properties to match
+    # Resolve openai_compatible_provider_name for providers that need it.
+    # Two cases need this:
+    # 1. user_model_registry entries with custom providers (provider_type="custom")
+    # 2. Legacy openai_compatible providers (model_name format: "provider_name::model_id")
     openai_compatible_provider_name = None
-    if run_config_properties.model_provider_name == ModelProviderName.openai_compatible:
+    user_model_provider = find_user_model(run_config_properties.model_name)
+    if (
+        user_model_provider
+        and user_model_provider.openai_compatible_provider_name is not None
+    ):
+        openai_compatible_provider_name = (
+            user_model_provider.openai_compatible_provider_name
+        )
+    elif (
+        run_config_properties.model_provider_name == ModelProviderName.openai_compatible
+        and not run_config_properties.model_name.startswith("user_model::")
+    ):
         model_id = run_config_properties.model_name
         try:
             openai_compatible_provider_name, model_id = model_id.split("::")
@@ -55,8 +76,24 @@ def adapter_for_task(
     run_config_properties: RunConfigProperties,
     base_adapter_config: AdapterConfig | None = None,
 ) -> BaseAdapter:
-    return LiteLlmAdapter(
-        kiln_task=kiln_task,
-        config=litellm_core_provider_config(run_config_properties),
-        base_adapter_config=base_adapter_config,
-    )
+    match run_config_properties.type:
+        case "mcp":
+            if not isinstance(run_config_properties, McpRunConfigProperties):
+                raise ValueError("McpRunConfigProperties is required for MCP adapter")
+            return MCPAdapter(
+                task=kiln_task,
+                run_config=run_config_properties,
+                config=base_adapter_config,
+            )
+        case "kiln_agent":
+            if not isinstance(run_config_properties, KilnAgentRunConfigProperties):
+                raise ValueError(
+                    "KilnAgentRunConfigProperties is required for LiteLlmAdapter"
+                )
+            return LiteLlmAdapter(
+                kiln_task=kiln_task,
+                config=litellm_core_provider_config(run_config_properties),
+                base_adapter_config=base_adapter_config,
+            )
+        case _:
+            raise_exhaustive_enum_error(run_config_properties.type)

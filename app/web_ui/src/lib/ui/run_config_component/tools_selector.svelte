@@ -14,6 +14,7 @@
   export let settings: Partial<ToolsSelectorSettings> = {}
   export let tools: string[] = []
   export let single_select_selected_tool: string | null = null // Only used if single_select is true
+  export let pending_tool_id: string | null = null
 
   let tools_store_loaded_task_id: string | null = null
 
@@ -41,6 +42,15 @@
   // Load tools if project_id or task_id changes
   $: load_tools(project_id, task_id)
 
+  function is_tool_available(tool_id: string, project_id: string): boolean {
+    const available = $available_tools[project_id]
+    if (!available) return false
+
+    return available.some((tool_set) =>
+      tool_set.tools.some((tool) => tool.id === tool_id),
+    )
+  }
+
   async function load_tools(project_id: string, task_id: string | null) {
     // Load available tools
     load_available_tools(project_id)
@@ -64,6 +74,24 @@
 
       tools_store_loaded_task_id = task_id
     }
+
+    apply_pending_tool()
+  }
+
+  function apply_pending_tool() {
+    if (
+      pending_tool_id &&
+      !tools.includes(pending_tool_id) &&
+      is_tool_available(pending_tool_id, project_id)
+    ) {
+      const next_tools = [...new Set([...tools, pending_tool_id])]
+      tools = next_tools
+    }
+  }
+
+  // If tools load after initial render, re-apply pending tool
+  $: if (pending_tool_id && $available_tools[project_id]) {
+    apply_pending_tool()
   }
 
   // Update tools_store when tools changes, only after initial load so we don't update it with the empty initial value

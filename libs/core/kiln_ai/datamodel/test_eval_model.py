@@ -142,6 +142,109 @@ def test_eval_train_set_filter_id_defaults_to_none():
     assert eval.train_set_filter_id is None
 
 
+def test_migrate_train_set_filter_id_on_load(mock_task, tmp_path):
+    """Test that loading an eval from file auto-creates train_set_filter_id when missing."""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="My Eval Name",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        train_set_filter_id=None,
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    loaded_eval = Eval.load_from_file(str(eval.path))
+    assert loaded_eval.train_set_filter_id == "tag::train_my_eval_name"
+
+
+def test_migrate_train_set_filter_id_preserves_existing(mock_task, tmp_path):
+    """Test that migration does not overwrite an existing train_set_filter_id."""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="My Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        train_set_filter_id="tag::custom_train_tag",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    loaded_eval = Eval.load_from_file(str(eval.path))
+    assert loaded_eval.train_set_filter_id == "tag::custom_train_tag"
+
+
+def test_migrate_train_set_filter_id_not_on_new_eval():
+    """Test that migration does not trigger on newly created evals (not loaded from file)."""
+    eval = Eval(
+        name="New Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        train_set_filter_id=None,
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    assert eval.train_set_filter_id is None
+
+
+@pytest.mark.parametrize(
+    "eval_name,expected_tag",
+    [
+        ("Simple", "tag::train_simple"),
+        ("Two Words", "tag::train_two_words"),
+        ("UPPER CASE", "tag::train_upper_case"),
+        ("mixed Case Name", "tag::train_mixed_case_name"),
+        ("already_underscored", "tag::train_already_underscored"),
+    ],
+)
+def test_migrate_train_set_filter_id_slugification(
+    mock_task, tmp_path, eval_name, expected_tag
+):
+    """Test that various eval names are correctly slugified into train_set_filter_id."""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name=eval_name,
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    loaded_eval = Eval.load_from_file(str(eval.path))
+    assert loaded_eval.train_set_filter_id == expected_tag
+
+
 def test_eval_default_values():
     eval = Eval(
         name="Test Eval",

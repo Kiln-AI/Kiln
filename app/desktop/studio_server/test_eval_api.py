@@ -44,9 +44,11 @@ from kiln_ai.datamodel.eval import (
     EvalRun,
     EvalTemplateId,
 )
+from kiln_ai.datamodel.prompt import BasePrompt
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
-from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
+from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import Usage
 
 
@@ -138,7 +140,7 @@ def mock_run_config(mock_task):
         id="run_config1",
         name="Test Run Config",
         description="Test Description",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id="simple_chain_of_thought_prompt_builder",
@@ -555,7 +557,7 @@ async def test_task_run_config_from_id(
 async def test_task_run_config_from_id_finetune(mock_task_from_id, mock_task):
     mock_task_from_id.return_value = mock_task
 
-    run_config_props = RunConfigProperties(
+    run_config_props = KilnAgentRunConfigProperties(
         model_name="gpt-4",
         model_provider_name=ModelProviderName.openai,
         prompt_id="simple_chain_of_thought_prompt_builder",
@@ -597,7 +599,7 @@ async def test_get_all_run_configs(mock_task_from_id, mock_task):
     """Test that get_all_run_configs returns regular run configs and completed finetune run configs."""
     mock_task_from_id.return_value = mock_task
 
-    run_config_props = RunConfigProperties(
+    run_config_props = KilnAgentRunConfigProperties(
         model_name="gpt-4",
         model_provider_name=ModelProviderName.openai,
         prompt_id="simple_chain_of_thought_prompt_builder",
@@ -647,6 +649,143 @@ async def test_get_all_run_configs(mock_task_from_id, mock_task):
     assert "regular_run_config1" in config_ids
     assert "finetune_run_config::project1::task1::ft_completed" in config_ids
     assert "finetune_run_config::project1::task1::ft_incomplete" not in config_ids
+
+
+def test_run_config_starred_default(mock_task):
+    """Test that starred defaults to False on TaskRunConfig."""
+    run_config = TaskRunConfig(
+        parent=mock_task,
+        name="Starred Test Config",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_chain_of_thought_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+    assert run_config.starred is False
+
+
+def test_run_config_starred_persists(mock_task):
+    """Test that starred field persists through save and load."""
+    run_config = TaskRunConfig(
+        parent=mock_task,
+        name="Starred Persist Config",
+        starred=True,
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_chain_of_thought_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+    run_config.save_to_file()
+    assert run_config.starred is True
+
+    loaded = TaskRunConfig.load_from_file(run_config.path)
+    assert loaded.starred is True
+
+
+def test_update_run_config_starred(client, mock_task_from_id, mock_run_config):
+    """Test the PATCH endpoint to star a run config."""
+    assert mock_run_config.starred is False
+
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        json={"starred": True},
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["starred"] is True
+
+    loaded = TaskRunConfig.load_from_file(mock_run_config.path)
+    assert loaded.starred is True
+
+
+def test_update_run_config_unstar(client, mock_task_from_id, mock_run_config):
+    """Test the PATCH endpoint to unstar a previously starred run config."""
+    mock_run_config.starred = True
+    mock_run_config.save_to_file()
+
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        json={"starred": False},
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["starred"] is False
+
+    loaded = TaskRunConfig.load_from_file(mock_run_config.path)
+    assert loaded.starred is False
+
+
+def test_update_run_config_not_found(client, mock_task_from_id, mock_task):
+    """Test the PATCH endpoint returns 404 for non-existent run config."""
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/run_config/non_existent",
+        json={"starred": True},
+    )
+    assert response.status_code == 404
+
+
+def test_update_run_config_no_path(client, mock_task_from_id, mock_task):
+    """Test that updating a run config without a path (e.g. finetune) returns 400."""
+    finetune_run_config = TaskRunConfig(
+        id="finetune_run_config::project1::task1::ft1",
+        name="Finetune Config",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_chain_of_thought_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=mock_task,
+    )
+
+    with patch(
+        "app.desktop.studio_server.eval_api.task_run_config_from_id"
+    ) as mock_from_id:
+        mock_from_id.return_value = finetune_run_config
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/run_config/finetune_run_config::project1::task1::ft1",
+            json={"starred": True},
+        )
+    assert response.status_code == 400
+
+
+def test_update_run_config_prompt_name(client, mock_task_from_id, mock_run_config):
+    """Test the PATCH endpoint to update a frozen prompt's name."""
+    mock_run_config.prompt = BasePrompt(
+        name="Original Name",
+        prompt="This is a frozen prompt",
+    )
+    mock_run_config.save_to_file()
+
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        json={"prompt_name": "Updated Name"},
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["prompt"]["name"] == "Updated Name"
+
+    loaded = TaskRunConfig.load_from_file(mock_run_config.path)
+    assert loaded.prompt is not None
+    assert loaded.prompt.name == "Updated Name"
+
+
+def test_update_run_config_prompt_name_no_prompt(
+    client, mock_task_from_id, mock_run_config
+):
+    """Test that updating prompt_name when no frozen prompt exists returns 400."""
+    assert mock_run_config.prompt is None
+
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        json={"prompt_name": "New Name"},
+    )
+    assert response.status_code == 400
+    assert "no frozen prompt" in response.json()["detail"].lower()
 
 
 @pytest.fixture
@@ -1260,6 +1399,163 @@ async def test_create_eval_then_delete_on_spec_failure(
     assert len(mock_task.evals()) == 0
 
 
+def test_update_eval_name_and_description(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    """Test that update_eval successfully updates name and description."""
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        update_request = {
+            "name": "Updated Eval Name",
+            "description": "Updated description",
+        }
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/eval/eval1",
+            json=update_request,
+        )
+
+    assert response.status_code == 200
+    updated_eval = response.json()
+    assert updated_eval["name"] == "Updated Eval Name"
+    assert updated_eval["description"] == "Updated description"
+
+    # Verify the eval was saved
+    eval_from_disk = mock_task.evals()[0]
+    assert eval_from_disk.name == "Updated Eval Name"
+    assert eval_from_disk.description == "Updated description"
+
+
+def test_update_eval_train_set_filter_id_when_none(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    """Test that update_eval successfully sets train_set_filter_id when it's None."""
+    # Ensure train_set_filter_id is None
+    mock_eval.train_set_filter_id = None
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        update_request = {
+            "train_set_filter_id": "tag::train_my_eval",
+        }
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/eval/eval1",
+            json=update_request,
+        )
+
+    assert response.status_code == 200
+    updated_eval = response.json()
+    assert updated_eval["train_set_filter_id"] == "tag::train_my_eval"
+
+    # Verify the eval was saved
+    eval_from_disk = mock_task.evals()[0]
+    assert eval_from_disk.train_set_filter_id == "tag::train_my_eval"
+
+
+def test_update_eval_train_set_filter_id_when_already_set(
+    client, mock_task_from_id, mock_eval
+):
+    """Test that update_eval raises error when trying to change existing train_set_filter_id."""
+    # Set an existing train_set_filter_id
+    mock_eval.train_set_filter_id = "tag::existing_train_set"
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        update_request = {
+            "train_set_filter_id": "tag::new_train_set",
+        }
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/eval/eval1",
+            json=update_request,
+        )
+
+    assert response.status_code == 400
+    assert (
+        "Train set filter is already set and cannot be changed"
+        in response.json()["detail"]
+    )
+
+
+def test_update_eval_partial_update(client, mock_task_from_id, mock_eval, mock_task):
+    """Test that update_eval only updates provided fields."""
+    original_name = mock_eval.name
+    original_description = mock_eval.description
+    mock_eval.train_set_filter_id = None
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        # Only update train_set_filter_id
+        update_request = {
+            "train_set_filter_id": "tag::train_set",
+        }
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/eval/eval1",
+            json=update_request,
+        )
+
+    assert response.status_code == 200
+    updated_eval = response.json()
+
+    # Name and description should remain unchanged
+    assert updated_eval["name"] == original_name
+    assert updated_eval["description"] == original_description
+    # train_set_filter_id should be updated
+    assert updated_eval["train_set_filter_id"] == "tag::train_set"
+
+
+def test_update_eval_not_found(client):
+    """Test that update_eval returns 404 when eval is not found."""
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.side_effect = HTTPException(
+            status_code=404, detail="Eval not found. ID: nonexistent_eval"
+        )
+
+        update_request = {
+            "name": "Updated Name",
+        }
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/eval/nonexistent_eval",
+            json=update_request,
+        )
+
+    assert response.status_code == 404
+    assert "Eval not found" in response.json()["detail"]
+
+
+def test_update_eval_empty_request(client, mock_task_from_id, mock_eval, mock_task):
+    """Test that update_eval succeeds with empty request (no fields to update)."""
+    original_name = mock_eval.name
+    original_description = mock_eval.description
+    original_train_set_filter_id = mock_eval.train_set_filter_id
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        # Empty update request
+        update_request = {}
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/eval/eval1",
+            json=update_request,
+        )
+
+    assert response.status_code == 200
+    updated_eval = response.json()
+
+    # All fields should remain unchanged
+    assert updated_eval["name"] == original_name
+    assert updated_eval["description"] == original_description
+    assert updated_eval["train_set_filter_id"] == original_train_set_filter_id
+
+
 def test_runs_in_filter():
     # Create a mock task with runs
     mock_task = Mock(spec=Task)
@@ -1322,8 +1618,8 @@ def test_build_score_key_to_task_requirement_id():
         "app.desktop.studio_server.eval_api.string_to_json_key"
     ) as mock_string_to_json_key:
         # Configure the mock to convert spaces to underscores and lowercase
-        mock_string_to_json_key.side_effect = (
-            lambda name: name.lower().replace(" ", "_").replace("-", "_")
+        mock_string_to_json_key.side_effect = lambda name: (
+            name.lower().replace(" ", "_").replace("-", "_")
         )
 
         # Call the function under test
@@ -2071,7 +2367,7 @@ async def test_get_run_configs_includes_finetunes_with_run_config(
     """Test that finetunes are included in run configs only if they have a run_config set."""
     mock_task_from_id.return_value = mock_task
 
-    run_config_props = RunConfigProperties(
+    run_config_props = KilnAgentRunConfigProperties(
         model_name="gpt-4",
         model_provider_name=ModelProviderName.openai,
         prompt_id="simple_chain_of_thought_prompt_builder",

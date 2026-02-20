@@ -1,24 +1,33 @@
 from http import HTTPStatus
 from typing import Any
-from urllib.parse import quote
 
 import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.gepa_job_result_response import GEPAJobResultResponse
+from ...models.check_model_supported_response import CheckModelSupportedResponse
 from ...models.http_validation_error import HTTPValidationError
-from ...types import Response
+from ...types import UNSET, Response
 
 
 def _get_kwargs(
-    job_id: str,
+    *,
+    model_name: str,
+    model_provider_name: str,
 ) -> dict[str, Any]:
+
+    params: dict[str, Any] = {}
+
+    params["model_name"] = model_name
+
+    params["model_provider_name"] = model_provider_name
+
+    params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
+
     _kwargs: dict[str, Any] = {
         "method": "get",
-        "url": "/v1/jobs/gepa_job/{job_id}/result".format(
-            job_id=quote(str(job_id), safe=""),
-        ),
+        "url": "/v1/jobs/prompt_optimization_job/check_model_supported",
+        "params": params,
     }
 
     return _kwargs
@@ -26,9 +35,9 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> GEPAJobResultResponse | HTTPValidationError | None:
+) -> CheckModelSupportedResponse | HTTPValidationError | None:
     if response.status_code == 200:
-        response_200 = GEPAJobResultResponse.from_dict(response.json())
+        response_200 = CheckModelSupportedResponse.from_dict(response.json())
 
         return response_200
 
@@ -45,7 +54,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[GEPAJobResultResponse | HTTPValidationError]:
+) -> Response[CheckModelSupportedResponse | HTTPValidationError]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -55,25 +64,28 @@ def _build_response(
 
 
 def sync_detailed(
-    job_id: str,
     *,
     client: AuthenticatedClient,
-) -> Response[GEPAJobResultResponse | HTTPValidationError]:
-    """Get Gepa Job Result
+    model_name: str,
+    model_provider_name: str,
+) -> Response[CheckModelSupportedResponse | HTTPValidationError]:
+    """Check Prompt Optimization Model Supported
 
     Args:
-        job_id (str):
+        model_name (str):
+        model_provider_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[GEPAJobResultResponse | HTTPValidationError]
+        Response[CheckModelSupportedResponse | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
-        job_id=job_id,
+        model_name=model_name,
+        model_provider_name=model_provider_name,
     )
 
     response = client.get_httpx_client().request(
@@ -84,49 +96,55 @@ def sync_detailed(
 
 
 def sync(
-    job_id: str,
     *,
     client: AuthenticatedClient,
-) -> GEPAJobResultResponse | HTTPValidationError | None:
-    """Get Gepa Job Result
+    model_name: str,
+    model_provider_name: str,
+) -> CheckModelSupportedResponse | HTTPValidationError | None:
+    """Check Prompt Optimization Model Supported
 
     Args:
-        job_id (str):
+        model_name (str):
+        model_provider_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        GEPAJobResultResponse | HTTPValidationError
+        CheckModelSupportedResponse | HTTPValidationError
     """
 
     return sync_detailed(
-        job_id=job_id,
         client=client,
+        model_name=model_name,
+        model_provider_name=model_provider_name,
     ).parsed
 
 
 async def asyncio_detailed(
-    job_id: str,
     *,
     client: AuthenticatedClient,
-) -> Response[GEPAJobResultResponse | HTTPValidationError]:
-    """Get Gepa Job Result
+    model_name: str,
+    model_provider_name: str,
+) -> Response[CheckModelSupportedResponse | HTTPValidationError]:
+    """Check Prompt Optimization Model Supported
 
     Args:
-        job_id (str):
+        model_name (str):
+        model_provider_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[GEPAJobResultResponse | HTTPValidationError]
+        Response[CheckModelSupportedResponse | HTTPValidationError]
     """
 
     kwargs = _get_kwargs(
-        job_id=job_id,
+        model_name=model_name,
+        model_provider_name=model_provider_name,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -135,26 +153,29 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    job_id: str,
     *,
     client: AuthenticatedClient,
-) -> GEPAJobResultResponse | HTTPValidationError | None:
-    """Get Gepa Job Result
+    model_name: str,
+    model_provider_name: str,
+) -> CheckModelSupportedResponse | HTTPValidationError | None:
+    """Check Prompt Optimization Model Supported
 
     Args:
-        job_id (str):
+        model_name (str):
+        model_provider_name (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        GEPAJobResultResponse | HTTPValidationError
+        CheckModelSupportedResponse | HTTPValidationError
     """
 
     return (
         await asyncio_detailed(
-            job_id=job_id,
             client=client,
+            model_name=model_name,
+            model_provider_name=model_provider_name,
         )
     ).parsed

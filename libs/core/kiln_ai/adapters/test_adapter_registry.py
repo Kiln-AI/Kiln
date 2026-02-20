@@ -11,13 +11,18 @@ from kiln_ai.adapters.model_adapters.litellm_adapter import (
     LiteLlmAdapter,
     LiteLlmConfig,
 )
+from kiln_ai.adapters.model_adapters.mcp_adapter import MCPAdapter
 from kiln_ai.adapters.provider_tools import (
     Config,
     LiteLlmCoreConfig,
     lite_llm_core_config_for_provider,
 )
 from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
-from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    McpRunConfigProperties,
+    MCPToolReference,
+)
 
 
 @pytest.fixture
@@ -69,7 +74,7 @@ def test_openai_adapter_creation(mock_config, basic_task):
 
         adapter = adapter_for_task(
             kiln_task=basic_task,
-            run_config_properties=RunConfigProperties(
+            run_config_properties=KilnAgentRunConfigProperties(
                 model_name="gpt-4",
                 model_provider_name=ModelProviderName.openai,
                 prompt_id="simple_prompt_builder",
@@ -117,7 +122,7 @@ def test_openrouter_adapter_creation(mock_config, basic_task):
 
         adapter = adapter_for_task(
             kiln_task=basic_task,
-            run_config_properties=RunConfigProperties(
+            run_config_properties=KilnAgentRunConfigProperties(
                 model_name="anthropic/claude-3-opus",
                 model_provider_name=ModelProviderName.openrouter,
                 prompt_id="simple_prompt_builder",
@@ -156,7 +161,7 @@ def test_openrouter_adapter_creation(mock_config, basic_task):
 def test_siliconflow_adapter_creation(mock_config, basic_task):
     adapter = adapter_for_task(
         kiln_task=basic_task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
             model_provider_name=ModelProviderName.siliconflow_cn,
             prompt_id="simple_prompt_builder",
@@ -199,7 +204,7 @@ def test_siliconflow_adapter_creation(mock_config, basic_task):
 def test_openai_compatible_adapter_creation(mock_config, basic_task, provider):
     adapter = adapter_for_task(
         kiln_task=basic_task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="test-model",
             model_provider_name=provider,
             prompt_id="simple_prompt_builder",
@@ -215,7 +220,7 @@ def test_openai_compatible_adapter_creation(mock_config, basic_task, provider):
 def test_custom_prompt_builder(mock_config, basic_task):
     adapter = adapter_for_task(
         kiln_task=basic_task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id="simple_chain_of_thought_prompt_builder",
@@ -231,7 +236,7 @@ def test_tags_passed_through(mock_config, basic_task):
     tags = ["test-tag-1", "test-tag-2"]
     adapter = adapter_for_task(
         kiln_task=basic_task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id="simple_prompt_builder",
@@ -249,7 +254,7 @@ def test_invalid_provider(mock_config, basic_task):
     with pytest.raises(ValueError, match="Input should be"):
         adapter_for_task(
             kiln_task=basic_task,
-            run_config_properties=RunConfigProperties(
+            run_config_properties=KilnAgentRunConfigProperties(
                 model_name="test-model",
                 model_provider_name="invalid",
                 prompt_id="simple_prompt_builder",
@@ -271,7 +276,7 @@ def test_openai_compatible_adapter(basic_task):
 
         adapter = adapter_for_task(
             kiln_task=basic_task,
-            run_config_properties=RunConfigProperties(
+            run_config_properties=KilnAgentRunConfigProperties(
                 model_name="some-provider::test-model",
                 model_provider_name=ModelProviderName.openai_compatible,
                 prompt_id="simple_prompt_builder",
@@ -296,7 +301,7 @@ def test_openai_compatible_adapter(basic_task):
 def test_custom_openai_compatible_provider(mock_config, basic_task):
     adapter = adapter_for_task(
         kiln_task=basic_task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="openai::test-model",
             model_provider_name=ModelProviderName.kiln_custom_registry,
             prompt_id="simple_prompt_builder",
@@ -339,7 +344,7 @@ def test_adapter_for_task_core_provider_mapping(
 
         adapter = adapter_for_task(
             kiln_task=basic_task,
-            run_config_properties=RunConfigProperties(
+            run_config_properties=KilnAgentRunConfigProperties(
                 model_name="fake-gpt",
                 model_provider_name=ModelProviderName.kiln_fine_tune,
                 prompt_id="simple_prompt_builder",
@@ -378,7 +383,7 @@ def test_adapter_for_task_preserves_run_config_properties(
     )
     mock_lite_llm_core_config_for_provider.return_value = mock_lite_llm_core_config
 
-    run_config_props = RunConfigProperties(
+    run_config_props = KilnAgentRunConfigProperties(
         model_name="gpt-4",
         model_provider_name=ModelProviderName.openai,
         prompt_id="simple_prompt_builder",
@@ -424,7 +429,7 @@ def test_adapter_for_task_with_base_adapter_config(
 
     adapter = adapter_for_task(
         kiln_task=basic_task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id="simple_prompt_builder",
@@ -475,7 +480,8 @@ def comprehensive_mock_config():
 
 
 def create_config_declarative(
-    provider_name: ModelProviderName, run_config_properties: RunConfigProperties
+    provider_name: ModelProviderName,
+    run_config_properties: KilnAgentRunConfigProperties,
 ) -> LiteLlmConfig:
     """Regression test, but also easier to verify the config is what we expect for each provider."""
     match provider_name:
@@ -610,7 +616,7 @@ def test_adapter_for_task_matches_original_switch(
     to the original switch statement for all providers.
     """
     # Standard run config properties for testing
-    run_config_props = RunConfigProperties(
+    run_config_props = KilnAgentRunConfigProperties(
         model_name=model_name,
         model_provider_name=provider_name,
         prompt_id="simple_prompt_builder",
@@ -647,7 +653,7 @@ def test_adapter_for_task_matches_original_switch_openrouter_env_var(
     Test that OpenRouter respects the OPENROUTER_BASE_URL environment variable
     exactly like the original switch statement did.
     """
-    run_config_props = RunConfigProperties(
+    run_config_props = KilnAgentRunConfigProperties(
         model_name="anthropic/claude-3-opus",
         model_provider_name=ModelProviderName.openrouter,
         prompt_id="simple_prompt_builder",
@@ -680,7 +686,7 @@ def test_adapter_for_task_matches_original_switch_ollama_default_url(
     # Override mock to return None for ollama_base_url
     comprehensive_mock_config.shared.return_value.ollama_base_url = None
 
-    run_config_props = RunConfigProperties(
+    run_config_props = KilnAgentRunConfigProperties(
         model_name="llama3.2",
         model_provider_name=ModelProviderName.ollama,
         prompt_id="simple_prompt_builder",
@@ -750,7 +756,7 @@ def test_lite_llm_core_config_for_provider_virtual_providers(
         with pytest.raises(ValueError, match="not a core provider"):
             adapter_for_task(
                 basic_task,
-                RunConfigProperties(
+                KilnAgentRunConfigProperties(
                     model_name="project::task::finetune",
                     model_provider_name=provider_name,
                     prompt_id="simple_prompt_builder",
@@ -763,7 +769,7 @@ def test_docker_model_runner_adapter_creation(mock_config, basic_task):
     """Test Docker Model Runner adapter creation with default and custom base URL."""
     adapter = adapter_for_task(
         kiln_task=basic_task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="llama_3_2_3b",
             model_provider_name=ModelProviderName.docker_model_runner,
             prompt_id="simple_prompt_builder",
@@ -782,6 +788,17 @@ def test_docker_model_runner_adapter_creation(mock_config, basic_task):
     assert adapter.config.default_headers is None
 
 
+def test_mcp_adapter_creation(basic_task):
+    run_config = McpRunConfigProperties(
+        tool_reference=MCPToolReference(tool_id="mcp::local::server_id::tool_name")
+    )
+    adapter = adapter_for_task(
+        kiln_task=basic_task,
+        run_config_properties=run_config,
+    )
+    assert isinstance(adapter, MCPAdapter)
+
+
 def test_docker_model_runner_adapter_creation_with_custom_url(mock_config, basic_task):
     """Test Docker Model Runner adapter creation with custom base URL."""
     mock_config.shared.return_value.docker_model_runner_base_url = (
@@ -790,7 +807,7 @@ def test_docker_model_runner_adapter_creation_with_custom_url(mock_config, basic
 
     adapter = adapter_for_task(
         kiln_task=basic_task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="llama_3_2_3b",
             model_provider_name=ModelProviderName.docker_model_runner,
             prompt_id="simple_prompt_builder",
@@ -815,7 +832,7 @@ def test_docker_model_runner_adapter_creation_with_none_url(mock_config, basic_t
 
     adapter = adapter_for_task(
         kiln_task=basic_task,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="llama_3_2_3b",
             model_provider_name=ModelProviderName.docker_model_runner,
             prompt_id="simple_prompt_builder",
@@ -832,3 +849,109 @@ def test_docker_model_runner_adapter_creation_with_none_url(mock_config, basic_t
     )
     assert adapter.config.base_url == "http://localhost:12434/engines/llama.cpp/v1"
     assert adapter.config.default_headers is None
+
+
+def test_user_model_builtin_provider_adapter_creation(basic_task):
+    """Test adapter creation for user models with builtin providers"""
+    with patch("kiln_ai.adapters.provider_tools.Config") as mock:
+        config_instance = Mock()
+        config_instance.user_model_registry = [
+            {
+                "id": "test-um-builtin",
+                "provider_type": "builtin",
+                "provider_id": "openai",
+                "model_id": "gpt-custom",
+                "overrides": {"supports_structured_output": True},
+            }
+        ]
+        config_instance.custom_models = []
+        mock.shared.return_value = config_instance
+
+        mock_lite_llm_core_config_result = LiteLlmCoreConfig(
+            additional_body_options={"api_key": "test-openai-key"},
+        )
+
+        with patch(
+            "kiln_ai.adapters.adapter_registry.lite_llm_core_config_for_provider"
+        ) as mock_lite_llm_core_config:
+            mock_lite_llm_core_config.return_value = mock_lite_llm_core_config_result
+
+            adapter = adapter_for_task(
+                kiln_task=basic_task,
+                run_config_properties=KilnAgentRunConfigProperties(
+                    model_name="user_model::test-um-builtin",
+                    model_provider_name=ModelProviderName.openai,
+                    prompt_id="simple_prompt_builder",
+                    structured_output_mode="json_schema",
+                ),
+            )
+
+            assert isinstance(adapter, LiteLlmAdapter)
+            mock_lite_llm_core_config.assert_called_once_with(
+                ModelProviderName.openai, None
+            )
+
+
+def test_user_model_custom_provider_adapter_creation(basic_task):
+    """Test adapter creation for user models with custom providers"""
+    with patch("kiln_ai.adapters.provider_tools.Config") as mock:
+        config_instance = Mock()
+        config_instance.user_model_registry = [
+            {
+                "id": "test-um-custom",
+                "provider_type": "custom",
+                "provider_id": "MyProvider",
+                "model_id": "custom-model",
+                "overrides": {"supports_vision": True},
+            }
+        ]
+        config_instance.custom_models = []
+        config_instance.openai_compatible_providers = [
+            {
+                "name": "MyProvider",
+                "base_url": "https://my-provider.com/v1",
+                "api_key": "my-key",
+            },
+        ]
+        mock.shared.return_value = config_instance
+
+        mock_lite_llm_core_config_result = LiteLlmCoreConfig(
+            base_url="https://my-provider.com/v1",
+            additional_body_options={"api_key": "my-key"},
+        )
+
+        with patch(
+            "kiln_ai.adapters.adapter_registry.lite_llm_core_config_for_provider"
+        ) as mock_lite_llm_core_config:
+            mock_lite_llm_core_config.return_value = mock_lite_llm_core_config_result
+
+            adapter = adapter_for_task(
+                kiln_task=basic_task,
+                run_config_properties=KilnAgentRunConfigProperties(
+                    model_name="user_model::test-um-custom",
+                    model_provider_name=ModelProviderName.openai_compatible,
+                    prompt_id="simple_prompt_builder",
+                    structured_output_mode="json_schema",
+                ),
+            )
+
+            assert isinstance(adapter, LiteLlmAdapter)
+            # Should call with custom provider name
+            mock_lite_llm_core_config.assert_called_once_with(
+                ModelProviderName.openai_compatible, "MyProvider"
+            )
+            assert adapter.config.base_url == "https://my-provider.com/v1"
+
+
+def test_adapter_for_task_rejects_kiln_agent_non_instance(basic_task):
+    class FakeRunConfig:
+        type = "kiln_agent"
+
+    with pytest.raises(
+        ValueError,
+        match="KilnAgentRunConfigProperties is required for LiteLlmAdapter",
+    ):
+        adapter_for_task(
+            kiln_task=basic_task,
+            run_config_properties=FakeRunConfig(),  # type: ignore[arg-type]
+        )

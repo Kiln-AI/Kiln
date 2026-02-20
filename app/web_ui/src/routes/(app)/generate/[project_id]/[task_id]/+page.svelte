@@ -55,9 +55,8 @@
       return
     } else if (reason_param) {
       //typecheck will flag this if we add a new case that we don't handle
-      const _: never = reason_param
-      console.error(`Invalid reason: ${_}`)
-      return
+      const invalid_reason: never = reason_param
+      console.error(`Invalid reason: ${invalid_reason}`)
     }
 
     // user lands on this page without any specific state in the URL, we want to redirect

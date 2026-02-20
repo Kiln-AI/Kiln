@@ -14,6 +14,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, RunOutpu
 from kiln_ai.adapters.prompt_builders import PromptGenerators
 from kiln_ai.datamodel import Project, Task, TaskRun
 from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, EvalDataType, EvalScores
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import RunConfigProperties, StructuredOutputMode
 
 # all the tokens we score for, and their float scores.
@@ -265,7 +266,7 @@ This is the full conversation history for the task run:
 
         adapter = adapter_for_task(
             self.geval_task,
-            run_config_properties=RunConfigProperties(
+            run_config_properties=KilnAgentRunConfigProperties(
                 model_name=model_name,
                 model_provider_name=provider,
                 # We always use Simple COT for G-Eval and LLM as Judge

@@ -1,15 +1,11 @@
 <script lang="ts">
   import { page } from "$app/stores"
-  import {
-    current_project,
-    current_task,
-    current_task_prompts,
-    prompt_name_from_id,
-  } from "$lib/stores"
+  import { current_task, current_task_prompts } from "$lib/stores"
   import AppPage from "../../../../../app_page.svelte"
   import Output from "$lib/ui/output.svelte"
   import { formatDate } from "$lib/utils/formatters"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
+  import { getPromptType } from "../../prompt_generators/prompt_generators"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -18,24 +14,20 @@
   $: prompt_model = $current_task_prompts?.prompts.find(
     (prompt) => prompt.id === prompt_id,
   )
+
   let prompt_props: Record<string, string | undefined | null> = {}
   $: {
     prompt_props = Object.fromEntries(
       Object.entries({
         ID: prompt_model?.id,
         Name: prompt_model?.name,
-        Description: prompt_model?.description,
+        Description: prompt_model?.description || undefined,
+        Type: getPromptType(
+          prompt_model?.id || "",
+          prompt_model?.generator_id || null,
+        ),
         "Created By": prompt_model?.created_by,
         "Created At": formatDate(prompt_model?.created_at || undefined),
-        "Chain of Thought": prompt_model?.chain_of_thought_instructions
-          ? "Yes"
-          : "No",
-        "Source Generator": prompt_model?.generator_id
-          ? prompt_name_from_id(
-              prompt_model?.generator_id,
-              $current_task_prompts,
-            )
-          : undefined,
       }).filter(([_, value]) => value !== undefined && value !== null),
     )
   }
@@ -49,6 +41,10 @@
     subtitle={prompt_model?.name}
     sub_subtitle={prompt_model?.description || undefined}
     breadcrumbs={[
+      {
+        label: "Optimize",
+        href: `/optimize/${project_id}/${task_id}`,
+      },
       {
         label: "Prompts",
         href: `/prompts/${project_id}/${task_id}`,
@@ -113,19 +109,17 @@
   bind:this={edit_dialog}
   name="Prompt"
   warning="Prompt body is locked to preserve consistency of past data. If you want to edit the prompt body, create a new prompt."
-  patch_url={`/api/projects/${$current_project?.id}/tasks/${task_id}/prompts/${prompt_id}`}
-  delete_url={`/api/projects/${$current_project?.id}/tasks/${task_id}/prompts/${prompt_id}`}
+  patch_url={`/api/projects/${project_id}/tasks/${task_id}/prompts/${prompt_id}`}
+  delete_url={`/api/projects/${project_id}/tasks/${task_id}/prompts/${prompt_id}`}
   fields={[
     {
       label: "Prompt Name",
-      description: "The name of the prompt",
       api_name: "name",
       value: prompt_model?.name || "",
       input_type: "input",
     },
     {
-      label: "Description",
-      description: "The description of the prompt",
+      label: "Prompt Description",
       api_name: "description",
       optional: true,
       value: prompt_model?.description || "",

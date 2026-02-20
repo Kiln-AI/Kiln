@@ -14,7 +14,7 @@ from kiln_ai.datamodel import (
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.extraction import Document
 from kiln_ai.datamodel.prompt_id import PromptGenerators
-from kiln_ai.datamodel.run_config import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
 from app.desktop.studio_server.data_gen_api import (
     DataGenCategoriesApiInput,
@@ -120,7 +120,7 @@ def test_generate_categories_success(
         num_subtopics=4,
         guidance="Generate tech categories",
         gen_type="eval",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE,
@@ -153,7 +153,7 @@ def test_generate_samples_success(
         topic=["technology", "AI"],
         gen_type="training",
         guidance="Make long samples",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE,
@@ -174,6 +174,57 @@ def test_generate_samples_success(
     mock_task_adapter.invoke.assert_awaited_once()
 
 
+def test_generate_categories_rejects_mcp_run_config(
+    mock_task_from_id,
+    mock_project_from_id,
+    client,
+):
+    input_data = {
+        "node_path": ["parent", "child"],
+        "num_subtopics": 4,
+        "guidance": "Generate tech categories",
+        "gen_type": "eval",
+        "run_config_properties": {
+            "type": "mcp",
+            "tool_reference": {
+                "tool_id": "mcp::local::server_id::tool_name",
+            },
+        },
+    }
+
+    response = client.post(
+        "/api/projects/proj-ID/tasks/task-ID/generate_categories",
+        json=input_data,
+    )
+
+    assert response.status_code == 422
+
+
+def test_generate_samples_rejects_mcp_run_config(
+    mock_task_from_id,
+    mock_project_from_id,
+    client,
+):
+    input_data = {
+        "topic": ["technology", "AI"],
+        "gen_type": "training",
+        "guidance": "Make long samples",
+        "run_config_properties": {
+            "type": "mcp",
+            "tool_reference": {
+                "tool_id": "mcp::local::server_id::tool_name",
+            },
+        },
+    }
+
+    response = client.post(
+        "/api/projects/proj-ID/tasks/task-ID/generate_inputs",
+        json=input_data,
+    )
+
+    assert response.status_code == 422
+
+
 @pytest.mark.paid
 def test_save_sample_success_paid_run(
     mock_task_from_id,
@@ -185,7 +236,7 @@ def test_save_sample_success_paid_run(
         input="Test sample input",
         input_model_name="gpt_4o",
         input_provider="openai",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt_4o_mini",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE,
@@ -242,7 +293,7 @@ def test_generate_sample_success_with_mock_invoke(
         input="Test sample input",
         input_model_name="gpt_4o",
         input_provider="openai",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt_4o_mini",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE,
@@ -317,7 +368,7 @@ def test_generate_sample_success_with_topic_path(
         topic_path=["AI", "Machine Learning", "Deep Learning"],
         input_model_name="gpt_4o",
         input_provider="openai",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt_4o_mini",
             model_provider_name=ModelProviderName.openai,
             prompt_id=PromptGenerators.SIMPLE,
@@ -453,7 +504,7 @@ def test_generate_sample_guidance_generation(
             input="Test input",
             input_model_name="gpt-4",
             input_provider="openai",
-            run_config_properties=RunConfigProperties(
+            run_config_properties=KilnAgentRunConfigProperties(
                 model_name="gpt-4",
                 model_provider_name=ModelProviderName.openai,
                 prompt_id=PromptGenerators.SIMPLE,
@@ -505,7 +556,7 @@ def test_generate_qna_success_with_session_and_tags(
             document_id="doc1",
             part_text=["section a", "section b"],
             num_samples=3,
-            run_config_properties=RunConfigProperties(
+            run_config_properties=KilnAgentRunConfigProperties(
                 model_name="gpt_4o_mini",
                 model_provider_name=ModelProviderName.openai,
                 prompt_id=PromptGenerators.SIMPLE,
@@ -533,6 +584,42 @@ def test_generate_qna_success_with_session_and_tags(
         assert payload["kiln_data_gen_document_name"] == "doc1"
         assert payload["kiln_data_gen_part_text"] == ["section a", "section b"]
         assert payload["kiln_data_gen_num_samples"] == 3
+
+
+def test_generate_qna_rejects_mcp_run_config(
+    mock_task_from_id,
+    client,
+    test_task,
+):
+    with (
+        patch(
+            "kiln_ai.datamodel.extraction.Document.from_id_and_parent_path"
+        ) as mock_document,
+        patch(
+            "app.desktop.studio_server.data_gen_api.project_from_id"
+        ) as mock_project_from_id,
+    ):
+        mock_document.return_value = MagicMock(friendly_name="doc1", spec=Document)
+        mock_project_from_id.return_value = test_task.parent
+
+        input_data = {
+            "document_id": "doc1",
+            "part_text": ["section a", "section b"],
+            "num_samples": 3,
+            "run_config_properties": {
+                "type": "mcp",
+                "tool_reference": {
+                    "tool_id": "mcp::local::server_id::tool_name",
+                },
+            },
+        }
+
+        response = client.post(
+            "/api/projects/proj-ID/tasks/task-ID/generate_qna?session_id=abcd",
+            json=input_data,
+        )
+
+        assert response.status_code == 422
 
 
 def test_save_qna_pair_persists_task_run(

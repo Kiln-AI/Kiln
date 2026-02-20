@@ -19,17 +19,21 @@
     Task,
     TaskRunConfig,
   } from "$lib/types"
+  import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
   import AvailableModelsDropdown from "./available_models_dropdown.svelte"
   import PromptTypeSelector from "./prompt_type_selector.svelte"
   import ToolsSelector from "./tools_selector.svelte"
   import AdvancedRunOptions from "./advanced_run_options.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
+  import McpRunConfigPanel from "$lib/ui/run_config_component/mcp_run_config_panel.svelte"
   import { tick, onMount } from "svelte"
   import { ui_state } from "$lib/stores"
   import { load_task_prompts } from "$lib/stores/prompts_store"
   import type { ModelDropdownSettings } from "./model_dropdown_settings"
+  import FormElement from "$lib/utils/form_element.svelte"
   import { arrays_equal } from "$lib/utils/collections"
   import type { ToolsSelectorSettings } from "./tools_selector_settings"
+  import { generate_memorable_name } from "$lib/utils/name_generator"
 
   // Props
   export let project_id: string
@@ -46,11 +50,15 @@
   export let show_tools_selector_in_advanced: boolean = false
   export let requires_structured_output: boolean = false
   export let hide_model_selector: boolean = false
+  export let pending_tool_id: string | null = null
+  export let pending_run_config_id: string | null = null
   // Model-specific suggested run config, such as fine-tuned models. If a model like that is selected, this will be set to the run config ID.
   export let selected_model_specific_run_config_id: string | null = null
+  export let run_config_name: string = generate_memorable_name()
+  export let show_name_field: boolean = true
 
   export let model: string = $ui_state.selected_model
-  let prompt_method: string = "simple_prompt_builder"
+  export let prompt_method: string = "simple_prompt_builder"
   export let tools: string[] = []
   let requires_tool_support: boolean = false
 
@@ -81,6 +89,25 @@
     load_task_prompts(project_id, current_task.id)
   }
 
+  $: is_mcp = (() => {
+    if (!selected_run_config_id || !current_task?.id) return false
+    const all_configs =
+      $run_configs_by_task_composite_id[
+        get_task_composite_id(project_id, current_task.id)
+      ] ?? []
+    const config = all_configs.find((c) => c.id === selected_run_config_id)
+    return isMcpRunConfig(config?.run_config_properties)
+  })()
+
+  $: selected_mcp_config = (() => {
+    if (!is_mcp || !selected_run_config_id || !current_task?.id) return null
+    const all_configs =
+      $run_configs_by_task_composite_id[
+        get_task_composite_id(project_id, current_task.id)
+      ] ?? []
+    return all_configs.find((c) => c.id === selected_run_config_id) ?? null
+  })()
+
   // If requires_structured_output, update structured_output_mode when model changes
   // We test each model in our known model list, so a smart default is selected automatically.
   function update_structured_output_mode_if_needed(
@@ -104,6 +131,7 @@
 
   // When a run config is selected, update the current run options to match the selected config
   let prior_selected_run_config_id: string | null = null
+  let run_config_just_loaded = false
   async function update_current_run_options_for_selected_run_config() {
     // Only run once immediately after a run config selection, not every reactive update
     if (prior_selected_run_config_id === selected_run_config_id) {
@@ -116,19 +144,22 @@
       // No need to update selected_run_config_id, it's already custom or unset
       return
     }
+    if (isMcpRunConfig(selected_run_config.run_config_properties)) {
+      return
+    }
 
+    const config_properties = selected_run_config.run_config_properties
+    if (!isKilnAgentRunConfig(config_properties)) {
+      return
+    }
     model =
-      selected_run_config.run_config_properties.model_provider_name +
-      "/" +
-      selected_run_config.run_config_properties.model_name
-    prompt_method = selected_run_config.run_config_properties.prompt_id
-    tools = [
-      ...(selected_run_config.run_config_properties.tools_config?.tools ?? []),
-    ]
-    temperature = selected_run_config.run_config_properties.temperature
-    top_p = selected_run_config.run_config_properties.top_p
-    structured_output_mode =
-      selected_run_config.run_config_properties.structured_output_mode
+      config_properties.model_provider_name + "/" + config_properties.model_name
+    prompt_method = config_properties.prompt_id
+    tools = [...(config_properties.tools_config?.tools ?? [])]
+    temperature = config_properties.temperature
+    top_p = config_properties.top_p
+    structured_output_mode = config_properties.structured_output_mode
+    run_config_just_loaded = true
   }
 
   // Main reactive statement. This class is a bit wild, as many changes are circular.
@@ -175,20 +206,29 @@
 
   // Progress step by step, stopping if any step asks to. It could be missing data, and the remaining steps aren't valid.
   async function update_for_state_changes() {
-    // All steps need available_models to be loaded. Don't set run_again as it would be tight loop, we're reactive to $available_models.
+    // Apply URL-driven intent first so it is not blocked by model loading.
+    apply_pending_tool_selection_if_needed()
+    await apply_pending_run_config_if_needed()
+
+    // All steps below need available_models to be loaded. Don't set run_again as it would be tight loop, we're reactive to $available_models.
     if ($available_models.length === 0) {
       return
     }
 
     // Check if they selected a new model, in which case we want to update the run config to the finetune run config if needed
-    process_model_change()
+    const model_changed = process_model_change()
 
-    // Update the structured output mode to match the selected model, if needed
-    update_structured_output_mode_if_needed(
-      model_name,
-      provider,
-      $available_models,
-    )
+    // Only apply model-default overrides for user-initiated model changes.
+    // When a run config was just loaded (which may have changed the model),
+    // the run config's values should take priority.
+    if (model_changed && !run_config_just_loaded) {
+      update_structured_output_mode_if_needed(
+        model_name,
+        provider,
+        $available_models,
+      )
+    }
+    run_config_just_loaded = false
 
     // Update all the run options if they have changed the run config
     await update_current_run_options_for_selected_run_config()
@@ -197,11 +237,42 @@
     await reset_to_custom_options_if_needed()
   }
 
+  async function apply_pending_run_config_if_needed() {
+    if (!pending_run_config_id || !current_task?.id) {
+      return
+    }
+    await load_task_run_configs(project_id, current_task.id)
+    const all_configs =
+      $run_configs_by_task_composite_id[
+        get_task_composite_id(project_id, current_task.id)
+      ] ?? []
+    const exists = all_configs.find((c) => c.id === pending_run_config_id)
+    if (exists) {
+      selected_run_config_id = pending_run_config_id
+    }
+  }
+
+  let pending_tool_selection_applied = false
+  function apply_pending_tool_selection_if_needed() {
+    if (pending_tool_selection_applied) {
+      return
+    }
+    if (!pending_tool_id) {
+      return
+    }
+
+    if (selected_run_config_id !== "custom") {
+      selected_run_config_id = "custom"
+      selected_model_specific_run_config_id = null
+    }
+    pending_tool_selection_applied = true
+  }
+
   let prior_model: string | null = null
-  async function process_model_change() {
+  function process_model_change(): boolean {
     // only run once immediately after a model change, not every reactive update
     if (prior_model === model) {
-      return
+      return false
     }
     prior_model = model
 
@@ -213,12 +284,15 @@
       $available_models,
     )
     if (model_details?.model_specific_run_config) {
-      selected_run_config_id = model_details.model_specific_run_config
+      if (!run_config_just_loaded) {
+        selected_run_config_id = model_details.model_specific_run_config
+      }
       selected_model_specific_run_config_id =
         model_details.model_specific_run_config
     } else {
       selected_model_specific_run_config_id = null
     }
+    return true
   }
 
   async function reset_to_custom_options_if_needed() {
@@ -226,8 +300,14 @@
     if (!selected_run_config || selected_run_config === "custom") {
       return
     }
+    if (isMcpRunConfig(selected_run_config.run_config_properties)) {
+      return
+    }
 
     const config_properties = selected_run_config.run_config_properties
+    if (!isKilnAgentRunConfig(config_properties)) {
+      return
+    }
 
     // Check if any values have changed from the saved config properties
     let model_changed = false
@@ -261,7 +341,11 @@
 
   // Helper function to convert run options to server run_config_properties format
   export function run_options_as_run_config_properties(): RunConfigProperties {
+    if (selected_mcp_config?.run_config_properties) {
+      return selected_mcp_config.run_config_properties
+    }
     return {
+      type: "kiln_agent",
       model_name: model_name,
       // @ts-expect-error server will catch if enum is not valid
       model_provider_name: provider,
@@ -285,9 +369,10 @@
         project_id,
         current_task.id,
         run_options_as_run_config_properties(),
+        run_config_name,
       )
       // Reload prompts to update the dropdown with the new static prompt that is made from saving a new run config
-      await load_task_prompts(project_id, current_task.id)
+      await load_task_prompts(project_id, current_task.id, true)
       if (!saved_config || !saved_config.id) {
         throw new Error("Saved config id not found")
       }
@@ -357,57 +442,73 @@
 </script>
 
 <div class="w-full flex flex-col gap-4">
-  {#if !hide_model_selector}
-    <AvailableModelsDropdown
-      task_id={current_task?.id ?? null}
-      bind:model
-      settings={updated_model_dropdown_settings}
-      bind:error_message={model_dropdown_error_message}
-      bind:this={model_dropdown}
+  {#if show_name_field}
+    <FormElement
+      label="Name"
+      id="run_config_name"
+      bind:value={run_config_name}
+      max_length={120}
     />
   {/if}
-  {#if !hide_prompt_selector}
-    <PromptTypeSelector
-      bind:prompt_method
-      info_description="Choose a prompt. Learn more on the 'Prompts' tab."
-      bind:linked_model_selection={model}
-    />
-  {/if}
-  {#if !show_tools_selector_in_advanced}
-    {#if !hide_tools_selector}
-      <ToolsSelector
-        bind:tools
-        {project_id}
+  {#if is_mcp}
+    {#if selected_mcp_config}
+      <McpRunConfigPanel run_config={selected_mcp_config} {project_id} />
+    {/if}
+  {:else}
+    {#if !hide_model_selector}
+      <AvailableModelsDropdown
         task_id={current_task?.id ?? null}
-        settings={tools_selector_settings}
+        bind:model
+        settings={updated_model_dropdown_settings}
+        bind:error_message={model_dropdown_error_message}
+        bind:this={model_dropdown}
       />
     {/if}
-    <Collapse title="Advanced Options">
-      <slot name="advanced" />
-      <AdvancedRunOptions
-        bind:temperature
-        bind:top_p
-        bind:structured_output_mode
-        has_structured_output={requires_structured_output}
+    {#if !hide_prompt_selector}
+      <PromptTypeSelector
+        bind:prompt_method
+        info_description="Choose a prompt. Learn more on the 'Prompts' tab."
+        bind:linked_model_selection={model}
       />
-    </Collapse>
-  {:else}
-    <Collapse title="Advanced Options">
-      <slot name="advanced" />
+    {/if}
+    {#if !show_tools_selector_in_advanced}
       {#if !hide_tools_selector}
         <ToolsSelector
           bind:tools
           {project_id}
           task_id={current_task?.id ?? null}
           settings={tools_selector_settings}
+          {pending_tool_id}
         />
       {/if}
-      <AdvancedRunOptions
-        bind:temperature
-        bind:top_p
-        bind:structured_output_mode
-        has_structured_output={requires_structured_output}
-      />
-    </Collapse>
+      <Collapse title="Advanced Options">
+        <slot name="advanced" />
+        <AdvancedRunOptions
+          bind:temperature
+          bind:top_p
+          bind:structured_output_mode
+          has_structured_output={requires_structured_output}
+        />
+      </Collapse>
+    {:else}
+      <Collapse title="Advanced Options">
+        <slot name="advanced" />
+        {#if !hide_tools_selector}
+          <ToolsSelector
+            bind:tools
+            {project_id}
+            task_id={current_task?.id ?? null}
+            settings={tools_selector_settings}
+            {pending_tool_id}
+          />
+        {/if}
+        <AdvancedRunOptions
+          bind:temperature
+          bind:top_p
+          bind:structured_output_mode
+          has_structured_output={requires_structured_output}
+        />
+      </Collapse>
+    {/if}
   {/if}
 </div>

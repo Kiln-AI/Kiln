@@ -7,11 +7,11 @@
     ProviderModels,
     PromptResponse,
   } from "$lib/types"
+  import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
   import {
-    getDetailedModelName,
+    getRunConfigModelDisplayName,
     getRunConfigPromptDisplayName,
   } from "$lib/utils/run_config_formatters"
-  import { provider_name_from_id } from "$lib/stores"
   import ChartNoData from "./chart_no_data.svelte"
 
   // Type for comparison features (same as parent page)
@@ -71,8 +71,26 @@
   }
 
   // Get simple display name for the series (used as the internal name/key)
-  function getRunConfigDisplayName(config: TaskRunConfig): string {
-    return config.name || getDetailedModelName(config, model_info) || "Unknown"
+  function getSeriesDisplayName(config: TaskRunConfig): string {
+    if (config.name) return config.name
+    if (isMcpRunConfig(config.run_config_properties)) {
+      return config.run_config_properties.tool_reference.tool_name ?? "MCP Tool"
+    }
+    return getRunConfigModelDisplayName(config, model_info) ?? "Unknown"
+  }
+
+  function buildLegendSubtext(config: TaskRunConfig): string {
+    if (isMcpRunConfig(config.run_config_properties)) {
+      const toolName =
+        config.run_config_properties.tool_reference.tool_name ?? "MCP Tool"
+      return `{sub|Tool: ${toolName}}`
+    }
+    const modelName =
+      getRunConfigModelDisplayName(config, model_info) || "Unknown"
+    const promptName = getRunConfigPromptDisplayName(config, prompts)
+    const parts = [`{sub|Model: ${modelName}}`]
+    if (promptName) parts.push(`{sub|Prompt: ${promptName}}`)
+    return parts.join("\n")
   }
 
   // Build a map from display name to full legend text (name, model, prompt)
@@ -80,14 +98,8 @@
     const formatter: Record<string, string> = {}
     for (const config of run_configs) {
       if (!config.id) continue
-
-      const displayName = getRunConfigDisplayName(config)
-      const modelName = getDetailedModelName(config, model_info) || "Unknown"
-      const promptName = getRunConfigPromptDisplayName(config, prompts)
-
-      // Multi-line legend: display name on first line, model and prompt on 2nd/3rd
-      formatter[displayName] =
-        `${displayName}\n{sub|Model: ${modelName}}\n{sub|Prompt: ${promptName}}`
+      const displayName = getSeriesDisplayName(config)
+      formatter[displayName] = `${displayName}\n${buildLegendSubtext(config)}`
     }
     return formatter
   }
@@ -143,7 +155,7 @@
 
       // Only include if both values are available
       if (xValue !== null && yValue !== null) {
-        const name = getRunConfigDisplayName(config)
+        const name = getSeriesDisplayName(config)
         legend.push(name)
 
         series.push({
@@ -185,15 +197,23 @@
             let tooltipHtml = `<strong>${params.seriesName}</strong>`
 
             if (config) {
-              const modelName = getDetailedModelName(config, model_info)
-              const providerName = provider_name_from_id(
-                config.run_config_properties?.model_provider_name,
-              )
-              const promptName = getRunConfigPromptDisplayName(config, prompts)
-
-              tooltipHtml = `<strong>${modelName}</strong>`
-              tooltipHtml += `<br/><span style="color: #666;">Provider:</span> ${providerName}`
-              tooltipHtml += `<br/><span style="color: #666;">Prompt:</span> ${promptName}`
+              if (isMcpRunConfig(config.run_config_properties)) {
+                const toolName =
+                  config.run_config_properties.tool_reference.tool_name ??
+                  "MCP Tool"
+                tooltipHtml = `<strong>MCP Tool: ${toolName}</strong>`
+              } else if (isKilnAgentRunConfig(config.run_config_properties)) {
+                const modelName =
+                  getRunConfigModelDisplayName(config, model_info) ?? "Unknown"
+                tooltipHtml = `<strong>${modelName}</strong>`
+                const promptName = getRunConfigPromptDisplayName(
+                  config,
+                  prompts,
+                )
+                if (promptName) {
+                  tooltipHtml += `<br/><span style="color: #666;">Prompt:</span> ${promptName}`
+                }
+              }
             }
 
             tooltipHtml += `<br/><br/><span style="color: #666;">${xLabel}:</span> ${formatValue(params.value[0] as number, xAxis)}`

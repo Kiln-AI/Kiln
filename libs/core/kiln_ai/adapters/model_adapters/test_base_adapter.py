@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -12,8 +12,7 @@ from kiln_ai.adapters.prompt_builders import BasePromptBuilder
 from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.project import Project
-from kiln_ai.datamodel.run_config import ToolsRunConfig
-from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.base_tool import KilnToolInterface
 
@@ -50,7 +49,7 @@ def base_task(base_project):
 def adapter(base_task):
     return MockAdapter(
         task=base_task,
-        run_config=RunConfigProperties(
+        run_config=KilnAgentRunConfigProperties(
             model_name="test_model",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",
@@ -122,7 +121,7 @@ async def test_model_provider_invalid_provider_model_name(base_project):
     with pytest.raises(ValueError, match="Input should be"):
         MockAdapter(
             task=task,
-            run_config=RunConfigProperties(
+            run_config=KilnAgentRunConfigProperties(
                 model_name="test_model",
                 model_provider_name="invalid",
                 prompt_id="simple_prompt_builder",
@@ -138,7 +137,7 @@ async def test_model_provider_missing_model_names(base_project):
     # Test with missing model name
     adapter = MockAdapter(
         task=task,
-        run_config=RunConfigProperties(
+        run_config=KilnAgentRunConfigProperties(
             model_name="",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",
@@ -256,15 +255,15 @@ async def test_input_formatting(
 
 
 async def test_properties_for_task_output_includes_all_run_config_properties(adapter):
-    """Test that all properties from RunConfigProperties are saved in task output properties"""
-    # Get all field names from RunConfigProperties
-    run_config_properties_fields = set(RunConfigProperties.model_fields.keys())
+    """Test that all properties from KilnAgentRunConfigProperties are saved in task output properties"""
+    # Get all field names from KilnAgentRunConfigProperties
+    run_config_properties_fields = set(KilnAgentRunConfigProperties.model_fields.keys())
 
     # Get the properties saved by the adapter
     saved_properties = adapter._properties_for_task_output()
     saved_property_keys = set(saved_properties.keys())
 
-    # Check which RunConfigProperties fields are missing from saved properties
+    # Check which KilnAgentRunConfigProperties fields are missing from saved properties
     # Note: model_provider_name becomes model_provider in saved properties
     expected_mappings = {
         "model_name": "model_name",
@@ -273,6 +272,7 @@ async def test_properties_for_task_output_includes_all_run_config_properties(ada
         "temperature": "temperature",
         "top_p": "top_p",
         "structured_output_mode": "structured_output_mode",
+        "type": None,
         "tools_config": None,
     }
 
@@ -281,19 +281,19 @@ async def test_properties_for_task_output_includes_all_run_config_properties(ada
         expected_key = expected_mappings.get(field_name, field_name)
         if expected_key is not None and expected_key not in saved_property_keys:
             missing_properties.append(
-                f"RunConfigProperties.{field_name} -> {expected_key}"
+                f"KilnAgentRunConfigProperties.{field_name} -> {expected_key}"
             )
 
     assert not missing_properties, (
-        f"The following RunConfigProperties fields are not saved by _properties_for_task_output: {missing_properties}. Please update the method to include them."
+        f"The following KilnAgentRunConfigProperties fields are not saved by _properties_for_task_output: {missing_properties}. Please update the method to include them."
     )
 
 
 async def test_properties_for_task_output_catches_missing_new_property(adapter):
-    """Test that demonstrates our test will catch when new properties are added to RunConfigProperties but not to _properties_for_task_output"""
-    # Simulate what happens if a new property was added to RunConfigProperties
+    """Test that demonstrates our test will catch when new properties are added to KilnAgentRunConfigProperties but not to _properties_for_task_output"""
+    # Simulate what happens if a new property was added to KilnAgentRunConfigProperties
     # We'll mock the model_fields to include a fake new property
-    original_fields = RunConfigProperties.model_fields.copy()
+    original_fields = KilnAgentRunConfigProperties.model_fields.copy()
 
     # Create a mock field to simulate a new property being added
     from pydantic.fields import FieldInfo
@@ -302,10 +302,12 @@ async def test_properties_for_task_output_catches_missing_new_property(adapter):
 
     try:
         # Add a fake new field to simulate someone adding a property
-        RunConfigProperties.model_fields["new_fake_property"] = mock_field
+        KilnAgentRunConfigProperties.model_fields["new_fake_property"] = mock_field
 
-        # Get all field names from RunConfigProperties (now includes our fake property)
-        run_config_properties_fields = set(RunConfigProperties.model_fields.keys())
+        # Get all field names from KilnAgentRunConfigProperties (now includes our fake property)
+        run_config_properties_fields = set(
+            KilnAgentRunConfigProperties.model_fields.keys()
+        )
 
         # Get the properties saved by the adapter (won't include our fake property)
         saved_properties = adapter._properties_for_task_output()
@@ -319,6 +321,7 @@ async def test_properties_for_task_output_catches_missing_new_property(adapter):
             "temperature": "temperature",
             "top_p": "top_p",
             "structured_output_mode": "structured_output_mode",
+            "type": None,
             "tools_config": None,
         }
 
@@ -327,18 +330,18 @@ async def test_properties_for_task_output_catches_missing_new_property(adapter):
             expected_key = expected_mappings.get(field_name, field_name)
             if expected_key is not None and expected_key not in saved_property_keys:
                 missing_properties.append(
-                    f"RunConfigProperties.{field_name} -> {expected_key}"
+                    f"KilnAgentRunConfigProperties.{field_name} -> {expected_key}"
                 )
 
         # This should find our missing fake property
         assert missing_properties == [
-            "RunConfigProperties.new_fake_property -> new_fake_property"
+            "KilnAgentRunConfigProperties.new_fake_property -> new_fake_property"
         ], f"Expected to find missing fake property, but got: {missing_properties}"
 
     finally:
         # Restore the original fields
-        RunConfigProperties.model_fields.clear()
-        RunConfigProperties.model_fields.update(original_fields)
+        KilnAgentRunConfigProperties.model_fields.clear()
+        KilnAgentRunConfigProperties.model_fields.update(original_fields)
 
 
 @pytest.mark.parametrize(
@@ -438,7 +441,7 @@ async def test_update_run_config_unknown_structured_output_mode(
     task = Task(name="test_task", instruction="test_instruction", parent=base_project)
 
     # Create a run config with the initial mode
-    run_config = RunConfigProperties(
+    run_config = KilnAgentRunConfigProperties(
         model_name="test_model",
         model_provider_name="openai",
         prompt_id="simple_prompt_builder",
@@ -521,7 +524,7 @@ async def test_available_tools(
     # Create adapter with tools config
     adapter = MockAdapter(
         task=task,
-        run_config=RunConfigProperties(
+        run_config=KilnAgentRunConfigProperties(
             model_name="test_model",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",
@@ -557,7 +560,7 @@ async def test_available_tools_with_invalid_tool_id(base_project):
     # Create adapter
     adapter = MockAdapter(
         task=task,
-        run_config=RunConfigProperties(
+        run_config=KilnAgentRunConfigProperties(
             model_name="test_model",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",
@@ -594,7 +597,7 @@ async def test_available_tools_duplicate_names_raises_error(base_project):
     # Create adapter
     adapter = MockAdapter(
         task=task,
-        run_config=RunConfigProperties(
+        run_config=KilnAgentRunConfigProperties(
             model_name="test_model",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",
@@ -638,7 +641,7 @@ async def test_custom_prompt_builder(base_task):
 
     adapter = MockAdapter(
         task=base_task,
-        run_config=RunConfigProperties(
+        run_config=KilnAgentRunConfigProperties(
             model_name="test_model",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",
@@ -657,3 +660,271 @@ async def test_custom_prompt_builder(base_task):
     formatter = adapter.build_chat_formatter(input="test input")
     assert formatter.system_message == "This is a custom prompt from injected builder"
     assert adapter.prompt_builder == custom_builder
+
+
+class TestAgentRunContextLifecycle:
+    """Unit tests for agent run context lifecycle in BaseAdapter."""
+
+    @pytest.fixture
+    def clear_context(self):
+        """Clear the agent run context before each test."""
+        from kiln_ai.run_context import clear_agent_run_id
+
+        clear_agent_run_id()
+        yield
+        clear_agent_run_id()
+
+    @pytest.mark.asyncio
+    async def test_invoke_sets_run_context(self, adapter, clear_context):
+        """Test that invoke sets the run context for root agent."""
+        from kiln_ai.adapters.run_output import RunOutput
+        from kiln_ai.run_context import get_agent_run_id
+
+        # Mock the _run method
+        async def mock_run(input):
+            # Check that run ID is set during _run
+            run_id = get_agent_run_id()
+            assert run_id is not None
+            assert run_id.startswith("run_")
+            return RunOutput(output="test output", intermediate_outputs={}), None
+
+        adapter._run = mock_run
+
+        # Mock the model provider and parser
+        provider = MagicMock()
+        provider.parser = "test_parser"
+        provider.formatter = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        parser = MagicMock()
+        parser.parse_output.return_value = RunOutput(
+            output="test output", intermediate_outputs={}
+        )
+
+        with (
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"
+            ) as mock_parser_factory,
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
+            ),
+        ):
+            mock_parser_factory.return_value = parser
+
+            await adapter.invoke_returning_run_output({"test": "input"})
+
+    @pytest.mark.asyncio
+    async def test_invoke_clears_run_context_after(self, adapter, clear_context):
+        """Test that invoke clears the run context after completion."""
+        from kiln_ai.adapters.run_output import RunOutput
+        from kiln_ai.run_context import get_agent_run_id
+
+        # Mock the _run method
+        async def mock_run(input):
+            return RunOutput(output="test output", intermediate_outputs={}), None
+
+        adapter._run = mock_run
+
+        # Mock the model provider and parser
+        provider = MagicMock()
+        provider.parser = "test_parser"
+        provider.formatter = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        parser = MagicMock()
+        parser.parse_output.return_value = RunOutput(
+            output="test output", intermediate_outputs={}
+        )
+
+        with (
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"
+            ) as mock_parser_factory,
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
+            ),
+        ):
+            mock_parser_factory.return_value = parser
+
+            await adapter.invoke_returning_run_output({"test": "input"})
+
+            # After invoke, run ID should be cleared
+            assert get_agent_run_id() is None
+
+    @pytest.mark.asyncio
+    async def test_invoke_clears_run_context_on_error(self, adapter, clear_context):
+        """Test that invoke clears the run context even on error."""
+        from kiln_ai.run_context import get_agent_run_id
+
+        # Mock the _run method to raise an error
+        async def mock_run(input):
+            # Run ID should be set even when error occurs
+            run_id = get_agent_run_id()
+            assert run_id is not None
+            raise ValueError("Test error")
+
+        adapter._run = mock_run
+
+        provider = MagicMock()
+        provider.parser = "test_parser"
+        provider.formatter = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        with (
+            patch("kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"),
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
+            ),
+        ):
+            with pytest.raises(ValueError, match="Test error"):
+                await adapter.invoke_returning_run_output({"test": "input"})
+
+            # After error, run ID should be cleared
+            assert get_agent_run_id() is None
+
+    @pytest.mark.asyncio
+    async def test_sub_agent_inherits_run(self, adapter, clear_context):
+        """Test that sub-agent inherits parent's run ID."""
+        from kiln_ai.adapters.run_output import RunOutput
+        from kiln_ai.run_context import get_agent_run_id, set_agent_run_id
+
+        # Simulate parent agent setting the run context
+        parent_run_id = "parent_agent_run"
+        set_agent_run_id(parent_run_id)
+
+        # Mock the _run method to check inherited run ID
+        async def mock_run(input):
+            # Sub-agent should see parent's run ID
+            run_id = get_agent_run_id()
+            assert run_id == parent_run_id
+            return RunOutput(output="test output", intermediate_outputs={}), None
+
+        adapter._run = mock_run
+
+        # Mock the model provider and parser
+        provider = MagicMock()
+        provider.parser = "test_parser"
+        provider.formatter = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        parser = MagicMock()
+        parser.parse_output.return_value = RunOutput(
+            output="test output", intermediate_outputs={}
+        )
+
+        with (
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"
+            ) as mock_parser_factory,
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
+            ),
+        ):
+            mock_parser_factory.return_value = parser
+
+            await adapter.invoke_returning_run_output({"test": "input"})
+
+            # After invoke, the parent's run ID should still be set
+            # (since we were acting as a sub-agent)
+            assert get_agent_run_id() == parent_run_id
+
+    @pytest.mark.asyncio
+    async def test_sub_agent_does_not_create_new_run(self, adapter, clear_context):
+        """Test that sub-agent doesn't create a new run ID."""
+        from kiln_ai.adapters.run_output import RunOutput
+        from kiln_ai.run_context import get_agent_run_id, set_agent_run_id
+
+        # Simulate parent agent setting the run context
+        parent_run_id = "parent_agent_run"
+        set_agent_run_id(parent_run_id)
+
+        run_id_during_run = None
+
+        # Mock the _run method to capture run ID
+        async def mock_run(input):
+            nonlocal run_id_during_run
+            run_id_during_run = get_agent_run_id()
+            return RunOutput(output="test output", intermediate_outputs={}), None
+
+        adapter._run = mock_run
+
+        # Mock the model provider and parser
+        provider = MagicMock()
+        provider.parser = "test_parser"
+        provider.formatter = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        parser = MagicMock()
+        parser.parse_output.return_value = RunOutput(
+            output="test output", intermediate_outputs={}
+        )
+
+        with (
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"
+            ) as mock_parser_factory,
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
+            ),
+        ):
+            mock_parser_factory.return_value = parser
+
+            await adapter.invoke_returning_run_output({"test": "input"})
+
+            # Sub-agent should have used the parent's run ID
+            assert run_id_during_run == parent_run_id
+
+    @pytest.mark.asyncio
+    async def test_cleanup_session_called_on_completion(self, adapter, clear_context):
+        """Test that cleanup_session is called when root agent completes."""
+        from kiln_ai.adapters.run_output import RunOutput
+
+        # Mock the _run method
+        async def mock_run(input):
+            return RunOutput(output="test output", intermediate_outputs={}), None
+
+        adapter._run = mock_run
+
+        # Mock the model provider and parser
+        provider = MagicMock()
+        provider.parser = "test_parser"
+        provider.formatter = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        parser = MagicMock()
+        parser.parse_output.return_value = RunOutput(
+            output="test output", intermediate_outputs={}
+        )
+
+        with (
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"
+            ) as mock_parser_factory,
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
+            ),
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.MCPSessionManager"
+            ) as mock_manager_class,
+        ):
+            mock_parser_factory.return_value = parser
+
+            mock_manager = MagicMock()
+            mock_manager_class.shared.return_value = mock_manager
+            mock_manager.cleanup_session = AsyncMock()
+
+            await adapter.invoke_returning_run_output({"test": "input"})
+
+            # cleanup_session should have been called
+            mock_manager.cleanup_session.assert_called_once()
+            # The run ID should be a string that starts with "run_"
+            call_args = mock_manager.cleanup_session.call_args
+            assert call_args is not None
+            run_id = call_args[0][0] if call_args[0] else call_args[1]["run_id"]
+            assert run_id.startswith("run_")
