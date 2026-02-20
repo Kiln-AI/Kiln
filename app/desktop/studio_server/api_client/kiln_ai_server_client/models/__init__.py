@@ -25,22 +25,19 @@ from .job_status import JobStatus
 from .job_status_response import JobStatusResponse
 from .job_type import JobType
 from .model_provider_name import ModelProviderName
-from .new_proposed_spec_edit_api import NewProposedSpecEditApi
+from .new_proposed_spec_edit import NewProposedSpecEdit
 from .output_file_info import OutputFileInfo
 from .prompt_optimization_job_output import PromptOptimizationJobOutput
 from .prompt_optimization_job_result_response import PromptOptimizationJobResultResponse
 from .question import Question
 from .question_set import QuestionSet
 from .question_with_answer import QuestionWithAnswer
-from .refine_spec_api_output import RefineSpecApiOutput
 from .refine_spec_input import RefineSpecInput
+from .refine_spec_output import RefineSpecOutput
 from .sample import Sample
 from .sample_job_output import SampleJobOutput
 from .sample_job_result_response import SampleJobResultResponse
-from .spec import Spec
 from .spec_questioner_api_input import SpecQuestionerApiInput
-from .spec_spec_field_current_values import SpecSpecFieldCurrentValues
-from .spec_spec_fields import SpecSpecFields
 from .specification_input import SpecificationInput
 from .specification_input_spec_field_current_values import SpecificationInputSpecFieldCurrentValues
 from .specification_input_spec_fields import SpecificationInputSpecFields
@@ -75,25 +72,22 @@ __all__ = (
     "JobStatusResponse",
     "JobType",
     "ModelProviderName",
-    "NewProposedSpecEditApi",
+    "NewProposedSpecEdit",
     "OutputFileInfo",
     "PromptOptimizationJobOutput",
     "PromptOptimizationJobResultResponse",
     "Question",
     "QuestionSet",
     "QuestionWithAnswer",
-    "RefineSpecApiOutput",
     "RefineSpecInput",
+    "RefineSpecOutput",
     "Sample",
     "SampleJobOutput",
     "SampleJobResultResponse",
-    "Spec",
     "SpecificationInput",
     "SpecificationInputSpecFieldCurrentValues",
     "SpecificationInputSpecFields",
     "SpecQuestionerApiInput",
-    "SpecSpecFieldCurrentValues",
-    "SpecSpecFields",
     "SubmitAnswersRequest",
     "SyntheticDataGenerationSessionConfig",
     "SyntheticDataGenerationSessionConfigInput",
