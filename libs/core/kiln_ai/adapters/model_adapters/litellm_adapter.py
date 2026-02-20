@@ -19,6 +19,10 @@ from openai.types.chat.chat_completion_message_tool_call_param import (
 )
 
 import kiln_ai.datamodel as datamodel
+from kiln_ai.adapters.chat.chat_formatter import (
+    ToolCallMessage,
+    ToolResponseMessage,
+)
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     ModelProviderName,
@@ -184,14 +188,20 @@ class LiteLlmAdapter(BaseAdapter):
             f"Too many tool calls ({tool_calls_count}). Stopping iteration to avoid using too many tokens."
         )
 
-    async def _run(self, input: InputType) -> tuple[RunOutput, Usage | None]:
+    async def _run(
+        self,
+        input: InputType,
+        conversation_history: list[ChatCompletionMessageParam] | None = None,
+    ) -> tuple[RunOutput, Usage | None]:
         usage = Usage()
 
         provider = self.model_provider()
         if not provider.model_id:
             raise ValueError("Model ID is required for OpenAI compatible models")
 
-        chat_formatter = self.build_chat_formatter(input)
+        chat_formatter = self.build_chat_formatter(
+            input, conversation_history=conversation_history
+        )
         messages: list[ChatCompletionMessageIncludingLiteLLM] = []
 
         prior_output: str | None = None
@@ -207,15 +217,31 @@ class LiteLlmAdapter(BaseAdapter):
 
             turn = chat_formatter.next_turn(prior_output)
             if turn is None:
-                # No next turn, we're done
                 break
 
-            # Add messages from the turn to chat history
             for message in turn.messages:
-                if message.content is None:
+                if message.content is None and not isinstance(
+                    message, (ToolCallMessage, ToolResponseMessage)
+                ):
                     raise ValueError("Empty message content isn't allowed")
-                # pyright incorrectly warns about this, but it's valid so we can ignore. It can't handle the multi-value role.
-                messages.append({"role": message.role, "content": message.content})  # type: ignore
+                if isinstance(message, ToolCallMessage):
+                    messages.append(
+                        {
+                            "role": "assistant",
+                            "content": message.content,
+                            "tool_calls": message.tool_calls,
+                        }
+                    )  # type: ignore[arg-type]
+                elif isinstance(message, ToolResponseMessage):
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "content": message.content,
+                            "tool_call_id": message.tool_call_id,
+                        }
+                    )  # type: ignore[arg-type]
+                else:
+                    messages.append({"role": message.role, "content": message.content})  # type: ignore[arg-type]
 
             skip_response_format = not turn.final_call
             turn_result = await self._run_model_turn(

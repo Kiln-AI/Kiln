@@ -1301,3 +1301,72 @@ async def test_dict_input_converted_to_json(tmp_path, config):
         assert isinstance(content, str)
         parsed_content = json.loads(content)
         assert parsed_content == {"x": 10, "y": 20}
+
+
+@pytest.mark.asyncio
+async def test_conversation_history_passed_to_litellm_and_in_trace(tmp_path, config):
+    """Conversation history is sent between system and user, and persisted in trace"""
+    project_path = tmp_path / "test_project" / "project.kiln"
+    project_path.parent.mkdir()
+    project = Project(name="Test Project", path=str(project_path))
+    project.save_to_file()
+    task = Task(
+        name="Test Task",
+        instruction="Reply briefly",
+        parent=project,
+    )
+    task.save_to_file()
+
+    config.run_config_properties.model_name = "gpt-4o-mini"
+    config.run_config_properties.model_provider_name = ModelProviderName.openai
+    adapter = LiteLlmAdapter(config=config, kiln_task=task)
+
+    mock_response = ModelResponse(
+        model="gpt-4o-mini",
+        choices=[{"message": {"content": "Final reply"}}],
+    )
+
+    captured_messages = []
+
+    async def capture_acompletion(*args, **kwargs):
+        captured_messages.append(list(kwargs.get("messages", [])))
+        return mock_response
+
+    mock_config_obj = Mock()
+    mock_config_obj.open_ai_api_key = "mock_api_key"
+    mock_config_obj.user_id = "test_user"
+
+    history = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+    ]
+
+    with (
+        patch("litellm.acompletion", new=AsyncMock(side_effect=capture_acompletion)),
+        patch("kiln_ai.utils.config.Config.shared", return_value=mock_config_obj),
+    ):
+        run = await adapter.invoke("current input", conversation_history=history)
+
+    assert run.output.output == "Final reply"
+    assert len(captured_messages) >= 1
+    first_call_messages = captured_messages[0]
+    roles = [m.get("role") for m in first_call_messages if isinstance(m, dict)]
+    assert roles[0] == "system"
+    user_assistant_order = [r for r in roles if r in ("user", "assistant")]
+    assert user_assistant_order == ["user", "assistant", "user"]
+
+    contents = [
+        m.get("content")
+        for m in first_call_messages
+        if isinstance(m, dict) and m.get("content")
+    ]
+    assert "hi" in contents
+    assert "hello" in contents
+    assert "current input" in contents
+
+    assert run.trace is not None
+    trace_roles = [m.get("role") for m in run.trace if isinstance(m, dict)]
+    assert "user" in trace_roles and "assistant" in trace_roles
+    trace_contents = {m.get("content") for m in run.trace if m.get("content")}
+    assert "hi" in trace_contents
+    assert "hello" in trace_contents

@@ -123,15 +123,26 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        conversation_history: list[ChatCompletionMessageParam] | None = None,
     ) -> TaskRun:
-        run_output, _ = await self.invoke_returning_run_output(input, input_source)
+        run_output, _ = await self.invoke_returning_run_output(
+            input, input_source, conversation_history
+        )
         return run_output
 
     async def _run_returning_run_output(
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        conversation_history: list[ChatCompletionMessageParam] | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
+        if conversation_history:
+            for msg in conversation_history:
+                if isinstance(msg, dict) and msg.get("role") == "system":
+                    raise ValueError(
+                        "conversation_history must not contain system messages"
+                    )
+
         # validate input, allowing arrays
         if self.input_schema is not None:
             validate_schema_with_value_error(
@@ -149,7 +160,9 @@ class BaseAdapter(metaclass=ABCMeta):
             formatted_input = formatter.format_input(input)
 
         # Run
-        run_output, usage = await self._run(formatted_input)
+        run_output, usage = await self._run(
+            formatted_input, conversation_history=conversation_history
+        )
 
         # Parse
         provider = self.model_provider()
@@ -220,6 +233,7 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        conversation_history: list[ChatCompletionMessageParam] | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # Determine if this is the root agent (no existing run context)
         is_root_agent = get_agent_run_id() is None
@@ -229,7 +243,9 @@ class BaseAdapter(metaclass=ABCMeta):
             set_agent_run_id(run_id)
 
         try:
-            return await self._run_returning_run_output(input, input_source)
+            return await self._run_returning_run_output(
+                input, input_source, conversation_history
+            )
         finally:
             if is_root_agent:
                 try:
@@ -247,7 +263,11 @@ class BaseAdapter(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    async def _run(self, input: InputType) -> Tuple[RunOutput, Usage | None]:
+    async def _run(
+        self,
+        input: InputType,
+        conversation_history: list[ChatCompletionMessageParam] | None = None,
+    ) -> Tuple[RunOutput, Usage | None]:
         pass
 
     def build_prompt(self) -> str:
@@ -267,24 +287,24 @@ class BaseAdapter(metaclass=ABCMeta):
             include_json_instructions=add_json_instructions
         )
 
-    def build_chat_formatter(self, input: InputType) -> ChatFormatter:
+    def build_chat_formatter(
+        self,
+        input: InputType,
+        conversation_history: list[ChatCompletionMessageParam] | None = None,
+    ) -> ChatFormatter:
         if self.prompt_builder is None:
             raise ValueError("Prompt builder is not available for MCP run config")
-        # Determine the chat strategy to use based on the prompt the user selected, the model's capabilities, and if the model was finetuned with a specific chat strategy.
-
         cot_prompt = self.prompt_builder.chain_of_thought_prompt()
         system_message = self.build_prompt()
 
-        # If no COT prompt, use the single turn strategy. Even when a tuned strategy is set, as the tuned strategy is either already single turn, or won't work without a COT prompt.
         if not cot_prompt:
             return get_chat_formatter(
                 strategy=ChatStrategy.single_turn,
                 system_message=system_message,
                 user_input=input,
+                conversation_history=conversation_history,
             )
 
-        # Some models like finetunes are trained with a specific chat strategy. Use that.
-        # However, don't use that if it is single turn. The user selected a COT prompt, and we give explicit prompt selection priority over the tuned strategy.
         tuned_chat_strategy = self.model_provider().tuned_chat_strategy
         if tuned_chat_strategy and tuned_chat_strategy != ChatStrategy.single_turn:
             return get_chat_formatter(
@@ -292,28 +312,25 @@ class BaseAdapter(metaclass=ABCMeta):
                 system_message=system_message,
                 user_input=input,
                 thinking_instructions=cot_prompt,
+                conversation_history=conversation_history,
             )
 
-        # Pick the best chat strategy for the model given it has a cot prompt.
         reasoning_capable = self.model_provider().reasoning_capable
         if reasoning_capable:
-            # "Thinking" LLM designed to output thinking in a structured format. We'll use it's native format.
-            # A simple message with the COT prompt appended to the message list is sufficient
             return get_chat_formatter(
                 strategy=ChatStrategy.single_turn_r1_thinking,
                 system_message=system_message,
                 user_input=input,
                 thinking_instructions=cot_prompt,
+                conversation_history=conversation_history,
             )
-        else:
-            # Unstructured output with COT
-            # Two calls to separate the thinking from the final response
-            return get_chat_formatter(
-                strategy=ChatStrategy.two_message_cot,
-                system_message=system_message,
-                user_input=input,
-                thinking_instructions=cot_prompt,
-            )
+        return get_chat_formatter(
+            strategy=ChatStrategy.two_message_cot,
+            system_message=system_message,
+            user_input=input,
+            thinking_instructions=cot_prompt,
+            conversation_history=conversation_history,
+        )
 
     # create a run and task output
     def generate_run(

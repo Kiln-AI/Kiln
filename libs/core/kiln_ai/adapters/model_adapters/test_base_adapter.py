@@ -20,7 +20,11 @@ from kiln_ai.tools.base_tool import KilnToolInterface
 class MockAdapter(BaseAdapter):
     """Concrete implementation of BaseAdapter for testing"""
 
-    async def _run(self, input):
+    async def _run(
+        self,
+        input,
+        conversation_history=None,
+    ):
         return None, None
 
     def adapter_name(self) -> str:
@@ -233,7 +237,7 @@ async def test_input_formatting(
         # Mock the _run method to capture the input
         captured_input = None
 
-        async def mock_run(input):
+        async def mock_run(input, conversation_history=None):
             nonlocal captured_input
             captured_input = input
             return RunOutput(output="test output", intermediate_outputs={}), None
@@ -252,6 +256,19 @@ async def test_input_formatting(
         # Verify original input was preserved in the run
         if formatter_id:
             mock_formatter.format_input.assert_called_once_with(original_input)
+
+
+@pytest.mark.asyncio
+async def test_conversation_history_rejects_system_message(adapter):
+    """conversation_history must not contain system messages"""
+    with pytest.raises(
+        ValueError,
+        match="conversation_history must not contain system messages",
+    ):
+        await adapter.invoke_returning_run_output(
+            "input",
+            conversation_history=[{"role": "system", "content": "nope"}],
+        )
 
 
 async def test_properties_for_task_output_includes_all_run_config_properties(adapter):
@@ -681,7 +698,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method
-        async def mock_run(input):
+        async def mock_run(input, conversation_history=None):
             # Check that run ID is set during _run
             run_id = get_agent_run_id()
             assert run_id is not None
@@ -721,7 +738,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method
-        async def mock_run(input):
+        async def mock_run(input, conversation_history=None):
             return RunOutput(output="test output", intermediate_outputs={}), None
 
         adapter._run = mock_run
@@ -759,7 +776,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method to raise an error
-        async def mock_run(input):
+        async def mock_run(input, conversation_history=None):
             # Run ID should be set even when error occurs
             run_id = get_agent_run_id()
             assert run_id is not None
@@ -796,7 +813,7 @@ class TestAgentRunContextLifecycle:
         set_agent_run_id(parent_run_id)
 
         # Mock the _run method to check inherited run ID
-        async def mock_run(input):
+        async def mock_run(input, conversation_history=None):
             # Sub-agent should see parent's run ID
             run_id = get_agent_run_id()
             assert run_id == parent_run_id
@@ -845,7 +862,7 @@ class TestAgentRunContextLifecycle:
         run_id_during_run = None
 
         # Mock the _run method to capture run ID
-        async def mock_run(input):
+        async def mock_run(input, conversation_history=None):
             nonlocal run_id_during_run
             run_id_during_run = get_agent_run_id()
             return RunOutput(output="test output", intermediate_outputs={}), None
@@ -885,7 +902,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.adapters.run_output import RunOutput
 
         # Mock the _run method
-        async def mock_run(input):
+        async def mock_run(input, conversation_history=None):
             return RunOutput(output="test output", intermediate_outputs={}), None
 
         adapter._run = mock_run

@@ -189,6 +189,43 @@ async def test_mcp_adapter_string_in_string_out(
 @pytest.mark.asyncio
 @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value="test_run_id")
 @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
+async def test_mcp_adapter_accepts_conversation_history_ignored(
+    mock_session_manager, _mock_run_id, project_with_local_mcp_server, local_mcp_tool_id
+):
+    """MCP adapter accepts conversation_history for API consistency but ignores it"""
+    project, _ = project_with_local_mcp_server
+    task = Task(
+        name="Plaintext Task",
+        parent=project,
+        instruction="Echo input",
+    )
+
+    run_config = McpRunConfigProperties(
+        tool_reference=MCPToolReference(tool_id=local_mcp_tool_id)
+    )
+
+    mock_session = _mock_mcp_call(mock_session_manager, "ok")
+
+    adapter = MCPAdapter(task=task, run_config=run_config)
+    run, run_output = await adapter.invoke_returning_run_output(
+        "input",
+        conversation_history=[
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello"},
+        ],
+    )
+
+    assert run_output.output == "ok"
+    assert run.output.output == "ok"
+    mock_session.call_tool.assert_called_once_with(
+        name="test_file_python",
+        arguments={"input": "input"},
+    )
+
+
+@pytest.mark.asyncio
+@patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value="test_run_id")
+@patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
 async def test_mcp_adapter_struct_in_struct_out(
     mock_session_manager, _mock_run_id, project_with_local_mcp_server, local_mcp_tool_id
 ):

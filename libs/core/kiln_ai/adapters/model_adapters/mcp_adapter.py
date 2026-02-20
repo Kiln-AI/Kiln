@@ -42,7 +42,11 @@ class MCPAdapter(BaseAdapter):
     def adapter_name(self) -> str:
         return "mcp_adapter"
 
-    async def _run(self, input: InputType) -> Tuple[RunOutput, Usage | None]:
+    async def _run(
+        self,
+        input: InputType,
+        conversation_history: list[ChatCompletionMessageParam] | None = None,
+    ) -> Tuple[RunOutput, Usage | None]:
         run_config = self.run_config
         if not isinstance(run_config, McpRunConfigProperties):
             raise ValueError("MCPAdapter requires McpRunConfigProperties")
@@ -75,14 +79,18 @@ class MCPAdapter(BaseAdapter):
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        conversation_history: list[ChatCompletionMessageParam] | None = None,
     ) -> TaskRun:
-        run_output, _ = await self.invoke_returning_run_output(input, input_source)
+        run_output, _ = await self.invoke_returning_run_output(
+            input, input_source, conversation_history
+        )
         return run_output
 
     async def invoke_returning_run_output(
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        conversation_history: list[ChatCompletionMessageParam] | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         """
         Runs the task and returns both the persisted TaskRun and raw RunOutput.

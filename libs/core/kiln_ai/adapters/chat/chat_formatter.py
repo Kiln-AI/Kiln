@@ -7,9 +7,55 @@ from typing import Dict, List, Literal, Optional, Sequence, Union
 
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
-from kiln_ai.utils.open_ai_types import ChatCompletionMessageToolCallParam
+from kiln_ai.utils.open_ai_types import (
+    ChatCompletionMessageParam,
+    ChatCompletionMessageToolCallParam,
+)
 
 COT_FINAL_ANSWER_PROMPT = "Considering the above, return a final result."
+
+
+def conversation_history_to_chat_messages(
+    params: Sequence[ChatCompletionMessageParam],
+) -> List[ChatMessage]:
+    out: List[ChatMessage] = []
+    for m in params:
+        if not isinstance(m, dict):
+            continue
+        role = m.get("role")
+        if role == "system":
+            continue
+        if role == "user":
+            content = m.get("content")
+            if content is not None:
+                content_str = (
+                    content if isinstance(content, str) else json.dumps(content)
+                )
+                out.append(BasicChatMessage("user", content_str))
+        elif role == "assistant":
+            content = m.get("content")
+            tool_calls = m.get("tool_calls")
+            if tool_calls:
+                content_str = (
+                    content
+                    if isinstance(content, str) or content is None
+                    else json.dumps(content)
+                )
+                out.append(ToolCallMessage("assistant", list(tool_calls), content_str))
+            elif content is not None:
+                content_str = (
+                    content if isinstance(content, str) else json.dumps(content)
+                )
+                out.append(BasicChatMessage("assistant", content_str))
+        elif role == "tool":
+            content = m.get("content")
+            tool_call_id = m.get("tool_call_id")
+            if content is not None and tool_call_id is not None:
+                content_str = (
+                    content if isinstance(content, str) else json.dumps(content)
+                )
+                out.append(ToolResponseMessage("tool", content_str, tool_call_id))
+    return out
 
 
 @dataclass
@@ -59,13 +105,24 @@ class ChatFormatter(ABC):
         system_message: str,
         user_input: InputType,
         thinking_instructions: str | None = None,
+        conversation_history: Sequence[ChatMessage] | None = None,
     ) -> None:
         self.system_message = system_message
         self.user_input = user_input
         self.thinking_instructions = thinking_instructions
+        self._conversation_history: List[ChatMessage] = (
+            list(conversation_history) if conversation_history else []
+        )
         self._messages: List[ChatMessage] = []
         self._state = "start"
         self._intermediate_outputs: Dict[str, str] = {}
+
+    def _first_turn_with_history(
+        self,
+        system_msgs: List[ChatMessage],
+        user_turn_msgs: List[ChatMessage],
+    ) -> List[ChatMessage]:
+        return system_msgs + self._conversation_history + user_turn_msgs
 
     @property
     def messages(self) -> List[ChatMessage]:
@@ -99,10 +156,10 @@ class ChatFormatter(ABC):
 class SingleTurnFormatter(ChatFormatter):
     def next_turn(self, previous_output: str | None = None) -> Optional[ChatTurn]:
         if self._state == "start":
-            msgs = [
-                BasicChatMessage("system", self.system_message),
-                BasicChatMessage("user", format_user_message(self.user_input)),
-            ]
+            msgs = self._first_turn_with_history(
+                [BasicChatMessage("system", self.system_message)],
+                [BasicChatMessage("user", format_user_message(self.user_input))],
+            )
             self._state = "awaiting_final"
             self._messages.extend(msgs)
             return ChatTurn(messages=msgs, final_call=True)
@@ -123,8 +180,14 @@ class TwoMessageCotLegacyFormatter(ChatFormatter):
         system_message: str,
         user_input: InputType,
         thinking_instructions: str | None,
+        conversation_history: Sequence[ChatMessage] | None = None,
     ) -> None:
-        super().__init__(system_message, user_input, thinking_instructions)
+        super().__init__(
+            system_message,
+            user_input,
+            thinking_instructions,
+            conversation_history=conversation_history,
+        )
         if self.thinking_instructions is None:
             raise ValueError(
                 "thinking_instructions are required when strategy is final_and_intermediate"
@@ -132,11 +195,13 @@ class TwoMessageCotLegacyFormatter(ChatFormatter):
 
     def next_turn(self, previous_output: str | None = None) -> Optional[ChatTurn]:
         if self._state == "start":
-            msgs = [
-                BasicChatMessage("system", self.system_message),
-                BasicChatMessage("user", format_user_message(self.user_input)),
-                BasicChatMessage("system", self.thinking_instructions),
-            ]
+            msgs = self._first_turn_with_history(
+                [BasicChatMessage("system", self.system_message)],
+                [
+                    BasicChatMessage("user", format_user_message(self.user_input)),
+                    BasicChatMessage("system", self.thinking_instructions),
+                ],
+            )
             self._state = "awaiting_thinking"
             self._messages.extend(msgs)
             return ChatTurn(messages=msgs, final_call=False)
@@ -167,8 +232,14 @@ class TwoMessageCotFormatter(ChatFormatter):
         system_message: str,
         user_input: InputType,
         thinking_instructions: str | None,
+        conversation_history: Sequence[ChatMessage] | None = None,
     ) -> None:
-        super().__init__(system_message, user_input, thinking_instructions)
+        super().__init__(
+            system_message,
+            user_input,
+            thinking_instructions,
+            conversation_history=conversation_history,
+        )
         if self.thinking_instructions is None:
             raise ValueError(
                 "thinking_instructions are required when strategy is final_and_intermediate"
@@ -176,10 +247,7 @@ class TwoMessageCotFormatter(ChatFormatter):
 
     def next_turn(self, previous_output: str | None = None) -> Optional[ChatTurn]:
         if self._state == "start":
-            # User message combines the input and the thinking instructions
             formatted_user_message = format_user_message(self.user_input)
-
-            # If the input contains conversation_history, it's a full_trace evaluation description and formatted_user_message contains more that a single turn of user_input and shouldn't be wrapped in <user_input> tags to avoid confusing the judge models.
             if "<conversation_history>" in formatted_user_message:
                 user_message = (
                     f"{formatted_user_message}\n\n{self.thinking_instructions}"
@@ -187,10 +255,10 @@ class TwoMessageCotFormatter(ChatFormatter):
             else:
                 user_message = f"The input is:\n<user_input>\n{formatted_user_message}\n</user_input>\n\n{self.thinking_instructions}"
 
-            msgs = [
-                BasicChatMessage("system", self.system_message),
-                BasicChatMessage("user", user_message),
-            ]
+            msgs = self._first_turn_with_history(
+                [BasicChatMessage("system", self.system_message)],
+                [BasicChatMessage("user", user_message)],
+            )
             self._state = "awaiting_thinking"
             self._messages.extend(msgs)
             return ChatTurn(messages=msgs, final_call=False)
@@ -218,10 +286,10 @@ class TwoMessageCotFormatter(ChatFormatter):
 class SingleTurnR1ThinkingFormatter(ChatFormatter):
     def next_turn(self, previous_output: str | None = None) -> Optional[ChatTurn]:
         if self._state == "start":
-            msgs = [
-                BasicChatMessage("system", self.system_message),
-                BasicChatMessage("user", format_user_message(self.user_input)),
-            ]
+            msgs = self._first_turn_with_history(
+                [BasicChatMessage("system", self.system_message)],
+                [BasicChatMessage("user", format_user_message(self.user_input))],
+            )
             self._state = "awaiting_final"
             self._messages.extend(msgs)
             return ChatTurn(messages=msgs, final_call=True)
@@ -241,20 +309,36 @@ def get_chat_formatter(
     system_message: str,
     user_input: InputType,
     thinking_instructions: str | None = None,
+    conversation_history: Sequence[ChatCompletionMessageParam] | None = None,
 ) -> ChatFormatter:
+    history_msgs = (
+        conversation_history_to_chat_messages(conversation_history)
+        if conversation_history
+        else None
+    )
     match strategy:
         case ChatStrategy.single_turn:
-            return SingleTurnFormatter(system_message, user_input)
+            return SingleTurnFormatter(
+                system_message, user_input, conversation_history=history_msgs
+            )
         case ChatStrategy.two_message_cot_legacy:
             return TwoMessageCotLegacyFormatter(
-                system_message, user_input, thinking_instructions
+                system_message,
+                user_input,
+                thinking_instructions,
+                conversation_history=history_msgs,
             )
         case ChatStrategy.two_message_cot:
             return TwoMessageCotFormatter(
-                system_message, user_input, thinking_instructions
+                system_message,
+                user_input,
+                thinking_instructions,
+                conversation_history=history_msgs,
             )
         case ChatStrategy.single_turn_r1_thinking:
-            return SingleTurnR1ThinkingFormatter(system_message, user_input)
+            return SingleTurnR1ThinkingFormatter(
+                system_message, user_input, conversation_history=history_msgs
+            )
         case _:
             raise_exhaustive_enum_error(strategy)
 
