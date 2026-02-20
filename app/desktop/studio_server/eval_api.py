@@ -451,7 +451,7 @@ def connect_evals_api(app: FastAPI):
         if isinstance(run_config_properties, KilnAgentRunConfigProperties):
             prompt_id = run_config_properties.prompt_id
             if not is_frozen_prompt(prompt_id):
-                # For dynamic prompts, we "freeze" a copy of this prompt into the task run config so we don't accidentially invalidate evals if the user changes something that impacts the prompt (example: chanding data for multi-shot, or chanding task for basic-prompt)
+                # For dynamic prompts, we "freeze" a copy of this prompt into the task run config so we don't accidentally invalidate evals if the user changes something that impacts the prompt (example: changing data for multi-shot, or changing task for basic-prompt)
                 # We then point the task_run_config.run_properties.prompt_id to this new frozen prompt
                 prompt_builder = prompt_builder_from_id(prompt_id, task)
                 prompt_name = generate_memorable_name()
