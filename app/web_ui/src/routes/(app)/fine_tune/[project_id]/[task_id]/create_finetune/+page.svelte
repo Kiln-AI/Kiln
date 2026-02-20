@@ -26,7 +26,7 @@
     DatasetSplit,
     Finetune,
     FineTuneParameter,
-    RunConfigProperties,
+    KilnAgentRunConfigProperties,
     ModelProviderName,
   } from "$lib/types"
   import { isKilnAgentRunConfig } from "$lib/types"
@@ -450,7 +450,7 @@
       const model_name = base_model_id?.split("/").pop() || base_model_id
       const base_run_config =
         run_config_component?.run_options_as_run_config_properties()
-      const run_config_properties: RunConfigProperties | undefined =
+      const run_config_properties: KilnAgentRunConfigProperties | undefined =
         base_run_config && isKilnAgentRunConfig(base_run_config) && model_name
           ? {
               ...base_run_config,

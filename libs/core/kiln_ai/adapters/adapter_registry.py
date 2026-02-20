@@ -11,8 +11,12 @@ from kiln_ai.adapters.provider_tools import (
     find_user_model,
     lite_llm_core_config_for_provider,
 )
-from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.run_config import (
+    KilnAgentRunConfigProperties,
+    McpRunConfigProperties,
+)
 from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
 def litellm_core_provider_config(
@@ -72,18 +76,24 @@ def adapter_for_task(
     run_config_properties: RunConfigProperties,
     base_adapter_config: AdapterConfig | None = None,
 ) -> BaseAdapter:
-    # for MCP run config, use MCPAdapter to call the MCP server
-    if run_config_properties.type == "mcp":
-        return MCPAdapter(
-            task=kiln_task,
-            run_config=run_config_properties,
-            config=base_adapter_config,
-        )
-
-    if not isinstance(run_config_properties, KilnAgentRunConfigProperties):
-        raise ValueError("Kiln agent run config is required for LiteLlmAdapter")
-    return LiteLlmAdapter(
-        kiln_task=kiln_task,
-        config=litellm_core_provider_config(run_config_properties),
-        base_adapter_config=base_adapter_config,
-    )
+    match run_config_properties.type:
+        case "mcp":
+            if not isinstance(run_config_properties, McpRunConfigProperties):
+                raise ValueError("McpRunConfigProperties is required for MCP adapter")
+            return MCPAdapter(
+                task=kiln_task,
+                run_config=run_config_properties,
+                config=base_adapter_config,
+            )
+        case "kiln_agent":
+            if not isinstance(run_config_properties, KilnAgentRunConfigProperties):
+                raise ValueError(
+                    "KilnAgentRunConfigProperties is required for LiteLlmAdapter"
+                )
+            return LiteLlmAdapter(
+                kiln_task=kiln_task,
+                config=litellm_core_provider_config(run_config_properties),
+                base_adapter_config=base_adapter_config,
+            )
+        case _:
+            raise_exhaustive_enum_error(run_config_properties.type)
