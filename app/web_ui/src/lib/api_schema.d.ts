@@ -3054,29 +3054,35 @@ export interface components {
          * @enum {string}
          */
         ChunkerType: "fixed_window" | "semantic";
-        /** ClarifySpecInput */
-        ClarifySpecInput: {
-            target_task_info: components["schemas"]["TaskInfo"];
+        /**
+         * ClarifySpecApiInput
+         * @description Input for clarifying a spec with copilot.
+         */
+        ClarifySpecApiInput: {
+            target_task_info: components["schemas"]["TaskInfoApi"];
             /** Target Specification */
             target_specification: string;
             /** Num Samples Per Topic */
             num_samples_per_topic: number;
             /** Num Topics */
             num_topics: number;
+            /** Providers */
+            providers: components["schemas"]["ModelProviderName"][];
             /**
              * Num Exemplars
              * @default 10
              */
             num_exemplars: number;
-            /** Providers */
-            providers: components["schemas"]["ModelProviderName"][];
         };
-        /** ClarifySpecOutput */
-        ClarifySpecOutput: {
+        /**
+         * ClarifySpecApiOutput
+         * @description Output from clarifying a spec.
+         */
+        ClarifySpecApiOutput: {
             /** Examples For Feedback */
-            examples_for_feedback: components["schemas"]["ExamplesForFeedbackItem"][];
-            judge_result: components["schemas"]["kiln_ai__datamodel__copilot_models__copilot_api_models__SyntheticDataGenerationStepConfig-Output"];
-            sdg_session_config: components["schemas"]["kiln_ai__datamodel__copilot_models__copilot_api_models__SyntheticDataGenerationSessionConfig"];
+            examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
+            judge_result: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
+            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Output"];
         };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
@@ -3392,8 +3398,8 @@ export interface components {
             evaluate_full_trace: boolean;
             /** Reviewed Examples */
             reviewed_examples?: components["schemas"]["ReviewedExample"][];
-            judge_info: components["schemas"]["SyntheticDataGenerationStepConfig-Input"];
-            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigInput"];
+            judge_info: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
+            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Input"];
             /**
              * Task Description
              * @default
@@ -4257,22 +4263,10 @@ export interface components {
          */
         EvalTemplateId: "kiln_requirements" | "desired_behaviour" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
         /**
-         * ExamplesForFeedbackItem
-         * @description A sample presented for user feedback, with model's judgment.
+         * ExampleWithFeedbackApi
+         * @description An example with user feedback for spec refinement.
          */
-        ExamplesForFeedbackItem: {
-            /** Input */
-            input: string;
-            /** Output */
-            output: string;
-            /** Fails Specification */
-            fails_specification: boolean;
-        };
-        /**
-         * ExamplesWithFeedbackItem
-         * @description An example with user feedback on the judge's assessment.
-         */
-        ExamplesWithFeedbackItem: {
+        ExampleWithFeedbackApi: {
             /** User Agrees With Judge */
             user_agrees_with_judge: boolean;
             /** Input */
@@ -4835,27 +4829,27 @@ export interface components {
             name: string;
         };
         /**
-         * GenerateBatchInput
-         * @description Input for batch generation (topics, inputs, outputs, optionally with scoring).
+         * GenerateBatchApiInput
+         * @description Input for generating a batch of examples.
          */
-        GenerateBatchInput: {
-            target_task_info: components["schemas"]["TaskInfo"];
+        GenerateBatchApiInput: {
+            target_task_info: components["schemas"]["TaskInfoApi"];
             /** Target Specification */
             target_specification: string;
             /** Num Samples Per Topic */
             num_samples_per_topic: number;
             /** Num Topics */
             num_topics: number;
-            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigInput"];
+            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Input"];
         };
         /**
-         * GenerateBatchOutput
-         * @description Output from batch generation, organized by topic.
+         * GenerateBatchApiOutput
+         * @description Output from generating a batch of examples.
          */
-        GenerateBatchOutput: {
+        GenerateBatchApiOutput: {
             /** Data By Topic */
             data_by_topic: {
-                [key: string]: components["schemas"]["Sample"][];
+                [key: string]: components["schemas"]["SampleApi"][];
             };
         };
         /** GetRagConfigProgressRequest */
@@ -5368,10 +5362,10 @@ export interface components {
          */
         ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner";
         /**
-         * NewProposedSpecEdit
+         * NewProposedSpecEditApi
          * @description A proposed edit to a spec field.
          */
-        NewProposedSpecEdit: {
+        NewProposedSpecEditApi: {
             /** Spec Field Name */
             spec_field_name: string;
             /** Proposed Edit */
@@ -6034,17 +6028,23 @@ export interface components {
             /** Inaccurate Examples */
             inaccurate_examples: string;
         };
-        /** RefineSpecInput */
-        RefineSpecInput: {
-            target_task_info: components["schemas"]["TaskInfo"];
-            target_specification: components["schemas"]["SpecificationInput"];
+        /**
+         * RefineSpecApiInput
+         * @description Input for refining a spec based on feedback.
+         */
+        RefineSpecApiInput: {
+            target_task_info: components["schemas"]["TaskInfoApi"];
+            target_specification: components["schemas"]["SpecApi"];
             /** Examples With Feedback */
-            examples_with_feedback: components["schemas"]["ExamplesWithFeedbackItem"][];
+            examples_with_feedback: components["schemas"]["ExampleWithFeedbackApi"][];
         };
-        /** RefineSpecOutput */
-        RefineSpecOutput: {
+        /**
+         * RefineSpecApiOutput
+         * @description Output from refining a spec.
+         */
+        RefineSpecApiOutput: {
             /** New Proposed Spec Edits */
-            new_proposed_spec_edits: components["schemas"]["NewProposedSpecEdit"][];
+            new_proposed_spec_edits: components["schemas"]["NewProposedSpecEditApi"][];
             /** Not Incorporated Feedback */
             not_incorporated_feedback: string | null;
         };
@@ -6159,7 +6159,7 @@ export interface components {
          * ReviewedExample
          * @description A reviewed example from the spec review process.
          *
-         *     Extends Sample with review-specific fields for tracking
+         *     Extends SampleApi with review-specific fields for tracking
          *     model and user judgments on spec compliance.
          */
         ReviewedExample: {
@@ -6234,10 +6234,10 @@ export interface components {
             tags?: string[] | null;
         };
         /**
-         * Sample
-         * @description A sample with input and output, without scoring.
+         * SampleApi
+         * @description A sample input/output pair.
          */
-        Sample: {
+        SampleApi: {
             /** Input */
             input: string;
             /** Output */
@@ -6411,9 +6411,23 @@ export interface components {
             /** @description An example task input/output pair used to demonstrate expected behavior for this spec. */
             task_sample?: components["schemas"]["TaskSample"] | null;
             /** @description Config for synthetic data generation session. */
-            synthetic_data_generation_session_config?: components["schemas"]["kiln_ai__datamodel__spec__SyntheticDataGenerationSessionConfig"] | null;
+            synthetic_data_generation_session_config?: components["schemas"]["SyntheticDataGenerationSessionConfig"] | null;
             /** Model Type */
             readonly model_type: string;
+        };
+        /**
+         * SpecApi
+         * @description Spec field information for refinement.
+         */
+        SpecApi: {
+            /** Spec Fields */
+            spec_fields: {
+                [key: string]: string;
+            };
+            /** Spec Field Current Values */
+            spec_field_current_values: {
+                [key: string]: string;
+            };
         };
         /** SpecCreationRequest */
         SpecCreationRequest: {
@@ -6438,8 +6452,15 @@ export interface components {
         };
         /** SpecQuestionerApiInput */
         SpecQuestionerApiInput: {
-            target_task_info: components["schemas"]["TaskInfo"];
-            /** Target Specification */
+            /**
+             * target_task_info
+             * @description The task info including prompt, input schema, and output schema
+             */
+            target_task_info: components["schemas"]["TaskInfoApi"];
+            /**
+             * target_specification
+             * @description The specification to analyze
+             */
             target_specification: string;
         };
         /**
@@ -6512,33 +6533,83 @@ export interface components {
             questions_and_answers: components["schemas"]["QuestionWithAnswer"][];
         };
         /**
-         * SyntheticDataGenerationSessionConfigInput
-         * @description Same as SyntheticDataGenerationSessionConfig, but new name for our SDK auto-compile tool.
-         *
-         *     https://fastapi.tiangolo.com/how-to/separate-openapi-schemas/#model-for-output-response-data
+         * SubsampleBatchOutputItemApi
+         * @description A single item from batch output for feedback.
          */
-        SyntheticDataGenerationSessionConfigInput: {
-            topic_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigInput"];
-            input_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigInput"];
-            output_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigInput"];
+        SubsampleBatchOutputItemApi: {
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
+            /** Fails Specification */
+            fails_specification: boolean;
+        };
+        /**
+         * SyntheticDataGenerationSessionConfig
+         * @description Configuration for a synthetic data generation session.
+         */
+        SyntheticDataGenerationSessionConfig: {
+            /** @description Configuration for topic generation. */
+            topic_generation_config: components["schemas"]["SyntheticDataGenerationStepConfig"];
+            /** @description Configuration for input generation. */
+            input_generation_config: components["schemas"]["SyntheticDataGenerationStepConfig"];
+            /** @description Configuration for output generation. */
+            output_generation_config: components["schemas"]["SyntheticDataGenerationStepConfig"];
+        };
+        /**
+         * SyntheticDataGenerationSessionConfigApi
+         * @description Configuration for a synthetic data generation session
+         */
+        "SyntheticDataGenerationSessionConfigApi-Input": {
+            topic_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
+            input_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
+            output_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
+        };
+        /**
+         * SyntheticDataGenerationSessionConfigApi
+         * @description Configuration for a synthetic data generation session
+         */
+        "SyntheticDataGenerationSessionConfigApi-Output": {
+            topic_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
+            input_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
+            output_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
         };
         /**
          * SyntheticDataGenerationStepConfig
+         * @description Information about a synthetic data generation step.
+         */
+        SyntheticDataGenerationStepConfig: {
+            /**
+             * Model Name
+             * @description The model used for generation.
+             */
+            model_name: string;
+            /**
+             * Provider Name
+             * @description The provider of the model used for generation.
+             */
+            provider_name: string;
+            /**
+             * Prompt
+             * @description The prompt used for generation.
+             */
+            prompt: string;
+        };
+        /**
+         * SyntheticDataGenerationStepConfigApi
          * @description Configuration for a synthetic data generation step.
          */
-        "SyntheticDataGenerationStepConfig-Input": {
-            task_metadata: components["schemas"]["TaskMetadata"];
+        "SyntheticDataGenerationStepConfigApi-Input": {
+            task_metadata: components["schemas"]["TaskMetadataApi"];
             /** Prompt */
             prompt: string;
         };
         /**
-         * SyntheticDataGenerationStepConfigInput
-         * @description Same as SyntheticDataGenerationStepConfig, but new name for our SDK auto-compile tool.
-         *
-         *     https://fastapi.tiangolo.com/how-to/separate-openapi-schemas/#model-for-output-response-data
+         * SyntheticDataGenerationStepConfigApi
+         * @description Configuration for a synthetic data generation step.
          */
-        SyntheticDataGenerationStepConfigInput: {
-            task_metadata: components["schemas"]["TaskMetadata"];
+        "SyntheticDataGenerationStepConfigApi-Output": {
+            task_metadata: components["schemas"]["TaskMetadataApi"];
             /** Prompt */
             prompt: string;
         };
@@ -6617,22 +6688,22 @@ export interface components {
             readonly model_type: string;
         };
         /**
-         * TaskInfo
-         * @description Shared information about a task
+         * TaskInfoApi
+         * @description Task information for copilot API calls.
          */
-        TaskInfo: {
+        TaskInfoApi: {
             /** Task Prompt */
             task_prompt: string;
             /** Task Input Schema */
-            task_input_schema?: string | null;
+            task_input_schema: string;
             /** Task Output Schema */
-            task_output_schema?: string | null;
+            task_output_schema: string;
         };
         /**
-         * TaskMetadata
-         * @description Metadata about a task invocation.
+         * TaskMetadataApi
+         * @description Metadata about the model used for a task.
          */
-        TaskMetadata: {
+        TaskMetadataApi: {
             /** Model Name */
             model_name: string;
             model_provider_name: components["schemas"]["ModelProviderName"];
@@ -7279,57 +7350,6 @@ export interface components {
          * @enum {string}
          */
         VectorStoreType: "lancedb_fts" | "lancedb_hybrid" | "lancedb_vector";
-        /**
-         * SyntheticDataGenerationSessionConfig
-         * @description Configuration for a synthetic data generation session
-         */
-        kiln_ai__datamodel__copilot_models__copilot_api_models__SyntheticDataGenerationSessionConfig: {
-            topic_generation_config: components["schemas"]["kiln_ai__datamodel__copilot_models__copilot_api_models__SyntheticDataGenerationStepConfig-Output"];
-            input_generation_config: components["schemas"]["kiln_ai__datamodel__copilot_models__copilot_api_models__SyntheticDataGenerationStepConfig-Output"];
-            output_generation_config: components["schemas"]["kiln_ai__datamodel__copilot_models__copilot_api_models__SyntheticDataGenerationStepConfig-Output"];
-        };
-        /**
-         * SyntheticDataGenerationStepConfig
-         * @description Configuration for a synthetic data generation step.
-         */
-        "kiln_ai__datamodel__copilot_models__copilot_api_models__SyntheticDataGenerationStepConfig-Output": {
-            task_metadata: components["schemas"]["TaskMetadata"];
-            /** Prompt */
-            prompt: string;
-        };
-        /**
-         * SyntheticDataGenerationSessionConfig
-         * @description Configuration for a synthetic data generation session.
-         */
-        kiln_ai__datamodel__spec__SyntheticDataGenerationSessionConfig: {
-            /** @description Configuration for topic generation. */
-            topic_generation_config: components["schemas"]["kiln_ai__datamodel__spec__SyntheticDataGenerationStepConfig"];
-            /** @description Configuration for input generation. */
-            input_generation_config: components["schemas"]["kiln_ai__datamodel__spec__SyntheticDataGenerationStepConfig"];
-            /** @description Configuration for output generation. */
-            output_generation_config: components["schemas"]["kiln_ai__datamodel__spec__SyntheticDataGenerationStepConfig"];
-        };
-        /**
-         * SyntheticDataGenerationStepConfig
-         * @description Information about a synthetic data generation step.
-         */
-        kiln_ai__datamodel__spec__SyntheticDataGenerationStepConfig: {
-            /**
-             * Model Name
-             * @description The model used for generation.
-             */
-            model_name: string;
-            /**
-             * Provider Name
-             * @description The provider of the model used for generation.
-             */
-            provider_name: string;
-            /**
-             * Prompt
-             * @description The prompt used for generation.
-             */
-            prompt: string;
-        };
     };
     responses: never;
     parameters: never;
@@ -12620,7 +12640,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ClarifySpecInput"];
+                "application/json": components["schemas"]["ClarifySpecApiInput"];
             };
         };
         responses: {
@@ -12630,7 +12650,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ClarifySpecOutput"];
+                    "application/json": components["schemas"]["ClarifySpecApiOutput"];
                 };
             };
             /** @description Validation Error */
@@ -12653,7 +12673,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RefineSpecInput"];
+                "application/json": components["schemas"]["RefineSpecApiInput"];
             };
         };
         responses: {
@@ -12663,7 +12683,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RefineSpecOutput"];
+                    "application/json": components["schemas"]["RefineSpecApiOutput"];
                 };
             };
             /** @description Validation Error */
@@ -12686,7 +12706,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["GenerateBatchInput"];
+                "application/json": components["schemas"]["GenerateBatchApiInput"];
             };
         };
         responses: {
@@ -12696,7 +12716,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GenerateBatchOutput"];
+                    "application/json": components["schemas"]["GenerateBatchApiOutput"];
                 };
             };
             /** @description Validation Error */
@@ -12762,7 +12782,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RefineSpecOutput"];
+                    "application/json": components["schemas"]["RefineSpecApiOutput"];
                 };
             };
             /** @description Validation Error */

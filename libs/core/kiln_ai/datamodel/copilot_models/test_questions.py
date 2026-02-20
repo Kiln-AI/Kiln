@@ -1,16 +1,14 @@
 import pytest
-from kiln_ai.datamodel.copilot_models.copilot_api_models import (
-    NewProposedSpecEdit,
-    RefineSpecOutput,
-)
 from pydantic import ValidationError
 
 from libs.core.kiln_ai.datamodel.copilot_models.questions import (
     AnswerOption,
     AnswerOptionWithSelection,
+    NewProposedSpecEditApi,
     Question,
     QuestionSet,
     QuestionWithAnswer,
+    RefineSpecApiOutput,
     SpecificationInput,
     SpecQuestionerInput,
     SubmitAnswersRequest,
@@ -593,7 +591,7 @@ class TestSpecificationInput:
 
 class TestNewProposedSpecEditApi:
     def test_creates_with_required_fields(self):
-        edit = NewProposedSpecEdit(
+        edit = NewProposedSpecEditApi(
             spec_field_name="tone_description",
             proposed_edit="Be more formal",
             reason_for_edit="User feedback indicated informality",
@@ -605,12 +603,12 @@ class TestNewProposedSpecEditApi:
 
 class TestRefineSpecApiOutput:
     def test_creates_with_required_fields(self):
-        edit = NewProposedSpecEdit(
+        edit = NewProposedSpecEditApi(
             spec_field_name="field",
             proposed_edit="new value",
             reason_for_edit="reason",
         )
-        output = RefineSpecOutput(
+        output = RefineSpecApiOutput(
             new_proposed_spec_edits=[edit],
             not_incorporated_feedback=None,
         )
@@ -618,7 +616,7 @@ class TestRefineSpecApiOutput:
         assert output.not_incorporated_feedback is None
 
     def test_not_incorporated_feedback_can_be_set(self):
-        output = RefineSpecOutput(
+        output = RefineSpecApiOutput(
             new_proposed_spec_edits=[],
             not_incorporated_feedback="Some feedback couldn't be incorporated",
         )
