@@ -1323,7 +1323,7 @@ built_in_models: List[KilnModel] = [
     KilnModel(
         family=ModelFamily.claude,
         name=ModelName.claude_sonnet_4_6,
-        friendly_name="Claude Sonnet 4.6",
+        friendly_name="Claude 4.6 Sonnet",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
