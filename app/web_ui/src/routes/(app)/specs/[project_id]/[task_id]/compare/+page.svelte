@@ -28,10 +28,11 @@
     prompts_by_task_composite_id,
   } from "$lib/stores/prompts_store"
   import {
-    getRunConfigDisplayName,
+    getRunConfigModelDisplayName,
     getRunConfigPromptDisplayName,
     getRunConfigPromptInfoText,
   } from "$lib/utils/run_config_formatters"
+  import { isMcpRunConfig } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
@@ -39,6 +40,10 @@
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: fromOptimize = $page.url.searchParams.get("from") === "optimize"
+  $: breadcrumbs = fromOptimize
+    ? [{ label: "Optimize", href: `/optimize/${project_id}/${task_id}` }]
+    : [{ label: "Specs & Evals", href: `/specs/${project_id}/${task_id}` }]
 
   // State management
   let columns = 2 // Start with 2 columns
@@ -591,9 +596,7 @@
 <AppPage
   title="Compare Run Configurations"
   subtitle="Find the optimal run configuration for your task using evals"
-  breadcrumbs={[
-    { label: "Specs & Evals", href: `/specs/${project_id}/${task_id}` },
-  ]}
+  {breadcrumbs}
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -691,40 +694,45 @@
                       task_id,
                       `task_run_config::${project_id}::${task_id}::${selectedConfig.id}`,
                     )}
+                    {@const prompt_display_name = getRunConfigPromptDisplayName(
+                      selectedConfig,
+                      $prompts_by_task_composite_id[
+                        get_task_composite_id(project_id, task_id)
+                      ] || null,
+                    )}
                     <div class="mt-3 text-center">
                       <div class="font-semibold text-gray-900 text-sm">
-                        {getRunConfigDisplayName(selectedConfig, $model_info) ||
-                          "Unknown Model"}
-                      </div>
-                      <div class="text-xs text-gray-500 font-normal mt-1">
-                        {#if prompt_link_url}
-                          Prompt: <a
-                            href={prompt_link_url}
-                            class="text-gray-500 font-normal link"
-                          >
-                            {getRunConfigPromptDisplayName(
-                              selectedConfig,
-                              $prompts_by_task_composite_id[
-                                get_task_composite_id(project_id, task_id)
-                              ] || null,
-                            )}
-                          </a>
+                        {#if isMcpRunConfig(selectedConfig.run_config_properties)}
+                          {selectedConfig.run_config_properties.tool_reference
+                            .tool_name ?? "MCP Tool"}
                         {:else}
-                          Prompt: {getRunConfigPromptDisplayName(
+                          {getRunConfigModelDisplayName(
                             selectedConfig,
-                            $prompts_by_task_composite_id[
-                              get_task_composite_id(project_id, task_id)
-                            ] || null,
-                          )}
-                        {/if}
-                        {#if prompt_info_text}
-                          <InfoTooltip
-                            tooltip_text={prompt_info_text}
-                            position="bottom"
-                            no_pad={true}
-                          />
+                            $model_info,
+                          ) ?? "Unknown Model"}
                         {/if}
                       </div>
+                      {#if prompt_display_name}
+                        <div class="text-xs text-gray-500 font-normal mt-1">
+                          {#if prompt_link_url}
+                            Prompt: <a
+                              href={prompt_link_url}
+                              class="text-gray-500 font-normal link"
+                            >
+                              {prompt_display_name}
+                            </a>
+                          {:else}
+                            Prompt: {prompt_display_name}
+                          {/if}
+                          {#if prompt_info_text}
+                            <InfoTooltip
+                              tooltip_text={prompt_info_text}
+                              position="bottom"
+                              no_pad={true}
+                            />
+                          {/if}
+                        </div>
+                      {/if}
                     </div>
                   {/if}
                 {/if}

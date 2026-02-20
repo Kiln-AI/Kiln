@@ -6,15 +6,25 @@ import pytest
 import typer
 
 from kiln_ai.datamodel import Project, Task
-from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
-from kiln_ai.datamodel.external_tool_server import (
-    ExternalToolServer,
-    ToolServerType,
+from kiln_ai.datamodel.datamodel_enums import (
+    ModelProviderName,
+    StructuredOutputMode,
+    TaskOutputRatingType,
 )
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfig,
+    EvalConfigType,
+    EvalOutputScore,
+    EvalRun,
+)
+from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServerType
 from kiln_ai.datamodel.prompt import Prompt
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.task import TaskRunConfig
+from kiln_ai.datamodel.task_output import TaskOutput
+from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.datamodel.tool_id import (
     KILN_TASK_TOOL_ID_PREFIX,
     MCP_LOCAL_TOOL_ID_PREFIX,
@@ -24,25 +34,32 @@ from kiln_ai.datamodel.tool_id import (
 )
 
 from .package_project import (
+    PackageForTrainingConfig,
     build_prompt_from_builder,
     classify_tool_id,
     collect_required_tool_servers,
     collect_subtask_ids_from_tools,
     create_export_directory,
     create_zip,
+    export_documents,
+    export_evals,
     export_task,
+    export_task_runs,
     export_tool_servers,
     get_default_run_config,
     get_tools_from_run_config,
     is_dynamic_prompt,
     load_project,
     package_project,
+    package_project_for_training,
     parse_task_ids,
     print_tasks_table,
     save_prompt_to_task,
     validate_and_build_prompts,
+    validate_and_build_prompts_noncli,
     validate_exported_prompts,
     validate_tasks,
+    validate_tasks_noncli,
     validate_tools,
 )
 
@@ -561,6 +578,31 @@ class TestValidateTasks:
         assert exc_info.value.exit_code == 1
 
 
+class TestValidateTasksNoncli:
+    def test_validate_existing_tasks(self, temp_project_with_multiple_tasks):
+        project = temp_project_with_multiple_tasks["project"]
+        tasks = temp_project_with_multiple_tasks["tasks"]
+        task_ids = [tasks[0].id, tasks[1].id]
+
+        result = validate_tasks_noncli(task_ids, project)
+        assert len(result) == 2
+
+    def test_validate_missing_task_raises_value_error(
+        self, temp_project_with_multiple_tasks
+    ):
+        project = temp_project_with_multiple_tasks["project"]
+        with pytest.raises(ValueError, match="Task ID\\(s\\) not found"):
+            validate_tasks_noncli(["nonexistent_id"], project)
+
+    def test_validate_partial_missing_raises_value_error(
+        self, temp_project_with_multiple_tasks
+    ):
+        project = temp_project_with_multiple_tasks["project"]
+        tasks = temp_project_with_multiple_tasks["tasks"]
+        with pytest.raises(ValueError, match="nonexistent"):
+            validate_tasks_noncli([tasks[0].id, "nonexistent"], project)
+
+
 class TestGetDefaultRunConfig:
     def test_get_valid_run_config(self, temp_project):
         """Test getting a valid default run config."""
@@ -592,7 +634,6 @@ class TestIsDynamicPrompt:
         "prompt_id,expected",
         [
             (PromptGenerators.SIMPLE.value, False),
-            (PromptGenerators.SHORT.value, False),
             (PromptGenerators.SIMPLE_CHAIN_OF_THOUGHT.value, False),
             (PromptGenerators.FEW_SHOT.value, True),
             (PromptGenerators.MULTI_SHOT.value, True),
@@ -647,6 +688,43 @@ class TestValidateAndBuildPrompts:
             with pytest.raises(typer.Exit) as exc_info:
                 validate_and_build_prompts([task], {task.id: run_config})
             assert exc_info.value.exit_code == 0
+
+
+class TestValidateAndBuildPromptsNoncli:
+    def test_build_static_prompts(self, temp_project):
+        task = Task.load_from_file(temp_project["task"].path)
+        run_config = TaskRunConfig.load_from_file(temp_project["run_config"].path)
+
+        result = validate_and_build_prompts_noncli([task], {task.id: run_config})
+
+        assert task.id in result
+        assert isinstance(result[task.id], Prompt)
+        assert "Test instruction" in result[task.id].prompt
+
+    def test_build_dynamic_prompts_without_confirmation(
+        self, temp_project_with_dynamic_prompt
+    ):
+        """Dynamic prompts are accepted silently without typer.confirm."""
+        task = Task.load_from_file(temp_project_with_dynamic_prompt["task"].path)
+        run_config = TaskRunConfig.load_from_file(
+            temp_project_with_dynamic_prompt["run_config"].path
+        )
+
+        result = validate_and_build_prompts_noncli([task], {task.id: run_config})
+
+        assert task.id in result
+        assert isinstance(result[task.id], Prompt)
+
+    def test_raises_value_error_on_build_failure(self, temp_project):
+        task = Task.load_from_file(temp_project["task"].path)
+        run_config = TaskRunConfig.load_from_file(temp_project["run_config"].path)
+
+        with patch(
+            "kiln_ai.cli.commands.package_project.prompt_builder_from_id",
+            side_effect=RuntimeError("boom"),
+        ):
+            with pytest.raises(ValueError, match="Failed to build prompt"):
+                validate_and_build_prompts_noncli([task], {task.id: run_config})
 
 
 class TestPackageProjectCommand:
@@ -1477,3 +1555,451 @@ class TestPackageProjectWithTools:
             )
 
         assert output_path.exists()
+
+
+OUTPUT_TO_CWD = False
+
+
+@pytest.fixture
+def temp_project_with_evals(tmp_path: Path):
+    """Create a project with a task, run config, evals (with configs and runs), and a document."""
+    project = Project(name="Training Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    task = Task(
+        name="Eval Task",
+        instruction="Task with evals",
+        parent=project,
+    )
+    task.save_to_file()
+
+    run_config = TaskRunConfig(
+        name="Default RC",
+        parent=task,
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4o",
+            model_provider_name="openai",
+            prompt_id=PromptGenerators.SIMPLE.value,
+            structured_output_mode=StructuredOutputMode.default,
+        ),
+    )
+    run_config.save_to_file()
+
+    task.default_run_config_id = run_config.id
+    task.save_to_file()
+
+    output_score = EvalOutputScore(
+        name="quality",
+        instruction="Rate the quality",
+        type=TaskOutputRatingType.five_star,
+    )
+
+    eval1 = Eval(
+        name="Eval One",
+        eval_set_filter_id="all",
+        eval_configs_filter_id="all",
+        output_scores=[output_score],
+        parent=task,
+    )
+    eval1.save_to_file()
+
+    eval1_config = EvalConfig(
+        name="Config A",
+        model_name="gpt-4o",
+        model_provider="openai",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1", "step2"]},
+        parent=eval1,
+    )
+    eval1_config.save_to_file()
+
+    eval1_run = EvalRun(
+        dataset_id="ds_item_1",
+        task_run_config_id=run_config.id,
+        input="test input",
+        output="test output",
+        scores={"quality": 4.0},
+        parent=eval1_config,
+    )
+    eval1_run.save_to_file()
+
+    eval2 = Eval(
+        name="Eval Two",
+        eval_set_filter_id="all",
+        eval_configs_filter_id="all",
+        output_scores=[output_score],
+        parent=task,
+    )
+    eval2.save_to_file()
+
+    eval2_config = EvalConfig(
+        name="Config B",
+        model_name="gpt-4o",
+        model_provider="openai",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+        parent=eval2,
+    )
+    eval2_config.save_to_file()
+
+    task_run = TaskRun(
+        input="sample input",
+        output=TaskOutput(output="sample output"),
+        parent=task,
+    )
+    task_run.save_to_file()
+
+    doc_dir = tmp_path / "documents" / "doc1 - TestDoc"
+    doc_dir.mkdir(parents=True)
+    (doc_dir / "document.kiln").write_text(
+        '{"v": 1, "model_type": "document", "name": "TestDoc", "description": "A test doc", "original_file": {"name": "test.txt", "path": "test.txt", "size": 10, "mime_type": "text/plain"}, "kind": "document"}'
+    )
+
+    return {
+        "project": project,
+        "task": task,
+        "run_config": run_config,
+        "task_run": task_run,
+        "eval1": eval1,
+        "eval1_config": eval1_config,
+        "eval1_run": eval1_run,
+        "eval2": eval2,
+        "eval2_config": eval2_config,
+        "path": tmp_path,
+    }
+
+
+class TestExportEvals:
+    def test_exports_selected_evals(self, temp_project_with_evals, tmp_path: Path):
+        """Test that only selected eval IDs are exported with full subtree."""
+        source = temp_project_with_evals
+        _, exported_project = create_export_directory(source["project"])
+        exported_task, _ = export_task(
+            source["task"], source["run_config"], exported_project
+        )
+
+        exported_ids = export_evals(source["task"], [source["eval1"].id], exported_task)
+
+        assert exported_ids == [source["eval1"].id]
+        exported_evals = exported_task.evals(readonly=True)
+        assert len(exported_evals) == 1
+        assert exported_evals[0].id == source["eval1"].id
+
+        configs = exported_evals[0].configs(readonly=True)
+        assert len(configs) == 1
+        assert configs[0].id == source["eval1_config"].id
+
+    def test_exports_no_evals_when_ids_dont_match(
+        self, temp_project_with_evals, tmp_path: Path
+    ):
+        source = temp_project_with_evals
+        _, exported_project = create_export_directory(source["project"])
+        exported_task, _ = export_task(
+            source["task"], source["run_config"], exported_project
+        )
+
+        exported_ids = export_evals(source["task"], ["nonexistent_id"], exported_task)
+
+        assert exported_ids == []
+        assert len(exported_task.evals(readonly=True)) == 0
+
+
+class TestExportDocuments:
+    def test_exports_documents(self, temp_project_with_evals, tmp_path: Path):
+        source = temp_project_with_evals
+        _, exported_project = create_export_directory(source["project"])
+
+        export_documents(source["project"], exported_project)
+
+        assert exported_project.path is not None
+        docs_dir = exported_project.path.parent / "documents"
+        assert docs_dir.exists()
+        doc_files = list(docs_dir.rglob("document.kiln"))
+        assert len(doc_files) == 1
+
+    def test_no_error_when_no_documents(self, temp_project, tmp_path: Path):
+        source = temp_project
+        _, exported_project = create_export_directory(source["project"])
+
+        export_documents(source["project"], exported_project)
+
+        assert exported_project.path is not None
+        docs_dir = exported_project.path.parent / "documents"
+        assert not docs_dir.exists()
+
+
+class TestPackageProjectForTraining:
+    def test_full_package_with_evals_and_docs(
+        self, temp_project_with_evals, tmp_path: Path
+    ):
+        source = temp_project_with_evals
+        output_path = (
+            Path("./exported_training.zip")
+            if OUTPUT_TO_CWD
+            else tmp_path / "output" / "training.zip"
+        )
+
+        package_project_for_training(
+            project=source["project"],
+            task_ids=[source["task"].id],
+            run_config_id=source["run_config"].id,
+            eval_ids=[source["eval1"].id, source["eval2"].id],
+            output=output_path,
+        )
+
+        assert output_path.exists()
+
+        extract_path = tmp_path / "extracted"
+        with zipfile.ZipFile(output_path, "r") as zipf:
+            names = zipf.namelist()
+            zipf.extractall(extract_path)
+
+        loaded_project = Project.load_from_file(extract_path / "project.kiln")
+        tasks = loaded_project.tasks()
+        assert len(tasks) == 1
+
+        loaded_task = tasks[0]
+        loaded_evals = loaded_task.evals(readonly=True)
+        assert len(loaded_evals) == 2
+        loaded_eval_ids = {e.id for e in loaded_evals}
+        assert source["eval1"].id in loaded_eval_ids
+        assert source["eval2"].id in loaded_eval_ids
+
+        for loaded_eval in loaded_evals:
+            configs = loaded_eval.configs(readonly=True)
+            assert len(configs) >= 1
+
+        assert any("documents/" in n for n in names)
+
+    def test_package_without_documents(self, temp_project_with_evals, tmp_path: Path):
+        source = temp_project_with_evals
+        output_path = tmp_path / "output" / "no_docs.zip"
+
+        package_project_for_training(
+            project=source["project"],
+            task_ids=[source["task"].id],
+            run_config_id=source["run_config"].id,
+            eval_ids=[source["eval1"].id],
+            output=output_path,
+            config=PackageForTrainingConfig(include_documents=False),
+        )
+
+        assert output_path.exists()
+
+        with zipfile.ZipFile(output_path, "r") as zipf:
+            names = zipf.namelist()
+
+        assert not any("documents/" in n for n in names)
+
+    def test_package_with_specific_eval_ids(
+        self, temp_project_with_evals, tmp_path: Path
+    ):
+        source = temp_project_with_evals
+        output_path = tmp_path / "output" / "one_eval.zip"
+
+        package_project_for_training(
+            project=source["project"],
+            task_ids=[source["task"].id],
+            run_config_id=source["run_config"].id,
+            eval_ids=[source["eval1"].id],
+            output=output_path,
+        )
+
+        extract_path = tmp_path / "extracted_one"
+        with zipfile.ZipFile(output_path, "r") as zipf:
+            zipf.extractall(extract_path)
+
+        loaded_project = Project.load_from_file(extract_path / "project.kiln")
+        loaded_task = loaded_project.tasks()[0]
+        loaded_evals = loaded_task.evals(readonly=True)
+        assert len(loaded_evals) == 1
+        assert loaded_evals[0].id == source["eval1"].id
+
+    def test_eval_subtree_fully_included(self, temp_project_with_evals, tmp_path: Path):
+        source = temp_project_with_evals
+        output_path = tmp_path / "output" / "subtree.zip"
+
+        package_project_for_training(
+            project=source["project"],
+            task_ids=[source["task"].id],
+            run_config_id=source["run_config"].id,
+            eval_ids=[source["eval1"].id],
+            output=output_path,
+        )
+
+        extract_path = tmp_path / "extracted_subtree"
+        with zipfile.ZipFile(output_path, "r") as zipf:
+            zipf.extractall(extract_path)
+
+        loaded_project = Project.load_from_file(extract_path / "project.kiln")
+        loaded_task = loaded_project.tasks()[0]
+        loaded_evals = loaded_task.evals(readonly=True)
+        assert len(loaded_evals) == 1
+
+        configs = loaded_evals[0].configs(readonly=True)
+        assert len(configs) == 1
+        assert configs[0].id == source["eval1_config"].id
+
+        runs = configs[0].runs(readonly=True)
+        assert len(runs) == 1
+        assert runs[0].id == source["eval1_run"].id
+
+    def test_default_config_includes_task_runs_and_eval_config_runs(
+        self, temp_project_with_evals, tmp_path: Path
+    ):
+        source = temp_project_with_evals
+        output_path = tmp_path / "output" / "default_runs.zip"
+
+        package_project_for_training(
+            project=source["project"],
+            task_ids=[source["task"].id],
+            run_config_id=source["run_config"].id,
+            eval_ids=[source["eval1"].id],
+            output=output_path,
+        )
+
+        extract_path = tmp_path / "extracted_default_runs"
+        with zipfile.ZipFile(output_path, "r") as zipf:
+            zipf.extractall(extract_path)
+
+        loaded_project = Project.load_from_file(extract_path / "project.kiln")
+        loaded_task = loaded_project.tasks()[0]
+
+        task_runs = loaded_task.runs()
+        assert len(task_runs) == 1
+        assert task_runs[0].id == source["task_run"].id
+
+        loaded_evals = loaded_task.evals(readonly=True)
+        assert len(loaded_evals) == 1
+        configs = loaded_evals[0].configs(readonly=True)
+        assert len(configs) == 1
+        eval_runs = configs[0].runs(readonly=True)
+        assert len(eval_runs) == 1
+        assert eval_runs[0].id == source["eval1_run"].id
+
+    def test_exclude_task_runs(self, temp_project_with_evals, tmp_path: Path):
+        source = temp_project_with_evals
+        output_path = tmp_path / "output" / "no_task_runs.zip"
+
+        package_project_for_training(
+            project=source["project"],
+            task_ids=[source["task"].id],
+            run_config_id=source["run_config"].id,
+            eval_ids=[source["eval1"].id],
+            output=output_path,
+            config=PackageForTrainingConfig(exclude_task_runs=True),
+        )
+
+        extract_path = tmp_path / "extracted_no_task_runs"
+        with zipfile.ZipFile(output_path, "r") as zipf:
+            names = zipf.namelist()
+            zipf.extractall(extract_path)
+
+        assert not any("/runs/" in n and "evals/" not in n for n in names)
+
+        loaded_project = Project.load_from_file(extract_path / "project.kiln")
+        loaded_task = loaded_project.tasks()[0]
+
+        task_runs_dir = loaded_task.path.parent / "runs"
+        assert not task_runs_dir.exists()
+
+        loaded_evals = loaded_task.evals(readonly=True)
+        configs = loaded_evals[0].configs(readonly=True)
+        eval_runs = configs[0].runs(readonly=True)
+        assert len(eval_runs) == 1
+
+    def test_exclude_eval_config_runs(self, temp_project_with_evals, tmp_path: Path):
+        source = temp_project_with_evals
+        output_path = tmp_path / "output" / "no_eval_runs.zip"
+
+        package_project_for_training(
+            project=source["project"],
+            task_ids=[source["task"].id],
+            run_config_id=source["run_config"].id,
+            eval_ids=[source["eval1"].id],
+            output=output_path,
+            config=PackageForTrainingConfig(exclude_eval_config_runs=True),
+        )
+
+        extract_path = tmp_path / "extracted_no_eval_runs"
+        with zipfile.ZipFile(output_path, "r") as zipf:
+            zipf.extractall(extract_path)
+
+        loaded_project = Project.load_from_file(extract_path / "project.kiln")
+        loaded_task = loaded_project.tasks()[0]
+
+        task_runs = loaded_task.runs()
+        assert len(task_runs) == 1
+        assert task_runs[0].id == source["task_run"].id
+
+        loaded_evals = loaded_task.evals(readonly=True)
+        assert len(loaded_evals) == 1
+        configs = loaded_evals[0].configs(readonly=True)
+        assert len(configs) == 1
+        assert configs[0].id == source["eval1_config"].id
+        eval_runs = configs[0].runs(readonly=True)
+        assert len(eval_runs) == 0
+
+
+class TestPackageProjectForTrainingNoncli:
+    def test_missing_task_raises_value_error(
+        self, temp_project_with_evals, tmp_path: Path
+    ):
+        source = temp_project_with_evals
+        output_path = tmp_path / "output" / "bad.zip"
+
+        with pytest.raises(ValueError, match="Task ID\\(s\\) not found"):
+            package_project_for_training(
+                project=source["project"],
+                task_ids=["nonexistent_id"],
+                run_config_id=source["run_config"].id,
+                eval_ids=[],
+                output=output_path,
+            )
+
+    def test_bad_prompt_raises_value_error(
+        self, temp_project_with_evals, tmp_path: Path
+    ):
+        source = temp_project_with_evals
+        output_path = tmp_path / "output" / "bad_prompt.zip"
+
+        with patch(
+            "kiln_ai.cli.commands.package_project.prompt_builder_from_id",
+            side_effect=RuntimeError("boom"),
+        ):
+            with pytest.raises(ValueError, match="Failed to build prompt"):
+                package_project_for_training(
+                    project=source["project"],
+                    task_ids=[source["task"].id],
+                    run_config_id=source["run_config"].id,
+                    eval_ids=[],
+                    output=output_path,
+                )
+
+
+class TestExportTaskRuns:
+    def test_copies_runs_directory(self, temp_project_with_evals, tmp_path: Path):
+        source = temp_project_with_evals
+        _, exported_project = create_export_directory(source["project"])
+        exported_task, _ = export_task(
+            source["task"], source["run_config"], exported_project
+        )
+
+        export_task_runs(source["task"], exported_task)
+
+        dest_runs_dir = exported_task.path.parent / "runs"
+        assert dest_runs_dir.exists()
+        run_files = list(dest_runs_dir.rglob("*.kiln"))
+        assert len(run_files) == 1
+
+    def test_noop_when_no_runs_directory(self, temp_project, tmp_path: Path):
+        source = temp_project
+        _, exported_project = create_export_directory(source["project"])
+        exported_task, _ = export_task(
+            source["task"], source["run_config"], exported_project
+        )
+
+        export_task_runs(source["task"], exported_task)
+
+        dest_runs_dir = exported_task.path.parent / "runs"
+        assert not dest_runs_dir.exists()

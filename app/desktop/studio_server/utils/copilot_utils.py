@@ -5,29 +5,28 @@ evals, eval configs, and task runs as part of the copilot-assisted
 spec creation workflow.
 """
 
-import json
 import random
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     generate_batch_v1_copilot_generate_batch_post,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
-    GenerateBatchInput,
-    GenerateBatchOutput,
-    HTTPValidationError,
+    GenerateBatchInput as ApiGenerateBatchInput,
+    GenerateBatchOutput as ApiGenerateBatchOutput,
 )
-from app.desktop.studio_server.api_client.kiln_ai_server_client.types import Response
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
-from app.desktop.studio_server.api_models.copilot_models import (
-    ReviewedExample,
-    SampleApi,
-    SyntheticDataGenerationSessionConfigApi,
-    TaskInfoApi,
-)
+from app.desktop.studio_server.utils.response_utils import unwrap_response
 from fastapi import HTTPException
 from kiln_ai.datamodel import TaskRun
+from kiln_ai.datamodel.copilot_models.copilot_api_models import (
+    GenerateBatchInput,
+    ReviewedExample,
+    Sample,
+    SyntheticDataGenerationSessionConfigInput,
+    TaskInfo,
+)
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.task_output import (
     DataSource,
@@ -60,13 +59,13 @@ def get_copilot_api_key() -> str:
 
 async def generate_copilot_examples(
     api_key: str,
-    target_task_info: TaskInfoApi,
-    sdg_session_config: SyntheticDataGenerationSessionConfigApi,
+    target_task_info: TaskInfo,
+    sdg_session_config: SyntheticDataGenerationSessionConfigInput,
     spec_definition: str,
-) -> list[SampleApi]:
+) -> list[Sample]:
     """Generate examples via the Kiln Copilot API.
 
-    Calls the copilot generate_batch endpoint and returns a flat list of SampleApi objects.
+    Calls the copilot generate_batch endpoint and returns a flat list of Sample objects.
     Raises HTTPException on API errors.
 
     Args:
@@ -77,65 +76,48 @@ async def generate_copilot_examples(
     """
     client = get_authenticated_client(api_key)
 
-    generate_input = GenerateBatchInput.from_dict(
-        {
-            "target_task_info": target_task_info.model_dump(),
-            "sdg_session_config": sdg_session_config.model_dump(),
-            "target_specification": spec_definition,
-            "num_samples_per_topic": NUM_SAMPLES_PER_TOPIC,
-            "num_topics": NUM_TOPICS,
-        }
+    generate_input = GenerateBatchInput(
+        target_task_info=target_task_info,
+        sdg_session_config=sdg_session_config,
+        target_specification=spec_definition,
+        num_samples_per_topic=NUM_SAMPLES_PER_TOPIC,
+        num_topics=NUM_TOPICS,
     )
+    api_generate_input = ApiGenerateBatchInput.from_dict(generate_input.model_dump())
 
     detailed_result = (
         await generate_batch_v1_copilot_generate_batch_post.asyncio_detailed(
             client=client,
-            body=generate_input,
+            body=api_generate_input,
         )
     )
-    check_response_error(detailed_result)
+    result = unwrap_response(
+        detailed_result,
+        none_detail="Failed to generate synthetic data for spec. Please try again.",
+    )
 
-    result = detailed_result.parsed
-    if result is None:
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to generate synthetic data for spec. Please try again.",
-        )
-
-    if isinstance(result, HTTPValidationError):
-        raise HTTPException(
-            status_code=422,
-            detail="Validation error.",
-        )
-
-    if not isinstance(result, GenerateBatchOutput):
+    if not isinstance(result, ApiGenerateBatchOutput):
         raise HTTPException(
             status_code=500,
             detail="Unknown error.",
         )
 
     # Convert result to flat list of SampleApi
-    examples: list[SampleApi] = []
-    data_dict = result.to_dict().get("data_by_topic", {})
-    for topic_examples in data_dict.values():
+    examples: list[Sample] = []
+    for topic_examples in result.data_by_topic.additional_properties.values():
         for ex in topic_examples:
-            examples.append(
-                SampleApi(
-                    input=ex.get("input", ""),
-                    output=ex.get("output", ""),
-                )
-            )
+            examples.append(Sample(input=ex.input_, output=ex.output))
 
     return examples
 
 
-def sample_and_remove(examples: list[SampleApi], n: int) -> list[SampleApi]:
+def sample_and_remove(examples: list[Sample], n: int) -> list[Sample]:
     """Randomly sample and remove n items from a list.
 
     Mutates the input list by removing the sampled elements.
     Uses swap-and-pop for O(1) removal.
     """
-    sampled: list[SampleApi] = []
+    sampled: list[Sample] = []
     count = min(n, len(examples))
 
     for _ in range(count):
@@ -150,9 +132,9 @@ def sample_and_remove(examples: list[SampleApi], n: int) -> list[SampleApi]:
 
 
 def create_task_run_from_sample(
-    sample: SampleApi, tag: str, extra_tags: list[str] | None = None
+    sample: Sample, tag: str, extra_tags: list[str] | None = None
 ) -> TaskRun:
-    """Create a TaskRun from a SampleApi (without parent set)."""
+    """Create a TaskRun from a Sample (without parent set)."""
     data_source = DataSource(
         type=DataSourceType.synthetic,
         properties={
@@ -166,10 +148,8 @@ def create_task_run_from_sample(
     if extra_tags:
         tags.extend(extra_tags)
 
-    # Access input using model_dump since SampleApi uses alias
-    sample_dict = sample.model_dump(by_alias=True)
     return TaskRun(
-        input=sample_dict["input"],
+        input=sample.input,
         input_source=data_source,
         output=TaskOutput(
             output=sample.output,
@@ -224,7 +204,7 @@ def create_task_run_from_reviewed(
 
 
 def create_dataset_task_runs(
-    all_examples: list[SampleApi],
+    all_examples: list[Sample],
     reviewed_examples: list[ReviewedExample],
     eval_tag: str,
     train_tag: str,
@@ -278,23 +258,3 @@ def create_dataset_task_runs(
         task_runs.append(create_task_run_from_sample(example, train_tag, extra_tags))
 
     return task_runs
-
-
-def check_response_error(
-    response: Response, default_detail: str = "Unknown error."
-) -> None:
-    """Check if the response is an error with user centric message."""
-    if response.status_code != 200:
-        # response.content is a bytes object
-        # We check if it's a JSON object with a user message field
-        detail = default_detail
-        if response.content.startswith(b"{"):
-            try:
-                json_data = json.loads(response.content)
-                detail = json_data.get("message", default_detail)
-            except json.JSONDecodeError:
-                pass
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=detail,
-        )

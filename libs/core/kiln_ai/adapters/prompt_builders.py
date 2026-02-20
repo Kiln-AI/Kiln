@@ -79,7 +79,7 @@ class BasePromptBuilder(metaclass=ABCMeta):
         base_prompt = self.build_prompt(include_json_instructions=False)
         cot_prompt = self.chain_of_thought_prompt()
         if cot_prompt:
-            base_prompt += "\n# Thinking Instructions\n\n" + cot_prompt
+            base_prompt += "\n\n# Thinking Instructions\n\n" + cot_prompt
         return base_prompt
 
 
@@ -103,18 +103,6 @@ class SimplePromptBuilder(BasePromptBuilder):
                 base_prompt += f"{i + 1}) {requirement.instruction}\n"
 
         return base_prompt
-
-
-class ShortPromptBuilder(BasePromptBuilder):
-    """A prompt builder that includes a the base prompt but excludes the requirements."""
-
-    def build_base_prompt(self) -> str:
-        """Build a short prompt with just the base prompt, no requirements.
-
-        Returns:
-            str: The constructed prompt string.
-        """
-        return self.task.instruction
 
 
 class MultiShotPromptBuilder(BasePromptBuilder):
@@ -451,8 +439,6 @@ def prompt_builder_from_id(prompt_id: PromptId, task: Task) -> BasePromptBuilder
     match typed_prompt_generator:
         case PromptGenerators.SIMPLE:
             return SimplePromptBuilder(task)
-        case PromptGenerators.SHORT:
-            return ShortPromptBuilder(task)
         case PromptGenerators.FEW_SHOT:
             return FewShotPromptBuilder(task)
         case PromptGenerators.MULTI_SHOT:

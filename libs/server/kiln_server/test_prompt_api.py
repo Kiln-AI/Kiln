@@ -190,16 +190,15 @@ def test_update_prompt_not_found(client, project_and_task):
     assert "Prompt not found" in response.json()["message"]
 
 
-def test_update_prompt_non_custom(client, project_and_task):
+def test_update_prompt_unsupported_type(client, project_and_task):
     project, task = project_and_task
 
     update_data = {"name": "Updated Name", "description": "Updated description"}
 
     with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
-        # Try to update a non-custom prompt (doesn't start with "id::")
         response = client.patch(
-            f"/api/projects/{project.id}/tasks/{task.id}/prompts/task_run_config::some_id",
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts/fine_tune_prompt::some_id",
             json=update_data,
         )
 

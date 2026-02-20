@@ -220,7 +220,7 @@
                       incompatible_count === 1 ? "" : "s"
                     } aren't compatible with this tool because their input/output schema doesn't match.${
                       tool_id
-                        ? ` [Create a new task using this tool's schema](/settings/manage_tools/${project_id}/create_task_from_tool?tool_id=${encodeURIComponent(
+                        ? `\n[Create a new task using this tool's schema](/settings/manage_tools/${project_id}/create_task_from_tool?tool_id=${encodeURIComponent(
                             tool_id,
                           )})`
                         : ""
@@ -229,7 +229,7 @@
                       incompatible_count === 1 ? "" : "s"
                     } aren't compatible with this tool because their input/output schema doesn't match.${
                       tool_id
-                        ? ` [Create a new task using this tool's schema](/settings/manage_tools/${project_id}/create_task_from_tool?tool_id=${encodeURIComponent(
+                        ? `\n[Create a new task using this tool's schema](/settings/manage_tools/${project_id}/create_task_from_tool?tool_id=${encodeURIComponent(
                             tool_id,
                           )})`
                         : ""
@@ -269,7 +269,7 @@
                 />
                 <FormElement
                   inputType="checkbox"
-                  label="Make Default"
+                  label="Set as task default run config"
                   id="make_default"
                   bind:value={make_default}
                 />

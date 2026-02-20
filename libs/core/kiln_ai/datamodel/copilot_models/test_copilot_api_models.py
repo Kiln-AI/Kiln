@@ -1,29 +1,29 @@
-"""Tests for app/desktop/studio_server/api_models/copilot_models.py."""
-
 import pytest
-from app.desktop.studio_server.api_models.copilot_models import (
-    ClarifySpecApiInput,
-    ClarifySpecApiOutput,
-    ExampleWithFeedbackApi,
-    GenerateBatchApiInput,
-    GenerateBatchApiOutput,
-    RefineSpecApiInput,
+from kiln_ai.datamodel.copilot_models.copilot_api_models import (
+    ClarifySpecInput,
+    ClarifySpecOutput,
+    ExamplesForFeedbackItem,
+    ExamplesWithFeedbackItem,
+    GenerateBatchInput,
+    GenerateBatchOutput,
+    RefineSpecInput,
     ReviewedExample,
-    SampleApi,
-    SpecApi,
-    SubsampleBatchOutputItemApi,
-    SyntheticDataGenerationSessionConfigApi,
-    SyntheticDataGenerationStepConfigApi,
-    TaskInfoApi,
-    TaskMetadataApi,
+    Sample,
+    SpecificationInput,
+    SyntheticDataGenerationSessionConfig,
+    SyntheticDataGenerationSessionConfigInput,
+    SyntheticDataGenerationStepConfig,
+    SyntheticDataGenerationStepConfigInput,
+    TaskInfo,
+    TaskMetadata,
 )
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from pydantic import ValidationError
 
 
-class TestTaskInfoApi:
+class TestTaskInfo:
     def test_creates_with_required_fields(self):
-        info = TaskInfoApi(
+        info = TaskInfo(
             task_prompt="Test prompt",
             task_input_schema='{"type": "string"}',
             task_output_schema='{"type": "object"}',
@@ -34,15 +34,21 @@ class TestTaskInfoApi:
 
     def test_missing_required_field_raises_error(self):
         with pytest.raises(ValidationError):
-            TaskInfoApi(
-                task_prompt="Test prompt",
+            TaskInfo(
                 task_input_schema='{"type": "string"}',
-            )  # type: ignore
+            )
+
+    def test_optional_schemas_default_to_none(self):
+        info = TaskInfo(
+            task_prompt="Test prompt",
+        )
+        assert info.task_input_schema is None
+        assert info.task_output_schema is None
 
 
-class TestTaskMetadataApi:
+class TestTaskMetadata:
     def test_creates_with_required_fields(self):
-        metadata = TaskMetadataApi(
+        metadata = TaskMetadata(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
         )
@@ -55,20 +61,20 @@ class TestTaskMetadataApi:
             ModelProviderName.anthropic,
             ModelProviderName.groq,
         ]:
-            metadata = TaskMetadataApi(
+            metadata = TaskMetadata(
                 model_name="test-model",
                 model_provider_name=provider,
             )
             assert metadata.model_provider_name == provider
 
 
-class TestSyntheticDataGenerationStepConfigApi:
+class TestSyntheticDataGenerationStepConfig:
     def test_creates_with_required_fields(self):
-        metadata = TaskMetadataApi(
+        metadata = TaskMetadata(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
         )
-        result = SyntheticDataGenerationStepConfigApi(
+        result = SyntheticDataGenerationStepConfig(
             task_metadata=metadata,
             prompt="Generated prompt content",
         )
@@ -76,23 +82,11 @@ class TestSyntheticDataGenerationStepConfigApi:
         assert result.prompt == "Generated prompt content"
 
 
-class TestSampleApi:
+class TestSample:
     def test_creates_with_required_fields(self):
-        sample = SampleApi(input="test input", output="test output")
+        sample = Sample(input="test input", output="test output")
         assert sample.input == "test input"
         assert sample.output == "test output"
-
-    def test_supports_alias_for_input(self):
-        # Test that 'input' alias works in dict form
-        data = {"input": "aliased input", "output": "test output"}
-        sample = SampleApi.model_validate(data)
-        assert sample.input == "aliased input"
-
-    def test_model_dump_with_alias(self):
-        sample = SampleApi(input="test input", output="test output")
-        dumped = sample.model_dump(by_alias=True)
-        assert "input" in dumped
-        assert dumped["input"] == "test input"
 
 
 class TestReviewedExample:
@@ -110,21 +104,10 @@ class TestReviewedExample:
         assert example.user_says_meets_spec is False
         assert example.feedback == "User disagrees"
 
-    def test_supports_alias_for_input(self):
-        data = {
-            "input": "aliased input",
-            "output": "test output",
-            "model_says_meets_spec": True,
-            "user_says_meets_spec": True,
-            "feedback": "",
-        }
-        example = ReviewedExample.model_validate(data)
-        assert example.input == "aliased input"
 
-
-class TestSpecApi:
+class TestSpecificationInput:
     def test_creates_with_required_fields(self):
-        info = SpecApi(
+        info = SpecificationInput(
             spec_fields={"field1": "Field 1 description"},
             spec_field_current_values={"field1": "current value"},
         )
@@ -132,7 +115,7 @@ class TestSpecApi:
         assert info.spec_field_current_values == {"field1": "current value"}
 
     def test_accepts_empty_dicts(self):
-        info = SpecApi(
+        info = SpecificationInput(
             spec_fields={},
             spec_field_current_values={},
         )
@@ -140,9 +123,9 @@ class TestSpecApi:
         assert info.spec_field_current_values == {}
 
 
-class TestExampleWithFeedbackApi:
+class TestExamplesWithFeedbackItem:
     def test_creates_with_required_fields(self):
-        example = ExampleWithFeedbackApi(
+        example = ExamplesWithFeedbackItem(
             user_agrees_with_judge=True,
             input="test input",
             output="test output",
@@ -154,7 +137,7 @@ class TestExampleWithFeedbackApi:
         assert example.fails_specification is False
 
     def test_user_feedback_optional(self):
-        example = ExampleWithFeedbackApi(
+        example = ExamplesWithFeedbackItem(
             user_agrees_with_judge=True,
             input="test input",
             output="test output",
@@ -163,7 +146,7 @@ class TestExampleWithFeedbackApi:
         assert example.user_feedback is None
 
     def test_user_feedback_can_be_set(self):
-        example = ExampleWithFeedbackApi(
+        example = ExamplesWithFeedbackItem(
             user_agrees_with_judge=False,
             input="test input",
             output="test output",
@@ -173,14 +156,14 @@ class TestExampleWithFeedbackApi:
         assert example.user_feedback == "This is wrong because..."
 
 
-class TestClarifySpecApiInput:
+class TestClarifySpecInput:
     def test_creates_with_required_fields(self):
-        task_info = TaskInfoApi(
+        task_info = TaskInfo(
             task_prompt="Test prompt",
             task_input_schema="{}",
             task_output_schema="{}",
         )
-        input_model = ClarifySpecApiInput(
+        input_model = ClarifySpecInput(
             target_task_info=task_info,
             target_specification="Test spec",
             num_samples_per_topic=5,
@@ -190,15 +173,15 @@ class TestClarifySpecApiInput:
         assert input_model.target_specification == "Test spec"
         assert input_model.num_samples_per_topic == 5
         assert input_model.num_topics == 3
-        assert input_model.num_exemplars == 10  # default
+        assert input_model.num_exemplars == 10
 
     def test_num_exemplars_default_value(self):
-        task_info = TaskInfoApi(
+        task_info = TaskInfo(
             task_prompt="Test prompt",
             task_input_schema="{}",
             task_output_schema="{}",
         )
-        input_model = ClarifySpecApiInput(
+        input_model = ClarifySpecInput(
             target_task_info=task_info,
             target_specification="Test spec",
             num_samples_per_topic=5,
@@ -208,24 +191,24 @@ class TestClarifySpecApiInput:
         assert input_model.num_exemplars == 10
 
 
-class TestRefineSpecApiInput:
+class TestRefineSpecInput:
     def test_creates_with_required_fields(self):
-        task_info = TaskInfoApi(
+        task_info = TaskInfo(
             task_prompt="Test prompt",
             task_input_schema="{}",
             task_output_schema="{}",
         )
-        spec_info = SpecApi(
+        spec_info = SpecificationInput(
             spec_fields={"field": "description"},
             spec_field_current_values={"field": "value"},
         )
-        example = ExampleWithFeedbackApi(
+        example = ExamplesWithFeedbackItem(
             user_agrees_with_judge=True,
             input="test",
             output="output",
             fails_specification=False,
         )
-        input_model = RefineSpecApiInput(
+        input_model = RefineSpecInput(
             target_task_info=task_info,
             target_specification=spec_info,
             examples_with_feedback=[example],
@@ -233,32 +216,32 @@ class TestRefineSpecApiInput:
         assert len(input_model.examples_with_feedback) == 1
 
 
-class TestGenerateBatchApiInput:
+class TestGenerateBatchInput:
     def test_creates_with_required_fields(self):
-        task_info = TaskInfoApi(
+        task_info = TaskInfo(
             task_prompt="Test prompt",
             task_input_schema="{}",
             task_output_schema="{}",
         )
-        input_model = GenerateBatchApiInput(
+        input_model = GenerateBatchInput(
             target_task_info=task_info,
-            sdg_session_config=SyntheticDataGenerationSessionConfigApi(
-                topic_generation_config=SyntheticDataGenerationStepConfigApi(
-                    task_metadata=TaskMetadataApi(
+            sdg_session_config=SyntheticDataGenerationSessionConfigInput(
+                topic_generation_config=SyntheticDataGenerationStepConfigInput(
+                    task_metadata=TaskMetadata(
                         model_name="gpt-4",
                         model_provider_name=ModelProviderName.openai,
                     ),
                     prompt="Test prompt",
                 ),
-                input_generation_config=SyntheticDataGenerationStepConfigApi(
-                    task_metadata=TaskMetadataApi(
+                input_generation_config=SyntheticDataGenerationStepConfigInput(
+                    task_metadata=TaskMetadata(
                         model_name="gpt-4",
                         model_provider_name=ModelProviderName.openai,
                     ),
                     prompt="Test prompt",
                 ),
-                output_generation_config=SyntheticDataGenerationStepConfigApi(
-                    task_metadata=TaskMetadataApi(
+                output_generation_config=SyntheticDataGenerationStepConfigInput(
+                    task_metadata=TaskMetadata(
                         model_name="gpt-4",
                         model_provider_name=ModelProviderName.openai,
                     ),
@@ -286,37 +269,25 @@ class TestGenerateBatchApiInput:
         assert input_model.num_topics == 3
 
 
-class TestSubsampleBatchOutputItemApi:
+class TestClarifySpecOutput:
     def test_creates_with_required_fields(self):
-        item = SubsampleBatchOutputItemApi(
-            input="test input",
-            output="test output",
-            fails_specification=True,
-        )
-        assert item.input == "test input"
-        assert item.output == "test output"
-        assert item.fails_specification is True
-
-
-class TestClarifySpecApiOutput:
-    def test_creates_with_required_fields(self):
-        metadata = TaskMetadataApi(
+        metadata = TaskMetadata(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
         )
-        prompt_result = SyntheticDataGenerationStepConfigApi(
+        prompt_result = SyntheticDataGenerationStepConfig(
             task_metadata=metadata,
             prompt="Test prompt",
         )
-        example = SubsampleBatchOutputItemApi(
+        example = ExamplesForFeedbackItem(
             input="test",
             output="output",
             fails_specification=False,
         )
-        output = ClarifySpecApiOutput(
+        output = ClarifySpecOutput(
             examples_for_feedback=[example],
             judge_result=prompt_result,
-            sdg_session_config=SyntheticDataGenerationSessionConfigApi(
+            sdg_session_config=SyntheticDataGenerationSessionConfig(
                 topic_generation_config=prompt_result,
                 input_generation_config=prompt_result,
                 output_generation_config=prompt_result,
@@ -326,15 +297,15 @@ class TestClarifySpecApiOutput:
         assert output.judge_result.prompt == "Test prompt"
 
 
-class TestGenerateBatchApiOutput:
+class TestGenerateBatchOutput:
     def test_creates_with_required_fields(self):
-        sample = SampleApi(input="test", output="output")
-        output = GenerateBatchApiOutput(
+        sample = Sample(input="test", output="output")
+        output = GenerateBatchOutput(
             data_by_topic={"topic1": [sample]},
         )
         assert "topic1" in output.data_by_topic
         assert len(output.data_by_topic["topic1"]) == 1
 
     def test_accepts_empty_data_by_topic(self):
-        output = GenerateBatchApiOutput(data_by_topic={})
+        output = GenerateBatchOutput(data_by_topic={})
         assert output.data_by_topic == {}

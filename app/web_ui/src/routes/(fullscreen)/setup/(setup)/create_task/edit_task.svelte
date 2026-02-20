@@ -17,6 +17,7 @@
   import { client } from "$lib/api_client"
   import { tick } from "svelte"
   import posthog from "posthog-js"
+  import Collapse from "$lib/ui/collapse.svelte"
 
   // Prevents flash of complete UI if we're going to redirect
   export let redirect_on_created: string | null = "/"
@@ -35,7 +36,7 @@
 
   $: creating = !task.id
   $: editing = !creating
-  $: show_requirements = !onboarding || task.requirements.length > 0
+  $: show_requirements = !onboarding && task.requirements.length > 0
 
   // These have their own custom VM, which is translated back to the model on save
   let outputSchemaSection: SchemaSection
@@ -236,9 +237,9 @@
       return "The prompt for the model to follow."
     }
     if (task.requirements.length > 0) {
-      return "The base prompt used by prompt generators (Basic, Multi-shot, etc). The task requirements below are appended to this. You can create additional prompts in the 'Prompts' tab to compare prompt performance."
+      return "The base prompt used by prompt generators (Basic, Few-shot, etc.). The task requirements below are appended to this. You can create additional prompts in the 'Prompts' tab to compare prompt performance."
     }
-    return "The base prompt used by prompt generators (Basic, Multi-shot, etc). You can create additional prompts in the 'Prompts' tab to compare prompt performance."
+    return "The base prompt used by prompt generators (Basic, Few-shot, etc.). You can create additional prompts in the 'Prompts' tab to compare prompt performance."
   }
 </script>
 
@@ -304,95 +305,8 @@
       />
     {/if}
 
-    {#if show_requirements}
-      <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
-        <div class="text-xl font-bold" id="requirements_part">
-          Part 2: Requirements
-        </div>
-        <div class="text-xs text-gray-500">
-          Define requirements you can use to rate the results of the model.
-          These are used in the prompt, ratings, evals and training.
-          <a
-            href="https://docs.kiln.tech/docs/reviewing-and-rating"
-            target="_blank"
-            class="link">Learn more</a
-          >.
-        </div>
-      </div>
-
-      <!-- Requirements Section -->
-      <FormList
-        content={task.requirements}
-        content_label="Requirement"
-        start_with_one={false}
-        empty_content={{
-          name: "",
-          description: "",
-          instructions: "",
-          priority: 1,
-        }}
-        let:item_index
-      >
-        <div class="flex flex-col gap-3">
-          <div class="flex flex-row gap-1">
-            <div class="grow flex flex-col gap-1">
-              <FormElement
-                label="Requirement Name"
-                info_description="A short name to uniquely identify the requirement. This will appear in the rating UI. It's not used by the model."
-                id="requirement_name_{item_index}"
-                light_label={true}
-                bind:value={task.requirements[item_index].name}
-                max_length={32}
-              />
-            </div>
-            <div class="flex flex-col gap-1">
-              <FormElement
-                label="Rating Type"
-                inputType="select"
-                id="requirement_type_{item_index}"
-                light_label={true}
-                select_options={[
-                  ["five_star", "5 Star"],
-                  ["pass_fail", "Pass / Fail"],
-                  ["pass_fail_critical", "Pass / Fail / Critical"],
-                ]}
-                bind:value={task.requirements[item_index].type}
-              />
-            </div>
-            <div class="flex flex-col gap-1">
-              <FormElement
-                label="Priority"
-                inputType="select"
-                id="requirement_priority_{item_index}"
-                light_label={true}
-                select_options={[
-                  [0, "P0 - Critical"],
-                  [1, "P1 - High"],
-                  [2, "P2 - Medium"],
-                  [3, "P3 - Low"],
-                ]}
-                bind:value={task.requirements[item_index].priority}
-              />
-            </div>
-          </div>
-          <div class="grow flex flex-col gap-1">
-            <FormElement
-              label="Instructions: a few sentences describing this requirement for the model"
-              info_description="These instructions will be appended to the prompt and using during evals. It should be written with the model in mind. Example requirement: Name='Be Succinct' and Instruction='Use short sentences and simple language. Don't repeat yourself.'"
-              inputType="textarea"
-              id="requirement_instructions_{item_index}"
-              light_label={true}
-              bind:value={task.requirements[item_index].instruction}
-            />
-          </div>
-        </div>
-      </FormList>
-    {/if}
-
     <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
-      <div class="text-xl font-bold">
-        Part {show_requirements ? "3" : "2"}: Input Schema
-      </div>
+      <div class="text-xl font-bold">Part 2: Input Schema</div>
       <div class="text-xs text-gray-500">
         What kind of input will the model receive?
       </div>
@@ -429,9 +343,7 @@
     </div>
 
     <div class="text-sm font-medium text-left pt-6 flex flex-col gap-1">
-      <div class="text-xl font-bold">
-        Part {show_requirements ? "4" : "3"}: Output Schema
-      </div>
+      <div class="text-xl font-bold">Part 3: Output Schema</div>
       <div class="text-xs text-gray-500">
         What kind of output will the model produce?
       </div>
@@ -467,5 +379,104 @@
         />
       {/if}
     </div>
+
+    {#if show_requirements}
+      <div class="pt-6">
+        <Collapse title="Advanced Options" small={false}>
+          <div class="text-sm font-medium text-left flex flex-col gap-1">
+            <div class="flex flex-row gap-2 items-center">
+              <div class="text-xl font-bold" id="requirements_part">
+                Part 4: Requirements
+              </div>
+              <div class="badge badge-sm badge-outline">Deprecated</div>
+            </div>
+            <div class="text-xs text-gray-500">
+              Requirements have been replaced by <a
+                href="https://docs.kiln.tech/docs/evals-and-specs"
+                target="_blank"
+                class="link">Specs & Evals</a
+              >
+              and
+              <a
+                href="https://docs.kiln.tech/docs/prompts"
+                target="_blank"
+                class="link">Prompts</a
+              >, which offer more powerful ways to evaluate and improve your
+              task's output. Requirements will be removed from an upcoming
+              release. We recommend migrating.
+            </div>
+          </div>
+
+          <!-- Requirements Section -->
+          <FormList
+            content={task.requirements}
+            content_label="Requirement"
+            start_with_one={false}
+            hide_add_button={true}
+            empty_content={{
+              name: "",
+              description: "",
+              instruction: "",
+              priority: 1,
+            }}
+            let:item_index
+          >
+            <div class="flex flex-col gap-3">
+              <div class="flex flex-row gap-1">
+                <div class="grow flex flex-col gap-1">
+                  <FormElement
+                    label="Requirement Name"
+                    info_description="A short name to uniquely identify the requirement. This will appear in the rating UI. It's not used by the model."
+                    id="requirement_name_{item_index}"
+                    light_label={true}
+                    bind:value={task.requirements[item_index].name}
+                    max_length={32}
+                  />
+                </div>
+                <div class="flex flex-col gap-1">
+                  <FormElement
+                    label="Rating Type"
+                    inputType="select"
+                    id="requirement_type_{item_index}"
+                    light_label={true}
+                    select_options={[
+                      ["five_star", "5 Star"],
+                      ["pass_fail", "Pass / Fail"],
+                      ["pass_fail_critical", "Pass / Fail / Critical"],
+                    ]}
+                    bind:value={task.requirements[item_index].type}
+                  />
+                </div>
+                <div class="flex flex-col gap-1">
+                  <FormElement
+                    label="Priority"
+                    inputType="select"
+                    id="requirement_priority_{item_index}"
+                    light_label={true}
+                    select_options={[
+                      [0, "P0 - Critical"],
+                      [1, "P1 - High"],
+                      [2, "P2 - Medium"],
+                      [3, "P3 - Low"],
+                    ]}
+                    bind:value={task.requirements[item_index].priority}
+                  />
+                </div>
+              </div>
+              <div class="grow flex flex-col gap-1">
+                <FormElement
+                  label="Instructions: a few sentences describing this requirement for the model"
+                  info_description="These instructions will be appended to the prompt and using during evals. It should be written with the model in mind. Example requirement: Name='Be Succinct' and Instruction='Use short sentences and simple language. Don't repeat yourself.'"
+                  inputType="textarea"
+                  id="requirement_instructions_{item_index}"
+                  light_label={true}
+                  bind:value={task.requirements[item_index].instruction}
+                />
+              </div>
+            </div>
+          </FormList>
+        </Collapse>
+      </div>
+    {/if}
   </FormContainer>
 </div>

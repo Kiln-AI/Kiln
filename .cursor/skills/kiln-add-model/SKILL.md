@@ -168,6 +168,8 @@ Only add a new family if the vendor is completely new.
 
 Tests call real LLMs and cost money. Just execute commands directly — Cursor prompts for approval.
 
+**Vertex AI authentication:** Vertex tests require active gcloud credentials. If you are changing a model that uses Vertex, you must not run the test until asking the user to run `gcloud auth application-default login` before trying. These failures are auth issues, not model config problems.
+
 **`-k` filter syntax:** Always use bracket notation for model+provider filtering, never `and`:
 - Good: `-k "test_name[glm_5-fireworks_ai]"` or `-k "glm_5"`
 - Bad: `-k "glm_5 and fireworks"` — `and` is a pytest keyword expression that can match wrong tests
@@ -266,7 +268,9 @@ Rules:
 - [ ] `ModelFamily` enum updated (only if new family)
 - [ ] All provider slugs verified from authoritative sources
 - [ ] Flags inherited from predecessor and adjusted for quirks
+- [ ] Preserve existing comments from predecessor (e.g. reasoning notes, MIME type groupings)
 - [ ] Zero-sum applied if model is suggested for evals/data gen
+- [ ] RAG config templates updated if the new model replaces one used in `app/web_ui/src/routes/(app)/docs/rag_configs/[project_id]/add_search_tool/rag_config_templates.ts`
 - [ ] Smoke test passed
 - [ ] Full test suite passed
 - [ ] Discord announcement drafted

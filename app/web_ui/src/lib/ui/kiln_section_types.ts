@@ -36,6 +36,17 @@ export interface SpecTemplateItem {
   on_select: () => void
 }
 
+export interface PromptGeneratorItem {
+  type: "prompt_generator"
+  name: string
+  description: string
+  on_select: () => void
+  disabled?: boolean
+  disabled_reason?: string
+  disabled_docs_link?: string
+  recommended?: boolean
+}
+
 export type KilnSectionItem = SettingsItem | EvalTemplateItem
 
-export type CarouselSectionItem = SpecTemplateItem
+export type CarouselSectionItem = SpecTemplateItem | PromptGeneratorItem

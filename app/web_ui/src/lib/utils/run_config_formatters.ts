@@ -17,14 +17,14 @@ import { prompt_link, tool_link } from "$lib/utils/link_builder"
 import type { UiProperty } from "$lib/ui/property_list"
 import { formatDate } from "./formatters"
 
-export function getRunConfigDisplayName(
+export function getRunConfigModelDisplayName(
   config: TaskRunConfig,
   model_info: ProviderModels | null,
-): string {
+): string | null {
   const run_config_type = config.run_config_properties.type
   switch (run_config_type) {
     case "mcp":
-      return config.run_config_properties.tool_reference.tool_name ?? "MCP Tool"
+      return null
     case "kiln_agent":
       return getDetailedModelNameFromParts(
         config.run_config_properties.model_name,
@@ -57,11 +57,11 @@ export function getStaticPromptDisplayName(
 export function getRunConfigPromptDisplayName(
   task_run_config: TaskRunConfig,
   current_task_prompts: PromptResponse | null,
-): string {
+): string | null {
   const run_config_type = task_run_config.run_config_properties.type
   switch (run_config_type) {
     case "mcp":
-      return task_run_config.name || "Unnamed Run Config"
+      return null
     case "kiln_agent": {
       const prompt_name = prompt_name_from_id(
         task_run_config?.run_config_properties?.prompt_id,
@@ -85,7 +85,7 @@ export function getRunConfigPromptDisplayName(
         return prompt_name
       }
 
-      return task_run_config.name || "Unnamed Run Config"
+      return "Unknown"
     }
     default: {
       const _exhaustive: never = run_config_type
@@ -186,7 +186,7 @@ export function getRunConfigUiProperties(
         : "Loading..."
 
       const prompt_value = task_prompts
-        ? getRunConfigPromptDisplayName(run_config, task_prompts)
+        ? getRunConfigPromptDisplayName(run_config, task_prompts) ?? "N/A"
         : "Loading..."
 
       const prompt_id = run_config.run_config_properties.prompt_id

@@ -16,10 +16,6 @@ export function prompt_link(
       trimmed_prompt_id.split("::").pop() || trimmed_prompt_id
     return `/fine_tune/${project_id}/${task_id}/fine_tune/${encodeURIComponent(fine_tune_id)}`
   }
-  if (!prompt_id.includes("::")) {
-    // not an ID style prompt, link to static
-    return `/prompts/${project_id}/${task_id}/generator_details/${encodeURIComponent(prompt_id)}`
-  }
   // ID style prompt, link to saved
   return `/prompts/${project_id}/${task_id}/saved/${encodeURIComponent(prompt_id)}`
 }

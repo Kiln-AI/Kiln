@@ -150,15 +150,14 @@ export function isMcpRunConfig(
 }
 
 // Copilot API types
-export type SyntheticDataGenerationStepConfigApi =
-  components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"]
-export type SyntheticDataGenerationSessionConfigApi =
-  components["schemas"]["SyntheticDataGenerationSessionConfigApi-Input"]
-export type TaskMetadataApi = components["schemas"]["TaskMetadataApi"]
+export type SyntheticDataGenerationStepConfigInput =
+  components["schemas"]["SyntheticDataGenerationStepConfigInput"]
+export type SyntheticDataGenerationSessionConfigInput =
+  components["schemas"]["SyntheticDataGenerationSessionConfigInput"]
+export type TaskMetadata = components["schemas"]["TaskMetadata"]
 export type ReviewedExample = components["schemas"]["ReviewedExample"]
-export type SampleApi = components["schemas"]["SampleApi"]
-export type SubsampleBatchOutputItemApi =
-  components["schemas"]["SubsampleBatchOutputItemApi"]
+export type Sample = components["schemas"]["Sample"]
+export type GenerateBatchOutput = components["schemas"]["GenerateBatchOutput"]
 export type SpecProperties =
   | components["schemas"]["AppropriateToolUseProperties"]
   | components["schemas"]["DesiredBehaviourProperties"]
@@ -185,6 +184,12 @@ export type QuestionSet = components["schemas"]["QuestionSet"]
 export type QuestionWithAnswer = components["schemas"]["QuestionWithAnswer"]
 export type AnswerOptionWithSelection =
   components["schemas"]["AnswerOptionWithSelection"]
+
+export type PublicPromptOptimizationJobStatusResponse =
+  components["schemas"]["PublicPromptOptimizationJobStatusResponse"]
+export type PromptOptimizationJob =
+  components["schemas"]["PromptOptimizationJob"]
+export type JobStatus = components["schemas"]["JobStatus"]
 
 // Type helpers for ExternalToolServerApiDescription properties
 
