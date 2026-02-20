@@ -133,7 +133,7 @@
 
 <div class="max-w-[900px]">
   <AppPage
-    title="New task from tool"
+    title="New Task from Tool"
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp/running-tools-as-tasks"
     breadcrumbs={[
@@ -156,16 +156,21 @@
         <FormElement
           inputType="input"
           label="Task Name"
+          description="A description for you and your team, not used by the model."
           id="task_name"
           bind:value={task_name}
         />
         <div>
-          <div class="text-sm font-medium mb-2">Tool Schema</div>
+          <div class="text-sm font-medium mb-1">Task Schema</div>
+          <div class="text-xs text-gray-500 font-medium mb-2">
+            The input and output schema of the task will be based the MCP tool's
+            schema.
+          </div>
           <ToolSchemaViewer
             inputSchema={tool.inputSchema}
             outputSchema={tool.outputSchema}
-            inputTitle="Input Schema (From Tool)"
-            outputTitle="Output Schema (From Tool)"
+            inputTitle="Input Schema"
+            outputTitle="Output Schema"
           />
         </div>
         <Collapse title="Advanced">
@@ -175,7 +180,7 @@
             id="instruction"
             height="medium"
             bind:value={instruction}
-            description="By default, we'll call the selected MCP tool directly—no prompt required. We'll use this prompt if you later add a model-based agent to this task."
+            description="By default, we'll call the selected MCP tool directly without a prompt. We'll use this prompt if you later add a model-based agent to this task."
             info_description={`You're creating a task from an MCP tool, so by default we'll call the MCP tool directly when you invoke this task.
 However, in the future you may choose to add other ways of invoking this task later, such as an agent. For that case, we need a prompt describing the task for the agent to follow.
 This prompt won't be used unless you add agent-based task run configurations.`}

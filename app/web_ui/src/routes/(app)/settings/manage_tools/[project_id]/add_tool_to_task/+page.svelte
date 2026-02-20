@@ -3,7 +3,6 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
-  import Collapse from "$lib/ui/collapse.svelte"
   import ToolSchemaViewer from "$lib/ui/tool_schema_viewer.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import { onDestroy } from "svelte"
@@ -19,6 +18,7 @@
     update_task_default_run_config,
   } from "$lib/stores/run_configs_store"
   import { selected_tool_for_task } from "$lib/stores/tools_store"
+  import { generate_memorable_name } from "$lib/utils/name_generator"
 
   $: project_id = $page.params.project_id!
   $: tool_id = $page.url.searchParams.get("tool_id")
@@ -63,7 +63,7 @@
   }
 
   $: if (tool_name && !run_config_name) {
-    run_config_name = `MCP ${tool_name}`
+    run_config_name = `MCP ${tool_name} - ${generate_memorable_name()}`
   }
   $: tool_schema_ready =
     tool_name !== null &&
@@ -215,25 +215,15 @@
           <div class="flex flex-col gap-4">
             {#if incompatible_count > 0}
               <Warning
-                warning_message={no_compatible_tasks
-                  ? `${incompatible_count} task${
-                      incompatible_count === 1 ? "" : "s"
-                    } aren't compatible with this tool because their input/output schema doesn't match.${
-                      tool_id
-                        ? `\n[Create a new task using this tool's schema](/settings/manage_tools/${project_id}/create_task_from_tool?tool_id=${encodeURIComponent(
-                            tool_id,
-                          )})`
-                        : ""
-                    }`
-                  : `${incompatible_count} task${
-                      incompatible_count === 1 ? "" : "s"
-                    } aren't compatible with this tool because their input/output schema doesn't match.${
-                      tool_id
-                        ? `\n[Create a new task using this tool's schema](/settings/manage_tools/${project_id}/create_task_from_tool?tool_id=${encodeURIComponent(
-                            tool_id,
-                          )})`
-                        : ""
-                    }`}
+                warning_message={`${
+                  no_compatible_tasks
+                    ? "None of your tasks are compatible with this tool because their input/output schema doesn't match."
+                    : `${incompatible_count} task${incompatible_count === 1 ? " isn't" : "s aren't"} compatible with this tool because ${incompatible_count === 1 ? "its" : "their"} input/output schema doesn't match.`
+                }${
+                  tool_id
+                    ? `\n[Create a new task using this tool's schema](/settings/manage_tools/${project_id}/create_task_from_tool?tool_id=${encodeURIComponent(tool_id)})`
+                    : ""
+                }`}
                 warning_color={no_compatible_tasks ? "error" : "warning"}
                 large_icon={true}
                 outline={true}
@@ -241,8 +231,8 @@
                 trusted={true}
               />
               {#if no_compatible_tasks && tool_schema_ready}
-                <details class="text-sm text-gray-600">
-                  <summary class="cursor-pointer">View tool schema</summary>
+                <details class="text-sm text-gray-600 mb-4">
+                  <summary class="cursor-pointer">View Tool Schema</summary>
                   <div class="mt-2">
                     <ToolSchemaViewer
                       inputSchema={tool_input_schema}
@@ -257,8 +247,16 @@
             {#if !no_compatible_tasks}
               <div class="flex flex-col gap-6">
                 <FormElement
+                  inputType="input"
+                  label="MCP Tool"
+                  id="tool_name"
+                  bind:value={tool_name}
+                  disabled={true}
+                />
+                <FormElement
                   inputType="fancy_select"
-                  label="Select a Task"
+                  label="Task"
+                  description="A new run config will be created for this task, invoking this MCP tool."
                   id="task_id"
                   bind:value={selected_task_id}
                   fancy_select_options={compatible_task_options}
@@ -268,21 +266,19 @@
                     : "No compatible tasks found"}
                 />
                 <FormElement
+                  inputType="input"
+                  label="Run Configuration Name"
+                  id="run_config_name"
+                  bind:value={run_config_name}
+                  description="A name to identify this run config."
+                />
+                <FormElement
                   inputType="checkbox"
                   label="Set as task default run config"
                   id="make_default"
                   bind:value={make_default}
                 />
               </div>
-              <Collapse title="Advanced">
-                <FormElement
-                  inputType="input"
-                  label="Run Config Name"
-                  id="run_config_name"
-                  bind:value={run_config_name}
-                  info_description="Run config names are names to help you identify a particular configuration for running a task. In this case, invoking this MCP tool."
-                />
-              </Collapse>
             {/if}
           </div>
         </FormContainer>

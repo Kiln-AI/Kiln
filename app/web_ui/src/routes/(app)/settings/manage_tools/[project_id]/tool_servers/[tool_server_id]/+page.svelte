@@ -448,12 +448,11 @@
           on:click={() => set_tool_store()}
         >
           <div class="card-body p-4">
-            <div class="text-lg font-semibold">
-              Task Runs Tool Directly (No Agent)
-            </div>
+            <div class="text-lg font-semibold">Run Tool Directly</div>
             <div class="text-sm text-gray-500">
-              The task will call the tool directly, without a wrapping agent.
-              Useful for evaluating external APIs or agents.
+              Setup a run configuration for a task to call this tool directly,
+              without a wrapper agent. Useful for evaluating external APIs or
+              agents.
             </div>
           </div>
         </a>
@@ -613,14 +612,14 @@
                                   on:click={() =>
                                     open_tool_action_dialog(tool.name)}
                                 >
-                                  Run task with tool
+                                  Run Task with Tool
                                 </button>
                               </li>
                               <li>
                                 <button
                                   on:click={() => handleCreateTask(tool.name)}
                                 >
-                                  Create task from tool
+                                  Create Task from Tool
                                 </button>
                               </li>
                             </ul>

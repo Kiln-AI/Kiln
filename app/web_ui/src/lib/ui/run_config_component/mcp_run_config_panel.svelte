@@ -26,6 +26,7 @@
     {
       name: "MCP Tool",
       value: mcp_tool_name,
+      badge: true,
       link: tool_server_link || undefined,
       tooltip: `This run configuration will invoke the MCP tool "${mcp_tool_name}" directly, without any wrapper agent.`,
     },

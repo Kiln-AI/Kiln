@@ -19,13 +19,13 @@
 
 <div class="flex flex-col gap-3">
   <div>
-    <div class="text-sm font-medium text-gray-700">{inputTitle}</div>
+    <div class="text-xs font-medium text-gray-700">{inputTitle}</div>
     <div class="mt-1">
       <Output raw_output={inputSchemaOutput} />
     </div>
   </div>
   <div>
-    <div class="text-sm font-medium text-gray-700">{outputTitle}</div>
+    <div class="text-xs font-medium text-gray-700">{outputTitle}</div>
     <div class="mt-1">
       <Output raw_output={outputSchemaOutput} />
     </div>
