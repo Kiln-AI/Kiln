@@ -20,7 +20,7 @@ from kiln_ai.tools.base_tool import KilnToolInterface
 class MockAdapter(BaseAdapter):
     """Concrete implementation of BaseAdapter for testing"""
 
-    async def _run(self, input):
+    async def _run(self, input, **kwargs):
         return None, None
 
     def adapter_name(self) -> str:
@@ -233,7 +233,7 @@ async def test_input_formatting(
         # Mock the _run method to capture the input
         captured_input = None
 
-        async def mock_run(input):
+        async def mock_run(input, **kwargs):
             nonlocal captured_input
             captured_input = input
             return RunOutput(output="test output", intermediate_outputs={}), None
@@ -681,7 +681,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method
-        async def mock_run(input):
+        async def mock_run(input, **kwargs):
             # Check that run ID is set during _run
             run_id = get_agent_run_id()
             assert run_id is not None
@@ -721,7 +721,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method
-        async def mock_run(input):
+        async def mock_run(input, **kwargs):
             return RunOutput(output="test output", intermediate_outputs={}), None
 
         adapter._run = mock_run
@@ -759,7 +759,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method to raise an error
-        async def mock_run(input):
+        async def mock_run(input, **kwargs):
             # Run ID should be set even when error occurs
             run_id = get_agent_run_id()
             assert run_id is not None
@@ -796,7 +796,7 @@ class TestAgentRunContextLifecycle:
         set_agent_run_id(parent_run_id)
 
         # Mock the _run method to check inherited run ID
-        async def mock_run(input):
+        async def mock_run(input, **kwargs):
             # Sub-agent should see parent's run ID
             run_id = get_agent_run_id()
             assert run_id == parent_run_id
@@ -845,7 +845,7 @@ class TestAgentRunContextLifecycle:
         run_id_during_run = None
 
         # Mock the _run method to capture run ID
-        async def mock_run(input):
+        async def mock_run(input, **kwargs):
             nonlocal run_id_during_run
             run_id_during_run = get_agent_run_id()
             return RunOutput(output="test output", intermediate_outputs={}), None
@@ -885,7 +885,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.adapters.run_output import RunOutput
 
         # Mock the _run method
-        async def mock_run(input):
+        async def mock_run(input, **kwargs):
             return RunOutput(output="test output", intermediate_outputs={}), None
 
         adapter._run = mock_run
@@ -928,3 +928,122 @@ class TestAgentRunContextLifecycle:
             assert call_args is not None
             run_id = call_args[0][0] if call_args[0] else call_args[1]["run_id"]
             assert run_id.startswith("run_")
+
+
+class TestStreamCallback:
+    """Tests for the on_chunk streaming callback parameter."""
+
+    @pytest.fixture
+    def stream_adapter(self, base_task):
+        return MockAdapter(
+            task=base_task,
+            run_config=KilnAgentRunConfigProperties(
+                model_name="test_model",
+                model_provider_name="openai",
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="json_schema",
+            ),
+        )
+
+    def _setup_adapter_mocks(self, adapter):
+        provider = MagicMock()
+        provider.parser = "test_parser"
+        provider.formatter = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+    @pytest.mark.asyncio
+    async def test_on_chunk_forwarded_to_run(self, stream_adapter):
+        """Test that on_chunk is passed through to _run."""
+        received_kwargs = {}
+
+        async def mock_run(input, **kwargs):
+            received_kwargs.update(kwargs)
+            return RunOutput(output="test output", intermediate_outputs={}), None
+
+        stream_adapter._run = mock_run
+        self._setup_adapter_mocks(stream_adapter)
+
+        callback = AsyncMock()
+
+        parser = MagicMock()
+        parser.parse_output.return_value = RunOutput(
+            output="test output", intermediate_outputs={}
+        )
+
+        with (
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"
+            ) as mock_parser_factory,
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
+            ),
+        ):
+            mock_parser_factory.return_value = parser
+            await stream_adapter.invoke_returning_run_output(
+                {"test": "input"}, on_chunk=callback
+            )
+
+        assert received_kwargs.get("on_chunk") is callback
+
+    @pytest.mark.asyncio
+    async def test_on_chunk_none_by_default(self, stream_adapter):
+        """Test that on_chunk defaults to None when not provided."""
+        received_kwargs = {}
+
+        async def mock_run(input, **kwargs):
+            received_kwargs.update(kwargs)
+            return RunOutput(output="test output", intermediate_outputs={}), None
+
+        stream_adapter._run = mock_run
+        self._setup_adapter_mocks(stream_adapter)
+
+        parser = MagicMock()
+        parser.parse_output.return_value = RunOutput(
+            output="test output", intermediate_outputs={}
+        )
+
+        with (
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"
+            ) as mock_parser_factory,
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
+            ),
+        ):
+            mock_parser_factory.return_value = parser
+            await stream_adapter.invoke_returning_run_output({"test": "input"})
+
+        assert received_kwargs.get("on_chunk") is None
+
+    @pytest.mark.asyncio
+    async def test_invoke_forwards_on_chunk(self, stream_adapter):
+        """Test that invoke() also forwards on_chunk."""
+        received_kwargs = {}
+
+        async def mock_run(input, **kwargs):
+            received_kwargs.update(kwargs)
+            return RunOutput(output="test output", intermediate_outputs={}), None
+
+        stream_adapter._run = mock_run
+        self._setup_adapter_mocks(stream_adapter)
+
+        callback = AsyncMock()
+
+        parser = MagicMock()
+        parser.parse_output.return_value = RunOutput(
+            output="test output", intermediate_outputs={}
+        )
+
+        with (
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"
+            ) as mock_parser_factory,
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
+            ),
+        ):
+            mock_parser_factory.return_value = parser
+            await stream_adapter.invoke({"test": "input"}, on_chunk=callback)
+
+        assert received_kwargs.get("on_chunk") is callback

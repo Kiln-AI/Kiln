@@ -117,16 +117,21 @@ class ModelName(str, Enum):
     gemma_3n_4b = "gemma_3n_4b"
     claude_3_5_haiku = "claude_3_5_haiku"
     claude_4_5_haiku = "claude_4_5_haiku"
+    claude_4_5_haiku_thinking = "claude_4_5_haiku_thinking"
     claude_3_5_sonnet = "claude_3_5_sonnet"
     claude_3_7_sonnet = "claude_3_7_sonnet"
     claude_3_7_sonnet_thinking = "claude_3_7_sonnet_thinking"
     claude_sonnet_4 = "claude_sonnet_4"
     claude_sonnet_4_6 = "claude_sonnet_4_6"
+    claude_sonnet_4_6_thinking = "claude_sonnet_4_6_thinking"
     claude_sonnet_4_5 = "claude_sonnet_4_5"
+    claude_sonnet_4_5_thinking = "claude_sonnet_4_5_thinking"
     claude_opus_4 = "claude_opus_4"
     claude_opus_4_1 = "claude_opus_4_1"
     claude_opus_4_5 = "claude_opus_4_5"
+    claude_opus_4_5_thinking = "claude_opus_4_5_thinking"
     claude_opus_4_6 = "claude_opus_4_6"
+    claude_opus_4_6_thinking = "claude_opus_4_6_thinking"
     gemini_1_5_flash = "gemini_1_5_flash"
     gemini_1_5_flash_8b = "gemini_1_5_flash_8b"
     gemini_1_5_pro = "gemini_1_5_pro"
@@ -1296,6 +1301,29 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Claude 4.5 Haiku Thinking
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_4_5_haiku_thinking,
+        friendly_name="Claude 4.5 Haiku Thinking",
+        featured_rank=11,
+        editorial_notes="Claude on a budget. 20% the cost of Claude Opus. Great for easier tasks.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-haiku-4.5",
+                structured_output_mode=StructuredOutputMode.function_calling,
+                thinking_level="medium",
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-haiku-4-5-20251001",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                thinking_level="medium",
+            ),
+        ],
+    ),
     # Claude 3.5 Haiku
     KilnModel(
         family=ModelFamily.claude,
@@ -1363,6 +1391,52 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Claude Sonnet 4.6 Thinking
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_sonnet_4_6_thinking,
+        friendly_name="Claude 4.6 Sonnet Thinking",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-sonnet-4.6",
+                structured_output_mode=StructuredOutputMode.function_calling,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
+                thinking_level="medium",
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-sonnet-4-6",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                thinking_level="medium",
+            ),
+        ],
+    ),
     # Claude Sonnet 4.5
     KilnModel(
         family=ModelFamily.claude,
@@ -1379,6 +1453,27 @@ built_in_models: List[KilnModel] = [
                 model_id="claude-sonnet-4-5-20250929",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
+            ),
+        ],
+    ),
+    # Claude Sonnet 4.5 Thinking
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_sonnet_4_5_thinking,
+        friendly_name="Claude 4.5 Sonnet Thinking",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-4.5-sonnet",
+                structured_output_mode=StructuredOutputMode.function_calling,
+                thinking_level="medium",
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-sonnet-4-5-20250929",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                thinking_level="medium",
             ),
         ],
     ),
@@ -1508,6 +1603,52 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Claude Opus 4.6 Thinking
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_opus_4_6_thinking,
+        friendly_name="Claude Opus 4.6 Thinking",
+        featured_rank=2,
+        editorial_notes="Anthropic's best Claude model, with thinking. Expensive, but often the best.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-opus-4.6",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                thinking_level="medium",
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-opus-4-6",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                thinking_level="medium",
+            ),
+        ],
+    ),
     # Claude Opus 4.5
     KilnModel(
         family=ModelFamily.claude,
@@ -1544,6 +1685,47 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
+            ),
+        ],
+    ),
+    # Claude Opus 4.5 Thinking
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_opus_4_5_thinking,
+        friendly_name="Claude Opus 4.5 Thinking",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-opus-4.5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                thinking_level="medium",
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-opus-4-5-20251101",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                thinking_level="medium",
             ),
         ],
     ),

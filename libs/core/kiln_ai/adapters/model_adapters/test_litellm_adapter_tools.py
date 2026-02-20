@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from litellm.types.utils import ModelResponse
@@ -89,7 +89,15 @@ async def run_simple_task_with_tools(
 
     with patch.object(adapter, "available_tools", return_value=mock_math_tools):
         if simplified:
-            run = await adapter.invoke("what is 2+2")
+            # test our chunking handler also works e2e on real models
+            received_chunks = []
+
+            async def on_chunk_handler(chunk):
+                received_chunks.append(chunk)
+
+            run = await adapter.invoke("what is 2+2", on_chunk=on_chunk_handler)
+
+            assert len(received_chunks) > 0
 
             # Verify that AddTool.run was called with correct parameters
             add_spy.run.assert_called()
@@ -287,10 +295,19 @@ async def test_tools_simplied_mocked(tmp_path):
     mock_config.open_ai_api_key = "mock_api_key"
     mock_config.user_id = "test_user"
 
+    responses = [mock_response_1, mock_response_2]
+
+    async def mock_acompletion_checking_response(self, on_chunk=None, **kwargs):
+        if on_chunk is not None:
+            await on_chunk(Mock())
+        response = responses.pop(0)
+        return response, response.choices[0]
+
     with (
-        patch(
-            "litellm.acompletion",
-            side_effect=[mock_response_1, mock_response_2],
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=mock_acompletion_checking_response,
         ),
         patch("kiln_ai.utils.config.Config.shared", return_value=mock_config),
     ):
@@ -386,9 +403,16 @@ async def test_tools_mocked(tmp_path):
     mock_config.user_id = "test_user"
 
     with (
-        patch(
-            "litellm.acompletion",
-            side_effect=[mock_response_1, mock_response_2, mock_response_3],
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=AsyncMock(
+                side_effect=[
+                    (mock_response_1, mock_response_1.choices[0]),
+                    (mock_response_2, mock_response_2.choices[0]),
+                    (mock_response_3, mock_response_3.choices[0]),
+                ]
+            ),
         ),
         patch("kiln_ai.utils.config.Config.shared", return_value=mock_config),
     ):

@@ -1,7 +1,11 @@
 import json
 from typing import Tuple
 
-from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, BaseAdapter
+from kiln_ai.adapters.model_adapters.base_adapter import (
+    AdapterConfig,
+    BaseAdapter,
+    StreamCallback,
+)
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel import DataSource, Task, TaskRun, Usage
@@ -42,7 +46,9 @@ class MCPAdapter(BaseAdapter):
     def adapter_name(self) -> str:
         return "mcp_adapter"
 
-    async def _run(self, input: InputType) -> Tuple[RunOutput, Usage | None]:
+    async def _run(
+        self, input: InputType, on_chunk: StreamCallback | None = None
+    ) -> Tuple[RunOutput, Usage | None]:
         run_config = self.run_config
         if not isinstance(run_config, McpRunConfigProperties):
             raise ValueError("MCPAdapter requires McpRunConfigProperties")
@@ -75,14 +81,18 @@ class MCPAdapter(BaseAdapter):
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        on_chunk: StreamCallback | None = None,
     ) -> TaskRun:
-        run_output, _ = await self.invoke_returning_run_output(input, input_source)
+        run_output, _ = await self.invoke_returning_run_output(
+            input, input_source, on_chunk=on_chunk
+        )
         return run_output
 
     async def invoke_returning_run_output(
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        on_chunk: StreamCallback | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         """
         Runs the task and returns both the persisted TaskRun and raw RunOutput.
@@ -95,7 +105,9 @@ class MCPAdapter(BaseAdapter):
             set_agent_run_id(run_id)
 
         try:
-            return await self._run_and_validate_output(input, input_source)
+            return await self._run_and_validate_output(
+                input, input_source, on_chunk=on_chunk
+            )
         finally:
             if is_root_agent:
                 try:
@@ -109,6 +121,7 @@ class MCPAdapter(BaseAdapter):
         self,
         input: InputType,
         input_source: DataSource | None,
+        on_chunk: StreamCallback | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         """
         Run the MCP task and validate the output.
@@ -121,7 +134,7 @@ class MCPAdapter(BaseAdapter):
                 require_object=False,
             )
 
-        run_output, usage = await self._run(input)
+        run_output, usage = await self._run(input, on_chunk=on_chunk)
 
         if self.output_schema is not None:
             if isinstance(run_output.output, str):
