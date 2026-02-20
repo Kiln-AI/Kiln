@@ -14,6 +14,7 @@
   import type { Task } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { getPromptType } from "./prompt_generators/prompt_generators"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Banner from "$lib/ui/banner.svelte"
   import Float from "$lib/ui/float.svelte"
 
@@ -92,11 +93,19 @@
     label: string
     sortable: boolean
     sortKey?: SortableColumn
+    tooltip?: string
   }
 
   const tableColumns: TableColumn[] = [
     { key: "name", label: "Name", sortable: true, sortKey: "name" },
-    { key: "type", label: "Type", sortable: true, sortKey: "type" },
+    {
+      key: "type",
+      label: "Type",
+      sortable: true,
+      sortKey: "type",
+      tooltip:
+        "How the prompt was created. 'Frozen' means it's a fixed snapshot of the task prompt from a saved run configuration.",
+    },
     { key: "prompt_preview", label: "Prompt Preview", sortable: false },
     {
       key: "created_at",
@@ -213,6 +222,14 @@
                           class="hover:bg-base-200 cursor-pointer"
                         >
                           {column.label}
+                          {#if column.tooltip}
+                            <span class="font-normal">
+                              <InfoTooltip
+                                tooltip_text={column.tooltip}
+                                no_pad
+                              />
+                            </span>
+                          {/if}
                           <span class="inline-block w-3 text-center">
                             {sortColumn === sortKey
                               ? sortDirection === "asc"
@@ -222,7 +239,17 @@
                           </span>
                         </th>
                       {:else}
-                        <th>{column.label}</th>
+                        <th>
+                          {column.label}
+                          {#if column.tooltip}
+                            <span class="font-normal">
+                              <InfoTooltip
+                                tooltip_text={column.tooltip}
+                                no_pad
+                              />
+                            </span>
+                          {/if}
+                        </th>
                       {/if}
                     {/each}
                     <th style="width: 3%;"></th>
