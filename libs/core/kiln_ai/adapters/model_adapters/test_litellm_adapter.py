@@ -506,6 +506,53 @@ def test_build_extra_body_non_openrouter_no_provider_order(config, mock_task):
         assert "provider" not in extra_body
 
 
+def test_build_extra_body_openrouter_with_thinking_level_adds_allowed_openai_params(
+    config, mock_task
+):
+    """When provider is OpenRouter and thinking_level is set, allowed_openai_params is added."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.openrouter
+    mock_provider.thinking_level = "medium"
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert extra_body["reasoning_effort"] == "medium"
+    assert "allowed_openai_params" in extra_body
+    assert extra_body["allowed_openai_params"] == ["reasoning_effort"]
+
+
+def test_build_extra_body_non_openrouter_with_thinking_level_no_allowed_openai_params(
+    config, mock_task
+):
+    """When provider is not OpenRouter and thinking_level is set, allowed_openai_params is not added."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.anthropic
+    mock_provider.thinking_level = "high"
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert extra_body["reasoning_effort"] == "high"
+    assert "allowed_openai_params" not in extra_body
+
+
 @pytest.mark.asyncio
 async def test_build_completion_kwargs_custom_temperature_top_p(config, mock_task):
     """Test build_completion_kwargs with custom temperature and top_p values"""
