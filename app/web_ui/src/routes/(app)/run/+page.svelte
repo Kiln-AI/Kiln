@@ -96,20 +96,19 @@
       if (is_mcp_run) {
         posthog.capture("run_mcp_tool_directly")
       } else {
+        const tools = run_config_component.get_tools()
         posthog.capture("run_task", {
           model_name: model_name,
           provider: provider,
           prompt_method: run_config_component.get_prompt_method(),
-          tool_count: run_config_component.get_tools().length,
-          search_tools: run_config_component
-            .get_tools()
-            .filter((tool) => tool.startsWith("kiln_tool::rag::")).length,
-          mcp_tools: run_config_component
-            .get_tools()
-            .filter((tool) => tool.startsWith("mcp::")).length,
-          kiln_task_tools: run_config_component
-            .get_tools()
-            .filter((tool) => tool.startsWith("kiln_task::")).length,
+          tool_count: tools.length,
+          search_tools: tools.filter((tool) =>
+            tool.startsWith("kiln_tool::rag::"),
+          ).length,
+          mcp_tools: tools.filter((tool) => tool.startsWith("mcp::")).length,
+          kiln_task_tools: tools.filter((tool) =>
+            tool.startsWith("kiln_task::"),
+          ).length,
         })
       }
       response = data

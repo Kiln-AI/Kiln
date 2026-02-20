@@ -165,8 +165,8 @@
         <div>
           <div class="text-sm font-medium mb-1">Task Schema</div>
           <div class="text-xs text-gray-500 font-medium mb-2">
-            The input and output schema of the task will be based the MCP tool's
-            schema.
+            The input and output schema of the task will be based on the MCP
+            tool's schema.
           </div>
           <ToolSchemaViewer
             inputSchema={tool.inputSchema}
