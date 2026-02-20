@@ -41,6 +41,7 @@
   import EntitlementRequiredCard from "$lib/ui/kiln_copilot/entitlement_required_card.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import TableButton from "../../../../generate/[project_id]/[task_id]/table_button.svelte"
+  import posthog from "posthog-js"
 
   function tagFromFilterId(filter_id: string): string | undefined {
     if (filter_id.startsWith("tag::")) {
@@ -708,7 +709,10 @@
       ) {
         throw new Error("Invalid response from server")
       }
-
+      posthog.capture("create_prompt", {
+        from_generator: "prompt_optimization",
+        eval_count: selected_eval_ids.size,
+      })
       created_job = { id: response.id }
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
