@@ -8,7 +8,7 @@ from attrs import field as _attrs_field
 
 if TYPE_CHECKING:
     from ..models.examples_with_feedback_item import ExamplesWithFeedbackItem
-    from ..models.specification_input import SpecificationInput
+    from ..models.spec import Spec
     from ..models.task_info import TaskInfo
 
 
@@ -20,12 +20,12 @@ class RefineSpecInput:
     """
     Attributes:
         target_task_info (TaskInfo): Shared information about a task
-        target_specification (SpecificationInput): The specification to refine.
+        target_specification (Spec):
         examples_with_feedback (list[ExamplesWithFeedbackItem]):
     """
 
     target_task_info: TaskInfo
-    target_specification: SpecificationInput
+    target_specification: Spec
     examples_with_feedback: list[ExamplesWithFeedbackItem]
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -54,13 +54,13 @@ class RefineSpecInput:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.examples_with_feedback_item import ExamplesWithFeedbackItem
-        from ..models.specification_input import SpecificationInput
+        from ..models.spec import Spec
         from ..models.task_info import TaskInfo
 
         d = dict(src_dict)
         target_task_info = TaskInfo.from_dict(d.pop("target_task_info"))
 
-        target_specification = SpecificationInput.from_dict(d.pop("target_specification"))
+        target_specification = Spec.from_dict(d.pop("target_specification"))
 
         examples_with_feedback = []
         _examples_with_feedback = d.pop("examples_with_feedback")
