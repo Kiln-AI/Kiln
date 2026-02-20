@@ -494,7 +494,7 @@
                   </td>
                   <td>
                     {#if isKilnAgentRunConfig(config.run_config_properties)}
-                      <span class="text-gray-500">Standard</span>
+                      <span class="text-gray-500">Agent</span>
                     {:else}
                       <span class="text-gray-500">MCP</span>
                     {/if}
