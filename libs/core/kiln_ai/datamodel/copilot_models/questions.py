@@ -6,7 +6,6 @@ Copilot models are in /lib so they can be shared across lib, server, and client.
 
 from typing import Optional
 
-from kiln_ai.datamodel.copilot_models.copilot_api_models import SpecificationInput
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -131,6 +130,23 @@ class QuestionWithAnswer(BaseModel):
         return self
 
 
+class SpecificationInput(BaseModel):
+    """The specification to refine."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    spec_fields: dict[str, str] = Field(
+        ...,
+        description="Dictionary mapping field names to their descriptions/purposes",
+        title="spec_fields",
+    )
+    spec_field_current_values: dict[str, str] = Field(
+        ...,
+        description="Dictionary mapping field names to their current values",
+        title="spec_field_current_values",
+    )
+
+
 class SubmitAnswersRequest(BaseModel):
     """Request to submit answers to a question set."""
 
@@ -151,3 +167,18 @@ class SubmitAnswersRequest(BaseModel):
         description="Questions about the specification with user-provided answers",
         title="questions_and_answers",
     )
+
+
+class NewProposedSpecEditApi(BaseModel):
+    """A proposed edit to a spec field."""
+
+    spec_field_name: str
+    proposed_edit: str
+    reason_for_edit: str
+
+
+class RefineSpecApiOutput(BaseModel):
+    """Output from refining a spec."""
+
+    new_proposed_spec_edits: list[NewProposedSpecEditApi]
+    not_incorporated_feedback: str | None
