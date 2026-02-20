@@ -7,21 +7,22 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 if TYPE_CHECKING:
-    from ..models.new_proposed_spec_edit import NewProposedSpecEdit
+    from ..models.new_proposed_spec_edit_api import NewProposedSpecEditApi
 
 
-T = TypeVar("T", bound="RefineSpecOutput")
+T = TypeVar("T", bound="RefineSpecApiOutput")
 
 
 @_attrs_define
-class RefineSpecOutput:
-    """
+class RefineSpecApiOutput:
+    """Output from refining a spec.
+
     Attributes:
-        new_proposed_spec_edits (list[NewProposedSpecEdit]):
+        new_proposed_spec_edits (list[NewProposedSpecEditApi]):
         not_incorporated_feedback (None | str):
     """
 
-    new_proposed_spec_edits: list[NewProposedSpecEdit]
+    new_proposed_spec_edits: list[NewProposedSpecEditApi]
     not_incorporated_feedback: None | str
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -47,13 +48,13 @@ class RefineSpecOutput:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.new_proposed_spec_edit import NewProposedSpecEdit
+        from ..models.new_proposed_spec_edit_api import NewProposedSpecEditApi
 
         d = dict(src_dict)
         new_proposed_spec_edits = []
         _new_proposed_spec_edits = d.pop("new_proposed_spec_edits")
         for new_proposed_spec_edits_item_data in _new_proposed_spec_edits:
-            new_proposed_spec_edits_item = NewProposedSpecEdit.from_dict(new_proposed_spec_edits_item_data)
+            new_proposed_spec_edits_item = NewProposedSpecEditApi.from_dict(new_proposed_spec_edits_item_data)
 
             new_proposed_spec_edits.append(new_proposed_spec_edits_item)
 
@@ -64,13 +65,13 @@ class RefineSpecOutput:
 
         not_incorporated_feedback = _parse_not_incorporated_feedback(d.pop("not_incorporated_feedback"))
 
-        refine_spec_output = cls(
+        refine_spec_api_output = cls(
             new_proposed_spec_edits=new_proposed_spec_edits,
             not_incorporated_feedback=not_incorporated_feedback,
         )
 
-        refine_spec_output.additional_properties = d
-        return refine_spec_output
+        refine_spec_api_output.additional_properties = d
+        return refine_spec_api_output
 
     @property
     def additional_keys(self) -> list[str]:
