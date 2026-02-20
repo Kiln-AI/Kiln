@@ -1,7 +1,7 @@
 import logging
 import os
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from pydantic import BaseModel
 
@@ -17,6 +17,7 @@ from kiln_ai.adapters.ml_model_list import (
     built_in_models,
 )
 from kiln_ai.adapters.ollama_tools import get_ollama_connection
+from kiln_ai.adapters.user_model_entry import UserModelEntry
 from kiln_ai.datamodel import Finetune, Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.utils.config import Config
@@ -143,7 +144,27 @@ def core_provider(model_id: str, provider_name: ModelProviderName) -> ModelProvi
     Some provider IDs are wrappers (fine-tunes, custom models). This maps these to runnable providers (openai, ollama, etc)
     """
 
-    # Custom models map to the underlying provider
+    # New user models: user_model::{id}
+    # Check this first, regardless of what provider_name is (user models can be in any provider list now)
+    if model_id.startswith("user_model::"):
+        parts = model_id.split("::", 1)
+        if len(parts) == 2:
+            entry_id = parts[1]
+            # Find the entry to get its provider info
+            for entry in get_all_user_models():
+                if entry.id == entry_id:
+                    if entry.provider_type == "custom":
+                        return ModelProviderName.openai_compatible
+                    elif entry.provider_type == "builtin":
+                        if entry.provider_id not in ModelProviderName.__members__:
+                            raise ValueError(
+                                f"Invalid provider name: {entry.provider_id}"
+                            )
+                        return ModelProviderName(entry.provider_id)
+            # If not found, raise an error
+            raise ValueError(f"User model {entry_id} not found")
+
+    # Legacy custom models: provider::model_id (only when using kiln_custom_registry)
     if provider_name is ModelProviderName.kiln_custom_registry:
         provider_name, _ = parse_custom_model_id(model_id)
         return provider_name
@@ -179,6 +200,11 @@ def parse_custom_model_id(
 def kiln_model_provider_from(
     name: str, provider_name: str | None = None
 ) -> KilnModelProvider:
+    # Check for user model first
+    user_model = find_user_model(name)
+    if user_model:
+        return user_model
+
     if provider_name == ModelProviderName.kiln_fine_tune:
         return finetune_provider_model(name)
 
@@ -189,7 +215,8 @@ def kiln_model_provider_from(
     if built_in_model:
         return built_in_model
 
-    # For custom registry, get the provider name and model name from the model id
+    # Legacy custom models: "provider::model_id" format (e.g., "openai::gpt-4o-custom")
+    # These always come through with provider_name=kiln_custom_registry
     if provider_name == ModelProviderName.kiln_custom_registry:
         provider_name, name = parse_custom_model_id(name)
     else:
@@ -210,7 +237,7 @@ def kiln_model_provider_from(
         supports_data_gen=False,
         untested_model=True,
         model_id=name,
-        # We don't know the structured output mode for custom models, so we default to json_instructions which is the only one that works everywhere.
+        # The only mode that works on all models. Newer user model registry allows you to set this.
         structured_output_mode=StructuredOutputMode.json_instructions,
     )
 
@@ -323,6 +350,123 @@ def finetune_provider_model(
             model_provider.structured_output_mode = StructuredOutputMode.json_mode
 
     return model_provider
+
+
+def get_all_user_models() -> list[UserModelEntry]:
+    """
+    Returns user-defined models from the user_model_registry config.
+
+    This only returns models from the new user_model_registry format.
+    Legacy custom_models (format "provider::model_id") are handled separately
+    via get_legacy_custom_models() to preserve their stable ID format.
+    """
+    result: list[UserModelEntry] = []
+
+    registry = Config.shared().user_model_registry or []
+    for entry in registry:
+        try:
+            result.append(UserModelEntry(**entry))
+        except Exception:
+            logger.warning(f"Invalid user model entry: {entry}")
+
+    return result
+
+
+def get_legacy_custom_models() -> list[tuple[str, str]]:
+    """
+    Returns legacy custom_models as a list of (provider_id, model_id) tuples.
+
+    Legacy custom_models are stored in config as "provider::model_id" strings
+    (e.g. "openai::gpt-4o-custom"). These generate stable IDs in the format
+    "provider::model_id" which are stored in the database. Do NOT change the
+    ID format as it would break history matching.
+
+    New custom models should use user_model_registry instead.
+    """
+    result: list[tuple[str, str]] = []
+    legacy_models = Config.shared().custom_models or []
+    for model_str in legacy_models:
+        try:
+            parts = model_str.split("::", 1)
+            if len(parts) == 2:
+                provider_id, model_id = parts
+                result.append((provider_id, model_id))
+        except Exception:
+            logger.warning(f"Invalid legacy custom model: {model_str}")
+    return result
+
+
+def user_model_to_provider(entry: UserModelEntry) -> KilnModelProvider:
+    """
+    Convert a UserModelEntry to a KilnModelProvider with overrides applied.
+
+    Note: This function filters overrides to only include valid KilnModelProvider fields.
+    Unknown fields in overrides are silently ignored for forward compatibility, allowing
+    new fields to be added to KilnModelProvider without breaking existing UserModelEntry data.
+    """
+    # Determine the base provider name
+    if entry.provider_type == "builtin":
+        if entry.provider_id not in ModelProviderName.__members__:
+            raise ValueError(f"Invalid built-in provider: {entry.provider_id}")
+        provider_name = ModelProviderName(entry.provider_id)
+    else:
+        provider_name = ModelProviderName.openai_compatible
+
+    # Build base provider with explicit typing
+    base_kwargs: dict[str, Any] = {
+        "name": provider_name,
+        "model_id": entry.model_id,
+        "untested_model": True,  # User models are untested by default
+        "supports_structured_output": False,  # Conservative defaults
+        "supports_data_gen": False,
+        "structured_output_mode": StructuredOutputMode.json_instructions,
+    }
+
+    # For custom providers, store the provider name
+    if entry.provider_type == "custom":
+        base_kwargs["openai_compatible_provider_name"] = entry.provider_id
+
+    # Apply overrides with proper type casting
+    # We ignore type errors here because the overrides are validated at runtime
+    # and the Pydantic model will handle type conversion
+    if entry.overrides:
+        # Get valid field names from KilnModelProvider for forward compatibility
+        # This allows new fields to be added to KilnModelProvider without breaking
+        # existing UserModelEntry data that may have those fields in overrides
+        valid_fields = set(KilnModelProvider.model_fields.keys())
+        # Remove fields that shouldn't be overridden
+        valid_fields -= {"name", "model_id"}
+
+        # Only include overrides that are valid fields and actually set (not None)
+        # This allows the default values to be used when override is None
+        for key, value in entry.overrides.items():
+            if value is not None and value != "" and key in valid_fields:
+                base_kwargs[key] = value
+
+    return KilnModelProvider(**base_kwargs)  # type: ignore[arg-type]
+
+
+def find_user_model(model_id: str) -> KilnModelProvider | None:
+    """
+    Find a user model by its ID and return as KilnModelProvider.
+
+    Model ID format: "user_model::{id}"
+    """
+    if not model_id.startswith("user_model::"):
+        return None
+
+    parts = model_id.split("::", 1)
+    if len(parts) != 2:
+        return None
+
+    entry_id = parts[1]
+
+    # Find matching entry by ID
+    for entry in get_all_user_models():
+        if entry.id == entry_id:
+            return user_model_to_provider(entry)
+
+    return None
 
 
 def get_model_and_provider(

@@ -105,6 +105,146 @@ def test_eval_basic_properties():
     assert eval.output_scores[0].type == TaskOutputRatingType.five_star
 
 
+def test_eval_with_train_set_filter_id():
+    """Test that Eval correctly stores train_set_filter_id."""
+    eval = Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::eval_test",
+        train_set_filter_id="tag::eval_train_test",
+        eval_configs_filter_id="tag::eval_golden_test",
+        output_scores=[
+            EvalOutputScore(
+                name="accuracy",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+
+    assert eval.eval_set_filter_id == "tag::eval_test"
+    assert eval.train_set_filter_id == "tag::eval_train_test"
+    assert eval.eval_configs_filter_id == "tag::eval_golden_test"
+
+
+def test_eval_train_set_filter_id_defaults_to_none():
+    """Test that train_set_filter_id defaults to None when not provided."""
+    eval = Eval(
+        name="Test Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+
+    assert eval.train_set_filter_id is None
+
+
+def test_migrate_train_set_filter_id_on_load(mock_task, tmp_path):
+    """Test that loading an eval from file auto-creates train_set_filter_id when missing."""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="My Eval Name",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        train_set_filter_id=None,
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    loaded_eval = Eval.load_from_file(str(eval.path))
+    assert loaded_eval.train_set_filter_id == "tag::train_my_eval_name"
+
+
+def test_migrate_train_set_filter_id_preserves_existing(mock_task, tmp_path):
+    """Test that migration does not overwrite an existing train_set_filter_id."""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name="My Eval",
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        train_set_filter_id="tag::custom_train_tag",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    loaded_eval = Eval.load_from_file(str(eval.path))
+    assert loaded_eval.train_set_filter_id == "tag::custom_train_tag"
+
+
+def test_migrate_train_set_filter_id_not_on_new_eval():
+    """Test that migration does not trigger on newly created evals (not loaded from file)."""
+    eval = Eval(
+        name="New Eval",
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        train_set_filter_id=None,
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    assert eval.train_set_filter_id is None
+
+
+@pytest.mark.parametrize(
+    "eval_name,expected_tag",
+    [
+        ("Simple", "tag::train_simple"),
+        ("Two Words", "tag::train_two_words"),
+        ("UPPER CASE", "tag::train_upper_case"),
+        ("mixed Case Name", "tag::train_mixed_case_name"),
+        ("already_underscored", "tag::train_already_underscored"),
+    ],
+)
+def test_migrate_train_set_filter_id_slugification(
+    mock_task, tmp_path, eval_name, expected_tag
+):
+    """Test that various eval names are correctly slugified into train_set_filter_id."""
+    task_path = tmp_path / "task.kiln"
+    mock_task.path = task_path
+    mock_task.save_to_file()
+
+    eval = Eval(
+        name=eval_name,
+        parent=mock_task,
+        eval_set_filter_id="tag::tag1",
+        eval_configs_filter_id="tag::tag2",
+        output_scores=[
+            EvalOutputScore(
+                name="score",
+                type=TaskOutputRatingType.pass_fail,
+            )
+        ],
+    )
+    eval.save_to_file()
+
+    loaded_eval = Eval.load_from_file(str(eval.path))
+    assert loaded_eval.train_set_filter_id == expected_tag
+
+
 def test_eval_default_values():
     eval = Eval(
         name="Test Eval",
@@ -806,7 +946,10 @@ def test_eval_template_properties_issue_template_validation(
         )
         assert eval.template == EvalTemplateId.issue
         for key, value in template_properties.items():
-            assert eval.template_properties[key] == value
+            assert (
+                eval.template_properties is not None
+                and eval.template_properties[key] == value
+            )
 
 
 @pytest.mark.parametrize(
@@ -843,7 +986,10 @@ def test_eval_template_properties_non_validated_templates(
     )
     assert eval.template == template
     for key, value in template_properties.items():
-        assert eval.template_properties[key] == value
+        assert (
+            eval.template_properties is not None
+            and eval.template_properties[key] == value
+        )
 
 
 @pytest.mark.parametrize(
@@ -988,7 +1134,10 @@ def test_eval_template_properties_tool_call_template_validation(
         )
         assert eval.template == EvalTemplateId.tool_call
         for key, value in template_properties.items():
-            assert eval.template_properties[key] == value
+            assert (
+                eval.template_properties is not None
+                and eval.template_properties[key] == value
+            )
 
 
 def test_eval_tool_call_template_requires_full_trace_evaluation_data_type():

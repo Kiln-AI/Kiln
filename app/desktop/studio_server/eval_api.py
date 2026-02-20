@@ -137,12 +137,12 @@ async def run_eval_runner_with_status(eval_runner: EvalRunner) -> StreamingRespo
 
 class CreateEvaluatorRequest(BaseModel):
     name: str
-    description: str
+    description: str | None = None
     template: EvalTemplateId | None
     output_scores: list[EvalOutputScore]
     eval_set_filter_id: DatasetFilterId
     eval_configs_filter_id: DatasetFilterId | None
-    template_properties: dict[str, str | float | int | bool]
+    template_properties: dict[str, str | float | int | bool] | None
     evaluation_data_type: EvalDataType
 
 
@@ -158,6 +158,12 @@ class CreateTaskRunConfigRequest(BaseModel):
     name: str | None = None
     description: str | None = None
     run_config_properties: RunConfigProperties
+
+
+class UpdateRunConfigRequest(BaseModel):
+    name: str | None = None
+    starred: bool | None = None
+    prompt_name: str | None = None
 
 
 class RunEvalConfigRequest(BaseModel):
@@ -186,6 +192,12 @@ class UpdateFavouriteRequest(BaseModel):
     favourite: bool
 
 
+class UpdateEvalRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    train_set_filter_id: str | None = None
+
+
 class EvalProgress(BaseModel):
     # The total size of the dataset used for the eval
     dataset_size: int
@@ -195,6 +207,8 @@ class EvalProgress(BaseModel):
     golden_dataset_not_rated_count: int
     golden_dataset_partially_rated_count: int
     golden_dataset_fully_rated_count: int
+    # The total size of the train dataset used for the eval
+    train_dataset_size: int
     # The current selected eval method
     current_eval_method: EvalConfig | None
 
@@ -235,17 +249,13 @@ class RunConfigEvalResult(BaseModel):
     dataset_size: int
     eval_config_result: EvalConfigResult | None
     missing_default_eval_config: bool
+    spec_id: ID_TYPE | None
 
 
 class RunConfigEvalScoresSummary(BaseModel):
     eval_results: List[RunConfigEvalResult]
     # mean usage statistics across all eval runs for this run config
     mean_usage: MeanUsage | None = None
-
-
-class UpdateEvalRequest(BaseModel):
-    name: str
-    description: str | None = None
 
 
 def dataset_ids_in_filter(
@@ -364,29 +374,39 @@ def connect_evals_api(app: FastAPI):
     async def get_eval(project_id: str, task_id: str, eval_id: str) -> Eval:
         return eval_from_id(project_id, task_id, eval_id)
 
-    @app.patch("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
-    async def update_eval(
-        project_id: str, task_id: str, eval_id: str, request: UpdateEvalRequest
-    ) -> Eval:
-        eval = eval_from_id(project_id, task_id, eval_id)
-        eval.name = request.name
-        eval.description = request.description
-        eval.save_to_file()
-        return eval
-
-    @app.patch("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/fav")
-    async def update_eval_favourite(
-        project_id: str, task_id: str, eval_id: str, request: UpdateFavouriteRequest
-    ) -> Eval:
-        eval = eval_from_id(project_id, task_id, eval_id)
-        eval.favourite = request.favourite
-        eval.save_to_file()
-        return eval
-
     @app.delete("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
     async def delete_eval(project_id: str, task_id: str, eval_id: str) -> None:
         eval = eval_from_id(project_id, task_id, eval_id)
         eval.delete()
+
+    @app.patch("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
+    async def update_eval(
+        project_id: str,
+        task_id: str,
+        eval_id: str,
+        request: UpdateEvalRequest,
+    ) -> Eval:
+        eval = eval_from_id(project_id, task_id, eval_id)
+
+        if request.name is not None:
+            eval.name = request.name
+        if request.description is not None:
+            eval.description = request.description
+
+        # legacy evals (not created with Specs) do not have a train set filter, but we need one
+        # for some features such as prompt optimization
+        if request.train_set_filter_id is not None:
+            # if the eval already has a train set filter, we do not allow changing it because it
+            # would make comparing results before and after the change very confusing
+            if eval.train_set_filter_id is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Train set filter is already set and cannot be changed. Please create a new eval if you need a different train set.",
+                )
+            eval.train_set_filter_id = request.train_set_filter_id
+
+        eval.save_to_file()
+        return eval
 
     @app.get("/api/projects/{project_id}/tasks/{task_id}/evals")
     async def get_evals(project_id: str, task_id: str) -> list[Eval]:
@@ -456,6 +476,35 @@ def connect_evals_api(app: FastAPI):
             )
         task_run_config.save_to_file()
         return task_run_config
+
+    @app.patch("/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}")
+    async def update_run_config(
+        project_id: str,
+        task_id: str,
+        run_config_id: str,
+        request: UpdateRunConfigRequest,
+    ) -> TaskRunConfig:
+        run_config = task_run_config_from_id(project_id, task_id, run_config_id)
+        if run_config.path is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot update this run config.",
+            )
+        if request.name is not None:
+            run_config.name = request.name
+        if request.starred is not None:
+            run_config.starred = request.starred
+        if request.prompt_name is not None:
+            if run_config.prompt is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Run config has no frozen prompt to rename.",
+                )
+            run_config.prompt = run_config.prompt.model_copy(
+                update={"name": request.prompt_name}
+            )
+        run_config.save_to_file()
+        return run_config
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/create_eval_config"
@@ -620,6 +669,12 @@ def connect_evals_api(app: FastAPI):
             build_score_key_to_task_requirement_id(task),
         )
 
+        train_dataset_runs = (
+            runs_in_filter(task, eval.train_set_filter_id, readonly=True)
+            if eval.train_set_filter_id
+            else []
+        )
+
         current_eval_method = next(
             (
                 eval_config
@@ -635,6 +690,7 @@ def connect_evals_api(app: FastAPI):
             golden_dataset_not_rated_count=not_rated_count,
             golden_dataset_partially_rated_count=partially_rated_count,
             golden_dataset_fully_rated_count=fully_rated_count,
+            train_dataset_size=len(train_dataset_runs),
             current_eval_method=current_eval_method,
         )
 
@@ -895,6 +951,13 @@ def connect_evals_api(app: FastAPI):
         # Verify the run config exists
         task_run_config_from_id(project_id, task_id, run_config_id)
 
+        # Build a mapping from eval_id to spec_id for evals that are associated with specs
+        specs = task.specs()
+        eval_id_to_spec_id: Dict[str, str] = {}
+        for spec in specs:
+            if spec.eval_id and spec.id:
+                eval_id_to_spec_id[spec.eval_id] = spec.id
+
         evals = task.evals()
         eval_results: List[RunConfigEvalResult] = []
 
@@ -941,6 +1004,7 @@ def connect_evals_api(app: FastAPI):
                         dataset_size=dataset_size,
                         eval_config_result=None,
                         missing_default_eval_config=True,
+                        spec_id=eval_id_to_spec_id.get(eval.id) if eval.id else None,
                     )
                 )
                 continue
@@ -1028,6 +1092,7 @@ def connect_evals_api(app: FastAPI):
                     eval_name=eval.name,
                     dataset_size=dataset_size,
                     missing_default_eval_config=False,
+                    spec_id=eval_id_to_spec_id.get(eval.id) if eval.id else None,
                     eval_config_result=EvalConfigResult(
                         eval_config_id=eval_config.id,
                         results=results,

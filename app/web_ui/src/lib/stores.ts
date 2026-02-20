@@ -371,6 +371,7 @@ export function available_model_details(
   model_id: string | null,
   provider_id: string | null,
   available_models: AvailableModels[],
+  provider_display_name: string | null = null,
 ): ModelDetails | null {
   // No-op if already loaded
   load_available_models()
@@ -381,7 +382,17 @@ export function available_model_details(
 
   // Find the model in the available models list which has fine-tunes and custom models
   for (const provider of available_models) {
+    // Match by provider_id first
     if (provider.provider_id !== provider_id) {
+      continue
+    }
+    // For openai_compatible providers, also match by provider_display_name if provided
+    // This is needed because multiple custom providers share the same provider_id
+    if (
+      provider_id === "openai_compatible" &&
+      provider_display_name &&
+      provider.provider_name !== provider_display_name
+    ) {
       continue
     }
     const models = provider.models || []
@@ -471,6 +482,10 @@ export function model_name(
     return "Unknown"
   }
 
+  if (model_id === "kiln-copilot") {
+    return "Kiln Copilot"
+  }
+
   const model = get_model_info(model_id, provider_models)
   if (model?.name) {
     return model.name
@@ -548,6 +563,18 @@ const provider_name_map: Record<ModelProviderName, string> = {
 export function provider_name_from_id(provider_id: string): string {
   if (!provider_id) {
     return "Unknown"
+  }
+  // Special case for Kiln internal provider
+  if (provider_id === "kiln") {
+    return "Kiln"
+  }
+  // Special case for openai_compatible - don't look up a specific provider since
+  // multiple custom providers share this provider_id. Use the generic name from map.
+  if (provider_id === "openai_compatible") {
+    if (provider_id in provider_name_map) {
+      return provider_name_map[provider_id as ModelProviderName]
+    }
+    return "OpenAI Compatible"
   }
   // Prefer the provider name from the available models list
   const provider = get(available_models).find(
@@ -700,6 +727,9 @@ export function rating_options_for_sample(
 }
 
 export function get_model_friendly_name(model_id: string): string {
+  if (model_id === "kiln-copilot") {
+    return "Kiln Copilot"
+  }
   const model = get_model_info(model_id, get(model_info))
   if (model?.name) {
     return model.name

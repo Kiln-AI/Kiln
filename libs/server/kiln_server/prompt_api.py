@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException
+from kiln_ai.adapters.prompt_builders import CustomExamplePromptBuilder, PromptExample
 from kiln_ai.datamodel import BasePrompt, Prompt, PromptId
 from pydantic import BaseModel
 
@@ -32,6 +33,7 @@ class ApiPrompt(BasePrompt):
 
 
 class PromptCreateRequest(BaseModel):
+    generator_id: str | None = None
     name: str
     description: str | None = None
     prompt: str
@@ -56,6 +58,19 @@ class PromptUpdateRequest(BaseModel):
     description: str | None = None
 
 
+class FewShotExample(BaseModel):
+    input: str
+    output: str
+
+
+class BuildPromptRequest(BaseModel):
+    examples: list[FewShotExample] = []
+
+
+class BuildPromptResponse(BaseModel):
+    prompt: str
+
+
 def connect_prompt_api(app: FastAPI):
     @app.post("/api/projects/{project_id}/task/{task_id}/prompt")
     async def create_prompt(
@@ -64,6 +79,7 @@ def connect_prompt_api(app: FastAPI):
         parent_task = task_from_id(project_id, task_id)
         prompt = Prompt(
             parent=parent_task,
+            generator_id=prompt_data.generator_id,
             name=prompt_data.name,
             description=prompt_data.description,
             prompt=prompt_data.prompt,
@@ -89,6 +105,7 @@ def connect_prompt_api(app: FastAPI):
                 prompts.append(
                     ApiPrompt(
                         id=f"task_run_config::{project_id}::{task_id}::{task_run_config.id}",
+                        created_at=task_run_config.created_at,
                         **properties,
                     )
                 )
@@ -101,17 +118,34 @@ def connect_prompt_api(app: FastAPI):
     @app.patch("/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}")
     async def update_prompt(
         project_id: str, task_id: str, prompt_id: str, prompt_data: PromptUpdateRequest
-    ) -> Prompt:
+    ) -> ApiPrompt:
         prompt = editable_prompt_from_id(project_id, task_id, prompt_id)
         prompt.name = prompt_data.name
         prompt.description = prompt_data.description
         prompt.save_to_file()
-        return prompt
+        properties = prompt.model_dump(exclude={"id"})
+        return ApiPrompt(id=f"id::{prompt.id}", **properties)
 
     @app.delete("/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}")
     async def delete_prompt(project_id: str, task_id: str, prompt_id: str) -> None:
         prompt = editable_prompt_from_id(project_id, task_id, prompt_id)
         prompt.delete()
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/build_prompt_with_examples")
+    async def build_prompt_with_examples(
+        project_id: str, task_id: str, request: BuildPromptRequest
+    ) -> BuildPromptResponse:
+        """Build a prompt with task instruction, requirements, and optional custom examples.
+
+        Uses the same formatting as the FewShotPromptBuilder but with user-provided examples.
+        """
+        task = task_from_id(project_id, task_id)
+        examples = [
+            PromptExample(input=e.input, output=e.output) for e in request.examples
+        ]
+        builder = CustomExamplePromptBuilder(task, examples)
+        prompt = builder.build_prompt(include_json_instructions=False)
+        return BuildPromptResponse(prompt=prompt)
 
 
 # User friendly descriptions of the prompt generators
@@ -120,7 +154,7 @@ _prompt_generators = [
         id="simple_prompt_builder",
         name="Basic (Zero Shot)",
         short_description="Just the prompt, no examples.",
-        description="A basic prompt generator. It will include the instructions and requirements from your task definition. It won't include any examples from your runs (zero-shot).",
+        description="A basic prompt generator. It will include the instructions from your task definition. It won't include any examples from your runs (zero-shot).",
         chain_of_thought=False,
     ),
     PromptGenerator(
@@ -153,23 +187,16 @@ _prompt_generators = [
     ),
     PromptGenerator(
         id="few_shot_chain_of_thought_prompt_builder",
-        name="Chain of Thought - Few Shot",
+        name="Chain of Thought + Few Shot",
         short_description="Combines CoT and few-shot.",
         description="Combines our 'Chain of Thought' generator with our 'Few-Shot' generator, for both the thinking and the few shot examples.",
         chain_of_thought=True,
     ),
     PromptGenerator(
         id="multi_shot_chain_of_thought_prompt_builder",
-        name="Chain of Thought - Many Shot",
+        name="Chain of Thought + Many Shot",
         short_description="Combines CoT and many-shot.",
         description="Combines our 'Chain of Thought' generator with our 'Many-Shot' generator, for both the thinking and the many shot examples.",
         chain_of_thought=True,
-    ),
-    PromptGenerator(
-        id="short_prompt_builder",
-        name="Short",
-        short_description="Just the prompt, no requirements or examples.",
-        description="A short prompt generator. It will include only the task's instruction/prompt. It excludes your task's requirements, and does not include any examples from your dataset.",
-        chain_of_thought=False,
     ),
 ]

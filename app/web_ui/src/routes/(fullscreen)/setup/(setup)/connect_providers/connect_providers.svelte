@@ -14,7 +14,9 @@
   import { clear_available_models_cache } from "$lib/stores"
   import { get_provider_image } from "$lib/ui/provider_image"
   import posthog from "posthog-js"
+  import { goto } from "$app/navigation"
 
+  export let onboarding = false
   export let highlight_finetune = false
   export let required_providers: string[] = []
 
@@ -23,6 +25,7 @@
     id: string
     description: string
     featured: boolean
+    hide_in_onboarding?: boolean
     pill_text?: string
     api_key_steps?: string[]
     api_key_warning?: string
@@ -41,6 +44,13 @@
         "Create a new API Key",
         "Copy the new API Key, paste it below and click 'Connect'",
       ],
+    },
+    {
+      name: "Kiln Copilot",
+      id: "kiln_copilot",
+      description: "Our Copilot to optimize your evals and AI performance.",
+      featured: !highlight_finetune,
+      hide_in_onboarding: true,
     },
     {
       name: "OpenAI",
@@ -220,6 +230,7 @@
     {
       name: "Weights & Biases",
       id: "wandb",
+      hide_in_onboarding: true,
       description: "Track and visualize your experiments.",
       featured: false,
       api_key_steps: [
@@ -353,6 +364,12 @@
       error: null,
       custom_description: null,
     },
+    kiln_copilot: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
   }
 
   export let has_connected_providers = false
@@ -424,6 +441,14 @@
     }
     if (provider.id === "openai_compatible") {
       show_custom_api_dialog()
+    }
+    if (provider.id === "kiln_copilot") {
+      const isSettings = window.location.pathname.includes("/settings/")
+      const route = isSettings
+        ? "/settings/providers/kiln_copilot"
+        : "/setup/connect_providers/kiln_copilot"
+      goto(route)
+      return
     }
 
     if (provider.api_key_steps) {
@@ -725,6 +750,9 @@
       if (data["cerebras_api_key"]) {
         status.cerebras.connected = true
       }
+      if (data["kiln_copilot_api_key"]) {
+        status.kiln_copilot.connected = true
+      }
       if (
         data["openai_compatible_providers"] &&
         data["openai_compatible_providers"].length > 0
@@ -742,6 +770,7 @@
 
   onMount(async () => {
     await check_existing_providers()
+
     // Check Ollama every load, as it can be closed. More epmemerial (and local/cheap/fast)
     connect_ollama(false).then(() => {
       // Clear the error as the user didn't initiate this run
@@ -933,97 +962,103 @@
       class="w-full grid grid-cols-1 xl:grid-cols-2 gap-y-6 gap-x-24 max-w-lg xl:max-w-screen-xl"
     >
       {#each providers as provider}
-        {@const is_connected =
-          status[provider.id] && status[provider.id].connected}
-        <div class="flex flex-row gap-4 items-center">
-          <img
-            src={get_provider_image(provider.id)}
-            alt={provider.name}
-            class="flex-none p-1 size-10 mx-1"
-          />
-          <div class="flex flex-col grow pr-4">
-            <h3 class="text-base font-medium flex flex-row gap-2 items-center">
-              {provider.name}
-              {#if required_providers.includes(provider.id)}
-                <div class="badge badge-sm badge-warning">Required</div>
-              {:else if provider.featured}
-                <div class="badge badge-sm badge-secondary">Recommended</div>
-              {:else if provider.pill_text}
-                <div class="badge badge-sm badge-primary">
-                  {provider.pill_text}
-                </div>
+        {#if !onboarding || !provider.hide_in_onboarding}
+          {@const is_connected =
+            status[provider.id] && status[provider.id].connected}
+          <div class="flex flex-row gap-4 items-center">
+            <img
+              src={get_provider_image(provider.id)}
+              alt={provider.name}
+              class="flex-none p-1 size-10 mx-1"
+            />
+            <div class="flex flex-col grow pr-4">
+              <h3
+                class="text-base font-medium flex flex-row gap-2 items-center"
+              >
+                {provider.name}
+                {#if required_providers.includes(provider.id)}
+                  <div class="badge badge-sm badge-warning">Required</div>
+                {:else if provider.featured}
+                  <div class="badge badge-sm badge-secondary">Recommended</div>
+                {:else if provider.pill_text}
+                  <div class="badge badge-sm badge-primary">
+                    {provider.pill_text}
+                  </div>
+                {/if}
+              </h3>
+              {#if status[provider.id] && status[provider.id].error}
+                <p class="text-sm text-error" in:fade>
+                  {status[provider.id].error}
+                </p>
+              {:else}
+                <p class="text-sm text-gray-500">
+                  {status[provider.id].custom_description ||
+                    provider.description}
+                </p>
               {/if}
-            </h3>
-            {#if status[provider.id] && status[provider.id].error}
-              <p class="text-sm text-error" in:fade>
-                {status[provider.id].error}
-              </p>
-            {:else}
-              <p class="text-sm text-gray-500">
-                {status[provider.id].custom_description || provider.description}
-              </p>
-            {/if}
-            {#if provider.id === "ollama" && status[provider.id] && status[provider.id].error}
+              {#if provider.id === "ollama" && status[provider.id] && status[provider.id].error}
+                <button
+                  class="link text-left text-sm text-gray-500"
+                  on:click={show_custom_ollama_url_dialog}
+                >
+                  Set Custom Ollama URL
+                </button>
+              {/if}
+              {#if provider.id === "docker_model_runner" && status[provider.id] && status[provider.id].error}
+                <button
+                  class="link text-left text-sm text-gray-500"
+                  on:click={show_docker_model_runner_custom_url_dialog}
+                >
+                  Set Docker Model Runner Custom URL
+                </button>
+              {/if}
+            </div>
+
+            {#if loading_initial_providers}
+              <!-- Light loading state-->
+              <div class="btn md:min-w-[100px] skeleton bg-base-200"></div>
+              &nbsp;
+            {:else if is_connected && provider.id === "openai_compatible"}
               <button
-                class="link text-left text-sm text-gray-500"
-                on:click={show_custom_ollama_url_dialog}
+                class="btn md:min-w-[100px]"
+                on:click={() => show_custom_api_dialog()}
               >
-                Set Custom Ollama URL
+                Manage
               </button>
-            {/if}
-            {#if provider.id === "docker_model_runner" && status[provider.id] && status[provider.id].error}
+            {:else if is_connected}
               <button
-                class="link text-left text-sm text-gray-500"
-                on:click={show_docker_model_runner_custom_url_dialog}
+                class="btn md:min-w-[100px] hover:btn-error group"
+                on:click={() => disconnect_provider(provider)}
               >
-                Set Docker Model Runner Custom URL
+                <img
+                  src="/images/circle-check.svg"
+                  class="size-6 group-hover:hidden"
+                  alt="Connected"
+                />
+                <span class="text-xs hidden group-hover:inline">Disconnect</span
+                >
+              </button>
+            {:else if status[provider.id].connecting}
+              <div class="btn md:min-w-[100px]">
+                <div class=" loading loading-spinner loading-md"></div>
+              </div>
+            {:else if initial_load_failure}
+              <div>
+                <div class="btn md:min-w-[100px] btn-error text-xs">Error</div>
+                <div class="text-xs text-gray-500 text-center pt-1">
+                  Reload page
+                </div>
+              </div>
+            {:else}
+              <button
+                class="btn md:min-w-[100px]"
+                on:click={() => connect_provider(provider)}
+              >
+                Connect
               </button>
             {/if}
           </div>
-
-          {#if loading_initial_providers}
-            <!-- Light loading state-->
-            <div class="btn md:min-w-[100px] skeleton bg-base-200"></div>
-            &nbsp;
-          {:else if is_connected && provider.id === "openai_compatible"}
-            <button
-              class="btn md:min-w-[100px]"
-              on:click={() => show_custom_api_dialog()}
-            >
-              Manage
-            </button>
-          {:else if is_connected}
-            <button
-              class="btn md:min-w-[100px] hover:btn-error group"
-              on:click={() => disconnect_provider(provider)}
-            >
-              <img
-                src="/images/circle-check.svg"
-                class="size-6 group-hover:hidden"
-                alt="Connected"
-              />
-              <span class="text-xs hidden group-hover:inline">Disconnect</span>
-            </button>
-          {:else if status[provider.id].connecting}
-            <div class="btn md:min-w-[100px]">
-              <div class=" loading loading-spinner loading-md"></div>
-            </div>
-          {:else if initial_load_failure}
-            <div>
-              <div class="btn md:min-w-[100px] btn-error text-xs">Error</div>
-              <div class="text-xs text-gray-500 text-center pt-1">
-                Reload page
-              </div>
-            </div>
-          {:else}
-            <button
-              class="btn md:min-w-[100px]"
-              on:click={() => connect_provider(provider)}
-            >
-              Connect
-            </button>
-          {/if}
-        </div>
+        {/if}
       {/each}
     </div>
   {/if}

@@ -28,8 +28,10 @@
   import { ui_state } from "$lib/stores"
   import { load_task_prompts } from "$lib/stores/prompts_store"
   import type { ModelDropdownSettings } from "./model_dropdown_settings"
+  import FormElement from "$lib/utils/form_element.svelte"
   import { arrays_equal } from "$lib/utils/collections"
   import type { ToolsSelectorSettings } from "./tools_selector_settings"
+  import { generate_memorable_name } from "$lib/utils/name_generator"
 
   // Props
   export let project_id: string
@@ -48,9 +50,11 @@
   export let hide_model_selector: boolean = false
   // Model-specific suggested run config, such as fine-tuned models. If a model like that is selected, this will be set to the run config ID.
   export let selected_model_specific_run_config_id: string | null = null
+  export let run_config_name: string = generate_memorable_name()
+  export let show_name_field: boolean = true
 
   export let model: string = $ui_state.selected_model
-  let prompt_method: string = "simple_prompt_builder"
+  export let prompt_method: string = "simple_prompt_builder"
   export let tools: string[] = []
   let requires_tool_support: boolean = false
 
@@ -104,6 +108,7 @@
 
   // When a run config is selected, update the current run options to match the selected config
   let prior_selected_run_config_id: string | null = null
+  let run_config_just_loaded = false
   async function update_current_run_options_for_selected_run_config() {
     // Only run once immediately after a run config selection, not every reactive update
     if (prior_selected_run_config_id === selected_run_config_id) {
@@ -129,6 +134,7 @@
     top_p = selected_run_config.run_config_properties.top_p
     structured_output_mode =
       selected_run_config.run_config_properties.structured_output_mode
+    run_config_just_loaded = true
   }
 
   // Main reactive statement. This class is a bit wild, as many changes are circular.
@@ -180,15 +186,19 @@
       return
     }
 
-    // Check if they selected a new model, in which case we want to update the run config to the finetune run config if needed
-    process_model_change()
+    const model_changed = process_model_change()
 
-    // Update the structured output mode to match the selected model, if needed
-    update_structured_output_mode_if_needed(
-      model_name,
-      provider,
-      $available_models,
-    )
+    // Only apply model-default overrides for user-initiated model changes.
+    // When a run config was just loaded (which may have changed the model),
+    // the run config's values should take priority.
+    if (model_changed && !run_config_just_loaded) {
+      update_structured_output_mode_if_needed(
+        model_name,
+        provider,
+        $available_models,
+      )
+    }
+    run_config_just_loaded = false
 
     // Update all the run options if they have changed the run config
     await update_current_run_options_for_selected_run_config()
@@ -198,10 +208,10 @@
   }
 
   let prior_model: string | null = null
-  async function process_model_change() {
+  function process_model_change(): boolean {
     // only run once immediately after a model change, not every reactive update
     if (prior_model === model) {
-      return
+      return false
     }
     prior_model = model
 
@@ -213,12 +223,15 @@
       $available_models,
     )
     if (model_details?.model_specific_run_config) {
-      selected_run_config_id = model_details.model_specific_run_config
+      if (!run_config_just_loaded) {
+        selected_run_config_id = model_details.model_specific_run_config
+      }
       selected_model_specific_run_config_id =
         model_details.model_specific_run_config
     } else {
       selected_model_specific_run_config_id = null
     }
+    return true
   }
 
   async function reset_to_custom_options_if_needed() {
@@ -285,9 +298,10 @@
         project_id,
         current_task.id,
         run_options_as_run_config_properties(),
+        run_config_name,
       )
       // Reload prompts to update the dropdown with the new static prompt that is made from saving a new run config
-      await load_task_prompts(project_id, current_task.id)
+      await load_task_prompts(project_id, current_task.id, true)
       if (!saved_config || !saved_config.id) {
         throw new Error("Saved config id not found")
       }
@@ -357,6 +371,14 @@
 </script>
 
 <div class="w-full flex flex-col gap-4">
+  {#if show_name_field}
+    <FormElement
+      label="Name"
+      id="run_config_name"
+      bind:value={run_config_name}
+      max_length={120}
+    />
+  {/if}
   {#if !hide_model_selector}
     <AvailableModelsDropdown
       task_id={current_task?.id ?? null}

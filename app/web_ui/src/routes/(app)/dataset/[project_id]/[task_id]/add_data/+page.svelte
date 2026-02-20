@@ -50,8 +50,8 @@
     reason === "eval"
       ? [
           {
-            label: "Evals",
-            href: `/evals/${$page.params.project_id}/${$page.params.task_id}`,
+            label: "Specs & Evals",
+            href: `/specs/${$page.params.project_id}/${$page.params.task_id}`,
           },
         ]
       : reason === "generic"
@@ -115,7 +115,7 @@
       // For reference answer evals, redirect to QnA page
       if (template_id === "rag") {
         const params = new URLSearchParams()
-        if (reason) params.set("reason", reason)
+        if (reason && reason !== "generic") params.set("reason", reason)
         if (template_id) params.set("template_id", template_id)
         const eval_id = $page.url.searchParams.get("eval_id")
         if (eval_id) params.set("eval_id", eval_id)
@@ -131,7 +131,7 @@
       }
 
       const params = new URLSearchParams()
-      if (reason) params.set("reason", reason)
+      if (reason && reason !== "generic") params.set("reason", reason)
       if (template_id) params.set("template_id", template_id)
       const eval_id = $page.url.searchParams.get("eval_id")
       if (eval_id) params.set("eval_id", eval_id)

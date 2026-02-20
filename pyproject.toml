@@ -20,7 +20,7 @@ dev = [
     "pytest>=8.3.3",
     "pytest-xdist>=3.5",
     "python-dotenv>=1.0.1",
-    "ruff>=0.13.0",
+    "ruff>=0.15.0",
     "watchfiles>=1.1.0",
     "scalar-fastapi>=1.4.3",
     "ty>=0.0.2",
@@ -43,7 +43,7 @@ kiln-ai = { workspace = true }
 exclude = []
 
 [tool.ty.src]
-exclude = ["**/test_*.py", "app/desktop/build/**", "app/web_ui/**", "**/.venv"]
+exclude = ["**/test_*.py", "app/desktop/build/**", "app/web_ui/**", "**/.venv", "**/kiln_ai_server_client/**"]
 
 [tool.ty.rules]
 invalid-key = "ignore"

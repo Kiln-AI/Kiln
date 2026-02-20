@@ -6,7 +6,7 @@ InputType: TypeAlias = StructuredInputType | str
 
 
 class Priority(IntEnum):
-    """Defines priority levels for tasks and requirements, where P0 is highest priority."""
+    """Priority levels, where P0 is highest priority."""
 
     p0 = 0
     p1 = 1

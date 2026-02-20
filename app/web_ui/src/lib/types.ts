@@ -1,5 +1,17 @@
 import type { components } from "./api_schema"
 
+// A type for a button which can appear on an app page
+export type ActionButton = {
+  label?: string
+  icon?: string
+  handler?: () => void
+  href?: string
+  primary?: boolean
+  notice?: boolean
+  shortcut?: string
+  disabled?: boolean
+}
+
 // Project-Input is a variant with path
 export type Project = components["schemas"]["Project-Input"]
 export type Task = components["schemas"]["Task"]
@@ -94,6 +106,9 @@ export type RemoteServerProperties =
   components["schemas"]["RemoteServerProperties"]
 export type KilnTaskServerProperties =
   components["schemas"]["KilnTaskServerProperties"]
+export type UserModelEntry = components["schemas"]["UserModelEntry"]
+export type AvailableProviderInfo =
+  components["schemas"]["AvailableProviderInfo"]
 
 export type TraceMessage =
   | components["schemas"]["ChatCompletionDeveloperMessageParam"]
@@ -108,6 +123,51 @@ export type ToolCallMessageParam =
 export type SearchToolApiDescription =
   components["schemas"]["SearchToolApiDescription"]
 export type DocumentLibraryState = components["schemas"]["DocumentLibraryState"]
+export type Spec = components["schemas"]["Spec"]
+export type SpecStatus = components["schemas"]["SpecStatus"]
+export type Priority = components["schemas"]["Priority"]
+
+// Copilot API types
+export type SyntheticDataGenerationStepConfigInput =
+  components["schemas"]["SyntheticDataGenerationStepConfigInput"]
+export type SyntheticDataGenerationSessionConfigInput =
+  components["schemas"]["SyntheticDataGenerationSessionConfigInput"]
+export type TaskMetadata = components["schemas"]["TaskMetadata"]
+export type ReviewedExample = components["schemas"]["ReviewedExample"]
+export type Sample = components["schemas"]["Sample"]
+export type GenerateBatchOutput = components["schemas"]["GenerateBatchOutput"]
+export type SpecProperties =
+  | components["schemas"]["AppropriateToolUseProperties"]
+  | components["schemas"]["DesiredBehaviourProperties"]
+  | components["schemas"]["IssueProperties"]
+  | components["schemas"]["ToneProperties"]
+  | components["schemas"]["FormattingProperties"]
+  | components["schemas"]["LocalizationProperties"]
+  | components["schemas"]["AppropriateToolUseProperties"]
+  | components["schemas"]["ReferenceAnswerAccuracyProperties"]
+  | components["schemas"]["FactualCorrectnessProperties"]
+  | components["schemas"]["HallucinationsProperties"]
+  | components["schemas"]["CompletenessProperties"]
+  | components["schemas"]["ToxicityProperties"]
+  | components["schemas"]["BiasProperties"]
+  | components["schemas"]["MaliciousnessProperties"]
+  | components["schemas"]["NsfwProperties"]
+  | components["schemas"]["TabooProperties"]
+  | components["schemas"]["JailbreakProperties"]
+  | components["schemas"]["PromptLeakageProperties"]
+export type SpecType = SpecProperties["spec_type"]
+export type SubmitAnswersRequest = components["schemas"]["SubmitAnswersRequest"]
+export type SpecificationInput = components["schemas"]["SpecificationInput"]
+export type QuestionSet = components["schemas"]["QuestionSet"]
+export type QuestionWithAnswer = components["schemas"]["QuestionWithAnswer"]
+export type AnswerOptionWithSelection =
+  components["schemas"]["AnswerOptionWithSelection"]
+
+export type PublicPromptOptimizationJobStatusResponse =
+  components["schemas"]["PublicPromptOptimizationJobStatusResponse"]
+export type PromptOptimizationJob =
+  components["schemas"]["PromptOptimizationJob"]
+export type JobStatus = components["schemas"]["JobStatus"]
 
 // Type helpers for ExternalToolServerApiDescription properties
 

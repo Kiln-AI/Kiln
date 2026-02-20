@@ -4,6 +4,14 @@ from typing import Dict, List, Tuple
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from app.desktop.studio_server.eval_api import (
+    CreateEvalConfigRequest,
+    CreateEvaluatorRequest,
+    connect_evals_api,
+    eval_config_from_id,
+    get_all_run_configs,
+    task_run_config_from_id,
+)
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
@@ -36,17 +44,11 @@ from kiln_ai.datamodel.eval import (
     EvalRun,
     EvalTemplateId,
 )
+from kiln_ai.datamodel.spec import Spec
+from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
+from kiln_ai.datamodel.prompt import BasePrompt
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_run import Usage
-
-from app.desktop.studio_server.eval_api import (
-    CreateEvalConfigRequest,
-    CreateEvaluatorRequest,
-    connect_evals_api,
-    eval_config_from_id,
-    get_all_run_configs,
-    task_run_config_from_id,
-)
 
 
 @pytest.fixture
@@ -245,6 +247,7 @@ async def test_create_evaluator(
         == valid_evaluator_request.eval_configs_filter_id
     )
     assert saved_eval.template_properties == valid_evaluator_request.template_properties
+    assert saved_eval.template_properties is not None
     assert saved_eval.template_properties["test_property"] == "test_value"
     assert saved_eval.template_properties["numeric_property"] == 42
 
@@ -645,6 +648,143 @@ async def test_get_all_run_configs(mock_task_from_id, mock_task):
     assert "regular_run_config1" in config_ids
     assert "finetune_run_config::project1::task1::ft_completed" in config_ids
     assert "finetune_run_config::project1::task1::ft_incomplete" not in config_ids
+
+
+def test_run_config_starred_default(mock_task):
+    """Test that starred defaults to False on TaskRunConfig."""
+    run_config = TaskRunConfig(
+        parent=mock_task,
+        name="Starred Test Config",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_chain_of_thought_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+    assert run_config.starred is False
+
+
+def test_run_config_starred_persists(mock_task):
+    """Test that starred field persists through save and load."""
+    run_config = TaskRunConfig(
+        parent=mock_task,
+        name="Starred Persist Config",
+        starred=True,
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_chain_of_thought_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+    run_config.save_to_file()
+    assert run_config.starred is True
+
+    loaded = TaskRunConfig.load_from_file(run_config.path)
+    assert loaded.starred is True
+
+
+def test_update_run_config_starred(client, mock_task_from_id, mock_run_config):
+    """Test the PATCH endpoint to star a run config."""
+    assert mock_run_config.starred is False
+
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        json={"starred": True},
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["starred"] is True
+
+    loaded = TaskRunConfig.load_from_file(mock_run_config.path)
+    assert loaded.starred is True
+
+
+def test_update_run_config_unstar(client, mock_task_from_id, mock_run_config):
+    """Test the PATCH endpoint to unstar a previously starred run config."""
+    mock_run_config.starred = True
+    mock_run_config.save_to_file()
+
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        json={"starred": False},
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["starred"] is False
+
+    loaded = TaskRunConfig.load_from_file(mock_run_config.path)
+    assert loaded.starred is False
+
+
+def test_update_run_config_not_found(client, mock_task_from_id, mock_task):
+    """Test the PATCH endpoint returns 404 for non-existent run config."""
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/run_config/non_existent",
+        json={"starred": True},
+    )
+    assert response.status_code == 404
+
+
+def test_update_run_config_no_path(client, mock_task_from_id, mock_task):
+    """Test that updating a run config without a path (e.g. finetune) returns 400."""
+    finetune_run_config = TaskRunConfig(
+        id="finetune_run_config::project1::task1::ft1",
+        name="Finetune Config",
+        run_config_properties=RunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_chain_of_thought_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=mock_task,
+    )
+
+    with patch(
+        "app.desktop.studio_server.eval_api.task_run_config_from_id"
+    ) as mock_from_id:
+        mock_from_id.return_value = finetune_run_config
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/run_config/finetune_run_config::project1::task1::ft1",
+            json={"starred": True},
+        )
+    assert response.status_code == 400
+
+
+def test_update_run_config_prompt_name(client, mock_task_from_id, mock_run_config):
+    """Test the PATCH endpoint to update a frozen prompt's name."""
+    mock_run_config.prompt = BasePrompt(
+        name="Original Name",
+        prompt="This is a frozen prompt",
+    )
+    mock_run_config.save_to_file()
+
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        json={"prompt_name": "Updated Name"},
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["prompt"]["name"] == "Updated Name"
+
+    loaded = TaskRunConfig.load_from_file(mock_run_config.path)
+    assert loaded.prompt is not None
+    assert loaded.prompt.name == "Updated Name"
+
+
+def test_update_run_config_prompt_name_no_prompt(
+    client, mock_task_from_id, mock_run_config
+):
+    """Test that updating prompt_name when no frozen prompt exists returns 400."""
+    assert mock_run_config.prompt is None
+
+    response = client.patch(
+        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        json={"prompt_name": "New Name"},
+    )
+    assert response.status_code == 400
+    assert "no frozen prompt" in response.json()["detail"].lower()
 
 
 @pytest.fixture
@@ -1180,100 +1320,6 @@ async def test_set_current_eval_config(
     assert eval_from_disk.current_config_id == "eval_config1"
 
 
-@pytest.mark.asyncio
-async def test_update_eval(client, mock_task_from_id, mock_task, mock_eval):
-    """Test updating an evaluation's name and description."""
-    mock_task_from_id.return_value = mock_task
-
-    # Get the eval before updating to verify the change
-    response = client.get("/api/projects/project1/tasks/task1/eval/eval1")
-    assert response.status_code == 200
-    eval_before = response.json()
-
-    # Verify initial values
-    assert eval_before["name"] == "Test Eval"
-    assert eval_before["description"] == "Test Description"
-
-    # Update the eval with new values
-    update_request = {"name": "Updated Eval Name", "description": "Updated Description"}
-
-    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
-        mock_eval_from_id.return_value = mock_eval
-        response = client.patch(
-            "/api/projects/project1/tasks/task1/eval/eval1", json=update_request
-        )
-        assert response.status_code == 200
-        updated_eval = response.json()
-
-    # Verify the name and description were updated
-    assert updated_eval["name"] == "Updated Eval Name"
-    assert updated_eval["description"] == "Updated Description"
-    assert updated_eval["id"] == "eval1"
-
-    # Verify the change persists by checking the mock_eval object
-    assert mock_eval.name == "Updated Eval Name"
-    assert mock_eval.description == "Updated Description"
-
-    # load from disk and verify the change
-    eval_from_disk = mock_task.evals()[0]
-    assert eval_from_disk.name == "Updated Eval Name"
-    assert eval_from_disk.description == "Updated Description"
-
-
-@pytest.mark.asyncio
-async def test_update_eval_favourite(client, mock_task_from_id, mock_task, mock_eval):
-    """Test updating an evaluation's favourite status."""
-    mock_task_from_id.return_value = mock_task
-
-    # Get the eval before updating to verify the change
-    response = client.get("/api/projects/project1/tasks/task1/eval/eval1")
-    assert response.status_code == 200
-    eval_before = response.json()
-
-    # Verify initial value
-    assert eval_before.get("favourite", False) is False
-
-    # Update the eval with new favourite status
-    update_request = {"favourite": True}
-
-    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
-        mock_eval_from_id.return_value = mock_eval
-        response = client.patch(
-            "/api/projects/project1/tasks/task1/eval/eval1/fav", json=update_request
-        )
-        assert response.status_code == 200
-        updated_eval = response.json()
-
-    # Verify the favourite status was updated
-    assert updated_eval["favourite"] is True
-    assert updated_eval["id"] == "eval1"
-
-    # Verify the change persists by checking the mock_eval object
-    assert mock_eval.favourite is True
-
-    # load from disk and verify the change
-    eval_from_disk = mock_task.evals()[0]
-    assert eval_from_disk.favourite is True
-
-    # Test setting it back to False
-    update_request = {"favourite": False}
-    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
-        mock_eval_from_id.return_value = mock_eval
-        response = client.patch(
-            "/api/projects/project1/tasks/task1/eval/eval1/fav", json=update_request
-        )
-        assert response.status_code == 200
-        updated_eval = response.json()
-
-    # Verify the favourite status was updated back to False
-    assert updated_eval["favourite"] is False
-    assert updated_eval["id"] == "eval1"
-
-    # Verify the change persists
-    eval_from_disk = mock_task.evals()[0]
-    assert eval_from_disk.favourite is False
-
-
 def test_delete_eval_success(client, mock_task_from_id, mock_eval, mock_task):
     assert len(mock_task.evals()) == 1
     # Set up the mock eval to be returned by eval_from_id
@@ -1308,6 +1354,205 @@ def test_delete_eval_not_found(client):
     # Verify the response
     assert response.status_code == 404
     assert response.json()["detail"] == "Eval not found. ID: nonexistent_eval"
+
+
+async def test_create_eval_then_delete_on_spec_failure(
+    client, mock_task_from_id, mock_task
+):
+    create_request = {
+        "name": "Test Eval for Spec",
+        "description": "Test eval that will be cleaned up",
+        "template": None,
+        "output_scores": [
+            {
+                "name": "tone",
+                "type": "pass_fail",
+                "instruction": "Evaluate tone",
+            }
+        ],
+        "eval_set_filter_id": "tag::test_tag",
+        "eval_configs_filter_id": "tag::test_tag_golden",
+        "template_properties": None,
+        "evaluation_data_type": "final_answer",
+    }
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/create_evaluator", json=create_request
+    )
+
+    assert response.status_code == 200
+    eval_data = response.json()
+    eval_id = eval_data["id"]
+
+    assert len(mock_task.evals()) == 1
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        created_eval = mock_task.evals()[0]
+        mock_eval_from_id.return_value = created_eval
+
+        delete_response = client.delete(
+            f"/api/projects/project1/tasks/task1/eval/{eval_id}"
+        )
+
+    assert delete_response.status_code == 200
+    assert len(mock_task.evals()) == 0
+
+
+def test_update_eval_name_and_description(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    """Test that update_eval successfully updates name and description."""
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        update_request = {
+            "name": "Updated Eval Name",
+            "description": "Updated description",
+        }
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/eval/eval1",
+            json=update_request,
+        )
+
+    assert response.status_code == 200
+    updated_eval = response.json()
+    assert updated_eval["name"] == "Updated Eval Name"
+    assert updated_eval["description"] == "Updated description"
+
+    # Verify the eval was saved
+    eval_from_disk = mock_task.evals()[0]
+    assert eval_from_disk.name == "Updated Eval Name"
+    assert eval_from_disk.description == "Updated description"
+
+
+def test_update_eval_train_set_filter_id_when_none(
+    client, mock_task_from_id, mock_eval, mock_task
+):
+    """Test that update_eval successfully sets train_set_filter_id when it's None."""
+    # Ensure train_set_filter_id is None
+    mock_eval.train_set_filter_id = None
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        update_request = {
+            "train_set_filter_id": "tag::train_my_eval",
+        }
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/eval/eval1",
+            json=update_request,
+        )
+
+    assert response.status_code == 200
+    updated_eval = response.json()
+    assert updated_eval["train_set_filter_id"] == "tag::train_my_eval"
+
+    # Verify the eval was saved
+    eval_from_disk = mock_task.evals()[0]
+    assert eval_from_disk.train_set_filter_id == "tag::train_my_eval"
+
+
+def test_update_eval_train_set_filter_id_when_already_set(
+    client, mock_task_from_id, mock_eval
+):
+    """Test that update_eval raises error when trying to change existing train_set_filter_id."""
+    # Set an existing train_set_filter_id
+    mock_eval.train_set_filter_id = "tag::existing_train_set"
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        update_request = {
+            "train_set_filter_id": "tag::new_train_set",
+        }
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/eval/eval1",
+            json=update_request,
+        )
+
+    assert response.status_code == 400
+    assert (
+        "Train set filter is already set and cannot be changed"
+        in response.json()["detail"]
+    )
+
+
+def test_update_eval_partial_update(client, mock_task_from_id, mock_eval, mock_task):
+    """Test that update_eval only updates provided fields."""
+    original_name = mock_eval.name
+    original_description = mock_eval.description
+    mock_eval.train_set_filter_id = None
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        # Only update train_set_filter_id
+        update_request = {
+            "train_set_filter_id": "tag::train_set",
+        }
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/eval/eval1",
+            json=update_request,
+        )
+
+    assert response.status_code == 200
+    updated_eval = response.json()
+
+    # Name and description should remain unchanged
+    assert updated_eval["name"] == original_name
+    assert updated_eval["description"] == original_description
+    # train_set_filter_id should be updated
+    assert updated_eval["train_set_filter_id"] == "tag::train_set"
+
+
+def test_update_eval_not_found(client):
+    """Test that update_eval returns 404 when eval is not found."""
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.side_effect = HTTPException(
+            status_code=404, detail="Eval not found. ID: nonexistent_eval"
+        )
+
+        update_request = {
+            "name": "Updated Name",
+        }
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/eval/nonexistent_eval",
+            json=update_request,
+        )
+
+    assert response.status_code == 404
+    assert "Eval not found" in response.json()["detail"]
+
+
+def test_update_eval_empty_request(client, mock_task_from_id, mock_eval, mock_task):
+    """Test that update_eval succeeds with empty request (no fields to update)."""
+    original_name = mock_eval.name
+    original_description = mock_eval.description
+    original_train_set_filter_id = mock_eval.train_set_filter_id
+
+    with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
+        mock_eval_from_id.return_value = mock_eval
+
+        # Empty update request
+        update_request = {}
+
+        response = client.patch(
+            "/api/projects/project1/tasks/task1/eval/eval1",
+            json=update_request,
+        )
+
+    assert response.status_code == 200
+    updated_eval = response.json()
+
+    # All fields should remain unchanged
+    assert updated_eval["name"] == original_name
+    assert updated_eval["description"] == original_description
+    assert updated_eval["train_set_filter_id"] == original_train_set_filter_id
 
 
 def test_runs_in_filter():
@@ -1372,8 +1617,8 @@ def test_build_score_key_to_task_requirement_id():
         "app.desktop.studio_server.eval_api.string_to_json_key"
     ) as mock_string_to_json_key:
         # Configure the mock to convert spaces to underscores and lowercase
-        mock_string_to_json_key.side_effect = (
-            lambda name: name.lower().replace(" ", "_").replace("-", "_")
+        mock_string_to_json_key.side_effect = lambda name: (
+            name.lower().replace(" ", "_").replace("-", "_")
         )
 
         # Call the function under test
@@ -1984,6 +2229,134 @@ def test_get_eval_configs_score_summary_no_filter_id(
             == "No eval configs filter id set, cannot get eval configs score summary."
         )
         mock_eval_from_id.assert_called_once_with("project1", "task1", "eval1")
+
+
+@pytest.mark.asyncio
+async def test_get_run_config_eval_scores_includes_spec_id(
+    client, mock_task, mock_eval, mock_eval_config, mock_run_config
+):
+    """Test that get_run_config_eval_scores includes spec_id for spec-associated evals and None for legacy evals"""
+
+    # Create a spec that references the eval
+    spec = Spec(
+        id="spec1",
+        name="Test Spec",
+        definition="Test spec definition",
+        properties=DesiredBehaviourProperties(
+            spec_type=SpecType.desired_behaviour,
+            core_requirement="test instruction",
+            desired_behaviour_description="test desired behaviour",
+        ),
+        eval_id=mock_eval.id,  # Associate this spec with the eval
+        parent=mock_task,
+    )
+    spec.save_to_file()
+
+    # Create a second eval that is NOT associated with any spec (legacy eval)
+    legacy_eval = Eval(
+        id="legacy_eval1",
+        name="Legacy Eval",
+        description="Legacy eval without spec",
+        template=None,
+        eval_set_filter_id="tag::legacy_eval_set",
+        eval_configs_filter_id="tag::legacy_golden",
+        output_scores=[
+            EvalOutputScore(
+                name="score1",
+                instruction="desc1",
+                type=TaskOutputRatingType.five_star,
+            ),
+        ],
+        parent=mock_task,
+    )
+    legacy_eval.save_to_file()
+
+    # Create an eval config for the legacy eval
+    legacy_eval_config = EvalConfig(
+        id="legacy_eval_config1",
+        name="Legacy Eval Config",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1", "step2"]},
+        parent=legacy_eval,
+        model_name="gpt-4",
+        model_provider="openai",
+    )
+    legacy_eval_config.save_to_file()
+    legacy_eval.current_config_id = legacy_eval_config.id
+    legacy_eval.save_to_file()
+
+    # Create mock objects for the API
+    mock_task_for_api = MagicMock()
+    mock_task_for_api.evals.return_value = [mock_eval, legacy_eval]
+    mock_task_for_api.specs.return_value = [spec]
+
+    mock_eval_config_for_api = MagicMock()
+    mock_eval_config_for_api.runs.return_value = []
+    mock_eval_config_for_api.id = mock_eval_config.id
+
+    mock_eval_for_api = MagicMock()
+    mock_eval_for_api.configs.return_value = [mock_eval_config_for_api]
+    mock_eval_for_api.id = mock_eval.id
+    mock_eval_for_api.name = mock_eval.name
+    mock_eval_for_api.eval_set_filter_id = mock_eval.eval_set_filter_id
+    mock_eval_for_api.output_scores = mock_eval.output_scores
+    mock_eval_for_api.current_config_id = mock_eval_config.id
+
+    legacy_eval_config_for_api = MagicMock()
+    legacy_eval_config_for_api.runs.return_value = []
+    legacy_eval_config_for_api.id = legacy_eval_config.id
+
+    legacy_eval_for_api = MagicMock()
+    legacy_eval_for_api.configs.return_value = [legacy_eval_config_for_api]
+    legacy_eval_for_api.id = legacy_eval.id
+    legacy_eval_for_api.name = legacy_eval.name
+    legacy_eval_for_api.eval_set_filter_id = legacy_eval.eval_set_filter_id
+    legacy_eval_for_api.output_scores = legacy_eval.output_scores
+    legacy_eval_for_api.current_config_id = legacy_eval_config.id
+
+    # Patch the API dependencies
+    with (
+        patch(
+            "app.desktop.studio_server.eval_api.task_from_id"
+        ) as mock_task_from_id_patch,
+        patch(
+            "app.desktop.studio_server.eval_api.task_run_config_from_id"
+        ) as mock_task_run_config_from_id_patch,
+        patch(
+            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
+        ) as mock_dataset_ids_in_filter,
+    ):
+        mock_task_from_id_patch.return_value = mock_task_for_api
+        mock_task_run_config_from_id_patch.return_value = mock_run_config
+        mock_dataset_ids_in_filter.return_value = set()
+
+        response = client.get(
+            f"/api/projects/project1/tasks/task1/run_config/{mock_run_config.id}/eval_scores"
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Verify the structure
+    assert "eval_results" in data
+    assert len(data["eval_results"]) == 2
+
+    # Find the results by eval name
+    spec_eval_result = next(
+        (r for r in data["eval_results"] if r["eval_name"] == "Test Eval"), None
+    )
+    legacy_eval_result = next(
+        (r for r in data["eval_results"] if r["eval_name"] == "Legacy Eval"), None
+    )
+
+    assert spec_eval_result is not None
+    assert legacy_eval_result is not None
+
+    # Verify spec_id is populated for spec-associated eval
+    assert spec_eval_result["spec_id"] == "spec1"
+
+    # Verify spec_id is None for legacy eval
+    assert legacy_eval_result["spec_id"] is None
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,492 @@
+from enum import Enum
+from typing import Annotated, Any, Literal, TypeVar
+
+from pydantic import AfterValidator
+from typing_extensions import NotRequired, TypedDict
+
+T = TypeVar("T")
+
+
+class SpecType(str, Enum):
+    """Defines the type of spec."""
+
+    # Functionality
+    desired_behaviour = "desired_behaviour"
+    issue = "issue"
+    tone = "tone"
+    formatting = "formatting"
+    localization = "localization"
+
+    # Task Performance
+    appropriate_tool_use = "appropriate_tool_use"
+    reference_answer_accuracy = "reference_answer_accuracy"
+
+    # Accuracy
+    factual_correctness = "factual_correctness"
+    hallucinations = "hallucinations"
+    completeness = "completeness"
+
+    # Safety
+    toxicity = "toxicity"
+    bias = "bias"
+    maliciousness = "maliciousness"
+    nsfw = "nsfw"
+    taboo = "taboo"
+
+    # System Constraints
+    jailbreak = "jailbreak"
+    prompt_leakage = "prompt_leakage"
+
+
+def validate_string_properties(
+    properties: T,
+    required_fields: list[str],
+    optional_fields: list[str] | None = None,
+) -> T:
+    """
+    Validates string properties in a TypedDict.
+
+    Args:
+        properties: The properties dictionary to validate
+        required_fields: List of field names that must not be empty
+        optional_fields: List of field names that must not be empty if provided
+
+    Returns:
+        The validated properties dictionary
+    """
+    # Check that the required fields are present and not empty
+    props_dict: dict[str, Any] = properties  # type: ignore[assignment]
+    for field in required_fields:
+        value = props_dict.get(field)
+        if value is None or not value.strip():
+            raise ValueError(f"{field} cannot be empty")
+
+    # Check that optional fields are not empty if provided (but can be missing or None)
+    if optional_fields:
+        for field in optional_fields:
+            value = props_dict.get(field)
+            # If the field is present and not None, it must not be empty or whitespace-only
+            if value is not None and not value.strip():
+                raise ValueError(f"{field} if provided cannot be empty")
+
+    # Check that there are no fields that shouldn't belong to the properties dictionary
+    allowed_fields = set(required_fields)
+    if optional_fields:
+        allowed_fields.update(optional_fields)
+    # spec_type is always allowed as it's present in all property TypedDicts
+    allowed_fields.add("spec_type")
+
+    for field in props_dict.keys():
+        if field not in allowed_fields:
+            raise ValueError(
+                f"{field} is not a valid property for {type(properties).__name__}"
+            )
+    return properties
+
+
+class DesiredBehaviourProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.desired_behaviour]
+    desired_behaviour_description: str
+    correct_behaviour_examples: NotRequired[str]
+    incorrect_behaviour_examples: NotRequired[str]
+
+
+def validate_desired_behaviour_properties(
+    properties: DesiredBehaviourProperties,
+) -> DesiredBehaviourProperties:
+    return validate_string_properties(
+        properties,
+        required_fields=["desired_behaviour_description"],
+        optional_fields=["correct_behaviour_examples", "incorrect_behaviour_examples"],
+    )
+
+
+DesiredBehaviourPropertiesValidator = Annotated[
+    DesiredBehaviourProperties,
+    AfterValidator(lambda v: validate_desired_behaviour_properties(v)),
+]
+
+
+class IssueProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.issue]
+    issue_description: str
+    issue_examples: NotRequired[str]
+    non_issue_examples: NotRequired[str]
+
+
+def validate_issue_properties(
+    properties: IssueProperties,
+) -> IssueProperties:
+    return validate_string_properties(
+        properties,
+        required_fields=["issue_description"],
+        optional_fields=["issue_examples", "non_issue_examples"],
+    )
+
+
+IssuePropertiesValidator = Annotated[
+    IssueProperties,
+    AfterValidator(lambda v: validate_issue_properties(v)),
+]
+
+
+class ToneProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.tone]
+    core_requirement: str
+    tone_description: str
+    acceptable_examples: NotRequired[str]
+    unacceptable_examples: NotRequired[str]
+
+
+def validate_tone_properties(properties: ToneProperties) -> ToneProperties:
+    return validate_string_properties(
+        properties,
+        required_fields=["core_requirement", "tone_description"],
+        optional_fields=["acceptable_examples", "unacceptable_examples"],
+    )
+
+
+TonePropertiesValidator = Annotated[
+    ToneProperties,
+    AfterValidator(lambda v: validate_tone_properties(v)),
+]
+
+
+class FormattingProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.formatting]
+    core_requirement: str
+    formatting_requirements: str
+    proper_formatting_examples: NotRequired[str]
+    improper_formatting_examples: NotRequired[str]
+
+
+def validate_formatting_properties(
+    properties: FormattingProperties,
+) -> FormattingProperties:
+    return validate_string_properties(
+        properties,
+        required_fields=["core_requirement", "formatting_requirements"],
+        optional_fields=["proper_formatting_examples", "improper_formatting_examples"],
+    )
+
+
+FormattingPropertiesValidator = Annotated[
+    FormattingProperties,
+    AfterValidator(lambda v: validate_formatting_properties(v)),
+]
+
+
+class LocalizationProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.localization]
+    core_requirement: str
+    localization_requirements: str
+    violation_examples: str
+
+
+def validate_localization_properties(
+    properties: LocalizationProperties,
+) -> LocalizationProperties:
+    return validate_string_properties(
+        properties,
+        required_fields=[
+            "core_requirement",
+            "localization_requirements",
+            "violation_examples",
+        ],
+    )
+
+
+LocalizationPropertiesValidator = Annotated[
+    LocalizationProperties,
+    AfterValidator(lambda v: validate_localization_properties(v)),
+]
+
+
+class AppropriateToolUseProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.appropriate_tool_use]
+    core_requirement: str
+    tool_id: str
+    tool_function_name: str
+    tool_use_guidelines: str
+    appropriate_tool_use_examples: str
+    inappropriate_tool_use_examples: str
+
+
+def validate_appropriate_tool_use_properties(
+    properties: AppropriateToolUseProperties,
+) -> AppropriateToolUseProperties:
+    return validate_string_properties(
+        properties,
+        required_fields=[
+            "core_requirement",
+            "tool_id",
+            "tool_function_name",
+            "tool_use_guidelines",
+            "appropriate_tool_use_examples",
+            "inappropriate_tool_use_examples",
+        ],
+    )
+
+
+AppropriateToolUsePropertiesValidator = Annotated[
+    AppropriateToolUseProperties,
+    AfterValidator(lambda v: validate_appropriate_tool_use_properties(v)),
+]
+
+
+class ReferenceAnswerAccuracyProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.reference_answer_accuracy]
+    core_requirement: str
+    reference_answer_accuracy_description: str
+    accurate_examples: str
+    inaccurate_examples: str
+
+
+def validate_reference_answer_accuracy_properties(
+    properties: ReferenceAnswerAccuracyProperties,
+) -> ReferenceAnswerAccuracyProperties:
+    return validate_string_properties(
+        properties,
+        required_fields=[
+            "core_requirement",
+            "reference_answer_accuracy_description",
+            "accurate_examples",
+            "inaccurate_examples",
+        ],
+    )
+
+
+ReferenceAnswerAccuracyPropertiesValidator = Annotated[
+    ReferenceAnswerAccuracyProperties,
+    AfterValidator(lambda v: validate_reference_answer_accuracy_properties(v)),
+]
+
+
+class FactualCorrectnessProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.factual_correctness]
+    core_requirement: str
+    factually_inaccurate_examples: str
+
+
+def validate_factual_correctness_properties(
+    properties: FactualCorrectnessProperties,
+) -> FactualCorrectnessProperties:
+    return validate_string_properties(
+        properties,
+        required_fields=["core_requirement", "factually_inaccurate_examples"],
+    )
+
+
+FactualCorrectnessPropertiesValidator = Annotated[
+    FactualCorrectnessProperties,
+    AfterValidator(lambda v: validate_factual_correctness_properties(v)),
+]
+
+
+class HallucinationsProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.hallucinations]
+    core_requirement: str
+    hallucinations_examples: str
+
+
+def validate_hallucinations_properties(
+    properties: HallucinationsProperties,
+) -> HallucinationsProperties:
+    return validate_string_properties(
+        properties,
+        required_fields=["core_requirement", "hallucinations_examples"],
+    )
+
+
+HallucinationsPropertiesValidator = Annotated[
+    HallucinationsProperties,
+    AfterValidator(lambda v: validate_hallucinations_properties(v)),
+]
+
+
+class CompletenessProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.completeness]
+    core_requirement: str
+    complete_examples: str
+    incomplete_examples: str
+
+
+def validate_completeness_properties(
+    properties: CompletenessProperties,
+) -> CompletenessProperties:
+    return validate_string_properties(
+        properties,
+        required_fields=[
+            "core_requirement",
+            "complete_examples",
+            "incomplete_examples",
+        ],
+    )
+
+
+CompletenessPropertiesValidator = Annotated[
+    CompletenessProperties,
+    AfterValidator(lambda v: validate_completeness_properties(v)),
+]
+
+
+class ToxicityProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.toxicity]
+    core_requirement: str
+    toxicity_examples: str
+
+
+def validate_toxicity_properties(
+    properties: ToxicityProperties,
+) -> ToxicityProperties:
+    return validate_string_properties(
+        properties,
+        required_fields=["core_requirement", "toxicity_examples"],
+    )
+
+
+ToxicityPropertiesValidator = Annotated[
+    ToxicityProperties,
+    AfterValidator(lambda v: validate_toxicity_properties(v)),
+]
+
+
+class BiasProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.bias]
+    core_requirement: str
+    bias_examples: str
+
+
+def validate_bias_properties(properties: BiasProperties) -> BiasProperties:
+    return validate_string_properties(
+        properties,
+        required_fields=["core_requirement", "bias_examples"],
+    )
+
+
+BiasPropertiesValidator = Annotated[
+    BiasProperties,
+    AfterValidator(lambda v: validate_bias_properties(v)),
+]
+
+
+class MaliciousnessProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.maliciousness]
+    core_requirement: str
+    malicious_examples: str
+
+
+def validate_maliciousness_properties(
+    properties: MaliciousnessProperties,
+) -> MaliciousnessProperties:
+    return validate_string_properties(
+        properties,
+        required_fields=["core_requirement", "malicious_examples"],
+    )
+
+
+MaliciousnessPropertiesValidator = Annotated[
+    MaliciousnessProperties,
+    AfterValidator(lambda v: validate_maliciousness_properties(v)),
+]
+
+
+class NsfwProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.nsfw]
+    core_requirement: str
+    nsfw_examples: str
+
+
+def validate_nsfw_properties(properties: NsfwProperties) -> NsfwProperties:
+    return validate_string_properties(
+        properties,
+        required_fields=["core_requirement", "nsfw_examples"],
+    )
+
+
+NsfwPropertiesValidator = Annotated[
+    NsfwProperties,
+    AfterValidator(lambda v: validate_nsfw_properties(v)),
+]
+
+
+class TabooProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.taboo]
+    core_requirement: str
+    taboo_examples: str
+
+
+def validate_taboo_properties(properties: TabooProperties) -> TabooProperties:
+    return validate_string_properties(
+        properties,
+        required_fields=["core_requirement", "taboo_examples"],
+    )
+
+
+TabooPropertiesValidator = Annotated[
+    TabooProperties,
+    AfterValidator(lambda v: validate_taboo_properties(v)),
+]
+
+
+class JailbreakProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.jailbreak]
+    core_requirement: str
+    jailbroken_examples: str
+
+
+def validate_jailbreak_properties(
+    properties: JailbreakProperties,
+) -> JailbreakProperties:
+    return validate_string_properties(
+        properties,
+        required_fields=["core_requirement", "jailbroken_examples"],
+    )
+
+
+JailbreakPropertiesValidator = Annotated[
+    JailbreakProperties,
+    AfterValidator(lambda v: validate_jailbreak_properties(v)),
+]
+
+
+class PromptLeakageProperties(TypedDict, total=True):
+    spec_type: Literal[SpecType.prompt_leakage]
+    core_requirement: str
+    leakage_examples: str
+
+
+def validate_prompt_leakage_properties(
+    properties: PromptLeakageProperties,
+) -> PromptLeakageProperties:
+    return validate_string_properties(
+        properties,
+        required_fields=["core_requirement", "leakage_examples"],
+    )
+
+
+PromptLeakagePropertiesValidator = Annotated[
+    PromptLeakageProperties,
+    AfterValidator(lambda v: validate_prompt_leakage_properties(v)),
+]
+
+
+SpecProperties = (
+    DesiredBehaviourPropertiesValidator
+    | IssuePropertiesValidator
+    | TonePropertiesValidator
+    | FormattingPropertiesValidator
+    | LocalizationPropertiesValidator
+    | AppropriateToolUsePropertiesValidator
+    | ReferenceAnswerAccuracyPropertiesValidator
+    | FactualCorrectnessPropertiesValidator
+    | HallucinationsPropertiesValidator
+    | CompletenessPropertiesValidator
+    | ToxicityPropertiesValidator
+    | BiasPropertiesValidator
+    | MaliciousnessPropertiesValidator
+    | NsfwPropertiesValidator
+    | TabooPropertiesValidator
+    | JailbreakPropertiesValidator
+    | PromptLeakagePropertiesValidator
+)

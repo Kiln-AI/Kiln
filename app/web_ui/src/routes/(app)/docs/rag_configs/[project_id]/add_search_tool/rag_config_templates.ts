@@ -90,15 +90,15 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     name: "Best Quality",
     preview_subtitle: "Spare No Expense",
     preview_description:
-      "The best quality search configuration. Uses Gemini 3 Pro with hybrid search.",
+      "The best quality search configuration. Uses Gemini 3.1 Pro with hybrid search.",
     preview_tooltip:
-      "Gemini 3 Pro extraction, Gemini embeddings 001 (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
+      "Gemini 3.1 Pro extraction, Gemini embeddings 001 (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
     required_provider: "GeminiOrOpenRouter",
     extractor: {
-      config_name: "Gemini 3 Pro w Default Prompts",
-      description: "Gemini 3 Pro",
+      config_name: "Gemini 3p1 Pro w Default Prompts",
+      description: "Gemini 3.1 Pro",
       model_provider_name: "gemini_api",
-      model_name: "gemini_3_pro_preview",
+      model_name: "gemini_3_1_pro_preview",
     },
     chunker: default_chunker,
     embedding: default_embedding,

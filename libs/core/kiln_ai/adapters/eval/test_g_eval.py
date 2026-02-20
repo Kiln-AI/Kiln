@@ -152,9 +152,16 @@ async def run_g_eval_test(
     # Run the evaluation
     eval_result, intermediate_outputs = await g_eval.run_eval(test_task_run)
 
-    # Should have 1 intermediate output (thinking or chain of thought)
+    # "chain_of_thought" comes from the multi-turn COT prompt strategy, "reasoning"
+    # comes from native model reasoning (e.g. Gemini thinking). Both can be present.
     assert intermediate_outputs is not None
-    assert len(intermediate_outputs) == 1
+    assert (
+        "chain_of_thought" in intermediate_outputs
+        or "reasoning" in intermediate_outputs
+    )
+    for value in intermediate_outputs.values():
+        assert isinstance(value, str)
+        assert len(value) > 0
 
     assert "topic_alignment" in eval_result
     topic_alignment = eval_result["topic_alignment"]
@@ -206,9 +213,16 @@ async def test_run_g_eval_e2e(
     # Verify the evaluation results
     assert isinstance(scores, dict)
 
-    # Should have 1 intermediate output (thinking or chain of thought)
+    # "chain_of_thought" comes from the multi-turn COT prompt strategy, "reasoning"
+    # comes from native model reasoning (e.g. Gemini thinking). Both can be present.
     assert intermediate_outputs is not None
-    assert len(intermediate_outputs) == 1
+    assert (
+        "chain_of_thought" in intermediate_outputs
+        or "reasoning" in intermediate_outputs
+    )
+    for value in intermediate_outputs.values():
+        assert isinstance(value, str)
+        assert len(value) > 0
 
     assert "topic_alignment" in scores
     topic_alignment = scores["topic_alignment"]
@@ -332,6 +346,8 @@ def test_generate_full_trace_run_description(test_eval_config, test_run_config):
     # Test case 1: With available tools (non-empty string)
     available_tools = "tool1: description1\ntool2: description2"
     appropriate_tool_use_guidelines = "Call the tool when user asks for help"
+    if g_eval.eval.template_properties is None:
+        g_eval.eval.template_properties = {}
     g_eval.eval.template_properties["appropriate_tool_use_guidelines"] = (
         appropriate_tool_use_guidelines
     )
@@ -412,6 +428,8 @@ This is the full conversation history for the task run:
 
     # Test case 4: With inappropriate_tool_use_guidelines
     inappropriate_tool_use_guidelines = "Don't call the tool for simple questions"
+    if g_eval.eval.template_properties is None:
+        g_eval.eval.template_properties = {}
     g_eval.eval.template_properties["inappropriate_tool_use_guidelines"] = (
         inappropriate_tool_use_guidelines
     )

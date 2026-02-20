@@ -1,7 +1,16 @@
 from abc import ABCMeta, abstractmethod
+from dataclasses import dataclass
 
 from kiln_ai.datamodel import PromptGenerators, PromptId, Task, TaskRun
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+
+
+@dataclass
+class PromptExample:
+    """A simple input/output example for use in prompt building."""
+
+    input: str
+    output: str
 
 
 class BasePromptBuilder(metaclass=ABCMeta):
@@ -70,7 +79,7 @@ class BasePromptBuilder(metaclass=ABCMeta):
         base_prompt = self.build_prompt(include_json_instructions=False)
         cot_prompt = self.chain_of_thought_prompt()
         if cot_prompt:
-            base_prompt += "\n# Thinking Instructions\n\n" + cot_prompt
+            base_prompt += "\n\n# Thinking Instructions\n\n" + cot_prompt
         return base_prompt
 
 
@@ -96,18 +105,6 @@ class SimplePromptBuilder(BasePromptBuilder):
         return base_prompt
 
 
-class ShortPromptBuilder(BasePromptBuilder):
-    """A prompt builder that includes a the base prompt but excludes the requirements."""
-
-    def build_base_prompt(self) -> str:
-        """Build a short prompt with just the base prompt, no requirements.
-
-        Returns:
-            str: The constructed prompt string.
-        """
-        return self.task.instruction
-
-
 class MultiShotPromptBuilder(BasePromptBuilder):
     """A prompt builder that includes multiple examples in the prompt."""
 
@@ -120,11 +117,11 @@ class MultiShotPromptBuilder(BasePromptBuilder):
         """
         return 25
 
-    def build_base_prompt(self) -> str:
-        """Build a prompt with instruction, requirements, and multiple examples.
+    def build_instruction_and_requirements(self) -> str:
+        """Build the instruction and requirements section of the prompt.
 
         Returns:
-            str: The constructed prompt string with examples.
+            str: The instruction and requirements sections.
         """
         base_prompt = f"# Instruction\n\n{self.task.instruction}\n\n"
 
@@ -133,6 +130,16 @@ class MultiShotPromptBuilder(BasePromptBuilder):
             for i, requirement in enumerate(self.task.requirements):
                 base_prompt += f"{i + 1}) {requirement.instruction}\n"
             base_prompt += "\n"
+
+        return base_prompt
+
+    def build_base_prompt(self) -> str:
+        """Build a prompt with instruction, requirements, and multiple examples.
+
+        Returns:
+            str: The constructed prompt string with examples.
+        """
+        base_prompt = self.build_instruction_and_requirements()
 
         valid_examples = self.collect_examples()
 
@@ -193,6 +200,29 @@ class FewShotPromptBuilder(MultiShotPromptBuilder):
             int: The maximum number of examples (4).
         """
         return 4
+
+
+class CustomExamplePromptBuilder(FewShotPromptBuilder):
+    """A prompt builder that uses custom examples instead of collecting from the dataset."""
+
+    def __init__(self, task: Task, examples: list[PromptExample] | None = None):
+        super().__init__(task)
+        self._custom_examples = examples or []
+
+    def collect_examples(self) -> list[TaskRun]:
+        """Override to return an empty list - we handle examples separately."""
+        return []
+
+    def build_base_prompt(self) -> str:
+        """Build a prompt with instruction, requirements, and custom examples."""
+        base_prompt = self.build_instruction_and_requirements()
+
+        if self._custom_examples:
+            base_prompt += "# Example Outputs\n\n"
+            for i, example in enumerate(self._custom_examples):
+                base_prompt += f"## Example {i + 1}\n\nInput: {example.input}\nOutput: {example.output}\n\n"
+
+        return base_prompt
 
 
 class RepairsPromptBuilder(MultiShotPromptBuilder):
@@ -409,8 +439,6 @@ def prompt_builder_from_id(prompt_id: PromptId, task: Task) -> BasePromptBuilder
     match typed_prompt_generator:
         case PromptGenerators.SIMPLE:
             return SimplePromptBuilder(task)
-        case PromptGenerators.SHORT:
-            return ShortPromptBuilder(task)
         case PromptGenerators.FEW_SHOT:
             return FewShotPromptBuilder(task)
         case PromptGenerators.MULTI_SHOT:

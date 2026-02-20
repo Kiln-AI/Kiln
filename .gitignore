@@ -12,9 +12,12 @@ __pycache__/
 node_modules/
 conductor.json
 CLAUDE.md
+.claude/
 
 libs/core/docs
 libs/core/build
 libs/server/build
 
 dist/
+
+.mcp.json

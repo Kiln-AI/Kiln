@@ -85,6 +85,12 @@
   subtitle="Fine-tune models for the current task."
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/fine-tuning-guide"
+  breadcrumbs={[
+    {
+      label: "Optimize",
+      href: `/optimize/${project_id}/${task_id}`,
+    },
+  ]}
   action_buttons={is_empty
     ? []
     : [

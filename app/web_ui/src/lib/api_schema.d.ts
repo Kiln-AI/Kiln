@@ -251,6 +251,81 @@ export interface paths {
         patch: operations["update_prompt_api_projects__project_id__tasks__task_id__prompts__prompt_id__patch"];
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/build_prompt_with_examples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Build Prompt With Examples
+         * @description Build a prompt with task instruction, requirements, and optional custom examples.
+         *
+         *     Uses the same formatting as the FewShotPromptBuilder but with user-provided examples.
+         */
+        post: operations["build_prompt_with_examples_api_projects__project_id__tasks__task_id__build_prompt_with_examples_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/spec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Spec */
+        post: operations["create_spec_api_projects__project_id__tasks__task_id__spec_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/specs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Specs */
+        get: operations["get_specs_api_projects__project_id__tasks__task_id__specs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Spec */
+        get: operations["get_spec_api_projects__project_id__tasks__task_id__specs__spec_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Spec */
+        delete: operations["delete_spec_api_projects__project_id__tasks__task_id__specs__spec_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Spec */
+        patch: operations["update_spec_api_projects__project_id__tasks__task_id__specs__spec_id__patch"];
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}": {
         parameters: {
             query?: never;
@@ -280,7 +355,11 @@ export interface paths {
         /** Get Runs */
         get: operations["get_runs_api_projects__project_id__tasks__task_id__runs_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create Task Run
+         * @description Create a TaskRun directly without running a model.
+         */
+        post: operations["create_task_run_api_projects__project_id__tasks__task_id__runs_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1172,6 +1251,65 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/available_providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Available Providers
+         * @description Returns all providers that can have custom models added.
+         */
+        get: operations["get_available_providers_api_settings_available_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/user_models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get User Models
+         * @description Returns all user-defined models (new registry + legacy combined).
+         *
+         *     Includes both user_model_registry entries and legacy custom_models
+         *     (converted to UserModelEntry for display). Legacy models can be
+         *     deleted via the tuple method (provider_type/provider_id/model_id).
+         */
+        get: operations["get_user_models_api_settings_user_models_get"];
+        put?: never;
+        /**
+         * Add User Model
+         * @description Add a user-defined model to the registry.
+         */
+        post: operations["add_user_model_api_settings_user_models_post"];
+        /**
+         * Delete User Model
+         * @description Delete a user-defined model from the registry.
+         *
+         *     Supports two deletion methods:
+         *     1. By ID (new): Pass `id` parameter to delete from user_model_registry
+         *     2. By tuple (legacy): Pass provider_type, provider_id, model_id to delete from
+         *        user_model_registry by matching those fields, or from legacy custom_models
+         *
+         *     Legacy models in custom_models don't have IDs and must use the tuple method.
+         */
+        delete: operations["delete_user_model_api_settings_user_models_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/provider/connect_api_key": {
         parameters: {
             query?: never;
@@ -1320,6 +1458,32 @@ export interface paths {
         put?: never;
         /** Open Project Folder */
         post: operations["open_project_folder_api_open_project_folder__project_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/check_entitlements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Entitlements
+         * @description Check whether the authenticated user has the given entitlements.
+         *
+         *     Args:
+         *         feature_codes: Comma-separated entitlement feature codes to check
+         *
+         *     Returns:
+         *         Dict mapping each feature code to a boolean indicating if user has that entitlement
+         */
+        get: operations["check_entitlements_api_check_entitlements_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1611,23 +1775,6 @@ export interface paths {
         patch: operations["update_eval_api_projects__project_id__tasks__task_id__eval__eval_id__patch"];
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/fav": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update Eval Favourite */
-        patch: operations["update_eval_favourite_api_projects__project_id__tasks__task_id__eval__eval_id__fav_patch"];
-        trace?: never;
-    };
     "/api/projects/{project_id}/tasks/{task_id}/evals": {
         parameters: {
             query?: never;
@@ -1694,6 +1841,23 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Run Config */
+        patch: operations["update_run_config_api_projects__project_id__tasks__task_id__run_config__run_config_id__patch"];
         trace?: never;
     };
     "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/create_eval_config": {
@@ -2100,10 +2264,306 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Run Config
+         * @description Check if a run config is valid for a Prompt Optimization job by validating the model is supported.
+         */
+        get: operations["check_run_config_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_run_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check Eval
+         * @description Check if an eval is valid for a Prompt Optimization job.
+         *     Validates that the eval has a default config and that the model is supported.
+         */
+        get: operations["check_eval_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_eval_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Prompt Optimization Job
+         * @description Start a prompt optimization job by zipping the project and sending it to the Kiln server.
+         *     Creates and saves a PromptOptimizationJob datamodel to track the job.
+         */
+        post: operations["start_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Prompt Optimization Jobs
+         * @description List all Prompt Optimization jobs for a task.
+         *     Optionally update the status of non-final jobs from the remote server.
+         */
+        get: operations["list_prompt_optimization_jobs_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Prompt Optimization Job
+         * @description Get a specific Prompt Optimization job and update its status from the remote server.
+         *     If the job has succeeded, create a prompt if one doesn't exist yet.
+         *     If the job is already in a settled state (succeeded, failed, cancelled),
+         *     skip the status update and return the cached model.
+         */
+        get: operations["get_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs__prompt_optimization_job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/prompt_optimization_jobs/{job_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Prompt Optimization Job Status
+         * @description Get the status of a Prompt Optimization job.
+         */
+        get: operations["get_prompt_optimization_job_status_api_prompt_optimization_jobs__job_id__status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/prompt_optimization_jobs/{job_id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Prompt Optimization Job Result
+         * @description Get the result of a prompt optimization job (includes status and output if completed).
+         */
+        get: operations["get_prompt_optimization_job_result_api_prompt_optimization_jobs__job_id__result_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/copilot/clarify_spec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clarify Spec */
+        post: operations["clarify_spec_api_copilot_clarify_spec_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/copilot/refine_spec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refine Spec */
+        post: operations["refine_spec_api_copilot_refine_spec_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/copilot/generate_batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Batch */
+        post: operations["generate_batch_api_copilot_generate_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/copilot/question_spec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Question Spec */
+        post: operations["question_spec_api_copilot_question_spec_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/copilot/refine_spec_with_question_answers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit Question Answers */
+        post: operations["submit_question_answers_api_copilot_refine_spec_with_question_answers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Spec With Copilot
+         * @description Create a spec using Kiln Copilot.
+         *
+         *     This endpoint uses Kiln Copilot to create a spec with:
+         *     1. An eval for the spec with appropriate template
+         *     2. Batch examples via copilot API for eval, train, and golden datasets
+         *     3. A judge eval config (if judge_info provided)
+         *     4. The spec itself
+         *
+         *     If you don't need copilot, use POST /spec instead.
+         *
+         *     All models are validated before any saves occur. If validation fails,
+         *     no data is persisted.
+         */
+        post: operations["create_spec_with_copilot_api_projects__project_id__tasks__task_id__spec_with_copilot_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnswerOption */
+        AnswerOption: {
+            /**
+             * answer_title
+             * @description A short title describing this answer option
+             */
+            answer_title: string;
+            /**
+             * answer_description
+             * @description A description of this answer
+             */
+            answer_description: string;
+        };
+        /**
+         * AnswerOptionWithSelection
+         * @description An answer option with user selection state.
+         */
+        AnswerOptionWithSelection: {
+            /**
+             * answer_title
+             * @description A short title describing this answer option
+             */
+            answer_title: string;
+            /**
+             * answer_description
+             * @description A description of this answer
+             */
+            answer_description: string;
+            /**
+             * selected
+             * @description Whether the user selected this answer option
+             */
+            selected: boolean;
+        };
         /** ApiPrompt */
         ApiPrompt: {
             /**
@@ -2138,6 +2598,26 @@ export interface components {
             /** Created By */
             created_by?: string | null;
         };
+        /** AppropriateToolUseProperties */
+        AppropriateToolUseProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "appropriate_tool_use";
+            /** Core Requirement */
+            core_requirement: string;
+            /** Tool Id */
+            tool_id: string;
+            /** Tool Function Name */
+            tool_function_name: string;
+            /** Tool Use Guidelines */
+            tool_use_guidelines: string;
+            /** Appropriate Tool Use Examples */
+            appropriate_tool_use_examples: string;
+            /** Inappropriate Tool Use Examples */
+            inappropriate_tool_use_examples: string;
+        };
         /** Audio */
         Audio: {
             /** Id */
@@ -2151,6 +2631,18 @@ export interface components {
             provider_id: string;
             /** Models */
             models: components["schemas"]["ModelDetails"][];
+        };
+        /** AvailableProviderInfo */
+        AvailableProviderInfo: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Provider Type
+             * @enum {string}
+             */
+            provider_type: "builtin" | "custom";
         };
         /**
          * BasePrompt
@@ -2184,6 +2676,18 @@ export interface components {
              * @description Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting. COT will not be used unless this is provided.
              */
             chain_of_thought_instructions?: string | null;
+        };
+        /** BiasProperties */
+        BiasProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "bias";
+            /** Core Requirement */
+            core_requirement: string;
+            /** Bias Examples */
+            bias_examples: string;
         };
         /** Body_bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post */
         Body_bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post: {
@@ -2221,6 +2725,19 @@ export interface components {
             add_tags?: string[] | null;
             /** Remove Tags */
             remove_tags?: string[] | null;
+        };
+        /** BuildPromptRequest */
+        BuildPromptRequest: {
+            /**
+             * Examples
+             * @default []
+             */
+            examples: components["schemas"]["FewShotExample"][];
+        };
+        /** BuildPromptResponse */
+        BuildPromptResponse: {
+            /** Prompt */
+            prompt: string;
         };
         /** BulkCreateDocumentsResponse */
         BulkCreateDocumentsResponse: {
@@ -2423,6 +2940,26 @@ export interface components {
          * @enum {string}
          */
         ChatStrategy: "final_only" | "final_and_intermediate" | "two_message_cot" | "final_and_intermediate_r1_compatible";
+        /**
+         * CheckEvalResponse
+         * @description Response model for check_eval endpoint.
+         */
+        CheckEvalResponse: {
+            /** Has Default Config */
+            has_default_config: boolean;
+            /** Has Train Set */
+            has_train_set: boolean;
+            /** Model Is Supported */
+            model_is_supported: boolean;
+        };
+        /**
+         * CheckRunConfigResponse
+         * @description Response model for check_run_config endpoint.
+         */
+        CheckRunConfigResponse: {
+            /** Is Supported */
+            is_supported: boolean;
+        };
         /** ChunkerConfig */
         ChunkerConfig: {
             /**
@@ -2466,6 +3003,30 @@ export interface components {
          * @enum {string}
          */
         ChunkerType: "fixed_window" | "semantic";
+        /** ClarifySpecInput */
+        ClarifySpecInput: {
+            target_task_info: components["schemas"]["TaskInfo"];
+            /** Target Specification */
+            target_specification: string;
+            /** Num Samples Per Topic */
+            num_samples_per_topic: number;
+            /** Num Topics */
+            num_topics: number;
+            /**
+             * Num Exemplars
+             * @default 10
+             */
+            num_exemplars: number;
+            /** Providers */
+            providers: components["schemas"]["ModelProviderName"][];
+        };
+        /** ClarifySpecOutput */
+        ClarifySpecOutput: {
+            /** Examples For Feedback */
+            examples_for_feedback: components["schemas"]["ExamplesForFeedbackItem"][];
+            judge_result: components["schemas"]["kiln_ai__datamodel__copilot_models__copilot_api_models__SyntheticDataGenerationStepConfig-Output"];
+            sdg_session_config: components["schemas"]["kiln_ai__datamodel__copilot_models__copilot_api_models__SyntheticDataGenerationSessionConfig"];
+        };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
             /**
@@ -2473,6 +3034,20 @@ export interface components {
              * @enum {string}
              */
             type: "cohere_compatible";
+        };
+        /** CompletenessProperties */
+        CompletenessProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "completeness";
+            /** Core Requirement */
+            core_requirement: string;
+            /** Complete Examples */
+            complete_examples: string;
+            /** Incomplete Examples */
+            incomplete_examples: string;
         };
         /** CorrelationResult */
         CorrelationResult: {
@@ -2561,7 +3136,7 @@ export interface components {
             /** Name */
             name: string;
             /** Description */
-            description: string;
+            description?: string | null;
             template: components["schemas"]["EvalTemplateId"] | null;
             /** Output Scores */
             output_scores: components["schemas"]["EvalOutputScore"][];
@@ -2572,7 +3147,7 @@ export interface components {
             /** Template Properties */
             template_properties: {
                 [key: string]: string | number | boolean;
-            };
+            } | null;
             evaluation_data_type: components["schemas"]["EvalDataType"];
         };
         /** CreateExtractorConfigRequest */
@@ -2721,6 +3296,56 @@ export interface components {
              */
             properties: components["schemas"]["CohereCompatibleProperties"];
         };
+        /**
+         * CreateSpecWithCopilotRequest
+         * @description Request model for creating a spec with Kiln Copilot.
+         *
+         *     This endpoint uses Kiln Copilot to:
+         *     - Generate batch examples for eval, train, and golden datasets
+         *     - Create a judge eval config
+         *     - Create an eval with appropriate template/output scores
+         *     - Create and save the spec
+         *
+         *     If you don't want to use copilot, use the regular POST /spec endpoint instead.
+         *
+         *     The client is responsible for building:
+         *     - definition: The spec definition string (use buildSpecDefinition on client)
+         *     - properties: The spec properties object (filtered, with spec_type included)
+         */
+        CreateSpecWithCopilotRequest: {
+            /** Name */
+            name: string;
+            /**
+             * Definition
+             * @description The spec definition string, built by client using buildSpecDefinition()
+             */
+            definition: string;
+            /**
+             * Properties
+             * @description The spec properties object, pre-built by client with spec_type included
+             */
+            properties: components["schemas"]["DesiredBehaviourProperties"] | components["schemas"]["IssueProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
+            /**
+             * Evaluate Full Trace
+             * @default false
+             */
+            evaluate_full_trace: boolean;
+            /** Reviewed Examples */
+            reviewed_examples?: components["schemas"]["ReviewedExample"][];
+            judge_info: components["schemas"]["SyntheticDataGenerationStepConfig-Input"];
+            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigInput"];
+            /**
+             * Task Description
+             * @default
+             */
+            task_description: string;
+            /**
+             * Task Prompt With Example
+             * @default
+             */
+            task_prompt_with_example: string;
+            task_sample?: components["schemas"]["TaskSample"] | null;
+        };
         /** CreateTaskRunConfigRequest */
         CreateTaskRunConfigRequest: {
             /** Name */
@@ -2728,6 +3353,45 @@ export interface components {
             /** Description */
             description?: string | null;
             run_config_properties: components["schemas"]["RunConfigProperties"];
+        };
+        /**
+         * CreateTaskRunRequest
+         * @description Request model for creating a synthetic TaskRun directly (without running a model).
+         */
+        CreateTaskRunRequest: {
+            /**
+             * Input
+             * @description The input for the task run
+             */
+            input: string;
+            /**
+             * Output
+             * @description The output for the task run
+             */
+            output: string;
+            /**
+             * Tags
+             * @description Tags to apply to the task run
+             * @default []
+             */
+            tags: string[];
+            /** @description Optional rating for the output */
+            rating?: components["schemas"]["TaskOutputRating-Input"] | null;
+            /**
+             * Model Name
+             * @description The name of the model used to generate the data
+             */
+            model_name: string;
+            /**
+             * Model Provider
+             * @description The provider of the model used to generate the data
+             */
+            model_provider: string;
+            /**
+             * Adapter Name
+             * @description The name of the adapter used to generate the data
+             */
+            adapter_name: string;
         };
         /** CreateVectorStoreConfigRequest */
         CreateVectorStoreConfigRequest: {
@@ -3014,6 +3678,20 @@ export interface components {
          * @enum {string}
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
+        /** DesiredBehaviourProperties */
+        DesiredBehaviourProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "desired_behaviour";
+            /** Desired Behaviour Description */
+            desired_behaviour_description: string;
+            /** Correct Behaviour Examples */
+            correct_behaviour_examples?: string;
+            /** Incorrect Behaviour Examples */
+            incorrect_behaviour_examples?: string;
+        };
         /** DockerModelRunnerConnection */
         DockerModelRunnerConnection: {
             /** Message */
@@ -3224,7 +3902,7 @@ export interface components {
             current_config_id?: string | null;
             /**
              * Eval Set Filter Id
-             * @description The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id.
+             * @description The id of the dataset filter which defines which dataset items are included when running this eval. Should be mutually exclusive with eval_configs_filter_id and train_set_filter_id.
              */
             eval_set_filter_id: string;
             /**
@@ -3232,6 +3910,11 @@ export interface components {
              * @description The id of the dataset filter which defines which dataset items are included when comparing the quality of the eval configs under this eval. Should consist of dataset items with ratings. Should be mutually exclusive with eval_set_filter_id.
              */
             eval_configs_filter_id?: string | null;
+            /**
+             * Train Set Filter Id
+             * @description The id of the dataset filter which defines which dataset items are included in the training set for fine-tuning. Should be mutually exclusive with eval_set_filter_id.
+             */
+            train_set_filter_id?: string | null;
             /**
              * Output Scores
              * @description The scores this evaluator should produce.
@@ -3246,11 +3929,10 @@ export interface components {
             /**
              * Template Properties
              * @description Properties to be used to execute the eval. This is template_type specific and should serialize to a json dict.
-             * @default {}
              */
-            template_properties: {
+            template_properties?: {
                 [key: string]: string | number | boolean;
-            };
+            } | null;
             /**
              * @description The output of the task run to evaluate. Can be final answer or full trace.
              * @default final_answer
@@ -3387,6 +4069,8 @@ export interface components {
             golden_dataset_partially_rated_count: number;
             /** Golden Dataset Fully Rated Count */
             golden_dataset_fully_rated_count: number;
+            /** Train Dataset Size */
+            train_dataset_size: number;
             current_eval_method: components["schemas"]["EvalConfig"] | null;
         };
         /** EvalResultSummary */
@@ -3499,7 +4183,35 @@ export interface components {
          * @description An eval template is a pre-defined eval that can be used as a starting point for a new eval.
          * @enum {string}
          */
-        EvalTemplateId: "kiln_requirements" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
+        EvalTemplateId: "kiln_requirements" | "desired_behaviour" | "kiln_issue" | "tool_call" | "toxicity" | "bias" | "maliciousness" | "factual_correctness" | "jailbreak" | "rag";
+        /**
+         * ExamplesForFeedbackItem
+         * @description A sample presented for user feedback, with model's judgment.
+         */
+        ExamplesForFeedbackItem: {
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
+            /** Fails Specification */
+            fails_specification: boolean;
+        };
+        /**
+         * ExamplesWithFeedbackItem
+         * @description An example with user feedback on the judge's assessment.
+         */
+        ExamplesWithFeedbackItem: {
+            /** User Agrees With Judge */
+            user_agrees_with_judge: boolean;
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
+            /** Fails Specification */
+            fails_specification: boolean;
+            /** User Feedback */
+            user_feedback?: string | null;
+        };
         /**
          * ExternalToolApiDescription
          * @description This class is a wrapper of MCP's Tool / KilnTaskTool objects to be displayed in the UI under tool_server/[tool_server_id].
@@ -3707,6 +4419,25 @@ export interface components {
          * @enum {string}
          */
         ExtractorType: "litellm";
+        /** FactualCorrectnessProperties */
+        FactualCorrectnessProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "factual_correctness";
+            /** Core Requirement */
+            core_requirement: string;
+            /** Factually Inaccurate Examples */
+            factually_inaccurate_examples: string;
+        };
+        /** FewShotExample */
+        FewShotExample: {
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
+        };
         /** File */
         File: {
             file: components["schemas"]["FileFile"];
@@ -3997,6 +4728,22 @@ export interface components {
              */
             chunk_overlap: number;
         };
+        /** FormattingProperties */
+        FormattingProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "formatting";
+            /** Core Requirement */
+            core_requirement: string;
+            /** Formatting Requirements */
+            formatting_requirements: string;
+            /** Proper Formatting Examples */
+            proper_formatting_examples?: string;
+            /** Improper Formatting Examples */
+            improper_formatting_examples?: string;
+        };
         /** Function */
         Function: {
             /** Arguments */
@@ -4011,6 +4758,30 @@ export interface components {
             /** Name */
             name: string;
         };
+        /**
+         * GenerateBatchInput
+         * @description Input for batch generation (topics, inputs, outputs, optionally with scoring).
+         */
+        GenerateBatchInput: {
+            target_task_info: components["schemas"]["TaskInfo"];
+            /** Target Specification */
+            target_specification: string;
+            /** Num Samples Per Topic */
+            num_samples_per_topic: number;
+            /** Num Topics */
+            num_topics: number;
+            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigInput"];
+        };
+        /**
+         * GenerateBatchOutput
+         * @description Output from batch generation, organized by topic.
+         */
+        GenerateBatchOutput: {
+            /** Data By Topic */
+            data_by_topic: {
+                [key: string]: components["schemas"]["Sample"][];
+            };
+        };
         /** GetRagConfigProgressRequest */
         GetRagConfigProgressRequest: {
             /**
@@ -4023,6 +4794,18 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HallucinationsProperties */
+        HallucinationsProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "hallucinations";
+            /** Core Requirement */
+            core_requirement: string;
+            /** Hallucinations Examples */
+            hallucinations_examples: string;
         };
         /** ImageURL */
         ImageURL: {
@@ -4044,6 +4827,37 @@ export interface components {
              */
             format: "wav" | "mp3";
         };
+        /** IssueProperties */
+        IssueProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "issue";
+            /** Issue Description */
+            issue_description: string;
+            /** Issue Examples */
+            issue_examples?: string;
+            /** Non Issue Examples */
+            non_issue_examples?: string;
+        };
+        /** JailbreakProperties */
+        JailbreakProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "jailbreak";
+            /** Core Requirement */
+            core_requirement: string;
+            /** Jailbroken Examples */
+            jailbroken_examples: string;
+        };
+        /**
+         * JobStatus
+         * @enum {string}
+         */
+        JobStatus: "cancelled" | "failed" | "pending" | "running" | "succeeded";
         KilnAttachmentModel: {
             [key: string]: string;
         } | null;
@@ -4286,6 +5100,20 @@ export interface components {
             /** Is Archived */
             is_archived: boolean;
         };
+        /** LocalizationProperties */
+        LocalizationProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "localization";
+            /** Core Requirement */
+            core_requirement: string;
+            /** Localization Requirements */
+            localization_requirements: string;
+            /** Violation Examples */
+            violation_examples: string;
+        };
         /** LogMessage */
         LogMessage: {
             /**
@@ -4299,6 +5127,18 @@ export interface components {
              * @description The message to display to the user
              */
             message: string;
+        };
+        /** MaliciousnessProperties */
+        MaliciousnessProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "maliciousness";
+            /** Core Requirement */
+            core_requirement: string;
+            /** Malicious Examples */
+            malicious_examples: string;
         };
         /** MeanUsage */
         MeanUsage: {
@@ -4363,6 +5203,30 @@ export interface components {
          * @enum {string}
          */
         ModelProviderName: "openai" | "groq" | "amazon_bedrock" | "ollama" | "openrouter" | "fireworks_ai" | "kiln_fine_tune" | "kiln_custom_registry" | "openai_compatible" | "anthropic" | "gemini_api" | "azure_openai" | "huggingface" | "vertex" | "together_ai" | "siliconflow_cn" | "cerebras" | "docker_model_runner";
+        /**
+         * NewProposedSpecEdit
+         * @description A proposed edit to a spec field.
+         */
+        NewProposedSpecEdit: {
+            /** Spec Field Name */
+            spec_field_name: string;
+            /** Proposed Edit */
+            proposed_edit: string;
+            /** Reason For Edit */
+            reason_for_edit: string;
+        };
+        /** NsfwProperties */
+        NsfwProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "nsfw";
+            /** Core Requirement */
+            core_requirement: string;
+            /** Nsfw Examples */
+            nsfw_examples: string;
+        };
         /** OllamaConnection */
         OllamaConnection: {
             /** Message */
@@ -4424,7 +5288,7 @@ export interface components {
         };
         /**
          * Priority
-         * @description Defines priority levels for tasks and requirements, where P0 is highest priority.
+         * @description Priority levels, where P0 is highest priority.
          * @enum {integer}
          */
         Priority: 0 | 1 | 2 | 3;
@@ -4558,6 +5422,8 @@ export interface components {
         };
         /** PromptCreateRequest */
         PromptCreateRequest: {
+            /** Generator Id */
+            generator_id?: string | null;
             /** Name */
             name: string;
             /** Description */
@@ -4579,6 +5445,88 @@ export interface components {
             name: string;
             /** Chain Of Thought */
             chain_of_thought: boolean;
+        };
+        /** PromptLeakageProperties */
+        PromptLeakageProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "prompt_leakage";
+            /** Core Requirement */
+            core_requirement: string;
+            /** Leakage Examples */
+            leakage_examples: string;
+        };
+        /**
+         * PromptOptimizationJob
+         * @description The Kiln prompt optimization job datamodel.
+         */
+        PromptOptimizationJob: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description The name of the prompt optimization job.
+             */
+            name: string;
+            /**
+             * Description
+             * @description A description of the prompt optimization job for you and your team.
+             */
+            description?: string | null;
+            /**
+             * Job Id
+             * @description The ID of the job on the remote Kiln server.
+             */
+            job_id: string;
+            /**
+             * Target Run Config Id
+             * @description The ID of the run configuration used for this job.
+             */
+            target_run_config_id: string;
+            /**
+             * Latest Status
+             * @description The latest known status of this prompt optimization job (pending, running, succeeded, failed, cancelled). Not updated in real time.
+             * @default pending
+             */
+            latest_status: string;
+            /**
+             * Optimized Prompt
+             * @description The optimized prompt result when the job succeeds.
+             */
+            optimized_prompt?: string | null;
+            /**
+             * Created Prompt Id
+             * @description The ID of the prompt created from this job's result, if any.
+             */
+            created_prompt_id?: string | null;
+            /**
+             * Created Run Config Id
+             * @description The ID of the run config created from this job's result, if any.
+             */
+            created_run_config_id?: string | null;
+            /**
+             * Eval Ids
+             * @description List of eval IDs used for this job.
+             */
+            eval_ids?: string[];
+            /** Model Type */
+            readonly model_type: string;
         };
         /** PromptResponse */
         PromptResponse: {
@@ -4621,6 +5569,75 @@ export interface components {
             models: {
                 [key: string]: components["schemas"]["ProviderModel"];
             };
+        };
+        /**
+         * PublicPromptOptimizationJobResultResponse
+         * @description Public response model for prompt optimization job result containing only the optimized prompt.
+         */
+        PublicPromptOptimizationJobResultResponse: {
+            /** Optimized Prompt */
+            optimized_prompt: string;
+        };
+        /**
+         * PublicPromptOptimizationJobStatusResponse
+         * @description Public response model for prompt optimization job status.
+         */
+        PublicPromptOptimizationJobStatusResponse: {
+            /** Job Id */
+            job_id: string;
+            status: components["schemas"]["JobStatus"];
+        };
+        /** Question */
+        Question: {
+            /**
+             * question_title
+             * @description A short title for this question
+             */
+            question_title: string;
+            /**
+             * question_body
+             * @description The full question text
+             */
+            question_body: string;
+            /**
+             * answer_options
+             * @description A list of possible answers to this question for the user to select from
+             */
+            answer_options: components["schemas"]["AnswerOption"][];
+        };
+        /** QuestionSet */
+        QuestionSet: {
+            /**
+             * questions
+             * @description A set of questions to ask about the specification
+             */
+            questions: components["schemas"]["Question"][];
+        };
+        /**
+         * QuestionWithAnswer
+         * @description A question with user-provided answer.
+         */
+        QuestionWithAnswer: {
+            /**
+             * question_title
+             * @description A short title for this question
+             */
+            question_title: string;
+            /**
+             * question_body
+             * @description The full question text
+             */
+            question_body: string;
+            /**
+             * answer_options
+             * @description Possible answers the user was asked to select from
+             */
+            answer_options: components["schemas"]["AnswerOptionWithSelection"][];
+            /**
+             * custom_answer
+             * @description User-provided text feedback when predefined answer options don't fit
+             */
+            custom_answer?: string | null;
         };
         /** RagConfig */
         RagConfig: {
@@ -4837,6 +5854,36 @@ export interface components {
             /** Options */
             options: components["schemas"]["RatingOption"][];
         };
+        /** ReferenceAnswerAccuracyProperties */
+        ReferenceAnswerAccuracyProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "reference_answer_accuracy";
+            /** Core Requirement */
+            core_requirement: string;
+            /** Reference Answer Accuracy Description */
+            reference_answer_accuracy_description: string;
+            /** Accurate Examples */
+            accurate_examples: string;
+            /** Inaccurate Examples */
+            inaccurate_examples: string;
+        };
+        /** RefineSpecInput */
+        RefineSpecInput: {
+            target_task_info: components["schemas"]["TaskInfo"];
+            target_specification: components["schemas"]["SpecificationInput"];
+            /** Examples With Feedback */
+            examples_with_feedback: components["schemas"]["ExamplesWithFeedbackItem"][];
+        };
+        /** RefineSpecOutput */
+        RefineSpecOutput: {
+            /** New Proposed Spec Edits */
+            new_proposed_spec_edits: components["schemas"]["NewProposedSpecEdit"][];
+            /** Not Incorporated Feedback */
+            not_incorporated_feedback: string | null;
+        };
         /** RemoteServerProperties */
         RemoteServerProperties: {
             /** Server Url */
@@ -4944,6 +5991,25 @@ export interface components {
             /** Models */
             models: components["schemas"]["RerankerModelDetails"][];
         };
+        /**
+         * ReviewedExample
+         * @description A reviewed example from the spec review process.
+         *
+         *     Extends Sample with review-specific fields for tracking
+         *     model and user judgments on spec compliance.
+         */
+        ReviewedExample: {
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
+            /** Model Says Meets Spec */
+            model_says_meets_spec: boolean;
+            /** User Says Meets Spec */
+            user_says_meets_spec: boolean;
+            /** Feedback */
+            feedback: string;
+        };
         /** RunConfigEvalResult */
         RunConfigEvalResult: {
             /** Eval Id */
@@ -4955,6 +6021,8 @@ export interface components {
             eval_config_result: components["schemas"]["EvalConfigResult"] | null;
             /** Missing Default Eval Config */
             missing_default_eval_config: boolean;
+            /** Spec Id */
+            spec_id: string | null;
         };
         /** RunConfigEvalScoresSummary */
         RunConfigEvalScoresSummary: {
@@ -5035,6 +6103,16 @@ export interface components {
             } | unknown[] | null;
             /** Tags */
             tags?: string[] | null;
+        };
+        /**
+         * Sample
+         * @description A sample with input and output, without scoring.
+         */
+        Sample: {
+            /** Input */
+            input: string;
+            /** Output */
+            output: string;
         };
         /** SaveQnaPairInput */
         SaveQnaPairInput: {
@@ -5145,6 +6223,130 @@ export interface components {
             breakpoint_percentile_threshold: number;
         };
         /**
+         * Spec
+         * @description A spec for a task.
+         */
+        Spec: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description The name of the spec.
+             */
+            name: string;
+            /**
+             * Definition
+             * @description A detailed definition of the spec.
+             */
+            definition: string;
+            /**
+             * Properties
+             * @description The properties of the spec.
+             */
+            properties: components["schemas"]["DesiredBehaviourProperties"] | components["schemas"]["IssueProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
+            /**
+             * @description The priority of the spec.
+             * @default 1
+             */
+            priority: components["schemas"]["Priority"];
+            /**
+             * @description The status of the spec.
+             * @default active
+             */
+            status: components["schemas"]["SpecStatus"];
+            /**
+             * Tags
+             * @description The tags of the spec.
+             * @default []
+             */
+            tags: string[];
+            /**
+             * Eval Id
+             * @description The id of the eval to use for this spec.
+             */
+            eval_id: string | null;
+            /** @description An example task input/output pair used to demonstrate expected behavior for this spec. */
+            task_sample?: components["schemas"]["TaskSample"] | null;
+            /** @description Config for synthetic data generation session. */
+            synthetic_data_generation_session_config?: components["schemas"]["kiln_ai__datamodel__spec__SyntheticDataGenerationSessionConfig"] | null;
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /** SpecCreationRequest */
+        SpecCreationRequest: {
+            /** Name */
+            name: string;
+            /** Definition */
+            definition: string;
+            /** Properties */
+            properties: components["schemas"]["DesiredBehaviourProperties"] | components["schemas"]["IssueProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
+            /** @default 1 */
+            priority: components["schemas"]["Priority"];
+            /** @default active */
+            status: components["schemas"]["SpecStatus"];
+            /** Tags */
+            tags?: string[];
+            /**
+             * Evaluate Full Trace
+             * @default false
+             */
+            evaluate_full_trace: boolean;
+            task_sample?: components["schemas"]["TaskSample"] | null;
+        };
+        /** SpecQuestionerApiInput */
+        SpecQuestionerApiInput: {
+            target_task_info: components["schemas"]["TaskInfo"];
+            /** Target Specification */
+            target_specification: string;
+        };
+        /**
+         * SpecStatus
+         * @description Defines the status of a spec.
+         * @enum {string}
+         */
+        SpecStatus: "active" | "future" | "deprecated" | "archived";
+        /**
+         * SpecificationInput
+         * @description The specification to refine.
+         */
+        SpecificationInput: {
+            /**
+             * spec_fields
+             * @description Dictionary mapping field names to their descriptions/purposes
+             */
+            spec_fields: {
+                [key: string]: string;
+            };
+            /**
+             * spec_field_current_values
+             * @description Dictionary mapping field names to their current values
+             */
+            spec_field_current_values: {
+                [key: string]: string;
+            };
+        };
+        /** StartPromptOptimizationJobRequest */
+        StartPromptOptimizationJobRequest: {
+            /** Target Run Config Id */
+            target_run_config_id: string;
+            /** Eval Ids */
+            eval_ids: string[];
+        };
+        /**
          * StructuredOutputMode
          * @description Enumeration of supported structured output modes.
          *
@@ -5159,6 +6361,70 @@ export interface components {
          * @enum {string}
          */
         StructuredOutputMode: "default" | "json_schema" | "function_calling_weak" | "function_calling" | "json_mode" | "json_instructions" | "json_instruction_and_object" | "json_custom_instructions" | "unknown";
+        /**
+         * SubmitAnswersRequest
+         * @description Request to submit answers to a question set.
+         */
+        SubmitAnswersRequest: {
+            /**
+             * task_prompt
+             * @description The task's prompt
+             */
+            task_prompt: string;
+            /**
+             * specification
+             * @description The specification to refine
+             */
+            specification: components["schemas"]["SpecificationInput"];
+            /**
+             * questions_and_answers
+             * @description Questions about the specification with user-provided answers
+             */
+            questions_and_answers: components["schemas"]["QuestionWithAnswer"][];
+        };
+        /**
+         * SyntheticDataGenerationSessionConfigInput
+         * @description Same as SyntheticDataGenerationSessionConfig, but new name for our SDK auto-compile tool.
+         *
+         *     https://fastapi.tiangolo.com/how-to/separate-openapi-schemas/#model-for-output-response-data
+         */
+        SyntheticDataGenerationSessionConfigInput: {
+            topic_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigInput"];
+            input_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigInput"];
+            output_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigInput"];
+        };
+        /**
+         * SyntheticDataGenerationStepConfig
+         * @description Configuration for a synthetic data generation step.
+         */
+        "SyntheticDataGenerationStepConfig-Input": {
+            task_metadata: components["schemas"]["TaskMetadata"];
+            /** Prompt */
+            prompt: string;
+        };
+        /**
+         * SyntheticDataGenerationStepConfigInput
+         * @description Same as SyntheticDataGenerationStepConfig, but new name for our SDK auto-compile tool.
+         *
+         *     https://fastapi.tiangolo.com/how-to/separate-openapi-schemas/#model-for-output-response-data
+         */
+        SyntheticDataGenerationStepConfigInput: {
+            task_metadata: components["schemas"]["TaskMetadata"];
+            /** Prompt */
+            prompt: string;
+        };
+        /** TabooProperties */
+        TabooProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "taboo";
+            /** Core Requirement */
+            core_requirement: string;
+            /** Taboo Examples */
+            taboo_examples: string;
+        };
         /**
          * Task
          * @description Represents a specific task to be performed, with associated requirements and validation rules.
@@ -5200,6 +6466,7 @@ export interface components {
             instruction: string;
             /**
              * Requirements
+             * @description Deprecated: Use specs and prompts instead.
              * @default []
              */
             requirements: components["schemas"]["TaskRequirement"][];
@@ -5219,6 +6486,27 @@ export interface components {
             default_run_config_id?: string | null;
             /** Model Type */
             readonly model_type: string;
+        };
+        /**
+         * TaskInfo
+         * @description Shared information about a task
+         */
+        TaskInfo: {
+            /** Task Prompt */
+            task_prompt: string;
+            /** Task Input Schema */
+            task_input_schema?: string | null;
+            /** Task Output Schema */
+            task_output_schema?: string | null;
+        };
+        /**
+         * TaskMetadata
+         * @description Metadata about a task invocation.
+         */
+        TaskMetadata: {
+            /** Model Name */
+            model_name: string;
+            model_provider_name: components["schemas"]["ModelProviderName"];
         };
         /**
          * TaskOutput
@@ -5576,8 +6864,46 @@ export interface components {
             run_config_properties: components["schemas"]["RunConfigProperties"];
             /** @description A prompt to use for run config. */
             prompt?: components["schemas"]["BasePrompt"] | null;
+            /**
+             * Starred
+             * @description Whether this run config is starred/favourited by the user.
+             * @default false
+             */
+            starred: boolean;
             /** Model Type */
             readonly model_type: string;
+        };
+        /**
+         * TaskSample
+         * @description An example task input/output pair used to demonstrate expected behavior.
+         */
+        TaskSample: {
+            /**
+             * Input
+             * @description The example input for the task.
+             */
+            input: string;
+            /**
+             * Output
+             * @description The expected output for the task.
+             */
+            output: string;
+        };
+        /** ToneProperties */
+        ToneProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "tone";
+            /** Core Requirement */
+            core_requirement: string;
+            /** Tone Description */
+            tone_description: string;
+            /** Acceptable Examples */
+            acceptable_examples?: string;
+            /** Unacceptable Examples */
+            unacceptable_examples?: string;
         };
         /** ToolApiDescription */
         ToolApiDescription: {
@@ -5635,17 +6961,26 @@ export interface components {
              */
             tools: string[];
         };
+        /** ToxicityProperties */
+        ToxicityProperties: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            spec_type: "toxicity";
+            /** Core Requirement */
+            core_requirement: string;
+            /** Toxicity Examples */
+            toxicity_examples: string;
+        };
         /** UpdateEvalRequest */
         UpdateEvalRequest: {
             /** Name */
-            name: string;
+            name?: string | null;
             /** Description */
             description?: string | null;
-        };
-        /** UpdateFavouriteRequest */
-        UpdateFavouriteRequest: {
-            /** Favourite */
-            favourite: boolean;
+            /** Train Set Filter Id */
+            train_set_filter_id?: string | null;
         };
         /**
          * UpdateFinetuneRequest
@@ -5665,6 +7000,28 @@ export interface components {
             description?: string | null;
             /** Is Archived */
             is_archived?: boolean | null;
+        };
+        /** UpdateRunConfigRequest */
+        UpdateRunConfigRequest: {
+            /** Name */
+            name?: string | null;
+            /** Starred */
+            starred?: boolean | null;
+            /** Prompt Name */
+            prompt_name?: string | null;
+        };
+        /** UpdateSpecRequest */
+        UpdateSpecRequest: {
+            /** Name */
+            name?: string | null;
+            /** Definition */
+            definition?: string | null;
+            /** Properties */
+            properties?: (components["schemas"]["DesiredBehaviourProperties"] | components["schemas"]["IssueProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"]) | null;
+            priority?: components["schemas"]["Priority"] | null;
+            status?: components["schemas"]["SpecStatus"] | null;
+            /** Tags */
+            tags?: string[] | null;
         };
         /** Usage */
         Usage: {
@@ -5688,6 +7045,44 @@ export interface components {
              * @description The cost of the task run in US dollars, saved at runtime (prices can change over time).
              */
             cost?: number | null;
+        };
+        /**
+         * UserModelEntry
+         * @description A user-defined custom model entry.
+         *
+         *     Attributes:
+         *         id: Unique identifier for this entry (auto-generated if not provided)
+         *         provider_type: "builtin" for ModelProviderName enum providers, "custom" for openai_compatible
+         *         provider_id: For builtin: enum value like "openai". For custom: the custom provider name
+         *         model_id: The model ID to use with the provider's API
+         *         name: Display name (optional, defaults to model_id)
+         *         overrides: Property overrides from KilnModelProvider (optional)
+         *
+         *     Note on overrides:
+         *         The overrides field accepts any keys for forward compatibility. When a UserModelEntry
+         *         is converted to a KilnModelProvider via user_model_to_provider(), only valid
+         *         KilnModelProvider fields are applied. Unknown fields are silently ignored.
+         *         This allows new fields to be added to KilnModelProvider without breaking existing
+         *         UserModelEntry data.
+         */
+        UserModelEntry: {
+            /**
+             * Provider Type
+             * @enum {string}
+             */
+            provider_type: "builtin" | "custom";
+            /** Provider Id */
+            provider_id: string;
+            /** Model Id */
+            model_id: string;
+            /** Name */
+            name?: string | null;
+            /** Overrides */
+            overrides?: {
+                [key: string]: unknown;
+            } | null;
+            /** Id */
+            id?: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -5741,6 +7136,57 @@ export interface components {
          * @enum {string}
          */
         VectorStoreType: "lancedb_fts" | "lancedb_hybrid" | "lancedb_vector";
+        /**
+         * SyntheticDataGenerationSessionConfig
+         * @description Configuration for a synthetic data generation session
+         */
+        kiln_ai__datamodel__copilot_models__copilot_api_models__SyntheticDataGenerationSessionConfig: {
+            topic_generation_config: components["schemas"]["kiln_ai__datamodel__copilot_models__copilot_api_models__SyntheticDataGenerationStepConfig-Output"];
+            input_generation_config: components["schemas"]["kiln_ai__datamodel__copilot_models__copilot_api_models__SyntheticDataGenerationStepConfig-Output"];
+            output_generation_config: components["schemas"]["kiln_ai__datamodel__copilot_models__copilot_api_models__SyntheticDataGenerationStepConfig-Output"];
+        };
+        /**
+         * SyntheticDataGenerationStepConfig
+         * @description Configuration for a synthetic data generation step.
+         */
+        "kiln_ai__datamodel__copilot_models__copilot_api_models__SyntheticDataGenerationStepConfig-Output": {
+            task_metadata: components["schemas"]["TaskMetadata"];
+            /** Prompt */
+            prompt: string;
+        };
+        /**
+         * SyntheticDataGenerationSessionConfig
+         * @description Configuration for a synthetic data generation session.
+         */
+        kiln_ai__datamodel__spec__SyntheticDataGenerationSessionConfig: {
+            /** @description Configuration for topic generation. */
+            topic_generation_config: components["schemas"]["kiln_ai__datamodel__spec__SyntheticDataGenerationStepConfig"];
+            /** @description Configuration for input generation. */
+            input_generation_config: components["schemas"]["kiln_ai__datamodel__spec__SyntheticDataGenerationStepConfig"];
+            /** @description Configuration for output generation. */
+            output_generation_config: components["schemas"]["kiln_ai__datamodel__spec__SyntheticDataGenerationStepConfig"];
+        };
+        /**
+         * SyntheticDataGenerationStepConfig
+         * @description Information about a synthetic data generation step.
+         */
+        kiln_ai__datamodel__spec__SyntheticDataGenerationStepConfig: {
+            /**
+             * Model Name
+             * @description The model used for generation.
+             */
+            model_name: string;
+            /**
+             * Provider Name
+             * @description The provider of the model used for generation.
+             */
+            provider_name: string;
+            /**
+             * Prompt
+             * @description The prompt used for generation.
+             */
+            prompt: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -6281,7 +7727,214 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Prompt"];
+                    "application/json": components["schemas"]["ApiPrompt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    build_prompt_with_examples_api_projects__project_id__tasks__task_id__build_prompt_with_examples_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BuildPromptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildPromptResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_spec_api_projects__project_id__tasks__task_id__spec_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpecCreationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Spec"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_specs_api_projects__project_id__tasks__task_id__specs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Spec"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_spec_api_projects__project_id__tasks__task_id__specs__spec_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                spec_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Spec"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_spec_api_projects__project_id__tasks__task_id__specs__spec_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                spec_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_spec_api_projects__project_id__tasks__task_id__specs__spec_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                spec_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSpecRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Spec"];
                 };
             };
             /** @description Validation Error */
@@ -6419,6 +8072,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskRun-Output"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_task_run_api_projects__project_id__tasks__task_id__runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTaskRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRun-Output"];
                 };
             };
             /** @description Validation Error */
@@ -8268,6 +9957,113 @@ export interface operations {
             };
         };
     };
+    get_available_providers_api_settings_available_providers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AvailableProviderInfo"][];
+                };
+            };
+        };
+    };
+    get_user_models_api_settings_user_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserModelEntry"][];
+                };
+            };
+        };
+    };
+    add_user_model_api_settings_user_models_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserModelEntry"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_user_model_api_settings_user_models_delete: {
+        parameters: {
+            query?: {
+                provider_type?: string | null;
+                provider_id?: string | null;
+                model_id?: string | null;
+                id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     connect_api_key_api_provider_connect_api_key_post: {
         parameters: {
             query?: never;
@@ -8567,6 +10363,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_entitlements_api_check_entitlements_get: {
+        parameters: {
+            query: {
+                feature_codes: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -9305,43 +11134,6 @@ export interface operations {
             };
         };
     };
-    update_eval_favourite_api_projects__project_id__tasks__task_id__eval__eval_id__fav_patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                task_id: string;
-                eval_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateFavouriteRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Eval"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_evals_api_projects__project_id__tasks__task_id__evals_get: {
         parameters: {
             query?: never;
@@ -9454,6 +11246,43 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CreateTaskRunConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRunConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_run_config_api_projects__project_id__tasks__task_id__run_config__run_config_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                run_config_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRunConfigRequest"];
             };
         };
         responses: {
@@ -10289,6 +12118,440 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ToolDefinitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_run_config_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_run_config_get: {
+        parameters: {
+            query: {
+                run_config_id: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckRunConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    check_eval_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_eval_get: {
+        parameters: {
+            query: {
+                eval_id: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckEvalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartPromptOptimizationJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptOptimizationJob"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_prompt_optimization_jobs_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_get: {
+        parameters: {
+            query?: {
+                update_status?: boolean;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptOptimizationJob"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_prompt_optimization_job_api_projects__project_id__tasks__task_id__prompt_optimization_jobs__prompt_optimization_job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+                prompt_optimization_job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromptOptimizationJob"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_prompt_optimization_job_status_api_prompt_optimization_jobs__job_id__status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicPromptOptimizationJobStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_prompt_optimization_job_result_api_prompt_optimization_jobs__job_id__result_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicPromptOptimizationJobResultResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clarify_spec_api_copilot_clarify_spec_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClarifySpecInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClarifySpecOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refine_spec_api_copilot_refine_spec_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefineSpecInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefineSpecOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_batch_api_copilot_generate_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateBatchInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerateBatchOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    question_spec_api_copilot_question_spec_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpecQuestionerApiInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuestionSet"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    submit_question_answers_api_copilot_refine_spec_with_question_answers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitAnswersRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefineSpecOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_spec_with_copilot_api_projects__project_id__tasks__task_id__spec_with_copilot_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSpecWithCopilotRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Spec"];
                 };
             };
             /** @description Validation Error */

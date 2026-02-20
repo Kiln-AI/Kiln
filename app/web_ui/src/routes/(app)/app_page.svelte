@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation"
-  import type { ActionButton } from "./types"
+  import type { ActionButton } from "$lib/types"
 
   export let title: string = ""
   export let subtitle: string = ""
@@ -81,12 +81,12 @@
       {/if}
     {/if}
   </div>
-  <div class="flex flex-col md:flex-row gap-2">
+  <div class="flex flex-col md:flex-row gap-2 shrink-0">
     {#each action_buttons as action_button}
       <div>
         <button
           on:click={() => run_action_button(action_button)}
-          class="btn btn-xs md:btn-md {!action_button.icon
+          class="btn btn-xs md:btn-md md:whitespace-nowrap {!action_button.icon
             ? 'md:px-6'
             : ''} {action_button.primary ? 'btn-primary' : ''}"
           disabled={action_button.disabled ?? false}

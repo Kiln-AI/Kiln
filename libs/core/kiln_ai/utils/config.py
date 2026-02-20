@@ -145,7 +145,12 @@ class Config:
                 str,
                 env_var="WANDB_BASE_URL",
             ),
+            # Legacy custom models, replaced by user_model_registry below
             "custom_models": ConfigProperty(
+                list,
+                default_lambda=lambda: [],
+            ),
+            "user_model_registry": ConfigProperty(
                 list,
                 default_lambda=lambda: [],
             ),
@@ -157,6 +162,11 @@ class Config:
             "cerebras_api_key": ConfigProperty(
                 str,
                 env_var="CEREBRAS_API_KEY",
+                sensitive=True,
+            ),
+            "kiln_copilot_api_key": ConfigProperty(
+                str,
+                env_var="KILN_COPILOT_API_KEY",
                 sensitive=True,
             ),
             "enable_demo_tools": ConfigProperty(

@@ -11,8 +11,6 @@
   export let project_id: string
   export let task_id: string | null = null
   export let label: string = "Tools & Search"
-  export let info_description: string | undefined =
-    "Select the tools available to the model. The model may or may not choose to use them."
   export let settings: Partial<ToolsSelectorSettings> = {}
   export let tools: string[] = []
   export let single_select_selected_tool: string | null = null // Only used if single_select is true
@@ -22,11 +20,14 @@
   let default_tools_selector_settings: ToolsSelectorSettings = {
     mandatory_tools: [],
     description: undefined,
+    info_description:
+      "Select the tools available to the model. The model may or may not choose to use them.",
     hide_info_description: false,
     hide_create_kiln_task_tool_button: false,
     disabled: false,
     empty_label: "None",
     single_select: false,
+    optional: true,
   }
   $: tools_selector_settings = {
     ...default_tools_selector_settings,
@@ -179,7 +180,7 @@
     description: tools_selector_settings.description,
     info_description: tools_selector_settings.hide_info_description
       ? undefined
-      : info_description,
+      : tools_selector_settings.info_description,
     fancy_select_options: get_tool_options($available_tools[project_id]),
     empty_label:
       tools_selector_settings.empty_label ??
@@ -191,6 +192,7 @@
     empty_state_subtitle: "Add Tools",
     empty_state_link: `/settings/manage_tools/${project_id}/add_tools`,
     disabled: tools_selector_settings.disabled,
+    optional: tools_selector_settings.optional,
   }
 </script>
 
@@ -199,14 +201,12 @@
     <FormElement
       {...common_props}
       inputType="fancy_select"
-      optional={true}
       bind:value={single_select_selected_tool}
     />
   {:else}
     <FormElement
       {...common_props}
       inputType="multi_select"
-      optional={true}
       bind:value={tools}
     />
   {/if}
