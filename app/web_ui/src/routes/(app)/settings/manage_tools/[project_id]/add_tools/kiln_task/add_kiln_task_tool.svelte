@@ -3,6 +3,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { client } from "$lib/api_client"
+  import { isKilnAgentRunConfig } from "$lib/types"
   import type { Task } from "$lib/types"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import { onMount, tick } from "svelte"
@@ -265,6 +266,8 @@
             bind:selected_run_config_id
             run_page={false}
             description="A configuration defining options the Kiln task will use when called, such as the model and prompt."
+            filter_run_configs={(config) =>
+              isKilnAgentRunConfig(config.run_config_properties)}
           />
           <FormElement
             label="Tool Name"

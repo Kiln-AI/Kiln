@@ -18,6 +18,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import { selected_tool_for_task } from "$lib/stores/tools_store"
   import TableButton from "../../../../../generate/[project_id]/[task_id]/table_button.svelte"
+  import Float from "$lib/ui/float.svelte"
 
   $: project_id = $page.params.project_id!
   $: tool_server_id = $page.params.tool_server_id!
@@ -601,27 +602,29 @@
                       <td class="p-0">
                         <div class="dropdown dropdown-end dropdown-hover">
                           <TableButton />
-                          <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-                          <ul
-                            tabindex="0"
-                            class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow"
-                          >
-                            <li>
-                              <button
-                                on:click={() =>
-                                  open_tool_action_dialog(tool.name)}
-                              >
-                                Run task with tool
-                              </button>
-                            </li>
-                            <li>
-                              <button
-                                on:click={() => handleCreateTask(tool.name)}
-                              >
-                                Create task from tool
-                              </button>
-                            </li>
-                          </ul>
+                          <Float>
+                            <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+                            <ul
+                              tabindex="0"
+                              class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow"
+                            >
+                              <li>
+                                <button
+                                  on:click={() =>
+                                    open_tool_action_dialog(tool.name)}
+                                >
+                                  Run task with tool
+                                </button>
+                              </li>
+                              <li>
+                                <button
+                                  on:click={() => handleCreateTask(tool.name)}
+                                >
+                                  Create task from tool
+                                </button>
+                              </li>
+                            </ul>
+                          </Float>
                         </div>
                       </td>
                     {/if}

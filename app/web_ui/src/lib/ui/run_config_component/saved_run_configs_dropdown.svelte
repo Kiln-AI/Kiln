@@ -19,7 +19,7 @@
     prompts_by_task_composite_id,
   } from "$lib/stores/prompts_store"
   import {
-    getRunConfigDisplayName,
+    getRunConfigModelDisplayName,
     getRunConfigPromptDisplayName,
   } from "$lib/utils/run_config_formatters"
   import { isMcpRunConfig } from "$lib/types"
@@ -45,6 +45,8 @@
   export let run_page: boolean = true
   export let auto_select_default: boolean = true
   export let selected_model_specific_run_config_id: string | null = null
+  export let filter_run_configs: ((config: TaskRunConfig) => boolean) | null =
+    null
 
   $: show_save_button = run_page && selected_run_config_id === "custom"
   $: show_set_default_button =
@@ -93,6 +95,7 @@
     ] ?? { generators: [], prompts: [] },
     run_page,
     selected_model_specific_run_config_id,
+    filter_run_configs,
   )
 
   // Build the options for the dropdown
@@ -103,6 +106,7 @@
     current_task_prompts: PromptResponse | null,
     run_page: boolean,
     selected_model_specific_run_config_id: string | null,
+    filter_run_configs: ((config: TaskRunConfig) => boolean) | null,
   ): OptionGroup[] {
     const options: OptionGroup[] = []
 
@@ -132,10 +136,11 @@
       })
     }
 
-    const all_run_configs =
+    const all_run_configs = (
       run_configs_by_task_composite_id[
         get_task_composite_id(project_id, current_task.id ?? "")
       ] ?? []
+    ).filter((config) => !filter_run_configs || filter_run_configs(config))
 
     // Add model-specific run config first if it is specified and exists
     if (selected_model_specific_run_config_id) {
@@ -188,7 +193,7 @@
           : null
         const description = mcp_props
           ? `MCP Tool: ${mcp_props.tool_reference?.tool_name ?? "Unknown"}`
-          : `Model: ${getRunConfigDisplayName(default_config, model_info)}
+          : `Model: ${getRunConfigModelDisplayName(default_config, model_info)}
             Prompt: ${getRunConfigPromptDisplayName(default_config, current_task_prompts)}`
         saved_configuration_options.push({
           value: default_run_config_id,
@@ -199,11 +204,7 @@
     }
 
     // Exclude finetune run configs
-    const other_task_run_configs = (
-      run_configs_by_task_composite_id[
-        get_task_composite_id(project_id, current_task.id ?? "")
-      ] ?? []
-    ).filter(
+    const other_task_run_configs = all_run_configs.filter(
       (config) =>
         config.id !== default_run_config_id &&
         !config.id?.startsWith("finetune_run_config::"),
@@ -216,7 +217,7 @@
             : null
           const description = mcp_props
             ? `MCP Tool: ${mcp_props.tool_reference?.tool_name ?? "Unknown"}`
-            : `Model: ${getRunConfigDisplayName(config, model_info)}
+            : `Model: ${getRunConfigModelDisplayName(config, model_info)}
             Prompt: ${getRunConfigPromptDisplayName(config, current_task_prompts)}`
           return {
             value: config.id ?? "",

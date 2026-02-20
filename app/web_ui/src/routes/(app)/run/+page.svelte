@@ -9,7 +9,7 @@
   import type { TaskRun, TaskRunConfig } from "$lib/types"
   import RunInputForm from "./run_input_form.svelte"
   import posthog from "posthog-js"
-  import { tick } from "svelte"
+  import { onMount, tick } from "svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import { isMcpRunConfig } from "$lib/types"
@@ -26,6 +26,7 @@
   let selected_run_config_id: string | null = null
   // Some models have a model-specific suggested run config, such as fine-tuned models. If a model like that is selected, this will be set to the run config ID.
   let selected_model_specific_run_config_id: string | null = null
+  let model: string = ""
 
   let run_config_component: RunConfigComponent
   let save_config_error: KilnError | null = null
@@ -41,6 +42,14 @@
   $: pending_run_config_id = $page.url.searchParams.get("run_config_id")
 
   $: subtitle = $current_task ? "Task: " + $current_task.name : ""
+
+  onMount(() => {
+    const model_override = $page.url.searchParams.get("model")
+    if (model_override) {
+      model = model_override
+      selected_run_config_id = "custom"
+    }
+  })
 
   async function run_task() {
     try {
@@ -210,6 +219,7 @@
             {selected_model_specific_run_config_id}
           />
           <RunConfigComponent
+            {model}
             bind:this={run_config_component}
             {project_id}
             current_task={$current_task}
@@ -220,6 +230,7 @@
             bind:selected_model_specific_run_config_id
             {pending_tool_id}
             {pending_run_config_id}
+            show_name_field={false}
           />
         </div>
       {/if}

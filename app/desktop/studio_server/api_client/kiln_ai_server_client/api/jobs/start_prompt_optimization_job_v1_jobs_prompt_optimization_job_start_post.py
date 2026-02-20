@@ -5,7 +5,9 @@ import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.body_start_gepa_job_v1_jobs_gepa_job_start_post import BodyStartGepaJobV1JobsGepaJobStartPost
+from ...models.body_start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post import (
+    BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost,
+)
 from ...models.http_validation_error import HTTPValidationError
 from ...models.job_start_response import JobStartResponse
 from ...types import Response
@@ -13,13 +15,13 @@ from ...types import Response
 
 def _get_kwargs(
     *,
-    body: BodyStartGepaJobV1JobsGepaJobStartPost,
+    body: BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
 
     _kwargs: dict[str, Any] = {
         "method": "post",
-        "url": "/v1/jobs/gepa_job/start",
+        "url": "/v1/jobs/prompt_optimization_job/start",
     }
 
     _kwargs["files"] = body.to_multipart()
@@ -61,12 +63,12 @@ def _build_response(
 def sync_detailed(
     *,
     client: AuthenticatedClient,
-    body: BodyStartGepaJobV1JobsGepaJobStartPost,
+    body: BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost,
 ) -> Response[HTTPValidationError | JobStartResponse]:
-    """Start Gepa Job
+    """Start Prompt Optimization Job
 
     Args:
-        body (BodyStartGepaJobV1JobsGepaJobStartPost):
+        body (BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -90,12 +92,12 @@ def sync_detailed(
 def sync(
     *,
     client: AuthenticatedClient,
-    body: BodyStartGepaJobV1JobsGepaJobStartPost,
+    body: BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost,
 ) -> HTTPValidationError | JobStartResponse | None:
-    """Start Gepa Job
+    """Start Prompt Optimization Job
 
     Args:
-        body (BodyStartGepaJobV1JobsGepaJobStartPost):
+        body (BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -114,12 +116,12 @@ def sync(
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
-    body: BodyStartGepaJobV1JobsGepaJobStartPost,
+    body: BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost,
 ) -> Response[HTTPValidationError | JobStartResponse]:
-    """Start Gepa Job
+    """Start Prompt Optimization Job
 
     Args:
-        body (BodyStartGepaJobV1JobsGepaJobStartPost):
+        body (BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -141,12 +143,12 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: AuthenticatedClient,
-    body: BodyStartGepaJobV1JobsGepaJobStartPost,
+    body: BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost,
 ) -> HTTPValidationError | JobStartResponse | None:
-    """Start Gepa Job
+    """Start Prompt Optimization Job
 
     Args:
-        body (BodyStartGepaJobV1JobsGepaJobStartPost):
+        body (BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
