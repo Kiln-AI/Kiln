@@ -19,6 +19,7 @@
   } from "$lib/stores/run_configs_store"
   import { selected_tool_for_task } from "$lib/stores/tools_store"
   import { generate_memorable_name } from "$lib/utils/name_generator"
+  import posthog from "posthog-js"
 
   $: project_id = $page.params.project_id!
   $: tool_id = $page.url.searchParams.get("tool_id")
@@ -163,6 +164,7 @@
       if (!config.id) {
         throw new Error("Run config ID missing after save.")
       }
+      posthog.capture("run_tool_directly", {})
       if (make_default) {
         await update_task_default_run_config(
           project_id,

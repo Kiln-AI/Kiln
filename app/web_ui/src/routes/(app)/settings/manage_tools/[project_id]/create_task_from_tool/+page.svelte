@@ -13,6 +13,7 @@
   import { ui_state } from "$lib/stores"
   import { selected_tool_for_task } from "$lib/stores/tools_store"
   import type { ExternalToolApiDescription } from "$lib/types"
+  import posthog from "posthog-js"
 
   $: project_id = $page.params.project_id!
   $: tool_id = $page.url.searchParams.get("tool_id")
@@ -117,6 +118,7 @@
       if (!data?.id) {
         throw new Error("Task ID missing after create.")
       }
+      posthog.capture("create_task", { from_mcp_tool: true })
       ui_state.set({
         ...get(ui_state),
         current_task_id: data.id,
