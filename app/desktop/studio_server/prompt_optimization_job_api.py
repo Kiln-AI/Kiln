@@ -38,6 +38,7 @@ from kiln_ai.cli.commands.package_project import (
     package_project_for_training,
 )
 from kiln_ai.datamodel import Prompt, PromptOptimizationJob
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.lock import shared_async_lock_manager
@@ -164,6 +165,12 @@ def create_run_config_from_optimization(
 
     # create new run config with the same properties but new prompt
     new_run_config_properties = target_run_config.run_config_properties.model_copy()
+
+    if not isinstance(new_run_config_properties, KilnAgentRunConfigProperties):
+        raise HTTPException(
+            status_code=400,
+            detail="Prompt Optimization only supports Kiln Agent run configurations",
+        )
 
     # point the run config properties to the new prompt - need id:: prefix because
     # we point to a standalone prompt, not a frozen prompt
@@ -343,6 +350,9 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             # Extract model info from run config
             run_config_props = run_config.run_config_properties
 
+            if not isinstance(run_config_props, KilnAgentRunConfigProperties):
+                return CheckRunConfigResponse(is_supported=False)
+
             if (
                 run_config_props.tools_config
                 and run_config_props.tools_config.tools
@@ -473,10 +483,16 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             run_config = task_run_config_from_id(
                 project_id, task_id, request.target_run_config_id
             )
+            run_config_props = run_config.run_config_properties
+            if not isinstance(run_config_props, KilnAgentRunConfigProperties):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Prompt Optimization only supports Kiln Agent run configurations",
+                )
             if (
-                run_config.run_config_properties.tools_config
-                and run_config.run_config_properties.tools_config.tools
-                and len(run_config.run_config_properties.tools_config.tools) > 0
+                run_config_props.tools_config
+                and run_config_props.tools_config.tools
+                and len(run_config_props.tools_config.tools) > 0
             ):
                 raise HTTPException(
                     status_code=400,

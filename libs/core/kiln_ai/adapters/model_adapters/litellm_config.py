@@ -1,11 +1,11 @@
 from dataclasses import dataclass, field
 
-from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
 
 @dataclass
 class LiteLlmConfig:
-    run_config_properties: RunConfigProperties
+    run_config_properties: KilnAgentRunConfigProperties
     # If set, over rides the provider-name based URL from litellm
     base_url: str | None = None
     # Headers to send with every request

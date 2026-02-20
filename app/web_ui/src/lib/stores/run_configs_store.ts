@@ -188,3 +188,28 @@ export async function update_task_default_run_config(
   // Reload the current task to get the updated default_run_config_id
   await load_current_task(project_id)
 }
+
+export async function save_new_mcp_run_config(
+  project_id: string,
+  task_id: string,
+  tool_id: string,
+  name?: string,
+  description?: string,
+): Promise<TaskRunConfig> {
+  const { error, data } = await client.POST(
+    "/api/projects/{project_id}/tasks/{task_id}/mcp_run_config",
+    {
+      params: { path: { project_id, task_id } },
+      body: { tool_id, name, description },
+    },
+  )
+  if (error) {
+    throw error
+  }
+  try {
+    await load_task_run_configs(project_id, task_id, true)
+  } catch (reloadErr) {
+    console.warn("Reload of task run configs after MCP save failed:", reloadErr)
+  }
+  return data
+}

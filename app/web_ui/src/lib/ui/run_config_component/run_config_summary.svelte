@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { TaskRunConfig } from "$lib/types"
+  import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
   import { model_info, get_task_composite_id } from "$lib/stores"
-  import { getDetailedModelName } from "$lib/utils/run_config_formatters"
+  import { getRunConfigModelDisplayName } from "$lib/utils/run_config_formatters"
   import { getRunConfigPromptDisplayName } from "$lib/utils/run_config_formatters"
   import { prompts_by_task_composite_id } from "$lib/stores/prompts_store"
   import { goto } from "$app/navigation"
@@ -15,8 +16,14 @@
     $prompts_by_task_composite_id[get_task_composite_id(project_id, task_id)] ||
     null
 
-  $: tools_count =
-    task_run_config.run_config_properties.tools_config?.tools?.length ?? 0
+  $: mcp_props = isMcpRunConfig(task_run_config.run_config_properties)
+    ? task_run_config.run_config_properties
+    : null
+  $: kiln_props = isKilnAgentRunConfig(task_run_config.run_config_properties)
+    ? task_run_config.run_config_properties
+    : null
+  $: is_mcp = mcp_props !== null
+  $: tools_count = kiln_props?.tools_config?.tools?.length ?? 0
 
   function openRunConfig() {
     goto(`/optimize/${project_id}/${task_id}/run_config/${task_run_config.id}`)
@@ -36,20 +43,23 @@
     }
   }}
 >
-  <div>
-    <div class="flex items-center gap-2">
-      <div class="font-medium">
-        {task_run_config.name}
-      </div>
-      {#if is_default}
-        <span class="badge badge-sm badge-primary badge-outline">
-          Default
-        </span>
-      {/if}
+  <div class="flex items-center gap-2">
+    <div class="font-medium">
+      {task_run_config.name}
     </div>
-    <div class="text-sm text-gray-500">
+    {#if is_default}
+      <span class="badge badge-sm badge-primary badge-outline"> Default </span>
+    {/if}
+  </div>
+  <div class="text-sm text-gray-500">
+    {#if is_mcp}
+      <div>Type: MCP Tool (No Agent)</div>
       <div>
-        Model: {getDetailedModelName(task_run_config, $model_info)}
+        Tool: {mcp_props?.tool_reference?.tool_name ?? "Unknown"}
+      </div>
+    {:else}
+      <div>
+        Model: {getRunConfigModelDisplayName(task_run_config, $model_info)}
       </div>
       <div>
         Prompt: {getRunConfigPromptDisplayName(task_run_config, task_prompts)}
@@ -57,6 +67,6 @@
       <div>
         Tools: {tools_count > 0 ? `${tools_count} available` : "None"}
       </div>
-    </div>
+    {/if}
   </div>
 </div>

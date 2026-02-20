@@ -44,7 +44,13 @@ export type EvalConfigType = components["schemas"]["EvalConfigType"]
 export type EvalDataType = components["schemas"]["EvalDataType"]
 export type EvalConfig = components["schemas"]["EvalConfig"]
 export type TaskRunConfig = components["schemas"]["TaskRunConfig"]
-export type RunConfigProperties = components["schemas"]["RunConfigProperties"]
+export type KilnAgentRunConfigProperties =
+  components["schemas"]["KilnAgentRunConfigProperties"]
+export type McpRunConfigProperties =
+  components["schemas"]["McpRunConfigProperties"]
+export type RunConfigProperties =
+  | KilnAgentRunConfigProperties
+  | McpRunConfigProperties
 export type EvalResultSummary = components["schemas"]["EvalResultSummary"]
 export type EvalRunResult = components["schemas"]["EvalRunResult"]
 export type EvalConfigCompareSummary =
@@ -95,6 +101,8 @@ export type KilnTaskToolDescription =
 export type ExternalToolServer = components["schemas"]["ExternalToolServer"]
 export type ExternalToolServerApiDescription =
   components["schemas"]["ExternalToolServerApiDescription"]
+export type ExternalToolApiDescription =
+  components["schemas"]["ExternalToolApiDescription"]
 export type ToolServerType = components["schemas"]["ToolServerType"]
 export type ToolSetType = components["schemas"]["ToolSetType"]
 export type ToolApiDescription = components["schemas"]["ToolApiDescription"]
@@ -106,6 +114,8 @@ export type RemoteServerProperties =
   components["schemas"]["RemoteServerProperties"]
 export type KilnTaskServerProperties =
   components["schemas"]["KilnTaskServerProperties"]
+export type TaskToolCompatibility =
+  components["schemas"]["TaskToolCompatibility"]
 export type UserModelEntry = components["schemas"]["UserModelEntry"]
 export type AvailableProviderInfo =
   components["schemas"]["AvailableProviderInfo"]
@@ -198,4 +208,16 @@ export function isToolType<T extends keyof ToolPropsByType>(
   // Throw an error if the tool is not of the given type
   toolIsType(x, t)
   return true
+}
+
+export function isKilnAgentRunConfig(
+  config: RunConfigProperties | null | undefined,
+): config is KilnAgentRunConfigProperties {
+  return config?.type === "kiln_agent"
+}
+
+export function isMcpRunConfig(
+  config: RunConfigProperties | null | undefined,
+): config is McpRunConfigProperties {
+  return config?.type === "mcp"
 }

@@ -2013,6 +2013,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks_compatible_with_tool": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tasks Compatible With Tool */
+        get: operations["tasks_compatible_with_tool_api_projects__project_id__tasks_compatible_with_tool_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/mcp_run_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Mcp Run Config */
+        post: operations["create_mcp_run_config_api_projects__project_id__tasks__task_id__mcp_run_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/create_task_from_tool": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Task From Tool */
+        post: operations["create_task_from_tool_api_projects__project_id__create_task_from_tool_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/select_kiln_file": {
         parameters: {
             query?: never;
@@ -3209,7 +3260,16 @@ export interface components {
             /** Custom Thinking Instructions */
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
-            run_config_properties?: components["schemas"]["RunConfigProperties"] | null;
+            run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
+        };
+        /** CreateMcpRunConfigRequest */
+        CreateMcpRunConfigRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Tool Id */
+            tool_id: string;
         };
         /** CreateRagConfigRequest */
         CreateRagConfigRequest: {
@@ -3346,13 +3406,23 @@ export interface components {
             task_prompt_with_example: string;
             task_sample?: components["schemas"]["TaskSample"] | null;
         };
+        /** CreateTaskFromToolRequest */
+        CreateTaskFromToolRequest: {
+            /** Tool Id */
+            tool_id: string;
+            /** Task Name */
+            task_name: string;
+            /** Instruction */
+            instruction: string;
+        };
         /** CreateTaskRunConfigRequest */
         CreateTaskRunConfigRequest: {
             /** Name */
             name?: string | null;
             /** Description */
             description?: string | null;
-            run_config_properties: components["schemas"]["RunConfigProperties"];
+            /** Run Config Properties */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
         };
         /**
          * CreateTaskRunRequest
@@ -3444,7 +3514,7 @@ export interface components {
              */
             existing_topics?: string[] | null;
             /** @description The run config properties to use for topic generation */
-            run_config_properties: components["schemas"]["RunConfigProperties"];
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
         };
         /** DataGenQnaApiInput */
         DataGenQnaApiInput: {
@@ -3466,7 +3536,7 @@ export interface components {
              */
             num_samples: number;
             /** @description The run config properties to use for the output */
-            run_config_properties: components["schemas"]["RunConfigProperties"];
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
             /**
              * Guidance
              * @description Optional custom guidance for generation
@@ -3504,7 +3574,7 @@ export interface components {
              */
             guidance?: string | null;
             /** @description The run config properties to use for input generation */
-            run_config_properties: components["schemas"]["RunConfigProperties"];
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
         };
         /** DataGenSaveSamplesApiInput */
         DataGenSaveSamplesApiInput: {
@@ -3530,8 +3600,11 @@ export interface components {
              * @description The provider of the model used to generate the input
              */
             input_provider: string;
-            /** @description The run config properties to use for output generation */
-            run_config_properties: components["schemas"]["RunConfigProperties"];
+            /**
+             * Run Config Properties
+             * @description The run config properties to use for output generation
+             */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
             /**
              * Guidance
              * @description Optional custom guidance for generation
@@ -3561,8 +3634,11 @@ export interface components {
             properties: {
                 [key: string]: string | number;
             };
-            /** @description The run config used to generate the data, if generated by a running a model in Kiln (only true for type=synthetic). */
-            run_config?: components["schemas"]["RunConfigProperties"] | null;
+            /**
+             * Run Config
+             * @description The run config used to generate the data, if generated by a running a model in Kiln (only true for type=synthetic).
+             */
+            run_config?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
         };
         /**
          * DataSource
@@ -3582,8 +3658,11 @@ export interface components {
             properties: {
                 [key: string]: string | number;
             };
-            /** @description The run config used to generate the data, if generated by a running a model in Kiln (only true for type=synthetic). */
-            run_config?: components["schemas"]["RunConfigProperties"] | null;
+            /**
+             * Run Config
+             * @description The run config used to generate the data, if generated by a running a model in Kiln (only true for type=synthetic).
+             */
+            run_config?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
         };
         /**
          * DataSourceType
@@ -4218,6 +4297,10 @@ export interface components {
             inputSchema?: {
                 [key: string]: unknown;
             };
+            /** Outputschema */
+            outputSchema?: {
+                [key: string]: unknown;
+            } | null;
         };
         /**
          * ExternalToolServer
@@ -4616,7 +4699,7 @@ export interface components {
              */
             data_strategy: components["schemas"]["ChatStrategy"];
             /** @description The run configuration for this fine-tune. */
-            run_config?: components["schemas"]["RunConfigProperties"] | null;
+            run_config?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -4851,6 +4934,48 @@ export interface components {
          * @enum {string}
          */
         JobStatus: "cancelled" | "failed" | "pending" | "running" | "succeeded";
+        /**
+         * KilnAgentRunConfigProperties
+         * @description A configuration for running a task using a Kiln AI agent.
+         *
+         *     This includes everything needed to run a task, except the input and task ID. Running the same RunConfig with the same input should make identical calls to the model (output may vary as models are non-deterministic).
+         */
+        KilnAgentRunConfigProperties: {
+            /**
+             * Type
+             * @default kiln_agent
+             * @constant
+             */
+            type: "kiln_agent";
+            /**
+             * Model Name
+             * @description The model to use for this run config.
+             */
+            model_name: string;
+            /** @description The provider to use for this run config. */
+            model_provider_name: components["schemas"]["ModelProviderName"];
+            /**
+             * Prompt Id
+             * @description The prompt to use for this run config. Defaults to building a simple prompt from the task if not provided.
+             */
+            prompt_id: string;
+            /**
+             * Top P
+             * @description The top-p value to use for this run config. Defaults to 1.0.
+             * @default 1
+             */
+            top_p: number;
+            /**
+             * Temperature
+             * @description The temperature to use for this run config. Defaults to 1.0.
+             * @default 1
+             */
+            temperature: number;
+            /** @description The structured output mode to use for this run config. */
+            structured_output_mode: components["schemas"]["StructuredOutputMode"];
+            /** @description The tools config to use for this run config, defining which tools are available to the model. */
+            tools_config?: components["schemas"]["ToolsRunConfig"] | null;
+        };
         KilnAttachmentModel: {
             [key: string]: string;
         } | null;
@@ -5121,6 +5246,38 @@ export interface components {
              */
             message: string;
         };
+        /** MCPToolReference */
+        MCPToolReference: {
+            /**
+             * Tool Id
+             * @description The MCP tool ID to call (mcp::local|remote::<server_id>::<tool_name>).
+             */
+            tool_id: string;
+            /**
+             * Tool Server Id
+             * @description The MCP tool server ID.
+             */
+            tool_server_id?: string | null;
+            /**
+             * Tool Name
+             * @description The MCP tool name.
+             */
+            tool_name?: string | null;
+            /**
+             * Input Schema
+             * @description Snapshot of the MCP tool input schema.
+             */
+            input_schema?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Output Schema
+             * @description Snapshot of the MCP tool output schema.
+             */
+            output_schema?: {
+                [key: string]: unknown;
+            } | null;
+        };
         /** MaliciousnessProperties */
         MaliciousnessProperties: {
             /**
@@ -5132,6 +5289,20 @@ export interface components {
             core_requirement: string;
             /** Malicious Examples */
             malicious_examples: string;
+        };
+        /**
+         * McpRunConfigProperties
+         * @description A configuration for running a task via an MCP tool.
+         */
+        McpRunConfigProperties: {
+            /**
+             * Type
+             * @default mcp
+             * @constant
+             */
+            type: "mcp";
+            /** @description The MCP tool to use for this run config. */
+            tool_reference: components["schemas"]["MCPToolReference"];
         };
         /** MeanUsage */
         MeanUsage: {
@@ -6023,42 +6194,6 @@ export interface components {
             eval_results: components["schemas"]["RunConfigEvalResult"][];
             mean_usage?: components["schemas"]["MeanUsage"] | null;
         };
-        /**
-         * RunConfigProperties
-         * @description A configuration for running a task.
-         *
-         *     This includes everything needed to run a task, except the input and task ID. Running the same RunConfig with the same input should make identical calls to the model (output may vary as models are non-deterministic).
-         */
-        RunConfigProperties: {
-            /**
-             * Model Name
-             * @description The model to use for this run config.
-             */
-            model_name: string;
-            /** @description The provider to use for this run config. */
-            model_provider_name: components["schemas"]["ModelProviderName"];
-            /**
-             * Prompt Id
-             * @description The prompt to use for this run config. Defaults to building a simple prompt from the task if not provided.
-             */
-            prompt_id: string;
-            /**
-             * Top P
-             * @description The top-p value to use for this run config. Defaults to 1.0.
-             * @default 1
-             */
-            top_p: number;
-            /**
-             * Temperature
-             * @description The temperature to use for this run config. Defaults to 1.0.
-             * @default 1
-             */
-            temperature: number;
-            /** @description The structured output mode to use for this run config. */
-            structured_output_mode: components["schemas"]["StructuredOutputMode"];
-            /** @description The tools config to use for this run config, defining which tools are available to the model. */
-            tools_config?: components["schemas"]["ToolsRunConfig"] | null;
-        };
         /** RunSummary */
         RunSummary: {
             /** Id */
@@ -6087,7 +6222,8 @@ export interface components {
          * @description Request model for running a task.
          */
         RunTaskRequest: {
-            run_config_properties: components["schemas"]["RunConfigProperties"];
+            /** Run Config Properties */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
             /** Plaintext Input */
             plaintext_input?: string | null;
             /** Structured Input */
@@ -6853,8 +6989,11 @@ export interface components {
              * @description The description of the task run config.
              */
             description?: string | null;
-            /** @description The run config properties to use for this task run. */
-            run_config_properties: components["schemas"]["RunConfigProperties"];
+            /**
+             * Run Config Properties
+             * @description The run config properties to use for this task run.
+             */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
             /** @description A prompt to use for run config. */
             prompt?: components["schemas"]["BasePrompt"] | null;
             /**
@@ -6881,6 +7020,17 @@ export interface components {
              * @description The expected output for the task.
              */
             output: string;
+        };
+        /** TaskToolCompatibility */
+        TaskToolCompatibility: {
+            /** Task Id */
+            task_id: string;
+            /** Task Name */
+            task_name: string;
+            /** Compatible */
+            compatible: boolean;
+            /** Incompatibility Reason */
+            incompatibility_reason?: string | null;
         };
         /** ToneProperties */
         ToneProperties: {
@@ -11595,6 +11745,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunConfigEvalScoresSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tasks_compatible_with_tool_api_projects__project_id__tasks_compatible_with_tool_get: {
+        parameters: {
+            query: {
+                tool_id: string;
+            };
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskToolCompatibility"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_mcp_run_config_api_projects__project_id__tasks__task_id__mcp_run_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateMcpRunConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRunConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_task_from_tool_api_projects__project_id__create_task_from_tool_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTaskFromToolRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Task"];
                 };
             };
             /** @description Validation Error */

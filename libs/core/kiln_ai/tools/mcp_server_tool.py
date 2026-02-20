@@ -1,3 +1,6 @@
+import json
+from typing import Any
+
 from mcp.types import CallToolResult, TextContent
 from mcp.types import Tool as MCPTool
 
@@ -52,6 +55,14 @@ class MCPServerTool(KilnToolInterface):
                 f"Tool {await self.name()} returned an error: {result.content}"
             )
 
+        # If the tool returns structured content, return it as a JSON string
+        if result.structuredContent is not None:
+            if not isinstance(result.structuredContent, dict):
+                raise ValueError("Tool returned invalid structured content")
+            return ToolCallResult(
+                output=json.dumps(result.structuredContent, ensure_ascii=False)
+            )
+
         if not result.content:
             raise ValueError("Tool returned no content")
 
@@ -64,6 +75,25 @@ class MCPServerTool(KilnToolInterface):
             raise ValueError("Tool returned multiple content blocks, expected one")
 
         return ToolCallResult(output=result.content[0].text)
+
+    async def input_schema(self) -> dict[str, Any]:
+        # input schema is required
+        await self._load_tool_properties()
+        if not isinstance(self._parameters_schema, dict):
+            raise ValueError("Tool input schema is invalid.")
+        return self._parameters_schema
+
+    async def output_schema(self) -> dict[str, Any] | None:
+        # output schema is optional
+        await self._load_tool_properties()
+        if self._tool is None:
+            raise ValueError("Tool output schema is invalid.")
+        output_schema = self._tool.outputSchema
+        if output_schema is None:
+            return None
+        if not isinstance(output_schema, dict):
+            raise ValueError("Tool output schema is invalid.")
+        return output_schema
 
     #  Call the MCP Tool
     async def _call_tool(self, **kwargs) -> CallToolResult:

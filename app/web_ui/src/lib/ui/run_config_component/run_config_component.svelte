@@ -19,11 +19,13 @@
     Task,
     TaskRunConfig,
   } from "$lib/types"
+  import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
   import AvailableModelsDropdown from "./available_models_dropdown.svelte"
   import PromptTypeSelector from "./prompt_type_selector.svelte"
   import ToolsSelector from "./tools_selector.svelte"
   import AdvancedRunOptions from "./advanced_run_options.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
+  import McpRunConfigPanel from "$lib/ui/run_config_component/mcp_run_config_panel.svelte"
   import { tick, onMount } from "svelte"
   import { ui_state } from "$lib/stores"
   import { load_task_prompts } from "$lib/stores/prompts_store"
@@ -48,6 +50,8 @@
   export let show_tools_selector_in_advanced: boolean = false
   export let requires_structured_output: boolean = false
   export let hide_model_selector: boolean = false
+  export let pending_tool_id: string | null = null
+  export let pending_run_config_id: string | null = null
   // Model-specific suggested run config, such as fine-tuned models. If a model like that is selected, this will be set to the run config ID.
   export let selected_model_specific_run_config_id: string | null = null
   export let run_config_name: string = generate_memorable_name()
@@ -85,6 +89,25 @@
     load_task_prompts(project_id, current_task.id)
   }
 
+  $: is_mcp = (() => {
+    if (!selected_run_config_id || !current_task?.id) return false
+    const all_configs =
+      $run_configs_by_task_composite_id[
+        get_task_composite_id(project_id, current_task.id)
+      ] ?? []
+    const config = all_configs.find((c) => c.id === selected_run_config_id)
+    return isMcpRunConfig(config?.run_config_properties)
+  })()
+
+  $: selected_mcp_config = (() => {
+    if (!is_mcp || !selected_run_config_id || !current_task?.id) return null
+    const all_configs =
+      $run_configs_by_task_composite_id[
+        get_task_composite_id(project_id, current_task.id)
+      ] ?? []
+    return all_configs.find((c) => c.id === selected_run_config_id) ?? null
+  })()
+
   // If requires_structured_output, update structured_output_mode when model changes
   // We test each model in our known model list, so a smart default is selected automatically.
   function update_structured_output_mode_if_needed(
@@ -121,19 +144,21 @@
       // No need to update selected_run_config_id, it's already custom or unset
       return
     }
+    if (isMcpRunConfig(selected_run_config.run_config_properties)) {
+      return
+    }
 
+    const config_properties = selected_run_config.run_config_properties
+    if (!isKilnAgentRunConfig(config_properties)) {
+      return
+    }
     model =
-      selected_run_config.run_config_properties.model_provider_name +
-      "/" +
-      selected_run_config.run_config_properties.model_name
-    prompt_method = selected_run_config.run_config_properties.prompt_id
-    tools = [
-      ...(selected_run_config.run_config_properties.tools_config?.tools ?? []),
-    ]
-    temperature = selected_run_config.run_config_properties.temperature
-    top_p = selected_run_config.run_config_properties.top_p
-    structured_output_mode =
-      selected_run_config.run_config_properties.structured_output_mode
+      config_properties.model_provider_name + "/" + config_properties.model_name
+    prompt_method = config_properties.prompt_id
+    tools = [...(config_properties.tools_config?.tools ?? [])]
+    temperature = config_properties.temperature
+    top_p = config_properties.top_p
+    structured_output_mode = config_properties.structured_output_mode
     run_config_just_loaded = true
   }
 
@@ -181,11 +206,16 @@
 
   // Progress step by step, stopping if any step asks to. It could be missing data, and the remaining steps aren't valid.
   async function update_for_state_changes() {
-    // All steps need available_models to be loaded. Don't set run_again as it would be tight loop, we're reactive to $available_models.
+    // Apply URL-driven intent first so it is not blocked by model loading.
+    apply_pending_tool_selection_if_needed()
+    await apply_pending_run_config_if_needed()
+
+    // All steps below need available_models to be loaded. Don't set run_again as it would be tight loop, we're reactive to $available_models.
     if ($available_models.length === 0) {
       return
     }
 
+    // Check if they selected a new model, in which case we want to update the run config to the finetune run config if needed
     const model_changed = process_model_change()
 
     // Only apply model-default overrides for user-initiated model changes.
@@ -205,6 +235,37 @@
 
     // deselect the run config if they have changed any run options to not match the selected run config
     await reset_to_custom_options_if_needed()
+  }
+
+  async function apply_pending_run_config_if_needed() {
+    if (!pending_run_config_id || !current_task?.id) {
+      return
+    }
+    await load_task_run_configs(project_id, current_task.id)
+    const all_configs =
+      $run_configs_by_task_composite_id[
+        get_task_composite_id(project_id, current_task.id)
+      ] ?? []
+    const exists = all_configs.find((c) => c.id === pending_run_config_id)
+    if (exists) {
+      selected_run_config_id = pending_run_config_id
+    }
+  }
+
+  let pending_tool_selection_applied = false
+  function apply_pending_tool_selection_if_needed() {
+    if (pending_tool_selection_applied) {
+      return
+    }
+    if (!pending_tool_id) {
+      return
+    }
+
+    if (selected_run_config_id !== "custom") {
+      selected_run_config_id = "custom"
+      selected_model_specific_run_config_id = null
+    }
+    pending_tool_selection_applied = true
   }
 
   let prior_model: string | null = null
@@ -239,8 +300,14 @@
     if (!selected_run_config || selected_run_config === "custom") {
       return
     }
+    if (isMcpRunConfig(selected_run_config.run_config_properties)) {
+      return
+    }
 
     const config_properties = selected_run_config.run_config_properties
+    if (!isKilnAgentRunConfig(config_properties)) {
+      return
+    }
 
     // Check if any values have changed from the saved config properties
     let model_changed = false
@@ -274,7 +341,11 @@
 
   // Helper function to convert run options to server run_config_properties format
   export function run_options_as_run_config_properties(): RunConfigProperties {
+    if (selected_mcp_config?.run_config_properties) {
+      return selected_mcp_config.run_config_properties
+    }
     return {
+      type: "kiln_agent",
       model_name: model_name,
       // @ts-expect-error server will catch if enum is not valid
       model_provider_name: provider,
@@ -379,57 +450,65 @@
       max_length={120}
     />
   {/if}
-  {#if !hide_model_selector}
-    <AvailableModelsDropdown
-      task_id={current_task?.id ?? null}
-      bind:model
-      settings={updated_model_dropdown_settings}
-      bind:error_message={model_dropdown_error_message}
-      bind:this={model_dropdown}
-    />
-  {/if}
-  {#if !hide_prompt_selector}
-    <PromptTypeSelector
-      bind:prompt_method
-      info_description="Choose a prompt. Learn more on the 'Prompts' tab."
-      bind:linked_model_selection={model}
-    />
-  {/if}
-  {#if !show_tools_selector_in_advanced}
-    {#if !hide_tools_selector}
-      <ToolsSelector
-        bind:tools
-        {project_id}
+  {#if is_mcp}
+    {#if selected_mcp_config}
+      <McpRunConfigPanel run_config={selected_mcp_config} {project_id} />
+    {/if}
+  {:else}
+    {#if !hide_model_selector}
+      <AvailableModelsDropdown
         task_id={current_task?.id ?? null}
-        settings={tools_selector_settings}
+        bind:model
+        settings={updated_model_dropdown_settings}
+        bind:error_message={model_dropdown_error_message}
+        bind:this={model_dropdown}
       />
     {/if}
-    <Collapse title="Advanced Options">
-      <slot name="advanced" />
-      <AdvancedRunOptions
-        bind:temperature
-        bind:top_p
-        bind:structured_output_mode
-        has_structured_output={requires_structured_output}
+    {#if !hide_prompt_selector}
+      <PromptTypeSelector
+        bind:prompt_method
+        info_description="Choose a prompt. Learn more on the 'Prompts' tab."
+        bind:linked_model_selection={model}
       />
-    </Collapse>
-  {:else}
-    <Collapse title="Advanced Options">
-      <slot name="advanced" />
+    {/if}
+    {#if !show_tools_selector_in_advanced}
       {#if !hide_tools_selector}
         <ToolsSelector
           bind:tools
           {project_id}
           task_id={current_task?.id ?? null}
           settings={tools_selector_settings}
+          {pending_tool_id}
         />
       {/if}
-      <AdvancedRunOptions
-        bind:temperature
-        bind:top_p
-        bind:structured_output_mode
-        has_structured_output={requires_structured_output}
-      />
-    </Collapse>
+      <Collapse title="Advanced Options">
+        <slot name="advanced" />
+        <AdvancedRunOptions
+          bind:temperature
+          bind:top_p
+          bind:structured_output_mode
+          has_structured_output={requires_structured_output}
+        />
+      </Collapse>
+    {:else}
+      <Collapse title="Advanced Options">
+        <slot name="advanced" />
+        {#if !hide_tools_selector}
+          <ToolsSelector
+            bind:tools
+            {project_id}
+            task_id={current_task?.id ?? null}
+            settings={tools_selector_settings}
+            {pending_tool_id}
+          />
+        {/if}
+        <AdvancedRunOptions
+          bind:temperature
+          bind:top_p
+          bind:structured_output_mode
+          has_structured_output={requires_structured_output}
+        />
+      </Collapse>
+    {/if}
   {/if}
 </div>

@@ -15,7 +15,7 @@
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import { prompt_link } from "$lib/utils/link_builder"
-  import { getDetailedModelNameFromParts } from "$lib/utils/run_config_formatters"
+  import { getRunConfigModelDisplayName } from "$lib/utils/run_config_formatters"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -157,11 +157,7 @@
     return {
       name: config?.name || run_config_id,
       model: config
-        ? getDetailedModelNameFromParts(
-            config.run_config_properties.model_name,
-            config.run_config_properties.model_provider_name,
-            $model_info,
-          )
+        ? getRunConfigModelDisplayName(config, $model_info) ?? "N/A"
         : "Unknown",
     }
   }

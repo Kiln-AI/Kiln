@@ -44,10 +44,11 @@ from kiln_ai.datamodel.eval import (
     EvalRun,
     EvalTemplateId,
 )
+from kiln_ai.datamodel.prompt import BasePrompt
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import Spec
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
-from kiln_ai.datamodel.prompt import BasePrompt
-from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
+from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import Usage
 
 
@@ -139,7 +140,7 @@ def mock_run_config(mock_task):
         id="run_config1",
         name="Test Run Config",
         description="Test Description",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id="simple_chain_of_thought_prompt_builder",
@@ -556,7 +557,7 @@ async def test_task_run_config_from_id(
 async def test_task_run_config_from_id_finetune(mock_task_from_id, mock_task):
     mock_task_from_id.return_value = mock_task
 
-    run_config_props = RunConfigProperties(
+    run_config_props = KilnAgentRunConfigProperties(
         model_name="gpt-4",
         model_provider_name=ModelProviderName.openai,
         prompt_id="simple_chain_of_thought_prompt_builder",
@@ -598,7 +599,7 @@ async def test_get_all_run_configs(mock_task_from_id, mock_task):
     """Test that get_all_run_configs returns regular run configs and completed finetune run configs."""
     mock_task_from_id.return_value = mock_task
 
-    run_config_props = RunConfigProperties(
+    run_config_props = KilnAgentRunConfigProperties(
         model_name="gpt-4",
         model_provider_name=ModelProviderName.openai,
         prompt_id="simple_chain_of_thought_prompt_builder",
@@ -655,7 +656,7 @@ def test_run_config_starred_default(mock_task):
     run_config = TaskRunConfig(
         parent=mock_task,
         name="Starred Test Config",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id="simple_chain_of_thought_prompt_builder",
@@ -671,7 +672,7 @@ def test_run_config_starred_persists(mock_task):
         parent=mock_task,
         name="Starred Persist Config",
         starred=True,
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id="simple_chain_of_thought_prompt_builder",
@@ -732,7 +733,7 @@ def test_update_run_config_no_path(client, mock_task_from_id, mock_task):
     finetune_run_config = TaskRunConfig(
         id="finetune_run_config::project1::task1::ft1",
         name="Finetune Config",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id="simple_chain_of_thought_prompt_builder",
@@ -2366,7 +2367,7 @@ async def test_get_run_configs_includes_finetunes_with_run_config(
     """Test that finetunes are included in run configs only if they have a run_config set."""
     mock_task_from_id.return_value = mock_task
 
-    run_config_props = RunConfigProperties(
+    run_config_props = KilnAgentRunConfigProperties(
         model_name="gpt-4",
         model_provider_name=ModelProviderName.openai,
         prompt_id="simple_chain_of_thought_prompt_builder",

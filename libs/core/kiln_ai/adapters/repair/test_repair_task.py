@@ -21,7 +21,7 @@ from kiln_ai.datamodel import (
     TaskRequirement,
     TaskRun,
 )
-from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
 json_joke_schema = """{
   "type": "object",
@@ -192,7 +192,7 @@ async def test_live_run(sample_task, sample_task_run, sample_repair_data):
 
     adapter = adapter_for_task(
         repair_task,
-        RunConfigProperties(
+        KilnAgentRunConfigProperties(
             model_name="llama_3_1_8b",
             model_provider_name="groq",
             prompt_id="simple_prompt_builder",
@@ -229,7 +229,7 @@ async def test_mocked_repair_task_run(sample_task, sample_task_run, sample_repai
         "rating": 8,
     }
 
-    run_config = RunConfigProperties(
+    run_config = KilnAgentRunConfigProperties(
         model_name="llama_3_1_8b",
         model_provider_name="ollama",
         prompt_id="simple_prompt_builder",

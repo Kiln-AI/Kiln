@@ -19,12 +19,14 @@
     update_task_default_run_config,
   } from "$lib/stores/run_configs_store"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import { isKilnAgentRunConfig, isMcpRunConfig } from "$lib/types"
   import type { Task, TaskRunConfig } from "$lib/types"
   import { prompts_by_task_composite_id } from "$lib/stores/prompts_store"
   import {
-    getDetailedModelName,
+    getRunConfigModelDisplayName,
     getRunConfigPromptDisplayName,
   } from "$lib/utils/run_config_formatters"
+  import { tool_link } from "$lib/utils/link_builder"
   import { formatDate } from "$lib/utils/formatters"
   import { get_tools_property_info } from "$lib/stores/tools_store"
   import { goto } from "$app/navigation"
@@ -48,7 +50,13 @@
   let error: KilnError | null = null
   let task: Task | null = null
 
-  type SortableColumn = "starred" | "name" | "prompt" | "model" | "created_at"
+  type SortableColumn =
+    | "starred"
+    | "name"
+    | "prompt"
+    | "model"
+    | "type"
+    | "created_at"
   let sortColumn: SortableColumn = "created_at"
   let sortDirection: "asc" | "desc" = "desc"
 
@@ -133,15 +141,23 @@
   $: tools_display_by_config_id = ((): Record<
     string,
     {
-      value: string | "Loading..."
+      value: string | string[] | "Loading..."
       links: (string | null)[] | undefined
     }
   > => {
-    // change in available_tools should trigger a re-run of this function
     const tools = $available_tools
 
     const entries = sorted_run_configs.map((config) => {
-      const tool_ids = config.run_config_properties.tools_config?.tools || []
+      if (isMcpRunConfig(config.run_config_properties)) {
+        const ref = config.run_config_properties.tool_reference
+        const name = ref.tool_name ?? "MCP Tool"
+        const link = tool_link(project_id, ref.tool_id ?? "")
+        return [config.id, { value: [name], links: [link] }] as const
+      }
+      const tool_ids =
+        (isKilnAgentRunConfig(config.run_config_properties) &&
+          config.run_config_properties.tools_config?.tools) ||
+        []
       const info =
         tools && tools[project_id]
           ? get_tools_property_info(tool_ids, project_id, tools)
@@ -179,12 +195,24 @@
           bValue = (b.name || "").toLowerCase()
           break
         case "prompt":
-          aValue = getRunConfigPromptDisplayName(a, task_prompts).toLowerCase()
-          bValue = getRunConfigPromptDisplayName(b, task_prompts).toLowerCase()
+          aValue = (
+            getRunConfigPromptDisplayName(a, task_prompts) ?? ""
+          ).toLowerCase()
+          bValue = (
+            getRunConfigPromptDisplayName(b, task_prompts) ?? ""
+          ).toLowerCase()
           break
         case "model":
-          aValue = getDetailedModelName(a, $model_info).toLowerCase()
-          bValue = getDetailedModelName(b, $model_info).toLowerCase()
+          aValue = (
+            getRunConfigModelDisplayName(a, $model_info) ?? ""
+          ).toLowerCase()
+          bValue = (
+            getRunConfigModelDisplayName(b, $model_info) ?? ""
+          ).toLowerCase()
+          break
+        case "type":
+          aValue = a.run_config_properties.type
+          bValue = b.run_config_properties.type
           break
         case "created_at":
           aValue = a.created_at ? new Date(a.created_at).getTime() : 0
@@ -276,6 +304,7 @@
     { key: "prompt", label: "Prompt", sortable: true, sortKey: "prompt" },
     { key: "model", label: "Model", sortable: true, sortKey: "model" },
     { key: "tools", label: "Tools", sortable: false },
+    { key: "type", label: "Type", sortable: true, sortKey: "type" },
     {
       key: "created_at",
       label: "Created At",
@@ -389,6 +418,7 @@
                 {@const is_default = config.id === task?.default_run_config_id}
                 {@const is_selected =
                   config.id && selected_run_configs.has(config.id)}
+                {@const is_mcp = isMcpRunConfig(config.run_config_properties)}
                 <tr
                   class="{select_mode ? '' : 'hover'} cursor-pointer {is_default
                     ? 'bg-base-200'
@@ -434,10 +464,11 @@
                     </div>
                   </td>
                   <td class="text-gray-500">
-                    {getRunConfigPromptDisplayName(config, task_prompts)}
+                    {getRunConfigPromptDisplayName(config, task_prompts) ??
+                      "N/A"}
                   </td>
                   <td class="text-gray-500">
-                    {getDetailedModelName(config, $model_info)}
+                    {getRunConfigModelDisplayName(config, $model_info) ?? "N/A"}
                   </td>
                   <td class="text-gray-500">
                     {#if Array.isArray(tools_info.value)}
@@ -461,35 +492,48 @@
                       {tools_info.value}
                     {/if}
                   </td>
+                  <td>
+                    {#if isKilnAgentRunConfig(config.run_config_properties)}
+                      <span class="text-gray-500">Standard</span>
+                    {:else}
+                      <span class="text-gray-500">MCP</span>
+                    {/if}
+                  </td>
                   <td class="text-sm text-gray-500">
                     {formatDate(config.created_at)}
                   </td>
                   <td class="p-0" on:click|stopPropagation>
-                    <div class="dropdown dropdown-end dropdown-hover">
-                      <TableButton />
-                      <Float>
-                        <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-                        <ul
-                          tabindex="0"
-                          class="dropdown-content menu bg-base-100 rounded-box z-[1] w-56 p-2 shadow"
-                        >
-                          <li>
-                            <button on:click={(e) => handleClone(config, e)}>
-                              Clone
-                            </button>
-                          </li>
-                          {#if !is_default}
-                            <li>
-                              <button
-                                on:click={(e) => handleSetDefault(config, e)}
-                              >
-                                Set as Task Default
-                              </button>
-                            </li>
-                          {/if}
-                        </ul>
-                      </Float>
-                    </div>
+                    {#if !is_mcp || !is_default}
+                      <div class="dropdown dropdown-end dropdown-hover">
+                        <TableButton />
+                        <Float>
+                          <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+                          <ul
+                            tabindex="0"
+                            class="dropdown-content menu bg-base-100 rounded-box z-[1] w-56 p-2 shadow"
+                          >
+                            {#if !is_mcp}
+                              <li>
+                                <button
+                                  on:click={(e) => handleClone(config, e)}
+                                >
+                                  Clone
+                                </button>
+                              </li>
+                            {/if}
+                            {#if !is_default}
+                              <li>
+                                <button
+                                  on:click={(e) => handleSetDefault(config, e)}
+                                >
+                                  Set as Task Default
+                                </button>
+                              </li>
+                            {/if}
+                          </ul>
+                        </Float>
+                      </div>
+                    {/if}
                   </td>
                 </tr>
               {/each}

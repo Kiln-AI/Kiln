@@ -1,0 +1,52 @@
+import { describe, it, expect } from "vitest"
+import type { TaskRunConfig } from "$lib/types"
+import {
+  getRunConfigModelDisplayName,
+  getRunConfigUiProperties,
+} from "./run_config_formatters"
+
+describe("run_config_formatters (MCP)", () => {
+  const mcp_config: TaskRunConfig = {
+    v: 1,
+    id: "rc1",
+    created_at: "2026-02-01T00:00:00.000Z",
+    created_by: "test",
+    name: "MCP Config",
+    description: null,
+    run_config_properties: {
+      type: "mcp",
+      tool_reference: {
+        tool_id: "mcp::local::server::tool",
+        tool_name: "Demo Tool",
+        input_schema: { type: "object", properties: {} },
+        output_schema: null,
+      },
+    },
+    prompt: null,
+    model_type: "task_run_config",
+    starred: false,
+  }
+
+  it("getRunConfigModelDisplayName should return MCP tool name", () => {
+    expect(getRunConfigModelDisplayName(mcp_config, null)).toBe(null)
+  })
+
+  it("getRunConfigUiProperties should return MCP-specific fields", () => {
+    const props = getRunConfigUiProperties(
+      "project1",
+      "task1",
+      mcp_config,
+      null,
+      null,
+      null,
+    )
+    const propNames = props.map((p) => p.name)
+    expect(propNames).toContain("Type")
+    expect(propNames).toContain("MCP Tool")
+    expect(propNames).toContain("Tool ID")
+    expect(propNames).not.toContain("Model")
+    expect(propNames).not.toContain("Prompt")
+    const typeProp = props.find((p) => p.name === "Type")
+    expect(typeProp?.value).toBe("MCP Tool (No Agent)")
+  })
+})

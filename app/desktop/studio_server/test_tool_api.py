@@ -10,7 +10,7 @@ from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServe
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.rag import RagConfig
-from kiln_ai.datamodel.run_config import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import Task, TaskRunConfig
 from kiln_ai.datamodel.tool_id import KILN_TASK_TOOL_ID_PREFIX
 from kiln_ai.utils.config import MCP_SECRETS_KEY
@@ -3674,6 +3674,13 @@ class TestExternalToolApiDescription:
                 },
                 "required": ["param1"],
             },
+            outputSchema={
+                "type": "object",
+                "properties": {
+                    "result": {"type": "string", "description": "Output result"},
+                },
+                "required": ["result"],
+            },
         )
 
         result = ExternalToolApiDescription.tool_from_mcp_tool(mcp_tool)
@@ -3687,6 +3694,13 @@ class TestExternalToolApiDescription:
                 "param2": {"type": "number", "description": "Second parameter"},
             },
             "required": ["param1"],
+        }
+        assert result.outputSchema == {
+            "type": "object",
+            "properties": {
+                "result": {"type": "string", "description": "Output result"},
+            },
+            "required": ["result"],
         }
 
     def test_tool_from_mcp_tool_with_minimal_fields(self):
@@ -3702,6 +3716,7 @@ class TestExternalToolApiDescription:
         assert result.name == "minimal_tool"
         assert result.description is None
         assert result.inputSchema == {}
+        assert result.outputSchema is None
 
     @pytest.mark.asyncio
     async def test_tool_from_kiln_task_tool_with_all_fields(self):
@@ -3733,6 +3748,7 @@ class TestExternalToolApiDescription:
             },
             "required": ["input"],
         }
+        assert result.outputSchema is None
 
     @pytest.mark.asyncio
     async def test_tool_from_kiln_task_tool_with_minimal_fields(self):
@@ -3748,6 +3764,7 @@ class TestExternalToolApiDescription:
         assert result.name == "minimal_kiln_tool"
         assert result.description == ""
         assert result.inputSchema == {}
+        assert result.outputSchema is None
 
 
 @pytest.mark.asyncio
@@ -4024,7 +4041,7 @@ async def test_add_kiln_task_tool_validation_success(client, test_project):
     # Create a run config with ID "default" for the task
     run_config = TaskRunConfig(
         name="default",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name="openai",
             prompt_id=PromptGenerators.SIMPLE,
@@ -4110,7 +4127,7 @@ async def test_add_kiln_task_tool_validation_run_config_not_found(client, test_p
     # Create a run config with ID "default" for the task
     run_config = TaskRunConfig(
         name="default",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name="openai",
             prompt_id=PromptGenerators.SIMPLE,
@@ -4160,7 +4177,7 @@ async def test_edit_kiln_task_tool_validation_success(client, test_project):
     # Create a run config with ID "default" for the task
     run_config = TaskRunConfig(
         name="default",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name="openai",
             prompt_id=PromptGenerators.SIMPLE,
@@ -4282,7 +4299,7 @@ async def test_edit_kiln_task_tool_validation_run_config_not_found(
     # Create a run config with ID "default" for the task
     run_config = TaskRunConfig(
         name="default",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name="openai",
             prompt_id=PromptGenerators.SIMPLE,
@@ -4349,7 +4366,7 @@ async def test_get_tool_definition_success(client, test_project):
     # Create a run config for the task
     run_config = TaskRunConfig(
         name="default",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name="openai",
             prompt_id=PromptGenerators.SIMPLE,

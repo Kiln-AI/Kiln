@@ -1,4 +1,8 @@
-import type { ToolSetApiDescription } from "$lib/types"
+import type {
+  ExternalToolApiDescription,
+  ToolSetApiDescription,
+} from "$lib/types"
+import { writable } from "svelte/store"
 import { tool_link } from "$lib/utils/link_builder"
 import { indexedDBStore } from "./index_db_store"
 import { client } from "$lib/api_client"
@@ -12,6 +16,9 @@ export const { store: tools_store, initialized: tools_store_initialized } =
   indexedDBStore<ToolsStore>(tools_store_key, {
     selected_tool_ids_by_task_id: {},
   })
+
+export const selected_tool_for_task =
+  writable<ExternalToolApiDescription | null>(null)
 
 export function get_tools_property_info(
   tool_ids: string[],
@@ -33,7 +40,27 @@ export function get_tools_property_info(
   }
 }
 
-function get_tool_names_from_ids(
+export function get_tool_server_name(
+  available_tools: Record<string, ToolSetApiDescription[]>,
+  project_id: string,
+  tool_id: string | null | undefined,
+): string | null {
+  if (!tool_id) {
+    return null
+  }
+  const project_tools = available_tools[project_id]
+  if (!project_tools) {
+    return null
+  }
+  for (const tool_set of project_tools) {
+    if (tool_set.tools.some((tool) => tool.id === tool_id)) {
+      return tool_set.set_name
+    }
+  }
+  return null
+}
+
+export function get_tool_names_from_ids(
   tool_ids: string[],
   project_tools: ToolSetApiDescription[],
 ): string[] {

@@ -2,6 +2,7 @@ import json
 import logging
 
 from kiln_ai.datamodel import TaskRun
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.tools.tool_registry import tool_from_id
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,9 @@ class EvalUtils:
             not task_run.parent_task()
             or not task_run.output.source
             or not task_run.output.source.run_config
+            or not isinstance(
+                task_run.output.source.run_config, KilnAgentRunConfigProperties
+            )
             or not task_run.output.source.run_config.tools_config
         ):
             return None

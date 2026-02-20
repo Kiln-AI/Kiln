@@ -26,7 +26,7 @@ from kiln_ai.datamodel.eval import (
     EvalDataType,
     EvalOutputScore,
 )
-from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
 
 @pytest.fixture
@@ -101,7 +101,7 @@ def test_eval_config(test_task):
 
 @pytest.fixture
 def test_run_config():
-    return RunConfigProperties(
+    return KilnAgentRunConfigProperties(
         model_name="llama_3_1_8b",
         model_provider_name=ModelProviderName.groq,
         prompt_id="simple_prompt_builder",

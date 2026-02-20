@@ -9,6 +9,7 @@
   import { onMount } from "svelte"
   import Completed from "$lib/ui/completed.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
+  import { isKilnAgentRunConfig } from "$lib/types"
   import type { Task, TaskRunConfig, Eval, EvalConfig } from "$lib/types"
   import {
     load_task_prompts,
@@ -27,7 +28,7 @@
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
   import {
-    getDetailedModelName,
+    getRunConfigModelDisplayName,
     getDetailedModelNameFromParts,
     getRunConfigUiProperties,
   } from "$lib/utils/run_config_formatters"
@@ -40,6 +41,7 @@
   import EntitlementRequiredCard from "$lib/ui/kiln_copilot/entitlement_required_card.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import TableButton from "../../../../generate/[project_id]/[task_id]/table_button.svelte"
+  import posthog from "posthog-js"
 
   function tagFromFilterId(filter_id: string): string | undefined {
     if (filter_id.startsWith("tag::")) {
@@ -82,7 +84,9 @@
   $: prompt_text =
     selected_run_config?.prompt?.prompt ||
     get_prompt_text_from_id(
-      selected_run_config?.run_config_properties.prompt_id,
+      isKilnAgentRunConfig(selected_run_config?.run_config_properties)
+        ? selected_run_config.run_config_properties.prompt_id
+        : undefined,
     )
 
   let create_job_error: KilnError | null = null
@@ -405,9 +409,17 @@
         task_id,
       )
 
+      if (!isKilnAgentRunConfig(run_config?.run_config_properties)) {
+        run_config_validation_status = "invalid"
+        run_config_validation_message =
+          "Only Kiln Agent run configurations are supported for Prompt Optimization"
+        run_config_blocking_reason = "has_tools"
+        return
+      }
+
       if (
-        run_config?.run_config_properties.tools_config &&
-        run_config?.run_config_properties.tools_config.tools.length > 0
+        run_config.run_config_properties.tools_config &&
+        run_config.run_config_properties.tools_config.tools.length > 0
       ) {
         run_config_validation_status = "invalid"
         run_config_validation_message =
@@ -439,7 +451,7 @@
         run_config_validation_status = "invalid"
         run_config_blocking_reason = "unsupported_model"
         if (run_config) {
-          run_config_validation_message = `${getDetailedModelName(run_config, $model_info)} is not supported for Prompt Optimization`
+          run_config_validation_message = `${getRunConfigModelDisplayName(run_config, $model_info) ?? "This model"} is not supported for Prompt Optimization`
         } else {
           run_config_validation_message =
             "Model is not supported for Kiln Prompt Optimization"
@@ -697,7 +709,10 @@
       ) {
         throw new Error("Invalid response from server")
       }
-
+      posthog.capture("create_prompt", {
+        from_generator: "prompt_optimization",
+        eval_count: selected_eval_ids.size,
+      })
       created_job = { id: response.id }
     } catch (e) {
       if (e instanceof Error && e.message.includes("Load failed")) {
@@ -799,6 +814,8 @@
               bind:selected_run_config_id={target_run_config_id}
               run_page={false}
               auto_select_default={false}
+              filter_run_configs={(config) =>
+                isKilnAgentRunConfig(config.run_config_properties)}
             />
 
             {#if selected_run_config}

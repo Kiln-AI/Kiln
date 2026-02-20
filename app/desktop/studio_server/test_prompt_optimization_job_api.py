@@ -39,7 +39,7 @@ from fastapi.testclient import TestClient
 from kiln_ai.cli.commands.package_project import PackageForTrainingConfig
 from kiln_ai.datamodel import Project, PromptOptimizationJob, Task
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
-from kiln_ai.datamodel.run_config import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import TaskRunConfig
 
 
@@ -296,6 +296,7 @@ def test_start_prompt_optimization_job_creates_datamodel(
     task_id = task.id
 
     mock_run_config = MagicMock()
+    mock_run_config.run_config_properties = MagicMock(spec=KilnAgentRunConfigProperties)
     mock_run_config.run_config_properties.tools_config = None
 
     with (
@@ -361,6 +362,7 @@ def test_start_prompt_optimization_job_calls_package_with_correct_params(
     task_id = task.id
 
     mock_run_config = MagicMock()
+    mock_run_config.run_config_properties = MagicMock(spec=KilnAgentRunConfigProperties)
     mock_run_config.run_config_properties.tools_config = None
 
     mock_packager = MagicMock(side_effect=_mock_package_project_for_training)
@@ -531,7 +533,7 @@ def test_prompt_optimization_job_creates_prompt_on_success(
     target_run_config = TaskRunConfig(
         parent=task,
         name="Original Config",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id="simple_prompt_builder",
@@ -616,7 +618,7 @@ def test_prompt_optimization_job_only_creates_prompt_once(
     target_run_config = TaskRunConfig(
         parent=task,
         name="Original Config",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",
@@ -1304,6 +1306,7 @@ def test_check_run_config_missing_model_name(client, mock_api_key, tmp_path):
     task.save_to_file()
 
     mock_run_config = MagicMock()
+    mock_run_config.run_config_properties = MagicMock(spec=KilnAgentRunConfigProperties)
     mock_run_config.run_config_properties.tools_config = None
     mock_run_config.run_config_properties.model_name = None
     mock_run_config.run_config_properties.model_provider_name = "openai"
@@ -1339,6 +1342,7 @@ def test_check_run_config_missing_model_provider(client, mock_api_key, tmp_path)
     task.save_to_file()
 
     mock_run_config = MagicMock()
+    mock_run_config.run_config_properties = MagicMock(spec=KilnAgentRunConfigProperties)
     mock_run_config.run_config_properties.tools_config = None
     mock_run_config.run_config_properties.model_name = "gpt-4"
     mock_run_config.run_config_properties.model_provider_name = None
@@ -1374,6 +1378,7 @@ def test_check_run_config_server_validation_error(client, mock_api_key, tmp_path
     task.save_to_file()
 
     mock_run_config = MagicMock()
+    mock_run_config.run_config_properties = MagicMock(spec=KilnAgentRunConfigProperties)
     mock_run_config.run_config_properties.tools_config = None
     mock_run_config.run_config_properties.model_name = "gpt-4"
     mock_run_config.run_config_properties.model_provider_name = MagicMock()
@@ -1418,6 +1423,7 @@ def test_check_run_config_server_none_response(client, mock_api_key, tmp_path):
     task.save_to_file()
 
     mock_run_config = MagicMock()
+    mock_run_config.run_config_properties = MagicMock(spec=KilnAgentRunConfigProperties)
     mock_run_config.run_config_properties.tools_config = None
     mock_run_config.run_config_properties.model_name = "gpt-4"
     mock_run_config.run_config_properties.model_provider_name = MagicMock()
@@ -1880,6 +1886,7 @@ def test_start_prompt_optimization_job_with_tools_in_run_config(
     task_id = task.id
 
     mock_run_config = MagicMock()
+    mock_run_config.run_config_properties = MagicMock(spec=KilnAgentRunConfigProperties)
     mock_run_config.run_config_properties.tools_config = MagicMock()
     mock_run_config.run_config_properties.tools_config.tools = ["tool1", "tool2"]
 
@@ -1924,6 +1931,7 @@ def test_start_prompt_optimization_job_server_not_authenticated(
     task_id = task.id
 
     mock_run_config = MagicMock()
+    mock_run_config.run_config_properties = MagicMock(spec=KilnAgentRunConfigProperties)
     mock_run_config.run_config_properties.tools_config = None
 
     with (
@@ -1970,6 +1978,7 @@ def test_start_prompt_optimization_job_server_validation_error(
     task_id = task.id
 
     mock_run_config = MagicMock()
+    mock_run_config.run_config_properties = MagicMock(spec=KilnAgentRunConfigProperties)
     mock_run_config.run_config_properties.tools_config = None
 
     with (
@@ -2024,6 +2033,7 @@ def test_start_prompt_optimization_job_server_none_response(
     task_id = task.id
 
     mock_run_config = MagicMock()
+    mock_run_config.run_config_properties = MagicMock(spec=KilnAgentRunConfigProperties)
     mock_run_config.run_config_properties.tools_config = None
 
     with (
@@ -2073,6 +2083,7 @@ def test_start_prompt_optimization_job_connection_error(client, mock_api_key, tm
     task_id = task.id
 
     mock_run_config = MagicMock()
+    mock_run_config.run_config_properties = MagicMock(spec=KilnAgentRunConfigProperties)
     mock_run_config.run_config_properties.tools_config = None
 
     class ReadError(Exception):
@@ -2126,6 +2137,7 @@ def test_start_prompt_optimization_job_timeout_error(client, mock_api_key, tmp_p
     task_id = task.id
 
     mock_run_config = MagicMock()
+    mock_run_config.run_config_properties = MagicMock(spec=KilnAgentRunConfigProperties)
     mock_run_config.run_config_properties.tools_config = None
 
     with (
@@ -2177,6 +2189,7 @@ def test_start_prompt_optimization_job_general_exception(
     task_id = task.id
 
     mock_run_config = MagicMock()
+    mock_run_config.run_config_properties = MagicMock(spec=KilnAgentRunConfigProperties)
     mock_run_config.run_config_properties.tools_config = None
 
     with (
@@ -2224,7 +2237,7 @@ def test_prompt_optimization_job_creates_run_config_on_success(
     target_run_config = TaskRunConfig(
         parent=task,
         name="Original Config",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id="simple_prompt_builder",
@@ -2336,7 +2349,7 @@ def test_prompt_optimization_job_only_creates_run_config_once(
     target_run_config = TaskRunConfig(
         parent=task,
         name="Original Config",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id="simple_prompt_builder",
@@ -2538,7 +2551,7 @@ def test_cleanup_artifact_deletes_run_config_successfully(mock_api_key, tmp_path
     run_config = TaskRunConfig(
         parent=task,
         name="Test Config",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name=ModelProviderName.openai,
             prompt_id="simple_prompt_builder",
@@ -2697,7 +2710,7 @@ def test_prompt_optimization_job_cleanup_both_artifacts_when_run_config_fails_af
     target_run_config = TaskRunConfig(
         parent=task,
         name="Original Config",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",
@@ -2787,7 +2800,7 @@ def test_prompt_optimization_job_retry_after_cleanup(mock_api_key, tmp_path):
     target_run_config = TaskRunConfig(
         parent=task,
         name="Original Config",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",
@@ -2912,7 +2925,7 @@ def test_prompt_optimization_job_prevents_race_condition_on_artifact_creation(
     target_run_config = TaskRunConfig(
         parent=task,
         name="Original Config",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",
@@ -3024,7 +3037,7 @@ def test_update_prompt_optimization_job_status_transitions(
     target_run_config = TaskRunConfig(
         parent=task,
         name="Original Config",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",
@@ -3127,7 +3140,7 @@ def test_update_prompt_optimization_job_running_to_succeeded_creates_artifacts(
     target_run_config = TaskRunConfig(
         parent=task,
         name="Original Config",
-        run_config_properties=RunConfigProperties(
+        run_config_properties=KilnAgentRunConfigProperties(
             model_name="gpt-4",
             model_provider_name="openai",
             prompt_id="simple_prompt_builder",

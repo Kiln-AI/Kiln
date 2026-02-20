@@ -5,8 +5,9 @@
     ProviderModels,
     PromptResponse,
   } from "$lib/types"
+  import { isMcpRunConfig } from "$lib/types"
   import {
-    getDetailedModelName,
+    getRunConfigModelDisplayName,
     getRunConfigPromptDisplayName,
   } from "$lib/utils/run_config_formatters"
   import ChartNoData from "$lib/components/chart_no_data.svelte"
@@ -97,41 +98,60 @@
   }
 
   // Get simple display name for the series (used as the internal name/key)
-  function getRunConfigDisplayName(config: TaskRunConfig): string {
-    return config.name || getDetailedModelName(config, model_info) || "Unknown"
+  function getSeriesDisplayName(config: TaskRunConfig): string {
+    if (config.name) return config.name
+    if (isMcpRunConfig(config.run_config_properties)) {
+      return config.run_config_properties.tool_reference.tool_name ?? "MCP Tool"
+    }
+    return getRunConfigModelDisplayName(config, model_info) ?? "Unknown"
   }
 
-  // Build a map from display name to full legend text (name, model, prompt)
+  function buildLegendSubtext(config: TaskRunConfig): string {
+    if (isMcpRunConfig(config.run_config_properties)) {
+      const toolName =
+        config.run_config_properties.tool_reference.tool_name ?? "MCP Tool"
+      return `{sub|Tool: ${toolName}}`
+    }
+    const modelName =
+      getRunConfigModelDisplayName(config, model_info) || "Unknown"
+    const promptName = getRunConfigPromptDisplayName(config, prompts)
+    const parts = [`{sub|Model: ${modelName}}`]
+    if (promptName) parts.push(`{sub|Prompt: ${promptName}}`)
+    return parts.join("\n")
+  }
+
   function buildLegendFormatter(): Record<string, string> {
     const formatter: Record<string, string> = {}
     for (const configId of selectedRunConfigIds) {
       const config = run_configs.find((c) => c.id === configId)
       if (!config) continue
-
-      const displayName = getRunConfigDisplayName(config)
-      const modelName = getDetailedModelName(config, model_info) || "Unknown"
-      const promptName = getRunConfigPromptDisplayName(config, prompts)
-
-      // Multi-line legend: display name on first line, model and prompt on 2nd/3rd
-      formatter[displayName] =
-        `${displayName}\n{sub|Model: ${modelName}}\n{sub|Prompt: ${promptName}}`
+      const displayName = getSeriesDisplayName(config)
+      formatter[displayName] = `${displayName}\n${buildLegendSubtext(config)}`
     }
     return formatter
   }
 
   // Build full tooltip HTML for a run config (reused by chart tooltip and legend tooltip)
   function buildRunConfigTooltip(name: string, allCosts: number[]): string {
-    const config = run_configs.find((c) => getRunConfigDisplayName(c) === name)
-    const modelName = config
-      ? getDetailedModelName(config, model_info) || "Unknown"
-      : "Unknown"
-    const promptName = config
-      ? getRunConfigPromptDisplayName(config, prompts)
-      : "Unknown"
+    const config = run_configs.find((c) => getSeriesDisplayName(c) === name)
 
     let html = `<div style="font-weight: bold; margin-bottom: 4px;">${name}</div>`
-    html += `<div>Model: ${modelName}</div>`
-    html += `<div>Prompt: ${promptName}</div>`
+    if (config && isMcpRunConfig(config.run_config_properties)) {
+      const toolName =
+        config.run_config_properties.tool_reference.tool_name ?? "MCP Tool"
+      html += `<div>MCP Tool: ${toolName}</div>`
+    } else {
+      const modelName = config
+        ? getRunConfigModelDisplayName(config, model_info) || "Unknown"
+        : "Unknown"
+      const promptName = config
+        ? getRunConfigPromptDisplayName(config, prompts)
+        : null
+      html += `<div>Model: ${modelName}</div>`
+      if (promptName) {
+        html += `<div>Prompt: ${promptName}</div>`
+      }
+    }
     html += `<div style="font-weight: bold; margin-bottom: 4px; padding-top: 8px;">Values</div>`
 
     dataKeys.forEach((key) => {
@@ -215,7 +235,7 @@
 
       // Only include if at least one value is available
       if (hasAnyValue) {
-        const name = getRunConfigDisplayName(config)
+        const name = getSeriesDisplayName(config)
         legend.push(name)
         series.push({ value: values, name })
       }

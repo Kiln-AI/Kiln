@@ -3,6 +3,7 @@
   import { client } from "$lib/api_client"
   import { current_task } from "$lib/stores"
   import type { RunConfigProperties, Task } from "$lib/types"
+  import { isKilnAgentRunConfig } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
@@ -530,6 +531,11 @@
       if (!run_config_properties) {
         throw new KilnError("Run config properties not found")
       }
+      if (!isKilnAgentRunConfig(run_config_properties)) {
+        throw new KilnError(
+          "Synthetic data generation requires a kiln_agent run config",
+        )
+      }
 
       generated_count = 0
       generate_all_running = true
@@ -621,6 +627,11 @@
     run_config_properties: RunConfigProperties,
   ): Promise<GenerateSampleResponse> {
     try {
+      if (!isKilnAgentRunConfig(run_config_properties)) {
+        throw new KilnError(
+          "Synthetic data generation requires a kiln_agent run config",
+        )
+      }
       if (!$saved_state.session_id) {
         throw new KilnError("Session ID not found")
       }
