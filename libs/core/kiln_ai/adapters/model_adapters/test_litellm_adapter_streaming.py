@@ -13,8 +13,7 @@ from kiln_ai.adapters.ml_model_list import ModelProviderName, StructuredOutputMo
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel import Project, PromptGenerators, Task
-from kiln_ai.datamodel.run_config import ToolsRunConfig
-from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 
 logger = logging.getLogger(__name__)
@@ -133,7 +132,7 @@ def adapter_factory(task: Task) -> Callable[[str, ModelProviderName], LiteLlmAda
         adapter = LiteLlmAdapter(
             kiln_task=task,
             config=LiteLlmConfig(
-                run_config_properties=RunConfigProperties(
+                run_config_properties=KilnAgentRunConfigProperties(
                     model_name=model_id,
                     model_provider_name=provider_name,
                     prompt_id=PromptGenerators.SIMPLE,
