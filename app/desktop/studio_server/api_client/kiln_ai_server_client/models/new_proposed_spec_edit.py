@@ -6,11 +6,11 @@ from typing import Any, TypeVar
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-T = TypeVar("T", bound="NewProposedSpecEditApi")
+T = TypeVar("T", bound="NewProposedSpecEdit")
 
 
 @_attrs_define
-class NewProposedSpecEditApi:
+class NewProposedSpecEdit:
     """A proposed edit to a spec field.
 
     Attributes:
@@ -52,14 +52,14 @@ class NewProposedSpecEditApi:
 
         reason_for_edit = d.pop("reason_for_edit")
 
-        new_proposed_spec_edit_api = cls(
+        new_proposed_spec_edit = cls(
             spec_field_name=spec_field_name,
             proposed_edit=proposed_edit,
             reason_for_edit=reason_for_edit,
         )
 
-        new_proposed_spec_edit_api.additional_properties = d
-        return new_proposed_spec_edit_api
+        new_proposed_spec_edit.additional_properties = d
+        return new_proposed_spec_edit
 
     @property
     def additional_keys(self) -> list[str]:

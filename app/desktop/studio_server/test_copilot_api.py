@@ -7,8 +7,8 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.clarify_s
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models.generate_batch_output import (
     GenerateBatchOutput,
 )
-from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_spec_api_output import (
-    RefineSpecApiOutput,
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_spec_output import (
+    RefineSpecOutput,
 )
 from app.desktop.studio_server.copilot_api import connect_copilot_api
 from fastapi import FastAPI
@@ -226,7 +226,7 @@ class TestRefineSpec:
             assert "API key not configured" in response.json()["detail"]
 
     def test_refine_spec_success(self, client, refine_spec_input, mock_api_key):
-        mock_output = MagicMock(spec=RefineSpecApiOutput)
+        mock_output = MagicMock(spec=RefineSpecOutput)
         mock_output.to_dict.return_value = {
             "new_proposed_spec_edits": [],
             "not_incorporated_feedback": None,
