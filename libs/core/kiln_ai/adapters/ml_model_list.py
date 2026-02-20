@@ -1287,7 +1287,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-haiku-4.5",
                 structured_output_mode=StructuredOutputMode.function_calling,
-                reasoning_capable=True,
                 thinking_level="medium",
             ),
             KilnModelProvider(
@@ -1295,7 +1294,6 @@ built_in_models: List[KilnModel] = [
                 model_id="claude-haiku-4-5-20251001",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
-                reasoning_capable=True,
                 thinking_level="medium",
             ),
         ],
@@ -1379,7 +1377,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-4.5-sonnet",
                 structured_output_mode=StructuredOutputMode.function_calling,
-                reasoning_capable=True,
                 thinking_level="medium",
             ),
             KilnModelProvider(
