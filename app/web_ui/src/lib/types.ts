@@ -138,14 +138,15 @@ export type SpecStatus = components["schemas"]["SpecStatus"]
 export type Priority = components["schemas"]["Priority"]
 
 // Copilot API types
-export type SyntheticDataGenerationStepConfigInput =
-  components["schemas"]["SyntheticDataGenerationStepConfigInput"]
-export type SyntheticDataGenerationSessionConfigInput =
-  components["schemas"]["SyntheticDataGenerationSessionConfigInput"]
-export type TaskMetadata = components["schemas"]["TaskMetadata"]
+export type SyntheticDataGenerationStepConfigApi =
+  components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"]
+export type SyntheticDataGenerationSessionConfigApi =
+  components["schemas"]["SyntheticDataGenerationSessionConfigApi-Input"]
+export type TaskMetadataApi = components["schemas"]["TaskMetadataApi"]
 export type ReviewedExample = components["schemas"]["ReviewedExample"]
-export type Sample = components["schemas"]["Sample"]
-export type GenerateBatchOutput = components["schemas"]["GenerateBatchOutput"]
+export type SampleApi = components["schemas"]["SampleApi"]
+export type SubsampleBatchOutputItemApi =
+  components["schemas"]["SubsampleBatchOutputItemApi"]
 export type SpecProperties =
   | components["schemas"]["AppropriateToolUseProperties"]
   | components["schemas"]["DesiredBehaviourProperties"]

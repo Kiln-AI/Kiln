@@ -1389,7 +1389,7 @@ async def connect_kiln_copilot(key: str):
             error_content = response.json()
         except Exception:
             error_content = {
-                "message": f"Failed to verify API key: {response.text.strip() or 'unknown error'}"
+                "message": f"Failed to verify API key (HTTP {response.status_code})"
             }
 
         return JSONResponse(
