@@ -937,7 +937,7 @@ class TestStreamCallback:
     def stream_adapter(self, base_task):
         return MockAdapter(
             task=base_task,
-            run_config=RunConfigProperties(
+            run_config=KilnAgentRunConfigProperties(
                 model_name="test_model",
                 model_provider_name="openai",
                 prompt_id="simple_prompt_builder",
