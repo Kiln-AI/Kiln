@@ -46,12 +46,15 @@ class ChunkContext(BaseModel):
 def format_search_results(search_results: List[SearchResult]) -> str:
     results: List[ChunkContext] = []
     for search_result in search_results:
+        metadata = {
+            "document_id": search_result.document_id,
+            "chunk_idx": search_result.chunk_idx,
+        }
+        if search_result.page_number is not None:
+            metadata["page_number"] = search_result.page_number
         results.append(
             ChunkContext(
-                metadata={
-                    "document_id": search_result.document_id,
-                    "chunk_idx": search_result.chunk_idx,
-                },
+                metadata=metadata,
                 text=search_result.chunk_text,
             )
         )

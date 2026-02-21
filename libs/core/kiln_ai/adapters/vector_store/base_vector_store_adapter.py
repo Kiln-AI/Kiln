@@ -35,6 +35,10 @@ class SearchResult(BaseModel):
     similarity: float | None = Field(
         description="The score of the chunk, which depends on the similarity metric used."
     )
+    page_number: int | None = Field(
+        default=None,
+        description="The page number (0-indexed) this chunk belongs to. Only set when the extraction has page_offsets.",
+    )
 
 
 class VectorStoreQuery(BaseModel):

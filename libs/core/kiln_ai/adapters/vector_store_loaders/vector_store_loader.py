@@ -84,6 +84,7 @@ class VectorStoreLoader:
                         for chunk_idx, (chunk_text, chunk_embeddings) in enumerate(
                             zip(chunks_text, embeddings)
                         ):
+                            chunk = chunked_document.chunks[chunk_idx]
                             batch.append(
                                 convert_to_llama_index_node(
                                     document_id=document_id,
@@ -93,6 +94,7 @@ class VectorStoreLoader:
                                     ),
                                     text=chunk_text,
                                     vector=chunk_embeddings.vector,
+                                    page_number=chunk.page_number,
                                 )
                             )
 
