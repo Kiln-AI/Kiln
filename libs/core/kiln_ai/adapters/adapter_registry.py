@@ -10,6 +10,7 @@ from kiln_ai.adapters.provider_tools import (
     core_provider,
     find_user_model,
     lite_llm_core_config_for_provider,
+    resolve_openai_compatible_model_id,
 )
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
@@ -45,10 +46,9 @@ def litellm_core_provider_config(
         and not run_config_properties.model_name.startswith("user_model::")
     ):
         model_id = run_config_properties.model_name
-        try:
-            openai_compatible_provider_name, model_id = model_id.split("::")
-        except Exception:
-            raise ValueError(f"Invalid openai compatible model ID: {model_id}")
+        openai_compatible_provider_name, model_id = resolve_openai_compatible_model_id(
+            model_id
+        )
 
         # Update a copy of the run config properties to use the openai compatible provider
         updated_run_config_properties = run_config_properties.model_copy(deep=True)
