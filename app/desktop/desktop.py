@@ -130,9 +130,12 @@ class DesktopApp:
             self.tray.run_detached()
         except Exception:
             logger.error("Error running tray", exc_info=True)
-            # Tray not starting on MacOS or Windows is critical. Let Linux continue to start the app.
-            if sys.platform in ["darwin", "Windows", "win32"]:
+            # Tray not starting on MacOS or Windows is critical.
+            # Let Linux continue to start the app as tray is more fragmented there and requires system deps.
+            if sys.platform in ["darwin", "win32"]:
                 raise
+            else:
+                self.tray = None
 
     def close_splash(self):
         try:
