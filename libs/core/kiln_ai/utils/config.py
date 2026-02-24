@@ -304,18 +304,32 @@ class Config:
         self.update_settings({name: value})
 
     def update_settings(self, new_settings: Dict[str, Any]):
-        # Lock to prevent race conditions in multi-threaded scenarios
-        with self._lock:
-            # Fresh load to avoid clobbering changes from other instances
-            current_settings = self.load_settings()
-            current_settings.update(new_settings)
-            # remove None values
-            current_settings = {
-                k: v for k, v in current_settings.items() if v is not None
-            }
-            with open(self.settings_path(), "w") as f:
-                yaml.dump(current_settings, f)
-            self._settings = current_settings
+        in_memory_updates = {
+            k: v
+            for k, v in new_settings.items()
+            if k in self._properties and self._properties[k].in_memory
+        }
+        disk_updates = {
+            k: v
+            for k, v in new_settings.items()
+            if k not in self._properties or not self._properties[k].in_memory
+        }
+
+        if in_memory_updates:
+            self._in_memory_settings.update(in_memory_updates)
+
+        if disk_updates:
+            with self._lock:
+                # Fresh load to avoid clobbering changes from other instances
+                current_settings = self.load_settings()
+                current_settings.update(disk_updates)
+                # remove None values
+                current_settings = {
+                    k: v for k, v in current_settings.items() if v is not None
+                }
+                with open(self.settings_path(), "w") as f:
+                    yaml.dump(current_settings, f)
+                self._settings = current_settings
 
 
 def _get_user_id():

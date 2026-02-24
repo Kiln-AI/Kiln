@@ -620,3 +620,52 @@ def test_autosave_runs_is_in_memory():
     config = Config.shared()
     assert config._properties["autosave_runs"].in_memory is True
     assert config.autosave_runs is True
+
+
+def test_update_settings_filters_in_memory_properties(mock_yaml_file):
+    """Test that update_settings routes in-memory properties correctly"""
+    with patch(
+        "kiln_ai.utils.config.Config.settings_path",
+        return_value=mock_yaml_file,
+    ):
+        config = Config(
+            properties={
+                "in_memory_prop": ConfigProperty(bool, default=True, in_memory=True),
+                "persisted_prop": ConfigProperty(str, default="default"),
+            }
+        )
+
+        config.update_settings(
+            {
+                "in_memory_prop": False,
+                "persisted_prop": "updated_value",
+            }
+        )
+
+        assert config.in_memory_prop is False
+        assert config.persisted_prop == "updated_value"
+
+        with open(mock_yaml_file, "r") as f:
+            saved_settings = yaml.safe_load(f)
+
+        assert "in_memory_prop" not in saved_settings
+        assert saved_settings["persisted_prop"] == "updated_value"
+
+
+def test_save_setting_filters_in_memory_properties(mock_yaml_file):
+    """Test that save_setting routes in-memory properties correctly"""
+    with patch(
+        "kiln_ai.utils.config.Config.settings_path",
+        return_value=mock_yaml_file,
+    ):
+        config = Config(
+            properties={
+                "in_memory_prop": ConfigProperty(bool, default=True, in_memory=True),
+            }
+        )
+
+        config.save_setting("in_memory_prop", False)
+
+        assert config.in_memory_prop is False
+
+        assert not os.path.exists(mock_yaml_file)
