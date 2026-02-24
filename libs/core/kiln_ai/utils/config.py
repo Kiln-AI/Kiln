@@ -279,7 +279,13 @@ class Config:
         return settings
 
     def settings(self, hide_sensitive=False) -> Dict[str, Any]:
-        combined = {**self._settings, **self._in_memory_settings}
+        with self._lock:
+            filtered_disk = {
+                k: v
+                for k, v in self._settings.items()
+                if k not in self._properties or not self._properties[k].in_memory
+            }
+            combined = {**filtered_disk, **self._in_memory_settings}
 
         if not hide_sensitive:
             return combined
@@ -306,22 +312,22 @@ class Config:
         self.update_settings({name: value})
 
     def update_settings(self, new_settings: Dict[str, Any]):
-        in_memory_updates = {
-            k: v
-            for k, v in new_settings.items()
-            if k in self._properties and self._properties[k].in_memory
-        }
-        disk_updates = {
-            k: v
-            for k, v in new_settings.items()
-            if k not in self._properties or not self._properties[k].in_memory
-        }
+        with self._lock:
+            in_memory_updates = {
+                k: v
+                for k, v in new_settings.items()
+                if k in self._properties and self._properties[k].in_memory
+            }
+            disk_updates = {
+                k: v
+                for k, v in new_settings.items()
+                if k not in self._properties or not self._properties[k].in_memory
+            }
 
-        if in_memory_updates:
-            self._in_memory_settings.update(in_memory_updates)
+            if in_memory_updates:
+                self._in_memory_settings.update(in_memory_updates)
 
-        if disk_updates:
-            with self._lock:
+            if disk_updates:
                 # Fresh load to avoid clobbering changes from other instances
                 current_settings = self.load_settings()
                 current_settings.update(disk_updates)
