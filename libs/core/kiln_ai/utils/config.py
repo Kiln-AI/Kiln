@@ -279,14 +279,16 @@ class Config:
         return settings
 
     def settings(self, hide_sensitive=False) -> Dict[str, Any]:
+        combined = {**self._settings, **self._in_memory_settings}
+
         if not hide_sensitive:
-            return self._settings
+            return combined
 
         settings = {
             k: "[hidden]"
             if k in self._properties and self._properties[k].sensitive
             else copy.deepcopy(v)
-            for k, v in self._settings.items()
+            for k, v in combined.items()
         }
         # Hide sensitive keys in lists. Could generalize this if we every have more types, but right not it's only needed for root elements of lists
         for key, value in settings.items():

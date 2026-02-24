@@ -570,8 +570,8 @@ def test_in_memory_property_not_persisted_to_yaml(mock_yaml_file):
         assert saved_settings["persisted_prop"] == "persisted_value"
 
 
-def test_in_memory_property_not_in_settings_output(mock_yaml_file):
-    """Test that in-memory property is not included in settings() output"""
+def test_in_memory_property_included_in_settings_output(mock_yaml_file):
+    """Test that in-memory property is included in settings() output"""
     with patch(
         "kiln_ai.utils.config.Config.settings_path",
         return_value=mock_yaml_file,
@@ -586,7 +586,7 @@ def test_in_memory_property_not_in_settings_output(mock_yaml_file):
         config.persisted_prop = "persisted_value"
 
         settings = config.settings()
-        assert "in_memory_prop" not in settings
+        assert settings["in_memory_prop"] is False
         assert settings["persisted_prop"] == "persisted_value"
 
 
@@ -669,3 +669,31 @@ def test_save_setting_filters_in_memory_properties(mock_yaml_file):
         assert config.in_memory_prop is False
 
         assert not os.path.exists(mock_yaml_file)
+
+
+def test_in_memory_property_sensitive_hidden(mock_yaml_file):
+    """Test that sensitive in-memory properties are hidden in settings()"""
+    with patch(
+        "kiln_ai.utils.config.Config.settings_path",
+        return_value=mock_yaml_file,
+    ):
+        config = Config(
+            properties={
+                "in_memory_secret": ConfigProperty(
+                    str, default="default", in_memory=True, sensitive=True
+                ),
+                "in_memory_public": ConfigProperty(
+                    str, default="default", in_memory=True
+                ),
+            }
+        )
+        config.in_memory_secret = "secret_value"
+        config.in_memory_public = "public_value"
+
+        settings = config.settings(hide_sensitive=True)
+        assert settings["in_memory_secret"] == "[hidden]"
+        assert settings["in_memory_public"] == "public_value"
+
+        settings_visible = config.settings(hide_sensitive=False)
+        assert settings_visible["in_memory_secret"] == "secret_value"
+        assert settings_visible["in_memory_public"] == "public_value"
