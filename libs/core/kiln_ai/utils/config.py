@@ -252,7 +252,8 @@ class Config:
             super().__setattr__(name, value)
         elif name in self._properties:
             if self._properties[name].in_memory:
-                self._in_memory_settings[name] = value
+                with self._lock:
+                    self._in_memory_settings[name] = value
             else:
                 self.update_settings({name: value})
         else:
