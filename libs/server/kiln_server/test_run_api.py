@@ -1,5 +1,7 @@
 import logging
+import os
 import time
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -17,6 +19,8 @@ from kiln_ai.datamodel import (
     TaskOutputRatingType,
     TaskRun,
 )
+from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
+from kiln_ai.utils.config import Config
 
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.run_api import (
@@ -133,6 +137,59 @@ async def test_run_task_success(client, task_run_setup):
     assert res["output"]["output"] == "Test output"
     # Checking that the ID is not None because it's saved to the disk
     assert res["id"] is not None
+
+
+@pytest.mark.asyncio
+async def test_run_task_with_task_run_id_continues_session(client, task_run_setup):
+    """Test that run_task with task_run_id passes it to adapter.invoke for session continuation."""
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    task_run = task_run_setup["task_run"]
+
+    run_task_request = {
+        "run_config_properties": {
+            "model_name": "gpt_4o",
+            "model_provider_name": "ollama",
+            "prompt_id": "simple_prompt_builder",
+            "structured_output_mode": "json_schema",
+        },
+        "plaintext_input": "Follow-up message",
+        "task_run_id": task_run.id,
+    }
+
+    continued_run = TaskRun(
+        parent=task,
+        input=task_run.input,
+        input_source=task_run.input_source,
+        output=TaskOutput(
+            output="Continued response",
+            source=task_run.output.source,
+        ),
+    )
+    continued_run.id = task_run.id
+
+    with (
+        patch("kiln_server.run_api.task_from_id") as mock_task_from_id,
+        patch.object(LiteLlmAdapter, "invoke", new_callable=AsyncMock) as mock_invoke,
+        patch("kiln_ai.utils.config.Config.shared") as MockConfig,
+    ):
+        mock_task_from_id.return_value = task
+        mock_invoke.return_value = continued_run
+
+        mock_config_instance = MockConfig.return_value
+        mock_config_instance.ollama_base_url = "http://localhost:11434/v1"
+
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/run", json=run_task_request
+        )
+
+    assert response.status_code == 200
+    mock_invoke.assert_called_once()
+    call_kwargs = mock_invoke.call_args[1]
+    assert call_kwargs["task_run_id"] == task_run.id
+    assert mock_invoke.call_args[0][0] == "Follow-up message"
+    res = response.json()
+    assert res["output"]["output"] == "Continued response"
 
 
 @pytest.mark.asyncio
@@ -1663,3 +1720,180 @@ async def test_benchmark_tag_runs(client, task_run_setup, run_count):
     logger.info(
         f"Performance: {runs_per_second:.1f} runs/second, {avg_time_per_run * 1000:.2f}ms per run"
     )
+
+
+def _adapter_sanity_check_output_path() -> Path:
+    return Path(__file__).resolve().parent / "adapter_sanity_check.txt"
+
+
+def _append_to_sanity_check(content: str, output_path: Path) -> None:
+    with open(output_path, "a", encoding="utf-8") as f:
+        f.write(content)
+        f.write("\n")
+
+
+@pytest.fixture
+def adapter_sanity_check_setup(tmp_path):
+    """Setup for paid adapter sanity check tests - real project/task, no adapter mocking."""
+    # if project at the path does not exist, create it, otherwise reuse
+    project_path = (
+        Path("/Users/leonardmarcq/Downloads/")
+        / "adapter_sanity_project"
+        / "project.kiln"
+    )
+    if not project_path.exists():
+        project_path.parent.mkdir()
+
+        project = Project(name="Adapter Sanity Project", path=str(project_path))
+        project.save_to_file()
+
+        task = Task(
+            name="Adapter Sanity Task",
+            instruction="You are a helpful assistant. Respond concisely.",
+            description="Task for adapter sanity checking",
+            parent=project,
+        )
+        task.save_to_file()
+
+    else:
+        project = Project.load_from_file(project_path)
+        task = next(
+            (
+                t
+                for t in project.tasks(readonly=True)
+                if t.name == "Adapter Sanity Task"
+            ),
+            None,
+        )
+        if task is None:
+            raise ValueError("Task not found")
+
+    config = Config.shared()
+    original_projects = list(config.projects) if config.projects else []
+    config._settings["projects"] = [*original_projects, str(project.path)]
+
+    yield {"project": project, "task": task}
+
+    config._settings["projects"] = original_projects
+
+
+@pytest.fixture
+def adapter_sanity_check_math_tools_setup(tmp_path):
+    """Setup for paid math tools test - task with instructions to use add, multiply, etc."""
+    project_path = tmp_path / "adapter_sanity_math_project" / "project.kiln"
+    project_path.parent.mkdir()
+
+    project = Project(name="Adapter Sanity Math Project", path=str(project_path))
+    project.save_to_file()
+
+    task = Task(
+        name="Math Tools Task",
+        instruction="You are an assistant that performs math using the provided tools. You MUST use the add, subtract, multiply, and divide tools for any arithmetic. For example, for 2+2 you must call the add tool with a=2 and b=2. End your response with the final answer in square brackets, e.g. [4].",
+        description="Task for testing Kiln built-in math tools",
+        parent=project,
+    )
+    task.save_to_file()
+
+    config = Config.shared()
+    original_projects = list(config.projects) if config.projects else []
+    config._settings["projects"] = [*original_projects, str(project.path)]
+
+    yield {"project": project, "task": task}
+
+    config._settings["projects"] = original_projects
+
+
+def _assert_math_tools_response(res: dict, expected_in_output: str) -> None:
+    """Assert response has correct output, trace with tool calls, and output matches latest message."""
+    assert res["id"] is not None
+
+    output = res.get("output", {}).get("output", "")
+    assert output is not None
+    assert expected_in_output in output
+
+    trace = res.get("trace") or []
+    assistant_with_tool_calls = [
+        m for m in trace if m.get("role") == "assistant" and m.get("tool_calls")
+    ]
+    assert len(assistant_with_tool_calls) >= 1
+
+    tool_messages = [m for m in trace if m.get("role") == "tool"]
+    assert len(tool_messages) >= 1
+
+    last_assistant = next(
+        (m for m in reversed(trace) if m.get("role") == "assistant"), None
+    )
+    assert last_assistant is not None
+    last_content = last_assistant.get("content") or ""
+    assert expected_in_output in last_content
+
+    intermediate_outputs = res.get("intermediate_outputs") or {}
+    if intermediate_outputs:
+        for key, value in intermediate_outputs.items():
+            assert isinstance(value, str)
+
+
+@pytest.mark.paid
+@pytest.mark.asyncio
+async def test_run_task_adapter_sanity_math_tools(
+    client, adapter_sanity_check_math_tools_setup
+):
+    """Multi-turn run with built-in Kiln math tools. Uses gpt_4o_mini for function calling."""
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        pytest.skip("OPENROUTER_API_KEY required for this test")
+
+    project = adapter_sanity_check_math_tools_setup["project"]
+    task = adapter_sanity_check_math_tools_setup["task"]
+
+    run_config = {
+        "model_name": "gpt_4o_mini",
+        "model_provider_name": "openrouter",
+        "prompt_id": "simple_prompt_builder",
+        "structured_output_mode": "json_schema",
+        "tools_config": {
+            "tools": [
+                KilnBuiltInToolId.ADD_NUMBERS.value,
+                KilnBuiltInToolId.SUBTRACT_NUMBERS.value,
+                KilnBuiltInToolId.MULTIPLY_NUMBERS.value,
+                KilnBuiltInToolId.DIVIDE_NUMBERS.value,
+            ]
+        },
+    }
+
+    response1 = client.post(
+        f"/api/projects/{project.id}/tasks/{task.id}/run",
+        json={
+            "run_config_properties": run_config,
+            "plaintext_input": "What is 2 + 2? Use the tools to calculate.",
+        },
+    )
+    assert response1.status_code == 200
+    res1 = response1.json()
+    _assert_math_tools_response(res1, "4")
+    task_run_id = res1["id"]
+
+    response2 = client.post(
+        f"/api/projects/{project.id}/tasks/{task.id}/run",
+        json={
+            "run_config_properties": run_config,
+            "plaintext_input": "What is 3 times 4? Use the tools to calculate.",
+            "task_run_id": task_run_id,
+        },
+    )
+    assert response2.status_code == 200
+    res2 = response2.json()
+    assert res2["id"] == task_run_id
+    _assert_math_tools_response(res2, "12")
+
+    response3 = client.post(
+        f"/api/projects/{project.id}/tasks/{task.id}/run",
+        json={
+            "run_config_properties": run_config,
+            "plaintext_input": "What is 7 times 8 plus 3? Use the tools to calculate.",
+            "task_run_id": task_run_id,
+        },
+    )
+    assert response3.status_code == 200
+    res3 = response3.json()
+    assert res3["id"] == task_run_id
+    _assert_math_tools_response(res3, "59")

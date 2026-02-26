@@ -7,7 +7,10 @@ from litellm.types.utils import ChoiceLogprobs, ModelResponse
 
 from kiln_ai.adapters.ml_model_list import ModelProviderName, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
-from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
+from kiln_ai.adapters.model_adapters.litellm_adapter import (
+    LiteLlmAdapter,
+    ModelTurnResult,
+)
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel import Project, Task, Usage
 from kiln_ai.datamodel.run_config import (
@@ -1301,3 +1304,61 @@ async def test_dict_input_converted_to_json(tmp_path, config):
         assert isinstance(content, str)
         parsed_content = json.loads(content)
         assert parsed_content == {"x": 10, "y": 20}
+
+
+@pytest.mark.asyncio
+async def test_run_with_prior_trace_uses_multiturn_formatter(mock_task):
+    config = LiteLlmConfig(
+        base_url="https://api.test.com",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="test-model",
+            model_provider_name="openai_compatible",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+        default_headers={"X-Test": "test"},
+        additional_body_options={"api_key": "test_key"},
+    )
+    prior_trace = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+    ]
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    build_chat_formatter_calls = []
+
+    original_build = adapter.build_chat_formatter
+
+    def capturing_build(input, prior_trace_arg=None):
+        build_chat_formatter_calls.append((input, prior_trace_arg))
+        return original_build(input, prior_trace_arg)
+
+    adapter.build_chat_formatter = capturing_build
+
+    async def mock_run_model_turn(
+        provider, prior_messages, top_logprobs, skip_response_format
+    ):
+        extended = list(prior_messages)
+        extended.append({"role": "assistant", "content": "How can I help?"})
+        return ModelTurnResult(
+            assistant_message="How can I help?",
+            all_messages=extended,
+            model_response=None,
+            model_choice=None,
+            usage=Usage(),
+        )
+
+    adapter._run_model_turn = mock_run_model_turn
+
+    run_output, _ = await adapter._run("follow-up", prior_trace=prior_trace)
+
+    assert len(build_chat_formatter_calls) == 1
+    assert build_chat_formatter_calls[0][0] == "follow-up"
+    assert build_chat_formatter_calls[0][1] == prior_trace
+
+    assert run_output.trace is not None
+    assert len(run_output.trace) == 4
+    assert run_output.trace[0]["content"] == "hi"
+    assert run_output.trace[1]["content"] == "hello"
+    assert run_output.trace[2]["content"] == "follow-up"
+    assert run_output.trace[3]["content"] == "How can I help?"

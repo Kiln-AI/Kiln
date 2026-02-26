@@ -184,20 +184,29 @@ class LiteLlmAdapter(BaseAdapter):
             f"Too many tool calls ({tool_calls_count}). Stopping iteration to avoid using too many tokens."
         )
 
-    async def _run(self, input: InputType) -> tuple[RunOutput, Usage | None]:
+    async def _run(
+        self,
+        input: InputType,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
+    ) -> tuple[RunOutput, Usage | None]:
         usage = Usage()
 
         provider = self.model_provider()
         if not provider.model_id:
             raise ValueError("Model ID is required for OpenAI compatible models")
 
-        chat_formatter = self.build_chat_formatter(input)
-        messages: list[ChatCompletionMessageIncludingLiteLLM] = []
+        # build_chat_formatter returns MultiturnFormatter when prior_trace is set, else prompt-based formatter
+        chat_formatter = self.build_chat_formatter(input, prior_trace)
+        messages: list[ChatCompletionMessageIncludingLiteLLM] = copy.deepcopy(
+            chat_formatter.initial_messages()
+        )
 
         prior_output: str | None = None
         final_choice: Choices | None = None
         turns = 0
 
+        # Same loop for both fresh runs and prior_trace continuation.
+        # _run_model_turn has its own internal loop for tool calls (model calls tool -> we run it -> model continues).
         while True:
             turns += 1
             if turns > MAX_CALLS_PER_TURN:

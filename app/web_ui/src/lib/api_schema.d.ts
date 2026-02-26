@@ -6232,6 +6232,11 @@ export interface components {
             } | unknown[] | null;
             /** Tags */
             tags?: string[] | null;
+            /**
+             * Task Run Id
+             * @description When set, continue an existing session. The new message is appended to the run's trace.
+             */
+            task_run_id?: string | null;
         };
         /**
          * SampleApi

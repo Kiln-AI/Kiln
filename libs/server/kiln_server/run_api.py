@@ -56,6 +56,10 @@ class RunTaskRequest(BaseModel):
     plaintext_input: str | None = None
     structured_input: StructuredInputType | None = None
     tags: list[str] | None = None
+    task_run_id: str | None = Field(
+        default=None,
+        description="When set, continue an existing session. The new message is appended to the run's trace.",
+    )
 
     # Allows use of the model_name field (usually pydantic will reserve model_*)
     model_config = ConfigDict(protected_namespaces=())
@@ -281,7 +285,7 @@ def connect_run_api(app: FastAPI):
                 detail="No input provided. Ensure your provided the proper format (plaintext or structured).",
             )
 
-        return await adapter.invoke(input)
+        return await adapter.invoke(input, task_run_id=request.task_run_id)
 
     @app.patch("/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}")
     async def update_run(

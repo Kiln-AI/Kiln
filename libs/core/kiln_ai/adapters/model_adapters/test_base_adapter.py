@@ -10,7 +10,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
 )
 from kiln_ai.adapters.prompt_builders import BasePromptBuilder
 from kiln_ai.datamodel import Task
-from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy, ModelProviderName
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
@@ -20,7 +20,7 @@ from kiln_ai.tools.base_tool import KilnToolInterface
 class MockAdapter(BaseAdapter):
     """Concrete implementation of BaseAdapter for testing"""
 
-    async def _run(self, input):
+    async def _run(self, input, prior_trace=None):
         return None, None
 
     def adapter_name(self) -> str:
@@ -233,7 +233,7 @@ async def test_input_formatting(
         # Mock the _run method to capture the input
         captured_input = None
 
-        async def mock_run(input):
+        async def mock_run(input, prior_trace=None):
             nonlocal captured_input
             captured_input = input
             return RunOutput(output="test output", intermediate_outputs={}), None
@@ -418,6 +418,101 @@ def test_build_chat_formatter(
     # Verify prompt builder was called correctly
     mock_prompt_builder.build_prompt.assert_called_once()
     mock_prompt_builder.chain_of_thought_prompt.assert_called_once()
+
+
+def test_build_chat_formatter_with_prior_trace_returns_multiturn_formatter(adapter):
+    prior_trace = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+    ]
+    formatter = adapter.build_chat_formatter("new input", prior_trace=prior_trace)
+    assert formatter.__class__.__name__ == "MultiturnFormatter"
+    assert formatter.initial_messages() == prior_trace
+
+
+@pytest.mark.asyncio
+async def test_task_run_id_task_path_none_raises(base_project):
+    task = Task(
+        name="test_task",
+        instruction="test_instruction",
+        parent=base_project,
+    )
+    assert task.path is None
+    adapter = MockAdapter(
+        task=task,
+        run_config=KilnAgentRunConfigProperties(
+            model_name="gpt_4o",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+    with pytest.raises(ValueError, match="task has no path"):
+        await adapter.invoke("input", task_run_id="some-id")
+
+
+@pytest.mark.asyncio
+async def test_invoke_returning_run_output_passes_task_run_id_to_run(
+    adapter, mock_parser, tmp_path
+):
+    project = Project(name="proj", path=tmp_path / "proj.kiln")
+    project.save_to_file()
+    task = Task(
+        name="t",
+        instruction="i",
+        parent=project,
+    )
+    task.save_to_file()
+    adapter.task = task
+
+    trace = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+    ]
+    initial_run = adapter.generate_run(
+        input="hi",
+        input_source=None,
+        run_output=RunOutput(
+            output="hello",
+            intermediate_outputs=None,
+            trace=trace,
+        ),
+        trace=trace,
+    )
+    initial_run.save_to_file()
+    run_id = initial_run.id
+    assert run_id is not None
+
+    captured_prior_trace = None
+
+    async def mock_run(input, prior_trace=None):
+        nonlocal captured_prior_trace
+        captured_prior_trace = prior_trace
+        return RunOutput(output="ok", intermediate_outputs=None, trace=trace), None
+
+    adapter._run = mock_run
+
+    provider = MagicMock()
+    provider.parser = "test_parser"
+    provider.formatter = None
+    provider.reasoning_capable = False
+    adapter.model_provider = MagicMock(return_value=provider)
+    mock_parser.parse_output.return_value = RunOutput(
+        output="ok", intermediate_outputs=None, trace=trace
+    )
+
+    with (
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id",
+            return_value=mock_parser,
+        ),
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id",
+        ),
+    ):
+        await adapter.invoke_returning_run_output("follow-up", task_run_id=run_id)
+
+    assert captured_prior_trace == trace
 
 
 @pytest.mark.parametrize(
@@ -681,7 +776,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method
-        async def mock_run(input):
+        async def mock_run(input, prior_trace=None):
             # Check that run ID is set during _run
             run_id = get_agent_run_id()
             assert run_id is not None
@@ -721,7 +816,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method
-        async def mock_run(input):
+        async def mock_run(input, prior_trace=None):
             return RunOutput(output="test output", intermediate_outputs={}), None
 
         adapter._run = mock_run
@@ -759,7 +854,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method to raise an error
-        async def mock_run(input):
+        async def mock_run(input, prior_trace=None):
             # Run ID should be set even when error occurs
             run_id = get_agent_run_id()
             assert run_id is not None
@@ -796,7 +891,7 @@ class TestAgentRunContextLifecycle:
         set_agent_run_id(parent_run_id)
 
         # Mock the _run method to check inherited run ID
-        async def mock_run(input):
+        async def mock_run(input, prior_trace=None):
             # Sub-agent should see parent's run ID
             run_id = get_agent_run_id()
             assert run_id == parent_run_id
@@ -845,7 +940,7 @@ class TestAgentRunContextLifecycle:
         run_id_during_run = None
 
         # Mock the _run method to capture run ID
-        async def mock_run(input):
+        async def mock_run(input, prior_trace=None):
             nonlocal run_id_during_run
             run_id_during_run = get_agent_run_id()
             return RunOutput(output="test output", intermediate_outputs={}), None
@@ -885,7 +980,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.adapters.run_output import RunOutput
 
         # Mock the _run method
-        async def mock_run(input):
+        async def mock_run(input, prior_trace=None):
             return RunOutput(output="test output", intermediate_outputs={}), None
 
         adapter._run = mock_run

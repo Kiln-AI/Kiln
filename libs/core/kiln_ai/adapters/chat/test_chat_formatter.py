@@ -1,6 +1,7 @@
 from kiln_ai.adapters.chat import ChatStrategy, get_chat_formatter
 from kiln_ai.adapters.chat.chat_formatter import (
     COT_FINAL_ANSWER_PROMPT,
+    MultiturnFormatter,
     format_user_message,
 )
 
@@ -117,6 +118,32 @@ def test_chat_formatter_r1_style():
     assert formatter.next_turn(thinking_output) is None
     assert formatter.message_dicts() == expected
     assert formatter.intermediate_outputs() == {}
+
+
+def test_multiturn_formatter_initial_messages():
+    prior_trace = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+    ]
+    formatter = MultiturnFormatter(prior_trace=prior_trace, user_input="new input")
+    assert formatter.initial_messages() == prior_trace
+
+
+def test_multiturn_formatter_next_turn():
+    prior_trace = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+    ]
+    formatter = MultiturnFormatter(prior_trace=prior_trace, user_input="follow-up")
+
+    first = formatter.next_turn()
+    assert first is not None
+    assert len(first.messages) == 1
+    assert first.messages[0].role == "user"
+    assert first.messages[0].content == "follow-up"
+    assert first.final_call
+
+    assert formatter.next_turn("assistant response") is None
 
 
 def test_format_user_message():
