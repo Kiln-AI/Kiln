@@ -116,7 +116,22 @@ class LiteLlmAdapter(BaseAdapter):
                 skip_response_format,
             )
 
+            kwargs_json = json.dumps(
+                {
+                    **completion_kwargs,
+                    "messages": [
+                        message.model_dump()
+                        for message in messages
+                        if isinstance(message, LiteLLMMessage)
+                    ],
+                },
+                indent=2,
+            )
+
+            # print(f"\n\n--------- Completion kwargs: {kwargs_json} \n---------\n\n\n")
+
             # Make the completion call
+            print("Making completion call")
             model_response, response_choice = await self.acompletion_checking_response(
                 **completion_kwargs
             )
@@ -309,6 +324,11 @@ class LiteLlmAdapter(BaseAdapter):
             raise RuntimeError(
                 f"Expected ModelResponse with Choices, got {type(response)}."
             )
+
+        print(
+            f"\n\n--------- Response: {json.dumps(response.choices[0].model_dump(), indent=2, ensure_ascii=False)} \n---------\n\n\n"
+        )
+
         return response, response.choices[0]
 
     def adapter_name(self) -> str:
@@ -719,6 +739,8 @@ class LiteLlmAdapter(BaseAdapter):
                 )
             if len(open_ai_tool_calls) > 0:
                 message["tool_calls"] = open_ai_tool_calls
+        if hasattr(raw_message, "thinking_blocks"):
+            message["thinking_blocks"] = raw_message.thinking_blocks
 
         if not message.get("content") and not message.get("tool_calls"):
             raise ValueError(
