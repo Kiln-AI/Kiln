@@ -172,12 +172,12 @@ class TestDefaultThinkingLevelForModelProvider:
         )
         assert result == "medium"
 
-    def test_falls_back_to_legacy_thinking_level(self):
+    def test_missing_default_returns_none(self):
         result = default_thinking_level_for_model_provider(
-            model_name=ModelName.gemini_2_5_pro.value,
-            provider=ModelProviderName.gemini_api,
+            model_name=ModelName.gpt_4o.value,
+            provider=ModelProviderName.openai,
         )
-        assert result == "medium"
+        assert result is None
 
     def test_unknown_model_returns_none(self):
         result = default_thinking_level_for_model_provider(

@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Literal
+from typing import List
 
 from pydantic import BaseModel
 
@@ -251,14 +251,6 @@ class ModelFormatterID(str, Enum):
     qwen3_style_no_think = "qwen3_style_no_think"
 
 
-GEMINI_3_THINKING_LEVELS: dict[str, str | None] = {
-    "Off/None": None,
-    "Low": "low",
-    "Medium": "medium",
-    "High": "high",
-}
-
-
 class KilnModelProvider(BaseModel):
     """
     Configuration for a specific model provider.
@@ -312,7 +304,6 @@ class KilnModelProvider(BaseModel):
     require_openrouter_reasoning: bool = False
     logprobs_openrouter_options: bool = False
     openrouter_skip_required_parameters: bool = False
-    thinking_level: Literal["low", "medium", "high"] | None = None
     available_thinking_levels: dict[str, str | None] | None = None
     default_thinking_level: str | None = None
     ollama_model_aliases: List[str] | None = None
@@ -978,14 +969,16 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o4-mini",
-                thinking_level="low",
+                available_thinking_levels={"Low": "low"},
+                default_thinking_level="low",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="o4-mini",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                thinking_level="low",
+                available_thinking_levels={"Low": "low"},
+                default_thinking_level="low",
             ),
         ],
     ),
@@ -998,14 +991,16 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o4-mini",
-                thinking_level="medium",
+                available_thinking_levels={"Medium": "medium"},
+                default_thinking_level="medium",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="o4-mini",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                thinking_level="medium",
+                available_thinking_levels={"Medium": "medium"},
+                default_thinking_level="medium",
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -1023,14 +1018,16 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o4-mini",
-                thinking_level="high",
+                available_thinking_levels={"High": "high"},
+                default_thinking_level="high",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="o4-mini",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                thinking_level="high",
+                available_thinking_levels={"High": "high"},
+                default_thinking_level="high",
             ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -1048,14 +1045,16 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o3-mini",
-                thinking_level="low",
+                available_thinking_levels={"Low": "low"},
+                default_thinking_level="low",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="o3-mini",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                thinking_level="low",
+                available_thinking_levels={"Low": "low"},
+                default_thinking_level="low",
             ),
         ],
     ),
@@ -1068,14 +1067,16 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o3-mini",
-                thinking_level="medium",
+                available_thinking_levels={"Medium": "medium"},
+                default_thinking_level="medium",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="o3-mini",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                thinking_level="medium",
+                available_thinking_levels={"Medium": "medium"},
+                default_thinking_level="medium",
             ),
         ],
     ),
@@ -1088,14 +1089,16 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o3-mini",
-                thinking_level="high",
+                available_thinking_levels={"High": "high"},
+                default_thinking_level="high",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="o3-mini",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                thinking_level="high",
+                available_thinking_levels={"High": "high"},
+                default_thinking_level="high",
             ),
         ],
     ),
@@ -1108,14 +1111,16 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o3",
-                thinking_level="low",
+                available_thinking_levels={"Low": "low"},
+                default_thinking_level="low",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="o3",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                thinking_level="low",
+                available_thinking_levels={"Low": "low"},
+                default_thinking_level="low",
             ),
         ],
     ),
@@ -1128,14 +1133,16 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o3",
-                thinking_level="medium",
+                available_thinking_levels={"Medium": "medium"},
+                default_thinking_level="medium",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="o3",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                thinking_level="medium",
+                available_thinking_levels={"Medium": "medium"},
+                default_thinking_level="medium",
             ),
         ],
     ),
@@ -1148,14 +1155,16 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o3",
-                thinking_level="high",
+                available_thinking_levels={"High": "high"},
+                default_thinking_level="high",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="o3",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                thinking_level="high",
+                available_thinking_levels={"High": "high"},
+                default_thinking_level="high",
             ),
         ],
     ),
@@ -1234,14 +1243,16 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o1",
-                thinking_level="low",
+                available_thinking_levels={"Low": "low"},
+                default_thinking_level="low",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="o1",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                thinking_level="low",
+                available_thinking_levels={"Low": "low"},
+                default_thinking_level="low",
             ),
         ],
     ),
@@ -1254,14 +1265,16 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o1",
-                thinking_level="medium",
+                available_thinking_levels={"Medium": "medium"},
+                default_thinking_level="medium",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="o1",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                thinking_level="medium",
+                available_thinking_levels={"Medium": "medium"},
+                default_thinking_level="medium",
             ),
         ],
     ),
@@ -1274,14 +1287,16 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="o1",
-                thinking_level="high",
+                available_thinking_levels={"High": "high"},
+                default_thinking_level="high",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="o1",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                thinking_level="high",
+                available_thinking_levels={"High": "high"},
+                default_thinking_level="high",
             ),
         ],
     ),
@@ -1612,7 +1627,7 @@ built_in_models: List[KilnModel] = [
                 suggested_for_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
-                available_thinking_levels=GEMINI_3_THINKING_LEVELS,
+                available_thinking_levels={"Medium": "medium"},
                 default_thinking_level="medium",
                 multimodal_mime_types=[
                     KilnMimeType.PDF,
@@ -1636,7 +1651,7 @@ built_in_models: List[KilnModel] = [
                 suggested_for_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
-                available_thinking_levels=GEMINI_3_THINKING_LEVELS,
+                available_thinking_levels={"Medium": "medium"},
                 default_thinking_level="medium",
                 multimodal_mime_types=[
                     KilnMimeType.PDF,
@@ -1662,7 +1677,7 @@ built_in_models: List[KilnModel] = [
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
                 gemini_reasoning_enabled=True,
-                available_thinking_levels=GEMINI_3_THINKING_LEVELS,
+                available_thinking_levels={"Medium": "medium"},
                 default_thinking_level="medium",
             ),
         ],
@@ -1682,7 +1697,7 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
-                available_thinking_levels=GEMINI_3_THINKING_LEVELS,
+                available_thinking_levels={"Medium": "medium"},
                 default_thinking_level="medium",
                 multimodal_mime_types=[
                     # documents
@@ -1704,7 +1719,7 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
-                available_thinking_levels=GEMINI_3_THINKING_LEVELS,
+                available_thinking_levels={"Medium": "medium"},
                 default_thinking_level="medium",
                 multimodal_mime_types=[
                     # documents
@@ -1736,7 +1751,7 @@ built_in_models: List[KilnModel] = [
                 # while the model is capable of reasoning, it doesn't always return it in the response
                 # reasoning_capable=True,
                 gemini_reasoning_enabled=True,
-                available_thinking_levels=GEMINI_3_THINKING_LEVELS,
+                available_thinking_levels={"Medium": "medium"},
                 default_thinking_level="medium",
             ),
         ],
@@ -1760,7 +1775,7 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
-                available_thinking_levels=GEMINI_3_THINKING_LEVELS,
+                available_thinking_levels={"Medium": "medium"},
                 default_thinking_level="medium",
                 multimodal_mime_types=[
                     # documents
@@ -1784,7 +1799,7 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
-                available_thinking_levels=GEMINI_3_THINKING_LEVELS,
+                available_thinking_levels={"Medium": "medium"},
                 default_thinking_level="medium",
                 multimodal_mime_types=[
                     # documents
@@ -1817,7 +1832,7 @@ built_in_models: List[KilnModel] = [
                 # while the model is capable of reasoning, it doesn't always return it in the response
                 # reasoning_capable=True,
                 gemini_reasoning_enabled=True,
-                available_thinking_levels=GEMINI_3_THINKING_LEVELS,
+                available_thinking_levels={"Medium": "medium"},
                 default_thinking_level="medium",
             ),
         ],
@@ -1848,7 +1863,8 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
                 gemini_reasoning_enabled=True,
-                thinking_level="medium",
+                available_thinking_levels={"Medium": "medium"},
+                default_thinking_level="medium",
             ),
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
@@ -1877,7 +1893,8 @@ built_in_models: List[KilnModel] = [
                 ],
                 reasoning_capable=True,
                 gemini_reasoning_enabled=True,
-                thinking_level="medium",
+                available_thinking_levels={"Medium": "medium"},
+                default_thinking_level="medium",
                 max_parallel_requests=2,
             ),
             KilnModelProvider(
@@ -1886,7 +1903,8 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 gemini_reasoning_enabled=True,
-                thinking_level="medium",
+                available_thinking_levels={"Medium": "medium"},
+                default_thinking_level="medium",
             ),
         ],
     ),
@@ -1923,7 +1941,8 @@ built_in_models: List[KilnModel] = [
                 model_id="gemini-2.5-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                thinking_level="medium",
+                available_thinking_levels={"Medium": "medium"},
+                default_thinking_level="medium",
                 supports_doc_extraction=True,
                 suggested_for_doc_extraction=True,
                 multimodal_capable=True,
@@ -1952,7 +1971,8 @@ built_in_models: List[KilnModel] = [
                 model_id="gemini-2.5-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                thinking_level="medium",
+                available_thinking_levels={"Medium": "medium"},
+                default_thinking_level="medium",
             ),
         ],
     ),
@@ -1989,7 +2009,8 @@ built_in_models: List[KilnModel] = [
                 model_id="gemini-2.5-flash-lite",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                thinking_level="medium",
+                available_thinking_levels={"Medium": "medium"},
+                default_thinking_level="medium",
                 supports_doc_extraction=True,
                 suggested_for_doc_extraction=False,
                 multimodal_capable=True,
@@ -2018,7 +2039,8 @@ built_in_models: List[KilnModel] = [
                 model_id="gemini-2.5-flash-lite",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                thinking_level="medium",
+                available_thinking_levels={"Medium": "medium"},
+                default_thinking_level="medium",
             ),
         ],
     ),
@@ -6312,6 +6334,6 @@ def default_thinking_level_for_model_provider(
         if model_provider.name == provider:
             if model_provider.default_thinking_level is not None:
                 return model_provider.default_thinking_level
-            return model_provider.thinking_level
+            return None
 
     return None

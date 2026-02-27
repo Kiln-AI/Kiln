@@ -403,8 +403,8 @@ class LiteLlmAdapter(BaseAdapter):
         extra_body = {}
         provider_options = {}
 
-        if provider.thinking_level is not None:
-            extra_body["reasoning_effort"] = provider.thinking_level
+        if provider.default_thinking_level is not None:
+            extra_body["reasoning_effort"] = provider.default_thinking_level
 
         if provider.require_openrouter_reasoning:
             # https://openrouter.ai/docs/use-cases/reasoning-tokens
