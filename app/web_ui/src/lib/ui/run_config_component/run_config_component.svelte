@@ -67,6 +67,12 @@
   let top_p: number = 1.0
 
   let structured_output_mode: StructuredOutputMode = "default"
+  let thinking_level: string | null = null
+  $: current_model_details = available_model_details(
+    model_name,
+    provider,
+    $available_models,
+  )
 
   $: model_name = model ? model.split("/").slice(1).join("/") : ""
   $: provider = model ? model.split("/")[0] : ""
@@ -129,6 +135,24 @@
     }
   }
 
+  function update_thinking_level_if_needed(
+    model_name: string,
+    provider: string,
+    available_models: AvailableModels[],
+  ) {
+    const model_details = available_model_details(
+      model_name,
+      provider,
+      available_models,
+    )
+    const new_level = model_details?.default_thinking_level ?? null
+    if (new_level !== thinking_level) {
+      thinking_level = new_level
+      return true
+    }
+    return false
+  }
+
   // When a run config is selected, update the current run options to match the selected config
   let prior_selected_run_config_id: string | null = null
   let run_config_just_loaded = false
@@ -159,6 +183,7 @@
     temperature = config_properties.temperature
     top_p = config_properties.top_p
     structured_output_mode = config_properties.structured_output_mode
+    thinking_level = config_properties.thinking_level ?? null
     run_config_just_loaded = true
   }
 
@@ -176,6 +201,7 @@
   temperature,
   top_p,
   structured_output_mode,
+  thinking_level,
   tools,
   $available_models,
   selected_run_config_id,
@@ -227,6 +253,7 @@
         provider,
         $available_models,
       )
+      update_thinking_level_if_needed(model_name, provider, $available_models)
     }
     run_config_just_loaded = false
 
@@ -331,6 +358,7 @@
       prompt_changed ||
       config_properties.temperature !== temperature ||
       config_properties.top_p !== top_p ||
+      (config_properties.thinking_level ?? null) !== thinking_level ||
       output_mode_mismatch ||
       !arrays_equal(config_properties.tools_config?.tools ?? [], tools)
     ) {
@@ -353,6 +381,7 @@
       temperature: temperature,
       top_p: top_p,
       structured_output_mode: structured_output_mode,
+      thinking_level: thinking_level,
       tools_config: {
         tools: tools,
       },
@@ -487,6 +516,9 @@
           bind:temperature
           bind:top_p
           bind:structured_output_mode
+          bind:thinking_level
+          available_thinking_levels={current_model_details?.available_thinking_levels ??
+            null}
           has_structured_output={requires_structured_output}
         />
       </Collapse>
@@ -506,6 +538,9 @@
           bind:temperature
           bind:top_p
           bind:structured_output_mode
+          bind:thinking_level
+          available_thinking_levels={current_model_details?.available_thinking_levels ??
+            null}
           has_structured_output={requires_structured_output}
         />
       </Collapse>

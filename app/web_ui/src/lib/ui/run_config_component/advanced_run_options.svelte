@@ -8,6 +8,8 @@
   export let top_p: number
   export let structured_output_mode: StructuredOutputMode
   export let has_structured_output: boolean
+  export let thinking_level: string | null
+  export let available_thinking_levels: Record<string, string | null> | null
 
   export let validate_temperature: (value: unknown) => string | null = (
     value: unknown,
@@ -111,6 +113,22 @@
       ],
     },
   ]
+
+  $: has_thinking_levels =
+    available_thinking_levels &&
+    Object.keys(available_thinking_levels).length > 0
+
+  $: thinking_level_options = [
+    {
+      label: "Thinking Level",
+      options: Object.entries(available_thinking_levels ?? {}).map(
+        ([label, value]) => ({
+          label,
+          value,
+        }),
+      ),
+    },
+  ]
 </script>
 
 <div class="flex flex-col gap-4">
@@ -140,6 +158,18 @@
       bind:value={structured_output_mode}
       fancy_select_options={structured_output_options}
       info_description="Choose how the model should return structured data. Defaults to a safe choice. Not all models/providers support all options so changing this may result in errors."
+    />
+  {/if}
+
+  {#if has_thinking_levels}
+    <FormElement
+      id="thinking_level"
+      label="Thinking Level"
+      inputType="fancy_select"
+      bind:value={thinking_level}
+      fancy_select_options={thinking_level_options}
+      info_description="Controls how much reasoning the model performs. If Off/None is selected, no reasoning parameter is sent."
+      optional={true}
     />
   {/if}
 </div>
