@@ -7,6 +7,7 @@ from kiln_ai.adapters.ml_model_list import (
     built_in_models,
     built_in_models_from_provider,
     default_structured_output_mode_for_model_provider,
+    default_thinking_level_for_model_provider,
     get_model_by_name,
 )
 from kiln_ai.adapters.user_model_entry import UserModelEntry
@@ -161,6 +162,29 @@ class TestDefaultStructuredOutputModeForModelProvider:
             provider=first_provider.name,
         )
         assert result == first_provider.structured_output_mode
+
+
+class TestDefaultThinkingLevelForModelProvider:
+    def test_uses_default_thinking_level(self):
+        result = default_thinking_level_for_model_provider(
+            model_name=ModelName.gemini_3_pro_preview.value,
+            provider=ModelProviderName.openrouter,
+        )
+        assert result == "medium"
+
+    def test_falls_back_to_legacy_thinking_level(self):
+        result = default_thinking_level_for_model_provider(
+            model_name=ModelName.gemini_2_5_pro.value,
+            provider=ModelProviderName.gemini_api,
+        )
+        assert result == "medium"
+
+    def test_unknown_model_returns_none(self):
+        result = default_thinking_level_for_model_provider(
+            model_name="unknown-model",
+            provider=ModelProviderName.openrouter,
+        )
+        assert result is None
 
 
 class TestBuiltInModelsFromProvider:

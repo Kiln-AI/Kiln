@@ -251,6 +251,14 @@ class ModelFormatterID(str, Enum):
     qwen3_style_no_think = "qwen3_style_no_think"
 
 
+GEMINI_3_THINKING_LEVELS: dict[str, str | None] = {
+    "Off/None": None,
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+}
+
+
 class KilnModelProvider(BaseModel):
     """
     Configuration for a specific model provider.
@@ -305,6 +313,8 @@ class KilnModelProvider(BaseModel):
     logprobs_openrouter_options: bool = False
     openrouter_skip_required_parameters: bool = False
     thinking_level: Literal["low", "medium", "high"] | None = None
+    available_thinking_levels: dict[str, str | None] | None = None
+    default_thinking_level: str | None = None
     ollama_model_aliases: List[str] | None = None
     anthropic_extended_thinking: bool = False
     gemini_reasoning_enabled: bool = False
@@ -1602,6 +1612,8 @@ built_in_models: List[KilnModel] = [
                 suggested_for_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
+                available_thinking_levels=GEMINI_3_THINKING_LEVELS,
+                default_thinking_level="medium",
                 multimodal_mime_types=[
                     KilnMimeType.PDF,
                     KilnMimeType.CSV,
@@ -1624,6 +1636,8 @@ built_in_models: List[KilnModel] = [
                 suggested_for_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
+                available_thinking_levels=GEMINI_3_THINKING_LEVELS,
+                default_thinking_level="medium",
                 multimodal_mime_types=[
                     KilnMimeType.PDF,
                     KilnMimeType.CSV,
@@ -1640,7 +1654,6 @@ built_in_models: List[KilnModel] = [
                 ],
                 gemini_reasoning_enabled=True,
                 max_parallel_requests=2,
-                thinking_level="medium",
             ),
             KilnModelProvider(
                 name=ModelProviderName.vertex,
@@ -1649,7 +1662,8 @@ built_in_models: List[KilnModel] = [
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
                 gemini_reasoning_enabled=True,
-                thinking_level="medium",
+                available_thinking_levels=GEMINI_3_THINKING_LEVELS,
+                default_thinking_level="medium",
             ),
         ],
     ),
@@ -1668,6 +1682,8 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
+                available_thinking_levels=GEMINI_3_THINKING_LEVELS,
+                default_thinking_level="medium",
                 multimodal_mime_types=[
                     # documents
                     KilnMimeType.PDF,
@@ -1688,6 +1704,8 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
+                available_thinking_levels=GEMINI_3_THINKING_LEVELS,
+                default_thinking_level="medium",
                 multimodal_mime_types=[
                     # documents
                     KilnMimeType.PDF,
@@ -1710,7 +1728,6 @@ built_in_models: List[KilnModel] = [
                 # reasoning_capable=True,
                 gemini_reasoning_enabled=True,
                 max_parallel_requests=2,
-                thinking_level="medium",
             ),
             KilnModelProvider(
                 name=ModelProviderName.vertex,
@@ -1719,7 +1736,8 @@ built_in_models: List[KilnModel] = [
                 # while the model is capable of reasoning, it doesn't always return it in the response
                 # reasoning_capable=True,
                 gemini_reasoning_enabled=True,
-                thinking_level="medium",
+                available_thinking_levels=GEMINI_3_THINKING_LEVELS,
+                default_thinking_level="medium",
             ),
         ],
     ),
@@ -1742,6 +1760,8 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
+                available_thinking_levels=GEMINI_3_THINKING_LEVELS,
+                default_thinking_level="medium",
                 multimodal_mime_types=[
                     # documents
                     KilnMimeType.PDF,
@@ -1764,6 +1784,8 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
+                available_thinking_levels=GEMINI_3_THINKING_LEVELS,
+                default_thinking_level="medium",
                 multimodal_mime_types=[
                     # documents
                     KilnMimeType.PDF,
@@ -1785,7 +1807,6 @@ built_in_models: List[KilnModel] = [
                 # while the model is capable of reasoning, it doesn't always return it in the response
                 # reasoning_capable=True,
                 gemini_reasoning_enabled=True,
-                thinking_level="medium",
             ),
             KilnModelProvider(
                 name=ModelProviderName.vertex,
@@ -1796,7 +1817,8 @@ built_in_models: List[KilnModel] = [
                 # while the model is capable of reasoning, it doesn't always return it in the response
                 # reasoning_capable=True,
                 gemini_reasoning_enabled=True,
-                thinking_level="medium",
+                available_thinking_levels=GEMINI_3_THINKING_LEVELS,
+                default_thinking_level="medium",
             ),
         ],
     ),
@@ -6274,3 +6296,22 @@ def default_structured_output_mode_for_model_provider(
 
     # If provider not found, return default
     return default
+
+
+def default_thinking_level_for_model_provider(
+    model_name: str,
+    provider: ModelProviderName,
+) -> str | None:
+    try:
+        model_name_enum = ModelName(model_name)
+        model = get_model_by_name(model_name_enum)
+    except (ValueError, KeyError):
+        return None
+
+    for model_provider in model.providers:
+        if model_provider.name == provider:
+            if model_provider.default_thinking_level is not None:
+                return model_provider.default_thinking_level
+            return model_provider.thinking_level
+
+    return None
