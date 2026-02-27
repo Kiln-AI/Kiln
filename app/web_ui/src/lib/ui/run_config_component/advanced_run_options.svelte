@@ -168,7 +168,7 @@
       inputType="fancy_select"
       bind:value={thinking_level}
       fancy_select_options={thinking_level_options}
-      info_description="Controls how much reasoning the model performs. If Off/None is selected, no reasoning parameter is sent."
+      info_description="Thinking level controls the model’s internal reasoning effort for supported models. Higher effort uses more tokens and is slower; lower effort is faster."
       optional={true}
     />
   {/if}
