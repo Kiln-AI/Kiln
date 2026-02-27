@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from mcp.types import CallToolResult, TextContent
@@ -334,7 +334,7 @@ async def test_mcp_adapter_sets_and_clears_run_context(
 async def test_mcp_adapter_rejects_multiturn_invoke_returning_run_output(
     project_with_local_mcp_server, local_mcp_tool_id
 ):
-    """Session continuation (task_run_id) is not supported for MCP adapter."""
+    """Session continuation (existing_run) is not supported for MCP adapter."""
     project, _ = project_with_local_mcp_server
     task = Task(
         name="Test Task",
@@ -348,8 +348,11 @@ async def test_mcp_adapter_rejects_multiturn_invoke_returning_run_output(
 
     adapter = MCPAdapter(task=task, run_config=run_config)
 
+    existing_run = MagicMock()
+    existing_run.trace = [{"role": "user", "content": "hi"}]
+
     with pytest.raises(NotImplementedError) as exc_info:
-        await adapter.invoke_returning_run_output("input", task_run_id="some-run-id")
+        await adapter.invoke_returning_run_output("input", existing_run=existing_run)
 
     assert "Session continuation is not supported" in str(exc_info.value)
     assert "MCP adapter" in str(exc_info.value)
@@ -359,7 +362,7 @@ async def test_mcp_adapter_rejects_multiturn_invoke_returning_run_output(
 async def test_mcp_adapter_rejects_multiturn_invoke(
     project_with_local_mcp_server, local_mcp_tool_id
 ):
-    """invoke with task_run_id raises NotImplementedError for MCP adapter."""
+    """invoke with existing_run raises NotImplementedError for MCP adapter."""
     project, _ = project_with_local_mcp_server
     task = Task(
         name="Test Task",
@@ -373,8 +376,11 @@ async def test_mcp_adapter_rejects_multiturn_invoke(
 
     adapter = MCPAdapter(task=task, run_config=run_config)
 
+    existing_run = MagicMock()
+    existing_run.trace = [{"role": "user", "content": "hi"}]
+
     with pytest.raises(NotImplementedError) as exc_info:
-        await adapter.invoke("input", task_run_id="some-run-id")
+        await adapter.invoke("input", existing_run=existing_run)
 
     assert "Session continuation is not supported" in str(exc_info.value)
 

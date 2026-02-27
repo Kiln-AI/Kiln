@@ -285,7 +285,28 @@ def connect_run_api(app: FastAPI):
                 detail="No input provided. Ensure your provided the proper format (plaintext or structured).",
             )
 
-        return await adapter.invoke(input, task_run_id=request.task_run_id)
+        existing_run: TaskRun | None = None
+        if request.task_run_id is not None:
+            if task.path is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot continue session: task has no path. Save the task first.",
+                )
+            existing_run = TaskRun.from_id_and_parent_path(
+                request.task_run_id, task.path
+            )
+            if existing_run is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Run not found. Cannot continue session.",
+                )
+            if not existing_run.trace or len(existing_run.trace) == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Run has no trace. Cannot continue session without conversation history.",
+                )
+
+        return await adapter.invoke(input, existing_run=existing_run)
 
     @app.patch("/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}")
     async def update_run(

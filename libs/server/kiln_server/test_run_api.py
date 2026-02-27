@@ -99,6 +99,10 @@ def task_run_setup(tmp_path):
                 },
             ),
         ),
+        trace=[
+            {"role": "user", "content": "Test input"},
+            {"role": "assistant", "content": "Test output"},
+        ],
     )
     task_run.save_to_file()
 
@@ -186,10 +190,86 @@ async def test_run_task_with_task_run_id_continues_session(client, task_run_setu
     assert response.status_code == 200
     mock_invoke.assert_called_once()
     call_kwargs = mock_invoke.call_args[1]
-    assert call_kwargs["task_run_id"] == task_run.id
+    assert call_kwargs["existing_run"].id == task_run.id
     assert mock_invoke.call_args[0][0] == "Follow-up message"
     res = response.json()
     assert res["output"]["output"] == "Continued response"
+
+
+@pytest.mark.asyncio
+async def test_run_task_task_run_id_not_found_returns_404(client, task_run_setup):
+    """Test that run_task with nonexistent task_run_id returns 404."""
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+
+    run_task_request = {
+        "run_config_properties": {
+            "model_name": "gpt_4o",
+            "model_provider_name": "ollama",
+            "prompt_id": "simple_prompt_builder",
+            "structured_output_mode": "json_schema",
+        },
+        "plaintext_input": "Follow-up",
+        "task_run_id": "nonexistent-run-id",
+    }
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/run", json=run_task_request
+        )
+
+    assert response.status_code == 404
+    assert "Run not found" in response.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_run_task_task_run_id_no_trace_returns_400(client, task_run_setup):
+    """Test that run_task with task_run_id for run without trace returns 400."""
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+
+    task_run_no_trace = TaskRun(
+        parent=task,
+        input="Hello",
+        input_source=DataSource(
+            type=DataSourceType.human, properties={"created_by": "Test User"}
+        ),
+        output=TaskOutput(
+            output="Hi",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt_4o",
+                    "model_provider": "ollama",
+                    "adapter_name": "kiln_langchain_adapter",
+                    "prompt_id": "simple_prompt_builder",
+                },
+            ),
+        ),
+        trace=None,
+    )
+    task_run_no_trace.save_to_file()
+
+    run_task_request = {
+        "run_config_properties": {
+            "model_name": "gpt_4o",
+            "model_provider_name": "ollama",
+            "prompt_id": "simple_prompt_builder",
+            "structured_output_mode": "json_schema",
+        },
+        "plaintext_input": "Follow-up",
+        "task_run_id": task_run_no_trace.id,
+    }
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/run", json=run_task_request
+        )
+
+    assert response.status_code == 400
+    assert "no trace" in response.json()["message"].lower()
 
 
 @pytest.mark.asyncio
@@ -1838,7 +1918,7 @@ def _assert_math_tools_response(res: dict, expected_in_output: str) -> None:
 async def test_run_task_adapter_sanity_math_tools(
     client, adapter_sanity_check_math_tools_setup
 ):
-    """Multi-turn run with built-in Kiln math tools. Uses gpt_4o_mini for function calling."""
+    """Multi-turn run with built-in Kiln math tools. Test that tools + continue session work as expected."""
     if not os.environ.get("OPENROUTER_API_KEY"):
         pytest.skip("OPENROUTER_API_KEY required for this test")
 
@@ -1846,7 +1926,7 @@ async def test_run_task_adapter_sanity_math_tools(
     task = adapter_sanity_check_math_tools_setup["task"]
 
     run_config = {
-        "model_name": "gpt_4o_mini",
+        "model_name": "gpt_5_nano",
         "model_provider_name": "openrouter",
         "prompt_id": "simple_prompt_builder",
         "structured_output_mode": "json_schema",
@@ -1897,3 +1977,17 @@ async def test_run_task_adapter_sanity_math_tools(
     res3 = response3.json()
     assert res3["id"] == task_run_id
     _assert_math_tools_response(res3, "59")
+
+    # now ask it to list out all the previous results in an array
+    response4 = client.post(
+        f"/api/projects/{project.id}/tasks/{task.id}/run",
+        json={
+            "run_config_properties": run_config,
+            "plaintext_input": "List all the previous results in an array - e.g. [55, 81, 7].",
+            "task_run_id": task_run_id,
+        },
+    )
+    assert response4.status_code == 200
+    res4 = response4.json()
+    assert res4["id"] == task_run_id
+    assert res4["output"]["output"] == "[4, 12, 59]"

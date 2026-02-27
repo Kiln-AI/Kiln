@@ -9,7 +9,13 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
     RunOutput,
 )
 from kiln_ai.adapters.prompt_builders import BasePromptBuilder
-from kiln_ai.datamodel import Task
+from kiln_ai.datamodel import (
+    DataSource,
+    DataSourceType,
+    Task,
+    TaskOutput,
+    TaskRun,
+)
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy, ModelProviderName
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
@@ -431,13 +437,12 @@ def test_build_chat_formatter_with_prior_trace_returns_multiturn_formatter(adapt
 
 
 @pytest.mark.asyncio
-async def test_task_run_id_task_path_none_raises(base_project):
+async def test_existing_run_without_trace_raises(base_project):
     task = Task(
         name="test_task",
         instruction="test_instruction",
         parent=base_project,
     )
-    assert task.path is None
     adapter = MockAdapter(
         task=task,
         run_config=KilnAgentRunConfigProperties(
@@ -447,12 +452,29 @@ async def test_task_run_id_task_path_none_raises(base_project):
             structured_output_mode=StructuredOutputMode.json_schema,
         ),
     )
-    with pytest.raises(ValueError, match="task has no path"):
-        await adapter.invoke("input", task_run_id="some-id")
+    run_without_trace = TaskRun(
+        parent=task,
+        input="hi",
+        input_source=None,
+        output=TaskOutput(
+            output="hello",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt_4o",
+                    "model_provider": "openai",
+                    "adapter_name": "test",
+                },
+            ),
+        ),
+        trace=None,
+    )
+    with pytest.raises(ValueError, match="no trace"):
+        await adapter.invoke("input", existing_run=run_without_trace)
 
 
 @pytest.mark.asyncio
-async def test_invoke_returning_run_output_passes_task_run_id_to_run(
+async def test_invoke_returning_run_output_passes_existing_run_to_run(
     adapter, mock_parser, tmp_path
 ):
     project = Project(name="proj", path=tmp_path / "proj.kiln")
@@ -510,7 +532,7 @@ async def test_invoke_returning_run_output_passes_task_run_id_to_run(
             "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id",
         ),
     ):
-        await adapter.invoke_returning_run_output("follow-up", task_run_id=run_id)
+        await adapter.invoke_returning_run_output("follow-up", existing_run=initial_run)
 
     assert captured_prior_trace == trace
 

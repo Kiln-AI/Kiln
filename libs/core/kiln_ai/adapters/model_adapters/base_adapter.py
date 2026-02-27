@@ -27,7 +27,6 @@ from kiln_ai.datamodel import (
     TaskRun,
     Usage,
 )
-from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.run_config import (
@@ -128,10 +127,10 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: InputType,
         input_source: DataSource | None = None,
-        task_run_id: ID_TYPE | None = None,
+        existing_run: TaskRun | None = None,
     ) -> TaskRun:
         run_output, _ = await self.invoke_returning_run_output(
-            input, input_source, task_run_id
+            input, input_source, existing_run
         )
         return run_output
 
@@ -139,7 +138,7 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: InputType,
         input_source: DataSource | None = None,
-        task_run_id: ID_TYPE | None = None,
+        existing_run: TaskRun | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # validate input, allowing arrays
         if self.input_schema is not None:
@@ -150,24 +149,14 @@ class BaseAdapter(metaclass=ABCMeta):
                 require_object=False,
             )
 
-        prior_trace: list[ChatCompletionMessageParam] | None = None
-        existing_run: TaskRun | None = None
+        if existing_run is not None and (
+            not existing_run.trace or len(existing_run.trace) == 0
+        ):
+            raise ValueError(
+                "Run has no trace. Cannot continue session without conversation history."
+            )
 
-        if task_run_id is not None:
-            if self.task.path is None:
-                raise ValueError(
-                    "Cannot continue session: task has no path. Save the task first."
-                )
-            existing_run = TaskRun.from_id_and_parent_path(task_run_id, self.task.path)
-            if existing_run is None:
-                raise ValueError(
-                    f"Run not found. Cannot continue session. ID: {task_run_id}"
-                )
-            if not existing_run.trace or len(existing_run.trace) == 0:
-                raise ValueError(
-                    f"Run has no trace. Cannot continue session without conversation history. ID: {task_run_id}"
-                )
-            prior_trace = existing_run.trace
+        prior_trace = existing_run.trace if existing_run else None
 
         # Format model input for model call (we save the original input in the task without formatting)
         formatted_input = input
@@ -266,7 +255,7 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: InputType,
         input_source: DataSource | None = None,
-        task_run_id: ID_TYPE | None = None,
+        existing_run: TaskRun | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # Determine if this is the root agent (no existing run context)
         is_root_agent = get_agent_run_id() is None
@@ -277,7 +266,7 @@ class BaseAdapter(metaclass=ABCMeta):
 
         try:
             return await self._run_returning_run_output(
-                input, input_source, task_run_id
+                input, input_source, existing_run
             )
         finally:
             if is_root_agent:

@@ -309,7 +309,7 @@ async def test_invoke_continue_session(test_task, adapter):
             )
             mock_parser_from_id.return_value = mock_parser
 
-            updated_run = await adapter.invoke("Tell me more", task_run_id=run_id)
+            updated_run = await adapter.invoke("Tell me more", existing_run=initial_run)
 
         assert updated_run.id == run_id
         assert updated_run.input == "Hello"
@@ -325,20 +325,8 @@ async def test_invoke_continue_session(test_task, adapter):
 
 
 @pytest.mark.asyncio
-async def test_invoke_continue_invalid_task_run_id(test_task, adapter):
-    """Test that invoke with invalid task_run_id raises ValueError."""
-    with patch("kiln_ai.utils.config.Config.shared") as mock_shared:
-        mock_config = mock_shared.return_value
-        mock_config.autosave_runs = True
-        mock_config.user_id = "test_user"
-
-        with pytest.raises(ValueError, match="Run not found"):
-            await adapter.invoke("Hello", task_run_id="nonexistent-id")
-
-
-@pytest.mark.asyncio
 async def test_invoke_continue_run_without_trace(test_task, adapter):
-    """Test that invoke with task_run_id for a run without trace raises ValueError."""
+    """Test that invoke with existing_run that has no trace raises ValueError."""
     with patch("kiln_ai.utils.config.Config.shared") as mock_shared:
         mock_config = mock_shared.return_value
         mock_config.autosave_runs = True
@@ -356,7 +344,7 @@ async def test_invoke_continue_run_without_trace(test_task, adapter):
         run_without_trace.save_to_file()
 
         with pytest.raises(ValueError, match="no trace"):
-            await adapter.invoke("Follow up", task_run_id=run_without_trace.id)
+            await adapter.invoke("Follow up", existing_run=run_without_trace)
 
 
 def test_generate_run_with_existing_run_merges_usage_and_intermediate_outputs(
