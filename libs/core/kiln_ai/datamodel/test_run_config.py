@@ -80,6 +80,46 @@ class TestKilnAgentRunConfigProperties:
         data = config.model_dump()
         assert data["type"] == "kiln_agent"
 
+    def test_thinking_level_missing(self):
+        config = KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+            # Thinking level is missing, so it should not be read from the model fields set
+        )
+        assert config.thinking_level is None
+        assert "thinking_level" not in config.model_fields_set
+        data_missing = config.model_dump(exclude_unset=True)
+        assert "thinking_level" not in data_missing
+
+    def test_thinking_level_explicit_none_is_set(self):
+        config_with_none = KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+            thinking_level=None,
+        )
+        assert config_with_none.thinking_level is None
+        assert "thinking_level" in config_with_none.model_fields_set
+        data_none = config_with_none.model_dump(exclude_unset=True)
+        assert "thinking_level" in data_none
+        assert data_none["thinking_level"] is None
+
+    def test_thinking_level_value_is_set(self):
+        config_with_value = KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+            thinking_level="low",
+        )
+        assert config_with_value.thinking_level == "low"
+        assert "thinking_level" in config_with_value.model_fields_set
+        data_value = config_with_value.model_dump(exclude_unset=True)
+        assert data_value["thinking_level"] == "low"
+
     def test_validation_top_p(self):
         with pytest.raises(ValidationError, match="top_p must be between 0 and 1"):
             KilnAgentRunConfigProperties(

@@ -63,6 +63,10 @@ class KilnAgentRunConfigProperties(BaseModel):
     structured_output_mode: StructuredOutputMode = Field(
         description="The structured output mode to use for this run config.",
     )
+    thinking_level: str | None = Field(
+        default=None,
+        description="The thinking level to use for this run config. If None, defaults may apply.",
+    )
     tools_config: ToolsRunConfig | None = Field(
         default=None,
         description="The tools config to use for this run config, defining which tools are available to the model.",

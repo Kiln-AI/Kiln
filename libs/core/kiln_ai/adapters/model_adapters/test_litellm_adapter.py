@@ -397,7 +397,7 @@ def test_build_extra_body_openrouter_usage(
     # Create a mock provider with the specified name and minimal required attributes
     mock_provider = Mock()
     mock_provider.name = provider_name
-    mock_provider.thinking_level = None
+    mock_provider.default_thinking_level = None
     mock_provider.require_openrouter_reasoning = False
     mock_provider.anthropic_extended_thinking = False
     mock_provider.r1_openrouter_options = False
@@ -416,6 +416,80 @@ def test_build_extra_body_openrouter_usage(
         assert "usage" not in extra_body
 
 
+def test_build_extra_body_thinking_level_fallback_to_default(config, mock_task):
+    """Test that the thinking level falls back to the provider's default if not set in the run config"""
+    assert "thinking_level" not in config.run_config_properties.model_fields_set
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.openai
+    mock_provider.default_thinking_level = "medium"
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert extra_body.get("reasoning_effort") == "medium"
+
+
+def test_build_extra_body_thinking_level_run_config_override(config, mock_task):
+    """Test that the thinking level in the run config overrides the provider's default"""
+    config.run_config_properties.thinking_level = "low"
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.openai
+    mock_provider.default_thinking_level = "high"
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert extra_body.get("reasoning_effort") == "low"
+
+
+def test_build_extra_body_thinking_level_explicit_none(config, mock_task):
+    """Test that the thinking level is not set if it's explicitly set to None"""
+    config = LiteLlmConfig(
+        base_url="https://api.test.com",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="test-model",
+            model_provider_name="openrouter",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+            thinking_level=None,  # Explicitly set to None to test that it's not set
+        ),
+        default_headers={"X-Test": "test"},
+        additional_body_options={"api_key": "test_key"},
+    )
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.openai
+    mock_provider.default_thinking_level = "high"
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert "reasoning_effort" not in extra_body
+
+
 def test_build_extra_body_openrouter_default_provider_order(config, mock_task):
     """Test build_extra_body sets default provider order for OpenRouter"""
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
@@ -423,7 +497,7 @@ def test_build_extra_body_openrouter_default_provider_order(config, mock_task):
     # Create a mock OpenRouter provider with minimal attributes
     mock_provider = Mock()
     mock_provider.name = ModelProviderName.openrouter
-    mock_provider.thinking_level = None
+    mock_provider.default_thinking_level = None
     mock_provider.require_openrouter_reasoning = False
     mock_provider.gemini_reasoning_enabled = False
     mock_provider.anthropic_extended_thinking = False
@@ -458,7 +532,7 @@ def test_build_extra_body_r1_overrides_default_order(config, mock_task):
     # Create a mock OpenRouter provider with R1 options enabled
     mock_provider = Mock()
     mock_provider.name = ModelProviderName.openrouter
-    mock_provider.thinking_level = None
+    mock_provider.default_thinking_level = None
     mock_provider.require_openrouter_reasoning = False
     mock_provider.gemini_reasoning_enabled = False
     mock_provider.anthropic_extended_thinking = False
@@ -491,7 +565,7 @@ def test_build_extra_body_non_openrouter_no_provider_order(config, mock_task):
     ]:
         mock_provider = Mock()
         mock_provider.name = provider_name
-        mock_provider.thinking_level = None
+        mock_provider.default_thinking_level = None
         mock_provider.require_openrouter_reasoning = False
         mock_provider.gemini_reasoning_enabled = False
         mock_provider.anthropic_extended_thinking = False
