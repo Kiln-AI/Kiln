@@ -3,7 +3,7 @@ import copy
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple, TypeAlias, Union
+from typing import Any, Dict, List, Tuple
 
 import litellm
 from litellm.types.utils import (
@@ -19,6 +19,7 @@ from openai.types.chat.chat_completion_message_tool_call_param import (
 )
 
 import kiln_ai.datamodel as datamodel
+from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     ModelProviderName,
@@ -55,10 +56,6 @@ MAX_CALLS_PER_TURN = 10
 MAX_TOOL_CALLS_PER_TURN = 30
 
 logger = logging.getLogger(__name__)
-
-ChatCompletionMessageIncludingLiteLLM: TypeAlias = Union[
-    ChatCompletionMessageParam, LiteLLMMessage
-]
 
 
 @dataclass

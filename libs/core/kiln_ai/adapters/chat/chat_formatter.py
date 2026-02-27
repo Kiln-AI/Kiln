@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, List, Literal, Optional, Sequence, Union
+from typing import Dict, List, Literal, Optional, Sequence, TypeAlias, Union
+
+from litellm.types.utils import Message as LiteLLMMessage
 
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -13,6 +15,11 @@ from kiln_ai.utils.open_ai_types import (
 )
 
 COT_FINAL_ANSWER_PROMPT = "Considering the above, return a final result."
+
+
+ChatCompletionMessageIncludingLiteLLM: TypeAlias = Union[
+    ChatCompletionMessageParam, LiteLLMMessage
+]
 
 
 @dataclass
@@ -93,9 +100,8 @@ class ChatFormatter(ABC):
         """Get the intermediate outputs from the chat formatter."""
         return self._intermediate_outputs
 
-    def initial_messages(self) -> list[Any]:
+    def initial_messages(self) -> list[ChatCompletionMessageIncludingLiteLLM]:
         """Messages to seed the conversation. Empty for fresh runs; prior trace for continuation."""
-        # TODO: fix the type somehow
         return []
 
     @abstractmethod
@@ -264,10 +270,8 @@ class MultiturnFormatter(ChatFormatter):
         )
         self._prior_trace = prior_trace
 
-    def initial_messages(self) -> list[Any]:
+    def initial_messages(self) -> list[ChatCompletionMessageIncludingLiteLLM]:
         """Messages to seed the conversation (prior trace)."""
-        # TODO: use the type we need, but trace is untyped, and we cannot import from litellm adapter here
-        # or we get circular imports
         return list(self._prior_trace)
 
     def next_turn(self, previous_output: str | None = None) -> Optional[ChatTurn]:
