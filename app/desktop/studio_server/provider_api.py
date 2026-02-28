@@ -161,7 +161,7 @@ class ModelDetails(BaseModel):
     multimodal_mime_types: List[str] | None = Field(default=None)
     # the suggested structured output mode for this model.
     structured_output_mode: StructuredOutputMode
-    available_thinking_levels: dict[str, str | None] | None = Field(default=None)
+    available_thinking_levels: dict[str, str] | None = Field(default=None)
     default_thinking_level: str | None = Field(default=None)
     # True if this is a untested model (typically user added). We don't know if these support structured output, data gen, etc. They should appear in their own section in the UI.
     untested_model: bool = Field(default=False)

@@ -305,7 +305,7 @@ class KilnModelProvider(BaseModel):
     logprobs_openrouter_options: bool = False
     openrouter_skip_required_parameters: bool = False
     openrouter_reasoning_object: bool = False
-    available_thinking_levels: dict[str, str | None] | None = None
+    available_thinking_levels: dict[str, str] | None = None
     default_thinking_level: str | None = None
     ollama_model_aliases: List[str] | None = None
     anthropic_extended_thinking: bool = False
@@ -411,6 +411,15 @@ GPT_5_OPENAI_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
     "High": "high",
+}
+
+CLAUDE_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Minimal": "minimal",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
 }
 
 
@@ -1487,15 +1496,8 @@ built_in_models: List[KilnModel] = [
                 model_id="anthropic/claude-4.5-sonnet",
                 structured_output_mode=StructuredOutputMode.function_calling,
                 openrouter_reasoning_object=True,
-                available_thinking_levels={
-                    "Off/None": None,
-                    "Minimal": "minimal",
-                    "Low": "low",
-                    "Medium": "medium",
-                    "High": "high",
-                    "Extra High": "xhigh",
-                },
-                default_thinking_level=None,
+                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="none",
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
@@ -1515,6 +1517,9 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-sonnet-4",
                 structured_output_mode=StructuredOutputMode.function_calling,
+                openrouter_reasoning_object=True,
+                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="none",
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
@@ -1533,6 +1538,9 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 structured_output_mode=StructuredOutputMode.function_calling,
                 model_id="anthropic/claude-3.7-sonnet",
+                openrouter_reasoning_object=True,
+                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="none",
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
@@ -1680,6 +1688,9 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-opus-4.1",
                 structured_output_mode=StructuredOutputMode.function_calling,
+                openrouter_reasoning_object=True,
+                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="none",
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
@@ -1699,6 +1710,9 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-opus-4",
                 structured_output_mode=StructuredOutputMode.function_calling,
+                openrouter_reasoning_object=True,
+                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="none",
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,

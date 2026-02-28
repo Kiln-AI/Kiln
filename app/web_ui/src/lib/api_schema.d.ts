@@ -5369,7 +5369,7 @@ export interface components {
             structured_output_mode: components["schemas"]["StructuredOutputMode"];
             /** Available Thinking Levels */
             available_thinking_levels?: {
-                [key: string]: string | null;
+                [key: string]: string;
             } | null;
             /** Default Thinking Level */
             default_thinking_level?: string | null;

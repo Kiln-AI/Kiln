@@ -9,7 +9,7 @@
   export let structured_output_mode: StructuredOutputMode
   export let has_structured_output: boolean
   export let thinking_level: string | null
-  export let available_thinking_levels: Record<string, string | null> | null
+  export let available_thinking_levels: Record<string, string> | null
 
   export let validate_temperature: (value: unknown) => string | null = (
     value: unknown,
