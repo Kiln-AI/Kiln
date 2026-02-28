@@ -41,8 +41,8 @@ dependencies = [
     "pillow>=11.1.0",
     "llama-index-vector-stores-lancedb>=0.4.2",
     "mcp[cli]>=1.10.1",
-    "litellm>=1.80.9",
     "typer>=0.9.0",
+    "litellm>=1.81.16",
 ]
 
 [project.scripts]
