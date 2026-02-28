@@ -376,6 +376,44 @@ class KilnModel(BaseModel):
     editorial_notes: str | None = None
 
 
+GPT_5_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Minimal": "minimal",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+}
+
+GPT_5_1_OPENAI_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+}
+
+GPT_5_2_OPENAI_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+}
+
+GPT_5_2_PRO_OPENAI_THINKING_LEVELS = {
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+}
+
+GPT_5_OPENAI_THINKING_LEVELS = {
+    "Minimal": "minimal",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+}
+
+
 built_in_models: List[KilnModel] = [
     # GPT 5.2
     KilnModel(
@@ -389,13 +427,7 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openai,
                 model_id="gpt-5.2",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels={
-                    "Off / None": "none",
-                    "Low": "low",
-                    "Medium": "medium",
-                    "High": "high",
-                    "Extra High": "xhigh",
-                },
+                available_thinking_levels=GPT_5_2_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
@@ -416,13 +448,7 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5.2",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels={
-                    "Off / None": "none",
-                    "Low": "low",
-                    "Medium": "medium",
-                    "High": "high",
-                    "Extra High": "xhigh",
-                },
+                available_thinking_levels=GPT_5_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="none",
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
@@ -451,6 +477,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openai,
                 model_id="gpt-5.2-pro",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_2_PRO_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
@@ -470,6 +498,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5.2-pro",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="none",
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
@@ -497,6 +527,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openai,
                 model_id="gpt-5.2-chat-latest",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_2_OPENAI_THINKING_LEVELS,
+                default_thinking_level="none",
                 suggested_for_evals=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
@@ -515,6 +547,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5.2-chat",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="none",
                 suggested_for_evals=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
@@ -541,6 +575,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openai,
                 model_id="gpt-5.1",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_1_OPENAI_THINKING_LEVELS,
+                default_thinking_level="none",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -558,6 +594,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5.1",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="none",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -583,6 +621,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openai,
                 model_id="gpt-5",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 supports_logprobs=False,
@@ -601,6 +641,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="medium",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -645,6 +687,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5-mini",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="medium",
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
@@ -691,6 +735,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5-nano",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="medium",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -717,6 +763,8 @@ built_in_models: List[KilnModel] = [
                 model_id="gpt-5-chat-latest",
                 # Oddly no json_schema support for this model.
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                available_thinking_levels=GPT_5_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
                 supports_function_calling=False,
                 supports_vision=True,
                 supports_doc_extraction=True,
