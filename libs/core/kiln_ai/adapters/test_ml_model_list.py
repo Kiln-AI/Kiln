@@ -3,6 +3,7 @@ from collections import Counter
 import pytest
 
 from kiln_ai.adapters.ml_model_list import (
+    KilnModelProvider,
     ModelName,
     built_in_models,
     built_in_models_from_provider,
@@ -185,6 +186,31 @@ class TestDefaultThinkingLevelForModelProvider:
             provider=ModelProviderName.openrouter,
         )
         assert result is None
+
+
+class TestThinkingLevelMetadata:
+    def test_default_thinking_level_validator(self):
+        with pytest.raises(
+            ValueError,
+            match="default_thinking_level must be one of the available_thinking_levels values",
+        ):
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="test-model",
+                available_thinking_levels={"Low": "low"},
+                default_thinking_level="high",
+            )
+
+    def test_openrouter_reasoning_object_requires_openrouter(self):
+        with pytest.raises(
+            ValueError,
+            match="openrouter_reasoning_object can only be true when provider is openrouter",
+        ):
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-4.1",
+                openrouter_reasoning_object=True,
+            )
 
 
 class TestBuiltInModelsFromProvider:

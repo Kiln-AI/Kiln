@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import List
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from kiln_ai.datamodel.datamodel_enums import (
     ChatStrategy,
@@ -329,6 +329,29 @@ class KilnModelProvider(BaseModel):
 
     # For openai_compatible providers: the name of the custom provider (user specified)
     openai_compatible_provider_name: str | None = None
+
+    @model_validator(mode="after")
+    def validate_openrouter_reasoning_object(self) -> "KilnModelProvider":
+        if (
+            self.openrouter_reasoning_object
+            and self.name != ModelProviderName.openrouter
+        ):
+            raise ValueError(
+                "openrouter_reasoning_object can only be true when provider is openrouter"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def validate_default_thinking_level(self) -> "KilnModelProvider":
+        if self.available_thinking_levels:
+            if (
+                self.default_thinking_level
+                not in self.available_thinking_levels.values()
+            ):
+                raise ValueError(
+                    "default_thinking_level must be one of the available_thinking_levels values"
+                )
+        return self
 
 
 class KilnModel(BaseModel):
