@@ -304,6 +304,7 @@ class KilnModelProvider(BaseModel):
     require_openrouter_reasoning: bool = False
     logprobs_openrouter_options: bool = False
     openrouter_skip_required_parameters: bool = False
+    openrouter_reasoning_object: bool = False
     available_thinking_levels: dict[str, str | None] | None = None
     default_thinking_level: str | None = None
     ollama_model_aliases: List[str] | None = None
@@ -1414,6 +1415,16 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-4.5-sonnet",
                 structured_output_mode=StructuredOutputMode.function_calling,
+                openrouter_reasoning_object=True,
+                available_thinking_levels={
+                    "Off/None": None,
+                    "Minimal": "minimal",
+                    "Low": "low",
+                    "Medium": "medium",
+                    "High": "high",
+                    "Extra High": "xhigh",
+                },
+                default_thinking_level=None,
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,

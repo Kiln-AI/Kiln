@@ -412,7 +412,14 @@ class LiteLlmAdapter(BaseAdapter):
 
         # Set the reasoning_effort
         if thinking_level is not None:
-            extra_body["reasoning_effort"] = thinking_level
+            # Anthropic models in OpenRouter uses reasoning object. See https://openrouter.ai/docs/use-cases/reasoning-tokens
+            if (
+                provider.name == ModelProviderName.openrouter
+                and provider.openrouter_reasoning_object
+            ):
+                extra_body["reasoning"] = {"effort": thinking_level}
+            else:
+                extra_body["reasoning_effort"] = thinking_level
 
         if provider.require_openrouter_reasoning:
             # https://openrouter.ai/docs/use-cases/reasoning-tokens
