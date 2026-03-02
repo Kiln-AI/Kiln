@@ -168,8 +168,8 @@ class TestDefaultStructuredOutputModeForModelProvider:
 class TestDefaultThinkingLevelForModelProvider:
     def test_uses_default_thinking_level(self):
         result = default_thinking_level_for_model_provider(
-            model_name=ModelName.gemini_3_pro_preview.value,
-            provider=ModelProviderName.openrouter,
+            model_name=ModelName.gpt_5.value,
+            provider=ModelProviderName.openai,
         )
         assert result == "medium"
 

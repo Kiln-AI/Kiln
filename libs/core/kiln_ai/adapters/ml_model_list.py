@@ -406,6 +406,18 @@ GPT_5_2_PRO_OPENAI_THINKING_LEVELS = {
     "Extra High": "xhigh",
 }
 
+GEMINI_3_PRO_THINKING_LEVELS = {
+    "Low": "low",
+    "High": "high",
+}
+
+GEMINI_3_FLASH_THINKING_LEVELS = {
+    "Minimal": "minimal",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+}
+
 GPT_5_OPENAI_THINKING_LEVELS = {
     "Minimal": "minimal",
     "Low": "low",
@@ -1739,8 +1751,8 @@ built_in_models: List[KilnModel] = [
                 suggested_for_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
-                available_thinking_levels={"Medium": "medium"},
-                default_thinking_level="medium",
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                default_thinking_level="high",
                 multimodal_mime_types=[
                     KilnMimeType.PDF,
                     KilnMimeType.CSV,
@@ -1763,8 +1775,8 @@ built_in_models: List[KilnModel] = [
                 suggested_for_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
-                available_thinking_levels={"Medium": "medium"},
-                default_thinking_level="medium",
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                default_thinking_level="high",
                 multimodal_mime_types=[
                     KilnMimeType.PDF,
                     KilnMimeType.CSV,
@@ -1789,8 +1801,8 @@ built_in_models: List[KilnModel] = [
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
                 gemini_reasoning_enabled=True,
-                available_thinking_levels={"Medium": "medium"},
-                default_thinking_level="medium",
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                default_thinking_level="high",
             ),
         ],
     ),
@@ -1809,8 +1821,8 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
-                available_thinking_levels={"Medium": "medium"},
-                default_thinking_level="medium",
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                default_thinking_level="high",
                 multimodal_mime_types=[
                     # documents
                     KilnMimeType.PDF,
@@ -1831,8 +1843,8 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
-                available_thinking_levels={"Medium": "medium"},
-                default_thinking_level="medium",
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                default_thinking_level="high",
                 multimodal_mime_types=[
                     # documents
                     KilnMimeType.PDF,
@@ -1863,8 +1875,8 @@ built_in_models: List[KilnModel] = [
                 # while the model is capable of reasoning, it doesn't always return it in the response
                 # reasoning_capable=True,
                 gemini_reasoning_enabled=True,
-                available_thinking_levels={"Medium": "medium"},
-                default_thinking_level="medium",
+                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                default_thinking_level="high",
             ),
         ],
     ),
@@ -1887,8 +1899,8 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
-                available_thinking_levels={"Medium": "medium"},
-                default_thinking_level="medium",
+                available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
+                default_thinking_level="high",
                 multimodal_mime_types=[
                     # documents
                     KilnMimeType.PDF,
@@ -1911,8 +1923,8 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
-                available_thinking_levels={"Medium": "medium"},
-                default_thinking_level="medium",
+                available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
+                default_thinking_level="high",
                 multimodal_mime_types=[
                     # documents
                     KilnMimeType.PDF,
@@ -1944,8 +1956,8 @@ built_in_models: List[KilnModel] = [
                 # while the model is capable of reasoning, it doesn't always return it in the response
                 # reasoning_capable=True,
                 gemini_reasoning_enabled=True,
-                available_thinking_levels={"Medium": "medium"},
-                default_thinking_level="medium",
+                available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
+                default_thinking_level="high",
             ),
         ],
     ),
@@ -1975,8 +1987,6 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
                 gemini_reasoning_enabled=True,
-                available_thinking_levels={"Medium": "medium"},
-                default_thinking_level="medium",
             ),
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
@@ -2005,8 +2015,6 @@ built_in_models: List[KilnModel] = [
                 ],
                 reasoning_capable=True,
                 gemini_reasoning_enabled=True,
-                available_thinking_levels={"Medium": "medium"},
-                default_thinking_level="medium",
                 max_parallel_requests=2,
             ),
             KilnModelProvider(
@@ -2015,8 +2023,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 gemini_reasoning_enabled=True,
-                available_thinking_levels={"Medium": "medium"},
-                default_thinking_level="medium",
             ),
         ],
     ),
@@ -2053,8 +2059,6 @@ built_in_models: List[KilnModel] = [
                 model_id="gemini-2.5-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                available_thinking_levels={"Medium": "medium"},
-                default_thinking_level="medium",
                 supports_doc_extraction=True,
                 suggested_for_doc_extraction=True,
                 multimodal_capable=True,
@@ -2083,8 +2087,6 @@ built_in_models: List[KilnModel] = [
                 model_id="gemini-2.5-flash",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                available_thinking_levels={"Medium": "medium"},
-                default_thinking_level="medium",
             ),
         ],
     ),
@@ -2121,8 +2123,6 @@ built_in_models: List[KilnModel] = [
                 model_id="gemini-2.5-flash-lite",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                available_thinking_levels={"Medium": "medium"},
-                default_thinking_level="medium",
                 supports_doc_extraction=True,
                 suggested_for_doc_extraction=False,
                 multimodal_capable=True,
@@ -2151,8 +2151,6 @@ built_in_models: List[KilnModel] = [
                 model_id="gemini-2.5-flash-lite",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
-                available_thinking_levels={"Medium": "medium"},
-                default_thinking_level="medium",
             ),
         ],
     ),
