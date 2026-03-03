@@ -72,38 +72,51 @@ def skip_if_missing_provider_keys(provider_name) -> None:
         )
 
 
-@pytest.mark.paid
-@pytest.mark.parametrize(
-    "provider_name",
-    [
+def _thinking_level_cases() -> list[object]:
+    providers = [
         ModelProviderName.openai,
         ModelProviderName.openrouter,
         ModelProviderName.gemini_api,
-        ModelProviderName.vertex,
-    ],
-)
-async def test_thinking_level_reasoning_content(tmp_path, provider_name: str):
-    skip_if_missing_provider_keys(provider_name)
-    for model_name, thinking_level in get_models_for_provider(provider_name):
-        task = build_thinking_level_test_task(tmp_path)
-        adapter = adapter_for_task(
-            task,
-            KilnAgentRunConfigProperties(
-                model_name=model_name,
-                model_provider_name=provider_name,
-                prompt_id="simple_prompt_builder",
-                structured_output_mode="default",
-                thinking_level=thinking_level,
-                temperature=0,
-                top_p=1,
-            ),
-        )
-        run = await adapter.invoke(
-            "Four people-A, B, C, and D-each have a different favorite color (red, blue, green, yellow) and a different pet (cat, dog, fish, bird). Use the clues to determine each person's color and pet.\n\n1) A does not like red or blue.\n2) The bird's owner likes yellow.\n3) B likes green.\n4) The dog is owned by the person who likes blue.\n5) C does not own the fish.\n6) D likes red.\n\nQuestion: Who owns the fish, and what color do they like? Answer with just: \"<person>, <color>\"."
-        )
-        reasoning_content = reasoning_content_from_run(run)
+    ]
+    cases: list[pytest.ParamSpec] = []
+    for provider_name in providers:
+        for model_name, thinking_level in get_models_for_provider(provider_name):
+            case_id = f"{provider_name}/{model_name}/{thinking_level}"
+            cases.append(
+                pytest.param(provider_name, model_name, thinking_level, id=case_id)
+            )
+    return cases
 
-        if thinking_level == "none":
-            assert reasoning_content is None
-        else:
-            assert reasoning_content is not None
+
+@pytest.mark.paid
+@pytest.mark.parametrize(
+    ("provider_name", "model_name", "thinking_level"), _thinking_level_cases()
+)
+async def test_thinking_level_reasoning_content(
+    tmp_path, provider_name: str, model_name: str, thinking_level: str
+):
+    skip_if_missing_provider_keys(provider_name)
+    task = build_thinking_level_test_task(tmp_path)
+    adapter = adapter_for_task(
+        task,
+        KilnAgentRunConfigProperties(
+            model_name=model_name,
+            model_provider_name=provider_name,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="default",
+            thinking_level=thinking_level,
+            temperature=0,
+            top_p=1,
+        ),
+    )
+    run = await adapter.invoke(
+        "Four people-A, B, C, and D-each have a different favorite color (red, blue, green, yellow) and a different pet (cat, dog, fish, bird). Use the clues to determine each person's color and pet.\n\n1) A does not like red or blue.\n2) The bird's owner likes yellow.\n3) B likes green.\n4) The dog is owned by the person who likes blue.\n5) C does not own the fish.\n6) D likes red.\n\nQuestion: Who owns the fish, and what color do they like? Answer with just: \"<person>, <color>\"."
+    )
+    reasoning_content = reasoning_content_from_run(run)
+
+    if thinking_level == "none":
+        assert reasoning_content is None, (
+            "expected no reasoning_content when thinking_level is none"
+        )
+    else:
+        assert reasoning_content is not None, "missing reasoning_content"

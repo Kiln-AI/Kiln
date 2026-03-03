@@ -385,6 +385,14 @@ GPT_5_OPENROUTER_THINKING_LEVELS = {
     "Extra High": "xhigh",
 }
 
+GPT_5_2_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+}
+
 GPT_5_1_OPENAI_THINKING_LEVELS = {
     "Off/None": "none",
     "Low": "low",
@@ -469,7 +477,7 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5.2",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=GPT_5_OPENROUTER_THINKING_LEVELS,
+                available_thinking_levels=GPT_5_2_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="none",
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
