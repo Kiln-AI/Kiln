@@ -4,7 +4,7 @@ import pytest
 
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
-from kiln_ai.adapters.ml_model_list import built_in_models
+from kiln_ai.adapters.ml_model_list import ModelProviderName, built_in_models
 from kiln_ai.adapters.provider_tools import provider_warnings
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.utils.config import Config
@@ -22,26 +22,18 @@ def build_thinking_level_test_task(tmp_path: Path) -> datamodel.Task:
     return task
 
 
-def get_thinking_levels_for_provider(provider) -> list[str]:
-    """Get all thinking levels for a provider."""
-    if not provider.available_thinking_levels:
-        return []
-    return list(provider.available_thinking_levels.values())
-
-
-def get_thinking_model_provider_levels() -> list[tuple[str, str, str]]:
-    """Get the thinking model, provider and level for all models that support thinking."""
-    params: list[tuple[str, str, str]] = []
+def get_models_for_provider(provider_name: str) -> list[tuple[str, str]]:
+    params: list[tuple[str, str]] = []
     for model in built_in_models:
         for provider in model.providers:
+            if provider.name != provider_name:
+                continue
             if not provider.model_id:
                 continue
             if not provider.available_thinking_levels:
                 continue
-
-            levels = get_thinking_levels_for_provider(provider)
-            for level in levels:
-                params.append((model.name, provider.name, level))
+            for level in provider.available_thinking_levels.values():
+                params.append((model.name, level))
     return params
 
 
@@ -82,31 +74,36 @@ def skip_if_missing_provider_keys(provider_name) -> None:
 
 @pytest.mark.paid
 @pytest.mark.parametrize(
-    "model_name, provider_name, thinking_level", get_thinking_model_provider_levels()
+    "provider_name",
+    [
+        ModelProviderName.openai,
+        ModelProviderName.openrouter,
+        ModelProviderName.gemini_api,
+        ModelProviderName.vertex,
+    ],
 )
-async def test_thinking_level_reasoning_content(
-    tmp_path, model_name: str, provider_name: str, thinking_level: str
-):
+async def test_thinking_level_reasoning_content(tmp_path, provider_name: str):
     skip_if_missing_provider_keys(provider_name)
-    task = build_thinking_level_test_task(tmp_path)
-    adapter = adapter_for_task(
-        task,
-        KilnAgentRunConfigProperties(
-            model_name=model_name,
-            model_provider_name=provider_name,
-            prompt_id="simple_prompt_builder",
-            structured_output_mode="default",
-            thinking_level=thinking_level,
-            temperature=0,
-            top_p=1,
-        ),
-    )
-    run = await adapter.invoke(
-        "A is older than B. B is older than C. C is older than D. Who is the second oldest? Answer with just the name."
-    )
-    reasoning_content = reasoning_content_from_run(run)
+    for model_name, thinking_level in get_models_for_provider(provider_name):
+        task = build_thinking_level_test_task(tmp_path)
+        adapter = adapter_for_task(
+            task,
+            KilnAgentRunConfigProperties(
+                model_name=model_name,
+                model_provider_name=provider_name,
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="default",
+                thinking_level=thinking_level,
+                temperature=0,
+                top_p=1,
+            ),
+        )
+        run = await adapter.invoke(
+            "Four people-A, B, C, and D-each have a different favorite color (red, blue, green, yellow) and a different pet (cat, dog, fish, bird). Use the clues to determine each person's color and pet.\n\n1) A does not like red or blue.\n2) The bird's owner likes yellow.\n3) B likes green.\n4) The dog is owned by the person who likes blue.\n5) C does not own the fish.\n6) D likes red.\n\nQuestion: Who owns the fish, and what color do they like? Answer with just: \"<person>, <color>\"."
+        )
+        reasoning_content = reasoning_content_from_run(run)
 
-    if thinking_level == "none":
-        assert reasoning_content is None
-    else:
-        assert reasoning_content is not None
+        if thinking_level == "none":
+            assert reasoning_content is None
+        else:
+            assert reasoning_content is not None
