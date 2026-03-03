@@ -72,25 +72,30 @@ def skip_if_missing_provider_keys(provider_name) -> None:
         )
 
 
-def _thinking_level_cases() -> list[object]:
-    providers = [
-        ModelProviderName.openai,
-        ModelProviderName.openrouter,
-        ModelProviderName.gemini_api,
-    ]
-    cases: list[pytest.ParamSpec] = []
-    for provider_name in providers:
+def get_all_model_providers_with_thinking_levels(
+    provider_names: list[ModelProviderName],
+) -> list[object]:
+    params: list[object] = []
+    for provider_name in provider_names:
         for model_name, thinking_level in get_models_for_provider(provider_name):
             case_id = f"{provider_name}/{model_name}/{thinking_level}"
-            cases.append(
+            params.append(
                 pytest.param(provider_name, model_name, thinking_level, id=case_id)
             )
-    return cases
+    return params
 
 
 @pytest.mark.paid
 @pytest.mark.parametrize(
-    ("provider_name", "model_name", "thinking_level"), _thinking_level_cases()
+    ("provider_name", "model_name", "thinking_level"),
+    get_all_model_providers_with_thinking_levels(
+        [
+            ModelProviderName.openai,
+            ModelProviderName.openrouter,
+            ModelProviderName.gemini_api,
+            ModelProviderName.vertex,
+        ]
+    ),
 )
 async def test_thinking_level_reasoning_content(
     tmp_path, provider_name: str, model_name: str, thinking_level: str
