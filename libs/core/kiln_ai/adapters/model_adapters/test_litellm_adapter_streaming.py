@@ -411,3 +411,49 @@ async def test_acompletion_streaming_rendering_raw_chunks(
     renderer = ChunkRawRenderer()
     await adapter.invoke(input="123 + 321 = ?", on_chunk=renderer.render_chunk)
     assert renderer.get_stream_text() is not None
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize(
+    "model_id,provider_name",
+    [
+        ("claude_sonnet_4_5", ModelProviderName.openrouter),
+        ("claude_sonnet_4_5", ModelProviderName.anthropic),
+        ("claude_sonnet_4_6", ModelProviderName.openrouter),
+        ("claude_sonnet_4_6", ModelProviderName.anthropic),
+        ("claude_opus_4_5", ModelProviderName.openrouter),
+        ("claude_opus_4_5", ModelProviderName.anthropic),
+        ("claude_opus_4_6", ModelProviderName.openrouter),
+        ("claude_opus_4_6", ModelProviderName.anthropic),
+        ("minimax_m2_5", ModelProviderName.openrouter),
+    ],
+)
+async def test_acompletion_streaming_with_existing_run(
+    model_id: str,
+    provider_name: ModelProviderName,
+    adapter_factory: Callable[[str, ModelProviderName], LiteLlmAdapter],
+):
+    """Test that streaming works when continuing an existing run (session continuation)."""
+    adapter = adapter_factory(model_id, provider_name)
+    renderer = ChunkRawRenderer()
+
+    initial_run = await adapter.invoke(
+        input="123 + 321 = ?",
+        on_chunk=renderer.render_chunk,
+    )
+    assert initial_run.trace is not None
+    assert len(initial_run.trace) > 0
+    initial_trace_len = len(initial_run.trace)
+
+    continuation_renderer = ChunkRawRenderer()
+    continued_run = await adapter.invoke(
+        input="What was the result? Reply in one short sentence.",
+        existing_run=initial_run,
+        on_chunk=continuation_renderer.render_chunk,
+    )
+
+    assert continued_run.id == initial_run.id
+    assert continued_run.trace is not None
+    assert len(continued_run.trace) > initial_trace_len
+    assert continuation_renderer.get_stream_text() is not None
+    assert len(continuation_renderer.chunks) > 0
