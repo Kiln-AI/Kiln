@@ -28,6 +28,7 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterConfig,
     BaseAdapter,
+    LiteLLMTransportAdapter,
     RunOutput,
     StreamCallback,
     Usage,
@@ -96,7 +97,7 @@ class LiteLlmAdapter(BaseAdapter):
         prior_messages: list[ChatCompletionMessageIncludingLiteLLM],
         top_logprobs: int | None,
         skip_response_format: bool,
-        on_chunk: StreamCallback | None = None,
+        stream_transport: LiteLLMTransportAdapter | None = None,
     ) -> ModelTurnResult:
         """
         Call the model for a single top level turn: from user message to agent message.
@@ -107,21 +108,27 @@ class LiteLlmAdapter(BaseAdapter):
         usage = Usage()
         messages = list(prior_messages)
         tool_calls_count = 0
+        chunk_cb: StreamCallback | None = (
+            stream_transport.on_chunk if stream_transport is not None else None
+        )
 
         while tool_calls_count < MAX_TOOL_CALLS_PER_TURN:
-            # Build completion kwargs for tool calls
+            if stream_transport is not None:
+                await stream_transport.on_step_start()
+
             completion_kwargs = await self.build_completion_kwargs(
                 provider,
-                # Pass a copy, as acompletion mutates objects and breaks types.
                 copy.deepcopy(messages),
                 top_logprobs,
                 skip_response_format,
             )
 
-            # Make the completion call
             model_response, response_choice = await self.acompletion_checking_response(
-                on_chunk=on_chunk, **completion_kwargs
+                on_chunk=chunk_cb, **completion_kwargs
             )
+
+            if stream_transport is not None:
+                await stream_transport.on_step_finish()
 
             # count the usage
             usage += self.usage_from_response(model_response)
@@ -187,7 +194,7 @@ class LiteLlmAdapter(BaseAdapter):
         self,
         input: InputType,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
-        on_chunk: StreamCallback | None = None,
+        stream_transport: LiteLLMTransportAdapter | None = None,
     ) -> tuple[RunOutput, Usage | None]:
         usage = Usage()
 
@@ -232,7 +239,7 @@ class LiteLlmAdapter(BaseAdapter):
                 messages,
                 self.base_adapter_config.top_logprobs if turn.final_call else None,
                 skip_response_format,
-                on_chunk=on_chunk,
+                stream_transport=stream_transport,
             )
 
             usage += turn_result.usage

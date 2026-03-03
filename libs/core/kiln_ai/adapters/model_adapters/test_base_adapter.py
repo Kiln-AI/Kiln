@@ -1047,8 +1047,8 @@ class TestAgentRunContextLifecycle:
             assert run_id.startswith("run_")
 
 
-class TestStreamCallback:
-    """Tests for the on_chunk streaming callback parameter."""
+class TestStreamTransport:
+    """Tests for the stream_transport parameter."""
 
     @pytest.fixture
     def stream_adapter(self, base_task):
@@ -1070,8 +1070,8 @@ class TestStreamCallback:
         adapter.model_provider = MagicMock(return_value=provider)
 
     @pytest.mark.asyncio
-    async def test_on_chunk_forwarded_to_run(self, stream_adapter):
-        """Test that on_chunk is passed through to _run."""
+    async def test_stream_transport_callback_forwarded_to_run(self, stream_adapter):
+        """Test that stream_transport callback is resolved and passed to _run."""
         received_kwargs = {}
 
         async def mock_run(input, **kwargs):
@@ -1098,14 +1098,18 @@ class TestStreamCallback:
         ):
             mock_parser_factory.return_value = parser
             await stream_adapter.invoke_returning_run_output(
-                {"test": "input"}, on_chunk=callback
+                {"test": "input"}, stream_transport=callback
             )
 
-        assert received_kwargs.get("on_chunk") is callback
+        transport = received_kwargs.get("stream_transport")
+        assert transport is not None
+        from kiln_ai.adapters.litellm_utils import OpenAIStreamTransport
+
+        assert isinstance(transport, OpenAIStreamTransport)
 
     @pytest.mark.asyncio
-    async def test_on_chunk_none_by_default(self, stream_adapter):
-        """Test that on_chunk defaults to None when not provided."""
+    async def test_stream_transport_none_by_default(self, stream_adapter):
+        """Test that stream_transport defaults to None when not provided."""
         received_kwargs = {}
 
         async def mock_run(input, **kwargs):
@@ -1131,11 +1135,11 @@ class TestStreamCallback:
             mock_parser_factory.return_value = parser
             await stream_adapter.invoke_returning_run_output({"test": "input"})
 
-        assert received_kwargs.get("on_chunk") is None
+        assert received_kwargs.get("stream_transport") is None
 
     @pytest.mark.asyncio
-    async def test_invoke_forwards_on_chunk(self, stream_adapter):
-        """Test that invoke() also forwards on_chunk."""
+    async def test_invoke_forwards_stream_transport(self, stream_adapter):
+        """Test that invoke() also forwards stream_transport."""
         received_kwargs = {}
 
         async def mock_run(input, **kwargs):
@@ -1161,6 +1165,12 @@ class TestStreamCallback:
             ),
         ):
             mock_parser_factory.return_value = parser
-            await stream_adapter.invoke({"test": "input"}, on_chunk=callback)
+            await stream_adapter.invoke(
+                {"test": "input"}, stream_transport=callback
+            )
 
-        assert received_kwargs.get("on_chunk") is callback
+        transport = received_kwargs.get("stream_transport")
+        assert transport is not None
+        from kiln_ai.adapters.litellm_utils import OpenAIStreamTransport
+
+        assert isinstance(transport, OpenAIStreamTransport)

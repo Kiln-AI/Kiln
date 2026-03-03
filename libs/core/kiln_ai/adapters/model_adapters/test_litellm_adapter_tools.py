@@ -95,7 +95,9 @@ async def run_simple_task_with_tools(
             async def on_chunk_handler(chunk):
                 received_chunks.append(chunk)
 
-            run = await adapter.invoke("what is 2+2", on_chunk=on_chunk_handler)
+            run = await adapter.invoke(
+                "what is 2+2", stream_transport=on_chunk_handler
+            )
 
             assert len(received_chunks) > 0
 

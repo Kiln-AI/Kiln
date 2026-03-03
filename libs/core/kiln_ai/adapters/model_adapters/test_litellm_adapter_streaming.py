@@ -196,7 +196,7 @@ async def test_acompletion_streaming_response(
     with patch.object(adapter, "acompletion_checking_response", side_effect=spy):
         task_run = await adapter.invoke(
             input="123 + 321 = ?",
-            on_chunk=renderer.render_chunk,
+            stream_transport=renderer.render_chunk,
         )
 
     # there is one call per thing going on (tool call, content, etc.)
@@ -302,7 +302,7 @@ async def test_acompletion_streaming_chunks(
         chunks.append(chunk)
         await renderer.render_chunk(chunk)
 
-    await adapter.invoke(input="123 + 321 = ?", on_chunk=collect_chunks)
+    await adapter.invoke(input="123 + 321 = ?", stream_transport=collect_chunks)
 
     assert len(chunks) > 0, "No chunks collected"
     reasoning_contents: list[str] = []
@@ -382,7 +382,7 @@ async def test_acompletion_streaming_rendering(
     """Test that the streaming response with a renderer to see how it looks"""
     adapter = adapter_factory(model_id, provider_name)
     renderer = ChunkRenderer()
-    await adapter.invoke(input="123 + 321 = ?", on_chunk=renderer.render_chunk)
+    await adapter.invoke(input="123 + 321 = ?", stream_transport=renderer.render_chunk)
     assert renderer.get_stream_text() is not None
 
 
@@ -409,7 +409,7 @@ async def test_acompletion_streaming_rendering_raw_chunks(
     """Test that the streaming response with a renderer to see how it looks, but with raw chunks"""
     adapter = adapter_factory(model_id, provider_name)
     renderer = ChunkRawRenderer()
-    await adapter.invoke(input="123 + 321 = ?", on_chunk=renderer.render_chunk)
+    await adapter.invoke(input="123 + 321 = ?", stream_transport=renderer.render_chunk)
     assert renderer.get_stream_text() is not None
 
 
@@ -439,7 +439,7 @@ async def test_acompletion_streaming_with_existing_run(
 
     initial_run = await adapter.invoke(
         input="123 + 321 = ?",
-        on_chunk=renderer.render_chunk,
+        stream_transport=renderer.render_chunk,
     )
     assert initial_run.trace is not None
     assert len(initial_run.trace) > 0
@@ -449,7 +449,7 @@ async def test_acompletion_streaming_with_existing_run(
     continued_run = await adapter.invoke(
         input="What was the result? Reply in one short sentence.",
         existing_run=initial_run,
-        on_chunk=continuation_renderer.render_chunk,
+        stream_transport=continuation_renderer.render_chunk,
     )
 
     assert continued_run.id == initial_run.id

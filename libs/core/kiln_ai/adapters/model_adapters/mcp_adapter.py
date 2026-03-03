@@ -4,7 +4,8 @@ from typing import Tuple
 from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterConfig,
     BaseAdapter,
-    StreamCallback,
+    LiteLLMTransportAdapter,
+    StreamTransport,
 )
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.run_output import RunOutput
@@ -50,7 +51,7 @@ class MCPAdapter(BaseAdapter):
         self,
         input: InputType,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
-        on_chunk: StreamCallback | None = None,
+        stream_transport: LiteLLMTransportAdapter | None = None,
     ) -> Tuple[RunOutput, Usage | None]:
         if prior_trace is not None:
             raise NotImplementedError(
@@ -91,7 +92,7 @@ class MCPAdapter(BaseAdapter):
         input: InputType,
         input_source: DataSource | None = None,
         existing_run: TaskRun | None = None,
-        on_chunk: StreamCallback | None = None,
+        stream_transport: StreamTransport = None,
     ) -> TaskRun:
         if existing_run is not None:
             raise NotImplementedError(
@@ -100,7 +101,7 @@ class MCPAdapter(BaseAdapter):
             )
 
         run_output, _ = await self.invoke_returning_run_output(
-            input, input_source, existing_run, on_chunk=on_chunk
+            input, input_source, existing_run, stream_transport=stream_transport
         )
         return run_output
 
@@ -109,7 +110,7 @@ class MCPAdapter(BaseAdapter):
         input: InputType,
         input_source: DataSource | None = None,
         existing_run: TaskRun | None = None,
-        on_chunk: StreamCallback | None = None,
+        stream_transport: StreamTransport = None,
     ) -> Tuple[TaskRun, RunOutput]:
         """
         Runs the task and returns both the persisted TaskRun and raw RunOutput.
