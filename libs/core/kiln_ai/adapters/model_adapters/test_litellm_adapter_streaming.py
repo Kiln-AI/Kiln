@@ -62,7 +62,7 @@ class ChunkRenderer(ChunkRendererAbstract):
             if tool_call.function.name is not None:
                 self.print_and_append(f'Calling tool: "{tool_call.function.name}" ')
                 self.print_and_append("with args: ")
-            elif tool_call.function.arguments is not None:
+            if tool_call.function.arguments is not None:
                 args = tool_call.function.arguments
                 self.print_and_append(args)
 
