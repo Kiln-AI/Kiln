@@ -15,6 +15,7 @@ from kiln_ai.utils.logging import setup_litellm_logging
 
 from app.desktop.log_config import log_config
 from app.desktop.studio_server.copilot_api import connect_copilot_api
+from app.desktop.studio_server.chat_stream_api import connect_chat_stream_api
 from app.desktop.studio_server.data_gen_api import connect_data_gen_api
 from app.desktop.studio_server.dev_tools import connect_dev_tools
 from app.desktop.studio_server.eval_api import connect_evals_api
@@ -72,6 +73,7 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_tool_servers_api(app)
     connect_prompt_optimization_job_api(app)
     connect_copilot_api(app)
+    connect_chat_stream_api(app)
     connect_dev_tools(app)
 
     # Important: webhost must be last, it handles all other URLs

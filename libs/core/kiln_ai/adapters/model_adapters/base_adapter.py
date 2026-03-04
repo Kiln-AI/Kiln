@@ -192,6 +192,8 @@ class BaseAdapter(metaclass=ABCMeta):
         run_output, usage = await self._run(
             formatted_input, prior_trace=prior_trace, stream_transport=transport
         )
+        if transport is not None:
+            await transport.on_run_complete()
 
         # Parse
         provider = self.model_provider()

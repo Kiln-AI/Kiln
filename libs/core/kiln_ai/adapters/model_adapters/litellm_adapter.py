@@ -151,7 +151,9 @@ class LiteLlmAdapter(BaseAdapter):
                 (
                     assistant_message_from_toolcall,
                     tool_call_messages,
-                ) = await self.process_tool_calls(tool_calls)
+                ) = await self.process_tool_calls(
+                    tool_calls, stream_transport=stream_transport
+                )
 
                 # Add tool call results to messages
                 messages.extend(tool_call_messages)
@@ -619,7 +621,9 @@ class LiteLlmAdapter(BaseAdapter):
         return [await tool.toolcall_definition() for tool in available_tools]
 
     async def process_tool_calls(
-        self, tool_calls: list[ChatCompletionMessageToolCall] | None
+        self,
+        tool_calls: list[ChatCompletionMessageToolCall] | None,
+        stream_transport: LiteLLMTransportAdapter | None = None,
     ) -> tuple[str | None, list[ChatCompletionToolMessageParamWrapper]]:
         if tool_calls is None:
             return None, []
@@ -669,9 +673,19 @@ class LiteLlmAdapter(BaseAdapter):
             )
 
             async def run_tool_and_format(
-                t=tool, c=context, args=parsed_args, tc_id=tool_call.id
+                t=tool,
+                c=context,
+                args=parsed_args,
+                tc_id=tool_call.id,
+                transport=stream_transport,
             ):
                 result = await t.run(c, **args)
+                if transport is not None:
+                    await transport.on_tool_result(
+                        tool_call_id=tc_id,
+                        output=result.output,
+                        provider_executed=False,
+                    )
                 return ChatCompletionToolMessageParamWrapper(
                     role="tool",
                     tool_call_id=tc_id,

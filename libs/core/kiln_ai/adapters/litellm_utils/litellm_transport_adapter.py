@@ -34,6 +34,14 @@ class LiteLLMTransportAdapter(ABC):
     async def on_step_finish(self) -> None:
         pass
 
+    async def on_run_complete(self) -> None:
+        pass
+
+    async def on_tool_result(
+        self, tool_call_id: str, output: Any, provider_executed: bool = False
+    ) -> None:
+        pass
+
 
 class OpenAIStreamTransport(LiteLLMTransportAdapter):
     def __init__(
@@ -90,6 +98,21 @@ class AISDKStreamTransport(LiteLLMTransportAdapter):
     async def on_step_finish(self) -> None:
         await self._emit({"type": "finish-step"})
 
+    async def on_run_complete(self) -> None:
+        await self._emit(AISDK_DONE)
+
+    async def on_tool_result(
+        self, tool_call_id: str, output: Any, provider_executed: bool = False
+    ) -> None:
+        await self._emit(
+            {
+                "type": "tool-output-available",
+                "toolCallId": tool_call_id,
+                "output": output,
+                "providerExecuted": provider_executed,
+            }
+        )
+
     async def on_chunk(self, chunk: ModelResponseStream) -> None:
         if not chunk.choices:
             return
@@ -98,7 +121,6 @@ class AISDKStreamTransport(LiteLLMTransportAdapter):
             await self._finish_text_block()
             await self._finish_reasoning_block()
             await self._emit({"type": "finish"})
-            await self._emit(AISDK_DONE)
             return
         delta = choice.delta
         if delta is None:

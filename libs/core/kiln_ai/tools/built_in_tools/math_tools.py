@@ -37,6 +37,7 @@ class AddTool(KilnTool):
         kwargs = AddParams(**kwargs)  # type: ignore[missing-typed-dict-key]
         a = kwargs["a"]
         b = kwargs["b"]
+        print(f"Adding {a} and {b} using TOOL CALL")
         return ToolCallResult(output=str(a + b))
 
 
