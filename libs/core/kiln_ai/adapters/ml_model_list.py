@@ -63,6 +63,7 @@ class ModelName(str, Enum):
     llama_4_scout = "llama_4_scout"
     gpt_5_2 = "gpt_5_2"
     gpt_5_2_pro = "gpt_5_2_pro"
+    gpt_5_3_chat = "gpt_5_3_chat"
     gpt_5_2_chat = "gpt_5_2_chat"
     gpt_5 = "gpt_5"
     gpt_5_1 = "gpt_5_1"
@@ -135,6 +136,7 @@ class ModelName(str, Enum):
     gemini_2_5_pro = "gemini_2_5_pro"
     gemini_2_5_flash = "gemini_2_5_flash"
     gemini_2_5_flash_lite = "gemini_2_5_flash_lite"
+    gemini_3_1_flash_lite_preview = "gemini_3_1_flash_lite_preview"
     gemini_3_1_pro_preview = "gemini_3_1_pro_preview"
     gemini_3_pro_preview = "gemini_3_pro_preview"
     gemini_3_flash = "gemini_3_flash"
@@ -168,6 +170,10 @@ class ModelName(str, Enum):
     grok_3_mini = "grok_3_mini"
     grok_4_1_fast = "grok_4_1_fast"
     grok_4 = "grok_4"
+    qwen_3p5_flash = "qwen_3p5_flash"
+    qwen_3p5_122b_a10b = "qwen_3p5_122b_a10b"
+    qwen_3p5_27b = "qwen_3p5_27b"
+    qwen_3p5_35b_a3b = "qwen_3p5_35b_a3b"
     qwen_3p5_plus = "qwen_3p5_plus"
     qwen_3p5_397b_a17b = "qwen_3p5_397b_a17b"
     qwen_3_next_80b_a3b = "qwen_3_next_80b_a3b"
@@ -440,6 +446,46 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
                     # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 5.3 Instant
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_5_3_chat,
+        friendly_name="GPT-5.3 Instant",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-5.3-chat-latest",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-5.3-chat",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
@@ -1795,6 +1841,65 @@ built_in_models: List[KilnModel] = [
                 suggested_for_evals=True,
                 # while the model is capable of reasoning, it doesn't always return it in the response
                 # reasoning_capable=True,
+                gemini_reasoning_enabled=True,
+                thinking_level="medium",
+            ),
+        ],
+    ),
+    # Gemini 3.1 Flash Lite Preview
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_3_1_flash_lite_preview,
+        friendly_name="Gemini 3.1 Flash Lite Preview",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-3.1-flash-lite-preview",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-3.1-flash-lite-preview",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                gemini_reasoning_enabled=True,
+                thinking_level="medium",
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-3.1-flash-lite-preview",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                # litellm sends an invalid role in tool-call messages to Vertex, causing 400 errors
+                supports_function_calling=False,
                 gemini_reasoning_enabled=True,
                 thinking_level="medium",
             ),
@@ -4245,6 +4350,112 @@ built_in_models: List[KilnModel] = [
                 supports_function_calling=True,
                 reasoning_capable=True,
                 siliconflow_enable_thinking=True,
+            ),
+        ],
+    ),
+    # Qwen 3.5 Flash
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p5_flash,
+        friendly_name="Qwen 3.5 Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.5-flash-02-23",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                # returns empty assistant messages instead of tool calls
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Qwen 3.5 122B (10B Active)
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p5_122b_a10b,
+        friendly_name="Qwen 3.5 122B (10B Active)",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.5-122b-a10b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Qwen 3.5 27B
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p5_27b,
+        friendly_name="Qwen 3.5 27B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.5-27b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Qwen 3.5 35B (3B Active)
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p5_35b_a3b,
+        friendly_name="Qwen 3.5 35B (3B Active)",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.5-35b-a3b",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                # 3B active params: echoes the JSON schema instead of generating data
+                supports_data_gen=False,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
             ),
         ],
     ),
