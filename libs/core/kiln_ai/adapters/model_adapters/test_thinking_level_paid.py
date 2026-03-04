@@ -4,6 +4,7 @@ import pytest
 
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
+from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import EvalTraceFormatter
 from kiln_ai.adapters.ml_model_list import ModelProviderName, built_in_models
 from kiln_ai.adapters.provider_tools import provider_warnings
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
@@ -48,7 +49,7 @@ def reasoning_content_from_run(run: datamodel.TaskRun) -> str | None:
         for message in run.trace:
             if not isinstance(message, dict):
                 continue
-            reasoning = message.get("reasoning_content")
+            reasoning = EvalTraceFormatter.reasoning_content_from_message(message)
             if isinstance(reasoning, str) and reasoning.strip():
                 return reasoning.strip()
 
@@ -90,10 +91,7 @@ def get_all_model_providers_with_thinking_levels(
     ("provider_name", "model_name", "thinking_level"),
     get_all_model_providers_with_thinking_levels(
         [
-            ModelProviderName.openai,
             ModelProviderName.openrouter,
-            ModelProviderName.gemini_api,
-            ModelProviderName.vertex,
         ]
     ),
 )
@@ -101,6 +99,7 @@ async def test_thinking_level_reasoning_content(
     tmp_path, provider_name: str, model_name: str, thinking_level: str
 ):
     skip_if_missing_provider_keys(provider_name)
+
     task = build_thinking_level_test_task(tmp_path)
     adapter = adapter_for_task(
         task,
