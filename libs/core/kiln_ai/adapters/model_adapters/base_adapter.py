@@ -3,7 +3,11 @@ from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
-from kiln_ai.adapters.chat.chat_formatter import ChatFormatter, get_chat_formatter
+from kiln_ai.adapters.chat.chat_formatter import (
+    ChatFormatter,
+    MultiturnFormatter,
+    get_chat_formatter,
+)
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     StructuredOutputMode,
@@ -123,14 +127,18 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        existing_run: TaskRun | None = None,
     ) -> TaskRun:
-        run_output, _ = await self.invoke_returning_run_output(input, input_source)
+        run_output, _ = await self.invoke_returning_run_output(
+            input, input_source, existing_run
+        )
         return run_output
 
     async def _run_returning_run_output(
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        existing_run: TaskRun | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # validate input, allowing arrays
         if self.input_schema is not None:
@@ -141,6 +149,15 @@ class BaseAdapter(metaclass=ABCMeta):
                 require_object=False,
             )
 
+        if existing_run is not None and (
+            not existing_run.trace or len(existing_run.trace) == 0
+        ):
+            raise ValueError(
+                "Run has no trace. Cannot continue session without conversation history."
+            )
+
+        prior_trace = existing_run.trace if existing_run else None
+
         # Format model input for model call (we save the original input in the task without formatting)
         formatted_input = input
         formatter_id = self.model_provider().formatter
@@ -149,7 +166,7 @@ class BaseAdapter(metaclass=ABCMeta):
             formatted_input = formatter.format_input(input)
 
         # Run
-        run_output, usage = await self._run(formatted_input)
+        run_output, usage = await self._run(formatted_input, prior_trace=prior_trace)
 
         # Parse
         provider = self.model_provider()
@@ -198,10 +215,28 @@ class BaseAdapter(metaclass=ABCMeta):
                 "Reasoning is required for this model, but no reasoning was returned."
             )
 
-        # Generate the run and output
-        run = self.generate_run(
-            input, input_source, parsed_output, usage, run_output.trace
-        )
+        # Create the run and output - merge if there is an existing run
+        if existing_run is not None:
+            merged_output = RunOutput(
+                output=parsed_output.output,
+                intermediate_outputs=parsed_output.intermediate_outputs
+                or run_output.intermediate_outputs,
+                output_logprobs=parsed_output.output_logprobs
+                or run_output.output_logprobs,
+                trace=run_output.trace,
+            )
+            run = self.generate_run(
+                input,
+                input_source,
+                merged_output,
+                usage,
+                run_output.trace,
+                existing_run=existing_run,
+            )
+        else:
+            run = self.generate_run(
+                input, input_source, parsed_output, usage, run_output.trace
+            )
 
         # Save the run if configured to do so, and we have a path to save to
         if (
@@ -210,7 +245,7 @@ class BaseAdapter(metaclass=ABCMeta):
             and self.task.path is not None
         ):
             run.save_to_file()
-        else:
+        elif existing_run is None:
             # Clear the ID to indicate it's not persisted
             run.id = None
 
@@ -220,6 +255,7 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        existing_run: TaskRun | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # Determine if this is the root agent (no existing run context)
         is_root_agent = get_agent_run_id() is None
@@ -229,7 +265,9 @@ class BaseAdapter(metaclass=ABCMeta):
             set_agent_run_id(run_id)
 
         try:
-            return await self._run_returning_run_output(input, input_source)
+            return await self._run_returning_run_output(
+                input, input_source, existing_run
+            )
         finally:
             if is_root_agent:
                 try:
@@ -247,7 +285,11 @@ class BaseAdapter(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    async def _run(self, input: InputType) -> Tuple[RunOutput, Usage | None]:
+    async def _run(
+        self,
+        input: InputType,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
+    ) -> Tuple[RunOutput, Usage | None]:
         pass
 
     def build_prompt(self) -> str:
@@ -267,7 +309,14 @@ class BaseAdapter(metaclass=ABCMeta):
             include_json_instructions=add_json_instructions
         )
 
-    def build_chat_formatter(self, input: InputType) -> ChatFormatter:
+    def build_chat_formatter(
+        self,
+        input: InputType,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
+    ) -> ChatFormatter:
+        if prior_trace is not None:
+            return MultiturnFormatter(prior_trace, input)
+
         if self.prompt_builder is None:
             raise ValueError("Prompt builder is not available for MCP run config")
         # Determine the chat strategy to use based on the prompt the user selected, the model's capabilities, and if the model was finetuned with a specific chat strategy.
@@ -323,23 +372,13 @@ class BaseAdapter(metaclass=ABCMeta):
         run_output: RunOutput,
         usage: Usage | None = None,
         trace: list[ChatCompletionMessageParam] | None = None,
+        existing_run: TaskRun | None = None,
     ) -> TaskRun:
-        # Convert input and output to JSON strings if they aren't strings
-        input_str = (
-            input if isinstance(input, str) else json.dumps(input, ensure_ascii=False)
-        )
         output_str = (
             json.dumps(run_output.output, ensure_ascii=False)
             if isinstance(run_output.output, dict)
             else run_output.output
         )
-
-        # If no input source is provided, use the human data source
-        if input_source is None:
-            input_source = DataSource(
-                type=DataSourceType.human,
-                properties={"created_by": Config.shared().user_id},
-            )
 
         # Synthetic since an adapter, not a human, is creating this
         # Special case for MCP run configs which calls a mcp tool
@@ -349,25 +388,40 @@ class BaseAdapter(metaclass=ABCMeta):
             else DataSourceType.synthetic
         )
 
-        new_task_run = TaskRun(
+        new_output = TaskOutput(
+            output=output_str,
+            source=DataSource(
+                type=output_source_type,
+                properties=self._properties_for_task_output(),
+                run_config=self.run_config,
+            ),
+        )
+
+        final_usage = usage
+        final_intermediate = run_output.intermediate_outputs
+        if existing_run is not None:
+            final_usage = (existing_run.usage or Usage()) + (usage or Usage())
+            final_intermediate = run_output.intermediate_outputs
+
+        input_str = (
+            input if isinstance(input, str) else json.dumps(input, ensure_ascii=False)
+        )
+        if input_source is None:
+            input_source = DataSource(
+                type=DataSourceType.human,
+                properties={"created_by": Config.shared().user_id},
+            )
+
+        return TaskRun(
             parent=self.task,
             input=input_str,
             input_source=input_source,
-            output=TaskOutput(
-                output=output_str,
-                source=DataSource(
-                    type=output_source_type,
-                    properties=self._properties_for_task_output(),
-                    run_config=self.run_config,
-                ),
-            ),
-            intermediate_outputs=run_output.intermediate_outputs,
+            output=new_output,
+            intermediate_outputs=final_intermediate,
             tags=self.base_adapter_config.default_tags or [],
-            usage=usage,
+            usage=final_usage,
             trace=trace,
         )
-
-        return new_task_run
 
     def _properties_for_task_output(self) -> Dict[str, str | int | float]:
         match self.run_config.type:

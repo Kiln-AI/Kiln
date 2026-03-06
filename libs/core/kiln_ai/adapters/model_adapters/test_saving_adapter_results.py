@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -10,7 +10,11 @@ from kiln_ai.utils.config import Config
 
 
 class MockAdapter(BaseAdapter):
-    async def _run(self, input: InputType) -> tuple[RunOutput, Usage | None]:
+    async def _run(
+        self,
+        input: InputType,
+        prior_trace=None,
+    ) -> tuple[RunOutput, Usage | None]:
         return RunOutput(output="Test output", intermediate_outputs=None), None
 
     def adapter_name(self) -> str:
@@ -231,6 +235,163 @@ async def test_autosave_true(test_task, adapter):
         assert output.source.properties["structured_output_mode"] == "json_schema"
         assert output.source.properties["temperature"] == 1.0
         assert output.source.properties["top_p"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_invoke_continue_session(test_task, adapter):
+    """Test that invoke with existing_run continues a session and creates a new run."""
+    with patch("kiln_ai.utils.config.Config.shared") as mock_shared:
+        mock_config = mock_shared.return_value
+        mock_config.autosave_runs = True
+        mock_config.user_id = "test_user"
+
+        trace = [
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi there!"},
+        ]
+        initial_run = adapter.generate_run(
+            input="Hello",
+            input_source=None,
+            run_output=RunOutput(
+                output="Hi there!",
+                intermediate_outputs=None,
+                trace=trace,
+            ),
+            trace=trace,
+        )
+        initial_run.save_to_file()
+        run_id = initial_run.id
+        assert run_id is not None
+
+        async def mock_run(input, prior_trace=None):
+            if prior_trace is not None:
+                extended_trace = [
+                    *prior_trace,
+                    {"role": "user", "content": input},
+                    {"role": "assistant", "content": "How can I help?"},
+                ]
+                return (
+                    RunOutput(
+                        output="How can I help?",
+                        intermediate_outputs=None,
+                        trace=extended_trace,
+                    ),
+                    None,
+                )
+            return RunOutput(output="Test output", intermediate_outputs=None), None
+
+        adapter._run = mock_run
+
+        with (
+            patch.object(
+                adapter,
+                "model_provider",
+                return_value=MagicMock(
+                    parser="default",
+                    formatter=None,
+                    reasoning_capable=False,
+                ),
+            ),
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"
+            ) as mock_parser_from_id,
+        ):
+            mock_parser = MagicMock()
+            mock_parser.parse_output.return_value = RunOutput(
+                output="How can I help?",
+                intermediate_outputs=None,
+                trace=[
+                    {"role": "user", "content": "Hello"},
+                    {"role": "assistant", "content": "Hi there!"},
+                    {"role": "user", "content": "Tell me more"},
+                    {"role": "assistant", "content": "How can I help?"},
+                ],
+            )
+            mock_parser_from_id.return_value = mock_parser
+
+            updated_run = await adapter.invoke("Tell me more", existing_run=initial_run)
+
+        assert updated_run.id != run_id
+        assert updated_run.input == "Tell me more"
+        assert updated_run.output.output == "How can I help?"
+        assert len(updated_run.trace) == 4
+        assert updated_run.trace[-2]["content"] == "Tell me more"
+        assert updated_run.trace[-1]["content"] == "How can I help?"
+
+        reloaded = Task.load_from_file(test_task.path)
+        runs = reloaded.runs()
+        assert len(runs) == 2
+        initial_run_reloaded = next(r for r in runs if r.id == run_id)
+        continued_run = next(r for r in runs if r.id == updated_run.id)
+        assert initial_run_reloaded.output.output == "Hi there!"
+        assert continued_run.output.output == "How can I help?"
+
+
+@pytest.mark.asyncio
+async def test_invoke_continue_run_without_trace(test_task, adapter):
+    """Test that invoke with existing_run that has no trace raises ValueError."""
+    with patch("kiln_ai.utils.config.Config.shared") as mock_shared:
+        mock_config = mock_shared.return_value
+        mock_config.autosave_runs = True
+        mock_config.user_id = "test_user"
+
+        run_without_trace = adapter.generate_run(
+            input="Hello",
+            input_source=None,
+            run_output=RunOutput(
+                output="Hi",
+                intermediate_outputs=None,
+                trace=None,
+            ),
+        )
+        run_without_trace.save_to_file()
+
+        with pytest.raises(ValueError, match="no trace"):
+            await adapter.invoke("Follow up", existing_run=run_without_trace)
+
+
+def test_generate_run_with_existing_run_merges_usage_and_intermediate_outputs(
+    test_task, adapter
+):
+    trace = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+    ]
+    initial_run = adapter.generate_run(
+        input="hi",
+        input_source=None,
+        run_output=RunOutput(
+            output="hello",
+            intermediate_outputs={"chain_of_thought": "old"},
+            trace=trace,
+        ),
+        usage=Usage(input_tokens=10, output_tokens=20),
+        trace=trace,
+    )
+    extended_trace = [
+        *trace,
+        {"role": "user", "content": "follow-up"},
+        {"role": "assistant", "content": "ok"},
+    ]
+    result = adapter.generate_run(
+        input="follow-up",
+        input_source=None,
+        run_output=RunOutput(
+            output="ok",
+            intermediate_outputs={"new_key": "new_val"},
+            trace=extended_trace,
+        ),
+        usage=Usage(input_tokens=5, output_tokens=10),
+        trace=extended_trace,
+        existing_run=initial_run,
+    )
+    assert result is not initial_run
+    assert result.id != initial_run.id
+    assert result.input == "follow-up"
+    assert result.usage.input_tokens == 15
+    assert result.usage.output_tokens == 30
+    assert result.intermediate_outputs == {"new_key": "new_val"}
+    assert result.output.output == "ok"
 
 
 def test_properties_for_task_output_custom_values(test_task):
