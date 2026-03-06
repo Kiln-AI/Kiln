@@ -1212,7 +1212,11 @@ async def test_array_input_converted_to_json(tmp_path, config):
     mock_config_obj.user_id = "test_user"
 
     with (
-        patch("litellm.acompletion", new=AsyncMock(return_value=mock_response)),
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=AsyncMock(return_value=(mock_response, mock_response.choices[0])),
+        ),
         patch("kiln_ai.utils.config.Config.shared", return_value=mock_config_obj),
     ):
         array_input = [1, 2, 3, 4, 5]
@@ -1282,7 +1286,11 @@ async def test_dict_input_converted_to_json(tmp_path, config):
     mock_config_obj.user_id = "test_user"
 
     with (
-        patch("litellm.acompletion", new=AsyncMock(return_value=mock_response)),
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=AsyncMock(return_value=(mock_response, mock_response.choices[0])),
+        ),
         patch("kiln_ai.utils.config.Config.shared", return_value=mock_config_obj),
     ):
         dict_input = {"x": 10, "y": 20}
@@ -1336,7 +1344,7 @@ async def test_run_with_prior_trace_uses_multiturn_formatter(mock_task):
     adapter.build_chat_formatter = capturing_build
 
     async def mock_run_model_turn(
-        provider, prior_messages, top_logprobs, skip_response_format
+        provider, prior_messages, top_logprobs, skip_response_format, on_chunk=None
     ):
         extended = list(prior_messages)
         extended.append({"role": "assistant", "content": "How can I help?"})

@@ -10,11 +10,7 @@ from kiln_ai.utils.config import Config
 
 
 class MockAdapter(BaseAdapter):
-    async def _run(
-        self,
-        input: InputType,
-        prior_trace=None,
-    ) -> tuple[RunOutput, Usage | None]:
+    async def _run(self, input: InputType, **kwargs) -> tuple[RunOutput, Usage | None]:
         return RunOutput(output="Test output", intermediate_outputs=None), None
 
     def adapter_name(self) -> str:
@@ -263,7 +259,8 @@ async def test_invoke_continue_session(test_task, adapter):
         run_id = initial_run.id
         assert run_id is not None
 
-        async def mock_run(input, prior_trace=None):
+        async def mock_run(input, **kwargs):
+            prior_trace = kwargs.get("prior_trace")
             if prior_trace is not None:
                 extended_trace = [
                     *prior_trace,
