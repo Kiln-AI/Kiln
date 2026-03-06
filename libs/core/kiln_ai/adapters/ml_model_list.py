@@ -426,12 +426,23 @@ GEMINI_3_FLASH_THINKING_LEVELS = {
     "High": "high",
 }
 
+GEMINI_3_FLASH_OPENROUTER_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+}
+
+GEMINI_3_PRO_OPENROUTER_THINKING_LEVELS = {
+    "High": "high",
+}
+
 GPT_5_OPENAI_THINKING_LEVELS = {
     "Minimal": "minimal",
     "Low": "low",
     "Medium": "medium",
     "High": "high",
 }
+
 
 CLAUDE_OPENROUTER_THINKING_LEVELS = {
     "Off/None": "none",
@@ -477,8 +488,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5.2",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=GPT_5_2_OPENROUTER_THINKING_LEVELS,
-                default_thinking_level="none",
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
@@ -527,8 +536,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5.2-pro",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=GPT_5_OPENROUTER_THINKING_LEVELS,
-                default_thinking_level="none",
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
@@ -576,8 +583,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5.2-chat",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=GPT_5_OPENROUTER_THINKING_LEVELS,
-                default_thinking_level="none",
                 suggested_for_evals=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
@@ -623,8 +628,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5.1",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=GPT_5_OPENROUTER_THINKING_LEVELS,
-                default_thinking_level="none",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -670,8 +673,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=GPT_5_OPENROUTER_THINKING_LEVELS,
-                default_thinking_level="medium",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -716,8 +717,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5-mini",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=GPT_5_OPENROUTER_THINKING_LEVELS,
-                default_thinking_level="medium",
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
@@ -764,8 +763,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5-nano",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                available_thinking_levels=GPT_5_OPENROUTER_THINKING_LEVELS,
-                default_thinking_level="medium",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1666,9 +1663,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-opus-4.5",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                openrouter_reasoning_object=True,
-                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
-                default_thinking_level="none",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1823,7 +1817,7 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
-                available_thinking_levels=GEMINI_3_PRO_THINKING_LEVELS,
+                available_thinking_levels=GEMINI_3_PRO_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="high",
                 multimodal_mime_types=[
                     # documents
@@ -1901,7 +1895,7 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 multimodal_capable=True,
                 supports_vision=True,
-                available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
+                available_thinking_levels=GEMINI_3_FLASH_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="high",
                 multimodal_mime_types=[
                     # documents
