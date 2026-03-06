@@ -239,7 +239,7 @@ async def test_autosave_true(test_task, adapter):
 
 @pytest.mark.asyncio
 async def test_invoke_continue_session(test_task, adapter):
-    """Test that invoke with task_run_id continues a session and updates the run."""
+    """Test that invoke with existing_run continues a session and creates a new run."""
     with patch("kiln_ai.utils.config.Config.shared") as mock_shared:
         mock_config = mock_shared.return_value
         mock_config.autosave_runs = True
@@ -311,8 +311,8 @@ async def test_invoke_continue_session(test_task, adapter):
 
             updated_run = await adapter.invoke("Tell me more", existing_run=initial_run)
 
-        assert updated_run.id == run_id
-        assert updated_run.input == "Hello"
+        assert updated_run.id != run_id
+        assert updated_run.input == "Tell me more"
         assert updated_run.output.output == "How can I help?"
         assert len(updated_run.trace) == 4
         assert updated_run.trace[-2]["content"] == "Tell me more"
@@ -320,8 +320,11 @@ async def test_invoke_continue_session(test_task, adapter):
 
         reloaded = Task.load_from_file(test_task.path)
         runs = reloaded.runs()
-        assert len(runs) == 1
-        assert runs[0].output.output == "How can I help?"
+        assert len(runs) == 2
+        initial_run_reloaded = next(r for r in runs if r.id == run_id)
+        continued_run = next(r for r in runs if r.id == updated_run.id)
+        assert initial_run_reloaded.output.output == "Hi there!"
+        assert continued_run.output.output == "How can I help?"
 
 
 @pytest.mark.asyncio
@@ -371,7 +374,7 @@ def test_generate_run_with_existing_run_merges_usage_and_intermediate_outputs(
         {"role": "assistant", "content": "ok"},
     ]
     result = adapter.generate_run(
-        input="hi",
+        input="follow-up",
         input_source=None,
         run_output=RunOutput(
             output="ok",
@@ -382,7 +385,9 @@ def test_generate_run_with_existing_run_merges_usage_and_intermediate_outputs(
         trace=extended_trace,
         existing_run=initial_run,
     )
-    assert result is initial_run
+    assert result is not initial_run
+    assert result.id != initial_run.id
+    assert result.input == "follow-up"
     assert result.usage.input_tokens == 15
     assert result.usage.output_tokens == 30
     assert result.intermediate_outputs == {

@@ -380,6 +380,8 @@ class BaseAdapter(metaclass=ABCMeta):
             else run_output.output
         )
 
+        # Synthetic since an adapter, not a human, is creating this
+        # Special case for MCP run configs which calls a mcp tool
         output_source_type = (
             DataSourceType.tool_call
             if self.run_config.type == "mcp"
@@ -395,31 +397,17 @@ class BaseAdapter(metaclass=ABCMeta):
             ),
         )
 
+        final_usage = usage
+        final_intermediate = run_output.intermediate_outputs
         if existing_run is not None:
-            accumulated_usage = existing_run.usage
-            if usage is not None:
-                if accumulated_usage is not None:
-                    accumulated_usage = accumulated_usage + usage
-                else:
-                    accumulated_usage = usage
-
-            merged_intermediate = dict(existing_run.intermediate_outputs or {})
+            final_usage = (existing_run.usage or Usage()) + (usage or Usage())
+            final_intermediate = dict(existing_run.intermediate_outputs or {})
             if run_output.intermediate_outputs:
-                for k, v in run_output.intermediate_outputs.items():
-                    merged_intermediate[k] = v
+                final_intermediate.update(run_output.intermediate_outputs)
 
-            existing_run.output = new_output
-            existing_run.trace = trace
-            existing_run.usage = accumulated_usage
-            existing_run.intermediate_outputs = merged_intermediate
-
-            return existing_run
-
-        # Convert input and output to JSON strings if they aren't strings
         input_str = (
             input if isinstance(input, str) else json.dumps(input, ensure_ascii=False)
         )
-
         if input_source is None:
             input_source = DataSource(
                 type=DataSourceType.human,
@@ -431,9 +419,9 @@ class BaseAdapter(metaclass=ABCMeta):
             input=input_str,
             input_source=input_source,
             output=new_output,
-            intermediate_outputs=run_output.intermediate_outputs,
+            intermediate_outputs=final_intermediate,
             tags=self.base_adapter_config.default_tags or [],
-            usage=usage,
+            usage=final_usage,
             trace=trace,
         )
 
