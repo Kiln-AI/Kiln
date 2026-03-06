@@ -161,6 +161,8 @@ class ModelDetails(BaseModel):
     multimodal_mime_types: List[str] | None = Field(default=None)
     # the suggested structured output mode for this model.
     structured_output_mode: StructuredOutputMode
+    available_thinking_levels: dict[str, str] | None = Field(default=None)
+    default_thinking_level: str | None = Field(default=None)
     # True if this is a untested model (typically user added). We don't know if these support structured output, data gen, etc. They should appear in their own section in the UI.
     untested_model: bool = Field(default=False)
     task_filter: List[str] | None = Field(default=None)
@@ -291,6 +293,8 @@ def connect_provider_api(app: FastAPI):
                                 suggested_for_doc_extraction=provider.suggested_for_doc_extraction,
                                 multimodal_capable=provider.multimodal_capable,
                                 multimodal_mime_types=mime_types_as_str,
+                                available_thinking_levels=provider.available_thinking_levels,
+                                default_thinking_level=provider.default_thinking_level,
                             )
                         )
 

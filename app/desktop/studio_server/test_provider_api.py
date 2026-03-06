@@ -968,6 +968,8 @@ async def test_get_available_models(app, client):
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                     "model_specific_run_config": None,
+                    "available_thinking_levels": None,
+                    "default_thinking_level": None,
                 }
             ],
         },
@@ -995,6 +997,8 @@ async def test_get_available_models(app, client):
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                     "model_specific_run_config": None,
+                    "available_thinking_levels": None,
+                    "default_thinking_level": None,
                 },
             ],
         },
@@ -1022,6 +1026,8 @@ async def test_get_available_models(app, client):
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                     "model_specific_run_config": None,
+                    "available_thinking_levels": None,
+                    "default_thinking_level": None,
                 }
             ],
         },
@@ -1099,6 +1105,8 @@ async def test_get_available_models_ollama_exception(app, client):
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                     "model_specific_run_config": None,
+                    "available_thinking_levels": None,
+                    "default_thinking_level": None,
                 }
             ],
         },
