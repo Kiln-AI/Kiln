@@ -31,13 +31,13 @@ echo $PWD
 headerStart="\n\033[4;34m=== "
 headerEnd=" ===\033[0m\n"
 
-echo "${headerStart}Checking Python: uvx ruff check ${headerEnd}"
+echo "${headerStart}Checking Python: uv run ruff check ${headerEnd}"
 uv run ruff check
 
-echo "${headerStart}Checking Python: uvx ruff format --check ${headerEnd}"
+echo "${headerStart}Checking Python: uv run ruff format --check ${headerEnd}"
 uv run ruff format --check .
 
-echo "${headerStart}Checking Python Types: uvx ty check${headerEnd}"
+echo "${headerStart}Checking Python Types: uv run ty check${headerEnd}"
 uv run ty check
 
 echo "${headerStart}Checking for Misspellings${headerEnd}"
