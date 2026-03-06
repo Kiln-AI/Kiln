@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from kiln_ai.adapters.embedding.base_embedding_adapter import (
     BaseEmbeddingAdapter,
     Embedding,
+    EmbeddingContext,
     EmbeddingResult,
 )
 from kiln_ai.adapters.ml_embedding_model_list import (
@@ -100,7 +101,27 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
 
         self.litellm_core_config = litellm_core_config
 
-    async def _generate_embeddings(self, input_texts: List[str]) -> EmbeddingResult:
+    def _should_apply_instructions(self, context: EmbeddingContext) -> bool:
+        """
+        Determine whether instructions should be applied based on context and model capabilities.
+
+        Instructions are only applied when:
+        1. The context is QUERY_SEARCH (not document indexing or semantic chunking)
+        2. The model supports instructions (supports_instructions=True)
+        3. Instructions are configured in the embedding config
+        """
+        if context != EmbeddingContext.QUERY_SEARCH:
+            return False
+
+        if not self.model_provider.supports_instructions:
+            return False
+
+        options = self.build_options()
+        return options.instructions is not None
+
+    async def _generate_embeddings(
+        self, input_texts: List[str], apply_embedding_instructions: bool = False
+    ) -> EmbeddingResult:
         # batch the requests
         batches: List[List[str]] = []
         for i in range(0, len(input_texts), MAX_BATCH_SIZE):
@@ -109,7 +130,9 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
         # generate embeddings for each batch
         results: List[EmbeddingResult] = []
         for batch in batches:
-            batch_response = await self._generate_embeddings_for_batch(batch)
+            batch_response = await self._generate_embeddings_for_batch(
+                batch, apply_embedding_instructions
+            )
             results.append(batch_response)
 
         # merge the results
@@ -149,7 +172,7 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
         return [f"Instruct: {instructions}\nQuery: {text}" for text in input_texts]
 
     async def _generate_embeddings_for_batch(
-        self, input_texts: List[str]
+        self, input_texts: List[str], apply_embedding_instructions: bool = False
     ) -> EmbeddingResult:
         if len(input_texts) > MAX_BATCH_SIZE:
             raise ValueError(
@@ -158,9 +181,12 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
 
         # Validate once and reuse the same instructions everywhere
         options = self.build_options()
-        # Apply instructions to input texts if present (validated)
+        # Apply instructions to input texts only if requested
+        instructions_to_apply = (
+            options.instructions if apply_embedding_instructions else None
+        )
         processed_texts = self._apply_instructions_to_texts(
-            input_texts, options.instructions
+            input_texts, instructions_to_apply
         )
 
         completion_kwargs: Dict[str, Any] = {}

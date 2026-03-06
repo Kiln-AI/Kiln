@@ -185,7 +185,7 @@ class EmbeddingModelDetails(BaseModel):
     max_input_tokens: int | None
     supports_custom_dimensions: bool
     suggested_for_chunk_embedding: bool
-    supports_instructions: bool
+    supports_instructions: bool = False
 
 
 class EmbeddingProvider(BaseModel):
