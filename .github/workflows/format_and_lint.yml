@@ -40,12 +40,12 @@ jobs:
 
       - name: Lint with ruff
         run: |
-          uvx ruff check
+          uv run ruff check
 
       - name: Format with ruff
         run: |
-          uvx ruff format --check .
+          uv run ruff format --check .
 
       - name: Typecheck with ty
         run: |
-          uvx ty check
+          uv run ty check

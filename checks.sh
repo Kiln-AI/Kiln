@@ -32,13 +32,13 @@ headerStart="\n\033[4;34m=== "
 headerEnd=" ===\033[0m\n"
 
 echo "${headerStart}Checking Python: uvx ruff check ${headerEnd}"
-uvx ruff check
+uv run ruff check
 
 echo "${headerStart}Checking Python: uvx ruff format --check ${headerEnd}"
-uvx ruff format --check .
+uv run ruff format --check .
 
 echo "${headerStart}Checking Python Types: uvx ty check${headerEnd}"
-uvx ty check
+uv run ty check
 
 echo "${headerStart}Checking for Misspellings${headerEnd}"
 if command -v misspell >/dev/null 2>&1; then
