@@ -401,9 +401,7 @@ class BaseAdapter(metaclass=ABCMeta):
         final_intermediate = run_output.intermediate_outputs
         if existing_run is not None:
             final_usage = (existing_run.usage or Usage()) + (usage or Usage())
-            final_intermediate = dict(existing_run.intermediate_outputs or {})
-            if run_output.intermediate_outputs:
-                final_intermediate.update(run_output.intermediate_outputs)
+            final_intermediate = run_output.intermediate_outputs
 
         input_str = (
             input if isinstance(input, str) else json.dumps(input, ensure_ascii=False)

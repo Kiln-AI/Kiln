@@ -390,10 +390,7 @@ def test_generate_run_with_existing_run_merges_usage_and_intermediate_outputs(
     assert result.input == "follow-up"
     assert result.usage.input_tokens == 15
     assert result.usage.output_tokens == 30
-    assert result.intermediate_outputs == {
-        "chain_of_thought": "old",
-        "new_key": "new_val",
-    }
+    assert result.intermediate_outputs == {"new_key": "new_val"}
     assert result.output.output == "ok"
 
 
