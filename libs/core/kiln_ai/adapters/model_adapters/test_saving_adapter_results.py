@@ -10,7 +10,7 @@ from kiln_ai.utils.config import Config
 
 
 class MockAdapter(BaseAdapter):
-    async def _run(self, input: InputType) -> tuple[RunOutput, Usage | None]:
+    async def _run(self, input: InputType, **kwargs) -> tuple[RunOutput, Usage | None]:
         return RunOutput(output="Test output", intermediate_outputs=None), None
 
     def adapter_name(self) -> str:

@@ -1209,7 +1209,11 @@ async def test_array_input_converted_to_json(tmp_path, config):
     mock_config_obj.user_id = "test_user"
 
     with (
-        patch("litellm.acompletion", new=AsyncMock(return_value=mock_response)),
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=AsyncMock(return_value=(mock_response, mock_response.choices[0])),
+        ),
         patch("kiln_ai.utils.config.Config.shared", return_value=mock_config_obj),
     ):
         array_input = [1, 2, 3, 4, 5]
@@ -1279,7 +1283,11 @@ async def test_dict_input_converted_to_json(tmp_path, config):
     mock_config_obj.user_id = "test_user"
 
     with (
-        patch("litellm.acompletion", new=AsyncMock(return_value=mock_response)),
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=AsyncMock(return_value=(mock_response, mock_response.choices[0])),
+        ),
         patch("kiln_ai.utils.config.Config.shared", return_value=mock_config_obj),
     ):
         dict_input = {"x": 10, "y": 20}
