@@ -43,6 +43,13 @@ class LiteLLMTransportAdapter(ABC):
         pass
 
 
+def _chunk_to_dict(chunk: ModelResponseStream) -> dict[str, Any]:
+    """Serialize ModelResponseStream to dict for JSON/SSE streaming."""
+    if hasattr(chunk, "model_dump"):
+        return chunk.model_dump()
+    return dict(chunk)
+
+
 class OpenAIStreamTransport(LiteLLMTransportAdapter):
     def __init__(
         self,
@@ -57,6 +64,30 @@ class OpenAIStreamTransport(LiteLLMTransportAdapter):
         self.parts.append(chunk)
         if self._on_part is not None:
             await self._on_part(chunk)
+
+
+class OpenAISSEStreamTransport(LiteLLMTransportAdapter):
+    """
+    Streams raw OpenAI-format chunks as SSE, compatible with OpenAI SDK and API clients.
+
+    Emits serialized ModelResponseStream chunks followed by [DONE].
+    """
+
+    def __init__(
+        self,
+        on_part: Callable[[dict[str, Any] | str], Awaitable[None]]
+        | Callable[[dict[str, Any] | str], None]
+        | None = None,
+    ) -> None:
+        self._on_part = _ensure_async(on_part) if on_part else None
+
+    async def on_chunk(self, chunk: ModelResponseStream) -> None:
+        if self._on_part is not None:
+            await self._on_part(_chunk_to_dict(chunk))
+
+    async def on_run_complete(self) -> None:
+        if self._on_part is not None:
+            await self._on_part(AISDK_DONE)
 
 
 class AISDKStreamTransport(LiteLLMTransportAdapter):
@@ -120,7 +151,10 @@ class AISDKStreamTransport(LiteLLMTransportAdapter):
         if choice.finish_reason is not None:
             await self._finish_text_block()
             await self._finish_reasoning_block()
-            await self._emit({"type": "finish"})
+            finish_payload: dict[str, Any] = {"type": "finish"}
+            if choice.finish_reason:
+                finish_payload["finishReason"] = choice.finish_reason
+            await self._emit(finish_payload)
             return
         delta = choice.delta
         if delta is None:
@@ -189,6 +223,7 @@ class AISDKStreamTransport(LiteLLMTransportAdapter):
                         "type": "tool-input-start",
                         "toolCallId": tool_call_id,
                         "toolName": tool_name,
+                        "providerExecuted": True,
                     }
                 )
             args_delta = getattr(func, "arguments", None) if func else None
@@ -210,6 +245,7 @@ class AISDKStreamTransport(LiteLLMTransportAdapter):
                         "toolCallId": tool_call_id,
                         "toolName": tool_name,
                         "input": parsed,
+                        "providerExecuted": True,
                     }
                 )
                 del self._tool_call_accumulator[index]

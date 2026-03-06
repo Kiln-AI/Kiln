@@ -4,12 +4,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from app.desktop.desktop_server import make_app
+from app.desktop.studio_server.webhost import HTMLStaticFiles
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.strict_mode import strict_mode
-
-from app.desktop.desktop_server import make_app
-from app.desktop.studio_server.webhost import HTMLStaticFiles
 
 
 @pytest.fixture
@@ -104,6 +103,8 @@ def test_connect_ollama_no_models(client):
         "http://127.0.0.1:5173",
         "https://localhost:5173",
         "https://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
     ],
 )
 def test_cors_allowed_origins(client, origin):
