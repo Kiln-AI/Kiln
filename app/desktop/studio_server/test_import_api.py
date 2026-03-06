@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from kiln_server.custom_errors import connect_custom_errors
 
 from app.desktop.studio_server.import_api import _show_file_dialog, connect_import_api
 
@@ -11,6 +12,7 @@ from app.desktop.studio_server.import_api import _show_file_dialog, connect_impo
 @pytest.fixture
 def app():
     app = FastAPI()
+    connect_custom_errors(app)
     return app
 
 
@@ -36,14 +38,14 @@ def test_select_kiln_file_no_tk_root(client_no_tk):
     """Test that the endpoint raises HTTPException when tk_root is None"""
     response = client_no_tk.get("/api/select_kiln_file")
     assert response.status_code == 400
-    assert "Not running in app mode" in response.json()["detail"]
+    assert "Not running in app mode" in response.json()["message"]
 
 
 def test_select_kiln_file_with_custom_title(client_no_tk):
     """Test that custom title parameter is handled when tk_root is None"""
     response = client_no_tk.get("/api/select_kiln_file?title=Custom Title")
     assert response.status_code == 400
-    assert "Not running in app mode" in response.json()["detail"]
+    assert "Not running in app mode" in response.json()["message"]
 
 
 @patch("app.desktop.studio_server.import_api.filedialog.askopenfilename")

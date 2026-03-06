@@ -21,8 +21,15 @@ from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 logger = logging.getLogger(__name__)
 
-LOCAL_MCP_ERROR_INSTRUCTION = "Please verify your command, arguments, and environment variables, and consult the server's documentation for the correct setup."
 MCP_SESSION_CACHE_KEY_DELIMITER = "::"
+
+
+class KilnMCPError(RuntimeError):
+    """Wraps MCP connection failures. Unwraps ExceptionGroup; attaches stderr."""
+
+    def __init__(self, message: str, stderr: str = ""):
+        super().__init__(message)
+        self.stderr = stderr
 
 
 class MCPSessionManager:
@@ -410,27 +417,18 @@ class MCPSessionManager:
             e: The exception to handle
 
         Raises:
-            ValueError: If the server rejected the request with an HTTP error
-            RuntimeError: If connection to the server failed
+            KilnMCPError: Always, with the raw library error message
         """
-        http_error = self._extract_first_exception(e, httpx.HTTPStatusError)
-        if http_error and isinstance(http_error, httpx.HTTPStatusError):
-            raise ValueError(
-                f"The MCP server rejected the request. "
-                f"Status {http_error.response.status_code}. "
-                f"Response from server:\n{http_error.response.reason_phrase}"
-            ) from e
-
-        connection_error_types = (ConnectionError, OSError, httpx.RequestError)
-        connection_error = self._extract_first_exception(e, connection_error_types)
-        if connection_error and isinstance(connection_error, connection_error_types):
-            raise RuntimeError(
-                f"Unable to connect to MCP server. Please verify the configurations are correct, the server is running, and your network connection is working. Original error: {connection_error}"
-            ) from e
-
-        raise RuntimeError(
-            f"Failed to connect to the MCP Server. Check the server's docs for troubleshooting. Original error: {e}"
-        ) from e
+        for exc_type in (
+            httpx.HTTPStatusError,
+            ConnectionError,
+            OSError,
+            httpx.RequestError,
+        ):
+            found = self._extract_first_exception(e, exc_type)
+            if found:
+                raise KilnMCPError(str(found)) from e
+        raise KilnMCPError(str(e)) from e
 
     def _handle_local_mcp_error(self, e: Exception, stderr: str) -> NoReturn:
         """Shared error handling for local MCP connection failures.
@@ -440,26 +438,13 @@ class MCPSessionManager:
             stderr: The stderr content from the MCP server
 
         Raises:
-            RuntimeError: Always, with a friendly error message
+            KilnMCPError: Always, with the raw library error message
         """
-        mcp_error = self._extract_first_exception(e, McpError)
-        if mcp_error and isinstance(mcp_error, McpError):
-            self._raise_local_mcp_error(mcp_error, stderr)
-
-        self._raise_local_mcp_error(e, stderr)
-
-    def _raise_local_mcp_error(self, e: Exception, stderr: str) -> NoReturn:
-        """
-        Raise a RuntimeError with a friendlier message for local MCP errors.
-        """
-        error_msg = f"'{e}'"
-
-        if stderr:
-            error_msg += f"\nMCP server error: {stderr}"
-
-        error_msg += f"\n{LOCAL_MCP_ERROR_INSTRUCTION}"
-
-        raise RuntimeError(error_msg) from e
+        for exc_type in (FileNotFoundError, OSError, McpError):
+            found = self._extract_first_exception(e, exc_type)
+            if found:
+                raise KilnMCPError(str(found), stderr=stderr) from e
+        raise KilnMCPError(str(e), stderr=stderr) from e
 
     def _get_path(self) -> str:
         """

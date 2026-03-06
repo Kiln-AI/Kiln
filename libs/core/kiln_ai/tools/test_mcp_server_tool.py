@@ -1,3 +1,4 @@
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -176,8 +177,47 @@ class TestMCPServerTool:
     @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id")
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
+    async def test_run_error_result_no_text_content(
+        self, mock_session_manager, mock_get_run_id
+    ):
+        """Test run() returns Unknown error when isError=True with no TextContent."""
+        mock_get_run_id.return_value = "test_run_123"
+        mock_session = AsyncMock()
+        mock_session_manager.shared.return_value.get_or_create_session = AsyncMock(
+            return_value=mock_session
+        )
+
+        # Return ImageContent instead of TextContent
+        result_content = [
+            ImageContent(type="image", data="base64data", mimeType="image/png")
+        ]
+        call_result = CallToolResult(
+            content=list[ContentBlock](result_content),
+            isError=True,  # type: ignore
+        )
+        mock_session.call_tool.return_value = call_result
+
+        server = ExternalToolServer(
+            name="test_server",
+            type=ToolServerType.remote_mcp,
+            properties={
+                "server_url": "https://example.com",
+                "is_archived": False,
+            },
+        )
+        tool = MCPServerTool(server, "test_tool")
+
+        result = await tool.run()
+
+        # Should return structured error with "Unknown error"
+        expected_output = json.dumps({"isError": True, "error": "Unknown error"})
+        assert result.output == expected_output
+
+    @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id")
+    @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
     async def test_run_error_result(self, mock_session_manager, mock_get_run_id):
-        """Test run() raises error when tool returns isError=True."""
+        """Test run() returns structured error when tool returns isError=True."""
         mock_get_run_id.return_value = "test_run_123"
         mock_session = AsyncMock()
         mock_session_manager.shared.return_value.get_or_create_session = AsyncMock(
@@ -201,8 +241,11 @@ class TestMCPServerTool:
         )
         tool = MCPServerTool(server, "test_tool")
 
-        with pytest.raises(ValueError, match="Tool test_tool returned an error"):
-            await tool.run()
+        result = await tool.run()
+
+        # Should return structured error, not raise an exception
+        expected_output = json.dumps({"isError": True, "error": "Error occurred"})
+        assert result.output == expected_output
 
     @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id")

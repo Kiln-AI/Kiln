@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List
@@ -10,6 +11,7 @@ from kiln_ai.datamodel.external_tool_server import (
     LocalServerProperties,
     RemoteServerProperties,
     ToolServerType,
+    tool_server_type_to_string,
 )
 from kiln_ai.datamodel.tool_id import (
     MCP_LOCAL_TOOL_ID_PREFIX,
@@ -20,7 +22,10 @@ from kiln_ai.datamodel.tool_id import (
     build_rag_tool_id,
 )
 from kiln_ai.tools.kiln_task_tool import KilnTaskTool
-from kiln_ai.tools.mcp_session_manager import MCPSessionManager
+from kiln_ai.tools.mcp_session_manager import (
+    KilnMCPError,
+    MCPSessionManager,
+)
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -28,6 +33,8 @@ from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
 from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 class KilnToolServerDescription(BaseModel):
@@ -428,15 +435,53 @@ def connect_tool_servers_api(app: FastAPI):
         available_tools = []
         match tool_server.type:
             case ToolServerType.remote_mcp | ToolServerType.local_mcp:
-                async with MCPSessionManager.shared().mcp_client(
-                    tool_server
-                ) as session:
-                    tools_result = await session.list_tools()
+                try:
+                    async with MCPSessionManager.shared().mcp_client(
+                        tool_server
+                    ) as session:
+                        tools_result = await session.list_tools()
 
-                    available_tools = [
-                        ExternalToolApiDescription.tool_from_mcp_tool(tool)
-                        for tool in tools_result.tools
+                        available_tools = [
+                            ExternalToolApiDescription.tool_from_mcp_tool(tool)
+                            for tool in tools_result.tools
+                        ]
+                except (KilnMCPError, ValueError) as e:
+                    context_lines = [
+                        "MCP call failed: list_tools",
+                        f"Tool server: {tool_server.name} ({tool_server.id})",
+                        f"Type: {tool_server_type_to_string(tool_server.type)}",
                     ]
+                    props = tool_server.properties or {}
+                    if tool_server.type == ToolServerType.local_mcp:
+                        command = props.get("command")
+                        args = props.get("args")
+                        command_text = (
+                            command if isinstance(command, str) else "<unknown>"
+                        )
+                        args_text = (
+                            " ".join(args)
+                            if isinstance(args, list)
+                            and all(isinstance(arg, str) for arg in args)
+                            else "<unknown>"
+                        )
+                        context_lines.append(f"Command: {command_text} {args_text}")
+                    elif tool_server.type == ToolServerType.remote_mcp:
+                        server_url = props.get("server_url")
+                        server_url_text = (
+                            server_url if isinstance(server_url, str) else "<unknown>"
+                        )
+                        context_lines.append(f"Server URL: {server_url_text}")
+
+                    detail = "\n".join(context_lines) + f"\n\nError: {e}"
+                    stderr_text = e.stderr if isinstance(e, KilnMCPError) else ""
+                    if stderr_text:
+                        # Truncate the error to 4kb
+                        if len(stderr_text) > 4096:
+                            stderr_text = stderr_text[:4096] + "\n... (truncated)"
+                        detail += f"\n\nMCP server stderr:\n{stderr_text}"
+
+                    logger.error("MCP list_tools failed:\n%s", e, exc_info=True)
+                    raise HTTPException(status_code=503, detail=detail) from e
             case ToolServerType.kiln_task:
                 available_tools = [
                     await ExternalToolApiDescription.tool_from_kiln_task_tool(
@@ -457,6 +502,23 @@ def connect_tool_servers_api(app: FastAPI):
             created_by=tool_server.created_by,
             properties=tool_server.properties,
             available_tools=available_tools,
+            missing_secrets=[],
+        )
+
+    @app.get("/api/projects/{project_id}/tool_servers/{tool_server_id}/config")
+    async def get_tool_server_config(
+        project_id: str, tool_server_id: str
+    ) -> ExternalToolServerApiDescription:
+        tool_server = tool_server_from_id(project_id, tool_server_id)
+        return ExternalToolServerApiDescription(
+            id=tool_server.id,
+            name=tool_server.name,
+            type=tool_server.type,
+            description=tool_server.description,
+            created_at=tool_server.created_at,
+            created_by=tool_server.created_by,
+            properties=tool_server.properties,
+            available_tools=[],
             missing_secrets=[],
         )
 

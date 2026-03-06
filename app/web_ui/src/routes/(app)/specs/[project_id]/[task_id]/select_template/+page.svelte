@@ -41,6 +41,7 @@
         task_id,
       )
       current_params.set("tool_function_name", tool_function_name)
+      current_params.set("tool_id", selected_tool)
     }
     goto(
       `/specs/${project_id}/${task_id}/spec_builder?${current_params.toString()}`,

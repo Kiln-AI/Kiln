@@ -34,7 +34,7 @@
 
       // Fetch the specific tool by ID
       const { data, error: fetch_error } = await client.GET(
-        "/api/projects/{project_id}/tool_servers/{tool_server_id}",
+        "/api/projects/{project_id}/tool_servers/{tool_server_id}/config",
         {
           params: {
             path: {

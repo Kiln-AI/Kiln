@@ -15,6 +15,7 @@ from app.desktop.studio_server.eval_api import (
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
+from kiln_server.custom_errors import connect_custom_errors
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel import (
     DataSource,
@@ -55,6 +56,7 @@ from kiln_ai.datamodel.task_run import Usage
 @pytest.fixture
 def app():
     app = FastAPI()
+    connect_custom_errors(app)
     connect_evals_api(app)
     return app
 
@@ -189,7 +191,7 @@ def test_get_eval_not_found(client, mock_task, mock_task_from_id):
     response = client.get("/api/projects/project1/tasks/task1/eval/non_existent")
 
     assert response.status_code == 404
-    assert response.json()["detail"] == "Eval not found. ID: non_existent"
+    assert response.json()["message"] == "Eval not found. ID: non_existent"
 
 
 @pytest.fixture
@@ -513,7 +515,7 @@ async def test_run_eval_config_no_run_configs_error(
 
         assert response.status_code == 400
         assert (
-            response.json()["detail"]
+            response.json()["message"]
             == "No run config ids provided. At least one run config id is required."
         )
 
@@ -785,7 +787,7 @@ def test_update_run_config_prompt_name_no_prompt(
         json={"prompt_name": "New Name"},
     )
     assert response.status_code == 400
-    assert "no frozen prompt" in response.json()["detail"].lower()
+    assert "no frozen prompt" in response.json()["message"].lower()
 
 
 @pytest.fixture
@@ -1354,7 +1356,7 @@ def test_delete_eval_not_found(client):
 
     # Verify the response
     assert response.status_code == 404
-    assert response.json()["detail"] == "Eval not found. ID: nonexistent_eval"
+    assert response.json()["message"] == "Eval not found. ID: nonexistent_eval"
 
 
 async def test_create_eval_then_delete_on_spec_failure(
@@ -1477,7 +1479,7 @@ def test_update_eval_train_set_filter_id_when_already_set(
     assert response.status_code == 400
     assert (
         "Train set filter is already set and cannot be changed"
-        in response.json()["detail"]
+        in response.json()["message"]
     )
 
 
@@ -1527,7 +1529,7 @@ def test_update_eval_not_found(client):
         )
 
     assert response.status_code == 404
-    assert "Eval not found" in response.json()["detail"]
+    assert "Eval not found" in response.json()["message"]
 
 
 def test_update_eval_empty_request(client, mock_task_from_id, mock_eval, mock_task):
@@ -1759,7 +1761,7 @@ async def test_get_eval_progress_not_found(client, mock_task_from_id, mock_task)
 
         # Verify the response
         assert response.status_code == 404
-        assert response.json()["detail"] == "Eval not found. ID: non_existent"
+        assert response.json()["message"] == "Eval not found. ID: non_existent"
         mock_eval_from_id.assert_called_once_with("project1", "task1", "non_existent")
 
 
@@ -1810,7 +1812,7 @@ async def test_set_current_eval_config_not_found(
 
     # Verify the response
     assert response.status_code == 400
-    assert response.json()["detail"] == "Eval config not found."
+    assert response.json()["message"] == "Eval config not found."
 
 
 @pytest.mark.parametrize(
@@ -1901,7 +1903,7 @@ async def test_create_task_run_config_invalid_temperature_values(
         },
     )
     assert response.status_code == 422
-    error_detail = response.json()["detail"]
+    error_detail = response.json()["message"]
     assert "temperature must be between 0 and 2" in str(error_detail)
 
     # Test temperature above 2
@@ -1919,7 +1921,7 @@ async def test_create_task_run_config_invalid_temperature_values(
         },
     )
     assert response.status_code == 422
-    error_detail = response.json()["detail"]
+    error_detail = response.json()["message"]
     assert "temperature must be between 0 and 2" in str(error_detail)
 
 
@@ -1945,7 +1947,7 @@ async def test_create_task_run_config_invalid_top_p_values(
         },
     )
     assert response.status_code == 422
-    error_detail = response.json()["detail"]
+    error_detail = response.json()["message"]
     assert "top_p must be between 0 and 1" in str(error_detail)
 
     # Test top_p above 1
@@ -1963,7 +1965,7 @@ async def test_create_task_run_config_invalid_top_p_values(
         },
     )
     assert response.status_code == 422
-    error_detail = response.json()["detail"]
+    error_detail = response.json()["message"]
     assert "top_p must be between 0 and 1" in str(error_detail)
 
 
@@ -2226,7 +2228,7 @@ def test_get_eval_configs_score_summary_no_filter_id(
 
         assert response.status_code == 400
         assert (
-            response.json()["detail"]
+            response.json()["message"]
             == "No eval configs filter id set, cannot get eval configs score summary."
         )
         mock_eval_from_id.assert_called_once_with("project1", "task1", "eval1")

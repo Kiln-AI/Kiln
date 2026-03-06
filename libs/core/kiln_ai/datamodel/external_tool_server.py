@@ -25,6 +25,18 @@ class ToolServerType(str, Enum):
     kiln_task = "kiln_task"
 
 
+def tool_server_type_to_string(server_type: ToolServerType) -> str:
+    match server_type:
+        case ToolServerType.remote_mcp:
+            return "Remote MCP"
+        case ToolServerType.local_mcp:
+            return "Local MCP"
+        case ToolServerType.kiln_task:
+            return "Kiln Task"
+        case _:
+            raise_exhaustive_enum_error(server_type)
+
+
 class LocalServerProperties(TypedDict, total=True):
     command: str
     args: NotRequired[list[str]]

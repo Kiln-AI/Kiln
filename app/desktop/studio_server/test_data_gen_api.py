@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from kiln_server.custom_errors import connect_custom_errors
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -31,6 +32,7 @@ from app.desktop.studio_server.data_gen_api import (
 @pytest.fixture
 def app():
     app = FastAPI()
+    connect_custom_errors(app)
     connect_data_gen_api(app)
     return app
 
