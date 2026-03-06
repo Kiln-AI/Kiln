@@ -101,6 +101,7 @@ class ExtractorRunner:
                 source=ExtractionSource.PASSTHROUGH
                 if output.is_passthrough
                 else ExtractionSource.PROCESSED,
+                page_offsets=output.page_offsets,
             )
             extraction.save_to_file()
 

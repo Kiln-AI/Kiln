@@ -169,6 +169,7 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
             for chunk_idx, (chunk_text, embedding) in enumerate(
                 zip(chunks_text, embeddings)
             ):
+                chunk = chunks[chunk_idx]
                 node_batch.append(
                     convert_to_llama_index_node(
                         document_id=document_id,
@@ -176,6 +177,7 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
                         node_id=deterministic_chunk_id(document_id, chunk_idx),
                         text=chunk_text,
                         vector=embedding.vector,
+                        page_number=chunk.page_number,
                     )
                 )
 
@@ -229,15 +231,22 @@ class LanceDBAdapter(BaseVectorStoreAdapter):
             document_id = node.metadata.get("kiln_doc_id")
             if document_id is None:
                 raise ValueError("node.metadata.kiln_doc_id must not be None")
+
             chunk_idx = node.metadata.get("kiln_chunk_idx")
             if chunk_idx is None:
                 raise ValueError("node.metadata.kiln_chunk_idx must not be None")
+
+            page_number: int | None = node.metadata.get("kiln_page_number")
+            if page_number is not None and not isinstance(page_number, int):
+                raise ValueError("page_number must be an integer")
+
             results.append(
                 SearchResult(
                     document_id=document_id,
                     chunk_idx=chunk_idx,
                     chunk_text=node.get_content(),
                     similarity=similarity,
+                    page_number=page_number,
                 )
             )
         return results

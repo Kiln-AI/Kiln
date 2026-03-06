@@ -302,6 +302,90 @@ The word water comes from Old English wæter, from Proto-Germanic *watar (source
         assert len(output.chunks) > 1
 
 
+async def test_fixed_window_chunker_page_numbers_single_page(
+    mock_fixed_window_chunker_factory,
+):
+    """Test page number assignment for chunks on a single page."""
+    chunker = mock_fixed_window_chunker_factory(100, 10)
+    text = "This is a test sentence. This is another test sentence."
+    page_offsets = [0]
+
+    output = await chunker.chunk(text, page_offsets=page_offsets)
+
+    assert len(output.chunks) > 0
+    for chunk in output.chunks:
+        assert chunk.page_number == 0
+
+
+async def test_fixed_window_chunker_page_numbers_multiple_pages(
+    mock_fixed_window_chunker_factory,
+):
+    """Test page number assignment across multiple pages."""
+    chunker = mock_fixed_window_chunker_factory(50, 5)
+    # Create text that spans multiple pages
+    page0_text = "Page 0 content. " * 10
+    page1_text = "Page 1 content. " * 10
+    page2_text = "Page 2 content. " * 10
+    text = page0_text + page1_text + page2_text
+
+    page_offsets = [0, len(page0_text), len(page0_text) + len(page1_text)]
+
+    output = await chunker.chunk(text, page_offsets=page_offsets)
+
+    assert len(output.chunks) > 0
+
+    for chunk in output.chunks:
+        chunk_offset = text.find(chunk.text)
+        if chunk_offset < page_offsets[1]:
+            assert chunk.page_number == 0, (
+                f"Chunk at offset {chunk_offset} should be page 0"
+            )
+        elif chunk_offset < page_offsets[2]:
+            assert chunk.page_number == 1, (
+                f"Chunk at offset {chunk_offset} should be page 1"
+            )
+        else:
+            assert chunk.page_number == 2, (
+                f"Chunk at offset {chunk_offset} should be page 2"
+            )
+
+
+async def test_fixed_window_chunker_page_numbers_without_offsets(
+    mock_fixed_window_chunker_factory,
+):
+    """Test that page_number is None when page_offsets are not provided."""
+    chunker = mock_fixed_window_chunker_factory(100, 10)
+    text = "This is a test sentence. This is another test sentence."
+
+    output = await chunker.chunk(text)
+
+    assert len(output.chunks) > 0
+    for chunk in output.chunks:
+        assert chunk.page_number is None
+
+
+async def test_fixed_window_chunker_page_numbers_at_boundaries(
+    mock_fixed_window_chunker_factory,
+):
+    """Test page number assignment at exact page boundaries."""
+    chunker = mock_fixed_window_chunker_factory(20, 0)
+    text = "A" * 20 + "B" * 20 + "C" * 20
+    page_offsets = [0, 20, 40]
+
+    output = await chunker.chunk(text, page_offsets=page_offsets)
+
+    assert len(output.chunks) > 0
+
+    for chunk in output.chunks:
+        chunk_offset = text.find(chunk.text)
+        if chunk_offset < 20:
+            assert chunk.page_number == 0
+        elif chunk_offset < 40:
+            assert chunk.page_number == 1
+        else:
+            assert chunk.page_number == 2
+
+
 @pytest.mark.parametrize(
     "whitespace_length",
     [100_000, 1_000_000, 5_000_000, 10_000_000],

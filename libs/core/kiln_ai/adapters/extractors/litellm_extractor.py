@@ -7,6 +7,7 @@ from typing import Any, List
 
 import litellm
 from litellm.types.utils import Choices, ModelResponse
+from pydantic import BaseModel
 
 from kiln_ai.adapters.extractors.base_extractor import (
     BaseExtractor,
@@ -88,6 +89,11 @@ def encode_file_litellm_format(path: Path, mime_type: str) -> dict[str, Any]:
         }
 
     raise ValueError(f"Unsupported MIME type: {mime_type} for {path}")
+
+
+class PdfPageResult(BaseModel):
+    content: str
+    page_number: int
 
 
 class LitellmExtractor(BaseExtractor):
@@ -186,7 +192,7 @@ class LitellmExtractor(BaseExtractor):
         page_path: Path,
         prompt: str,
         page_number: int,
-    ) -> str:
+    ) -> PdfPageResult:
         try:
             if self.model_provider.multimodal_requires_pdf_as_image:
                 page_input = await self.convert_pdf_page_to_image_input(
@@ -237,11 +243,15 @@ class LitellmExtractor(BaseExtractor):
                     exc_info=True,
                 )
 
-        return content
+        return PdfPageResult(content=content, page_number=page_number)
 
-    async def _extract_pdf_page_by_page(self, pdf_path: Path, prompt: str) -> str:
+    async def _extract_pdf_page_by_page(
+        self, pdf_path: Path, prompt: str
+    ) -> tuple[str, list[int]]:
         async with split_pdf_into_pages(pdf_path) as page_paths:
-            page_outcomes: List[str | Exception | None] = [None] * len(page_paths)
+            page_outcomes: List[PdfPageResult | Exception | None] = [None] * len(
+                page_paths
+            )
 
             extract_page_jobs: list = []
             page_indices_for_jobs: list = []  # Track which page index each job corresponds to
@@ -252,7 +262,9 @@ class LitellmExtractor(BaseExtractor):
             for i, page_path in enumerate(page_paths):
                 page_content = await self.get_page_content_from_cache(pdf_path, i)
                 if page_content is not None:
-                    page_outcomes[i] = page_content
+                    page_outcomes[i] = PdfPageResult(
+                        content=page_content, page_number=i
+                    )
                     continue
 
                 extract_page_jobs.append(
@@ -276,7 +288,7 @@ class LitellmExtractor(BaseExtractor):
                         # and can be reused on the next run
                         if isinstance(extraction_result, Exception):
                             page_outcomes[page_index] = extraction_result
-                        elif isinstance(extraction_result, str):
+                        elif isinstance(extraction_result, PdfPageResult):
                             page_outcomes[page_index] = extraction_result
                         else:
                             raise ValueError(
@@ -296,9 +308,25 @@ class LitellmExtractor(BaseExtractor):
                 msg += f"Page {page_index}: {exception}\n"
             raise RuntimeError(msg)
 
-        return "\n\n".join(
-            [outcome for outcome in page_outcomes if isinstance(outcome, str)]
-        )
+        valid_pages = [
+            outcome for outcome in page_outcomes if isinstance(outcome, PdfPageResult)
+        ]
+        # Sort by page_number to ensure correct order
+        valid_pages.sort(key=lambda x: x.page_number)
+
+        # Build content and calculate page offsets
+        page_contents: list[str] = []
+        page_offsets: list[int] = []
+        current_offset = 0
+
+        for page_result in valid_pages:
+            page_offsets.append(current_offset)
+            page_contents.append(page_result.content)
+            # Add length of content plus separator length (2 for "\n\n")
+            current_offset += len(page_result.content) + 2
+
+        content = "\n\n".join(page_contents)
+        return content, page_offsets
 
     def _get_kind_from_mime_type(self, mime_type: str) -> Kind | None:
         for kind, mime_types in MIME_TYPES_SUPPORTED.items():
@@ -350,13 +378,14 @@ class LitellmExtractor(BaseExtractor):
 
         # special handling for PDFs - process each page individually
         if extraction_input.mime_type == "application/pdf":
-            content = await self._extract_pdf_page_by_page(
+            content, page_offsets = await self._extract_pdf_page_by_page(
                 Path(extraction_input.path), prompt
             )
             return ExtractionOutput(
                 is_passthrough=False,
                 content=content,
                 content_format=self.extractor_config.output_format,
+                page_offsets=page_offsets,
             )
 
         completion_kwargs = self._build_completion_kwargs(prompt, extraction_input)
