@@ -263,6 +263,65 @@ async def test_invoke_ai_sdk_stream(
 
 
 @pytest.mark.paid
+@pytest.mark.parametrize("model_id,provider_name", STREAMING_MODELS)
+async def test_ai_sdk_stream_text_ends_before_tool_calls(
+    request: pytest.FixtureRequest,
+    model_id: str,
+    provider_name: ModelProviderName,
+    adapter_factory: Callable[[str, ModelProviderName], LiteLlmAdapter],
+):
+    """Verify text blocks are properly closed before tool-input-start and reopened with a new ID after tool execution."""
+    adapter = adapter_factory(model_id, provider_name)
+
+    events: list[AiSdkStreamEvent] = []
+    async for event in adapter.invoke_ai_sdk_stream(
+        input="First tell me you're about to calculate, then compute 11 + 50 and 50 * 85, then add the results. Use the tools for all math."
+    ):
+        events.append(event)
+
+    _dump_paid_test_output(request, events=events)
+
+    event_types = [e.type for e in events]
+    assert AiSdkEventType.TEXT_START in event_types, "Should have TEXT_START"
+    assert AiSdkEventType.TOOL_INPUT_START in event_types, (
+        "Should have TOOL_INPUT_START"
+    )
+
+    text_ids_seen: list[str] = []
+    text_open = False
+    for event in events:
+        if event.type == AiSdkEventType.TEXT_START:
+            assert not text_open, (
+                "text-start emitted while a text block was already open"
+            )
+            text_open = True
+            text_ids_seen.append(event.payload["id"])
+
+        elif event.type == AiSdkEventType.TEXT_END:
+            assert text_open, "text-end emitted without a preceding text-start"
+            text_open = False
+
+        elif event.type == AiSdkEventType.TEXT_DELTA:
+            assert text_open, (
+                f"text-delta emitted outside an open text block: {event.payload}"
+            )
+
+        elif event.type == AiSdkEventType.TOOL_INPUT_START:
+            assert not text_open, (
+                "tool-input-start emitted while text block was still open "
+                "(missing text-end before tool calls)"
+            )
+
+    assert len(text_ids_seen) >= 2, (
+        f"Expected at least 2 distinct text blocks (before and after tool calls), "
+        f"got {len(text_ids_seen)}: {text_ids_seen}"
+    )
+    assert len(set(text_ids_seen)) == len(text_ids_seen), (
+        f"Each text block should have a unique ID, got duplicates: {text_ids_seen}"
+    )
+
+
+@pytest.mark.paid
 @pytest.mark.parametrize("model_id,provider_name", STREAMING_MODELS_NO_HAIKU)
 async def test_invoke_openai_stream_non_streaming_still_works(
     request: pytest.FixtureRequest,

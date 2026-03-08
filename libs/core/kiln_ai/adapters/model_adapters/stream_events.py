@@ -124,6 +124,7 @@ class AiSdkStreamConverter:
                     self._reasoning_started = False
 
                 if not self._text_started:
+                    self._text_id = f"text-{uuid.uuid4().hex[:12]}"
                     events.append(
                         AiSdkStreamEvent(
                             AiSdkEventType.TEXT_START,
@@ -147,6 +148,15 @@ class AiSdkStreamConverter:
                         )
                     )
                     self._reasoning_started = False
+
+                if self._text_started:
+                    events.append(
+                        AiSdkStreamEvent(
+                            AiSdkEventType.TEXT_END,
+                            {"id": self._text_id},
+                        )
+                    )
+                    self._text_started = False
 
                 for tc_delta in delta.tool_calls:
                     idx = tc_delta.index

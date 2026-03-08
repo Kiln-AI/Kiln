@@ -248,6 +248,59 @@ class TestAiSdkStreamConverter:
         )
         assert starts_r2[0].payload["toolCallId"] == "call_r2"
 
+    def test_text_ends_before_tool_calls(self):
+        converter = AiSdkStreamConverter()
+        events1 = converter.convert_chunk(_make_chunk(content="Hello"))
+        text_start = next(e for e in events1 if e.type == AiSdkEventType.TEXT_START)
+        text_id_1 = text_start.payload["id"]
+
+        tc_delta = _make_tool_call_delta(
+            index=0, call_id="call_1", name="add", arguments='{"a":1}'
+        )
+        events2 = converter.convert_chunk(_make_chunk(tool_calls=[tc_delta]))
+        types2 = [e.type for e in events2]
+        assert AiSdkEventType.TEXT_END in types2
+        text_end_idx = types2.index(AiSdkEventType.TEXT_END)
+        tool_start_idx = types2.index(AiSdkEventType.TOOL_INPUT_START)
+        assert text_end_idx < tool_start_idx, (
+            "text-end must come before tool-input-start"
+        )
+
+        text_end_event = next(
+            e for e in events2 if e.type == AiSdkEventType.TEXT_END
+        )
+        assert text_end_event.payload["id"] == text_id_1
+
+    def test_text_restarts_with_new_id_after_tool_calls(self):
+        converter = AiSdkStreamConverter()
+        events1 = converter.convert_chunk(_make_chunk(content="Hello"))
+        text_start_1 = next(e for e in events1 if e.type == AiSdkEventType.TEXT_START)
+        text_id_1 = text_start_1.payload["id"]
+
+        tc_delta = _make_tool_call_delta(
+            index=0, call_id="call_1", name="add", arguments='{"a":1}'
+        )
+        converter.convert_chunk(_make_chunk(tool_calls=[tc_delta]))
+        converter.reset_for_next_step()
+
+        events3 = converter.convert_chunk(_make_chunk(content="Result"))
+        types3 = [e.type for e in events3]
+        assert AiSdkEventType.TEXT_START in types3
+        text_start_2 = next(e for e in events3 if e.type == AiSdkEventType.TEXT_START)
+        text_id_2 = text_start_2.payload["id"]
+        assert text_id_1 != text_id_2, (
+            "New text block after tool calls must have a different id"
+        )
+
+    def test_no_text_end_before_tool_calls_when_text_not_started(self):
+        converter = AiSdkStreamConverter()
+        tc_delta = _make_tool_call_delta(
+            index=0, call_id="call_1", name="add", arguments='{"a":1}'
+        )
+        events = converter.convert_chunk(_make_chunk(tool_calls=[tc_delta]))
+        types = [e.type for e in events]
+        assert AiSdkEventType.TEXT_END not in types
+
     def test_tool_input_start_not_reemitted_without_reset(self):
         """Without reset, a second tool call at index 0 must NOT re-emit tool-input-start."""
         converter = AiSdkStreamConverter()
