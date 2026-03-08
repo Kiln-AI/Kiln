@@ -352,7 +352,9 @@ async def test_mcp_adapter_rejects_multiturn_invoke_returning_run_output(
     existing_run.trace = [{"role": "user", "content": "hi"}]
 
     with pytest.raises(NotImplementedError) as exc_info:
-        await adapter.invoke_returning_run_output("input", prior_trace=existing_run.trace)
+        await adapter.invoke_returning_run_output(
+            "input", prior_trace=existing_run.trace
+        )
 
     assert "Session continuation is not supported" in str(exc_info.value)
     assert "MCP adapter" in str(exc_info.value)

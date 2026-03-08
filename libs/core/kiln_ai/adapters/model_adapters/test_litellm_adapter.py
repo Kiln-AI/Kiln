@@ -1370,3 +1370,121 @@ async def test_run_with_prior_trace_uses_multiturn_formatter(mock_task):
     assert run_output.trace[1]["content"] == "hello"
     assert run_output.trace[2]["content"] == "follow-up"
     assert run_output.trace[3]["content"] == "How can I help?"
+
+
+@pytest.mark.asyncio
+async def test_run_with_prior_trace_preserves_tool_calls(mock_task):
+    """Prior trace containing tool calls should be passed through to the model and preserved in the output trace."""
+    config = LiteLlmConfig(
+        base_url="https://api.test.com",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="test-model",
+            model_provider_name="openai_compatible",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+        default_headers={"X-Test": "test"},
+        additional_body_options={"api_key": "test_key"},
+    )
+
+    prior_trace = [
+        {"role": "system", "content": "Use the math tools."},
+        {"role": "user", "content": "4"},
+        {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "Let me multiply 4 by 7.\n",
+            "tool_calls": [
+                {
+                    "id": "call_abc123",
+                    "function": {"arguments": '{"a": 4, "b": 7}', "name": "multiply"},
+                    "type": "function",
+                }
+            ],
+        },
+        {
+            "content": "28",
+            "role": "tool",
+            "tool_call_id": "call_abc123",
+            "kiln_task_tool_data": None,
+        },
+        {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "Now add 144.\n",
+            "tool_calls": [
+                {
+                    "id": "call_def456",
+                    "function": {"arguments": '{"a": 28, "b": 144}', "name": "add"},
+                    "type": "function",
+                }
+            ],
+        },
+        {
+            "content": "172",
+            "role": "tool",
+            "tool_call_id": "call_def456",
+            "kiln_task_tool_data": None,
+        },
+        {
+            "role": "assistant",
+            "content": "There were 172 distinct species of giant tortoises.",
+            "reasoning_content": "Now I have 172.\n",
+        },
+    ]
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    captured_messages = []
+
+    async def mock_run_model_turn(
+        provider, prior_messages, top_logprobs, skip_response_format
+    ):
+        captured_messages.extend(prior_messages)
+        extended = list(prior_messages)
+        extended.append({"role": "assistant", "content": '{"test": "response"}'})
+        return ModelTurnResult(
+            assistant_message='{"test": "response"}',
+            all_messages=extended,
+            model_response=None,
+            model_choice=None,
+            usage=Usage(),
+        )
+
+    adapter._run_model_turn = mock_run_model_turn
+
+    run_output, _ = await adapter._run("what else?", prior_trace=prior_trace)
+
+    assert run_output.trace is not None
+    # 7 prior trace messages + 1 new user + 1 new assistant = 9
+    assert len(run_output.trace) == 9
+
+    # Verify tool call messages are preserved in the trace
+    assistant_with_tools = run_output.trace[2]
+    assert assistant_with_tools["role"] == "assistant"
+    assert assistant_with_tools["tool_calls"][0]["id"] == "call_abc123"
+    assert assistant_with_tools["tool_calls"][0]["function"]["name"] == "multiply"
+    assert assistant_with_tools["reasoning_content"] == "Let me multiply 4 by 7.\n"
+
+    tool_response = run_output.trace[3]
+    assert tool_response["role"] == "tool"
+    assert tool_response["tool_call_id"] == "call_abc123"
+    assert tool_response["content"] == "28"
+
+    second_tool_call = run_output.trace[4]
+    assert second_tool_call["tool_calls"][0]["id"] == "call_def456"
+    assert second_tool_call["tool_calls"][0]["function"]["name"] == "add"
+
+    second_tool_response = run_output.trace[5]
+    assert second_tool_response["role"] == "tool"
+    assert second_tool_response["tool_call_id"] == "call_def456"
+    assert second_tool_response["content"] == "172"
+
+    # Verify the tool call messages were passed to _run_model_turn (i.e., sent to the model)
+    assert any(
+        m.get("tool_calls") is not None
+        for m in captured_messages
+        if isinstance(m, dict)
+    )
+    assert any(
+        m.get("role") == "tool" for m in captured_messages if isinstance(m, dict)
+    )

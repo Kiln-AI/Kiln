@@ -266,94 +266,38 @@ class BaseAdapter(metaclass=ABCMeta):
                 finally:
                     clear_agent_run_id()
 
-    async def invoke_openai_stream(
+    def invoke_openai_stream(
         self,
         input: InputType,
         input_source: DataSource | None = None,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
-    ) -> AsyncIterator[ModelResponseStream]:
+    ) -> OpenAIStreamResult:
         """Stream raw OpenAI-protocol chunks for the task execution.
 
-        Yields ``ModelResponseStream`` chunks as they arrive from the model.
-        After the iterator is exhausted the run has been validated and saved
-        (when configured).  Tool-call rounds happen internally and are not
-        surfaced; use ``invoke_ai_sdk_stream`` if you need tool-call events.
+        Returns an async-iterable that yields ``ModelResponseStream`` chunks
+        as they arrive from the model.  After the iterator is exhausted the
+        run has been validated and saved (when configured).  The resulting
+        ``TaskRun`` is available via the ``.task_run`` property.
+
+        Tool-call rounds happen internally and are not surfaced; use
+        ``invoke_ai_sdk_stream`` if you need tool-call events.
         """
-        is_root_agent = get_agent_run_id() is None
-        if is_root_agent:
-            set_agent_run_id(generate_agent_run_id())
+        return OpenAIStreamResult(self, input, input_source, prior_trace)
 
-        try:
-            adapter_stream = self._prepare_stream(input, prior_trace)
-
-            async for event in adapter_stream:
-                if isinstance(event, ModelResponseStream):
-                    yield event
-
-            self._finalize_stream(adapter_stream, input, input_source, prior_trace)
-        finally:
-            if is_root_agent:
-                try:
-                    run_id = get_agent_run_id()
-                    if run_id:
-                        await MCPSessionManager.shared().cleanup_session(run_id)
-                finally:
-                    clear_agent_run_id()
-
-    async def invoke_ai_sdk_stream(
+    def invoke_ai_sdk_stream(
         self,
         input: InputType,
         input_source: DataSource | None = None,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
-    ) -> AsyncIterator[AiSdkStreamEvent]:
+    ) -> AiSdkStreamResult:
         """Stream AI SDK protocol events for the task execution.
 
-        Yields ``AiSdkStreamEvent`` instances covering text, reasoning,
-        tool-call lifecycle, step boundaries, and control events.
+        Returns an async-iterable that yields ``AiSdkStreamEvent`` instances
+        covering text, reasoning, tool-call lifecycle, step boundaries, and
+        control events.  After the iterator is exhausted the resulting
+        ``TaskRun`` is available via the ``.task_run`` property.
         """
-        is_root_agent = get_agent_run_id() is None
-        if is_root_agent:
-            set_agent_run_id(generate_agent_run_id())
-
-        try:
-            adapter_stream = self._prepare_stream(input, prior_trace)
-
-            message_id = f"msg-{uuid.uuid4().hex}"
-            converter = AiSdkStreamConverter()
-
-            yield AiSdkStreamEvent(AiSdkEventType.START, {"messageId": message_id})
-
-            yield AiSdkStreamEvent(AiSdkEventType.START_STEP)
-
-            last_event_was_tool_call = False
-            async for event in adapter_stream:
-                # ModelResponseStream events come from LiteLLM's own OpenAI compatible streaming
-                if isinstance(event, ModelResponseStream):
-                    if last_event_was_tool_call:
-                        converter.reset_for_next_step()
-                        last_event_was_tool_call = False
-                    for ai_event in converter.convert_chunk(event):
-                        yield ai_event
-                # ToolCallEvent events come from ourselves and are emitted on rounds of toolcalls
-                elif isinstance(event, ToolCallEvent):
-                    last_event_was_tool_call = True
-                    for ai_event in converter.convert_tool_event(event):
-                        yield ai_event
-
-            for ai_event in converter.finalize():
-                yield ai_event
-
-            yield AiSdkStreamEvent(AiSdkEventType.FINISH_STEP)
-
-            self._finalize_stream(adapter_stream, input, input_source, prior_trace)
-        finally:
-            if is_root_agent:
-                try:
-                    run_id = get_agent_run_id()
-                    if run_id:
-                        await MCPSessionManager.shared().cleanup_session(run_id)
-                finally:
-                    clear_agent_run_id()
+        return AiSdkStreamResult(self, input, input_source, prior_trace)
 
     def _prepare_stream(
         self,
@@ -663,3 +607,137 @@ class BaseAdapter(metaclass=ABCMeta):
             )
 
         return tools
+
+
+class OpenAIStreamResult:
+    """Async-iterable wrapper around the OpenAI streaming flow.
+
+    Yields ``ModelResponseStream`` chunks.  After iteration the resulting
+    ``TaskRun`` is available via the ``.task_run`` property.
+    """
+
+    def __init__(
+        self,
+        adapter: BaseAdapter,
+        input: InputType,
+        input_source: DataSource | None,
+        prior_trace: list[ChatCompletionMessageParam] | None,
+    ) -> None:
+        self._adapter = adapter
+        self._input = input
+        self._input_source = input_source
+        self._prior_trace = prior_trace
+        self._task_run: TaskRun | None = None
+
+    @property
+    def task_run(self) -> TaskRun:
+        if self._task_run is None:
+            raise RuntimeError(
+                "Stream has not been fully consumed yet. "
+                "Iterate over the stream before accessing .task_run"
+            )
+        return self._task_run
+
+    async def __aiter__(self) -> AsyncIterator[ModelResponseStream]:
+        self._task_run = None
+        is_root_agent = get_agent_run_id() is None
+        if is_root_agent:
+            set_agent_run_id(generate_agent_run_id())
+
+        try:
+            adapter_stream = self._adapter._prepare_stream(
+                self._input, self._prior_trace
+            )
+
+            async for event in adapter_stream:
+                if isinstance(event, ModelResponseStream):
+                    yield event
+
+            self._task_run = self._adapter._finalize_stream(
+                adapter_stream, self._input, self._input_source, self._prior_trace
+            )
+        finally:
+            if is_root_agent:
+                try:
+                    run_id = get_agent_run_id()
+                    if run_id:
+                        await MCPSessionManager.shared().cleanup_session(run_id)
+                finally:
+                    clear_agent_run_id()
+
+
+class AiSdkStreamResult:
+    """Async-iterable wrapper around the AI SDK streaming flow.
+
+    Yields ``AiSdkStreamEvent`` instances.  After iteration the resulting
+    ``TaskRun`` is available via the ``.task_run`` property.
+    """
+
+    def __init__(
+        self,
+        adapter: BaseAdapter,
+        input: InputType,
+        input_source: DataSource | None,
+        prior_trace: list[ChatCompletionMessageParam] | None,
+    ) -> None:
+        self._adapter = adapter
+        self._input = input
+        self._input_source = input_source
+        self._prior_trace = prior_trace
+        self._task_run: TaskRun | None = None
+
+    @property
+    def task_run(self) -> TaskRun:
+        if self._task_run is None:
+            raise RuntimeError(
+                "Stream has not been fully consumed yet. "
+                "Iterate over the stream before accessing .task_run"
+            )
+        return self._task_run
+
+    async def __aiter__(self) -> AsyncIterator[AiSdkStreamEvent]:
+        self._task_run = None
+        is_root_agent = get_agent_run_id() is None
+        if is_root_agent:
+            set_agent_run_id(generate_agent_run_id())
+
+        try:
+            adapter_stream = self._adapter._prepare_stream(
+                self._input, self._prior_trace
+            )
+
+            message_id = f"msg-{uuid.uuid4().hex}"
+            converter = AiSdkStreamConverter()
+
+            yield AiSdkStreamEvent(AiSdkEventType.START, {"messageId": message_id})
+            yield AiSdkStreamEvent(AiSdkEventType.START_STEP)
+
+            last_event_was_tool_call = False
+            async for event in adapter_stream:
+                if isinstance(event, ModelResponseStream):
+                    if last_event_was_tool_call:
+                        converter.reset_for_next_step()
+                        last_event_was_tool_call = False
+                    for ai_event in converter.convert_chunk(event):
+                        yield ai_event
+                elif isinstance(event, ToolCallEvent):
+                    last_event_was_tool_call = True
+                    for ai_event in converter.convert_tool_event(event):
+                        yield ai_event
+
+            for ai_event in converter.finalize():
+                yield ai_event
+
+            yield AiSdkStreamEvent(AiSdkEventType.FINISH_STEP)
+
+            self._task_run = self._adapter._finalize_stream(
+                adapter_stream, self._input, self._input_source, self._prior_trace
+            )
+        finally:
+            if is_root_agent:
+                try:
+                    run_id = get_agent_run_id()
+                    if run_id:
+                        await MCPSessionManager.shared().cleanup_session(run_id)
+                finally:
+                    clear_agent_run_id()

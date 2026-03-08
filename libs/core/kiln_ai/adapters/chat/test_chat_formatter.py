@@ -146,6 +146,50 @@ def test_multiturn_formatter_next_turn():
     assert formatter.next_turn("assistant response") is None
 
 
+def test_multiturn_formatter_preserves_tool_call_messages():
+    prior_trace = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "4"},
+        {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "Let me multiply 4 by 7.\n",
+            "tool_calls": [
+                {
+                    "id": "call_abc123",
+                    "function": {"arguments": '{"a": 4, "b": 7}', "name": "multiply"},
+                    "type": "function",
+                }
+            ],
+        },
+        {
+            "content": "28",
+            "role": "tool",
+            "tool_call_id": "call_abc123",
+            "kiln_task_tool_data": None,
+        },
+        {
+            "role": "assistant",
+            "content": "4 multiplied by 7 is 28.",
+            "reasoning_content": "Done.\n",
+        },
+    ]
+    formatter = MultiturnFormatter(prior_trace=prior_trace, user_input="now double it")
+    initial = formatter.initial_messages()
+    assert initial == prior_trace
+    assert initial[2]["tool_calls"][0]["id"] == "call_abc123"
+    assert initial[2]["tool_calls"][0]["function"]["name"] == "multiply"
+    assert initial[3]["role"] == "tool"
+    assert initial[3]["tool_call_id"] == "call_abc123"
+
+    first = formatter.next_turn()
+    assert first is not None
+    assert len(first.messages) == 1
+    assert first.messages[0].role == "user"
+    assert first.messages[0].content == "now double it"
+    assert first.final_call
+
+
 def test_format_user_message():
     # String
     assert format_user_message("test input") == "test input"

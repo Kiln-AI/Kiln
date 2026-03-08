@@ -243,7 +243,9 @@ class TestAiSdkStreamConverter:
         )
         events_r2 = converter.convert_chunk(_make_chunk(tool_calls=[tc_round2]))
         starts_r2 = [e for e in events_r2 if e.type == AiSdkEventType.TOOL_INPUT_START]
-        assert len(starts_r2) == 1, "tool-input-start must be re-emitted for index 0 after reset"
+        assert len(starts_r2) == 1, (
+            "tool-input-start must be re-emitted for index 0 after reset"
+        )
         assert starts_r2[0].payload["toolCallId"] == "call_r2"
 
     def test_tool_input_start_not_reemitted_without_reset(self):
@@ -260,4 +262,6 @@ class TestAiSdkStreamConverter:
         )
         events_r2 = converter.convert_chunk(_make_chunk(tool_calls=[tc_round2]))
         starts_r2 = [e for e in events_r2 if e.type == AiSdkEventType.TOOL_INPUT_START]
-        assert len(starts_r2) == 0, "Without reset, started=True blocks duplicate tool-input-start"
+        assert len(starts_r2) == 0, (
+            "Without reset, started=True blocks duplicate tool-input-start"
+        )

@@ -21,7 +21,7 @@ from kiln_ai.adapters.model_adapters.stream_events import (
     ToolCallEventType,
 )
 from kiln_ai.adapters.prompt_builders import BasePromptBuilder
-from kiln_ai.datamodel import DataSource, DataSourceType, Task, TaskOutput, TaskRun
+from kiln_ai.datamodel import Task, TaskRun
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy, ModelProviderName
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
@@ -467,7 +467,13 @@ async def test_invoke_with_prior_trace_none_starts_fresh(base_project):
     with (
         patch(
             "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id",
-            return_value=MagicMock(parse_output=MagicMock(return_value=RunOutput(output="ok", intermediate_outputs=None, trace=None))),
+            return_value=MagicMock(
+                parse_output=MagicMock(
+                    return_value=RunOutput(
+                        output="ok", intermediate_outputs=None, trace=None
+                    )
+                )
+            ),
         ),
         patch(
             "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id",
@@ -1151,3 +1157,81 @@ class TestStreamMethods:
         )
         assert tool_input_starts[0].payload["toolCallId"] == "call_r1"
         assert tool_input_starts[1].payload["toolCallId"] == "call_r2"
+
+    @pytest.mark.asyncio
+    async def test_openai_stream_exposes_task_run_after_iteration(self, stream_adapter):
+        fake_chunk = ModelResponseStream(
+            id="test",
+            choices=[
+                StreamingChoices(
+                    index=0,
+                    delta=Delta(content="hi"),
+                    finish_reason=None,
+                )
+            ],
+        )
+
+        class FakeAdapterStream:
+            result = MagicMock()
+
+            async def __aiter__(self):
+                yield fake_chunk
+
+        expected_run = MagicMock(spec=TaskRun)
+
+        with (
+            patch.object(
+                stream_adapter,
+                "_prepare_stream",
+                return_value=FakeAdapterStream(),
+            ),
+            patch.object(stream_adapter, "_finalize_stream", return_value=expected_run),
+        ):
+            stream = stream_adapter.invoke_openai_stream("test input")
+
+            with pytest.raises(RuntimeError, match="not been fully consumed"):
+                _ = stream.task_run
+
+            async for _chunk in stream:
+                pass
+
+            assert stream.task_run is expected_run
+
+    @pytest.mark.asyncio
+    async def test_ai_sdk_stream_exposes_task_run_after_iteration(self, stream_adapter):
+        fake_chunk = ModelResponseStream(
+            id="test",
+            choices=[
+                StreamingChoices(
+                    index=0,
+                    delta=Delta(content="hi"),
+                    finish_reason=None,
+                )
+            ],
+        )
+
+        class FakeAdapterStream:
+            result = MagicMock()
+
+            async def __aiter__(self):
+                yield fake_chunk
+
+        expected_run = MagicMock(spec=TaskRun)
+
+        with (
+            patch.object(
+                stream_adapter,
+                "_prepare_stream",
+                return_value=FakeAdapterStream(),
+            ),
+            patch.object(stream_adapter, "_finalize_stream", return_value=expected_run),
+        ):
+            stream = stream_adapter.invoke_ai_sdk_stream("test input")
+
+            with pytest.raises(RuntimeError, match="not been fully consumed"):
+                _ = stream.task_run
+
+            async for _event in stream:
+                pass
+
+            assert stream.task_run is expected_run
