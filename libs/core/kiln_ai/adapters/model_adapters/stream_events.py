@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import json
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
 from litellm.types.utils import ModelResponseStream
-from pydantic import BaseModel
 
 
 class AiSdkEventType(str, Enum):
@@ -41,19 +39,16 @@ class AiSdkEventType(str, Enum):
     FILE = "file"
 
 
-class AiSdkStreamEvent(BaseModel):
+@dataclass
+class AiSdkStreamEvent:
     type: AiSdkEventType
     payload: dict[str, Any] = field(default_factory=dict)
 
-    def __init__(self, type: AiSdkEventType, payload: dict[str, Any] = {}):
-        super().__init__(
-            type=type,
-            payload=payload,
-        )
-
-    def to_sse(self) -> str:
-        data = {"type": self.type.value, **self.payload}
-        return f"data: {json.dumps(data, separators=(',', ':'))}\n\n"
+    def model_dump(self) -> dict[str, Any]:
+        return {
+            "type": self.type.value,
+            **self.payload,
+        }
 
 
 class ToolCallEventType(str, Enum):

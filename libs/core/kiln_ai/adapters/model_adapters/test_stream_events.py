@@ -46,13 +46,11 @@ def _make_chunk(
 
 
 class TestAiSdkStreamEvent:
-    def test_to_sse(self):
+    def test_model_dump(self):
         event = AiSdkStreamEvent(AiSdkEventType.START, {"messageId": "msg-123"})
-        sse = event.to_sse()
-        assert sse.startswith("data: ")
-        assert sse.endswith("\n\n")
-        assert '"type":"start"' in sse
-        assert '"messageId":"msg-123"' in sse
+        dump = event.model_dump()
+        assert dump["type"] == "start"
+        assert dump["messageId"] == "msg-123"
 
 
 class TestAiSdkStreamConverter:
