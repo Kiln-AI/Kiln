@@ -190,7 +190,7 @@ async def test_run_task_with_task_run_id_continues_session(client, task_run_setu
     assert response.status_code == 200
     mock_invoke.assert_called_once()
     call_kwargs = mock_invoke.call_args[1]
-    assert call_kwargs["existing_run"].id == task_run.id
+    assert call_kwargs["prior_trace"] == task_run.trace
     assert mock_invoke.call_args[0][0] == "Follow-up message"
     res = response.json()
     assert res["output"]["output"] == "Continued response"
@@ -1962,7 +1962,7 @@ async def test_run_task_adapter_sanity_math_tools(
     )
     assert response2.status_code == 200
     res2 = response2.json()
-    assert res2["id"] == task_run_id
+    assert res2["id"] != task_run_id
     _assert_math_tools_response(res2, "12")
 
     response3 = client.post(
@@ -1970,24 +1970,23 @@ async def test_run_task_adapter_sanity_math_tools(
         json={
             "run_config_properties": run_config,
             "plaintext_input": "What is 7 times 8 plus 3? Use the tools to calculate.",
-            "task_run_id": task_run_id,
+            "task_run_id": res2["id"],
         },
     )
     assert response3.status_code == 200
     res3 = response3.json()
-    assert res3["id"] == task_run_id
+    assert res3["id"] != res2["id"]
     _assert_math_tools_response(res3, "59")
 
-    # now ask it to list out all the previous results in an array
     response4 = client.post(
         f"/api/projects/{project.id}/tasks/{task.id}/run",
         json={
             "run_config_properties": run_config,
             "plaintext_input": "List all the previous results in an array - e.g. [55, 81, 7].",
-            "task_run_id": task_run_id,
+            "task_run_id": res3["id"],
         },
     )
     assert response4.status_code == 200
     res4 = response4.json()
-    assert res4["id"] == task_run_id
+    assert res4["id"] != res3["id"]
     assert res4["output"]["output"] == "[4, 12, 59]"

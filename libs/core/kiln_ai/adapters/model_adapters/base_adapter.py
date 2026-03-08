@@ -142,10 +142,10 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: InputType,
         input_source: DataSource | None = None,
-        existing_run: TaskRun | None = None,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> TaskRun:
         run_output, _ = await self.invoke_returning_run_output(
-            input, input_source, existing_run
+            input, input_source, prior_trace
         )
         return run_output
 
@@ -153,7 +153,7 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: InputType,
         input_source: DataSource | None = None,
-        existing_run: TaskRun | None = None,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # validate input, allowing arrays
         if self.input_schema is not None:
@@ -164,14 +164,7 @@ class BaseAdapter(metaclass=ABCMeta):
                 require_object=False,
             )
 
-        if existing_run is not None and (
-            not existing_run.trace or len(existing_run.trace) == 0
-        ):
-            raise ValueError(
-                "Run has no trace. Cannot continue session without conversation history."
-            )
-
-        prior_trace = existing_run.trace if existing_run else None
+        prior_trace = prior_trace if prior_trace else None
 
         # Format model input for model call (we save the original input in the task without formatting)
         formatted_input = input
@@ -230,28 +223,9 @@ class BaseAdapter(metaclass=ABCMeta):
                 "Reasoning is required for this model, but no reasoning was returned."
             )
 
-        # Create the run and output - merge if there is an existing run
-        if existing_run is not None:
-            merged_output = RunOutput(
-                output=parsed_output.output,
-                intermediate_outputs=parsed_output.intermediate_outputs
-                or run_output.intermediate_outputs,
-                output_logprobs=parsed_output.output_logprobs
-                or run_output.output_logprobs,
-                trace=run_output.trace,
-            )
-            run = self.generate_run(
-                input,
-                input_source,
-                merged_output,
-                usage,
-                run_output.trace,
-                existing_run=existing_run,
-            )
-        else:
-            run = self.generate_run(
-                input, input_source, parsed_output, usage, run_output.trace
-            )
+        run = self.generate_run(
+            input, input_source, parsed_output, usage, run_output.trace
+        )
 
         # Save the run if configured to do so, and we have a path to save to
         if (
@@ -260,7 +234,7 @@ class BaseAdapter(metaclass=ABCMeta):
             and self.task.path is not None
         ):
             run.save_to_file()
-        elif existing_run is None:
+        else:
             # Clear the ID to indicate it's not persisted
             run.id = None
 
@@ -270,7 +244,7 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: InputType,
         input_source: DataSource | None = None,
-        existing_run: TaskRun | None = None,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # Determine if this is the root agent (no existing run context)
         is_root_agent = get_agent_run_id() is None
@@ -281,7 +255,7 @@ class BaseAdapter(metaclass=ABCMeta):
 
         try:
             return await self._run_returning_run_output(
-                input, input_source, existing_run
+                input, input_source, prior_trace
             )
         finally:
             if is_root_agent:
@@ -296,7 +270,7 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: InputType,
         input_source: DataSource | None = None,
-        existing_run: TaskRun | None = None,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> AsyncIterator[ModelResponseStream]:
         """Stream raw OpenAI-protocol chunks for the task execution.
 
@@ -310,13 +284,13 @@ class BaseAdapter(metaclass=ABCMeta):
             set_agent_run_id(generate_agent_run_id())
 
         try:
-            adapter_stream = self._prepare_stream(input, existing_run)
+            adapter_stream = self._prepare_stream(input, prior_trace)
 
             async for event in adapter_stream:
                 if isinstance(event, ModelResponseStream):
                     yield event
 
-            self._finalize_stream(adapter_stream, input, input_source, existing_run)
+            self._finalize_stream(adapter_stream, input, input_source, prior_trace)
         finally:
             if is_root_agent:
                 try:
@@ -330,7 +304,7 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: InputType,
         input_source: DataSource | None = None,
-        existing_run: TaskRun | None = None,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> AsyncIterator[AiSdkStreamEvent]:
         """Stream AI SDK protocol events for the task execution.
 
@@ -342,7 +316,7 @@ class BaseAdapter(metaclass=ABCMeta):
             set_agent_run_id(generate_agent_run_id())
 
         try:
-            adapter_stream = self._prepare_stream(input, existing_run)
+            adapter_stream = self._prepare_stream(input, prior_trace)
 
             message_id = f"msg-{uuid.uuid4().hex}"
             converter = AiSdkStreamConverter()
@@ -371,7 +345,7 @@ class BaseAdapter(metaclass=ABCMeta):
 
             yield AiSdkStreamEvent(AiSdkEventType.FINISH_STEP)
 
-            self._finalize_stream(adapter_stream, input, input_source, existing_run)
+            self._finalize_stream(adapter_stream, input, input_source, prior_trace)
         finally:
             if is_root_agent:
                 try:
@@ -384,7 +358,7 @@ class BaseAdapter(metaclass=ABCMeta):
     def _prepare_stream(
         self,
         input: InputType,
-        existing_run: TaskRun | None,
+        prior_trace: list[ChatCompletionMessageParam] | None,
     ) -> AdapterStream:
         if self.input_schema is not None:
             validate_schema_with_value_error(
@@ -394,14 +368,7 @@ class BaseAdapter(metaclass=ABCMeta):
                 require_object=False,
             )
 
-        if existing_run is not None and (
-            not existing_run.trace or len(existing_run.trace) == 0
-        ):
-            raise ValueError(
-                "Run has no trace. Cannot continue session without conversation history."
-            )
-
-        prior_trace = existing_run.trace if existing_run else None
+        prior_trace = prior_trace if prior_trace else None
 
         formatted_input = input
         formatter_id = self.model_provider().formatter
@@ -416,7 +383,7 @@ class BaseAdapter(metaclass=ABCMeta):
         adapter_stream: AdapterStream,
         input: InputType,
         input_source: DataSource | None,
-        existing_run: TaskRun | None,
+        prior_trace: list[ChatCompletionMessageParam] | None,
     ) -> TaskRun:
         """Streaming invocations are only concerned with passing through events as they come in.
         At the end of the stream, we still need to validate the output, create a run and everything
@@ -468,27 +435,9 @@ class BaseAdapter(metaclass=ABCMeta):
                 "Reasoning is required for this model, but no reasoning was returned."
             )
 
-        if existing_run is not None:
-            merged_output = RunOutput(
-                output=parsed_output.output,
-                intermediate_outputs=parsed_output.intermediate_outputs
-                or run_output.intermediate_outputs,
-                output_logprobs=parsed_output.output_logprobs
-                or run_output.output_logprobs,
-                trace=run_output.trace,
-            )
-            run = self.generate_run(
-                input,
-                input_source,
-                merged_output,
-                usage,
-                run_output.trace,
-                existing_run=existing_run,
-            )
-        else:
-            run = self.generate_run(
-                input, input_source, parsed_output, usage, run_output.trace
-            )
+        run = self.generate_run(
+            input, input_source, parsed_output, usage, run_output.trace
+        )
 
         if (
             self.base_adapter_config.allow_saving
@@ -496,7 +445,7 @@ class BaseAdapter(metaclass=ABCMeta):
             and self.task.path is not None
         ):
             run.save_to_file()
-        elif existing_run is None:
+        else:
             run.id = None
 
         return run
@@ -604,7 +553,6 @@ class BaseAdapter(metaclass=ABCMeta):
         run_output: RunOutput,
         usage: Usage | None = None,
         trace: list[ChatCompletionMessageParam] | None = None,
-        existing_run: TaskRun | None = None,
     ) -> TaskRun:
         output_str = (
             json.dumps(run_output.output, ensure_ascii=False)
@@ -626,26 +574,6 @@ class BaseAdapter(metaclass=ABCMeta):
                 run_config=self.run_config,
             ),
         )
-
-        if existing_run is not None:
-            accumulated_usage = existing_run.usage
-            if usage is not None:
-                if accumulated_usage is not None:
-                    accumulated_usage = accumulated_usage + usage
-                else:
-                    accumulated_usage = usage
-
-            merged_intermediate = dict(existing_run.intermediate_outputs or {})
-            if run_output.intermediate_outputs:
-                for k, v in run_output.intermediate_outputs.items():
-                    merged_intermediate[k] = v
-
-            existing_run.output = new_output
-            existing_run.trace = trace
-            existing_run.usage = accumulated_usage
-            existing_run.intermediate_outputs = merged_intermediate
-
-            return existing_run
 
         # Convert input and output to JSON strings if they aren't strings
         input_str = (

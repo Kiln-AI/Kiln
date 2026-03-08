@@ -443,7 +443,7 @@ def test_build_chat_formatter_with_prior_trace_returns_multiturn_formatter(adapt
 
 
 @pytest.mark.asyncio
-async def test_existing_run_without_trace_raises(base_project):
+async def test_invoke_with_prior_trace_none_starts_fresh(base_project):
     task = Task(
         name="test_task",
         instruction="test_instruction",
@@ -458,29 +458,38 @@ async def test_existing_run_without_trace_raises(base_project):
             structured_output_mode=StructuredOutputMode.json_schema,
         ),
     )
-    run_without_trace = TaskRun(
-        parent=task,
-        input="hi",
-        input_source=None,
-        output=TaskOutput(
-            output="hello",
-            source=DataSource(
-                type=DataSourceType.synthetic,
-                properties={
-                    "model_name": "gpt_4o",
-                    "model_provider": "openai",
-                    "adapter_name": "test",
-                },
+    adapter._run = AsyncMock(
+        return_value=(
+            RunOutput(output="ok", intermediate_outputs=None, trace=None),
+            None,
+        )
+    )
+    with (
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id",
+            return_value=MagicMock(parse_output=MagicMock(return_value=RunOutput(output="ok", intermediate_outputs=None, trace=None))),
+        ),
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id",
+        ),
+        patch.object(
+            adapter,
+            "model_provider",
+            return_value=MagicMock(
+                parser="default",
+                formatter=None,
+                reasoning_capable=False,
             ),
         ),
-        trace=None,
-    )
-    with pytest.raises(ValueError, match="no trace"):
-        await adapter.invoke("input", existing_run=run_without_trace)
+    ):
+        run = await adapter.invoke("input", prior_trace=None)
+    assert run.output.output == "ok"
+    adapter._run.assert_called_once()
+    assert adapter._run.call_args[1].get("prior_trace") is None
 
 
 @pytest.mark.asyncio
-async def test_invoke_returning_run_output_passes_existing_run_to_run(
+async def test_invoke_returning_run_output_passes_prior_trace_to_run(
     adapter, mock_parser, tmp_path
 ):
     project = Project(name="proj", path=tmp_path / "proj.kiln")
@@ -497,19 +506,6 @@ async def test_invoke_returning_run_output_passes_existing_run_to_run(
         {"role": "user", "content": "hi"},
         {"role": "assistant", "content": "hello"},
     ]
-    initial_run = adapter.generate_run(
-        input="hi",
-        input_source=None,
-        run_output=RunOutput(
-            output="hello",
-            intermediate_outputs=None,
-            trace=trace,
-        ),
-        trace=trace,
-    )
-    initial_run.save_to_file()
-    run_id = initial_run.id
-    assert run_id is not None
 
     captured_prior_trace = None
 
@@ -538,7 +534,7 @@ async def test_invoke_returning_run_output_passes_existing_run_to_run(
             "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id",
         ),
     ):
-        await adapter.invoke_returning_run_output("follow-up", existing_run=initial_run)
+        await adapter.invoke_returning_run_output("follow-up", prior_trace=trace)
 
     assert captured_prior_trace == trace
 

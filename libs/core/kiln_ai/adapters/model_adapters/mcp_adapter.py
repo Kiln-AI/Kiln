@@ -88,16 +88,16 @@ class MCPAdapter(BaseAdapter):
         self,
         input: InputType,
         input_source: DataSource | None = None,
-        existing_run: TaskRun | None = None,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> TaskRun:
-        if existing_run is not None:
+        if prior_trace:
             raise NotImplementedError(
                 "Session continuation is not supported for MCP adapter. "
                 "MCP tools are single-turn and do not maintain conversation state."
             )
 
         run_output, _ = await self.invoke_returning_run_output(
-            input, input_source, existing_run
+            input, input_source, prior_trace
         )
         return run_output
 
@@ -105,13 +105,13 @@ class MCPAdapter(BaseAdapter):
         self,
         input: InputType,
         input_source: DataSource | None = None,
-        existing_run: TaskRun | None = None,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         """
         Runs the task and returns both the persisted TaskRun and raw RunOutput.
         If this call is the root of a run, it creates an agent run context, ensures MCP tool calls have a valid session scope, and cleans up the session/context on completion.
         """
-        if existing_run is not None:
+        if prior_trace:
             raise NotImplementedError(
                 "Session continuation is not supported for MCP adapter. "
                 "MCP tools are single-turn and do not maintain conversation state."

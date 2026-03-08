@@ -284,7 +284,7 @@ async def test_invoke_openai_stream_non_streaming_still_works(
 
 @pytest.mark.paid
 @pytest.mark.parametrize("model_id,provider_name", STREAMING_MODELS_NO_HAIKU)
-async def test_invoke_openai_stream_with_existing_run(
+async def test_invoke_openai_stream_with_prior_trace(
     request: pytest.FixtureRequest,
     model_id: str,
     provider_name: ModelProviderName,
@@ -300,7 +300,7 @@ async def test_invoke_openai_stream_with_existing_run(
     continuation_chunks: list[litellm.ModelResponseStream] = []
     async for chunk in adapter.invoke_openai_stream(
         input="What was the result? Reply in one short sentence.",
-        existing_run=initial_run,
+        prior_trace=initial_run.trace,
     ):
         continuation_chunks.append(chunk)
 

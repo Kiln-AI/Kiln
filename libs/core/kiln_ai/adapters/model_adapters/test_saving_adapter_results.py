@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -235,7 +235,7 @@ async def test_autosave_true(test_task, adapter):
 
 @pytest.mark.asyncio
 async def test_invoke_continue_session(test_task, adapter):
-    """Test that invoke with task_run_id continues a session and updates the run."""
+    """Test that invoke with prior_trace continues a session and creates a new run."""
     with patch("kiln_ai.utils.config.Config.shared") as mock_shared:
         mock_config = mock_shared.return_value
         mock_config.autosave_runs = True
@@ -245,19 +245,6 @@ async def test_invoke_continue_session(test_task, adapter):
             {"role": "user", "content": "Hello"},
             {"role": "assistant", "content": "Hi there!"},
         ]
-        initial_run = adapter.generate_run(
-            input="Hello",
-            input_source=None,
-            run_output=RunOutput(
-                output="Hi there!",
-                intermediate_outputs=None,
-                trace=trace,
-            ),
-            trace=trace,
-        )
-        initial_run.save_to_file()
-        run_id = initial_run.id
-        assert run_id is not None
 
         async def mock_run(input, **kwargs):
             prior_trace = kwargs.get("prior_trace")
@@ -306,14 +293,14 @@ async def test_invoke_continue_session(test_task, adapter):
             )
             mock_parser_from_id.return_value = mock_parser
 
-            updated_run = await adapter.invoke("Tell me more", existing_run=initial_run)
+            new_run = await adapter.invoke("Tell me more", prior_trace=trace)
 
-        assert updated_run.id == run_id
-        assert updated_run.input == "Hello"
-        assert updated_run.output.output == "How can I help?"
-        assert len(updated_run.trace) == 4
-        assert updated_run.trace[-2]["content"] == "Tell me more"
-        assert updated_run.trace[-1]["content"] == "How can I help?"
+        assert new_run.id is not None
+        assert new_run.input == "Tell me more"
+        assert new_run.output.output == "How can I help?"
+        assert len(new_run.trace) == 4
+        assert new_run.trace[-2]["content"] == "Tell me more"
+        assert new_run.trace[-1]["content"] == "How can I help?"
 
         reloaded = Task.load_from_file(test_task.path)
         runs = reloaded.runs()
@@ -322,36 +309,55 @@ async def test_invoke_continue_session(test_task, adapter):
 
 
 @pytest.mark.asyncio
-async def test_invoke_continue_run_without_trace(test_task, adapter):
-    """Test that invoke with existing_run that has no trace raises ValueError."""
+async def test_invoke_with_empty_prior_trace_starts_fresh(test_task, adapter):
+    """Test that invoke with prior_trace=[] starts a fresh conversation (no error)."""
     with patch("kiln_ai.utils.config.Config.shared") as mock_shared:
         mock_config = mock_shared.return_value
         mock_config.autosave_runs = True
         mock_config.user_id = "test_user"
 
-        run_without_trace = adapter.generate_run(
-            input="Hello",
-            input_source=None,
-            run_output=RunOutput(
-                output="Hi",
-                intermediate_outputs=None,
-                trace=None,
-            ),
+        adapter._run = AsyncMock(
+            return_value=(
+                RunOutput(output="Fresh reply", intermediate_outputs=None, trace=None),
+                None,
+            )
         )
-        run_without_trace.save_to_file()
+        with (
+            patch.object(
+                adapter,
+                "model_provider",
+                return_value=MagicMock(
+                    parser="default",
+                    formatter=None,
+                    reasoning_capable=False,
+                ),
+            ),
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id",
+                return_value=MagicMock(
+                    parse_output=MagicMock(
+                        return_value=RunOutput(
+                            output="Fresh reply",
+                            intermediate_outputs=None,
+                            trace=None,
+                        )
+                    )
+                ),
+            ),
+            patch(
+                "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id",
+            ),
+        ):
+            run = await adapter.invoke("Follow up", prior_trace=[])
+        assert run.output.output == "Fresh reply"
 
-        with pytest.raises(ValueError, match="no trace"):
-            await adapter.invoke("Follow up", existing_run=run_without_trace)
 
-
-def test_generate_run_with_existing_run_merges_usage_and_intermediate_outputs(
-    test_task, adapter
-):
+def test_generate_run_always_creates_new_task_run(test_task, adapter):
     trace = [
         {"role": "user", "content": "hi"},
         {"role": "assistant", "content": "hello"},
     ]
-    initial_run = adapter.generate_run(
+    run1 = adapter.generate_run(
         input="hi",
         input_source=None,
         run_output=RunOutput(
@@ -367,8 +373,8 @@ def test_generate_run_with_existing_run_merges_usage_and_intermediate_outputs(
         {"role": "user", "content": "follow-up"},
         {"role": "assistant", "content": "ok"},
     ]
-    result = adapter.generate_run(
-        input="hi",
+    run2 = adapter.generate_run(
+        input="follow-up",
         input_source=None,
         run_output=RunOutput(
             output="ok",
@@ -377,16 +383,12 @@ def test_generate_run_with_existing_run_merges_usage_and_intermediate_outputs(
         ),
         usage=Usage(input_tokens=5, output_tokens=10),
         trace=extended_trace,
-        existing_run=initial_run,
     )
-    assert result is initial_run
-    assert result.usage.input_tokens == 15
-    assert result.usage.output_tokens == 30
-    assert result.intermediate_outputs == {
-        "chain_of_thought": "old",
-        "new_key": "new_val",
-    }
-    assert result.output.output == "ok"
+    assert run2 is not run1
+    assert run2.usage is not None and run2.usage.input_tokens == 5
+    assert run2.usage.output_tokens == 10
+    assert run2.intermediate_outputs == {"new_key": "new_val"}
+    assert run2.output.output == "ok"
 
 
 def test_properties_for_task_output_custom_values(test_task):
