@@ -1047,8 +1047,8 @@ class TestAgentRunContextLifecycle:
             assert run_id.startswith("run_")
 
 
-class TestStreamCallback:
-    """Tests for the on_chunk streaming callback parameter."""
+class TestStreamMethods:
+    """Tests for the streaming methods on BaseAdapter."""
 
     @pytest.fixture
     def stream_adapter(self, base_task):
@@ -1062,105 +1062,28 @@ class TestStreamCallback:
             ),
         )
 
-    def _setup_adapter_mocks(self, adapter):
+    @pytest.mark.asyncio
+    async def test_invoke_openai_stream_raises_for_unsupported_adapter(
+        self, stream_adapter
+    ):
+        """MockAdapter does not implement _create_run_stream."""
         provider = MagicMock()
-        provider.parser = "test_parser"
         provider.formatter = None
-        provider.reasoning_capable = False
-        adapter.model_provider = MagicMock(return_value=provider)
+        stream_adapter.model_provider = MagicMock(return_value=provider)
+
+        with pytest.raises(NotImplementedError, match="Streaming is not supported"):
+            async for _chunk in stream_adapter.invoke_openai_stream("test input"):
+                pass
 
     @pytest.mark.asyncio
-    async def test_on_chunk_forwarded_to_run(self, stream_adapter):
-        """Test that on_chunk is passed through to _run."""
-        received_kwargs = {}
+    async def test_invoke_ai_sdk_stream_raises_for_unsupported_adapter(
+        self, stream_adapter
+    ):
+        """MockAdapter does not implement _create_run_stream."""
+        provider = MagicMock()
+        provider.formatter = None
+        stream_adapter.model_provider = MagicMock(return_value=provider)
 
-        async def mock_run(input, **kwargs):
-            received_kwargs.update(kwargs)
-            return RunOutput(output="test output", intermediate_outputs={}), None
-
-        stream_adapter._run = mock_run
-        self._setup_adapter_mocks(stream_adapter)
-
-        callback = AsyncMock()
-
-        parser = MagicMock()
-        parser.parse_output.return_value = RunOutput(
-            output="test output", intermediate_outputs={}
-        )
-
-        with (
-            patch(
-                "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"
-            ) as mock_parser_factory,
-            patch(
-                "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
-            ),
-        ):
-            mock_parser_factory.return_value = parser
-            await stream_adapter.invoke_returning_run_output(
-                {"test": "input"}, on_chunk=callback
-            )
-
-        assert received_kwargs.get("on_chunk") is callback
-
-    @pytest.mark.asyncio
-    async def test_on_chunk_none_by_default(self, stream_adapter):
-        """Test that on_chunk defaults to None when not provided."""
-        received_kwargs = {}
-
-        async def mock_run(input, **kwargs):
-            received_kwargs.update(kwargs)
-            return RunOutput(output="test output", intermediate_outputs={}), None
-
-        stream_adapter._run = mock_run
-        self._setup_adapter_mocks(stream_adapter)
-
-        parser = MagicMock()
-        parser.parse_output.return_value = RunOutput(
-            output="test output", intermediate_outputs={}
-        )
-
-        with (
-            patch(
-                "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"
-            ) as mock_parser_factory,
-            patch(
-                "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
-            ),
-        ):
-            mock_parser_factory.return_value = parser
-            await stream_adapter.invoke_returning_run_output({"test": "input"})
-
-        assert received_kwargs.get("on_chunk") is None
-
-    @pytest.mark.asyncio
-    async def test_invoke_forwards_on_chunk(self, stream_adapter):
-        """Test that invoke() also forwards on_chunk."""
-        received_kwargs = {}
-
-        async def mock_run(input, **kwargs):
-            received_kwargs.update(kwargs)
-            return RunOutput(output="test output", intermediate_outputs={}), None
-
-        stream_adapter._run = mock_run
-        self._setup_adapter_mocks(stream_adapter)
-
-        callback = AsyncMock()
-
-        parser = MagicMock()
-        parser.parse_output.return_value = RunOutput(
-            output="test output", intermediate_outputs={}
-        )
-
-        with (
-            patch(
-                "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"
-            ) as mock_parser_factory,
-            patch(
-                "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
-            ),
-        ):
-            mock_parser_factory.return_value = parser
-            await stream_adapter.invoke({"test": "input"}, on_chunk=callback)
-
-        assert received_kwargs.get("on_chunk") is callback
+        with pytest.raises(NotImplementedError, match="Streaming is not supported"):
+            async for _event in stream_adapter.invoke_ai_sdk_stream("test input"):
+                pass

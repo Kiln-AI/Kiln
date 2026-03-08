@@ -21,3 +21,5 @@ libs/server/build
 dist/
 
 .mcp.json
+
+test_output/

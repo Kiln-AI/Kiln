@@ -5,6 +5,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
+import litellm
 from litellm.types.utils import (
     ChatCompletionMessageToolCall,
     ChoiceLogprobs,
@@ -19,17 +20,16 @@ from openai.types.chat.chat_completion_message_tool_call_param import (
 
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
-from kiln_ai.adapters.litellm_utils.litellm_streaming import StreamingCompletion
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     ModelProviderName,
     StructuredOutputMode,
 )
+from kiln_ai.adapters.model_adapters.adapter_stream import AdapterStream
 from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterConfig,
     BaseAdapter,
     RunOutput,
-    StreamCallback,
     Usage,
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
@@ -96,7 +96,6 @@ class LiteLlmAdapter(BaseAdapter):
         prior_messages: list[ChatCompletionMessageIncludingLiteLLM],
         top_logprobs: int | None,
         skip_response_format: bool,
-        on_chunk: StreamCallback | None = None,
     ) -> ModelTurnResult:
         """
         Call the model for a single top level turn: from user message to agent message.
@@ -120,7 +119,7 @@ class LiteLlmAdapter(BaseAdapter):
 
             # Make the completion call
             model_response, response_choice = await self.acompletion_checking_response(
-                on_chunk=on_chunk, **completion_kwargs
+                **completion_kwargs
             )
 
             # count the usage
@@ -187,7 +186,6 @@ class LiteLlmAdapter(BaseAdapter):
         self,
         input: InputType,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
-        on_chunk: StreamCallback | None = None,
     ) -> tuple[RunOutput, Usage | None]:
         usage = Usage()
 
@@ -232,7 +230,6 @@ class LiteLlmAdapter(BaseAdapter):
                 messages,
                 self.base_adapter_config.top_logprobs if turn.final_call else None,
                 skip_response_format,
-                on_chunk=on_chunk,
             )
 
             usage += turn_result.usage
@@ -264,6 +261,28 @@ class LiteLlmAdapter(BaseAdapter):
         )
 
         return output, usage
+
+    def _create_run_stream(
+        self,
+        input: InputType,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
+    ) -> AdapterStream:
+        provider = self.model_provider()
+        if not provider.model_id:
+            raise ValueError("Model ID is required for OpenAI compatible models")
+
+        chat_formatter = self.build_chat_formatter(input, prior_trace)
+        initial_messages: list[ChatCompletionMessageIncludingLiteLLM] = copy.deepcopy(
+            chat_formatter.initial_messages()
+        )
+
+        return AdapterStream(
+            adapter=self,
+            provider=provider,
+            chat_formatter=chat_formatter,
+            initial_messages=initial_messages,
+            top_logprobs=self.base_adapter_config.top_logprobs,
+        )
 
     def _extract_and_validate_logprobs(
         self, final_choice: Choices | None
@@ -301,13 +320,9 @@ class LiteLlmAdapter(BaseAdapter):
                     intermediate_outputs["reasoning"] = stripped_reasoning_content
 
     async def acompletion_checking_response(
-        self, on_chunk: StreamCallback | None = None, **kwargs
+        self, **kwargs: Any
     ) -> Tuple[ModelResponse, Choices]:
-        stream = StreamingCompletion(**kwargs)
-        async for chunk in stream:
-            if on_chunk is not None:
-                await on_chunk(chunk)
-        response = stream.response
+        response = await litellm.acompletion(**kwargs)
 
         if (
             not isinstance(response, ModelResponse)

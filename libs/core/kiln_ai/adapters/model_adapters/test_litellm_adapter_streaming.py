@@ -1,9 +1,9 @@
 import json
 import logging
-from abc import ABC, abstractmethod
+import re
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Tuple
-from unittest.mock import patch
+from typing import Any, Callable
 
 import litellm
 import pytest
@@ -12,99 +12,70 @@ from litellm.types.utils import ChatCompletionDeltaToolCall
 from kiln_ai.adapters.ml_model_list import ModelProviderName, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
+from kiln_ai.adapters.model_adapters.stream_events import (
+    AiSdkEventType,
+    AiSdkStreamEvent,
+)
 from kiln_ai.datamodel import Project, PromptGenerators, Task
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 
 logger = logging.getLogger(__name__)
 
+STREAMING_MODELS = [
+    ("claude_sonnet_4_5", ModelProviderName.openrouter),
+    ("claude_sonnet_4_5", ModelProviderName.anthropic),
+    ("claude_sonnet_4_6", ModelProviderName.openrouter),
+    ("claude_sonnet_4_6", ModelProviderName.anthropic),
+    ("claude_opus_4_5", ModelProviderName.openrouter),
+    ("claude_opus_4_5", ModelProviderName.anthropic),
+    ("claude_opus_4_6", ModelProviderName.openrouter),
+    ("claude_opus_4_6", ModelProviderName.anthropic),
+    ("minimax_m2_5", ModelProviderName.openrouter),
+    ("claude_4_5_haiku", ModelProviderName.openrouter),
+    ("claude_4_5_haiku", ModelProviderName.anthropic),
+]
 
-class ChunkRendererAbstract(ABC):
-    @abstractmethod
-    async def render_chunk(self, chunk: litellm.ModelResponseStream):
-        pass
+STREAMING_MODELS_NO_HAIKU = [m for m in STREAMING_MODELS if "haiku" not in m[0]]
 
-    @abstractmethod
-    def get_stream_text(self) -> str:
-        pass
-
-
-class ChunkRenderer(ChunkRendererAbstract):
-    def __init__(self):
-        self.chunk_texts: list[str] = []
-        self.current_block_type: str | None = None
-
-    def print_and_append(self, text: str):
-        # replace with print if your logger is not outputting info logs
-        logger.info(text)
-        self.chunk_texts.append(text)
-
-    def enter_block(self, block_type: str):
-        if self.current_block_type != block_type:
-            if self.current_block_type is not None:
-                self.print_and_append(f"</{self.current_block_type}>\n")
-
-            self.print_and_append(f"\n<{block_type}>\n")
-            self.current_block_type = block_type
-
-    def render_reasoning(self, reasoning_content: str):
-        self.enter_block("reasoning")
-        self.print_and_append(reasoning_content)
-
-    def render_content(self, content: str):
-        self.enter_block("content")
-        self.print_and_append(content)
-
-    def render_tool_call(self, tool_calls: list[ChatCompletionDeltaToolCall | Any]):
-        self.enter_block("tool_call")
-        for tool_call in tool_calls:
-            # first it says the tool name, then the arguments
-            if tool_call.function.name is not None:
-                self.print_and_append(f'Calling tool: "{tool_call.function.name}" ')
-                self.print_and_append("with args: ")
-            if tool_call.function.arguments is not None:
-                args = tool_call.function.arguments
-                self.print_and_append(args)
-
-    def render_stop(self, stop_reason: str):
-        self.print_and_append("\n")
-
-    def render_unknown(self, chunk: litellm.ModelResponseStream):
-        self.enter_block("unknown")
-        self.print_and_append(f"Unknown chunk: {chunk}")
-
-    async def render_chunk(self, chunk: litellm.ModelResponseStream):
-        if chunk.choices[0].finish_reason is not None:
-            self.render_stop(chunk.choices[0].finish_reason)
-            return
-        elif chunk.choices[0].delta is not None:
-            # inconsistent behavior between providers, some have multiple fields at once, some don't
-            if chunk.choices[0].delta.tool_calls is not None:
-                self.render_tool_call(chunk.choices[0].delta.tool_calls)
-            elif getattr(chunk.choices[0].delta, "reasoning_content", None) is not None:
-                text = getattr(chunk.choices[0].delta, "reasoning_content", None)
-                if text is not None:
-                    self.render_reasoning(text)
-            elif chunk.choices[0].delta.content is not None:
-                self.render_content(chunk.choices[0].delta.content)
-        else:
-            self.render_unknown(chunk)
-
-    def get_stream_text(self) -> str:
-        return "".join(self.chunk_texts)
+PAID_TEST_OUTPUT_DIR = Path(__file__).resolve().parents[5] / "test_output"
 
 
-class ChunkRawRenderer(ChunkRendererAbstract):
-    def __init__(self):
-        self.chunks: list[litellm.ModelResponseStream] = []
-        self.current_block_type: str | None = None
+def _serialize_for_dump(obj: Any) -> Any:
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump(mode="json")
+    if isinstance(obj, list):
+        if not obj:
+            return []
+        first = obj[0]
+        if hasattr(first, "type") and hasattr(first, "payload"):
+            return [{"type": e.type.value, "payload": e.payload} for e in obj]
+        if hasattr(first, "model_dump"):
+            return [item.model_dump(mode="json") for item in obj]
+        return [_serialize_for_dump(x) for x in obj]
+    return obj
 
-    async def render_chunk(self, chunk: litellm.ModelResponseStream):
-        logger.info(str(chunk))
-        self.chunks.append(chunk)
 
-    def get_stream_text(self) -> str:
-        return "\n".join([str(chunk) for chunk in self.chunks])
+def _dump_paid_test_output(request: pytest.FixtureRequest, **payloads: Any) -> Path:
+    test_name = re.sub(r"[^\w\-]", "_", request.node.name)
+    param_id = "default"
+    if hasattr(request.node, "callspec") and request.node.callspec is not None:
+        id_attr = getattr(request.node.callspec, "id", None)
+        if id_attr is not None:
+            param_id = re.sub(r"[^\w\-]", "_", str(id_attr))
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+    out_dir = PAID_TEST_OUTPUT_DIR / test_name / param_id / timestamp
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for filename, data in payloads.items():
+        if data is None:
+            continue
+        if not filename.endswith(".json"):
+            filename = f"{filename}.json"
+        serialized = _serialize_for_dump(data)
+        (out_dir / filename).write_text(
+            json.dumps(serialized, indent=2, default=str), encoding="utf-8"
+        )
+    return out_dir
 
 
 @pytest.fixture
@@ -129,7 +100,7 @@ def adapter_factory(task: Task) -> Callable[[str, ModelProviderName], LiteLlmAda
     def create_adapter(
         model_id: str, provider_name: ModelProviderName
     ) -> LiteLlmAdapter:
-        adapter = LiteLlmAdapter(
+        return LiteLlmAdapter(
             kiln_task=task,
             config=LiteLlmConfig(
                 run_config_properties=KilnAgentRunConfigProperties(
@@ -148,163 +119,28 @@ def adapter_factory(task: Task) -> Callable[[str, ModelProviderName], LiteLlmAda
                 )
             ),
         )
-        return adapter
 
     return create_adapter
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize(
-    "model_id,provider_name",
-    [
-        ("claude_sonnet_4_5", ModelProviderName.openrouter),
-        ("claude_sonnet_4_5", ModelProviderName.anthropic),
-        ("claude_sonnet_4_6", ModelProviderName.openrouter),
-        ("claude_sonnet_4_6", ModelProviderName.anthropic),
-        ("claude_opus_4_5", ModelProviderName.openrouter),
-        ("claude_opus_4_5", ModelProviderName.anthropic),
-        ("claude_opus_4_6", ModelProviderName.openrouter),
-        ("claude_opus_4_6", ModelProviderName.anthropic),
-        ("minimax_m2_5", ModelProviderName.openrouter),
-        ("claude_4_5_haiku", ModelProviderName.openrouter),
-        ("claude_4_5_haiku", ModelProviderName.anthropic),
-    ],
-)
-async def test_acompletion_streaming_response(
+@pytest.mark.parametrize("model_id,provider_name", STREAMING_MODELS)
+async def test_invoke_openai_stream_chunks(
+    request: pytest.FixtureRequest,
     model_id: str,
     provider_name: ModelProviderName,
     adapter_factory: Callable[[str, ModelProviderName], LiteLlmAdapter],
 ):
-    """Check the accumulated response has all the expected parts"""
-    adapter = adapter_factory(model_id, provider_name)
-
-    renderer = ChunkRenderer()
-
-    # we proxy all the calls to the original function so we can spy on the return values
-    captured_responses: list[Tuple[litellm.ModelResponse, litellm.Choices]] = []
-    origin_func = adapter.acompletion_checking_response
-
-    async def spy(
-        *args: Any, **kwargs: Any
-    ) -> Tuple[litellm.ModelResponse, litellm.Choices]:
-        nonlocal captured_responses
-
-        result = await origin_func(*args, **kwargs)
-        captured_responses.append(result)
-        return result
-
-    with patch.object(adapter, "acompletion_checking_response", side_effect=spy):
-        task_run = await adapter.invoke(
-            input="123 + 321 = ?",
-            on_chunk=renderer.render_chunk,
-        )
-
-    # there is one call per thing going on (tool call, content, etc.)
-    # with our toy task, we expect ~2 or 3 calls (reasoning + tool call -> content)
-    if len(captured_responses) == 0:
-        raise RuntimeError(
-            "captured_responses is empty after invocation - test probably broken due to wrong spy"
-        )
-
-    # check we are getting the trace successfully
-    assert task_run.trace is not None, "Task run trace is None"
-    assert len(task_run.trace) > 0, "Task run trace is empty"
-
-    assistant_messages: list[litellm.Message] = []
-    for model_response, _ in captured_responses:
-        for choice in model_response.choices:
-            if isinstance(choice, litellm.Choices):
-                assistant_messages.append(choice.message)
-    assert len(assistant_messages) > 0, "No assistant messages found in the trace"
-
-    # we do not know which message the reasoning / content / tool call is in, but we know each one
-    # should appear in at least one message so we accumulate them here
-    reasoning_contents: list[str] = []
-    contents: list[str] = []
-    tool_calls: list[ChatCompletionDeltaToolCall | Any] = []
-    for assistant_message in assistant_messages:
-        reasoning_content = getattr(assistant_message, "reasoning_content", None)
-        if reasoning_content:
-            reasoning_contents.append(reasoning_content)
-
-        content = getattr(assistant_message, "content", None)
-        if content:
-            contents.append(str(content))
-
-        _tool_calls = getattr(assistant_message, "tool_calls", None)
-        if _tool_calls:
-            tool_calls.extend(_tool_calls)
-
-    # check we got all the expected parts somewhere
-    assert len(reasoning_contents) > 0, "No reasoning contents found in the trace"
-    assert len(contents) > 0, "No contents found in the trace"
-    assert len(tool_calls) > 0, "No tool calls found in the trace"
-    assert len(tool_calls) == 1, "Expected exactly one tool call (to do the math)"
-
-    # check we got some non-empty reasoning - we should have gotten some reasoning at least somewhere
-    # usually the toolcall
-    assert not all(
-        reasoning_content.strip() == "" for reasoning_content in reasoning_contents
-    ), "All reasoning contents are empty"
-
-    # check we got some non-empty content (we get empty strings when there is no content)
-    assert not all(content.strip() == "" for content in contents), (
-        "All contents are empty"
-    )
-
-    for tool_call in tool_calls:
-        assert tool_call.function.name is not None, "Tool call name is None"
-        assert tool_call.function.arguments is not None, "Tool call arguments are None"
-        assert json.loads(tool_call.function.arguments) is not None, (
-            "Tool call arguments are not JSON"
-        )
-        tool_call_args = json.loads(tool_call.function.arguments)
-        assert tool_call_args == {
-            "a": 123,
-            "b": 321,
-        } or tool_call_args == {
-            "a": 321,
-            "b": 123,
-        }, f"Tool call arguments are not the expected values: {tool_call_args}"
-
-
-@pytest.mark.paid
-@pytest.mark.parametrize(
-    "model_id,provider_name",
-    [
-        ("claude_sonnet_4_5", ModelProviderName.openrouter),
-        ("claude_sonnet_4_5", ModelProviderName.anthropic),
-        ("claude_sonnet_4_6", ModelProviderName.openrouter),
-        ("claude_sonnet_4_6", ModelProviderName.anthropic),
-        ("claude_opus_4_5", ModelProviderName.openrouter),
-        ("claude_opus_4_5", ModelProviderName.anthropic),
-        ("claude_opus_4_6", ModelProviderName.openrouter),
-        ("claude_opus_4_6", ModelProviderName.anthropic),
-        ("minimax_m2_5", ModelProviderName.openrouter),
-        ("claude_4_5_haiku", ModelProviderName.openrouter),
-        ("claude_4_5_haiku", ModelProviderName.anthropic),
-    ],
-)
-async def test_acompletion_streaming_chunks(
-    model_id: str,
-    provider_name: ModelProviderName,
-    adapter_factory: Callable[[str, ModelProviderName], LiteLlmAdapter],
-):
-    """Collect all chunks from all completion calls, then one pass to check we got reasoning, content, and tool calls."""
-
+    """Collect all OpenAI-protocol chunks via invoke_openai_stream and verify we got reasoning, content, and tool call data."""
     adapter = adapter_factory(model_id, provider_name)
 
     chunks: list[litellm.ModelResponseStream] = []
-
-    renderer = ChunkRenderer()
-
-    async def collect_chunks(chunk: litellm.ModelResponseStream) -> None:
+    async for chunk in adapter.invoke_openai_stream(input="123 + 321 = ?"):
         chunks.append(chunk)
-        await renderer.render_chunk(chunk)
 
-    await adapter.invoke(input="123 + 321 = ?", on_chunk=collect_chunks)
-
+    _dump_paid_test_output(request, chunks=chunks)
     assert len(chunks) > 0, "No chunks collected"
+
     reasoning_contents: list[str] = []
     contents: list[str] = []
     tool_calls: list[ChatCompletionDeltaToolCall | Any] = []
@@ -333,9 +169,7 @@ async def test_acompletion_streaming_chunks(
     assert not all(c.strip() == "" for c in contents), "All content in chunks is empty"
 
     tool_call_function_names = [
-        tool_call.function.name
-        for tool_call in tool_calls
-        if tool_call.function.name is not None
+        tc.function.name for tc in tool_calls if tc.function.name is not None
     ]
     assert len(tool_call_function_names) == 1, (
         "Expected exactly one tool call function name"
@@ -343,13 +177,8 @@ async def test_acompletion_streaming_chunks(
     assert tool_call_function_names[0] == "add", "Tool call function name is not 'add'"
 
     tool_call_args_chunks = "".join(
-        [
-            tool_call.function.arguments
-            for tool_call in tool_calls
-            if tool_call.function.arguments is not None
-        ]
+        tc.function.arguments for tc in tool_calls if tc.function.arguments is not None
     )
-
     tool_call_args = json.loads(tool_call_args_chunks)
     assert tool_call_args == {"a": 123, "b": 321} or tool_call_args == {
         "a": 321,
@@ -358,102 +187,122 @@ async def test_acompletion_streaming_chunks(
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize(
-    "model_id,provider_name",
-    [
-        ("claude_sonnet_4_5", ModelProviderName.openrouter),
-        ("claude_sonnet_4_5", ModelProviderName.anthropic),
-        ("claude_sonnet_4_6", ModelProviderName.openrouter),
-        ("claude_sonnet_4_6", ModelProviderName.anthropic),
-        ("claude_opus_4_5", ModelProviderName.openrouter),
-        ("claude_opus_4_5", ModelProviderName.anthropic),
-        ("claude_opus_4_6", ModelProviderName.openrouter),
-        ("claude_opus_4_6", ModelProviderName.anthropic),
-        ("minimax_m2_5", ModelProviderName.openrouter),
-        ("claude_4_5_haiku", ModelProviderName.openrouter),
-        ("claude_4_5_haiku", ModelProviderName.anthropic),
-    ],
-)
-async def test_acompletion_streaming_rendering(
+@pytest.mark.parametrize("model_id,provider_name", STREAMING_MODELS)
+async def test_invoke_ai_sdk_stream(
+    request: pytest.FixtureRequest,
     model_id: str,
     provider_name: ModelProviderName,
     adapter_factory: Callable[[str, ModelProviderName], LiteLlmAdapter],
 ):
-    """Test that the streaming response with a renderer to see how it looks"""
+    """Collect AI SDK events and verify the full protocol lifecycle including tool events."""
     adapter = adapter_factory(model_id, provider_name)
-    renderer = ChunkRenderer()
-    await adapter.invoke(input="123 + 321 = ?", on_chunk=renderer.render_chunk)
-    assert renderer.get_stream_text() is not None
+
+    events: list[AiSdkStreamEvent] = []
+    async for event in adapter.invoke_ai_sdk_stream(input="123 + 321 = ?"):
+        events.append(event)
+        logger.info(f"AI SDK event: {event.type.value} {event.payload}")
+
+    _dump_paid_test_output(request, events=events)
+    assert len(events) > 0, "No events collected"
+
+    event_types = [e.type for e in events]
+
+    assert event_types[0] == AiSdkEventType.START, "First event should be START"
+    assert event_types[1] == AiSdkEventType.START_STEP, (
+        "Second event should be START_STEP"
+    )
+
+    assert AiSdkEventType.FINISH_STEP in event_types, "Should have FINISH_STEP"
+    assert AiSdkEventType.FINISH in event_types, "Should have FINISH"
+
+    assert AiSdkEventType.REASONING_START in event_types, "Should have REASONING_START"
+    assert AiSdkEventType.REASONING_DELTA in event_types, "Should have REASONING_DELTA"
+
+    assert AiSdkEventType.TEXT_START in event_types, "Should have TEXT_START"
+    assert AiSdkEventType.TEXT_DELTA in event_types, "Should have TEXT_DELTA"
+    assert AiSdkEventType.TEXT_END in event_types, "Should have TEXT_END"
+
+    assert AiSdkEventType.TOOL_INPUT_START in event_types, (
+        "Should have TOOL_INPUT_START"
+    )
+    assert AiSdkEventType.TOOL_INPUT_AVAILABLE in event_types, (
+        "Should have TOOL_INPUT_AVAILABLE"
+    )
+    assert AiSdkEventType.TOOL_OUTPUT_AVAILABLE in event_types, (
+        "Should have TOOL_OUTPUT_AVAILABLE"
+    )
+
+    text_deltas = [
+        e.payload.get("delta", "")
+        for e in events
+        if e.type == AiSdkEventType.TEXT_DELTA
+    ]
+    full_text = "".join(text_deltas)
+    assert len(full_text) > 0, "Text content is empty"
+
+    tool_input_available = [
+        e for e in events if e.type == AiSdkEventType.TOOL_INPUT_AVAILABLE
+    ]
+    assert len(tool_input_available) >= 1, (
+        "Should have at least one tool-input-available"
+    )
+    tool_input = tool_input_available[0].payload.get("input", {})
+    assert "a" in tool_input and "b" in tool_input, (
+        f"Tool input should have a and b keys: {tool_input}"
+    )
+
+    tool_output_available = [
+        e for e in events if e.type == AiSdkEventType.TOOL_OUTPUT_AVAILABLE
+    ]
+    assert len(tool_output_available) >= 1, (
+        "Should have at least one tool-output-available"
+    )
+    assert tool_output_available[0].payload.get("output") is not None, (
+        "Tool output should not be None"
+    )
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize(
-    "model_id,provider_name",
-    [
-        ("claude_sonnet_4_5", ModelProviderName.openrouter),
-        ("claude_sonnet_4_5", ModelProviderName.anthropic),
-        ("claude_sonnet_4_6", ModelProviderName.openrouter),
-        ("claude_sonnet_4_6", ModelProviderName.anthropic),
-        ("claude_opus_4_5", ModelProviderName.openrouter),
-        ("claude_opus_4_5", ModelProviderName.anthropic),
-        ("claude_opus_4_6", ModelProviderName.openrouter),
-        ("claude_opus_4_6", ModelProviderName.anthropic),
-        ("minimax_m2_5", ModelProviderName.openrouter),
-    ],
-)
-async def test_acompletion_streaming_rendering_raw_chunks(
+@pytest.mark.parametrize("model_id,provider_name", STREAMING_MODELS_NO_HAIKU)
+async def test_invoke_openai_stream_non_streaming_still_works(
+    request: pytest.FixtureRequest,
     model_id: str,
     provider_name: ModelProviderName,
     adapter_factory: Callable[[str, ModelProviderName], LiteLlmAdapter],
 ):
-    """Test that the streaming response with a renderer to see how it looks, but with raw chunks"""
+    """Verify the non-streaming invoke() still works after the refactor."""
     adapter = adapter_factory(model_id, provider_name)
-    renderer = ChunkRawRenderer()
-    await adapter.invoke(input="123 + 321 = ?", on_chunk=renderer.render_chunk)
-    assert renderer.get_stream_text() is not None
+    task_run = await adapter.invoke(input="123 + 321 = ?")
+
+    _dump_paid_test_output(request, task_run=task_run)
+    assert task_run.trace is not None, "Task run trace is None"
+    assert len(task_run.trace) > 0, "Task run trace is empty"
+    assert "444" in task_run.output.output, (
+        f"Expected 444 in output: {task_run.output.output}"
+    )
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize(
-    "model_id,provider_name",
-    [
-        ("claude_sonnet_4_5", ModelProviderName.openrouter),
-        ("claude_sonnet_4_5", ModelProviderName.anthropic),
-        ("claude_sonnet_4_6", ModelProviderName.openrouter),
-        ("claude_sonnet_4_6", ModelProviderName.anthropic),
-        ("claude_opus_4_5", ModelProviderName.openrouter),
-        ("claude_opus_4_5", ModelProviderName.anthropic),
-        ("claude_opus_4_6", ModelProviderName.openrouter),
-        ("claude_opus_4_6", ModelProviderName.anthropic),
-        ("minimax_m2_5", ModelProviderName.openrouter),
-    ],
-)
-async def test_acompletion_streaming_with_existing_run(
+@pytest.mark.parametrize("model_id,provider_name", STREAMING_MODELS_NO_HAIKU)
+async def test_invoke_openai_stream_with_existing_run(
+    request: pytest.FixtureRequest,
     model_id: str,
     provider_name: ModelProviderName,
     adapter_factory: Callable[[str, ModelProviderName], LiteLlmAdapter],
 ):
     """Test that streaming works when continuing an existing run (session continuation)."""
     adapter = adapter_factory(model_id, provider_name)
-    renderer = ChunkRawRenderer()
 
-    initial_run = await adapter.invoke(
-        input="123 + 321 = ?",
-        on_chunk=renderer.render_chunk,
-    )
+    initial_run = await adapter.invoke(input="123 + 321 = ?")
     assert initial_run.trace is not None
     assert len(initial_run.trace) > 0
-    initial_trace_len = len(initial_run.trace)
 
-    continuation_renderer = ChunkRawRenderer()
-    continued_run = await adapter.invoke(
+    continuation_chunks: list[litellm.ModelResponseStream] = []
+    async for chunk in adapter.invoke_openai_stream(
         input="What was the result? Reply in one short sentence.",
         existing_run=initial_run,
-        on_chunk=continuation_renderer.render_chunk,
-    )
+    ):
+        continuation_chunks.append(chunk)
 
-    assert continued_run.id == initial_run.id
-    assert continued_run.trace is not None
-    assert len(continued_run.trace) > initial_trace_len
-    assert continuation_renderer.get_stream_text() is not None
-    assert len(continuation_renderer.chunks) > 0
+    _dump_paid_test_output(request, continuation_chunks=continuation_chunks)
+    assert len(continuation_chunks) > 0, "No continuation chunks collected"

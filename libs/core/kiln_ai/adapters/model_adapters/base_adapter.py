@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import json
+import uuid
 from abc import ABCMeta, abstractmethod
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Dict, Tuple
+from typing import TYPE_CHECKING, AsyncIterator, Dict, Tuple
 
 from litellm.types.utils import ModelResponseStream
 
@@ -15,6 +17,13 @@ from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     StructuredOutputMode,
     default_structured_output_mode_for_model_provider,
+)
+from kiln_ai.adapters.model_adapters.adapter_stream import AdapterStreamResult
+from kiln_ai.adapters.model_adapters.stream_events import (
+    AiSdkEventType,
+    AiSdkStreamConverter,
+    AiSdkStreamEvent,
+    ToolCallEvent,
 )
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.parsers.parser_registry import model_parser_from_id
@@ -52,7 +61,8 @@ from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
-StreamCallback = Callable[[ModelResponseStream], Awaitable[None]]
+if TYPE_CHECKING:
+    from kiln_ai.adapters.model_adapters.adapter_stream import AdapterStream
 
 
 @dataclass
@@ -133,10 +143,9 @@ class BaseAdapter(metaclass=ABCMeta):
         input: InputType,
         input_source: DataSource | None = None,
         existing_run: TaskRun | None = None,
-        on_chunk: StreamCallback | None = None,
     ) -> TaskRun:
         run_output, _ = await self.invoke_returning_run_output(
-            input, input_source, existing_run, on_chunk=on_chunk
+            input, input_source, existing_run
         )
         return run_output
 
@@ -145,7 +154,6 @@ class BaseAdapter(metaclass=ABCMeta):
         input: InputType,
         input_source: DataSource | None = None,
         existing_run: TaskRun | None = None,
-        on_chunk: StreamCallback | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # validate input, allowing arrays
         if self.input_schema is not None:
@@ -173,9 +181,7 @@ class BaseAdapter(metaclass=ABCMeta):
             formatted_input = formatter.format_input(input)
 
         # Run
-        run_output, usage = await self._run(
-            formatted_input, prior_trace=prior_trace, on_chunk=on_chunk
-        )
+        run_output, usage = await self._run(formatted_input, prior_trace=prior_trace)
 
         # Parse
         provider = self.model_provider()
@@ -265,7 +271,6 @@ class BaseAdapter(metaclass=ABCMeta):
         input: InputType,
         input_source: DataSource | None = None,
         existing_run: TaskRun | None = None,
-        on_chunk: StreamCallback | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # Determine if this is the root agent (no existing run context)
         is_root_agent = get_agent_run_id() is None
@@ -276,7 +281,7 @@ class BaseAdapter(metaclass=ABCMeta):
 
         try:
             return await self._run_returning_run_output(
-                input, input_source, existing_run, on_chunk=on_chunk
+                input, input_source, existing_run
             )
         finally:
             if is_root_agent:
@@ -286,6 +291,210 @@ class BaseAdapter(metaclass=ABCMeta):
                         await MCPSessionManager.shared().cleanup_session(run_id)
                 finally:
                     clear_agent_run_id()
+
+    async def invoke_openai_stream(
+        self,
+        input: InputType,
+        input_source: DataSource | None = None,
+        existing_run: TaskRun | None = None,
+    ) -> AsyncIterator[ModelResponseStream]:
+        """Stream raw OpenAI-protocol chunks for the task execution.
+
+        Yields ``ModelResponseStream`` chunks as they arrive from the model.
+        After the iterator is exhausted the run has been validated and saved
+        (when configured).  Tool-call rounds happen internally and are not
+        surfaced; use ``invoke_ai_sdk_stream`` if you need tool-call events.
+        """
+        is_root_agent = get_agent_run_id() is None
+        if is_root_agent:
+            set_agent_run_id(generate_agent_run_id())
+
+        try:
+            adapter_stream = self._prepare_stream(input, existing_run)
+
+            async for event in adapter_stream:
+                if isinstance(event, ModelResponseStream):
+                    yield event
+
+            self._finalize_stream(adapter_stream, input, input_source, existing_run)
+        finally:
+            if is_root_agent:
+                try:
+                    run_id = get_agent_run_id()
+                    if run_id:
+                        await MCPSessionManager.shared().cleanup_session(run_id)
+                finally:
+                    clear_agent_run_id()
+
+    async def invoke_ai_sdk_stream(
+        self,
+        input: InputType,
+        input_source: DataSource | None = None,
+        existing_run: TaskRun | None = None,
+    ) -> AsyncIterator[AiSdkStreamEvent]:
+        """Stream AI SDK protocol events for the task execution.
+
+        Yields ``AiSdkStreamEvent`` instances covering text, reasoning,
+        tool-call lifecycle, step boundaries, and control events.
+        """
+        is_root_agent = get_agent_run_id() is None
+        if is_root_agent:
+            set_agent_run_id(generate_agent_run_id())
+
+        try:
+            adapter_stream = self._prepare_stream(input, existing_run)
+
+            message_id = f"msg-{uuid.uuid4().hex}"
+            converter = AiSdkStreamConverter()
+
+            yield AiSdkStreamEvent(AiSdkEventType.START, {"messageId": message_id})
+
+            yield AiSdkStreamEvent(AiSdkEventType.START_STEP)
+
+            async for event in adapter_stream:
+                # ModelResponseStream events come from LiteLLM's own OpenAI compatible streaming
+                if isinstance(event, ModelResponseStream):
+                    for ai_event in converter.convert_chunk(event):
+                        yield ai_event
+                # ToolCallEvent events come from ourselves and are emitted on rounds of toolcalls
+                elif isinstance(event, ToolCallEvent):
+                    for ai_event in converter.convert_tool_event(event):
+                        yield ai_event
+
+            for ai_event in converter.finalize():
+                yield ai_event
+
+            yield AiSdkStreamEvent(AiSdkEventType.FINISH_STEP)
+
+            self._finalize_stream(adapter_stream, input, input_source, existing_run)
+        finally:
+            if is_root_agent:
+                try:
+                    run_id = get_agent_run_id()
+                    if run_id:
+                        await MCPSessionManager.shared().cleanup_session(run_id)
+                finally:
+                    clear_agent_run_id()
+
+    def _prepare_stream(
+        self,
+        input: InputType,
+        existing_run: TaskRun | None,
+    ) -> AdapterStream:
+        if self.input_schema is not None:
+            validate_schema_with_value_error(
+                input,
+                self.input_schema,
+                "This task requires a specific input schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+                require_object=False,
+            )
+
+        if existing_run is not None and (
+            not existing_run.trace or len(existing_run.trace) == 0
+        ):
+            raise ValueError(
+                "Run has no trace. Cannot continue session without conversation history."
+            )
+
+        prior_trace = existing_run.trace if existing_run else None
+
+        formatted_input = input
+        formatter_id = self.model_provider().formatter
+        if formatter_id is not None:
+            formatter = request_formatter_from_id(formatter_id)
+            formatted_input = formatter.format_input(input)
+
+        return self._create_run_stream(formatted_input, prior_trace)
+
+    def _finalize_stream(
+        self,
+        adapter_stream: AdapterStream,
+        input: InputType,
+        input_source: DataSource | None,
+        existing_run: TaskRun | None,
+    ) -> TaskRun:
+        """Streaming invocations are only concerned with passing through events as they come in.
+        At the end of the stream, we still need to validate the output, create a run and everything
+        else that a non-streaming invocation would do.
+        """
+
+        result: AdapterStreamResult = adapter_stream.result
+        run_output = result.run_output
+        usage = result.usage
+
+        provider = self.model_provider()
+        parser = model_parser_from_id(provider.parser)
+        parsed_output = parser.parse_output(original_output=run_output)
+
+        if self.output_schema is not None:
+            if isinstance(parsed_output.output, str):
+                parsed_output.output = parse_json_string(parsed_output.output)
+            if not isinstance(parsed_output.output, dict):
+                raise RuntimeError(
+                    f"structured response is not a dict: {parsed_output.output}"
+                )
+            validate_schema_with_value_error(
+                parsed_output.output,
+                self.output_schema,
+                "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+            )
+        else:
+            if not isinstance(parsed_output.output, str):
+                raise RuntimeError(
+                    f"response is not a string for non-structured task: {parsed_output.output}"
+                )
+
+        trace_has_toolcalls = parsed_output.trace is not None and any(
+            message.get("role", None) == "tool" for message in parsed_output.trace
+        )
+        if (
+            provider.reasoning_capable
+            and (
+                not parsed_output.intermediate_outputs
+                or "reasoning" not in parsed_output.intermediate_outputs
+            )
+            and not (
+                provider.reasoning_optional_for_structured_output
+                and self.has_structured_output()
+            )
+            and not trace_has_toolcalls
+        ):
+            raise RuntimeError(
+                "Reasoning is required for this model, but no reasoning was returned."
+            )
+
+        if existing_run is not None:
+            merged_output = RunOutput(
+                output=parsed_output.output,
+                intermediate_outputs=parsed_output.intermediate_outputs
+                or run_output.intermediate_outputs,
+                output_logprobs=parsed_output.output_logprobs
+                or run_output.output_logprobs,
+                trace=run_output.trace,
+            )
+            run = self.generate_run(
+                input,
+                input_source,
+                merged_output,
+                usage,
+                run_output.trace,
+                existing_run=existing_run,
+            )
+        else:
+            run = self.generate_run(
+                input, input_source, parsed_output, usage, run_output.trace
+            )
+
+        if (
+            self.base_adapter_config.allow_saving
+            and Config.shared().autosave_runs
+            and self.task.path is not None
+        ):
+            run.save_to_file()
+        elif existing_run is None:
+            run.id = None
+
+        return run
 
     def has_structured_output(self) -> bool:
         return self.output_schema is not None
@@ -299,9 +508,16 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: InputType,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
-        on_chunk: StreamCallback | None = None,
     ) -> Tuple[RunOutput, Usage | None]:
         pass
+
+    def _create_run_stream(
+        self,
+        input: InputType,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
+    ) -> AdapterStream:
+        """Create a stream for the adapter. Implementations must override this method to support streaming."""
+        raise NotImplementedError("Streaming is not supported for this adapter type")
 
     def build_prompt(self) -> str:
         if self.prompt_builder is None:

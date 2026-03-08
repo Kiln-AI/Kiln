@@ -1344,7 +1344,7 @@ async def test_run_with_prior_trace_uses_multiturn_formatter(mock_task):
     adapter.build_chat_formatter = capturing_build
 
     async def mock_run_model_turn(
-        provider, prior_messages, top_logprobs, skip_response_format, on_chunk=None
+        provider, prior_messages, top_logprobs, skip_response_format
     ):
         extended = list(prior_messages)
         extended.append({"role": "assistant", "content": "How can I help?"})

@@ -89,15 +89,7 @@ async def run_simple_task_with_tools(
 
     with patch.object(adapter, "available_tools", return_value=mock_math_tools):
         if simplified:
-            # test our chunking handler also works e2e on real models
-            received_chunks = []
-
-            async def on_chunk_handler(chunk):
-                received_chunks.append(chunk)
-
-            run = await adapter.invoke("what is 2+2", on_chunk=on_chunk_handler)
-
-            assert len(received_chunks) > 0
+            run = await adapter.invoke("what is 2+2")
 
             # Verify that AddTool.run was called with correct parameters
             add_spy.run.assert_called()
@@ -297,9 +289,7 @@ async def test_tools_simplied_mocked(tmp_path):
 
     responses = [mock_response_1, mock_response_2]
 
-    async def mock_acompletion_checking_response(self, on_chunk=None, **kwargs):
-        if on_chunk is not None:
-            await on_chunk(Mock())
+    async def mock_acompletion_checking_response(self, **kwargs):
         response = responses.pop(0)
         return response, response.choices[0]
 
