@@ -5,6 +5,7 @@ import pytest
 # Create a FastAPI app and connect the prompt_api
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from kiln_server.custom_errors import connect_custom_errors
 from kiln_ai.adapters.prompt_builders import BasePromptBuilder
 from kiln_ai.datamodel import Task
 
@@ -14,6 +15,7 @@ from app.desktop.studio_server.prompt_api import connect_prompt_api
 @pytest.fixture
 def client():
     app = FastAPI()
+    connect_custom_errors(app)
     connect_prompt_api(app)
     return TestClient(app)
 

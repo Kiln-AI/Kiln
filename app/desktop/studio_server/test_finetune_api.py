@@ -4,6 +4,18 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
+from app.desktop.studio_server.finetune_api import (
+    CreateDatasetSplitRequest,
+    CreateFinetuneRequest,
+    DatasetSplitType,
+    FinetuneProviderModel,
+    compute_finetune_tag_info,
+    connect_fine_tune_api,
+    data_strategies_from_finetune_id,
+    fetch_fireworks_finetune_models,
+    infer_data_strategies_for_model,
+    thinking_instructions_from_request,
+)
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.adapters.fine_tune.base_finetune import FineTuneParameter
@@ -39,20 +51,8 @@ from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     ToolsRunConfig,
 )
+from kiln_server.custom_errors import connect_custom_errors
 from pydantic import BaseModel
-
-from app.desktop.studio_server.finetune_api import (
-    CreateDatasetSplitRequest,
-    CreateFinetuneRequest,
-    DatasetSplitType,
-    FinetuneProviderModel,
-    compute_finetune_tag_info,
-    connect_fine_tune_api,
-    data_strategies_from_finetune_id,
-    fetch_fireworks_finetune_models,
-    infer_data_strategies_for_model,
-    thinking_instructions_from_request,
-)
 
 
 @pytest.fixture
@@ -173,6 +173,7 @@ def mock_task_from_id_disk_backed(test_task, monkeypatch):
 @pytest.fixture
 def client():
     app = FastAPI()
+    connect_custom_errors(app)
     connect_fine_tune_api(app)
     return TestClient(app)
 
@@ -391,7 +392,7 @@ def test_get_finetune_hyperparameters_invalid_provider(client, mock_finetune_reg
 
     assert response.status_code == 400
     assert (
-        response.json()["detail"] == "Fine tune provider 'invalid_provider' not found"
+        response.json()["message"] == "Fine tune provider 'invalid_provider' not found"
     )
 
 
@@ -660,7 +661,7 @@ def test_create_finetune_invalid_provider(client, mock_task_from_id_disk_backed)
 
     assert response.status_code == 400
     assert (
-        response.json()["detail"] == "Fine tune provider 'invalid_provider' not found"
+        response.json()["message"] == "Fine tune provider 'invalid_provider' not found"
     )
 
 
@@ -688,7 +689,7 @@ def test_create_finetune_invalid_dataset(
 
     assert response.status_code == 404
     assert (
-        response.json()["detail"]
+        response.json()["message"]
         == "Dataset split with ID 'invalid_split_id' not found"
     )
 
@@ -756,7 +757,7 @@ def test_create_finetune_no_system_message(
 
     assert response.status_code == 400
     assert (
-        response.json()["detail"]
+        response.json()["message"]
         == "System message generator or custom system message is required"
     )
 
@@ -864,7 +865,7 @@ def test_create_finetune_prompt_builder_error(
 
     assert response.status_code == 400
     assert (
-        response.json()["detail"]
+        response.json()["message"]
         == "Error generating system message using generator: test_prompt_builder. Source error: Invalid prompt configuration"
     )
 
@@ -952,7 +953,7 @@ def test_download_dataset_jsonl_invalid_format(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "Dataset format 'invalid_format' not found"
+    assert response.json()["message"] == "Dataset format 'invalid_format' not found"
 
 
 def test_download_dataset_jsonl_data_strategy_invalid(
@@ -966,7 +967,7 @@ def test_download_dataset_jsonl_data_strategy_invalid(
 
     assert response.status_code == 400
     assert (
-        response.json()["detail"] == "Data strategy 'invalid_data_strategy' not found"
+        response.json()["message"] == "Data strategy 'invalid_data_strategy' not found"
     )
 
 
@@ -981,7 +982,7 @@ def test_download_dataset_jsonl_invalid_dataset(
 
     assert response.status_code == 404
     assert (
-        response.json()["detail"] == "Dataset split with ID 'invalid_split' not found"
+        response.json()["message"] == "Dataset split with ID 'invalid_split' not found"
     )
 
 
@@ -996,7 +997,8 @@ def test_download_dataset_jsonl_invalid_split(
 
     assert response.status_code == 404
     assert (
-        response.json()["detail"] == "Dataset split with name 'invalid_split' not found"
+        response.json()["message"]
+        == "Dataset split with name 'invalid_split' not found"
     )
 
 
@@ -1071,7 +1073,7 @@ def test_get_finetune_not_found(client, mock_task_from_id_disk_backed):
     response = client.get("/api/projects/project1/tasks/task1/finetunes/nonexistent")
 
     assert response.status_code == 404
-    assert response.json()["detail"] == "Finetune with ID 'nonexistent' not found"
+    assert response.json()["message"] == "Finetune with ID 'nonexistent' not found"
 
     mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
 
