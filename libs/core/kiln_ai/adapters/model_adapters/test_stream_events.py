@@ -266,9 +266,7 @@ class TestAiSdkStreamConverter:
             "text-end must come before tool-input-start"
         )
 
-        text_end_event = next(
-            e for e in events2 if e.type == AiSdkEventType.TEXT_END
-        )
+        text_end_event = next(e for e in events2 if e.type == AiSdkEventType.TEXT_END)
         assert text_end_event.payload["id"] == text_id_1
 
     def test_text_restarts_with_new_id_after_tool_calls(self):

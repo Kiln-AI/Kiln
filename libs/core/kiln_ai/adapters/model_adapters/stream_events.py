@@ -95,7 +95,7 @@ class AiSdkStreamConverter:
                 continue
 
             reasoning_content = getattr(delta, "reasoning_content", None)
-            if reasoning_content is not None:
+            if reasoning_content:
                 if not self._reasoning_started:
                     self._reasoning_block_count += 1
                     self._reasoning_id = f"reasoning-{uuid.uuid4().hex[:12]}"
@@ -298,3 +298,7 @@ class AiSdkStreamConverter:
         """Reset per-step state between LLM calls in a multi-step flow."""
         self._tool_calls_state = {}
         self._finish_reason = None
+        self._text_started = False
+        self._reasoning_started = False
+        self._text_id = f"text-{uuid.uuid4().hex[:12]}"
+        self._reasoning_id = f"reasoning-{uuid.uuid4().hex[:12]}"
