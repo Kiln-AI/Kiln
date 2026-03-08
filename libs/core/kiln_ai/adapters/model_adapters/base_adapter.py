@@ -351,13 +351,18 @@ class BaseAdapter(metaclass=ABCMeta):
 
             yield AiSdkStreamEvent(AiSdkEventType.START_STEP)
 
+            last_event_was_tool_call = False
             async for event in adapter_stream:
                 # ModelResponseStream events come from LiteLLM's own OpenAI compatible streaming
                 if isinstance(event, ModelResponseStream):
+                    if last_event_was_tool_call:
+                        converter.reset_for_next_step()
+                        last_event_was_tool_call = False
                     for ai_event in converter.convert_chunk(event):
                         yield ai_event
                 # ToolCallEvent events come from ourselves and are emitted on rounds of toolcalls
                 elif isinstance(event, ToolCallEvent):
+                    last_event_was_tool_call = True
                     for ai_event in converter.convert_tool_event(event):
                         yield ai_event
 

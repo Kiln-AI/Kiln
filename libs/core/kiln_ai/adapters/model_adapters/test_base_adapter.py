@@ -1,6 +1,13 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from litellm.types.utils import (
+    ChatCompletionDeltaToolCall,
+    Delta,
+    Function,
+    ModelResponseStream,
+    StreamingChoices,
+)
 
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import (
@@ -8,14 +15,13 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
     BaseAdapter,
     RunOutput,
 )
-from kiln_ai.adapters.prompt_builders import BasePromptBuilder
-from kiln_ai.datamodel import (
-    DataSource,
-    DataSourceType,
-    Task,
-    TaskOutput,
-    TaskRun,
+from kiln_ai.adapters.model_adapters.stream_events import (
+    AiSdkEventType,
+    ToolCallEvent,
+    ToolCallEventType,
 )
+from kiln_ai.adapters.prompt_builders import BasePromptBuilder
+from kiln_ai.datamodel import DataSource, DataSourceType, Task, TaskOutput, TaskRun
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy, ModelProviderName
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
@@ -1087,3 +1093,65 @@ class TestStreamMethods:
         with pytest.raises(NotImplementedError, match="Streaming is not supported"):
             async for _event in stream_adapter.invoke_ai_sdk_stream("test input"):
                 pass
+
+    @pytest.mark.asyncio
+    async def test_invoke_ai_sdk_stream_resets_converter_between_tool_rounds(
+        self, stream_adapter
+    ):
+        """tool-input-start must be emitted for a new tool call at index 0 after a tool round."""
+
+        def _make_tool_chunk(call_id: str, name: str) -> ModelResponseStream:
+            func = Function(name=name, arguments='{"x":1}')
+            tc = ChatCompletionDeltaToolCall(index=0, function=func)
+            tc.id = call_id
+            delta = Delta(tool_calls=[tc])
+            choice = StreamingChoices(index=0, delta=delta, finish_reason=None)
+            return ModelResponseStream(id="test", choices=[choice])
+
+        round1_chunk = _make_tool_chunk("call_r1", "tool_a")
+        round2_chunk = _make_tool_chunk("call_r2", "tool_b")
+
+        fake_events = [
+            round1_chunk,
+            ToolCallEvent(
+                event_type=ToolCallEventType.INPUT_AVAILABLE,
+                tool_call_id="call_r1",
+                tool_name="tool_a",
+                arguments={"x": 1},
+            ),
+            ToolCallEvent(
+                event_type=ToolCallEventType.OUTPUT_AVAILABLE,
+                tool_call_id="call_r1",
+                tool_name="tool_a",
+                result="done",
+            ),
+            round2_chunk,
+        ]
+
+        class FakeAdapterStream:
+            result = MagicMock()
+
+            async def __aiter__(self):
+                for event in fake_events:
+                    yield event
+
+        with (
+            patch.object(
+                stream_adapter,
+                "_prepare_stream",
+                return_value=FakeAdapterStream(),
+            ),
+            patch.object(stream_adapter, "_finalize_stream"),
+        ):
+            events = []
+            async for event in stream_adapter.invoke_ai_sdk_stream("test input"):
+                events.append(event)
+
+        tool_input_starts = [
+            e for e in events if e.type == AiSdkEventType.TOOL_INPUT_START
+        ]
+        assert len(tool_input_starts) == 2, (
+            "tool-input-start must fire once per tool-call round"
+        )
+        assert tool_input_starts[0].payload["toolCallId"] == "call_r1"
+        assert tool_input_starts[1].payload["toolCallId"] == "call_r2"

@@ -223,3 +223,41 @@ class TestAiSdkStreamConverter:
         assert len(finish_events) == 1
         meta = finish_events[0].payload.get("messageMetadata", {})
         assert meta.get("finishReason") == "stop"
+
+    def test_tool_input_start_reemitted_after_reset(self):
+        """After reset_for_next_step, tool-input-start must fire again for index 0."""
+        converter = AiSdkStreamConverter()
+
+        tc_round1 = _make_tool_call_delta(
+            index=0, call_id="call_r1", name="search", arguments='{"q":"hi"}'
+        )
+        events_r1 = converter.convert_chunk(_make_chunk(tool_calls=[tc_round1]))
+        starts_r1 = [e for e in events_r1 if e.type == AiSdkEventType.TOOL_INPUT_START]
+        assert len(starts_r1) == 1
+        assert starts_r1[0].payload["toolCallId"] == "call_r1"
+
+        converter.reset_for_next_step()
+
+        tc_round2 = _make_tool_call_delta(
+            index=0, call_id="call_r2", name="search", arguments='{"q":"world"}'
+        )
+        events_r2 = converter.convert_chunk(_make_chunk(tool_calls=[tc_round2]))
+        starts_r2 = [e for e in events_r2 if e.type == AiSdkEventType.TOOL_INPUT_START]
+        assert len(starts_r2) == 1, "tool-input-start must be re-emitted for index 0 after reset"
+        assert starts_r2[0].payload["toolCallId"] == "call_r2"
+
+    def test_tool_input_start_not_reemitted_without_reset(self):
+        """Without reset, a second tool call at index 0 must NOT re-emit tool-input-start."""
+        converter = AiSdkStreamConverter()
+
+        tc_round1 = _make_tool_call_delta(
+            index=0, call_id="call_r1", name="search", arguments='{"q":"hi"}'
+        )
+        converter.convert_chunk(_make_chunk(tool_calls=[tc_round1]))
+
+        tc_round2 = _make_tool_call_delta(
+            index=0, call_id="call_r2", name="search", arguments='{"q":"world"}'
+        )
+        events_r2 = converter.convert_chunk(_make_chunk(tool_calls=[tc_round2]))
+        starts_r2 = [e for e in events_r2 if e.type == AiSdkEventType.TOOL_INPUT_START]
+        assert len(starts_r2) == 0, "Without reset, started=True blocks duplicate tool-input-start"
