@@ -1,6 +1,7 @@
 # Phase 2: Skill Tool Implementation
 
 ## Goal
+
 Implement the `SkillTool` that agents use to discover and load skills at runtime. Integrate into the tool registry and run config.
 
 ## Files to Create/Modify
@@ -22,24 +23,24 @@ from kiln_ai.datamodel.tool_id import ToolId
 
 class SkillTool(KilnToolInterface):
     """Tool that provides agents access to skills.
-    
+
     Lists available skills in the tool description. Agents call it
     with a skill name to load the full instructions.
     """
-    
+
     def __init__(self, tool_id: str, skills: list[Skill]):
         self._tool_id = tool_id
-        self._skills = {s.skill_name: s for s in skills}
-    
+        self._skills = {s.name: s for s in skills}
+
     async def id(self) -> ToolId:
         return self._tool_id
-    
+
     async def name(self) -> str:
         return "skill"
-    
+
     async def description(self) -> str:
         skills_xml = "\n".join(
-            f'  <skill>\n    <name>{s.skill_name}</name>\n    <description>{s.skill_description}</description>\n  </skill>'
+            f'  <skill>\n    <name>{s.name}</name>\n    <description>{s.description}</description>\n  </skill>'
             for s in self._skills.values()
         )
         return (
@@ -48,7 +49,7 @@ class SkillTool(KilnToolInterface):
             "full instructions.\n\n"
             f"<available_skills>\n{skills_xml}\n</available_skills>"
         )
-    
+
     async def toolcall_definition(self) -> ToolCallDefinition:
         return {
             "type": "function",
@@ -67,22 +68,22 @@ class SkillTool(KilnToolInterface):
                 },
             },
         }
-    
+
     async def run(
         self, context: ToolCallContext | None = None, **kwargs
     ) -> ToolCallResult:
         skill_name = kwargs.get("name")
-        
+
         if not skill_name:
             return ToolCallResult(output="Error: 'name' parameter is required.")
-        
+
         skill = self._skills.get(skill_name)
         if skill is None:
             available = ", ".join(self._skills.keys())
             return ToolCallResult(
                 output=f"Error: Skill '{skill_name}' not found. Available skills: {available}"
             )
-        
+
         return ToolCallResult(output=skill.body)
 ```
 
@@ -129,18 +130,18 @@ elif tool_id.startswith(SKILL_TOOL_ID_PREFIX):
         raise ValueError(
             f"Unable to resolve tool from id: {tool_id}. Requires a parent project/task."
         )
-    
+
     skill_id = skill_id_from_tool_id(tool_id)
     skill = Skill.from_id_and_parent_path(skill_id, project.path)
     if skill is None:
         raise ValueError(
             f"Skill not found: {skill_id} in project {project.id}"
         )
-    
+
     return SkillTool(tool_id, [skill])
 ```
 
-**Important design note**: The `tool_from_id` approach returns one tool per skill ID. But the *preferred* pattern is to have a **single SkillTool per run** that bundles all selected skills together (so the agent sees one `skill` tool with all available skills listed). This means:
+**Important design note**: The `tool_from_id` approach returns one tool per skill ID. But the _preferred_ pattern is to have a **single SkillTool per run** that bundles all selected skills together (so the agent sees one `skill` tool with all available skills listed). This means:
 
 - The run config stores individual skill tool IDs: `["kiln_tool::skill::123", "kiln_tool::skill::456"]`
 - But at runtime, the adapter should **consolidate** these into a single SkillTool with all referenced skills
@@ -153,18 +154,18 @@ Add skill consolidation to `available_tools()`:
 ```python
 async def available_tools(self) -> list[KilnToolInterface]:
     # ... existing tool resolution ...
-    
+
     # Consolidate skill tools into a single SkillTool
     skill_tools = [t for t in tools if isinstance(t, SkillTool)]
     non_skill_tools = [t for t in tools if not isinstance(t, SkillTool)]
-    
+
     if skill_tools:
         all_skills = []
         for st in skill_tools:
             all_skills.extend(st._skills.values())
         consolidated = SkillTool("kiln_tool::skill", all_skills)
         non_skill_tools.append(consolidated)
-    
+
     return non_skill_tools
 ```
 
@@ -173,12 +174,12 @@ async def available_tools(self) -> list[KilnToolInterface]:
 Tests:
 
 1. **Tool definition tests**:
-   - `toolcall_definition()` returns correct schema with name/resource params
+   - `toolcall_definition()` returns correct schema with name param
    - `description()` includes XML listing of all skills
    - `name()` returns `"skill"`
 
 2. **Skill loading tests**:
-   - `run(name="valid-skill")` returns `skill.body` content
+   - `run(name="valid_skill")` returns `skill.body` content
    - `run(name="unknown")` returns error with available skill names
    - `run()` with no name returns error
 
@@ -192,4 +193,4 @@ Tests:
 - Available skills are listed in XML in the tool description (OpenCode pattern), not in the system prompt
 - No `resource` parameter in V1 — add when import/export with references/assets is built
 - Skill tool IDs in the run config are individual (`kiln_tool::skill::123`), but at runtime they merge into one tool
-- Error messages are informative: listing available skills/resources when not found
+- Error messages are informative: listing available skills when not found

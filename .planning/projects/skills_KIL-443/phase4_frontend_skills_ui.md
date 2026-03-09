@@ -1,6 +1,7 @@
 # Phase 4: Frontend - Skills Management UI
 
 ## Goal
+
 Create the Skills management pages: list, create, and detail/edit views. Follow the existing Intro → List → Create pattern used by tools and RAG configs.
 
 ## Route Structure
@@ -25,11 +26,13 @@ app/web_ui/src/routes/(app)/settings/
 Skills list page. Shows an intro screen when no skills exist, a table when skills are present.
 
 **Empty state**: Use `Intro` component with:
+
 - Title: "Agent Skills"
 - Description explaining what skills are and how they help agents
 - Action button: "Create Skill" linking to create page
 
 **List state**: Use `AppPage` with:
+
 - Title: "Skills"
 - Action button: "Create Skill"
 - Table/list of skills showing: name, description, created date
@@ -44,12 +47,12 @@ Pattern reference: Follow `settings/manage_tools/[project_id]/+page.svelte` clos
   import { page } from "$app/stores"
   import { client } from "$lib/api_client"
   import { onMount } from "svelte"
-  
+
   $: project_id = $page.params.project_id
-  
+
   let skills: Skill[] = []
   let loading = true
-  
+
   onMount(async () => {
     const { data } = await client.GET("/api/projects/{project_id}/skills", {
       params: { path: { project_id } },
@@ -87,8 +90,9 @@ Pattern reference: Follow `settings/manage_tools/[project_id]/+page.svelte` clos
 Create skill form using `FormContainer` and `FormElement`.
 
 Fields:
-- **Name** (`skill_name`): text input with validation hint (lowercase, hyphens only). FormElement with custom validation.
-- **Description** (`skill_description`): textarea, max 1024 chars. Hint about what makes a good description.
+
+- **Name** (`name`): text input with validation hint (lowercase, underscores only). FormElement with custom validation.
+- **Description** (`description`): textarea, max 1024 chars. Hint about what makes a good description.
 - **Instructions** (`body`): large textarea for the skill body content. This is the main skill content.
 
 Pattern reference: Similar to the prompt create page or RAG config create.
@@ -101,19 +105,19 @@ Pattern reference: Similar to the prompt create page or RAG config create.
   import { client } from "$lib/api_client"
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
-  
+
   $: project_id = $page.params.project_id
-  
-  let skill_name = ""
-  let skill_description = ""
+
+  let name = ""
+  let description = ""
   let body = ""
-  
+
   async function handleSubmit() {
     const { data, error } = await client.POST(
       "/api/projects/{project_id}/skills",
       {
         params: { path: { project_id } },
-        body: { skill_name, skill_description, body },
+        body: { name, description, body },
       }
     )
     if (data) {
@@ -130,14 +134,14 @@ Pattern reference: Similar to the prompt create page or RAG config create.
   <FormContainer submit_label="Create Skill" on:submit={handleSubmit}>
     <FormElement
       label="Name"
-      info_description="Lowercase letters, numbers, and hyphens only. E.g. 'code-review'"
-      bind:value={skill_name}
+      info_description="Lowercase letters, numbers, and underscores only. E.g. 'code_review'"
+      bind:value={name}
     />
     <FormElement
       label="Description"
       inputType="textarea"
       info_description="Describe what this skill does and when to use it. This helps agents decide when to load the skill."
-      bind:value={skill_description}
+      bind:value={description}
     />
     <FormElement
       label="Instructions"
@@ -156,6 +160,7 @@ Detail/edit page for a single skill. Shows skill properties and allows editing.
 Uses `AppPage` + `PropertyList` for display, `EditDialog` for editing fields.
 
 Fields shown:
+
 - Name (read-only after creation, since it's used for directory naming)
 - Description (editable)
 - Instructions/body (editable, large textarea)
@@ -172,7 +177,6 @@ Add TypeScript type re-exports for the Skill schema once the API schema is regen
 ## Key Design Notes
 
 - Skills are project-level (not task-level), living under Settings like tools management
-- The `name` field validation should give clear feedback: show the regex rules, auto-suggest converting spaces to hyphens
+- The `name` field validation should give clear feedback: show the snake_case rules, auto-suggest converting spaces to underscores
 - The `body` (instructions) textarea should be generous in size — this is the main content authors will write
-- Consider adding a preview panel that shows how the SKILL.md will look (nice to have, not required for V1)
 - After creating/editing a skill, the API schema needs to be regenerated (`generate_schema.sh`)
