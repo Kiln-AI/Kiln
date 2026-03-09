@@ -4510,6 +4510,7 @@ built_in_models: List[KilnModel] = [
                 model_id="qwen/qwen3.5-35b-a3b",
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 # 3B active params: echoes the JSON schema instead of generating data
+                supports_structured_output=False,
                 supports_data_gen=False,
                 supports_function_calling=True,
                 supports_doc_extraction=True,
