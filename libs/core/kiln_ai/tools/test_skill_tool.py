@@ -198,7 +198,7 @@ class TestSkillConsolidation:
 
         assert len(result) == 1
         assert isinstance(result[0], SkillTool)
-        assert set(result[0]._skills.keys()) == {"a", "b"}
+        assert {s.name for s in result[0].skills} == {"a", "b"}
 
     def test_single_skill_tool_not_consolidated(self):
         from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter
@@ -233,7 +233,7 @@ class TestSkillConsolidation:
         assert len(result) == 2
         assert add_tool in result
         consolidated = next(t for t in result if isinstance(t, SkillTool))
-        assert set(consolidated._skills.keys()) == {"x", "y"}
+        assert {s.name for s in consolidated.skills} == {"x", "y"}
 
     async def test_consolidated_tool_loads_all_skills(self):
         from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter

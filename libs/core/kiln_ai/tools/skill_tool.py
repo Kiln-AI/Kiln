@@ -19,6 +19,10 @@ class SkillTool(KilnToolInterface):
         self._tool_id = tool_id
         self._skills = {s.name: s for s in skills}
 
+    @property
+    def skills(self) -> list[Skill]:
+        return list(self._skills.values())
+
     async def id(self) -> ToolId:
         return self._tool_id
 

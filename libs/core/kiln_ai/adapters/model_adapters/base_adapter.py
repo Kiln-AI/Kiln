@@ -451,8 +451,8 @@ class BaseAdapter(metaclass=ABCMeta):
         non_skill_tools = [t for t in tools if not isinstance(t, SkillTool)]
         all_skills = []
         for st in skill_tools:
-            all_skills.extend(st._skills.values())
+            all_skills.extend(st.skills)
 
-        consolidated = SkillTool("kiln_tool::skill", all_skills)
+        consolidated = SkillTool("kiln_tool::skill::_consolidated", all_skills)
         non_skill_tools.append(consolidated)
         return non_skill_tools
