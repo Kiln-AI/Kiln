@@ -29,6 +29,7 @@ class Skill(KilnParentedModel):
     )
     body: str = Field(
         description="The markdown body content (instructions) of the skill.",
+        min_length=1,
     )
 
     @classmethod
