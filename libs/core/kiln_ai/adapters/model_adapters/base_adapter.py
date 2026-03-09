@@ -449,9 +449,14 @@ class BaseAdapter(metaclass=ABCMeta):
             return tools
 
         non_skill_tools = [t for t in tools if not isinstance(t, SkillTool)]
-        all_skills = []
+        all_skills: list = []
         for st in skill_tools:
-            all_skills.extend(st.skills)
+            for skill in st.skills:
+                if skill.name in {s.name for s in all_skills}:
+                    raise ValueError(
+                        f"Duplicate skill name '{skill.name}'. Each skill must have a unique name."
+                    )
+                all_skills.append(skill)
 
         consolidated = SkillTool("kiln_tool::skill::_consolidated", all_skills)
         non_skill_tools.append(consolidated)

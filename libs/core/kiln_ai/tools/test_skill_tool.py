@@ -235,6 +235,17 @@ class TestSkillConsolidation:
         consolidated = next(t for t in result if isinstance(t, SkillTool))
         assert {s.name for s in consolidated.skills} == {"x", "y"}
 
+    def test_duplicate_skill_names_raises(self):
+        from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter
+
+        s1 = _make_skill("dup", "First", "body 1")
+        s2 = _make_skill("dup", "Second", "body 2")
+        st1 = SkillTool("kiln_tool::skill::1", [s1])
+        st2 = SkillTool("kiln_tool::skill::2", [s2])
+
+        with pytest.raises(ValueError, match="Duplicate skill name 'dup'"):
+            BaseAdapter._consolidate_skill_tools([st1, st2])
+
     async def test_consolidated_tool_loads_all_skills(self):
         from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter
 
