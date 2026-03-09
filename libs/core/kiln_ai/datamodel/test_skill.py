@@ -76,6 +76,11 @@ def test_body_required():
         Skill(name="test_skill", description="A test skill.")
 
 
+def test_body_empty_rejected():
+    with pytest.raises(ValidationError):
+        make_skill(body="")
+
+
 # -- Persistence tests --
 
 
