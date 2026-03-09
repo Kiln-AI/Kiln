@@ -1,14 +1,17 @@
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import (
     KILN_TASK_TOOL_ID_PREFIX,
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
     RAG_TOOL_ID_PREFIX,
+    SKILL_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     kiln_task_server_id_from_tool_id,
     mcp_server_and_tool_name_from_id,
     rag_config_id_from_id,
+    skill_id_from_tool_id,
 )
 from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallDefinition
 from kiln_ai.tools.built_in_tools.math_tools import (
@@ -111,6 +114,22 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
         from kiln_ai.tools.rag_tools import RagTool
 
         return RagTool(tool_id, rag_config)
+
+    elif tool_id.startswith(SKILL_TOOL_ID_PREFIX):
+        project = task.parent_project() if task is not None else None
+        if project is None:
+            raise ValueError(
+                f"Unable to resolve tool from id: {tool_id}. Requires a parent project/task."
+            )
+
+        sid = skill_id_from_tool_id(tool_id)
+        skill = Skill.from_id_and_parent_path(sid, project.path)
+        if skill is None:
+            raise ValueError(f"Skill not found: {sid} in project {project.id}")
+
+        from kiln_ai.tools.skill_tool import SkillTool
+
+        return SkillTool(tool_id, [skill])
 
     raise ValueError(f"Tool ID {tool_id} not found in tool registry")
 

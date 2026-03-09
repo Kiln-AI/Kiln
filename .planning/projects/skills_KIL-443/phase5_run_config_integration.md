@@ -1,6 +1,7 @@
 # Phase 5: Frontend - Run Config Integration
 
 ## Goal
+
 Add skills selection to the run config UI so users can choose which skills to include in agent runs.
 
 ## Files to Modify
@@ -33,6 +34,7 @@ The `FancySelect` multi-select dropdown already supports option groups, so skill
 The tools store loads available tools via `GET /api/projects/{project_id}/available_tools`. Since the backend now includes skills in this response, the store should work without changes — it already handles arbitrary `ToolSetType` values.
 
 However, verify that:
+
 1. The store correctly passes through the new "skill" type
 2. Selected skill IDs are included in the run config's `tools_config.tools` list
 
@@ -43,6 +45,7 @@ After regenerating the API schema, ensure the `ToolSetType` enum includes `"skil
 ### Run Config Flow
 
 When a user selects skills:
+
 1. Skills appear in the tools dropdown under a "Skills" group
 2. Selected skill IDs (e.g. `kiln_tool::skill::123`) are stored in `tools_config.tools`
 3. When the run executes, the backend's adapter consolidates skill tool IDs into a single `SkillTool`

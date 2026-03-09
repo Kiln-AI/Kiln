@@ -427,7 +427,8 @@ class BaseAdapter(metaclass=ABCMeta):
 
         tools = [tool_from_id(tool_id, self.task) for tool_id in tool_config.tools]
 
-        # Check each tool has a unique name
+        tools = self._consolidate_skill_tools(tools)
+
         tool_names = [await tool.name() for tool in tools]
         if len(tool_names) != len(set(tool_names)):
             raise ValueError(
@@ -435,3 +436,23 @@ class BaseAdapter(metaclass=ABCMeta):
             )
 
         return tools
+
+    @staticmethod
+    def _consolidate_skill_tools(
+        tools: list[KilnToolInterface],
+    ) -> list[KilnToolInterface]:
+        """Merge multiple individual SkillTools into a single SkillTool with all skills."""
+        from kiln_ai.tools.skill_tool import SkillTool
+
+        skill_tools = [t for t in tools if isinstance(t, SkillTool)]
+        if len(skill_tools) <= 1:
+            return tools
+
+        non_skill_tools = [t for t in tools if not isinstance(t, SkillTool)]
+        all_skills = []
+        for st in skill_tools:
+            all_skills.extend(st._skills.values())
+
+        consolidated = SkillTool("kiln_tool::skill", all_skills)
+        non_skill_tools.append(consolidated)
+        return non_skill_tools

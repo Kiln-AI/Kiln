@@ -56,7 +56,7 @@ def connect_skill_api(app: FastAPI):
         updated = Skill.model_validate(merged)
         updated.path = skill.path
         updated.save_to_file()
-        
+
         return updated
 
     @app.delete("/api/projects/{project_id}/skills/{skill_id}")
