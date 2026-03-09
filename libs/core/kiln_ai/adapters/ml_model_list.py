@@ -61,6 +61,8 @@ class ModelName(str, Enum):
     llama_3_3_70b = "llama_3_3_70b"
     llama_4_maverick = "llama_4_maverick"
     llama_4_scout = "llama_4_scout"
+    gpt_5_4 = "gpt_5_4"
+    gpt_5_4_pro = "gpt_5_4_pro"
     gpt_5_2 = "gpt_5_2"
     gpt_5_2_pro = "gpt_5_2_pro"
     gpt_5_3_chat = "gpt_5_3_chat"
@@ -358,13 +360,149 @@ class KilnModel(BaseModel):
 
 
 built_in_models: List[KilnModel] = [
+    # GPT 5.4
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_5_4,
+        friendly_name="GPT-5.4",
+        featured_rank=1,
+        editorial_notes="OpenAI's most capable GPT model. Powerful reasoning and multimodal.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-5.4",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-5.4",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 5.4 Pro
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_5_4_pro,
+        friendly_name="GPT-5.4 Pro",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-5.4-pro",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-5.4-pro",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 5.3 Instant
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_5_3_chat,
+        friendly_name="GPT-5.3 Instant",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-5.3-chat-latest",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-5.3-chat",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # GPT 5.2
     KilnModel(
         family=ModelFamily.gpt,
         name=ModelName.gpt_5_2,
         friendly_name="GPT-5.2",
-        featured_rank=1,
-        editorial_notes="OpenAI's latest GPT model. Powerful and capable.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openai,
@@ -446,46 +584,6 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
                     # images
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
-                ],
-            ),
-        ],
-    ),
-    # GPT 5.3 Instant
-    KilnModel(
-        family=ModelFamily.gpt,
-        name=ModelName.gpt_5_3_chat,
-        friendly_name="GPT-5.3 Instant",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openai,
-                model_id="gpt-5.3-chat-latest",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_evals=True,
-                supports_doc_extraction=True,
-                supports_vision=True,
-                multimodal_capable=True,
-                multimodal_mime_types=[
-                    KilnMimeType.PDF,
-                    KilnMimeType.TXT,
-                    KilnMimeType.MD,
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
-                ],
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="openai/gpt-5.3-chat",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                suggested_for_evals=True,
-                supports_doc_extraction=True,
-                supports_vision=True,
-                multimodal_capable=True,
-                multimodal_mime_types=[
-                    KilnMimeType.PDF,
-                    KilnMimeType.TXT,
-                    KilnMimeType.MD,
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
@@ -750,8 +848,8 @@ built_in_models: List[KilnModel] = [
                 provider_finetune_id="gpt-4.1-2025-04-14",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
-                suggested_for_evals=True,
                 suggested_for_data_gen=True,
+                suggested_for_evals=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -774,8 +872,6 @@ built_in_models: List[KilnModel] = [
                 # logprobs_openrouter_options does not help this particular
                 # model at the moment
                 # logprobs_openrouter_options=True,
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -792,8 +888,6 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="gpt-4.1",
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
             ),
         ],
     ),
@@ -915,8 +1009,6 @@ built_in_models: List[KilnModel] = [
                 provider_finetune_id="gpt-4o-2024-08-06",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_vision=True,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
@@ -935,8 +1027,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
                 logprobs_openrouter_options=True,
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
                 supports_vision=True,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
@@ -952,8 +1042,6 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.azure_openai,
                 model_id="gpt-4o",
-                suggested_for_data_gen=True,
-                suggested_for_evals=True,
             ),
         ],
     ),
@@ -1699,6 +1787,71 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Gemini 3.1 Flash Lite Preview
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_3_1_flash_lite_preview,
+        friendly_name="Gemini 3.1 Flash Lite Preview",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-3.1-flash-lite-preview",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                gemini_reasoning_enabled=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-3.1-flash-lite-preview",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                gemini_reasoning_enabled=True,
+                thinking_level="medium",
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-3.1-flash-lite-preview",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                # litellm sends an invalid role in tool-call messages to Vertex, causing 400 errors
+                supports_function_calling=False,
+                gemini_reasoning_enabled=True,
+                thinking_level="medium",
+            ),
+        ],
+    ),
     # Gemini 3 Pro Preview
     KilnModel(
         family=ModelFamily.gemini,
@@ -1841,65 +1994,6 @@ built_in_models: List[KilnModel] = [
                 suggested_for_evals=True,
                 # while the model is capable of reasoning, it doesn't always return it in the response
                 # reasoning_capable=True,
-                gemini_reasoning_enabled=True,
-                thinking_level="medium",
-            ),
-        ],
-    ),
-    # Gemini 3.1 Flash Lite Preview
-    KilnModel(
-        family=ModelFamily.gemini,
-        name=ModelName.gemini_3_1_flash_lite_preview,
-        friendly_name="Gemini 3.1 Flash Lite Preview",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="google/gemini-3.1-flash-lite-preview",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                supports_doc_extraction=True,
-                multimodal_capable=True,
-                supports_vision=True,
-                multimodal_mime_types=[
-                    KilnMimeType.PDF,
-                    KilnMimeType.CSV,
-                    KilnMimeType.TXT,
-                    KilnMimeType.HTML,
-                    KilnMimeType.MD,
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
-                ],
-                gemini_reasoning_enabled=True,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.gemini_api,
-                model_id="gemini-3.1-flash-lite-preview",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                supports_doc_extraction=True,
-                multimodal_capable=True,
-                supports_vision=True,
-                multimodal_mime_types=[
-                    KilnMimeType.PDF,
-                    KilnMimeType.CSV,
-                    KilnMimeType.TXT,
-                    KilnMimeType.HTML,
-                    KilnMimeType.MD,
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
-                    KilnMimeType.MP3,
-                    KilnMimeType.WAV,
-                    KilnMimeType.OGG,
-                    KilnMimeType.MP4,
-                    KilnMimeType.MOV,
-                ],
-                gemini_reasoning_enabled=True,
-                thinking_level="medium",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.vertex,
-                model_id="gemini-3.1-flash-lite-preview",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                # litellm sends an invalid role in tool-call messages to Vertex, causing 400 errors
-                supports_function_calling=False,
                 gemini_reasoning_enabled=True,
                 thinking_level="medium",
             ),
@@ -4353,33 +4447,6 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Qwen 3.5 Flash
-    KilnModel(
-        family=ModelFamily.qwen,
-        name=ModelName.qwen_3p5_flash,
-        friendly_name="Qwen 3.5 Flash",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="qwen/qwen3.5-flash-02-23",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                supports_data_gen=True,
-                # returns empty assistant messages instead of tool calls
-                supports_function_calling=False,
-                supports_doc_extraction=True,
-                supports_vision=True,
-                multimodal_capable=True,
-                multimodal_mime_types=[
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
-                    KilnMimeType.PDF,
-                    KilnMimeType.TXT,
-                    KilnMimeType.MD,
-                ],
-                multimodal_requires_pdf_as_image=True,
-            ),
-        ],
-    ),
     # Qwen 3.5 122B (10B Active)
     KilnModel(
         family=ModelFamily.qwen,
@@ -4445,6 +4512,33 @@ built_in_models: List[KilnModel] = [
                 # 3B active params: echoes the JSON schema instead of generating data
                 supports_data_gen=False,
                 supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # Qwen 3.5 Flash
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p5_flash,
+        friendly_name="Qwen 3.5 Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.5-flash-02-23",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                # returns empty assistant messages instead of tool calls
+                supports_function_calling=False,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
