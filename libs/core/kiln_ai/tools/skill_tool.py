@@ -65,7 +65,7 @@ class SkillTool(KilnToolInterface):
     ) -> ToolCallResult:
         skill_name = kwargs.get("name")
 
-        if not skill_name:
+        if not isinstance(skill_name, str) or not skill_name:
             return ToolCallResult(output="Error: 'name' parameter is required.")
 
         skill = self._skills.get(skill_name)
