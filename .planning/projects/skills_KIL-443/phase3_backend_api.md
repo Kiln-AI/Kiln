@@ -51,9 +51,12 @@ def connect_skill_api(app: FastAPI):
         if skill is None:
             raise HTTPException(status_code=404, detail="Skill not found")
 
-        updated = skill.model_copy(update=updates)
+        merged = skill.model_dump()
+        merged.update(updates)
+        updated = Skill.model_validate(merged)
+        updated.path = skill.path
         updated.save_to_file()
-
+        
         return updated
 
     @app.delete("/api/projects/{project_id}/skills/{skill_id}")
