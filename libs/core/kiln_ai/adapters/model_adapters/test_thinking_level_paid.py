@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,8 @@ from kiln_ai.adapters.ml_model_list import ModelProviderName, built_in_models
 from kiln_ai.adapters.provider_tools import provider_warnings
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.utils.config import Config
+
+logger = logging.getLogger(__name__)
 
 
 def build_thinking_level_test_task(tmp_path: Path) -> datamodel.Task:
@@ -120,9 +123,18 @@ async def test_thinking_level_reasoning_content(
         "Four people-A, B, C, and D-each have a different favorite color (red, blue, green, yellow) and a different pet (cat, dog, fish, bird). Use the clues to determine each person's color and pet.\n\n1) A does not like red or blue.\n2) The bird's owner likes yellow.\n3) B likes green.\n4) The dog is owned by the person who likes blue.\n5) C does not own the fish.\n6) D likes red.\n\nQuestion: Who owns the fish, and what color do they like? Answer with just: \"<person>, <color>\"."
     )
     reasoning_content = reasoning_content_from_run(run)
-
     if reasoning_content:
-        print(
-            f"reasoning_content present: provider={provider_name} model={model_name} "
-            f"level={thinking_level} length={len(reasoning_content)}"
+        logger.info(
+            "reasoning_content present: provider=%s model=%s level=%s length=%d",
+            provider_name,
+            model_name,
+            thinking_level,
+            len(reasoning_content),
+        )
+    else:
+        logger.info(
+            "reasoning_content missing: provider=%s model=%s level=%s",
+            provider_name,
+            model_name,
+            thinking_level,
         )
