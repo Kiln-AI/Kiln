@@ -29,7 +29,9 @@ from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     as_kiln_agent_run_config,
 )
+from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX, skill_id_from_tool_id
 
 # Import agent run context for run lifecycle management
 from kiln_ai.run_context import (
@@ -40,6 +42,7 @@ from kiln_ai.run_context import (
 )
 from kiln_ai.tools import KilnToolInterface
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
+from kiln_ai.tools.skill_tool import SkillTool
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -263,8 +266,57 @@ class BaseAdapter(metaclass=ABCMeta):
             == StructuredOutputMode.json_instruction_and_object
         )
 
-        return self.prompt_builder.build_prompt(
+        prompt = self.prompt_builder.build_prompt(
             include_json_instructions=add_json_instructions
+        )
+
+        skills_section = self._build_skills_prompt_section()
+        if skills_section:
+            prompt = prompt + "\n\n" + skills_section
+
+        return prompt
+
+    def _build_skills_prompt_section(self) -> str | None:
+        """Load skills from the run config and build a system prompt section listing them."""
+        run_config = as_kiln_agent_run_config(self.run_config)
+        tool_config = run_config.tools_config
+        if tool_config is None or tool_config.tools is None:
+            return None
+
+        project = self.task.parent_project()
+        if project is None:
+            return None
+
+        skills: list[Skill] = []
+        for tool_id in tool_config.tools:
+            if not tool_id.startswith(SKILL_TOOL_ID_PREFIX):
+                continue
+            sid = skill_id_from_tool_id(tool_id)
+            skill = Skill.from_id_and_parent_path(sid, project.path)
+            if skill is not None:
+                skills.append(skill)
+
+        if not skills:
+            return None
+
+        skill_lines = "\n".join(f"- {s.name}\n  {s.description}" for s in skills)
+        return (
+            "## Skills\n\n"
+            "Skills extend the assistant's capabilities with domain knowledge and "
+            "structured workflows.\n\n"
+            "Each Skill contains instructions describing how to solve a specific "
+            "type of task.\n\n"
+            "When handling a request:\n\n"
+            "1. Determine whether a Skill is relevant.\n"
+            "2. If a relevant Skill exists, load it before proceeding.\n"
+            "3. Follow the instructions and workflow defined in the Skill.\n\n"
+            "If a Skill provides a workflow, follow that workflow unless there is a "
+            "clear reason not to.\n\n"
+            "Load Skills only when necessary to keep context efficient.\n\n"
+            "If no Skill applies, proceed using general reasoning.\n\n"
+            "## Available Skills\n\n"
+            "The following Skills are available and may be loaded when relevant:\n\n"
+            f"{skill_lines}"
         )
 
     def build_chat_formatter(self, input: InputType) -> ChatFormatter:
@@ -425,9 +477,30 @@ class BaseAdapter(metaclass=ABCMeta):
         if project_id is None:
             raise ValueError("Project must have an ID to resolve tools")
 
-        tools = [tool_from_id(tool_id, self.task) for tool_id in tool_config.tools]
+        skill_tool_ids = [
+            tid for tid in tool_config.tools if tid.startswith(SKILL_TOOL_ID_PREFIX)
+        ]
+        non_skill_tool_ids = [
+            tid for tid in tool_config.tools if not tid.startswith(SKILL_TOOL_ID_PREFIX)
+        ]
 
-        tools = self._consolidate_skill_tools(tools)
+        tools: list[KilnToolInterface] = [
+            tool_from_id(tool_id, self.task) for tool_id in non_skill_tool_ids
+        ]
+
+        if skill_tool_ids:
+            skills: list[Skill] = []
+            for tool_id in skill_tool_ids:
+                sid = skill_id_from_tool_id(tool_id)
+                skill = Skill.from_id_and_parent_path(sid, project.path)
+                if skill is None:
+                    raise ValueError(f"Skill not found: {sid} in project {project_id}")
+                if skill.name in {s.name for s in skills}:
+                    raise ValueError(
+                        f"Duplicate skill name '{skill.name}'. Each skill must have a unique name."
+                    )
+                skills.append(skill)
+            tools.append(SkillTool(f"{SKILL_TOOL_ID_PREFIX}_combined", skills))
 
         tool_names = [await tool.name() for tool in tools]
         if len(tool_names) != len(set(tool_names)):
@@ -436,28 +509,3 @@ class BaseAdapter(metaclass=ABCMeta):
             )
 
         return tools
-
-    @staticmethod
-    def _consolidate_skill_tools(
-        tools: list[KilnToolInterface],
-    ) -> list[KilnToolInterface]:
-        """Merge multiple individual SkillTools into a single SkillTool with all skills."""
-        from kiln_ai.tools.skill_tool import SkillTool
-
-        skill_tools = [t for t in tools if isinstance(t, SkillTool)]
-        if len(skill_tools) <= 1:
-            return tools
-
-        non_skill_tools = [t for t in tools if not isinstance(t, SkillTool)]
-        all_skills: list = []
-        for st in skill_tools:
-            for skill in st.skills:
-                if skill.name in {s.name for s in all_skills}:
-                    raise ValueError(
-                        f"Duplicate skill name '{skill.name}'. Each skill must have a unique name."
-                    )
-                all_skills.append(skill)
-
-        consolidated = SkillTool("kiln_tool::skill::_consolidated", all_skills)
-        non_skill_tools.append(consolidated)
-        return non_skill_tools

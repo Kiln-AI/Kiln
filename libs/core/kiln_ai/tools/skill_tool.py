@@ -9,10 +9,10 @@ from kiln_ai.tools.base_tool import (
 
 
 class SkillTool(KilnToolInterface):
-    """Tool that provides agents access to skills.
+    """Tool that lets agents load skill instructions by name.
 
-    Lists available skills in the tool description. Agents call it
-    with a skill name to load the full instructions.
+    Available skills and their descriptions are listed in the system prompt.
+    The agent calls this tool with a skill name to retrieve its full body.
     """
 
     def __init__(self, tool_id: str, skills: list[Skill]):
@@ -30,15 +30,10 @@ class SkillTool(KilnToolInterface):
         return "skill"
 
     async def description(self) -> str:
-        skills_xml = "\n".join(
-            f"  <skill>\n    <name>{s.name}</name>\n    <description>{s.description}</description>\n  </skill>"
-            for s in self._skills.values()
-        )
         return (
             "Load an agent skill by name. Skills provide specialized instructions "
             "for specific tasks. Call this tool with the skill name to load its "
-            "full instructions.\n\n"
-            f"<available_skills>\n{skills_xml}\n</available_skills>"
+            "full instructions. Available skills are listed in your system prompt."
         )
 
     async def toolcall_definition(self) -> ToolCallDefinition:
