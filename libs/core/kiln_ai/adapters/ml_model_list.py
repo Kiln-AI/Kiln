@@ -304,6 +304,10 @@ class KilnModelProvider(BaseModel):
     require_openrouter_reasoning: bool = False
     logprobs_openrouter_options: bool = False
     openrouter_skip_required_parameters: bool = False
+
+    # OpenRouter-specific payload toggle for thinking effort.
+    # When true, send `reasoning: {effort: <level>}` instead of `reasoning_effort`.
+    # Use only for OpenRouter models that require the reasoning-object format.
     openrouter_reasoning_object: bool = False
     available_thinking_levels: dict[str, str] | None = None
     default_thinking_level: str | None = None
