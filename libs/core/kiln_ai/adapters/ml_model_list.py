@@ -405,6 +405,20 @@ GPT_5_2_OPENROUTER_THINKING_LEVELS = {
     "Extra High": "xhigh",
 }
 
+GPT_5_4_OPENAI_THINKING_LEVELS = {
+    "Off/None": "none",
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+}
+
+GPT_5_4_PRO_OPENAI_THINKING_LEVELS = {
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+}
+
 GPT_5_1_OPENAI_THINKING_LEVELS = {
     "Off/None": "none",
     "Low": "low",
@@ -476,6 +490,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openai,
                 model_id="gpt-5.4",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
+                default_thinking_level="none",
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
@@ -495,6 +511,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5.4",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
+                default_thinking_level="none",
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
@@ -522,6 +540,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openai,
                 model_id="gpt-5.4-pro",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_4_PRO_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
@@ -541,6 +561,8 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="openai/gpt-5.4-pro",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_4_PRO_OPENAI_THINKING_LEVELS,
+                default_thinking_level="medium",
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
@@ -1997,6 +2019,8 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
                 gemini_reasoning_enabled=True,
+                available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
+                default_thinking_level="high",
             ),
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
@@ -2024,16 +2048,17 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.MOV,
                 ],
                 gemini_reasoning_enabled=True,
-                thinking_level="medium",
+                available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
+                default_thinking_level="high",
             ),
             KilnModelProvider(
                 name=ModelProviderName.vertex,
                 model_id="gemini-3.1-flash-lite-preview",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                # litellm sends an invalid role in tool-call messages to Vertex, causing 400 errors
                 supports_function_calling=False,
                 gemini_reasoning_enabled=True,
-                thinking_level="medium",
+                available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
+                default_thinking_level="high",
             ),
         ],
     ),
