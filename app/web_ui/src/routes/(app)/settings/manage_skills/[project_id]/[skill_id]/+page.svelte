@@ -85,12 +85,11 @@
 </script>
 
 <div class="max-w-[1400px]">
-  <!-- TODO: Read the Docs link -->
   <AppPage
     title="Skill"
     subtitle={`Name: ${skill?.name || ""}`}
     sub_subtitle="Read the Docs"
-    sub_subtitle_link=""
+    sub_subtitle_link="https://docs.kiln.tech/docs/skills"
     breadcrumbs={[
       { label: "Settings", href: `/settings` },
       {
@@ -98,12 +97,14 @@
         href: `/settings/manage_skills/${project_id}`,
       },
     ]}
-    action_buttons={[
-      {
-        label: is_archived ? "Unarchive" : "Archive",
-        handler: () => update_archive(!is_archived),
-      },
-    ]}
+    action_buttons={skill && !loading && !loading_error
+      ? [
+          {
+            label: is_archived ? "Unarchive" : "Archive",
+            handler: () => update_archive(!is_archived),
+          },
+        ]
+      : []}
   >
     {#if archive_error}
       <Warning
@@ -143,7 +144,7 @@
       </div>
     {:else if skill}
       <div class="grid grid-cols-1 lg:grid-cols-[1fr,auto] gap-12">
-        <div class="grow max-w-[900px]">
+        <div class="grow">
           <h3 class="text-xl font-bold mb-4">Instructions</h3>
           <div
             class="bg-base-200 rounded-lg p-6 text-sm whitespace-pre-wrap font-mono max-h-[600px] overflow-y-auto"
@@ -151,7 +152,7 @@
             {skill.body}
           </div>
         </div>
-        <div class="flex flex-col gap-4">
+        <div class="flex flex-col gap-4 max-w-[900px]">
           <PropertyList properties={get_properties(skill)} title="Properties" />
         </div>
       </div>

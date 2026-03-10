@@ -42,7 +42,7 @@
           type: "settings",
           name: "Manage Skills",
           description:
-            "Create reusable instructions that help agents perform specific tasks with domain knowledge and guidelines.",
+            "Add reusable instructions for your agents, loaded into context only when needed.",
           href: `/settings/manage_skills/${$ui_state?.current_project_id}`,
           button_text: "Manage Skills",
         },

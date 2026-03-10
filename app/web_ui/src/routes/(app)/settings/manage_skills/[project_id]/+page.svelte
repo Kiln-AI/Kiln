@@ -40,142 +40,123 @@
     }
   }
 
-  $: sorted_skills =
-    skills
-      .slice()
-      .sort(
-        (a, b) =>
-          new Date(b.created_at ?? "").getTime() -
-          new Date(a.created_at ?? "").getTime(),
-      ) || []
-  $: active_skills = sorted_skills.filter((s) => !s.is_archived)
-  $: archived_skills = sorted_skills.filter((s) => s.is_archived)
+  $: sorted_skills = skills
+    .slice()
+    .sort(
+      (a, b) =>
+        (b.created_at ? new Date(b.created_at).getTime() : 0) -
+        (a.created_at ? new Date(a.created_at).getTime() : 0),
+    )
 </script>
 
-{#if !loading && skills.length === 0}
-  <div class="flex flex-col items-center justify-center min-h-[60vh]">
-    <Intro
-      title="Agent Skills"
-      description_paragraphs={[
-        "Skills are reusable instructions that help agents perform specific tasks.",
-        "Add skills to give your agents domain knowledge, workflows, and guidelines. Agents load skills on demand — keeping context focused and efficient.",
-      ]}
-      action_buttons={[
-        {
-          label: "Add Skill",
-          href: `/settings/manage_skills/${project_id}/create`,
-          is_primary: true,
-        },
-      ]}
-    />
-  </div>
-{:else}
-  <div class="max-w-[1400px]">
-    <!-- TODO: Read the Docs link -->
-    <AppPage
-      title="Manage Skills"
-      subtitle="Reusable instructions for your agents, loaded into context only when needed."
-      sub_subtitle="Read the Docs"
-      sub_subtitle_link=""
-      breadcrumbs={[{ label: "Settings", href: `/settings` }]}
-      action_buttons={[
-        {
-          label: "Add Skill",
-          href: `/settings/manage_skills/${project_id}/create`,
-          primary: true,
-        },
-      ]}
-    >
-      {#if loading}
-        <div class="w-full min-h-[50vh] flex justify-center items-center">
-          <div class="loading loading-spinner loading-lg"></div>
+<div class="max-w-[1400px]">
+  <AppPage
+    title="Manage Skills"
+    subtitle="Reusable instructions for your agents, loaded into context only when needed."
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/skills"
+    breadcrumbs={[{ label: "Settings", href: `/settings` }]}
+    action_buttons={!loading && skills.length === 0
+      ? []
+      : [
+          {
+            label: "Add Skill",
+            href: `/settings/manage_skills/${project_id}/create`,
+            primary: true,
+          },
+        ]}
+  >
+    {#if loading}
+      <div class="w-full min-h-[50vh] flex justify-center items-center">
+        <div class="loading loading-spinner loading-lg"></div>
+      </div>
+    {:else if error}
+      <div
+        class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+      >
+        <div class="font-medium">Error Loading Skills</div>
+        <div class="text-error text-sm">
+          {error.getMessage() || "An unknown error occurred"}
         </div>
-      {:else if error}
-        <div
-          class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
-        >
-          <div class="font-medium">Error Loading Skills</div>
-          <div class="text-error text-sm">
-            {error.getMessage() || "An unknown error occurred"}
-          </div>
-        </div>
-      {:else}
-        <div class="overflow-x-auto rounded-lg border mt-4">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Description</th>
-                <th>Created At</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each active_skills as skill}
-                <tr
-                  class="hover:bg-base-200 cursor-pointer"
-                  on:click={() =>
-                    goto(`/settings/manage_skills/${project_id}/${skill.id}`)}
-                  on:keydown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault()
-                      goto(`/settings/manage_skills/${project_id}/${skill.id}`)
-                    }
-                  }}
-                  role="button"
-                  tabindex="0"
+      </div>
+    {:else if !loading && skills.length === 0}
+      <div class="flex flex-col items-center justify-center min-h-[60vh]">
+        <Intro
+          title="Skills"
+          description_paragraphs={[
+            "Add skills to give your agents domain knowledge, workflows, or guidelines.",
+            "Agents load skills on demand, keeping context focused and efficient.",
+          ]}
+          action_buttons={[
+            {
+              label: "Add Skill",
+              href: `/settings/manage_skills/${project_id}/create`,
+              is_primary: true,
+            },
+            {
+              label: "Docs & Guide",
+              href: "https://docs.kiln.tech/docs/skills",
+              is_primary: false,
+              new_tab: true,
+            },
+          ]}
+        />
+      </div>
+    {:else}
+      <div class="overflow-x-auto rounded-lg border mt-4">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Description</th>
+              <th>Created At</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each sorted_skills as skill}
+              <tr
+                class="hover:bg-base-200 cursor-pointer"
+                class:opacity-60={skill.is_archived}
+                on:click={() =>
+                  goto(`/settings/manage_skills/${project_id}/${skill.id}`)}
+                on:keydown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    goto(`/settings/manage_skills/${project_id}/${skill.id}`)
+                  }
+                }}
+                role="button"
+                tabindex="0"
+              >
+                <td class="font-medium">{skill.name}</td>
+                <td class="text-sm max-w-[400px] truncate"
+                  >{skill.description}</td
                 >
-                  <td class="font-medium">{skill.name}</td>
-                  <td class="text-sm max-w-[400px] truncate"
-                    >{skill.description}</td
-                  >
-                  <td class="text-sm whitespace-nowrap"
-                    >{formatDate(skill.created_at)}</td
-                  >
-                  <td class="text-sm">
+                <td class="text-sm whitespace-nowrap"
+                  >{formatDate(skill.created_at)}</td
+                >
+                <td class="text-sm">
+                  {#if skill.is_archived}
+                    <Warning
+                      warning_message="Archived"
+                      warning_color="warning"
+                      tight={true}
+                    />
+                  {:else}
                     <Warning
                       warning_message="Active"
                       warning_color="success"
                       warning_icon="check"
                       tight={true}
                     />
-                  </td>
-                </tr>
-              {/each}
-              {#each archived_skills as skill}
-                <tr
-                  class="hover:bg-base-200 cursor-pointer opacity-60"
-                  on:click={() =>
-                    goto(`/settings/manage_skills/${project_id}/${skill.id}`)}
-                  on:keydown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault()
-                      goto(`/settings/manage_skills/${project_id}/${skill.id}`)
-                    }
-                  }}
-                  role="button"
-                  tabindex="0"
-                >
-                  <td class="font-medium">{skill.name}</td>
-                  <td class="text-sm max-w-[400px] truncate"
-                    >{skill.description}</td
-                  >
-                  <td class="text-sm whitespace-nowrap"
-                    >{formatDate(skill.created_at)}</td
-                  >
-                  <td class="text-sm">
-                    <Warning
-                      warning_message="Archived"
-                      warning_color="warning"
-                      tight={true}
-                    />
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      {/if}
-    </AppPage>
-  </div>
-{/if}
+                  {/if}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
+  </AppPage>
+</div>

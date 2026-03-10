@@ -4,6 +4,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import { tool_name_validator } from "$lib/utils/input_validators"
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
 
@@ -37,28 +38,14 @@
       submitting = false
     }
   }
-
-  function name_validator(value: unknown): string | null {
-    if (!value || typeof value !== "string" || value.length === 0) {
-      return '"Name" is required'
-    }
-    if (!/^[a-z][a-z0-9_]*$/.test(value)) {
-      return "Must be lowercase letters, numbers, and underscores. Must start with a letter."
-    }
-    if (value.length > 64) {
-      return "Name must be 64 characters or fewer"
-    }
-    return null
-  }
 </script>
 
 <div class="max-w-2xl">
-  <!-- TODO: Read the Docs link -->
   <AppPage
     title="Add Skill"
     subtitle="Add reusable instructions for your agents, loaded into context only when needed."
     sub_subtitle="Read the Docs"
-    sub_subtitle_link=""
+    sub_subtitle_link="https://docs.kiln.tech/docs/skills"
     breadcrumbs={[
       { label: "Settings", href: `/settings` },
       {
@@ -79,7 +66,7 @@
         description="A unique short identifier for the skill such as 'style_guidelines'."
         info_description="Must be in snake_case format."
         bind:value={name}
-        validator={name_validator}
+        validator={tool_name_validator}
       />
       <FormElement
         id="skill_description"
