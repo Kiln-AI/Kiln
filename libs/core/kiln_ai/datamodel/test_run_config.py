@@ -120,6 +120,28 @@ class TestKilnAgentRunConfigProperties:
         data_value = config_with_value.model_dump(exclude_unset=True)
         assert data_value["thinking_level"] == "low"
 
+    def test_thinking_level_normalizes_and_rejects_blank(self):
+        config = KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+            thinking_level="  medium  ",
+        )
+        assert config.thinking_level == "medium"
+
+        with pytest.raises(
+            ValidationError,
+            match="thinking_level must be a non-empty string when provided",
+        ):
+            KilnAgentRunConfigProperties(
+                model_name="gpt-4",
+                model_provider_name=ModelProviderName.openai,
+                prompt_id=PromptGenerators.SIMPLE,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                thinking_level="   ",
+            )
+
     def test_validation_top_p(self):
         with pytest.raises(ValidationError, match="top_p must be between 0 and 1"):
             KilnAgentRunConfigProperties(

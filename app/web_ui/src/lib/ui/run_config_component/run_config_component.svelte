@@ -135,17 +135,8 @@
     }
   }
 
-  function update_thinking_level_if_needed(
-    model_name: string,
-    provider: string,
-    available_models: AvailableModels[],
-  ) {
-    const model_details = available_model_details(
-      model_name,
-      provider,
-      available_models,
-    )
-    const new_level = model_details?.default_thinking_level ?? null
+  function update_thinking_level_if_needed() {
+    const new_level = current_model_details?.default_thinking_level ?? null
     if (new_level !== thinking_level) {
       thinking_level = new_level
       return true
@@ -253,7 +244,7 @@
         provider,
         $available_models,
       )
-      update_thinking_level_if_needed(model_name, provider, $available_models)
+      update_thinking_level_if_needed()
     }
     run_config_just_loaded = false
 

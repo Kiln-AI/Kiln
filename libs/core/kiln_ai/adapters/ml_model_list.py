@@ -6374,8 +6374,6 @@ def default_thinking_level_for_model_provider(
 
     for model_provider in model.providers:
         if model_provider.name == provider:
-            if model_provider.default_thinking_level is not None:
-                return model_provider.default_thinking_level
-            return None
+            return model_provider.default_thinking_level
 
     return None

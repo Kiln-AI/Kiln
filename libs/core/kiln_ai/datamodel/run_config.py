@@ -1,6 +1,13 @@
 from typing import Annotated, Any, List, Literal, Union
 
-from pydantic import BaseModel, Discriminator, Field, Tag, model_validator
+from pydantic import (
+    BaseModel,
+    Discriminator,
+    Field,
+    Tag,
+    field_validator,
+    model_validator,
+)
 from typing_extensions import Self
 
 from kiln_ai.datamodel.datamodel_enums import (
@@ -71,6 +78,17 @@ class KilnAgentRunConfigProperties(BaseModel):
         default=None,
         description="The tools config to use for this run config, defining which tools are available to the model.",
     )
+
+    @field_validator("thinking_level")
+    @classmethod
+    def validate_thinking_level(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("thinking_level must be a non-empty string when provided")
+        return normalized
 
     @model_validator(mode="after")
     def validate_sampling(self) -> Self:
