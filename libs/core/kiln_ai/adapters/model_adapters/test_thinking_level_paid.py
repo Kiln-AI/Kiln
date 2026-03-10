@@ -105,6 +105,8 @@ async def test_thinking_level_reasoning_content(
     tmp_path, provider_name: str, model_name: str, thinking_level: str
 ):
     skip_if_missing_provider_keys(provider_name)
+    # For anthropic, we need to set the temperature to 1 to use thinking level.
+    temperature = 1 if provider_name == ModelProviderName.anthropic else 0
 
     task = build_thinking_level_test_task(tmp_path)
     adapter = adapter_for_task(
@@ -115,7 +117,7 @@ async def test_thinking_level_reasoning_content(
             prompt_id="simple_prompt_builder",
             structured_output_mode="default",
             thinking_level=thinking_level,
-            temperature=0,
+            temperature=temperature,
             top_p=1,
         ),
     )

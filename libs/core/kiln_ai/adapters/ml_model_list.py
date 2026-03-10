@@ -444,6 +444,12 @@ CLAUDE_OPENROUTER_THINKING_LEVELS = {
     "Extra High": "xhigh",
 }
 
+CLAUDE_ANTHROPIC_EFFORT_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+}
+
 
 built_in_models: List[KilnModel] = [
     # GPT 5.2
@@ -1478,6 +1484,9 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-sonnet-4.6",
                 structured_output_mode=StructuredOutputMode.function_calling,
+                openrouter_reasoning_object=True,
+                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="none",
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
                 supports_doc_extraction=True,
@@ -1497,6 +1506,8 @@ built_in_models: List[KilnModel] = [
                 model_id="claude-sonnet-4-6",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
+                available_thinking_levels=CLAUDE_ANTHROPIC_EFFORT_THINKING_LEVELS,
+                default_thinking_level="high",
                 suggested_for_data_gen=True,
                 suggested_for_evals=True,
                 supports_doc_extraction=True,
@@ -1628,6 +1639,9 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 model_id="anthropic/claude-opus-4.6",
                 structured_output_mode=StructuredOutputMode.json_schema,
+                openrouter_reasoning_object=True,
+                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="none",
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
@@ -1645,6 +1659,8 @@ built_in_models: List[KilnModel] = [
                 model_id="claude-opus-4-6",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
+                available_thinking_levels=CLAUDE_ANTHROPIC_EFFORT_THINKING_LEVELS,
+                default_thinking_level="high",
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
@@ -1689,6 +1705,8 @@ built_in_models: List[KilnModel] = [
                 model_id="claude-opus-4-5-20251101",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
+                available_thinking_levels=CLAUDE_ANTHROPIC_EFFORT_THINKING_LEVELS,
+                default_thinking_level="high",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
