@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
 from pydantic import Field
 
@@ -32,12 +32,8 @@ class Skill(KilnParentedModel):
         min_length=1,
     )
 
-    @classmethod
-    def relationship_name(cls) -> str:
-        return "skills"
-
-    @classmethod
-    def parent_type(cls) -> type[Project]:
-        from kiln_ai.datamodel.project import Project
-
-        return Project
+    # Workaround to return typed parent without importing Project
+    def parent_project(self) -> Union["Project", None]:
+        if self.parent is None or self.parent.__class__.__name__ != "Project":
+            return None
+        return self.parent  # type: ignore
