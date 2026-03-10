@@ -132,6 +132,7 @@ export type ToolCallMessageParam =
   components["schemas"]["ChatCompletionMessageFunctionToolCallParam"]
 export type SearchToolApiDescription =
   components["schemas"]["SearchToolApiDescription"]
+export type Skill = components["schemas"]["Skill"]
 export type DocumentLibraryState = components["schemas"]["DocumentLibraryState"]
 export type Spec = components["schemas"]["Spec"]
 export type SpecStatus = components["schemas"]["SpecStatus"]

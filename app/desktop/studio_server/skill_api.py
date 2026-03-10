@@ -14,9 +14,6 @@ class SkillCreationRequest(BaseModel):
 
 
 class SkillUpdateRequest(BaseModel):
-    name: ToolNameString | None = None
-    description: str | None = Field(default=None, min_length=1, max_length=1024)
-    body: str | None = Field(default=None, min_length=1)
     is_archived: bool | None = None
 
 

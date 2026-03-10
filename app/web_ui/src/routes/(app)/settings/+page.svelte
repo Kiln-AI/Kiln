@@ -28,7 +28,7 @@
       ],
     },
     {
-      category: "Tools & MCP",
+      category: "Tools & Skills",
       items: [
         {
           type: "settings",
@@ -37,6 +37,14 @@
             "Connect your project to tools such as RAG systems, Kiln Tasks, and MCP servers",
           href: `/settings/manage_tools/${$ui_state?.current_project_id}`,
           button_text: "Manage Tools",
+        },
+        {
+          type: "settings",
+          name: "Manage Skills",
+          description:
+            "Create reusable instructions that help agents perform specific tasks with domain knowledge and guidelines.",
+          href: `/settings/manage_skills/${$ui_state?.current_project_id}`,
+          button_text: "Manage Skills",
         },
       ],
     },

@@ -6464,12 +6464,6 @@ export interface components {
         };
         /** SkillUpdateRequest */
         SkillUpdateRequest: {
-            /** Name */
-            name?: string | null;
-            /** Description */
-            description?: string | null;
-            /** Body */
-            body?: string | null;
             /** Is Archived */
             is_archived?: boolean | null;
         };

@@ -141,22 +141,10 @@ class TestGetSkills:
 
 
 class TestUpdateSkill:
-    def test_update_skill(
-        self, client, test_project, mock_project_from_id, saved_skill
-    ):
-        response = client.patch(
-            f"/api/projects/{test_project.id}/skills/{saved_skill.id}",
-            json={"description": "Updated description."},
-        )
-        assert response.status_code == 200
-        result = response.json()
-        assert result["description"] == "Updated description."
-        assert result["name"] == "test_skill"
-
     def test_update_skill_not_found(self, client, test_project, mock_project_from_id):
         response = client.patch(
             f"/api/projects/{test_project.id}/skills/nonexistent-id",
-            json={"description": "nope"},
+            json={"is_archived": True},
         )
         assert response.status_code == 404
 
