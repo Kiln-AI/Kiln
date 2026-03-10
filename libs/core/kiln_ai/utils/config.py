@@ -20,6 +20,7 @@ class ConfigProperty:
         default_lambda: Optional[Callable[[], Any]] = None,
         sensitive: bool = False,
         sensitive_keys: Optional[List[str]] = None,
+        in_memory: bool = False,
     ):
         self.type = type_
         self.default = default
@@ -27,6 +28,7 @@ class ConfigProperty:
         self.default_lambda = default_lambda
         self.sensitive = sensitive
         self.sensitive_keys = sensitive_keys
+        self.in_memory = in_memory
 
 
 class Config:
@@ -43,6 +45,7 @@ class Config:
                 bool,
                 env_var="KILN_AUTOSAVE_RUNS",
                 default=True,
+                in_memory=True,
             ),
             "open_ai_api_key": ConfigProperty(
                 str,
@@ -198,6 +201,7 @@ class Config:
             ),
         }
         self._lock = threading.Lock()
+        self._in_memory_settings: Dict[str, Any] = {}
         self._settings = self.load_settings()
 
     @classmethod
@@ -221,10 +225,14 @@ class Config:
 
         property_config = self._properties[name]
 
-        # Check if the value is in settings
-        if name in self._settings:
-            value = self._settings[name]
-            return value if value is None else property_config.type(value)
+        if property_config.in_memory:
+            if name in self._in_memory_settings:
+                value = self._in_memory_settings[name]
+                return value if value is None else property_config.type(value)
+        else:
+            if name in self._settings:
+                value = self._settings[name]
+                return value if value is None else property_config.type(value)
 
         # Check environment variable
         if property_config.env_var and property_config.env_var in os.environ:
@@ -240,10 +248,14 @@ class Config:
         return None if value is None else property_config.type(value)
 
     def __setattr__(self, name, value):
-        if name in ("_properties", "_settings", "_lock"):
+        if name in ("_properties", "_settings", "_lock", "_in_memory_settings"):
             super().__setattr__(name, value)
         elif name in self._properties:
-            self.update_settings({name: value})
+            if self._properties[name].in_memory:
+                with self._lock:
+                    self._in_memory_settings[name] = value
+            else:
+                self.update_settings({name: value})
         else:
             raise AttributeError(f"Config has no attribute '{name}'")
 
@@ -268,14 +280,22 @@ class Config:
         return settings
 
     def settings(self, hide_sensitive=False) -> Dict[str, Any]:
+        with self._lock:
+            filtered_disk = {
+                k: v
+                for k, v in self._settings.items()
+                if k not in self._properties or not self._properties[k].in_memory
+            }
+            combined = {**filtered_disk, **self._in_memory_settings}
+
         if not hide_sensitive:
-            return self._settings
+            return combined
 
         settings = {
             k: "[hidden]"
             if k in self._properties and self._properties[k].sensitive
             else copy.deepcopy(v)
-            for k, v in self._settings.items()
+            for k, v in combined.items()
         }
         # Hide sensitive keys in lists. Could generalize this if we every have more types, but right not it's only needed for root elements of lists
         for key, value in settings.items():
@@ -293,18 +313,32 @@ class Config:
         self.update_settings({name: value})
 
     def update_settings(self, new_settings: Dict[str, Any]):
-        # Lock to prevent race conditions in multi-threaded scenarios
         with self._lock:
-            # Fresh load to avoid clobbering changes from other instances
-            current_settings = self.load_settings()
-            current_settings.update(new_settings)
-            # remove None values
-            current_settings = {
-                k: v for k, v in current_settings.items() if v is not None
+            in_memory_updates = {
+                k: v
+                for k, v in new_settings.items()
+                if k in self._properties and self._properties[k].in_memory
             }
-            with open(self.settings_path(), "w") as f:
-                yaml.dump(current_settings, f)
-            self._settings = current_settings
+            disk_updates = {
+                k: v
+                for k, v in new_settings.items()
+                if k not in self._properties or not self._properties[k].in_memory
+            }
+
+            if in_memory_updates:
+                self._in_memory_settings.update(in_memory_updates)
+
+            if disk_updates:
+                # Fresh load to avoid clobbering changes from other instances
+                current_settings = self.load_settings()
+                current_settings.update(disk_updates)
+                # remove None values
+                current_settings = {
+                    k: v for k, v in current_settings.items() if v is not None
+                }
+                with open(self.settings_path(), "w") as f:
+                    yaml.dump(current_settings, f)
+                self._settings = current_settings
 
 
 def _get_user_id():
