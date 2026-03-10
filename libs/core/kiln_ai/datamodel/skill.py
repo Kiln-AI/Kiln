@@ -31,6 +31,10 @@ class Skill(KilnParentedModel):
         description="The markdown body content (instructions) of the skill.",
         min_length=1,
     )
+    is_archived: bool = Field(
+        default=False,
+        description="Whether the skill is archived. Archived skills are hidden from the UI and not available for use.",
+    )
 
     @classmethod
     def relationship_name(cls) -> str:

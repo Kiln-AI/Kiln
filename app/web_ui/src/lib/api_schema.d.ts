@@ -2332,6 +2332,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Skills */
+        get: operations["get_skills_api_projects__project_id__skills_get"];
+        put?: never;
+        /** Create Skill */
+        post: operations["create_skill_api_projects__project_id__skills_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/skills/{skill_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Skill */
+        get: operations["get_skill_api_projects__project_id__skills__skill_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Skill */
+        patch: operations["update_skill_api_projects__project_id__skills__skill_id__patch"];
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config": {
         parameters: {
             query?: never;
@@ -6369,6 +6405,75 @@ export interface components {
             breakpoint_percentile_threshold: number;
         };
         /**
+         * Skill
+         * @description A Skill represents reusable agent instructions following the agentskills.io specification.
+         *
+         *     Skills are project-level resources that can be attached to run configs.
+         *     The agent discovers available skills via the skill tool description, then
+         *     loads a skill's body on demand by calling skill(name="skill_name").
+         */
+        Skill: {
+            /**
+             * V
+             * @default 1
+             */
+            v: number;
+            /** Id */
+            id?: string | null;
+            /** Path */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /** Created By */
+            created_by?: string;
+            /**
+             * Name
+             * @description Skill name. Snake_case: lowercase alphanumeric with underscores, 1-64 chars.
+             */
+            name: string;
+            /**
+             * Description
+             * @description Description of what the skill does and when to use it. 1-1024 chars.
+             */
+            description: string;
+            /**
+             * Body
+             * @description The markdown body content (instructions) of the skill.
+             */
+            body: string;
+            /**
+             * Is Archived
+             * @description Whether the skill is archived. Archived skills are hidden from the UI and not available for use.
+             * @default false
+             */
+            is_archived: boolean;
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /** SkillCreationRequest */
+        SkillCreationRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Body */
+            body: string;
+        };
+        /** SkillUpdateRequest */
+        SkillUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Body */
+            body?: string | null;
+            /** Is Archived */
+            is_archived?: boolean | null;
+        };
+        /**
          * Spec
          * @description A spec for a task.
          */
@@ -7180,7 +7285,7 @@ export interface components {
          * ToolSetType
          * @enum {string}
          */
-        ToolSetType: "search" | "mcp" | "kiln_task" | "demo";
+        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill";
         /**
          * ToolsRunConfig
          * @description A config describing which tools are available to a task.
@@ -12434,6 +12539,140 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ToolDefinitionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_skills_api_projects__project_id__skills_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Skill"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_skill_api_projects__project_id__skills_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillCreationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Skill"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_skill_api_projects__project_id__skills__skill_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Skill"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_skill_api_projects__project_id__skills__skill_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Skill"];
                 };
             };
             /** @description Validation Error */
