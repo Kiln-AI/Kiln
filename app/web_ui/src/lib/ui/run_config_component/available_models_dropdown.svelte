@@ -198,7 +198,6 @@
           deprecated_models.push({
             value: id,
             label: long_label,
-            badge: "Deprecated",
             disabled: true,
           })
           model_value_to_provider_name.set(id, provider.provider_name)
