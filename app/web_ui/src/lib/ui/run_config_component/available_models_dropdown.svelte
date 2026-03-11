@@ -139,11 +139,9 @@
       )
       if (
         !model_details ||
-        !model_dropdown_settings.filter_models_predicate(model_details)
+        !model_dropdown_settings.filter_models_predicate(model_details) ||
+        model_details.deprecated
       ) {
-        continue
-      }
-      if (model_details.deprecated) {
         continue
       }
       // Use the stored provider_display_name for custom providers, otherwise fall back to provider_name_from_id
@@ -192,9 +190,7 @@
           model_value_to_provider_name.set(id, provider.provider_name)
           continue
         }
-        const model_is_deprecated =
-          (model as { deprecated?: boolean }).deprecated === true
-        if (model_is_deprecated) {
+        if (model.deprecated) {
           deprecated_models.push({
             value: id,
             label: long_label,
@@ -371,7 +367,7 @@
     />
   {:else if selected_model_deprecated}
     <Warning
-      warning_message="This model is deprecated and can no longer be used. Please select a different model."
+      warning_message="This model is deprecated and can no longer be used. Please select a different model or provider."
     />
   {:else if selected_model_unsupported}
     {#if model_dropdown_settings.requires_uncensored_data_gen}

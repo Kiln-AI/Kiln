@@ -334,7 +334,7 @@ class KilnModelProvider(BaseModel):
     # For openai_compatible providers: the name of the custom provider (user specified)
     openai_compatible_provider_name: str | None = None
 
-    # Whether the model is deprecated.
+    # The model is deprecated and no longer supported on a specific provider
     deprecated: bool = False
 
     @model_validator(mode="after")
