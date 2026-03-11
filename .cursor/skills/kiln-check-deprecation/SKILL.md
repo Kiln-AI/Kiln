@@ -189,7 +189,7 @@ Ensure the count matches what you expect (previous count + newly marked).
 
 - [ ] Extraction script run, JSON saved to /tmp/kiln_extracted.json
 - [ ] Provider checks run (all or individually)
-- [ ] Vertex checked manually (skip if gcloud auth unavailable)
+- [ ] Vertex auth confirmed (`gcloud auth print-access-token` works, or skip Vertex)
 - [ ] Bedrock checked manually (skip if aws CLI unavailable)
 - [ ] LiteLLM DB checked for supplementary deprecation_date signals
 - [ ] Findings reported to user with clear table
