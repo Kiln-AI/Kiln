@@ -335,7 +335,7 @@ def main():
         extracted = json.load(f)
 
     if args.provider == "all":
-        providers = [p for p in PROVIDER_CONFIG if p not in SKIP_PROVIDERS]
+        providers = sorted(p for p in extracted["providers"] if p not in SKIP_PROVIDERS)
     else:
         providers = [args.provider]
 
