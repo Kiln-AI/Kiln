@@ -132,7 +132,7 @@ These don't have meaningful deprecation to check:
 
 Read the JSON output from check_provider.py and present findings in a clear table to the user:
 
-```
+```text
 Deprecation Audit Results
 =========================
 

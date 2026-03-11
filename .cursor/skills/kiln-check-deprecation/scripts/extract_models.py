@@ -111,23 +111,26 @@ def extract():
     }
 
 
+def _log(msg: str = "") -> None:
+    sys.stderr.write(msg + "\n")
+
+
 def main():
     result = extract()
 
-    print(f"Already deprecated: {result['deprecated_count']}", file=sys.stderr)
-    print(file=sys.stderr)
+    _log(f"Already deprecated: {result['deprecated_count']}")
+    _log()
     for p, models in sorted(result["providers"].items()):
         tag = " (SKIP)" if p in SKIP_PROVIDERS else ""
-        print(f"  {p}: {len(models)} models{tag}", file=sys.stderr)
-    print(file=sys.stderr)
-    print(
+        _log(f"  {p}: {len(models)} models{tag}")
+    _log()
+    _log(
         f"Total active entries: {len(result['entries'])} "
-        f"across {len(result['providers'])} providers",
-        file=sys.stderr,
+        f"across {len(result['providers'])} providers"
     )
 
     json.dump(result, sys.stdout, indent=2)
-    print()
+    sys.stdout.write("\n")
 
 
 if __name__ == "__main__":

@@ -154,14 +154,17 @@ def fetch_anthropic(api_key: str) -> set[str]:
 def fetch_gemini(api_key: str) -> set[str]:
     """Fetches from both v1 and v1beta — preview/Gemma models only appear on v1beta."""
     ids: set[str] = set()
+    errors: list[str] = []
     for version in ("v1", "v1beta"):
         url = f"https://generativelanguage.googleapis.com/{version}/models?key={api_key}&pageSize=100"
         try:
             data = fetch_json(url)
             for m in data.get("models", []):
                 ids.add(m["name"].removeprefix("models/"))
-        except Exception:
-            pass
+        except (HTTPError, URLError, OSError, KeyError, ValueError) as e:
+            errors.append(f"{version}: {e}")
+    if not ids and errors:
+        raise RuntimeError(f"All Gemini endpoints failed: {'; '.join(errors)}")
     return ids
 
 
@@ -178,6 +181,7 @@ def fetch_vertex(project_id: str) -> set[str]:
     ).strip()
 
     ids: set[str] = set()
+    errors: list[str] = []
     for publisher in ("google", "anthropic", "meta"):
         url = f"https://us-central1-aiplatform.googleapis.com/v1beta1/publishers/{publisher}/models"
         req = Request(url)
@@ -189,8 +193,10 @@ def fetch_vertex(project_id: str) -> set[str]:
                 data = json.loads(resp.read())
                 for m in data.get("publisherModels", []):
                     ids.add(m["name"].split("/")[-1])
-        except Exception:
-            pass
+        except (HTTPError, URLError, OSError, KeyError, ValueError) as e:
+            errors.append(f"{publisher}: {e}")
+    if not ids and errors:
+        raise RuntimeError(f"All Vertex publishers failed: {'; '.join(errors)}")
     return ids
 
 
@@ -212,8 +218,9 @@ def fetch_fireworks_individual(api_key: str, model_ids: list[str]) -> set[str]:
             with urlopen(req, timeout=10) as _:
                 available.add(model_id)
         except HTTPError as e:
-            if e.code != 404:
-                available.add(model_id)
+            if e.code == 404:
+                continue
+            raise
     return available
 
 
@@ -305,6 +312,10 @@ def check_provider(provider_name: str, extracted: dict) -> dict:
     }
 
 
+def _log(msg: str = "") -> None:
+    sys.stderr.write(msg + "\n")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Check provider model availability against Kiln model list"
@@ -330,48 +341,41 @@ def main():
 
     results = {}
     for provider in providers:
-        print(f"Checking {provider}...", file=sys.stderr)
+        _log(f"Checking {provider}...")
         try:
             result = check_provider(provider, extracted)
             results[provider] = result
 
             if result.get("skipped"):
-                print(f"  ⏭️  Skipped: {result['reason']}", file=sys.stderr)
+                _log(f"  ⏭️  Skipped: {result['reason']}")
             elif result.get("error"):
-                print(f"  ❗ Error: {result['error']}", file=sys.stderr)
+                _log(f"  ❗ Error: {result['error']}")
             elif result["missing_count"] > 0:
-                print(
+                _log(
                     f"  ❌ {result['missing_count']}/{result['kiln_count']} missing "
-                    f"(provider has {result['available_count']} models total)",
-                    file=sys.stderr,
+                    f"(provider has {result['available_count']} models total)"
                 )
                 for m in result["missing"]:
-                    print(f"     - {m}", file=sys.stderr)
+                    _log(f"     - {m}")
                 if result.get("expiring"):
                     for e in result["expiring"]:
-                        print(
-                            f"  ⚠️  Expiring: {e['model_id']} ({e['expiration_date']})",
-                            file=sys.stderr,
-                        )
+                        _log(f"  ⚠️  Expiring: {e['model_id']} ({e['expiration_date']})")
             else:
                 msg = f"  ✅ {result['kiln_count']}/{result['kiln_count']} found"
                 if result.get("expiring"):
                     msg += f" ({len(result['expiring'])} expiring soon)"
-                print(msg, file=sys.stderr)
+                _log(msg)
                 for e in result.get("expiring", []):
-                    print(
-                        f"  ⚠️  Expiring: {e['model_id']} ({e['expiration_date']})",
-                        file=sys.stderr,
-                    )
+                    _log(f"  ⚠️  Expiring: {e['model_id']} ({e['expiration_date']})")
         except (HTTPError, URLError, OSError) as e:
             results[provider] = {"provider": provider, "error": str(e)}
-            print(f"  ❗ Network error: {e}", file=sys.stderr)
+            _log(f"  ❗ Network error: {e}")
         except Exception as e:
             results[provider] = {"provider": provider, "error": str(e)}
-            print(f"  ❗ Error: {e}", file=sys.stderr)
+            _log(f"  ❗ Error: {e}")
 
     json.dump(results, sys.stdout, indent=2)
-    print()
+    sys.stdout.write("\n")
 
 
 if __name__ == "__main__":
