@@ -337,20 +337,16 @@
   $: selected_model_deprecated = selected_model_details?.deprecated ?? false
 
   $: selected_model_suggested_data_gen =
-    available_model_details(model_name, provider_name, $available_models)
-      ?.suggested_for_data_gen || false
+    selected_model_details?.suggested_for_data_gen || false
 
   $: selected_model_suggested_uncensored_data_gen =
-    available_model_details(model_name, provider_name, $available_models)
-      ?.suggested_for_uncensored_data_gen || false
+    selected_model_details?.suggested_for_uncensored_data_gen || false
 
   $: selected_model_suggested_evals =
-    available_model_details(model_name, provider_name, $available_models)
-      ?.suggested_for_evals || false
+    selected_model_details?.suggested_for_evals || false
 
   $: selected_model_suggested_doc_extraction =
-    available_model_details(model_name, provider_name, $available_models)
-      ?.suggested_for_doc_extraction || false
+    selected_model_details?.suggested_for_doc_extraction || false
 </script>
 
 <div>

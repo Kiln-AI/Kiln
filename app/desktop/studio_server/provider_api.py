@@ -1444,7 +1444,7 @@ async def available_ollama_models() -> AvailableModels | None:
                             ]
                             if ollama_provider.multimodal_mime_types
                             else None,
-                            deprecated=False,
+                            deprecated=ollama_provider.deprecated,
                         )
                     )
         for ollama_model in ollama_connection.untested_models:
@@ -1550,7 +1550,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                             # Docker Model Runner uses OpenAI-compatible API with JSON schema support
                             structured_output_mode=StructuredOutputMode.json_schema,
                             supports_function_calling=docker_provider.supports_function_calling,
-                            deprecated=False,
+                            deprecated=docker_provider.deprecated,
                         )
                     )
         for docker_model in docker_connection.untested_models:
@@ -1771,7 +1771,7 @@ def user_models_as_available() -> Dict[str, List[ModelDetails]]:
                 suggested_for_doc_extraction=False,
                 multimodal_capable=overrides.get("multimodal_capable", False),
                 multimodal_mime_types=overrides.get("multimodal_mime_types"),
-                deprecated=False,
+                deprecated=overrides.get("deprecated", False),
             )
         )
 
