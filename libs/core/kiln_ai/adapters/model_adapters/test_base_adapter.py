@@ -13,6 +13,7 @@ from kiln_ai.datamodel import Task
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
+from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.base_tool import KilnToolInterface
 
@@ -928,3 +929,102 @@ class TestAgentRunContextLifecycle:
             assert call_args is not None
             run_id = call_args[0][0] if call_args[0] else call_args[1]["run_id"]
             assert run_id.startswith("run_")
+
+
+class TestResolveSkills:
+    def test_returns_empty_for_non_kiln_agent(self, base_task):
+        from kiln_ai.datamodel.run_config import (
+            McpRunConfigProperties,
+            MCPToolReference,
+        )
+
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=McpRunConfigProperties(
+                tool_reference=MCPToolReference(tool_id="mcp::local::s::t"),
+            ),
+        )
+        assert adapter._resolve_skills() == []
+
+    def test_returns_empty_when_no_tools_config(self, adapter):
+        assert adapter._resolve_skills() == []
+
+    @pytest.fixture
+    def _run_config_with_tools(self):
+        def _make(tools: list[str]) -> KilnAgentRunConfigProperties:
+            return KilnAgentRunConfigProperties(
+                model_name="test_model",
+                model_provider_name="openai",
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="json_schema",
+                tools_config=ToolsRunConfig(tools=tools),
+            )
+
+        return _make
+
+    def test_returns_empty_when_no_skill_ids(self, base_task, _run_config_with_tools):
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=_run_config_with_tools(["kiln_tool::add_numbers"]),
+        )
+        assert adapter._resolve_skills() == []
+
+    def test_raises_when_skills_dict_not_provided(
+        self, base_task, _run_config_with_tools
+    ):
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=_run_config_with_tools(["kiln_tool::skill::skill_123"]),
+        )
+        with pytest.raises(ValueError, match="no skills dict was provided"):
+            adapter._resolve_skills()
+
+    def test_raises_when_skill_missing_from_dict(
+        self, base_task, _run_config_with_tools
+    ):
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=_run_config_with_tools(["kiln_tool::skill::skill_123"]),
+            config=AdapterConfig(skills={}),
+        )
+        with pytest.raises(ValueError, match="not found in the injected skills dict"):
+            adapter._resolve_skills()
+
+    def test_resolves_skills_from_injected_dict(
+        self, base_task, _run_config_with_tools
+    ):
+        skill = Skill(name="my_skill", description="A skill", body="do things")
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=_run_config_with_tools([f"kiln_tool::skill::{skill.id}"]),
+            config=AdapterConfig(skills={skill.id: skill}),
+        )
+        result = adapter._resolve_skills()
+        assert len(result) == 1
+        assert result[0].name == "my_skill"
+
+    def test_caches_result(self, base_task, _run_config_with_tools):
+        skill = Skill(name="my_skill", description="A skill", body="do things")
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=_run_config_with_tools([f"kiln_tool::skill::{skill.id}"]),
+            config=AdapterConfig(skills={skill.id: skill}),
+        )
+        result1 = adapter._resolve_skills()
+        result2 = adapter._resolve_skills()
+        assert result1 is result2
+
+    def test_builds_skills_prompt_section(self, base_task, _run_config_with_tools):
+        skill = Skill(name="my_skill", description="A test skill", body="do things")
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=_run_config_with_tools([f"kiln_tool::skill::{skill.id}"]),
+            config=AdapterConfig(skills={skill.id: skill}),
+        )
+        section = adapter._build_skills_prompt_section()
+        assert section is not None
+        assert "my_skill" in section
+        assert "A test skill" in section
+
+    def test_skills_prompt_section_none_without_skills(self, adapter):
+        assert adapter._build_skills_prompt_section() is None
