@@ -87,6 +87,7 @@
 
   let unsupported_models: Option[] = []
   let untested_models: Option[] = []
+  let deprecated_models: Option[] = []
   let previous_model: string = model
 
   function get_model_warning(selected: string): string | null {
@@ -123,6 +124,7 @@
     let options: OptionGroup[] = []
     unsupported_models = []
     untested_models = []
+    deprecated_models = []
     // Clear and rebuild the map
     model_value_to_provider_name = new Map()
 
@@ -183,6 +185,18 @@
           untested_models.push({
             value: id,
             label: long_label,
+          })
+          model_value_to_provider_name.set(id, provider.provider_name)
+          continue
+        }
+        const model_is_deprecated =
+          (model as { deprecated?: boolean }).deprecated === true
+        if (model_is_deprecated) {
+          deprecated_models.push({
+            value: id,
+            label: long_label,
+            badge: "Deprecated",
+            disabled: true,
           })
           model_value_to_provider_name.set(id, provider.provider_name)
           continue
@@ -265,6 +279,13 @@
       })
     }
 
+    if (deprecated_models.length > 0) {
+      options.push({
+        label: "Deprecated Models",
+        options: deprecated_models,
+      })
+    }
+
     if (settings.suggested_mode === "doc_extraction") {
       for (const option_group of options) {
         for (const option of option_group.options) {
@@ -308,6 +329,12 @@
   $: selected_model_unsupported = unsupported_models.find(
     (m) => m.value === model,
   )
+  $: selected_model_deprecated =
+    (
+      available_model_details(model_name, provider_name, $available_models) as {
+        deprecated?: boolean
+      } | null
+    )?.deprecated || false
 
   $: selected_model_suggested_data_gen =
     available_model_details(model_name, provider_name, $available_models)
@@ -343,6 +370,10 @@
   {#if selected_model_untested}
     <Warning
       warning_message="This model has not been tested with Kiln. It may not work as expected."
+    />
+  {:else if selected_model_deprecated}
+    <Warning
+      warning_message="This model is deprecated. Existing run configs can still use it, but you should migrate to a newer model."
     />
   {:else if selected_model_unsupported}
     {#if model_dropdown_settings.requires_uncensored_data_gen}

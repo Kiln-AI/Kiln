@@ -970,6 +970,7 @@ async def test_get_available_models(app, client):
                     "model_specific_run_config": None,
                     "available_thinking_levels": None,
                     "default_thinking_level": None,
+                    "deprecated": False,
                 }
             ],
         },
@@ -999,6 +1000,7 @@ async def test_get_available_models(app, client):
                     "model_specific_run_config": None,
                     "available_thinking_levels": None,
                     "default_thinking_level": None,
+                    "deprecated": False,
                 },
             ],
         },
@@ -1028,6 +1030,7 @@ async def test_get_available_models(app, client):
                     "model_specific_run_config": None,
                     "available_thinking_levels": None,
                     "default_thinking_level": None,
+                    "deprecated": False,
                 }
             ],
         },
@@ -1107,10 +1110,64 @@ async def test_get_available_models_ollama_exception(app, client):
                     "model_specific_run_config": None,
                     "available_thinking_levels": None,
                     "default_thinking_level": None,
+                    "deprecated": False,
                 }
             ],
         },
     ]
+
+
+@pytest.mark.asyncio
+async def test_get_available_models_includes_deprecated_flag(app, client):
+    mock_config = MagicMock()
+    mock_config.get_value.return_value = "mock_key"
+
+    mock_provider_warnings = {
+        ModelProviderName.gemini_api: MagicMock(required_config_keys=["key1"]),
+    }
+
+    mock_built_in_models = [
+        KilnModel(
+            name="gemini_3_pro_preview",
+            family="",
+            friendly_name="Gemini 3 Pro Preview",
+            providers=[
+                KilnModelProvider(
+                    name=ModelProviderName.gemini_api,
+                    model_id="gemini-3-pro-preview",
+                    deprecated=True,
+                    structured_output_mode="json_schema",
+                )
+            ],
+        ),
+    ]
+
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.Config.shared",
+            return_value=mock_config,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.provider_warnings",
+            mock_provider_warnings,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.built_in_models",
+            mock_built_in_models,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.connect_ollama",
+            side_effect=HTTPException(status_code=500),
+        ),
+    ):
+        response = client.get("/api/available_models")
+
+    assert response.status_code == 200
+    models = response.json()
+    assert len(models) == 1
+    assert models[0]["provider_id"] == "gemini_api"
+    assert models[0]["models"][0]["id"] == "gemini_3_pro_preview"
+    assert models[0]["models"][0]["deprecated"] is True
 
 
 def test_get_providers_models(client):

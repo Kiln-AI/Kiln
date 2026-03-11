@@ -334,6 +334,9 @@ class KilnModelProvider(BaseModel):
     # For openai_compatible providers: the name of the custom provider (user specified)
     openai_compatible_provider_name: str | None = None
 
+    # Whether the model is deprecated.
+    deprecated: bool = False
+
     @model_validator(mode="after")
     def validate_openrouter_reasoning_object(self) -> "KilnModelProvider":
         if (
@@ -1847,6 +1850,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="google/gemini-3-pro-preview",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 # while the model is capable of reasoning, it doesn't always return it in the response
                 # reasoning_capable=True,
@@ -1871,6 +1875,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.gemini_api,
                 model_id="gemini-3-pro-preview",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_doc_extraction=True,
                 multimodal_capable=True,
@@ -1903,6 +1908,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.vertex,
                 model_id="gemini-3-pro-preview",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 # while the model is capable of reasoning, it doesn't always return it in the response
                 # reasoning_capable=True,
