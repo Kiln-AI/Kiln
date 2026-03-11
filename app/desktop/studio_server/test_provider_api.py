@@ -1,4 +1,5 @@
 import json
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, Mock, patch
 
@@ -38,6 +39,7 @@ from app.desktop.studio_server.provider_api import (
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from kiln_server.custom_errors import connect_custom_errors
 from kiln_ai.adapters.ml_embedding_model_list import (
     EmbeddingModelName,
     KilnEmbeddingModel,
@@ -65,6 +67,7 @@ from kiln_ai.utils.config import Config
 @pytest.fixture
 def app():
     app = FastAPI()
+    connect_custom_errors(app)
     connect_provider_api(app)
     return app
 
@@ -72,6 +75,33 @@ def app():
 @pytest.fixture
 def client(app):
     return TestClient(app)
+
+
+@contextmanager
+def patched_non_builtin_available_model_sources():
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.available_docker_model_runner_models",
+            return_value=None,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.all_fine_tuned_models",
+            return_value=None,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.openai_compatible_providers",
+            return_value=[],
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.legacy_custom_models_as_available",
+            return_value={},
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.user_models_as_available",
+            return_value={},
+        ),
+    ):
+        yield
 
 
 @pytest.mark.parametrize(
@@ -162,7 +192,7 @@ def test_connect_api_key_kiln_copilot_empty_key(client):
     )
 
     assert response.status_code == 400
-    assert response.json() == {"detail": "API Key not found"}
+    assert response.json() == {"message": "API Key not found"}
 
 
 @patch("app.desktop.studio_server.provider_api.httpx.AsyncClient.get")
@@ -925,6 +955,7 @@ async def test_get_available_models(app, client):
             "app.desktop.studio_server.provider_api.Config.shared",
             return_value=mock_config,
         ),
+        patched_non_builtin_available_model_sources(),
         patch(
             "app.desktop.studio_server.provider_api.provider_warnings",
             mock_provider_warnings,
@@ -966,6 +997,9 @@ async def test_get_available_models(app, client):
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                     "model_specific_run_config": None,
+                    "available_thinking_levels": None,
+                    "default_thinking_level": None,
+                    "deprecated": False,
                 }
             ],
         },
@@ -993,6 +1027,9 @@ async def test_get_available_models(app, client):
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                     "model_specific_run_config": None,
+                    "available_thinking_levels": None,
+                    "default_thinking_level": None,
+                    "deprecated": False,
                 },
             ],
         },
@@ -1020,6 +1057,9 @@ async def test_get_available_models(app, client):
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                     "model_specific_run_config": None,
+                    "available_thinking_levels": None,
+                    "default_thinking_level": None,
+                    "deprecated": False,
                 }
             ],
         },
@@ -1055,6 +1095,7 @@ async def test_get_available_models_ollama_exception(app, client):
             "app.desktop.studio_server.provider_api.Config.shared",
             return_value=mock_config,
         ),
+        patched_non_builtin_available_model_sources(),
         patch(
             "app.desktop.studio_server.provider_api.provider_warnings",
             mock_provider_warnings,
@@ -1097,10 +1138,67 @@ async def test_get_available_models_ollama_exception(app, client):
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                     "model_specific_run_config": None,
+                    "available_thinking_levels": None,
+                    "default_thinking_level": None,
+                    "deprecated": False,
                 }
             ],
         },
     ]
+
+
+@pytest.mark.asyncio
+async def test_get_available_models_includes_deprecated_flag(app, client):
+    mock_config = MagicMock()
+    mock_config.get_value.return_value = "mock_key"
+
+    mock_provider_warnings = {
+        ModelProviderName.gemini_api: MagicMock(required_config_keys=["key1"]),
+    }
+
+    mock_built_in_models = [
+        KilnModel(
+            name="gemini_3_pro_preview",
+            family="",
+            friendly_name="Gemini 3 Pro Preview",
+            providers=[
+                KilnModelProvider(
+                    name=ModelProviderName.gemini_api,
+                    model_id="gemini-3-pro-preview",
+                    deprecated=True,
+                    structured_output_mode="json_schema",
+                )
+            ],
+        ),
+    ]
+
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.Config.shared",
+            return_value=mock_config,
+        ),
+        patched_non_builtin_available_model_sources(),
+        patch(
+            "app.desktop.studio_server.provider_api.provider_warnings",
+            mock_provider_warnings,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.built_in_models",
+            mock_built_in_models,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.connect_ollama",
+            side_effect=HTTPException(status_code=500),
+        ),
+    ):
+        response = client.get("/api/available_models")
+
+    assert response.status_code == 200
+    models = response.json()
+    assert len(models) == 1
+    assert models[0]["provider_id"] == "gemini_api"
+    assert models[0]["models"][0]["id"] == "gemini_3_pro_preview"
+    assert models[0]["models"][0]["deprecated"] is True
 
 
 def test_get_providers_models(client):
@@ -1602,7 +1700,7 @@ async def test_save_openai_compatible_providers_duplicate_name(client):
         )
 
         assert response.status_code == 400
-        assert response.json() == {"detail": "Provider with this name already exists"}
+        assert response.json() == {"message": "Provider with this name already exists"}
 
 
 @pytest.mark.asyncio
@@ -3415,6 +3513,7 @@ async def test_get_available_reranker_models(app, client):
 def test_add_user_model_success():
     """Test adding a user model successfully"""
     app = FastAPI()
+    connect_custom_errors(app)
     connect_provider_api(app)
     client = TestClient(app)
 
@@ -3447,6 +3546,7 @@ def test_add_user_model_success():
 def test_add_user_model_exact_duplicate_rejected():
     """Test that an exact duplicate (same provider_id, model_id, name, overrides) is rejected"""
     app = FastAPI()
+    connect_custom_errors(app)
     connect_provider_api(app)
     client = TestClient(app)
 
@@ -3479,12 +3579,13 @@ def test_add_user_model_exact_duplicate_rejected():
         )
 
     assert response.status_code == 400
-    assert "already exists" in response.json()["detail"]
+    assert "already exists" in response.json()["message"]
 
 
 def test_add_user_model_same_model_id_different_name_allowed():
     """Test that same model_id with different display name is allowed (not a duplicate)"""
     app = FastAPI()
+    connect_custom_errors(app)
     connect_provider_api(app)
     client = TestClient(app)
 
@@ -3524,6 +3625,7 @@ def test_add_user_model_same_model_id_different_name_allowed():
 def test_add_user_model_same_model_id_different_overrides_allowed():
     """Test that same model_id with different overrides is allowed (not a duplicate)"""
     app = FastAPI()
+    connect_custom_errors(app)
     connect_provider_api(app)
     client = TestClient(app)
 
@@ -3564,6 +3666,7 @@ def test_add_user_model_same_model_id_different_overrides_allowed():
 def test_add_user_model_same_model_id_different_provider_allowed():
     """Test that same model_id on a different provider is allowed"""
     app = FastAPI()
+    connect_custom_errors(app)
     connect_provider_api(app)
     client = TestClient(app)
 
@@ -3603,6 +3706,7 @@ def test_add_user_model_same_model_id_different_provider_allowed():
 def test_add_user_model_invalid_custom_provider():
     """Test that adding a model for a non-existent custom provider fails"""
     app = FastAPI()
+    connect_custom_errors(app)
     connect_provider_api(app)
     client = TestClient(app)
 
@@ -3624,12 +3728,13 @@ def test_add_user_model_invalid_custom_provider():
         )
 
     assert response.status_code == 400
-    assert "not found" in response.json()["detail"]
+    assert "not found" in response.json()["message"]
 
 
 def test_delete_user_model_by_id():
     """Test deleting a user model by its ID (new format)"""
     app = FastAPI()
+    connect_custom_errors(app)
     connect_provider_api(app)
     client = TestClient(app)
 
@@ -3666,6 +3771,7 @@ def test_delete_user_model_by_id():
 def test_delete_user_model_by_tuple_from_registry():
     """Test deleting a user model by provider_type/provider_id/model_id tuple (legacy format)"""
     app = FastAPI()
+    connect_custom_errors(app)
     connect_provider_api(app)
     client = TestClient(app)
 
@@ -3696,6 +3802,7 @@ def test_delete_user_model_by_tuple_from_registry():
 def test_delete_user_model_by_tuple_from_legacy_custom_models():
     """Test deleting a legacy model from custom_models by tuple (legacy format)"""
     app = FastAPI()
+    connect_custom_errors(app)
     connect_provider_api(app)
     client = TestClient(app)
 
@@ -3721,6 +3828,7 @@ def test_delete_user_model_by_tuple_from_legacy_custom_models():
 def test_delete_user_model_not_found():
     """Test deleting a non-existent model returns 404"""
     app = FastAPI()
+    connect_custom_errors(app)
     connect_provider_api(app)
     client = TestClient(app)
 
@@ -3735,12 +3843,13 @@ def test_delete_user_model_not_found():
         response = client.delete("/api/settings/user_models?id=non-existent-id")
 
     assert response.status_code == 404
-    assert "not found" in response.json()["detail"]
+    assert "not found" in response.json()["message"]
 
 
 def test_delete_user_model_bad_request_no_params():
     """Test deleting without required parameters returns 400"""
     app = FastAPI()
+    connect_custom_errors(app)
     connect_provider_api(app)
     client = TestClient(app)
 
@@ -3755,4 +3864,4 @@ def test_delete_user_model_bad_request_no_params():
         response = client.delete("/api/settings/user_models")
 
     assert response.status_code == 400
-    assert "Must specify" in response.json()["detail"]
+    assert "Must specify" in response.json()["message"]

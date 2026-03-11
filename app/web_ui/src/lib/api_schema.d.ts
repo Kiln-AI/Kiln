@@ -2150,6 +2150,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tool_servers/{tool_server_id}/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Tool Server Config */
+        get: operations["get_tool_server_config_api_projects__project_id__tool_servers__tool_server_id__config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/connect_remote_mcp": {
         parameters: {
             query?: never;
@@ -4967,6 +4984,11 @@ export interface components {
             temperature: number;
             /** @description The structured output mode to use for this run config. */
             structured_output_mode: components["schemas"]["StructuredOutputMode"];
+            /**
+             * Thinking Level
+             * @description The thinking level to use for this run config. If None, defaults may apply.
+             */
+            thinking_level?: string | null;
             /** @description The tools config to use for this run config, defining which tools are available to the model. */
             tools_config?: components["schemas"]["ToolsRunConfig"] | null;
         };
@@ -5345,6 +5367,12 @@ export interface components {
             /** Multimodal Mime Types */
             multimodal_mime_types?: string[] | null;
             structured_output_mode: components["schemas"]["StructuredOutputMode"];
+            /** Available Thinking Levels */
+            available_thinking_levels?: {
+                [key: string]: string;
+            } | null;
+            /** Default Thinking Level */
+            default_thinking_level?: string | null;
             /**
              * Untested Model
              * @default false
@@ -5354,6 +5382,11 @@ export interface components {
             task_filter?: string[] | null;
             /** Model Specific Run Config */
             model_specific_run_config?: string | null;
+            /**
+             * Deprecated
+             * @default false
+             */
+            deprecated: boolean;
         };
         /**
          * ModelProviderName
@@ -12057,6 +12090,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_tool_server_config_api_projects__project_id__tool_servers__tool_server_id__config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                tool_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalToolServerApiDescription"];
                 };
             };
             /** @description Validation Error */

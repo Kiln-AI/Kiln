@@ -12,6 +12,7 @@
   import type { ExternalToolServerApiDescription } from "$lib/types"
   import Warning from "$lib/ui/warning.svelte"
   import posthog from "posthog-js"
+  import ErrorDetailsBlock from "$lib/ui/error_details_block.svelte"
 
   $: project_id = $page.params.project_id!
 
@@ -230,7 +231,6 @@
     <FormContainer
       submit_label="Connect"
       on:submit={connect_remote_mcp}
-      bind:error
       bind:submitting
     >
       <FormElement
@@ -317,6 +317,19 @@
           </div>
         </div>
       </FormList>
+
+      {#if error}
+        <ErrorDetailsBlock
+          title="Could Not Connect to MCP Server"
+          error_messages={error.getErrorMessages()}
+          troubleshooting_steps={[
+            "Verify the URL is correct.",
+            "Verify the server is running and accessible.",
+            "Check your network connection.",
+            "Check Kiln logs for additional details.",
+          ]}
+        />
+      {/if}
     </FormContainer>
   </div>
 </div>

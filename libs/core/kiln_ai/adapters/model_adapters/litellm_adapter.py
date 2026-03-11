@@ -403,8 +403,23 @@ class LiteLlmAdapter(BaseAdapter):
         extra_body = {}
         provider_options = {}
 
-        if provider.thinking_level is not None:
-            extra_body["reasoning_effort"] = provider.thinking_level
+        run_config = as_kiln_agent_run_config(self.run_config)
+        # For legacy config 'thinking_level' is not set, default to provider's default
+        if "thinking_level" in run_config.model_fields_set:
+            thinking_level = run_config.thinking_level
+        else:
+            thinking_level = provider.default_thinking_level
+
+        # Set the reasoning_effort
+        if thinking_level is not None:
+            # Anthropic models in OpenRouter uses reasoning object. See https://openrouter.ai/docs/use-cases/reasoning-tokens
+            if (
+                provider.name == ModelProviderName.openrouter
+                and provider.openrouter_reasoning_object
+            ):
+                extra_body["reasoning"] = {"effort": thinking_level}
+            else:
+                extra_body["reasoning_effort"] = thinking_level
 
         if provider.require_openrouter_reasoning:
             # https://openrouter.ai/docs/use-cases/reasoning-tokens

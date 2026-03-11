@@ -9,6 +9,7 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.check_ent
 from app.desktop.studio_server.settings_api import connect_settings
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from kiln_server.custom_errors import connect_custom_errors
 from kiln_ai.utils.config import Config
 
 
@@ -21,6 +22,7 @@ def temp_home(tmp_path):
 @pytest.fixture
 def app():
     app = FastAPI()
+    connect_custom_errors(app)
     connect_settings(app)
     return app
 
@@ -186,7 +188,7 @@ class TestCheckEntitlements:
                 "/api/check_entitlements?feature_codes=prompt-optimization"
             )
             assert response.status_code == 401
-            assert "API key not configured" in response.json()["detail"]
+            assert "API key not configured" in response.json()["message"]
 
     def test_check_entitlements_single_feature_true(self, client, mock_api_key):
         mock_response = MagicMock(
@@ -278,4 +280,4 @@ class TestCheckEntitlements:
                 "/api/check_entitlements?feature_codes=prompt-optimization"
             )
             assert response.status_code == 403
-            assert "Forbidden: Invalid API key" in response.json()["detail"]
+            assert "Forbidden: Invalid API key" in response.json()["message"]

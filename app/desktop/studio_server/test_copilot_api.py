@@ -13,11 +13,13 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_sp
 from app.desktop.studio_server.copilot_api import connect_copilot_api
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from kiln_server.custom_errors import connect_custom_errors
 
 
 @pytest.fixture
 def app():
     app = FastAPI()
+    connect_custom_errors(app)
     connect_copilot_api(app)
     return app
 
@@ -123,7 +125,7 @@ class TestClarifySpec:
 
             response = client.post("/api/copilot/clarify_spec", json=clarify_spec_input)
             assert response.status_code == 401
-            assert "API key not configured" in response.json()["detail"]
+            assert "API key not configured" in response.json()["message"]
 
     def test_clarify_spec_success(self, client, clarify_spec_input, mock_api_key):
         mock_output = MagicMock(spec=ClarifySpecOutput)
@@ -194,7 +196,7 @@ class TestClarifySpec:
         ):
             response = client.post("/api/copilot/clarify_spec", json=clarify_spec_input)
             assert response.status_code == 500
-            assert "Failed to analyze spec" in response.json()["detail"]
+            assert "Failed to analyze spec" in response.json()["message"]
 
     def test_clarify_spec_validation_error(
         self, client, clarify_spec_input, mock_api_key
@@ -210,7 +212,7 @@ class TestClarifySpec:
         ):
             response = client.post("/api/copilot/clarify_spec", json=clarify_spec_input)
             assert response.status_code == 422
-            assert "Validation error from server" in response.json()["detail"]
+            assert "Validation error from server" in response.json()["message"]
 
 
 class TestRefineSpec:
@@ -223,7 +225,7 @@ class TestRefineSpec:
 
             response = client.post("/api/copilot/refine_spec", json=refine_spec_input)
             assert response.status_code == 401
-            assert "API key not configured" in response.json()["detail"]
+            assert "API key not configured" in response.json()["message"]
 
     def test_refine_spec_success(self, client, refine_spec_input, mock_api_key):
         mock_output = MagicMock(spec=RefineSpecApiOutput)
@@ -259,7 +261,7 @@ class TestRefineSpec:
         ):
             response = client.post("/api/copilot/refine_spec", json=refine_spec_input)
             assert response.status_code == 500
-            assert "Failed to refine spec" in response.json()["detail"]
+            assert "Failed to refine spec" in response.json()["message"]
 
     def test_refine_spec_validation_error(
         self, client, refine_spec_input, mock_api_key
@@ -275,7 +277,7 @@ class TestRefineSpec:
         ):
             response = client.post("/api/copilot/refine_spec", json=refine_spec_input)
             assert response.status_code == 422
-            assert "Validation error from server" in response.json()["detail"]
+            assert "Validation error from server" in response.json()["message"]
 
 
 class TestGenerateBatch:
@@ -290,7 +292,7 @@ class TestGenerateBatch:
                 "/api/copilot/generate_batch", json=generate_batch_input
             )
             assert response.status_code == 401
-            assert "API key not configured" in response.json()["detail"]
+            assert "API key not configured" in response.json()["message"]
 
     def test_generate_batch_success(self, client, generate_batch_input, mock_api_key):
         mock_output = MagicMock(spec=GenerateBatchOutput)
@@ -328,7 +330,7 @@ class TestGenerateBatch:
                 "/api/copilot/generate_batch", json=generate_batch_input
             )
             assert response.status_code == 500
-            assert "Failed to generate synthetic data" in response.json()["detail"]
+            assert "Failed to generate synthetic data" in response.json()["message"]
 
     def test_generate_batch_validation_error(
         self, client, generate_batch_input, mock_api_key
@@ -346,4 +348,4 @@ class TestGenerateBatch:
                 "/api/copilot/generate_batch", json=generate_batch_input
             )
             assert response.status_code == 422
-            assert "Validation error from server" in response.json()["detail"]
+            assert "Validation error from server" in response.json()["message"]

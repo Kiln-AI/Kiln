@@ -48,6 +48,7 @@ The library has a [comprehensive set of docs](https://kiln-ai.github.io/Kiln/kil
   - [Load a LlamaIndex Vector Store](#load-a-llamaindex-vector-store)
   - [Example: LanceDB Cloud](#example-lancedb-cloud)
   - [Deploy RAG without LlamaIndex](#deploy-rag-without-llamaindex)
+- [Connecting to Telemetry / MLOps](#connecting-to-telemetry--mlops-opentelemetry-braintrust-etc)
 - [Full API Reference](#full-api-reference)
 
 ## Installation
@@ -431,6 +432,18 @@ After export, query your data using [LlamaIndex](https://developers.llamaindex.a
 ### Deploy RAG without LlamaIndex
 
 While Kiln is designed for deploying to LlamaIndex, you don't need to use it. The `iter_llama_index_nodes` returns a `TextNode` object which includes all the data you need to build a RAG index in any stack: embedding, text, document name, chunk ID, etc.
+
+## Connecting to Telemetry / MLOps (OpenTelemetry, Braintrust, etc)
+
+You can connect the Kiln SDK to a wide range of MLOps, trace tracking, and telemetry platforms.
+
+Kiln uses the LiteLLM SDK, which supports all major telemetry providers. See LiteLLM's documentation for how to set up each provider:
+
+- [OpenTelemetry](https://docs.litellm.ai/docs/observability/opentelemetry_integration)
+- [Braintrust](https://docs.litellm.ai/docs/observability/braintrust)
+- [MLFlow](https://docs.litellm.ai/docs/observability/mlflow)
+- [LangFuse](https://docs.litellm.ai/docs/observability/langfuse_otel_integration)
+- Many more (see LiteLLM documentation)
 
 ## Full API Reference
 

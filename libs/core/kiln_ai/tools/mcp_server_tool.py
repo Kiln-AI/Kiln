@@ -50,9 +50,19 @@ class MCPServerTool(KilnToolInterface):
     ) -> ToolCallResult:
         result = await self._call_tool(**kwargs)
 
+        # MCP tool returned an application-level error - return it to the agent
+        # instead of crashing the run. This allows the agent to respond gracefully.
         if result.isError:
-            raise ValueError(
-                f"Tool {await self.name()} returned an error: {result.content}"
+            error_text = (
+                " ".join(
+                    block.text
+                    for block in result.content
+                    if isinstance(block, TextContent)
+                )
+                or "Unknown error"
+            )
+            return ToolCallResult(
+                output=json.dumps({"isError": True, "error": error_text})
             )
 
         # If the tool returns structured content, return it as a JSON string
