@@ -27,11 +27,10 @@ Run the extraction script from the repo root:
 python3 .cursor/skills/kiln-check-deprecation/scripts/extract_models.py > /tmp/kiln_extracted.json
 ```
 
-This parses `ml_model_list.py`, tracks parenthesis depth to find each `KilnModelProvider(` block, and extracts:
-- The provider name (`name=ModelProviderName.xxx`)
-- The model_id (`model_id="..."`)
-- The parent model's enum name (`name=ModelName.xxx`)
-- The line number for later editing
+This fetches the published model list from `https://remote-config.getkiln.ai/kiln_config_v2.json` and extracts:
+- The provider name
+- The model_id
+- The parent model's enum name
 
 It skips entries already marked `deprecated=True`.
 
@@ -40,7 +39,7 @@ It skips entries already marked `deprecated=True`.
 The JSON contains:
 - `deprecated_count`: number of already-deprecated entries
 - `providers`: dict of provider_name → sorted unique list of model_ids
-- `entries`: list of `{enum, provider, model_id, line}` for mapping back to code
+- `entries`: list of `{enum, provider, model_id}` for each non-deprecated entry
 
 ---
 
@@ -75,7 +74,7 @@ The script handles all provider API quirks automatically:
 Each provider result contains:
 - `missing`: model_ids not found in the provider's listing
 - `expiring`: model_ids with upcoming expiration dates (OpenRouter only)
-- `entries_to_deprecate`: full enum/provider/model_id/line entries for each missing model
+- `entries_to_deprecate`: full enum/provider/model_id entries for each missing model
 - `skipped` / `error`: if credentials missing or API call failed
 
 ### Supported providers
@@ -162,6 +161,14 @@ Group by provider within each category. Use the `entries_to_deprecate` field fro
 ## Phase 4 – Mark Deprecated
 
 For each confirmed-removed model, set `deprecated=True` on the affected `KilnModelProvider` entry.
+
+To find the line to edit, grep for the `model_id` in `ml_model_list.py`:
+
+```bash
+grep -n 'model_id="<model_id>"' libs/core/kiln_ai/adapters/ml_model_list.py
+```
+
+Then add `deprecated=True,` after the `model_id=` line in the matching `KilnModelProvider` block.
 
 **Rules:**
 - Only mark a provider deprecated if its model_id is confirmed missing from that provider's model list

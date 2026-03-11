@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Extract all non-deprecated KilnModelProvider entries from ml_model_list.py.
+"""Extract all non-deprecated KilnModelProvider entries from the remote config.
 
-Outputs JSON to stdout with:
+Fetches the published model list from remote-config.getkiln.ai and outputs
+JSON to stdout with:
   - deprecated_count: number of already-deprecated entries
   - providers: dict of provider_name -> sorted unique list of model_ids
-  - entries: list of {enum, provider, model_id, line} for mapping back to code
+  - entries: list of {enum, provider, model_id} for each non-deprecated entry
 
 Also prints a human-readable summary to stderr.
 
@@ -13,18 +14,13 @@ Usage:
 """
 
 import json
-import os
-import re
 import sys
+from urllib.request import Request, urlopen
 
-REPO_ROOT = os.path.dirname(
-    os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    )
-)
-MODEL_LIST_PATH = os.path.join(REPO_ROOT, "libs/core/kiln_ai/adapters/ml_model_list.py")
+REMOTE_CONFIG_URL = "https://remote-config.getkiln.ai/kiln_config_v2.json"
 
 SKIP_PROVIDERS = {
+    "amazon_bedrock",
     "ollama",
     "docker_model_runner",
     "kiln_fine_tune",
@@ -35,74 +31,58 @@ SKIP_PROVIDERS = {
 }
 
 
-def extract():
-    with open(MODEL_LIST_PATH, "r") as f:
-        lines = f.readlines()
+def _log(msg: str = "") -> None:
+    sys.stderr.write(msg + "\n")
 
-    entries = []
+
+def fetch_remote_config() -> dict:
+    req = Request(REMOTE_CONFIG_URL)
+    req.add_header("User-Agent", "kiln-deprecation-check/1.0")
+    with urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read())
+
+
+def extract() -> dict:
+    config = fetch_remote_config()
+
+    entries: list[dict] = []
     providers: dict[str, list[str]] = {}
     deprecated_count = 0
-    current_model_enum = None
 
-    i = 0
-    while i < len(lines):
-        line = lines[i]
+    for model in config.get("model_list", []):
+        model_enum = model.get("name", "")
+        for p in model.get("providers", []):
+            provider_name = p.get("name", "")
+            model_id = p.get("model_id")
 
-        # Track the parent KilnModel's name=ModelName.xxx
-        # This field uses `name=ModelName.xxx` (not `model_name=`).
-        mn_match = re.search(r"name=ModelName\.(\w+)", line)
-        if mn_match:
-            current_model_enum = mn_match.group(1)
-
-        if "KilnModelProvider(" in line and "class KilnModelProvider" not in line:
-            block = line
-            start_line = i + 1
-            paren_count = line.count("(") - line.count(")")
-            j = i + 1
-            while paren_count > 0 and j < len(lines):
-                block += lines[j]
-                paren_count += lines[j].count("(") - lines[j].count(")")
-                j += 1
-
-            if "deprecated=True" in block:
-                deprecated_count += 1
-                i = j
+            if not model_id or not provider_name:
                 continue
 
-            # Provider field uses `name=ModelProviderName.xxx` (not `provider_name=`).
-            pn_match = re.search(r"name=ModelProviderName\.(\w+)", block)
-            mid_match = re.search(r'model_id="([^"]+)"', block)
+            if p.get("deprecated", False):
+                deprecated_count += 1
+                continue
 
-            if pn_match and mid_match and current_model_enum:
-                provider_name = pn_match.group(1)
-                model_id = mid_match.group(1)
+            if provider_name not in providers:
+                providers[provider_name] = []
+            providers[provider_name].append(model_id)
 
-                if provider_name not in providers:
-                    providers[provider_name] = []
-                providers[provider_name].append(model_id)
-
-                entries.append(
-                    {
-                        "enum": current_model_enum,
-                        "provider": provider_name,
-                        "model_id": model_id,
-                        "line": start_line,
-                    }
-                )
-
-            i = j
-        else:
-            i += 1
+            entries.append(
+                {
+                    "enum": model_enum,
+                    "provider": provider_name,
+                    "model_id": model_id,
+                }
+            )
 
     unique_providers: dict[str, list[str]] = {}
-    for p, models in sorted(providers.items()):
+    for pname, models in sorted(providers.items()):
         seen: set[str] = set()
         unique: list[str] = []
         for m in models:
             if m not in seen:
                 seen.add(m)
                 unique.append(m)
-        unique_providers[p] = sorted(unique)
+        unique_providers[pname] = sorted(unique)
 
     return {
         "deprecated_count": deprecated_count,
@@ -111,11 +91,7 @@ def extract():
     }
 
 
-def _log(msg: str = "") -> None:
-    sys.stderr.write(msg + "\n")
-
-
-def main():
+def main() -> None:
     result = extract()
 
     _log(f"Already deprecated: {result['deprecated_count']}")
