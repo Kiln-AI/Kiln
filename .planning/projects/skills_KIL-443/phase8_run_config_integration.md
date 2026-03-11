@@ -1,4 +1,4 @@
-# Phase 5: Frontend - Run Config Integration
+# Phase 8: Frontend - Run Config Integration
 
 ## Goal
 
