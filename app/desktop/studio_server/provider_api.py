@@ -168,6 +168,7 @@ class ModelDetails(BaseModel):
     task_filter: List[str] | None = Field(default=None)
     # if the model has a model-specific run config which should be used when running the model (like a fine-tune model's baked in run config)
     model_specific_run_config: str | None = Field(default=None)
+    deprecated: bool = Field(default=False)
 
 
 class AvailableModels(BaseModel):
@@ -295,6 +296,7 @@ def connect_provider_api(app: FastAPI):
                                 multimodal_mime_types=mime_types_as_str,
                                 available_thinking_levels=provider.available_thinking_levels,
                                 default_thinking_level=provider.default_thinking_level,
+                                deprecated=provider.deprecated,
                             )
                         )
 
@@ -1442,6 +1444,7 @@ async def available_ollama_models() -> AvailableModels | None:
                             ]
                             if ollama_provider.multimodal_mime_types
                             else None,
+                            deprecated=ollama_provider.deprecated,
                         )
                     )
         for ollama_model in ollama_connection.untested_models:
@@ -1465,6 +1468,7 @@ async def available_ollama_models() -> AvailableModels | None:
                     suggested_for_doc_extraction=False,
                     multimodal_capable=False,
                     multimodal_mime_types=None,
+                    deprecated=False,
                 )
             )
 
@@ -1546,6 +1550,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                             # Docker Model Runner uses OpenAI-compatible API with JSON schema support
                             structured_output_mode=StructuredOutputMode.json_schema,
                             supports_function_calling=docker_provider.supports_function_calling,
+                            deprecated=docker_provider.deprecated,
                         )
                     )
         for docker_model in docker_connection.untested_models:
@@ -1567,6 +1572,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                     # Docker Model Runner uses OpenAI-compatible API with JSON schema support
                     structured_output_mode=StructuredOutputMode.json_schema,
                     supports_function_calling=False,
+                    deprecated=False,
                 )
             )
 
@@ -1686,6 +1692,7 @@ def legacy_custom_models_as_available() -> Dict[str, List[ModelDetails]]:
                 suggested_for_doc_extraction=False,
                 multimodal_capable=False,
                 multimodal_mime_types=None,
+                deprecated=False,
             )
         )
     return {"kiln_custom_registry": models}
@@ -1764,6 +1771,7 @@ def user_models_as_available() -> Dict[str, List[ModelDetails]]:
                 suggested_for_doc_extraction=False,
                 multimodal_capable=overrides.get("multimodal_capable", False),
                 multimodal_mime_types=overrides.get("multimodal_mime_types"),
+                deprecated=overrides.get("deprecated", False),
             )
         )
 
@@ -1824,6 +1832,7 @@ def all_fine_tuned_models() -> AvailableModels | None:
                             suggested_for_doc_extraction=False,
                             multimodal_capable=False,
                             multimodal_mime_types=None,
+                            deprecated=False,
                         )
                     )
 
@@ -1938,6 +1947,7 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
                         suggested_for_doc_extraction=False,
                         multimodal_capable=False,
                         multimodal_mime_types=None,
+                        deprecated=False,
                     )
                 )
 
