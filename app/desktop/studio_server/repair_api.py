@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
-from kiln_ai.adapters.adapter_registry import adapter_for_task
+from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
+from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.ml_model_list import (
     default_structured_output_mode_for_model_provider,
 )
@@ -93,9 +94,11 @@ def connect_repair_api(app: FastAPI):
                 detail=f"Invalid run config properties: {e}",
             )
 
+        skills = load_skills_for_task(repair_task, run_config_properties)
         adapter = adapter_for_task(
             repair_task,
             run_config_properties=run_config_properties,
+            base_adapter_config=AdapterConfig(skills=skills),
         )
 
         repair_run = await adapter.invoke(repair_task_input.model_dump())

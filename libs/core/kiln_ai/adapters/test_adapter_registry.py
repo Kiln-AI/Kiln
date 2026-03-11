@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from kiln_ai import datamodel
-from kiln_ai.adapters.adapter_registry import adapter_for_task
+from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import (
@@ -22,7 +22,9 @@ from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     McpRunConfigProperties,
     MCPToolReference,
+    ToolsRunConfig,
 )
+from kiln_ai.datamodel.skill import Skill
 
 
 @pytest.fixture
@@ -955,3 +957,72 @@ def test_adapter_for_task_rejects_kiln_agent_non_instance(basic_task):
             kiln_task=basic_task,
             run_config_properties=FakeRunConfig(),  # type: ignore[arg-type]
         )
+
+
+class TestLoadSkillsForTask:
+    def test_returns_empty_for_mcp_run_config(self, basic_task):
+        run_config = McpRunConfigProperties(
+            tool_reference=MCPToolReference(tool_id="mcp::local::s::t"),
+        )
+        assert load_skills_for_task(basic_task, run_config) == {}
+
+    @pytest.fixture
+    def _agent_config(self):
+        def _make(**overrides) -> KilnAgentRunConfigProperties:
+            defaults = dict(
+                model_name="gpt-4o",
+                model_provider_name="openai",
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="json_schema",
+            )
+            defaults.update(overrides)
+            return KilnAgentRunConfigProperties(**defaults)
+
+        return _make
+
+    def test_returns_empty_when_no_tools_config(self, basic_task, _agent_config):
+        assert load_skills_for_task(basic_task, _agent_config()) == {}
+
+    def test_returns_empty_when_no_skill_tool_ids(self, basic_task, _agent_config):
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(tools=["kiln_tool::add_numbers"])
+        )
+        assert load_skills_for_task(basic_task, rc) == {}
+
+    def test_returns_empty_when_no_parent_project(self, _agent_config):
+        task = datamodel.Task(name="orphan", instruction="do something")
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(tools=["kiln_tool::skill::skill_123"])
+        )
+        assert load_skills_for_task(task, rc) == {}
+
+    def test_bulk_loads_skills(self, tmp_path, _agent_config):
+        project = datamodel.Project(name="test_project", path=tmp_path / "project.kiln")
+        project.save_to_file()
+        task = datamodel.Task(
+            name="test_task", instruction="do something", parent=project
+        )
+        task.save_to_file()
+        skill_a = Skill(
+            name="skill_a", description="Skill A", body="body a", parent=project
+        )
+        skill_a.save_to_file()
+        skill_b = Skill(
+            name="skill_b", description="Skill B", body="body b", parent=project
+        )
+        skill_b.save_to_file()
+
+        rc = _agent_config(
+            tools_config=ToolsRunConfig(
+                tools=[
+                    f"kiln_tool::skill::{skill_a.id}",
+                    f"kiln_tool::skill::{skill_b.id}",
+                    "kiln_tool::add_numbers",
+                ]
+            ),
+        )
+        result = load_skills_for_task(task, rc)
+
+        assert set(result.keys()) == {skill_a.id, skill_b.id}
+        assert result[skill_a.id].name == "skill_a"
+        assert result[skill_b.id].name == "skill_b"

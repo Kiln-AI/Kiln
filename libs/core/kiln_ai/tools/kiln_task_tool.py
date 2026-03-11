@@ -81,17 +81,22 @@ class KilnTaskTool(KilnToolInterface):
             else:
                 raise ValueError(f"Input not found in kwargs: {kwargs}")
 
-        # These imports are here to avoid circular chains
-        from kiln_ai.adapters.adapter_registry import adapter_for_task
+        from kiln_ai.adapters.adapter_registry import (
+            adapter_for_task,
+            load_skills_for_task,
+        )
         from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 
-        # Create adapter and run the task using the calling task's allow_saving setting
+        skills = load_skills_for_task(
+            self._task, self._run_config.run_config_properties
+        )
         adapter = adapter_for_task(
             self._task,
             run_config_properties=self._run_config.run_config_properties,
             base_adapter_config=AdapterConfig(
                 allow_saving=context.allow_saving,
                 default_tags=["tool_call"],
+                skills=skills,
             ),
         )
         task_run = await adapter.invoke(
