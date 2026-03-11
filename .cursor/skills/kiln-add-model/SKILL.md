@@ -176,7 +176,6 @@ If the model supports configurable reasoning effort (not just on/off), add `avai
 - Reuse an existing `_THINKING_LEVELS` constant if the levels match exactly
 - Create a new constant only if levels differ; name it `{MODEL}_{PROVIDER_CONTEXT}_THINKING_LEVELS`
 - `default_thinking_level` must be one of the values in `available_thinking_levels`
-- ⚠️ Use `default_thinking_level`, NOT `thinking_level` — the latter is not a valid field and is silently ignored by Pydantic
 
 ---
 
@@ -366,7 +365,7 @@ No API provides the available thinking levels programmatically — they must be 
 
 ### Existing Constants
 
-Reuse when levels match exactly. Create a new constant only if levels differ.
+Reuse when levels match exactly. Create a new constant only if levels differ. This is not an exhaustive list.
 
 | Constant | Levels | Default | Used by |
 |----------|--------|---------|---------|
