@@ -143,6 +143,9 @@
       ) {
         continue
       }
+      if (model_details.deprecated) {
+        continue
+      }
       // Use the stored provider_display_name for custom providers, otherwise fall back to provider_name_from_id
       const display_name =
         recent_model.provider_display_name ||
@@ -318,7 +321,7 @@
   // Extra check to make sure the model is available to use
   export function get_selected_model(): string | null {
     for (const provider of model_options) {
-      if (provider.options.find((m) => m.value === model)) {
+      if (provider.options.find((m) => m.value === model && !m.disabled)) {
         return model
       }
     }

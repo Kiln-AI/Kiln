@@ -928,6 +928,26 @@ async def test_get_available_models(app, client):
             return_value=mock_config,
         ),
         patch(
+            "app.desktop.studio_server.provider_api.available_docker_model_runner_models",
+            return_value=None,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.all_fine_tuned_models",
+            return_value=None,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.openai_compatible_providers",
+            return_value=[],
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.legacy_custom_models_as_available",
+            return_value={},
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.user_models_as_available",
+            return_value={},
+        ),
+        patch(
             "app.desktop.studio_server.provider_api.provider_warnings",
             mock_provider_warnings,
         ),
@@ -1067,6 +1087,26 @@ async def test_get_available_models_ollama_exception(app, client):
             return_value=mock_config,
         ),
         patch(
+            "app.desktop.studio_server.provider_api.available_docker_model_runner_models",
+            return_value=None,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.all_fine_tuned_models",
+            return_value=None,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.openai_compatible_providers",
+            return_value=[],
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.legacy_custom_models_as_available",
+            return_value={},
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.user_models_as_available",
+            return_value={},
+        ),
+        patch(
             "app.desktop.studio_server.provider_api.provider_warnings",
             mock_provider_warnings,
         ),
@@ -1146,6 +1186,26 @@ async def test_get_available_models_includes_deprecated_flag(app, client):
         patch(
             "app.desktop.studio_server.provider_api.Config.shared",
             return_value=mock_config,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.available_docker_model_runner_models",
+            return_value=None,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.all_fine_tuned_models",
+            return_value=None,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.openai_compatible_providers",
+            return_value=[],
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.legacy_custom_models_as_available",
+            return_value={},
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.user_models_as_available",
+            return_value={},
         ),
         patch(
             "app.desktop.studio_server.provider_api.provider_warnings",
