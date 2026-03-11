@@ -67,7 +67,7 @@ The script handles all provider API quirks automatically:
 - **OpenRouter** is public (no auth) and includes `expiration_date` fields
 - **Fireworks AI** `/v1/models` only lists serverless models; the script instead checks each model individually via the model detail API (`GET /v1/{model_id}`), which covers all tiers (serverless, on-demand, fine-tune). A model is only flagged as missing if it returns HTTP 404 from the detail API.
 - **OpenRouter** `:exacto` is a virtual routing suffix (quality-first provider sorting) that never appears in model listings. The script strips it before checking. `:free` and `:thinking` are real model entries that appear in the listing when available — if they're missing, it's a genuine removal.
-- **Vertex AI** uses the v1beta1 publisher models endpoint with `x-goog-user-project` header. Requires `gcloud` CLI auth. Kiln entries may use `meta/` prefix for LiteLLM routing — stripped automatically. Versioned aliases like `gemini-2.0-flash` → `gemini-2.0-flash-001` are handled.
+- **Vertex AI** uses the v1beta1 publisher models endpoint with `x-goog-user-project` header. Requires `gcloud` CLI auth. Kiln entries may use `meta/` prefix for LiteLLM routing — stripped automatically. Versioned aliases (e.g. `gemini-2.0-flash-001` → `gemini-2.0-flash`) are handled by stripping 3-digit version suffixes.
 
 **Output:** JSON to stdout with per-provider results, human summary to stderr.
 

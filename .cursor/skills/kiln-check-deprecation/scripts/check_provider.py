@@ -39,6 +39,7 @@ API format quirks handled by this script:
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from typing import Any
@@ -282,8 +283,8 @@ def check_provider(provider_name: str, extracted: dict) -> dict:
     if provider_name == "vertex":
         available_with_aliases = set(available)
         for a in available:
-            if a.endswith("-001"):
-                available_with_aliases.add(a.removesuffix("-001"))
+            if re.match(r".*-\d{3}$", a):
+                available_with_aliases.add(re.sub(r"-\d{3}$", "", a))
         available = available_with_aliases
 
     missing = sorted(m for m in kiln_models if _effective_id(m) not in available)
