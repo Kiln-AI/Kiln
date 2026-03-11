@@ -95,6 +95,7 @@ PROVIDER_CONFIG = {
 }
 
 SKIP_PROVIDERS = {
+    "amazon_bedrock",
     "ollama",
     "docker_model_runner",
     "kiln_fine_tune",
