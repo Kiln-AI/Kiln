@@ -329,12 +329,12 @@
   $: selected_model_unsupported = unsupported_models.find(
     (m) => m.value === model,
   )
-  $: selected_model_deprecated =
-    (
-      available_model_details(model_name, provider_name, $available_models) as {
-        deprecated?: boolean
-      } | null
-    )?.deprecated || false
+  $: selected_model_details = available_model_details(
+    model_name,
+    provider_name,
+    $available_models,
+  )
+  $: selected_model_deprecated = selected_model_details?.deprecated ?? false
 
   $: selected_model_suggested_data_gen =
     available_model_details(model_name, provider_name, $available_models)
@@ -373,7 +373,7 @@
     />
   {:else if selected_model_deprecated}
     <Warning
-      warning_message="This model is deprecated. Existing run configs can still use it, but you should migrate to a newer model."
+      warning_message="This model is deprecated and can no longer be used. Please select a different model."
     />
   {:else if selected_model_unsupported}
     {#if model_dropdown_settings.requires_uncensored_data_gen}
