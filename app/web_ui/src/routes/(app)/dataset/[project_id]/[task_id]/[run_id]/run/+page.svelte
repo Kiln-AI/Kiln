@@ -37,6 +37,7 @@
     get_tools_property_info,
     get_tool_names_from_ids,
     get_tool_server_name,
+    split_tool_and_skill_ids,
   } from "$lib/stores/tools_store"
 
   $: run_id = $page.params.run_id!
@@ -52,20 +53,22 @@
   let see_all_properties = false
   let tools_property_value: string | string[] = "Loading..."
   let tool_links: (string | null)[] | undefined
+  let skills_property_value: string | string[] = "None"
+  let skill_links: (string | null)[] | undefined
 
   $: {
     const run_config = run?.output?.source?.run_config
-    let tool_ids: string[] = []
+    let all_ids: string[] = []
     if (!run_config) {
-      tool_ids = []
+      all_ids = []
     } else {
       const run_config_type = run_config.type
       switch (run_config_type) {
         case "mcp":
-          tool_ids = []
+          all_ids = []
           break
         case "kiln_agent":
-          tool_ids = run_config.tools_config?.tools ?? []
+          all_ids = run_config.tools_config?.tools ?? []
           break
         default: {
           const _exhaustive: never = run_config_type
@@ -73,6 +76,7 @@
         }
       }
     }
+    const { tool_ids, skill_ids } = split_tool_and_skill_ids(all_ids)
     const tools_property_info = get_tools_property_info(
       tool_ids,
       project_id,
@@ -80,6 +84,13 @@
     )
     tools_property_value = tools_property_info.value
     tool_links = tools_property_info.links
+    const skills_property_info = get_tools_property_info(
+      skill_ids,
+      project_id,
+      $available_tools,
+    )
+    skills_property_value = skills_property_info.value
+    skill_links = skills_property_info.links
   }
 
   function get_kiln_agent_properties(
@@ -119,6 +130,12 @@
       value: tools_property_value,
       links: tool_links,
       badge: Array.isArray(tools_property_value) ? true : false,
+    })
+    properties.push({
+      name: "Skills",
+      value: skills_property_value,
+      links: skill_links,
+      badge: Array.isArray(skills_property_value) ? true : false,
     })
     return properties
   }
