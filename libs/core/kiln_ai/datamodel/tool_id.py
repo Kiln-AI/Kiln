@@ -32,6 +32,7 @@ MCP_REMOTE_TOOL_ID_PREFIX = "mcp::remote::"
 RAG_TOOL_ID_PREFIX = "kiln_tool::rag::"
 MCP_LOCAL_TOOL_ID_PREFIX = "mcp::local::"
 KILN_TASK_TOOL_ID_PREFIX = "kiln_task::"
+CLIENT_TOOL_ID_PREFIX = "client_tool::"
 
 
 def _check_tool_id(id: str) -> str:
@@ -81,6 +82,15 @@ def _check_tool_id(id: str) -> str:
             )
         return id
 
+    # Client tools: client_tool::<tool_name>
+    if id.startswith(CLIENT_TOOL_ID_PREFIX):
+        tool_name = client_tool_name_from_id(id)
+        if not tool_name:
+            raise ValueError(
+                f"Invalid client tool ID: {id}. Expected format: 'client_tool::<tool_name>'."
+            )
+        return id
+
     raise ValueError(f"Invalid tool ID: {id}")
 
 
@@ -127,6 +137,20 @@ def build_rag_tool_id(rag_config_id: ID_TYPE) -> str:
 def build_kiln_task_tool_id(server_id: ID_TYPE) -> str:
     """Construct the tool ID for a Kiln task server."""
     return f"{KILN_TASK_TOOL_ID_PREFIX}{server_id}"
+
+
+def client_tool_name_from_id(tool_id: str) -> str:
+    """Get the tool name from a client tool ID."""
+    if not tool_id.startswith(CLIENT_TOOL_ID_PREFIX):
+        raise ValueError(
+            f"Invalid client tool ID format: {tool_id}. Expected format: 'client_tool::<tool_name>'."
+        )
+    name = tool_id[len(CLIENT_TOOL_ID_PREFIX) :]
+    if not name or not name.strip():
+        raise ValueError(
+            f"Invalid client tool ID format: {tool_id}. Expected format: 'client_tool::<tool_name>'."
+        )
+    return name
 
 
 def kiln_task_server_id_from_tool_id(tool_id: str) -> str:

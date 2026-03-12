@@ -21,6 +21,7 @@
     "@sveltejs/kit": "^2.20.6",
     "@sveltejs/vite-plugin-svelte": "^3.1.1",
     "@tailwindcss/typography": "^0.5.13",
+    "@types/dompurify": "^3.0.5",
     "@typescript-eslint/eslint-plugin": "^8.46.1",
     "@typescript-eslint/parser": "^8.46.1",
     "autoprefixer": "^10.4.15",
@@ -43,9 +44,11 @@
   "type": "module",
   "dependencies": {
     "@floating-ui/dom": "^1.7.2",
-    "echarts": "^6.0.0",
     "@kinde-oss/kinde-auth-pkce-js": "^4.3.0",
+    "dompurify": "^3.3.2",
+    "echarts": "^6.0.0",
     "highlight.js": "^11.10.0",
+    "marked": "^17.0.4",
     "openapi-fetch": "^0.12.2",
     "posthog-js": "^1.184.2"
   },

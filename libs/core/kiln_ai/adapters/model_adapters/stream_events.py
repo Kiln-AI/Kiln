@@ -30,6 +30,8 @@ class AiSdkEventType(str, Enum):
     TOOL_OUTPUT_AVAILABLE = "tool-output-available"
     TOOL_OUTPUT_ERROR = "tool-output-error"
 
+    CLIENT_TOOL_CALL = "client-tool-call"
+
     START_STEP = "start-step"
     FINISH_STEP = "finish-step"
 

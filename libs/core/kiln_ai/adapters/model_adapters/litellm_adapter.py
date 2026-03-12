@@ -694,7 +694,13 @@ class LiteLlmAdapter(BaseAdapter):
             async def run_tool_and_format(
                 t=tool, c=context, args=parsed_args, tc_id=tool_call.id
             ):
-                result = await t.run(c, **args)
+                from kiln_ai.tools.client_tool import ClientToolCallRequired
+
+                try:
+                    result = await t.run(c, **args)
+                except ClientToolCallRequired as e:
+                    e.tool_call_id = tc_id
+                    raise
                 return ChatCompletionToolMessageParamWrapper(
                     role="tool",
                     tool_call_id=tc_id,

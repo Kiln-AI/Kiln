@@ -256,6 +256,9 @@ class MultiturnFormatter(ChatFormatter):
     Takes prior_trace (existing conversation) and appends the new user message.
     Produces a single turn: the new user message. Tool calls and multi-turn
     model responses are handled by _run_model_turn's internal loop.
+
+    When the prior_trace ends with a tool result, the formatter skips adding
+    a user message so the model can respond directly to the tool output.
     """
 
     def __init__(
@@ -270,16 +273,22 @@ class MultiturnFormatter(ChatFormatter):
         )
         self._prior_trace = prior_trace
 
+    def _is_tool_continuation(self) -> bool:
+        if not self._prior_trace:
+            return False
+        last = self._prior_trace[-1]
+        return isinstance(last, dict) and last.get("role") == "tool"
+
     def initial_messages(self) -> list[ChatCompletionMessageIncludingLiteLLM]:
         """Messages to seed the conversation (prior trace)."""
         return list(self._prior_trace)
 
     def next_turn(self, previous_output: str | None = None) -> Optional[ChatTurn]:
         if self._state == "start":
-            # prior trace is already in the messages list and contains system and so on, we only need
-            # to append the latest new user message
-            user_msg = BasicChatMessage("user", format_user_message(self.user_input))
             self._state = "awaiting_final"
+            if self._is_tool_continuation():
+                return ChatTurn(messages=[], final_call=True)
+            user_msg = BasicChatMessage("user", format_user_message(self.user_input))
             self._messages.append(user_msg)
             return ChatTurn(messages=[user_msg], final_call=True)
 

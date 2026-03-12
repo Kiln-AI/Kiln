@@ -55,6 +55,7 @@ from kiln_ai.run_context import (
     set_agent_run_id,
 )
 from kiln_ai.tools import KilnToolInterface
+from kiln_ai.tools.client_tool import ClientToolCallRequired
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
@@ -670,7 +671,8 @@ class AiSdkStreamResult:
     """Async-iterable wrapper around the AI SDK streaming flow.
 
     Yields ``AiSdkStreamEvent`` instances.  After iteration the resulting
-    ``TaskRun`` is available via the ``.task_run`` property.
+    ``TaskRun`` is available via the ``.task_run`` property (unless
+    ``.client_tool_pending`` is ``True``).
     """
 
     def __init__(
@@ -685,10 +687,16 @@ class AiSdkStreamResult:
         self._input_source = input_source
         self._prior_trace = prior_trace
         self._task_run: TaskRun | None = None
+        self.client_tool_pending: bool = False
 
     @property
     def task_run(self) -> TaskRun:
         if self._task_run is None:
+            if self.client_tool_pending:
+                raise RuntimeError(
+                    "No task_run available: stream ended with a client tool call. "
+                    "Check .client_tool_pending before accessing .task_run"
+                )
             raise RuntimeError(
                 "Stream has not been fully consumed yet. "
                 "Iterate over the stream before accessing .task_run"
@@ -713,17 +721,32 @@ class AiSdkStreamResult:
             yield AiSdkStreamEvent(AiSdkEventType.START_STEP)
 
             last_event_was_tool_call = False
-            async for event in adapter_stream:
-                if isinstance(event, ModelResponseStream):
-                    if last_event_was_tool_call:
-                        converter.reset_for_next_step()
-                        last_event_was_tool_call = False
-                    for ai_event in converter.convert_chunk(event):
-                        yield ai_event
-                elif isinstance(event, ToolCallEvent):
-                    last_event_was_tool_call = True
-                    for ai_event in converter.convert_tool_event(event):
-                        yield ai_event
+            try:
+                async for event in adapter_stream:
+                    if isinstance(event, ModelResponseStream):
+                        if last_event_was_tool_call:
+                            converter.reset_for_next_step()
+                            last_event_was_tool_call = False
+                        for ai_event in converter.convert_chunk(event):
+                            yield ai_event
+                    elif isinstance(event, ToolCallEvent):
+                        last_event_was_tool_call = True
+                        for ai_event in converter.convert_tool_event(event):
+                            yield ai_event
+            except ClientToolCallRequired as e:
+                self.client_tool_pending = True
+                yield AiSdkStreamEvent(
+                    AiSdkEventType.CLIENT_TOOL_CALL,
+                    {
+                        "toolCallId": e.tool_call_id,
+                        "toolName": e.tool_name,
+                        "input": e.arguments,
+                    },
+                )
+                for ai_event in converter.finalize():
+                    yield ai_event
+                yield AiSdkStreamEvent(AiSdkEventType.FINISH_STEP)
+                return
 
             for ai_event in converter.finalize():
                 yield ai_event

@@ -1,6 +1,7 @@
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.tool_id import (
+    CLIENT_TOOL_ID_PREFIX,
     KILN_TASK_TOOL_ID_PREFIX,
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
@@ -17,6 +18,7 @@ from kiln_ai.tools.built_in_tools.math_tools import (
     MultiplyTool,
     SubtractTool,
 )
+from kiln_ai.tools.client_tool import client_tool_from_id
 from kiln_ai.tools.kiln_task_tool import KilnTaskTool
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -92,6 +94,9 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
                 )
 
             return KilnTaskTool(project.id, tool_id, server)
+
+    elif tool_id.startswith(CLIENT_TOOL_ID_PREFIX):
+        return client_tool_from_id(tool_id)
 
     elif tool_id.startswith(RAG_TOOL_ID_PREFIX):
         project = task.parent_project() if task is not None else None

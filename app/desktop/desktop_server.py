@@ -14,6 +14,7 @@ from kiln_ai.adapters.remote_config import load_remote_models
 from kiln_ai.utils.logging import setup_litellm_logging
 
 from app.desktop.log_config import log_config
+from app.desktop.studio_server.chat_api import connect_chat_api
 from app.desktop.studio_server.copilot_api import connect_copilot_api
 from app.desktop.studio_server.data_gen_api import connect_data_gen_api
 from app.desktop.studio_server.dev_tools import connect_dev_tools
@@ -71,6 +72,7 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_import_api(app, tk_root=tk_root)
     connect_tool_servers_api(app)
     connect_prompt_optimization_job_api(app)
+    connect_chat_api(app)
     connect_copilot_api(app)
     connect_dev_tools(app)
 
