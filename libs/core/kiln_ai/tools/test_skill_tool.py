@@ -1,5 +1,6 @@
 import pytest
 
+from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.tool_id import (
     _check_tool_id,
@@ -9,17 +10,39 @@ from kiln_ai.datamodel.tool_id import (
 from kiln_ai.tools.skill_tool import SkillTool
 
 
-def _make_skill(name: str, description: str, body: str) -> Skill:
-    return Skill(name=name, description=description, body=body)
+def _make_saved_skill(
+    project: Project, name: str, description: str, body: str
+) -> Skill:
+    skill = Skill(name=name, description=description, parent=project)
+    skill.save_to_file()
+    skill.save_skill_md(body)
+    return skill
 
 
 @pytest.fixture
-def sample_skills() -> list[Skill]:
+def mock_project(tmp_path):
+    project_path = tmp_path / "test_project" / "project.kiln"
+    project_path.parent.mkdir()
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+    return project
+
+
+@pytest.fixture
+def sample_skills(mock_project) -> list[Skill]:
     return [
-        _make_skill(
-            "code_review", "Review code for quality", "## Code Review\nCheck for bugs."
+        _make_saved_skill(
+            mock_project,
+            "code_review",
+            "Review code for quality",
+            "## Code Review\nCheck for bugs.",
         ),
-        _make_skill("testing", "Write tests for code", "## Testing\nWrite unit tests."),
+        _make_saved_skill(
+            mock_project,
+            "testing",
+            "Write tests for code",
+            "## Testing\nWrite unit tests.",
+        ),
     ]
 
 

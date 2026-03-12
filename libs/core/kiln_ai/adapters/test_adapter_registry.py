@@ -1003,14 +1003,12 @@ class TestLoadSkillsForTask:
             name="test_task", instruction="do something", parent=project
         )
         task.save_to_file()
-        skill_a = Skill(
-            name="skill_a", description="Skill A", body="body a", parent=project
-        )
+        skill_a = Skill(name="skill_a", description="Skill A", parent=project)
         skill_a.save_to_file()
-        skill_b = Skill(
-            name="skill_b", description="Skill B", body="body b", parent=project
-        )
+        skill_a.save_skill_md("body a")
+        skill_b = Skill(name="skill_b", description="Skill B", parent=project)
         skill_b.save_to_file()
+        skill_b.save_skill_md("body b")
 
         rc = _agent_config(
             tools_config=ToolsRunConfig(

@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from kiln_ai.datamodel.project import Project
-from kiln_ai.datamodel.skill import Skill
+from kiln_ai.datamodel.skill import Skill, _parse_skill_md_body
 
 
 @pytest.fixture
@@ -20,10 +20,18 @@ def make_skill(**overrides) -> Skill:
     defaults = {
         "name": "code_review",
         "description": "Review code for style and correctness.",
-        "body": "## Instructions\n\nReview the code carefully.",
     }
     defaults.update(overrides)
     return Skill(**defaults)
+
+
+def save_skill_with_body(
+    project, body="## Instructions\n\nReview the code carefully.", **overrides
+):
+    skill = make_skill(parent=project, **overrides)
+    skill.save_to_file()
+    skill.save_skill_md(body)
+    return skill
 
 
 # -- Validation tests --
@@ -71,33 +79,107 @@ def test_description_at_max_length():
     assert len(skill.description) == 1024
 
 
-def test_body_required():
-    with pytest.raises(ValidationError):
-        Skill(name="test_skill", description="A test skill.")
+# -- SKILL.md storage tests --
 
 
-def test_body_empty_rejected():
-    with pytest.raises(ValidationError):
-        make_skill(body="")
+def test_save_and_read_body(mock_project):
+    skill = save_skill_with_body(mock_project)
+    assert skill.body() == "## Instructions\n\nReview the code carefully."
+
+
+def test_skill_md_path(mock_project):
+    skill = save_skill_with_body(mock_project)
+    assert skill.skill_md_path().name == "SKILL.md"
+    assert skill.skill_md_path().parent == skill.path.parent
+
+
+def test_skill_md_path_raises_without_path():
+    skill = make_skill()
+    with pytest.raises(ValueError, match="Skill must be saved"):
+        skill.skill_md_path()
+
+
+def test_body_raises_without_skill_md(mock_project):
+    skill = make_skill(parent=mock_project)
+    skill.save_to_file()
+    with pytest.raises(FileNotFoundError, match=r"SKILL\.md not found"):
+        skill.body()
+
+
+def test_save_skill_md_empty_body_rejected(mock_project):
+    skill = make_skill(parent=mock_project)
+    skill.save_to_file()
+    with pytest.raises(ValueError, match="body must be non-empty"):
+        skill.save_skill_md("")
+
+
+def test_save_skill_md_whitespace_only_rejected(mock_project):
+    skill = make_skill(parent=mock_project)
+    skill.save_to_file()
+    with pytest.raises(ValueError, match="body must be non-empty"):
+        skill.save_skill_md("   \n  ")
+
+
+def test_round_trip(mock_project):
+    body = "## Code Review\n\nCheck for bugs and style issues.\n\n- Naming\n- Error handling"
+    skill = save_skill_with_body(mock_project, body=body)
+    assert skill.body() == body
+
+
+def test_kiln_file_does_not_contain_body(mock_project):
+    skill = save_skill_with_body(mock_project)
+    data = json.loads(skill.path.read_text())
+    assert "body" not in data
+
+
+def test_kiln_file_contains_description(mock_project):
+    skill = save_skill_with_body(mock_project)
+    data = json.loads(skill.path.read_text())
+    assert data["description"] == "Review code for style and correctness."
+
+
+def test_skill_md_frontmatter_matches_kiln(mock_project):
+    skill = save_skill_with_body(mock_project)
+    import yaml
+
+    raw = skill.skill_md_path().read_text(encoding="utf-8")
+    assert raw.startswith("---\n")
+    end = raw.index("---", 3)
+    fm = yaml.safe_load(raw[4:end])
+    assert fm["name"] == skill.name
+    assert fm["description"] == skill.description
+
+
+def test_skill_md_keeps_sync_on_save(mock_project):
+    skill = save_skill_with_body(mock_project)
+    skill.description = "Updated description."
+    skill.save_to_file()
+    skill.save_skill_md("Updated body content.")
+
+    import yaml
+
+    raw = skill.skill_md_path().read_text(encoding="utf-8")
+    end = raw.index("---", 3)
+    fm = yaml.safe_load(raw[4:end])
+    assert fm["description"] == "Updated description."
+    assert skill.body() == "Updated body content."
 
 
 # -- Persistence tests --
 
 
 def test_save_and_load(mock_project):
-    skill = make_skill(parent=mock_project)
-    skill.save_to_file()
+    skill = save_skill_with_body(mock_project)
 
     loaded = Skill.from_id_and_parent_path(skill.id, mock_project.path)
     assert loaded is not None
     assert loaded.name == "code_review"
     assert loaded.description == "Review code for style and correctness."
-    assert loaded.body == "## Instructions\n\nReview the code carefully."
+    assert loaded.body() == "## Instructions\n\nReview the code carefully."
 
 
 def test_kiln_file_contents(mock_project):
-    skill = make_skill(parent=mock_project)
-    skill.save_to_file()
+    skill = save_skill_with_body(mock_project)
 
     kiln_file = skill.path
     assert kiln_file is not None
@@ -107,17 +189,18 @@ def test_kiln_file_contents(mock_project):
     data = json.loads(kiln_file.read_text())
     assert data["name"] == "code_review"
     assert data["description"] == "Review code for style and correctness."
-    assert data["body"] == "## Instructions\n\nReview the code carefully."
 
 
 # -- Project integration tests --
 
 
 def test_project_skills_relationship(mock_project):
-    s1 = make_skill(parent=mock_project, name="skill_one", description="First skill.")
-    s2 = make_skill(parent=mock_project, name="skill_two", description="Second skill.")
-    s1.save_to_file()
-    s2.save_to_file()
+    s1 = save_skill_with_body(
+        mock_project, name="skill_one", description="First skill.", body="Body one"
+    )
+    s2 = save_skill_with_body(
+        mock_project, name="skill_two", description="Second skill.", body="Body two"
+    )
 
     skills = mock_project.skills()
     assert len(skills) == 2
@@ -125,8 +208,7 @@ def test_project_skills_relationship(mock_project):
 
 
 def test_skill_directory_structure(mock_project):
-    skill = make_skill(parent=mock_project)
-    skill.save_to_file()
+    skill = save_skill_with_body(mock_project)
 
     assert skill.path is not None
     skill_dir = skill.path.parent
@@ -141,3 +223,27 @@ def test_skill_relationship_name():
 
 def test_skill_parent_type():
     assert Skill.parent_type() is Project
+
+
+# -- Frontmatter parsing tests --
+
+
+def test_parse_skill_md_body_valid():
+    raw = "---\nname: test\ndescription: desc\n---\nHello world"
+    assert _parse_skill_md_body(raw) == "Hello world"
+
+
+def test_parse_skill_md_body_no_frontmatter():
+    raw = "Just plain markdown"
+    assert _parse_skill_md_body(raw) == "Just plain markdown"
+
+
+def test_parse_skill_md_body_with_leading_newline():
+    raw = "---\nname: test\n---\n\nBody after blank line"
+    assert _parse_skill_md_body(raw) == "\nBody after blank line"
+
+
+def test_parse_skill_md_body_malformed_raises():
+    raw = "---\nname: test\nno closing delimiter"
+    with pytest.raises(ValueError):
+        _parse_skill_md_body(raw)

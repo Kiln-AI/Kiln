@@ -993,7 +993,7 @@ class TestResolveSkills:
     def test_resolves_skills_from_injected_dict(
         self, base_task, _run_config_with_tools
     ):
-        skill = Skill(name="my_skill", description="A skill", body="do things")
+        skill = Skill(name="my_skill", description="A skill")
         adapter = MockAdapter(
             task=base_task,
             run_config=_run_config_with_tools([f"kiln_tool::skill::{skill.id}"]),
@@ -1004,7 +1004,7 @@ class TestResolveSkills:
         assert result[0].name == "my_skill"
 
     def test_caches_result(self, base_task, _run_config_with_tools):
-        skill = Skill(name="my_skill", description="A skill", body="do things")
+        skill = Skill(name="my_skill", description="A skill")
         adapter = MockAdapter(
             task=base_task,
             run_config=_run_config_with_tools([f"kiln_tool::skill::{skill.id}"]),
@@ -1015,7 +1015,7 @@ class TestResolveSkills:
         assert result1 is result2
 
     def test_builds_skills_prompt_section(self, base_task, _run_config_with_tools):
-        skill = Skill(name="my_skill", description="A test skill", body="do things")
+        skill = Skill(name="my_skill", description="A test skill")
         adapter = MockAdapter(
             task=base_task,
             run_config=_run_config_with_tools([f"kiln_tool::skill::{skill.id}"]),

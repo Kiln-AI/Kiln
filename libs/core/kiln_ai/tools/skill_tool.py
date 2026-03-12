@@ -70,4 +70,4 @@ class SkillTool(KilnToolInterface):
                 output=f"Error: Skill '{skill_name}' not found. Available skills: {available}"
             )
 
-        return ToolCallResult(output=skill.body)
+        return ToolCallResult(output=skill.body())
