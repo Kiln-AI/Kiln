@@ -2,7 +2,6 @@
   import { onMount, onDestroy } from "svelte"
   import { fly } from "svelte/transition"
   import AppPage from "../app_page.svelte"
-  import { CHAT_API_URL } from "$lib/chat_api_url"
   import {
     streamChat,
     chatGenerateId,
@@ -12,6 +11,9 @@
   import ChatMarkdown from "$lib/chat/ChatMarkdown.svelte"
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
   import StopIcon from "$lib/ui/icons/stop_icon.svelte"
+  import { base_url } from "$lib/api_client"
+
+  const CHAT_API_URL = `${base_url}/api/chat`
 
   let messages: ChatMessage[] = []
   let input = ""
