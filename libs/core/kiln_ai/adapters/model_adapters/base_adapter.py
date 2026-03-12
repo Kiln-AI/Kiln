@@ -29,7 +29,9 @@ from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     as_kiln_agent_run_config,
 )
+from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX, skill_id_from_tool_id
 
 # Import agent run context for run lifecycle management
 from kiln_ai.run_context import (
@@ -40,10 +42,13 @@ from kiln_ai.run_context import (
 )
 from kiln_ai.tools import KilnToolInterface
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
+from kiln_ai.tools.skill_tool import SkillTool
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+
+SkillsDict = Dict[str, Skill]
 
 
 @dataclass
@@ -64,6 +69,13 @@ class AdapterConfig:
     may load additional files from disk.
     """
     prompt_builder: BasePromptBuilder | None = None
+
+    """
+    Pre-loaded skills keyed by skill ID. When the run config references skills,
+    they are looked up from this dict instead of reading from the filesystem.
+    Use load_skills_for_task() to build this dict.
+    """
+    skills: SkillsDict | None = None
 
 
 class BaseAdapter(metaclass=ABCMeta):
@@ -97,6 +109,7 @@ class BaseAdapter(metaclass=ABCMeta):
         else:
             self.prompt_builder = None
         self._model_provider: KilnModelProvider | None = None
+        self._resolved_skills: list[Skill] | None = None
 
         self.output_schema = task.output_json_schema
         self.input_schema = task.input_json_schema
@@ -263,8 +276,92 @@ class BaseAdapter(metaclass=ABCMeta):
             == StructuredOutputMode.json_instruction_and_object
         )
 
-        return self.prompt_builder.build_prompt(
+        prompt = self.prompt_builder.build_prompt(
             include_json_instructions=add_json_instructions
+        )
+
+        skills_section = self._build_skills_prompt_section()
+        if skills_section:
+            prompt = prompt + "\n\n" + skills_section
+
+        return prompt
+
+    def _resolve_skills(self) -> list[Skill]:
+        """Resolve skills from the injected skills dict.
+
+        Uses the pre-loaded skills dict from AdapterConfig. Caches the result
+        so that _build_skills_prompt_section and available_tools don't repeat
+        the lookup. Raises ValueError if the run config references a skill
+        that is not in the injected dict.
+        """
+        if self._resolved_skills is not None:
+            return self._resolved_skills
+
+        if self.run_config.type != "kiln_agent":
+            self._resolved_skills = []
+            return self._resolved_skills
+
+        tool_config = as_kiln_agent_run_config(self.run_config).tools_config
+        if tool_config is None or tool_config.tools is None:
+            self._resolved_skills = []
+            return self._resolved_skills
+
+        skill_tool_ids = [
+            tid for tid in tool_config.tools if tid.startswith(SKILL_TOOL_ID_PREFIX)
+        ]
+        if not skill_tool_ids:
+            self._resolved_skills = []
+            return self._resolved_skills
+
+        injected = self.base_adapter_config.skills
+        if injected is None:
+            raise ValueError(
+                "Run config references skills but no skills dict was provided via "
+                "AdapterConfig(skills=...). Use load_skills_for_task() to pre-load "
+                "skills and pass them to the adapter."
+            )
+
+        skills: list[Skill] = []
+        seen: set[str] = set()
+        for tool_id in skill_tool_ids:
+            sid = skill_id_from_tool_id(tool_id)
+            if sid not in injected:
+                raise ValueError(
+                    f"Skill {sid} referenced in run config but not found in the "
+                    "injected skills dict."
+                )
+            if sid in seen:
+                continue
+            seen.add(sid)
+            skills.append(injected[sid])
+
+        self._resolved_skills = skills
+        return self._resolved_skills
+
+    def _build_skills_prompt_section(self) -> str | None:
+        """Build a system prompt section listing available skills."""
+        skills = self._resolve_skills()
+        if not skills:
+            return None
+
+        skill_lines = "\n".join(f"- {s.name}\n  {s.description}" for s in skills)
+        return (
+            "## Skills\n\n"
+            "Skills extend the assistant's capabilities with domain knowledge and "
+            "structured workflows.\n\n"
+            "Each Skill contains instructions describing how to solve a specific "
+            "type of task.\n\n"
+            "When handling a request:\n\n"
+            "1. Determine whether a Skill is relevant.\n"
+            "2. If a relevant Skill exists, load it before proceeding.\n"
+            "3. Follow the instructions and workflow defined in the Skill.\n\n"
+            "If a Skill provides a workflow, follow that workflow unless there is a "
+            "clear reason not to.\n\n"
+            "Load Skills only when necessary to keep context efficient.\n\n"
+            "If no Skill applies, proceed using general reasoning.\n\n"
+            "## Available Skills\n\n"
+            "The following Skills are available and may be loaded when relevant:\n\n"
+            f"{skill_lines}"
         )
 
     def build_chat_formatter(self, input: InputType) -> ChatFormatter:
@@ -417,17 +514,25 @@ class BaseAdapter(metaclass=ABCMeta):
         if tool_config is None or tool_config.tools is None:
             return []
 
-        project = self.task.parent_project()
-        if project is None:
-            raise ValueError("Task must have a parent project to resolve tools")
+        non_skill_tool_ids = [
+            tid for tid in tool_config.tools if not tid.startswith(SKILL_TOOL_ID_PREFIX)
+        ]
 
-        project_id = project.id
-        if project_id is None:
-            raise ValueError("Project must have an ID to resolve tools")
+        tools: list[KilnToolInterface] = [
+            tool_from_id(tool_id, self.task) for tool_id in non_skill_tool_ids
+        ]
 
-        tools = [tool_from_id(tool_id, self.task) for tool_id in tool_config.tools]
+        skills = self._resolve_skills()
+        if skills:
+            seen_names: set[str] = set()
+            for skill in skills:
+                if skill.name in seen_names:
+                    raise ValueError(
+                        f"Duplicate skill name '{skill.name}'. Each skill must have a unique name."
+                    )
+                seen_names.add(skill.name)
+            tools.append(SkillTool(f"{SKILL_TOOL_ID_PREFIX}_combined", skills))
 
-        # Check each tool has a unique name
         tool_names = [await tool.name() for tool in tools]
         if len(tool_names) != len(set(tool_names)):
             raise ValueError(

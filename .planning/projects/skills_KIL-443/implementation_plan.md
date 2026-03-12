@@ -41,11 +41,11 @@ The implementation follows the spec's progressive disclosure model:
 
 ## Phases
 
-### Phase 1: Data Model & Validation
+### Phase 1: Data Model & Validation ✅
 
 Core Pydantic model, disk persistence, agentskills.io spec validation.
 
-### Phase 2: Skill Tool Implementation
+### Phase 2: Skill Tool Implementation ✅
 
 `SkillTool` implementing `KilnToolInterface`, tool registry integration, run config changes.
 
