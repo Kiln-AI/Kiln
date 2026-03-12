@@ -1,6 +1,13 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from litellm.types.utils import (
+    ChatCompletionDeltaToolCall,
+    Delta,
+    Function,
+    ModelResponseStream,
+    StreamingChoices,
+)
 
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import (
@@ -8,9 +15,14 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
     BaseAdapter,
     RunOutput,
 )
+from kiln_ai.adapters.model_adapters.stream_events import (
+    AiSdkEventType,
+    ToolCallEvent,
+    ToolCallEventType,
+)
 from kiln_ai.adapters.prompt_builders import BasePromptBuilder
-from kiln_ai.datamodel import Task
-from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel import Task, TaskRun
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy, ModelProviderName
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
@@ -20,7 +32,7 @@ from kiln_ai.tools.base_tool import KilnToolInterface
 class MockAdapter(BaseAdapter):
     """Concrete implementation of BaseAdapter for testing"""
 
-    async def _run(self, input):
+    async def _run(self, input, **kwargs):
         return None, None
 
     def adapter_name(self) -> str:
@@ -233,7 +245,7 @@ async def test_input_formatting(
         # Mock the _run method to capture the input
         captured_input = None
 
-        async def mock_run(input):
+        async def mock_run(input, **kwargs):
             nonlocal captured_input
             captured_input = input
             return RunOutput(output="test output", intermediate_outputs={}), None
@@ -420,6 +432,119 @@ def test_build_chat_formatter(
     # Verify prompt builder was called correctly
     mock_prompt_builder.build_prompt.assert_called_once()
     mock_prompt_builder.chain_of_thought_prompt.assert_called_once()
+
+
+def test_build_chat_formatter_with_prior_trace_returns_multiturn_formatter(adapter):
+    prior_trace = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+    ]
+    formatter = adapter.build_chat_formatter("new input", prior_trace=prior_trace)
+    assert formatter.__class__.__name__ == "MultiturnFormatter"
+    assert formatter.initial_messages() == prior_trace
+
+
+@pytest.mark.asyncio
+async def test_invoke_with_prior_trace_none_starts_fresh(base_project):
+    task = Task(
+        name="test_task",
+        instruction="test_instruction",
+        parent=base_project,
+    )
+    adapter = MockAdapter(
+        task=task,
+        run_config=KilnAgentRunConfigProperties(
+            model_name="gpt_4o",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+    adapter._run = AsyncMock(
+        return_value=(
+            RunOutput(output="ok", intermediate_outputs=None, trace=None),
+            None,
+        )
+    )
+    with (
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id",
+            return_value=MagicMock(
+                parse_output=MagicMock(
+                    return_value=RunOutput(
+                        output="ok", intermediate_outputs=None, trace=None
+                    )
+                )
+            ),
+        ),
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id",
+        ),
+        patch.object(
+            adapter,
+            "model_provider",
+            return_value=MagicMock(
+                parser="default",
+                formatter=None,
+                reasoning_capable=False,
+            ),
+        ),
+    ):
+        run = await adapter.invoke("input", prior_trace=None)
+    assert run.output.output == "ok"
+    adapter._run.assert_called_once()
+    assert adapter._run.call_args[1].get("prior_trace") is None
+
+
+@pytest.mark.asyncio
+async def test_invoke_returning_run_output_passes_prior_trace_to_run(
+    adapter, mock_parser, tmp_path
+):
+    project = Project(name="proj", path=tmp_path / "proj.kiln")
+    project.save_to_file()
+    task = Task(
+        name="t",
+        instruction="i",
+        parent=project,
+    )
+    task.save_to_file()
+    adapter.task = task
+
+    trace = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+    ]
+
+    captured_prior_trace = None
+
+    async def mock_run(input, **kwargs):
+        nonlocal captured_prior_trace
+        captured_prior_trace = kwargs.get("prior_trace")
+        return RunOutput(output="ok", intermediate_outputs=None, trace=trace), None
+
+    adapter._run = mock_run
+
+    provider = MagicMock()
+    provider.parser = "test_parser"
+    provider.formatter = None
+    provider.reasoning_capable = False
+    adapter.model_provider = MagicMock(return_value=provider)
+    mock_parser.parse_output.return_value = RunOutput(
+        output="ok", intermediate_outputs=None, trace=trace
+    )
+
+    with (
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id",
+            return_value=mock_parser,
+        ),
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id",
+        ),
+    ):
+        await adapter.invoke_returning_run_output("follow-up", prior_trace=trace)
+
+    assert captured_prior_trace == trace
 
 
 @pytest.mark.parametrize(
@@ -683,7 +808,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method
-        async def mock_run(input):
+        async def mock_run(input, **kwargs):
             # Check that run ID is set during _run
             run_id = get_agent_run_id()
             assert run_id is not None
@@ -723,7 +848,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method
-        async def mock_run(input):
+        async def mock_run(input, **kwargs):
             return RunOutput(output="test output", intermediate_outputs={}), None
 
         adapter._run = mock_run
@@ -761,7 +886,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method to raise an error
-        async def mock_run(input):
+        async def mock_run(input, **kwargs):
             # Run ID should be set even when error occurs
             run_id = get_agent_run_id()
             assert run_id is not None
@@ -798,7 +923,7 @@ class TestAgentRunContextLifecycle:
         set_agent_run_id(parent_run_id)
 
         # Mock the _run method to check inherited run ID
-        async def mock_run(input):
+        async def mock_run(input, **kwargs):
             # Sub-agent should see parent's run ID
             run_id = get_agent_run_id()
             assert run_id == parent_run_id
@@ -847,7 +972,7 @@ class TestAgentRunContextLifecycle:
         run_id_during_run = None
 
         # Mock the _run method to capture run ID
-        async def mock_run(input):
+        async def mock_run(input, **kwargs):
             nonlocal run_id_during_run
             run_id_during_run = get_agent_run_id()
             return RunOutput(output="test output", intermediate_outputs={}), None
@@ -887,7 +1012,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.adapters.run_output import RunOutput
 
         # Mock the _run method
-        async def mock_run(input):
+        async def mock_run(input, **kwargs):
             return RunOutput(output="test output", intermediate_outputs={}), None
 
         adapter._run = mock_run
@@ -930,3 +1055,185 @@ class TestAgentRunContextLifecycle:
             assert call_args is not None
             run_id = call_args[0][0] if call_args[0] else call_args[1]["run_id"]
             assert run_id.startswith("run_")
+
+
+class TestStreamMethods:
+    """Tests for the streaming methods on BaseAdapter."""
+
+    @pytest.fixture
+    def stream_adapter(self, base_task):
+        return MockAdapter(
+            task=base_task,
+            run_config=KilnAgentRunConfigProperties(
+                model_name="test_model",
+                model_provider_name="openai",
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="json_schema",
+            ),
+        )
+
+    @pytest.mark.asyncio
+    async def test_invoke_openai_stream_raises_for_unsupported_adapter(
+        self, stream_adapter
+    ):
+        """MockAdapter does not implement _create_run_stream."""
+        provider = MagicMock()
+        provider.formatter = None
+        stream_adapter.model_provider = MagicMock(return_value=provider)
+
+        with pytest.raises(NotImplementedError, match="Streaming is not supported"):
+            async for _chunk in stream_adapter.invoke_openai_stream("test input"):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_invoke_ai_sdk_stream_raises_for_unsupported_adapter(
+        self, stream_adapter
+    ):
+        """MockAdapter does not implement _create_run_stream."""
+        provider = MagicMock()
+        provider.formatter = None
+        stream_adapter.model_provider = MagicMock(return_value=provider)
+
+        with pytest.raises(NotImplementedError, match="Streaming is not supported"):
+            async for _event in stream_adapter.invoke_ai_sdk_stream("test input"):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_invoke_ai_sdk_stream_resets_converter_between_tool_rounds(
+        self, stream_adapter
+    ):
+        """tool-input-start must be emitted for a new tool call at index 0 after a tool round."""
+
+        def _make_tool_chunk(call_id: str, name: str) -> ModelResponseStream:
+            func = Function(name=name, arguments='{"x":1}')
+            tc = ChatCompletionDeltaToolCall(index=0, function=func)
+            tc.id = call_id
+            delta = Delta(tool_calls=[tc])
+            choice = StreamingChoices(index=0, delta=delta, finish_reason=None)
+            return ModelResponseStream(id="test", choices=[choice])
+
+        round1_chunk = _make_tool_chunk("call_r1", "tool_a")
+        round2_chunk = _make_tool_chunk("call_r2", "tool_b")
+
+        fake_events = [
+            round1_chunk,
+            ToolCallEvent(
+                event_type=ToolCallEventType.INPUT_AVAILABLE,
+                tool_call_id="call_r1",
+                tool_name="tool_a",
+                arguments={"x": 1},
+            ),
+            ToolCallEvent(
+                event_type=ToolCallEventType.OUTPUT_AVAILABLE,
+                tool_call_id="call_r1",
+                tool_name="tool_a",
+                result="done",
+            ),
+            round2_chunk,
+        ]
+
+        class FakeAdapterStream:
+            result = MagicMock()
+
+            async def __aiter__(self):
+                for event in fake_events:
+                    yield event
+
+        with (
+            patch.object(
+                stream_adapter,
+                "_prepare_stream",
+                return_value=FakeAdapterStream(),
+            ),
+            patch.object(stream_adapter, "_finalize_stream"),
+        ):
+            events = []
+            async for event in stream_adapter.invoke_ai_sdk_stream("test input"):
+                events.append(event)
+
+        tool_input_starts = [
+            e for e in events if e.type == AiSdkEventType.TOOL_INPUT_START
+        ]
+        assert len(tool_input_starts) == 2, (
+            "tool-input-start must fire once per tool-call round"
+        )
+        assert tool_input_starts[0].payload["toolCallId"] == "call_r1"
+        assert tool_input_starts[1].payload["toolCallId"] == "call_r2"
+
+    @pytest.mark.asyncio
+    async def test_openai_stream_exposes_task_run_after_iteration(self, stream_adapter):
+        fake_chunk = ModelResponseStream(
+            id="test",
+            choices=[
+                StreamingChoices(
+                    index=0,
+                    delta=Delta(content="hi"),
+                    finish_reason=None,
+                )
+            ],
+        )
+
+        class FakeAdapterStream:
+            result = MagicMock()
+
+            async def __aiter__(self):
+                yield fake_chunk
+
+        expected_run = MagicMock(spec=TaskRun)
+
+        with (
+            patch.object(
+                stream_adapter,
+                "_prepare_stream",
+                return_value=FakeAdapterStream(),
+            ),
+            patch.object(stream_adapter, "_finalize_stream", return_value=expected_run),
+        ):
+            stream = stream_adapter.invoke_openai_stream("test input")
+
+            with pytest.raises(RuntimeError, match="not been fully consumed"):
+                _ = stream.task_run
+
+            async for _chunk in stream:
+                pass
+
+            assert stream.task_run is expected_run
+
+    @pytest.mark.asyncio
+    async def test_ai_sdk_stream_exposes_task_run_after_iteration(self, stream_adapter):
+        fake_chunk = ModelResponseStream(
+            id="test",
+            choices=[
+                StreamingChoices(
+                    index=0,
+                    delta=Delta(content="hi"),
+                    finish_reason=None,
+                )
+            ],
+        )
+
+        class FakeAdapterStream:
+            result = MagicMock()
+
+            async def __aiter__(self):
+                yield fake_chunk
+
+        expected_run = MagicMock(spec=TaskRun)
+
+        with (
+            patch.object(
+                stream_adapter,
+                "_prepare_stream",
+                return_value=FakeAdapterStream(),
+            ),
+            patch.object(stream_adapter, "_finalize_stream", return_value=expected_run),
+        ):
+            stream = stream_adapter.invoke_ai_sdk_stream("test input")
+
+            with pytest.raises(RuntimeError, match="not been fully consumed"):
+                _ = stream.task_run
+
+            async for _event in stream:
+                pass
+
+            assert stream.task_run is expected_run

@@ -1,7 +1,10 @@
 import json
 from typing import Tuple
 
-from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, BaseAdapter
+from kiln_ai.adapters.model_adapters.base_adapter import (
+    AdapterConfig,
+    BaseAdapter,
+)
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel import DataSource, Task, TaskRun, Usage
@@ -42,7 +45,17 @@ class MCPAdapter(BaseAdapter):
     def adapter_name(self) -> str:
         return "mcp_adapter"
 
-    async def _run(self, input: InputType) -> Tuple[RunOutput, Usage | None]:
+    async def _run(
+        self,
+        input: InputType,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
+    ) -> Tuple[RunOutput, Usage | None]:
+        if prior_trace is not None:
+            raise NotImplementedError(
+                "Session continuation is not supported for MCP adapter. "
+                "MCP tools are single-turn and do not maintain conversation state."
+            )
+
         run_config = self.run_config
         if not isinstance(run_config, McpRunConfigProperties):
             raise ValueError("MCPAdapter requires McpRunConfigProperties")
@@ -75,19 +88,35 @@ class MCPAdapter(BaseAdapter):
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> TaskRun:
-        run_output, _ = await self.invoke_returning_run_output(input, input_source)
+        if prior_trace:
+            raise NotImplementedError(
+                "Session continuation is not supported for MCP adapter. "
+                "MCP tools are single-turn and do not maintain conversation state."
+            )
+
+        run_output, _ = await self.invoke_returning_run_output(
+            input, input_source, prior_trace
+        )
         return run_output
 
     async def invoke_returning_run_output(
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         """
         Runs the task and returns both the persisted TaskRun and raw RunOutput.
         If this call is the root of a run, it creates an agent run context, ensures MCP tool calls have a valid session scope, and cleans up the session/context on completion.
         """
+        if prior_trace:
+            raise NotImplementedError(
+                "Session continuation is not supported for MCP adapter. "
+                "MCP tools are single-turn and do not maintain conversation state."
+            )
+
         is_root_agent = get_agent_run_id() is None
 
         if is_root_agent:
