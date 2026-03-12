@@ -178,8 +178,9 @@ def _build_continuation_body(
 ) -> dict[str, Any]:
     """Build the request body for continuing after a client tool call.
 
-    Appends an assistant message (with the tool call) and a tool result message
-    so the backend can resume the conversation.
+    Appends a single assistant message containing both the tool call and its
+    result so the backend's convert_to_openai_messages produces the correct
+    assistant(tool_calls) + tool(result) sequence.
     """
     messages = list(original_body.get("messages", []))
 
@@ -194,19 +195,10 @@ def _build_continuation_body(
                     "input": tool_input,
                     "state": "call",
                 },
-            ],
-        }
-    )
-
-    messages.append(
-        {
-            "role": "assistant",
-            "parts": [
                 {
                     "type": f"tool-{tool_name}",
                     "toolCallId": tool_call_id,
                     "toolName": tool_name,
-                    "input": tool_input,
                     "output": tool_result,
                     "state": "output-available",
                 },

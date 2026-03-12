@@ -190,6 +190,41 @@ def test_multiturn_formatter_preserves_tool_call_messages():
     assert first.final_call
 
 
+def test_multiturn_formatter_tool_continuation_skips_user_message():
+    prior_trace = [
+        {"role": "system", "content": "You are helpful."},
+        {"role": "user", "content": "read task run 123"},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call_xyz",
+                    "function": {
+                        "arguments": '{"task_run_id": "123"}',
+                        "name": "read_task_run",
+                    },
+                    "type": "function",
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call_xyz",
+            "content": '{"id": "123", "input": "test"}',
+        },
+    ]
+    formatter = MultiturnFormatter(prior_trace=prior_trace, user_input="")
+    assert formatter.initial_messages() == prior_trace
+
+    first = formatter.next_turn()
+    assert first is not None
+    assert len(first.messages) == 0
+    assert first.final_call
+
+    assert formatter.next_turn("Here is your task run.") is None
+
+
 def test_format_user_message():
     # String
     assert format_user_message("test input") == "test input"

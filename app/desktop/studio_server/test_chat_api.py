@@ -194,14 +194,18 @@ class TestBuildContinuationBody:
             original, "tc1", "read_task_run", {"path": "/x"}, '{"data": "result"}'
         )
 
-        assert len(result["messages"]) == 3
+        assert len(result["messages"]) == 2
         assert result["messages"][0]["role"] == "user"
+
+        parts = result["messages"][1]["parts"]
         assert result["messages"][1]["role"] == "assistant"
-        assert result["messages"][1]["parts"][0]["toolCallId"] == "tc1"
-        assert result["messages"][1]["parts"][0]["state"] == "call"
-        assert result["messages"][2]["role"] == "assistant"
-        assert result["messages"][2]["parts"][0]["state"] == "output-available"
-        assert result["messages"][2]["parts"][0]["output"] == '{"data": "result"}'
+        assert len(parts) == 2
+        assert parts[0]["toolCallId"] == "tc1"
+        assert parts[0]["state"] == "call"
+        assert parts[0]["input"] == {"path": "/x"}
+        assert parts[1]["state"] == "output-available"
+        assert parts[1]["output"] == '{"data": "result"}'
+        assert "input" not in parts[1]
 
     def test_preserves_original_body_fields(self):
         original = {
@@ -276,4 +280,4 @@ class TestClientToolRoundTrip:
 
         continuation_call = mock_client.stream.call_args_list[1]
         continuation_body = json.loads(continuation_call.kwargs["content"])
-        assert len(continuation_body["messages"]) == 3
+        assert len(continuation_body["messages"]) == 2
