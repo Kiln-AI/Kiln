@@ -341,6 +341,7 @@ class BaseAdapter(metaclass=ABCMeta):
             return None
 
         skill_lines = "\n".join(f"- {s.name}\n  {s.description}" for s in skills)
+
         return (
             "## Skills\n\n"
             "Skills extend the assistant's capabilities with domain knowledge and "
@@ -349,8 +350,12 @@ class BaseAdapter(metaclass=ABCMeta):
             "type of task.\n\n"
             "When handling a request:\n\n"
             "1. Determine whether a Skill is relevant.\n"
-            "2. If a relevant Skill exists, load it before proceeding.\n"
-            "3. Follow the instructions and workflow defined in the Skill.\n\n"
+            '2. If a relevant Skill exists, load it by calling skill(name="skill_name").\n'
+            "3. Follow the instructions and workflow defined in the Skill.\n"
+            "4. If the Skill's instructions mention reference files that are relevant to "
+            "the current task, load them on demand by calling "
+            'skill(name="skill_name", resource="references/filename.md"). '
+            "Only load references you actually need.\n\n"
             "If a Skill provides a workflow, follow that workflow unless there is a "
             "clear reason not to.\n\n"
             "Load Skills only when necessary to keep context efficient.\n\n"

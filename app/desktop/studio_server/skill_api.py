@@ -18,6 +18,10 @@ class SkillUpdateRequest(BaseModel):
     is_archived: bool | None = None
 
 
+class ReferenceContent(BaseModel):
+    content: str = Field(min_length=1)
+
+
 class SkillResponse(BaseModel):
     id: str | None = None
     name: str
@@ -38,6 +42,14 @@ def skill_to_response(skill: Skill) -> SkillResponse:
     return SkillResponse.model_validate(data)
 
 
+def _get_skill(project_id: str, skill_id: str) -> Skill:
+    project = project_from_id(project_id)
+    skill = Skill.from_id_and_parent_path(skill_id, project.path)
+    if skill is None:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    return skill
+
+
 def connect_skill_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/skills")
     async def get_skills(project_id: str) -> List[SkillResponse]:
@@ -46,10 +58,7 @@ def connect_skill_api(app: FastAPI):
 
     @app.get("/api/projects/{project_id}/skills/{skill_id}")
     async def get_skill(project_id: str, skill_id: str) -> SkillResponse:
-        project = project_from_id(project_id)
-        skill = Skill.from_id_and_parent_path(skill_id, project.path)
-        if skill is None:
-            raise HTTPException(status_code=404, detail="Skill not found")
+        skill = _get_skill(project_id, skill_id)
         return skill_to_response(skill)
 
     @app.post("/api/projects/{project_id}/skills")
@@ -70,10 +79,7 @@ def connect_skill_api(app: FastAPI):
     async def update_skill(
         project_id: str, skill_id: str, updates: SkillUpdateRequest
     ) -> SkillResponse:
-        project = project_from_id(project_id)
-        skill = Skill.from_id_and_parent_path(skill_id, project.path)
-        if skill is None:
-            raise HTTPException(status_code=404, detail="Skill not found")
+        skill = _get_skill(project_id, skill_id)
 
         update_fields = updates.model_dump(exclude_none=True)
         merged = skill.model_dump()
@@ -83,3 +89,42 @@ def connect_skill_api(app: FastAPI):
         updated.save_to_file()
 
         return skill_to_response(updated)
+
+    # -- Reference file endpoints --
+
+    @app.get("/api/projects/{project_id}/skills/{skill_id}/references")
+    async def list_references(project_id: str, skill_id: str) -> list[str]:
+        skill = _get_skill(project_id, skill_id)
+        return skill.list_references()
+
+    @app.get("/api/projects/{project_id}/skills/{skill_id}/references/{filename}")
+    async def get_reference(project_id: str, skill_id: str, filename: str) -> dict:
+        skill = _get_skill(project_id, skill_id)
+        try:
+            content = skill.read_reference(filename)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="Reference file not found")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"filename": filename, "content": content}
+
+    @app.put("/api/projects/{project_id}/skills/{skill_id}/references/{filename}")
+    async def save_reference(
+        project_id: str, skill_id: str, filename: str, body: ReferenceContent
+    ) -> dict:
+        skill = _get_skill(project_id, skill_id)
+        try:
+            skill.save_reference(filename, body.content)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"filename": filename}
+
+    @app.delete("/api/projects/{project_id}/skills/{skill_id}/references/{filename}")
+    async def delete_reference(project_id: str, skill_id: str, filename: str) -> None:
+        skill = _get_skill(project_id, skill_id)
+        try:
+            skill.delete_reference(filename)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="Reference file not found")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))

@@ -7,12 +7,15 @@ from kiln_ai.tools.base_tool import (
     ToolCallResult,
 )
 
+ALLOWED_RESOURCE_PREFIXES = ("references/",)
+
 
 class SkillTool(KilnToolInterface):
     """Tool that lets agents load skill instructions by name.
 
     Available skills and their descriptions are listed in the system prompt.
     The agent calls this tool with a skill name to retrieve its full body.
+    Optionally, the agent can request a specific resource file within the skill.
     """
 
     def __init__(self, tool_id: str, skills: list[Skill]):
@@ -33,7 +36,9 @@ class SkillTool(KilnToolInterface):
         return (
             "Load an agent skill by name. Skills provide specialized instructions "
             "for specific tasks. Call this tool with the skill name to load its "
-            "full instructions. Available skills are listed in your system prompt."
+            "full instructions. If the skill's instructions mention reference files "
+            "relevant to the current task, load them by passing a 'resource' path "
+            "(e.g. 'references/filename.md')."
         )
 
     async def toolcall_definition(self) -> ToolCallDefinition:
@@ -49,6 +54,10 @@ class SkillTool(KilnToolInterface):
                             "type": "string",
                             "description": "The name of the skill to load.",
                         },
+                        "resource": {
+                            "type": "string",
+                            "description": "Optional. Path to a specific resource file within the skill (e.g. 'references/REFERENCE.md'). If omitted, returns the skill's main instructions.",
+                        },
                     },
                     "required": ["name"],
                 },
@@ -59,6 +68,7 @@ class SkillTool(KilnToolInterface):
         self, context: ToolCallContext | None = None, **kwargs
     ) -> ToolCallResult:
         skill_name = kwargs.get("name")
+        resource = kwargs.get("resource")
 
         if not isinstance(skill_name, str) or not skill_name:
             return ToolCallResult(output="Error: 'name' parameter is required.")
@@ -70,4 +80,33 @@ class SkillTool(KilnToolInterface):
                 output=f"Error: Skill '{skill_name}' not found. Available skills: {available}"
             )
 
+        if resource:
+            return self._load_resource(skill, resource)
+
         return ToolCallResult(output=skill.body())
+
+    def _load_resource(self, skill: Skill, resource: str) -> ToolCallResult:
+        """Load a resource file from the references/ directory."""
+        if not any(resource.startswith(p) for p in ALLOWED_RESOURCE_PREFIXES):
+            return ToolCallResult(
+                output=f"Error: Resource path must start with one of: {', '.join(ALLOWED_RESOURCE_PREFIXES)}"
+            )
+
+        if ".." in resource:
+            return ToolCallResult(output="Error: Invalid resource path.")
+
+        parts = resource.split("/", 1)
+        if len(parts) != 2 or not parts[1]:
+            return ToolCallResult(
+                output="Error: Resource path must include a filename after the directory prefix."
+            )
+
+        _, filename = parts
+
+        try:
+            content = skill.read_reference(filename)
+            return ToolCallResult(output=content)
+        except FileNotFoundError:
+            return ToolCallResult(output=f"Error: Resource not found: {resource}")
+        except ValueError as e:
+            return ToolCallResult(output=f"Error: {e}")

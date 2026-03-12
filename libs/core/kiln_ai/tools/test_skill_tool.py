@@ -58,10 +58,10 @@ class TestSkillToolDefinition:
     async def test_id(self, skill_tool: SkillTool):
         assert await skill_tool.id() == "kiln_tool::skill::123"
 
-    async def test_description_is_static(self, skill_tool: SkillTool):
+    async def test_description_mentions_resource(self, skill_tool: SkillTool):
         desc = await skill_tool.description()
         assert "Load an agent skill by name" in desc
-        assert "system prompt" in desc
+        assert "resource" in desc
         assert len(desc) <= 1024
 
     async def test_toolcall_definition_schema(self, skill_tool: SkillTool):
@@ -70,9 +70,9 @@ class TestSkillToolDefinition:
         assert defn["function"]["name"] == "skill"
         params = defn["function"]["parameters"]
         assert params["required"] == ["name"]
-        name_prop = params["properties"]["name"]
-        assert name_prop["type"] == "string"
-        assert "enum" not in name_prop
+        assert "name" in params["properties"]
+        assert "resource" in params["properties"]
+        assert params["properties"]["resource"]["type"] == "string"
 
 
 class TestSkillToolRun:
@@ -101,6 +101,43 @@ class TestSkillToolRun:
 
         ctx = ToolCallContext(allow_saving=True)
         result = await skill_tool.run(context=ctx, name="code_review")
+        assert result.output == "## Code Review\nCheck for bugs."
+
+
+class TestSkillToolResource:
+    async def test_load_reference(
+        self, sample_skills: list[Skill], skill_tool: SkillTool
+    ):
+        sample_skills[0].save_reference("guide.md", "# Guide\nReference content.")
+        result = await skill_tool.run(
+            name="code_review", resource="references/guide.md"
+        )
+        assert result.output == "# Guide\nReference content."
+
+    async def test_invalid_prefix(self, skill_tool: SkillTool):
+        result = await skill_tool.run(name="code_review", resource="secrets/key.txt")
+        assert "Error" in result.output
+        assert "references/" in result.output
+
+    async def test_path_traversal_blocked(self, skill_tool: SkillTool):
+        result = await skill_tool.run(
+            name="code_review", resource="references/../../etc/passwd"
+        )
+        assert "Error" in result.output
+
+    async def test_missing_reference(self, skill_tool: SkillTool):
+        result = await skill_tool.run(
+            name="code_review", resource="references/nonexistent.md"
+        )
+        assert "Error" in result.output
+        assert "not found" in result.output.lower()
+
+    async def test_no_filename_after_prefix(self, skill_tool: SkillTool):
+        result = await skill_tool.run(name="code_review", resource="references/")
+        assert "Error" in result.output
+
+    async def test_without_resource_returns_body(self, skill_tool: SkillTool):
+        result = await skill_tool.run(name="code_review")
         assert result.output == "## Code Review\nCheck for bugs."
 
 
