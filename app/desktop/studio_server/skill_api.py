@@ -73,6 +73,7 @@ def connect_skill_api(app: FastAPI):
         )
         skill.save_to_file()
         skill.save_skill_md(skill_data.body)
+        skill.references_dir().mkdir(parents=True, exist_ok=True)
         return skill_to_response(skill)
 
     @app.patch("/api/projects/{project_id}/skills/{skill_id}")
