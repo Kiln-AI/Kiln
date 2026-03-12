@@ -1,7 +1,13 @@
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from app.desktop.studio_server.chat_api import connect_chat_api
+from app.desktop.studio_server.chat_api import (
+    _build_continuation_body,
+    _execute_client_tool,
+    _parse_sse_events,
+    connect_chat_api,
+)
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_server.custom_errors import connect_custom_errors
@@ -31,7 +37,6 @@ def mock_api_key():
 
 
 def _make_httpx_mock(status_code: int = 200, chunks: list[bytes] | None = None):
-    """Build a mock httpx.AsyncClient context-manager chain for chat_api tests."""
     if chunks is None:
         chunks = [b'data: {"type":"text-delta","delta":"hello"}\n\n']
 
@@ -57,87 +62,203 @@ def _make_httpx_mock(status_code: int = 200, chunks: list[bytes] | None = None):
     return mock_async_client_class, mock_client, mock_upstream
 
 
-def test_chat_streams_chunks(client, mock_api_key):
-    chunks = [
-        b'data: {"type":"text-delta","delta":"hello"}\n\n',
-        b'data: {"type":"finish"}\n\n',
-    ]
-    mock_class, mock_client, mock_upstream = _make_httpx_mock(chunks=chunks)
-
-    with patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class):
-        response = client.post(
-            "/api/chat",
-            json={"messages": [{"role": "user", "content": "hi"}]},
-        )
-
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-    assert b"text-delta" in response.content
-    assert b"finish" in response.content
+# --- SSE passthrough tests ---
 
 
-def test_chat_forwards_auth_header(client, mock_api_key):
-    mock_class, mock_client, mock_upstream = _make_httpx_mock()
+class TestChatStreaming:
+    def test_streams_chunks(self, client, mock_api_key):
+        chunks = [
+            b'data: {"type":"text-delta","delta":"hello"}\n\n',
+            b'data: {"type":"finish"}\n\n',
+        ]
+        mock_class, _, _ = _make_httpx_mock(chunks=chunks)
 
-    with patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class):
-        client.post(
-            "/api/chat",
-            json={"messages": [{"role": "user", "content": "hi"}]},
-        )
+        with patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class):
+            response = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "hi"}]},
+            )
 
-    call_kwargs = mock_client.stream.call_args
-    headers = (
-        call_kwargs.kwargs.get("headers") or call_kwargs.args[2]
-        if len(call_kwargs.args) > 2
-        else {}
-    )
-    if not headers:
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        assert b"text-delta" in response.content
+
+    def test_forwards_auth_header(self, client, mock_api_key):
+        mock_class, mock_client, _ = _make_httpx_mock()
+
+        with patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class):
+            client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "hi"}]},
+            )
+
+        call_kwargs = mock_client.stream.call_args
         headers = call_kwargs.kwargs.get("headers", {})
-    assert headers.get("Authorization") == "Bearer test_api_key"
+        assert headers.get("Authorization") == "Bearer test_api_key"
+
+    def test_returns_401_when_no_api_key(self, client):
+        with patch(
+            "app.desktop.studio_server.utils.copilot_utils.Config.shared"
+        ) as mock_config_shared:
+            mock_config = mock_config_shared.return_value
+            mock_config.kiln_copilot_api_key = None
+
+            response = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "hi"}]},
+            )
+
+        assert response.status_code == 401
+
+    def test_handles_upstream_error(self, client, mock_api_key):
+        mock_class, _, _ = _make_httpx_mock(status_code=500)
+
+        with patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class):
+            response = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "hi"}]},
+            )
+
+        assert response.status_code == 200
+        assert b"error" in response.content
 
 
-def test_chat_forwards_request_body(client, mock_api_key):
-    mock_class, mock_client, _ = _make_httpx_mock()
-    request_body = {"messages": [{"role": "user", "content": "test message"}]}
-
-    with patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class):
-        client.post("/api/chat", json=request_body)
-
-    call_kwargs = mock_client.stream.call_args
-    sent_content = call_kwargs.kwargs.get("content") or (
-        call_kwargs.args[2] if len(call_kwargs.args) > 2 else None
-    )
-    if sent_content is None:
-        sent_content = call_kwargs.kwargs.get("content")
-    import json
-
-    assert json.loads(sent_content) == request_body
+# --- SSE parsing tests ---
 
 
-def test_chat_returns_401_when_no_api_key(client):
-    with patch(
-        "app.desktop.studio_server.utils.copilot_utils.Config.shared"
-    ) as mock_config_shared:
-        mock_config = mock_config_shared.return_value
-        mock_config.kiln_copilot_api_key = None
+class TestParseSSEEvents:
+    def test_passthrough_normal_events(self):
+        raw = b'data: {"type":"text-delta","delta":"hi"}\n\n'
+        lines, tool_event = _parse_sse_events(raw)
+        assert tool_event is None
+        assert any(b"text-delta" in line for line in lines)
 
-        response = client.post(
-            "/api/chat",
-            json={"messages": [{"role": "user", "content": "hi"}]},
+    def test_detects_client_tool_call(self):
+        raw = (
+            b'data: {"type":"text-delta","delta":"hi"}\n'
+            b'data: {"type":"client-tool-call","toolCallId":"tc1","toolName":"read_task_run","input":{"path":"/x"}}\n\n'
+        )
+        lines, tool_event = _parse_sse_events(raw)
+        assert tool_event is not None
+        assert tool_event["toolName"] == "read_task_run"
+        assert tool_event["toolCallId"] == "tc1"
+        assert not any(b"client-tool-call" in line for line in lines)
+
+    def test_handles_empty_input(self):
+        lines, tool_event = _parse_sse_events(b"")
+        assert tool_event is None
+
+
+# --- Client tool execution tests ---
+
+
+class TestExecuteClientTool:
+    def test_read_task_run_success(self, tmp_path):
+        test_file = tmp_path / "task_run.kiln"
+        test_file.write_text('{"id": "123", "input": "test"}')
+
+        result = _execute_client_tool("read_task_run", {"path": str(test_file)})
+        assert '"id": "123"' in result
+
+    def test_read_task_run_file_not_found(self):
+        result = _execute_client_tool("read_task_run", {"path": "/nonexistent/path"})
+        assert "error" in result.lower()
+
+    def test_unknown_tool(self):
+        result = _execute_client_tool("unknown_tool", {})
+        assert "Unknown client tool" in result
+
+
+# --- Continuation body tests ---
+
+
+class TestBuildContinuationBody:
+    def test_appends_tool_messages(self):
+        original = {"messages": [{"role": "user", "content": "hi"}]}
+        result = _build_continuation_body(
+            original, "tc1", "read_task_run", {"path": "/x"}, '{"data": "result"}'
         )
 
-    assert response.status_code == 401
+        assert len(result["messages"]) == 3
+        assert result["messages"][0]["role"] == "user"
+        assert result["messages"][1]["role"] == "assistant"
+        assert result["messages"][1]["parts"][0]["toolCallId"] == "tc1"
+        assert result["messages"][1]["parts"][0]["state"] == "call"
+        assert result["messages"][2]["role"] == "assistant"
+        assert result["messages"][2]["parts"][0]["state"] == "output-available"
+        assert result["messages"][2]["parts"][0]["output"] == '{"data": "result"}'
+
+    def test_preserves_original_body_fields(self):
+        original = {
+            "messages": [{"role": "user", "content": "hi"}],
+            "task_id": "test_task",
+        }
+        result = _build_continuation_body(original, "tc1", "tool", {}, "result")
+        assert result["task_id"] == "test_task"
 
 
-def test_chat_handles_upstream_error(client, mock_api_key):
-    mock_class, _, _ = _make_httpx_mock(status_code=500)
+# --- Client tool round-trip test ---
 
-    with patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class):
-        response = client.post(
-            "/api/chat",
-            json={"messages": [{"role": "user", "content": "hi"}]},
-        )
 
-    assert response.status_code == 200
-    assert b"error" in response.content
-    assert b"upstream error" in response.content
+class TestClientToolRoundTrip:
+    def test_detects_and_continues_after_client_tool(self, client, mock_api_key):
+        """First request returns client-tool-call, proxy executes locally and sends continuation."""
+        first_response_chunks = [
+            b'data: {"type":"text-delta","delta":"Let me read that"}\n\n',
+            b'data: {"type":"client-tool-call","toolCallId":"tc1","toolName":"read_task_run","input":{"path":"/fake"}}\n\n',
+            b'data: {"type":"finish"}\n\n',
+        ]
+        second_response_chunks = [
+            b'data: {"type":"text-delta","delta":"Here is the result"}\n\n',
+            b'data: {"type":"finish"}\n\n',
+        ]
+
+        call_count = 0
+
+        def make_stream_mock(chunks):
+            async def mock_aiter_bytes():
+                for chunk in chunks:
+                    yield chunk
+
+            mock_upstream = MagicMock()
+            mock_upstream.status_code = 200
+            mock_upstream.aiter_bytes.return_value = mock_aiter_bytes()
+            mock_upstream.__aenter__ = AsyncMock(return_value=mock_upstream)
+            mock_upstream.__aexit__ = AsyncMock(return_value=None)
+            return mock_upstream
+
+        def side_effect_stream(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return make_stream_mock(first_response_chunks)
+            return make_stream_mock(second_response_chunks)
+
+        mock_client = MagicMock()
+        mock_client.stream.side_effect = side_effect_stream
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+
+        mock_class = MagicMock(return_value=mock_client)
+
+        with (
+            patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class),
+            patch(
+                "app.desktop.studio_server.chat_api._execute_client_tool",
+                return_value='{"data": "mock result"}',
+            ),
+        ):
+            response = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "read my task run"}]},
+            )
+
+        assert response.status_code == 200
+        content = response.content
+        assert b"Let me read that" in content
+        assert b"Here is the result" in content
+        assert call_count == 2
+
+        continuation_call = mock_client.stream.call_args_list[1]
+        continuation_body = json.loads(continuation_call.kwargs["content"])
+        assert len(continuation_body["messages"]) == 3
