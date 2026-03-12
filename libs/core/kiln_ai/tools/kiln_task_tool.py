@@ -81,6 +81,7 @@ class KilnTaskTool(KilnToolInterface):
             else:
                 raise ValueError(f"Input not found in kwargs: {kwargs}")
 
+        # These imports are here to avoid circular chains
         from kiln_ai.adapters.adapter_registry import (
             adapter_for_task,
             load_skills_for_task,
