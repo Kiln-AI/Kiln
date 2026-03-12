@@ -153,16 +153,31 @@ class TestParseSSEEvents:
 
 
 class TestExecuteClientTool:
-    def test_read_task_run_success(self, tmp_path):
-        test_file = tmp_path / "task_run.kiln"
-        test_file.write_text('{"id": "123", "input": "test"}')
+    def test_read_task_run_success(self):
+        mock_run = MagicMock()
+        mock_run.model_dump_json.return_value = '{"id": "42", "input": "hello"}'
 
-        result = _execute_client_tool("read_task_run", {"path": str(test_file)})
-        assert '"id": "123"' in result
+        with patch(
+            "app.desktop.studio_server.chat_api._find_task_run_by_id",
+            return_value=mock_run,
+        ):
+            result = _execute_client_tool("read_task_run", {"task_run_id": "42"})
+        assert '"id": "42"' in result
 
-    def test_read_task_run_file_not_found(self):
-        result = _execute_client_tool("read_task_run", {"path": "/nonexistent/path"})
-        assert "error" in result.lower()
+    def test_read_task_run_not_found(self):
+        with patch(
+            "app.desktop.studio_server.chat_api._find_task_run_by_id",
+            return_value=None,
+        ):
+            result = _execute_client_tool("read_task_run", {"task_run_id": "999"})
+        parsed = json.loads(result)
+        assert "error" in parsed
+        assert "999" in parsed["error"]
+
+    def test_read_task_run_missing_id(self):
+        result = _execute_client_tool("read_task_run", {})
+        parsed = json.loads(result)
+        assert "error" in parsed
 
     def test_unknown_tool(self):
         result = _execute_client_tool("unknown_tool", {})

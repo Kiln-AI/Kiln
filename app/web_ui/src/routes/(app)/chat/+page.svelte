@@ -179,6 +179,18 @@
     return typeof input === "string" ? input : JSON.stringify(input, null, 2)
   }
 
+  function formatToolOutput(output: unknown): string {
+    if (typeof output === "string") {
+      try {
+        const parsed = JSON.parse(output)
+        return JSON.stringify(parsed, null, 2)
+      } catch {
+        return output
+      }
+    }
+    return JSON.stringify(output, null, 2)
+  }
+
   function getToolOutputError(part: ChatMessagePart): string {
     if (
       !("output" in part) ||
@@ -462,10 +474,8 @@
                                 </div>
                               {:else if hasOutput}
                                 <pre
-                                  class="text-xs overflow-x-auto rounded py-1.5 font-mono text-base-content/80">{JSON.stringify(
+                                  class="text-xs overflow-x-auto rounded py-1.5 font-mono text-base-content/80">{formatToolOutput(
                                     part.output,
-                                    null,
-                                    2,
                                   )}</pre>
                               {:else}
                                 <div

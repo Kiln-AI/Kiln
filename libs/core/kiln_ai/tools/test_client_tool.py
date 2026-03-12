@@ -34,15 +34,15 @@ class TestClientToolPlaceholder:
 
         assert definition["type"] == "function"
         assert definition["function"]["name"] == "read_task_run"
-        assert "path" in definition["function"]["parameters"]["properties"]
+        assert "task_run_id" in definition["function"]["parameters"]["properties"]
 
     async def test_run_raises_client_tool_call_required(self):
         tool = client_tool_from_id("client_tool::read_task_run")
         with pytest.raises(ClientToolCallRequired) as exc_info:
-            await tool.run(path="/some/path.kiln")
+            await tool.run(task_run_id="12345")
 
         assert exc_info.value.tool_name == "read_task_run"
-        assert exc_info.value.arguments["path"] == "/some/path.kiln"
+        assert exc_info.value.arguments["task_run_id"] == "12345"
 
     async def test_id(self):
         tool = client_tool_from_id("client_tool::read_task_run")

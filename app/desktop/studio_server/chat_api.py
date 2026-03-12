@@ -1,6 +1,5 @@
 import json
 import logging
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -11,6 +10,8 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
+from kiln_ai.datamodel import Project, TaskRun
+from kiln_ai.utils.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -26,12 +27,32 @@ def _build_upstream_headers(api_key: str) -> dict[str, str]:
     }
 
 
+def _find_task_run_by_id(task_run_id: str) -> TaskRun | None:
+    """Search all projects and tasks for a task run with the given ID."""
+    project_paths = Config.shared().projects or []
+    for project_path in project_paths:
+        try:
+            project = Project.load_from_file(project_path)
+        except Exception:
+            continue
+        for task in project.tasks():
+            run = TaskRun.from_id_and_parent_path(task_run_id, task.path)
+            if run is not None:
+                return run
+    return None
+
+
 def _execute_client_tool(tool_name: str, arguments: dict[str, Any]) -> str:
     """Execute a client-side tool and return the result as a string."""
     if tool_name == "read_task_run":
-        path = arguments.get("path", "")
+        task_run_id = arguments.get("task_run_id", "")
+        if not task_run_id:
+            return json.dumps({"error": "task_run_id is required"})
         try:
-            return Path(path).read_text()
+            run = _find_task_run_by_id(task_run_id)
+            if run is None:
+                return json.dumps({"error": f"Task run not found: {task_run_id}"})
+            return run.model_dump_json(indent=2)
         except Exception as e:
             return json.dumps({"error": f"Failed to read task run: {e}"})
     return json.dumps({"error": f"Unknown client tool: {tool_name}"})

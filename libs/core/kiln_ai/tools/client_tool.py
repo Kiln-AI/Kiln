@@ -81,16 +81,16 @@ class ClientToolPlaceholder(KilnToolInterface):
 # Execution happens on the client side.
 _CLIENT_TOOL_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     "read_task_run": {
-        "description": "Read a task run from the user's local Kiln project. Returns the task run data as JSON.",
+        "description": "Read a task run from the user's local Kiln project by its ID. Returns the task run data as JSON.",
         "parameters_schema": {
             "type": "object",
             "properties": {
-                "path": {
+                "task_run_id": {
                     "type": "string",
-                    "description": "The file path to the task_run.kiln file on the user's machine",
+                    "description": "The numeric ID of the task run to read",
                 },
             },
-            "required": ["path"],
+            "required": ["task_run_id"],
         },
     },
 }
