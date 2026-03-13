@@ -322,6 +322,7 @@ class BaseAdapter(metaclass=ABCMeta):
             )
 
         skills: list[Skill] = []
+        seen: set[str] = set()
         for tool_id in skill_tool_ids:
             sid = skill_id_from_tool_id(tool_id)
             if sid not in injected:
@@ -329,6 +330,9 @@ class BaseAdapter(metaclass=ABCMeta):
                     f"Skill {sid} referenced in run config but not found in the "
                     "injected skills dict."
                 )
+            if sid in seen:
+                continue
+            seen.add(sid)
             skills.append(injected[sid])
 
         self._resolved_skills = skills
