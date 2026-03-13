@@ -118,18 +118,16 @@
   title="Document Extractors"
   subtitle="Extractors convert files like PDFs or images into text your models can use"
   limit_max_width
-  breadcrumbs={$ui_state.current_task_id
-    ? [
-        {
-          label: "Optimize",
-          href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
-        },
-        {
-          label: "Docs & Search",
-          href: `/docs/${project_id}`,
-        },
-      ]
-    : [{ label: "Docs & Search", href: `/docs/${project_id}` }]}
+  breadcrumbs={[
+    {
+      label: "Optimize",
+      href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+    },
+    {
+      label: "Docs & Search",
+      href: `/docs/${project_id}`,
+    },
+  ]}
   no_y_padding={!!(extractor_configs && extractor_configs.length == 0)}
   action_buttons={extractor_configs && extractor_configs.length == 0
     ? []

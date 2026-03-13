@@ -165,14 +165,12 @@
     subtitle="Connect your project to tools such as RAG systems, Kiln Tasks, and MCP servers"
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp"
-    breadcrumbs={$ui_state.current_task_id
-      ? [
-          {
-            label: "Optimize",
-            href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
-          },
-        ]
-      : []}
+    breadcrumbs={[
+      {
+        label: "Optimize",
+        href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+      },
+    ]}
     action_buttons={is_empty
       ? []
       : [

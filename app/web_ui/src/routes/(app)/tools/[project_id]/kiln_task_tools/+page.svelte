@@ -67,14 +67,10 @@
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/agents#multi-actor-interaction-aka-subtasks"
     breadcrumbs={[
-      ...($ui_state.current_task_id
-        ? [
-            {
-              label: "Optimize",
-              href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
-            },
-          ]
-        : []),
+      {
+        label: "Optimize",
+        href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+      },
       {
         label: "Tools",
         href: `/tools/${project_id}`,

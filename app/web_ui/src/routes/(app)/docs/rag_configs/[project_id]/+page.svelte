@@ -103,15 +103,13 @@
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
     no_y_padding={!!(all_rag_configs && all_rag_configs.length == 0)}
-    breadcrumbs={current_task_id
-      ? [
-          {
-            label: "Optimize",
-            href: `/optimize/${project_id}/${current_task_id}`,
-          },
-          { label: "Docs & Search", href: `/docs/${project_id}` },
-        ]
-      : [{ label: "Docs & Search", href: `/docs/${project_id}` }]}
+    breadcrumbs={[
+      {
+        label: "Optimize",
+        href: `/optimize/${project_id}/${current_task_id}`,
+      },
+      { label: "Docs & Search", href: `/docs/${project_id}` },
+    ]}
     action_buttons={all_rag_configs && all_rag_configs.length == 0
       ? []
       : [

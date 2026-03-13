@@ -196,31 +196,20 @@
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
   limit_max_width
-  breadcrumbs={$ui_state.current_task_id
-    ? [
-        {
-          label: "Optimize",
-          href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
-        },
-        {
-          label: "Docs & Search",
-          href: `/docs/${project_id}`,
-        },
-        {
-          label: "Document Library",
-          href: `/docs/library/${project_id}`,
-        },
-      ]
-    : [
-        {
-          label: "Docs & Search",
-          href: `/docs/${project_id}`,
-        },
-        {
-          label: "Document Library",
-          href: `/docs/library/${project_id}`,
-        },
-      ]}
+  breadcrumbs={[
+    {
+      label: "Optimize",
+      href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+    },
+    {
+      label: "Docs & Search",
+      href: `/docs/${project_id}`,
+    },
+    {
+      label: "Document Library",
+      href: `/docs/library/${project_id}`,
+    },
+  ]}
   action_buttons={[
     {
       label: "Edit",
