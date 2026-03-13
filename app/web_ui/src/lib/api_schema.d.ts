@@ -6934,6 +6934,11 @@ export interface components {
          *
          *     Contains the input used, its source, the output produced, and optional
          *     repair information if the output needed correction.
+         *
+         *     Can be nested under another TaskRun; nested runs are stored as child runs
+         *     in a "runs" subfolder (same relationship name as Task's runs).
+         *
+         *     Accepts both Task and TaskRun as parents (polymorphic).
          */
         "TaskRun-Input": {
             /**
@@ -6996,6 +7001,11 @@ export interface components {
          *
          *     Contains the input used, its source, the output produced, and optional
          *     repair information if the output needed correction.
+         *
+         *     Can be nested under another TaskRun; nested runs are stored as child runs
+         *     in a "runs" subfolder (same relationship name as Task's runs).
+         *
+         *     Accepts both Task and TaskRun as parents (polymorphic).
          */
         "TaskRun-Output": {
             /**
