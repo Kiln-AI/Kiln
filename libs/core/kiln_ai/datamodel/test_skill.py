@@ -228,22 +228,112 @@ def test_skill_parent_type():
 # -- Frontmatter parsing tests --
 
 
-def test_parse_skill_md_body_valid():
-    raw = "---\nname: test\ndescription: desc\n---\nHello world"
-    assert _parse_skill_md_body(raw) == "Hello world"
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        # basic frontmatter
+        ("---\nname: test\ndescription: desc\n---\nHello world", "Hello world"),
+        # blank line between frontmatter and body (standard format)
+        ("---\nname: test\n---\n\nBody after blank", "Body after blank"),
+        # multiple blank lines between frontmatter and body
+        ("---\nname: test\n---\n\n\n\nBody", "Body"),
+        # no frontmatter at all
+        ("Just plain markdown", "Just plain markdown"),
+        # does not start with --- (leading whitespace)
+        ("  ---\nname: test\n---\nbody", "  ---\nname: test\n---\nbody"),
+        # opening --- not on its own line (e.g. ---name)
+        ("---name: test\n---\nbody", "---name: test\n---\nbody"),
+        # bare --- with no newline (not frontmatter)
+        ("---", "---"),
+        # description containing --- mid-line (must not split early)
+        (
+            "---\ndescription: has --- in it\n---\n\nReal body",
+            "Real body",
+        ),
+        # body itself contains --- on its own line (markdown horizontal rule)
+        (
+            "---\nname: test\n---\n\nBefore rule\n---\nAfter rule",
+            "Before rule\n---\nAfter rule",
+        ),
+        # body contains multiple --- lines
+        (
+            "---\nname: test\n---\n\nA\n---\nB\n---\nC",
+            "A\n---\nB\n---\nC",
+        ),
+        # body starts with ---
+        ("---\nname: test\n---\n\n---\nrest", "---\nrest"),
+        # minimal frontmatter (empty YAML between delimiters)
+        ("---\n\n---\n\nBody", "Body"),
+        # single-line body
+        ("---\nname: test\n---\n\nOne liner", "One liner"),
+        # body with trailing newlines (preserved)
+        ("---\nname: test\n---\n\nBody\n\n\n", "Body\n\n\n"),
+        # unicode in body and frontmatter
+        ("---\nname: tëst\n---\n\nBödy with émojis 🎉", "Bödy with émojis 🎉"),
+        # YAML multiline literal block containing ---
+        (
+            "---\ndesc: |\n  line one\n  ---\n  line two\n---\n\nBody",
+            "Body",
+        ),
+        # YAML quoted value containing ---
+        (
+            '---\ndesc: "---"\n---\n\nBody',
+            "Body",
+        ),
+        # four dashes in YAML value — should not match as closing fence
+        (
+            "---\ndesc: ----\n---\n\nBody",
+            "Body",
+        ),
+    ],
+    ids=[
+        "basic",
+        "blank_line_separator",
+        "multiple_blank_lines",
+        "no_frontmatter",
+        "leading_whitespace_no_frontmatter",
+        "opening_fence_not_own_line",
+        "bare_dashes_no_newline",
+        "triple_dashes_in_yaml_value",
+        "horizontal_rule_in_body",
+        "multiple_hr_in_body",
+        "body_starts_with_dashes",
+        "empty_yaml",
+        "single_line_body",
+        "trailing_newlines_preserved",
+        "unicode",
+        "yaml_literal_block_with_dashes",
+        "yaml_quoted_dashes",
+        "four_dashes_in_yaml",
+    ],
+)
+def test_parse_skill_md_body(raw, expected):
+    assert _parse_skill_md_body(raw) == expected
 
 
-def test_parse_skill_md_body_no_frontmatter():
-    raw = "Just plain markdown"
-    assert _parse_skill_md_body(raw) == "Just plain markdown"
-
-
-def test_parse_skill_md_body_with_leading_newline():
-    raw = "---\nname: test\n---\n\nBody after blank line"
-    assert _parse_skill_md_body(raw) == "\nBody after blank line"
-
-
-def test_parse_skill_md_body_malformed_raises():
-    raw = "---\nname: test\nno closing delimiter"
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "---\nname: test\nno closing delimiter",
+        "---\nname: test",
+        "---\n",
+    ],
+    ids=[
+        "no_closing_delimiter",
+        "no_closing_delimiter_two_lines",
+        "opening_fence_only_with_newline",
+    ],
+)
+def test_parse_skill_md_body_malformed_raises(raw):
     with pytest.raises(ValueError):
         _parse_skill_md_body(raw)
+
+
+def test_round_trip_description_with_dashes(mock_project):
+    """Ensure --- in a description survives a write→read round-trip."""
+    skill = save_skill_with_body(
+        mock_project,
+        description="Check code --- look for bugs",
+        body="The body",
+    )
+    assert skill.body() == "The body"

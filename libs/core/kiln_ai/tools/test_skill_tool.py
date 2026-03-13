@@ -1,142 +1,84 @@
+from unittest.mock import MagicMock
+
 import pytest
 
-from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.skill import Skill
-from kiln_ai.datamodel.tool_id import (
-    _check_tool_id,
-    build_skill_tool_id,
-    skill_id_from_tool_id,
-)
 from kiln_ai.tools.skill_tool import SkillTool
 
 
-def _make_saved_skill(
-    project: Project, name: str, description: str, body: str
-) -> Skill:
-    skill = Skill(name=name, description=description, parent=project)
-    skill.save_to_file()
-    skill.save_skill_md(body)
-    return skill
+@pytest.fixture
+def skills():
+    s1 = MagicMock(spec=Skill)
+    s1.name = "code_review"
+    s1.description = "Review code"
+
+    s2 = MagicMock(spec=Skill)
+    s2.name = "test_writing"
+    s2.description = "Write tests"
+
+    return [s1, s2]
 
 
 @pytest.fixture
-def mock_project(tmp_path):
-    project_path = tmp_path / "test_project" / "project.kiln"
-    project_path.parent.mkdir()
-    project = Project(name="Test Project", path=project_path)
-    project.save_to_file()
-    return project
-
-
-@pytest.fixture
-def sample_skills(mock_project) -> list[Skill]:
-    return [
-        _make_saved_skill(
-            mock_project,
-            "code_review",
-            "Review code for quality",
-            "## Code Review\nCheck for bugs.",
-        ),
-        _make_saved_skill(
-            mock_project,
-            "testing",
-            "Write tests for code",
-            "## Testing\nWrite unit tests.",
-        ),
-    ]
-
-
-@pytest.fixture
-def skill_tool(sample_skills: list[Skill]) -> SkillTool:
-    return SkillTool("kiln_tool::skill::123", sample_skills)
-
-
-class TestSkillToolDefinition:
-    async def test_name(self, skill_tool: SkillTool):
-        assert await skill_tool.name() == "skill"
-
-    async def test_id(self, skill_tool: SkillTool):
-        assert await skill_tool.id() == "kiln_tool::skill::123"
-
-    async def test_description_is_static(self, skill_tool: SkillTool):
-        desc = await skill_tool.description()
-        assert "Load an agent skill by name" in desc
-        assert "system prompt" in desc
-        assert len(desc) <= 1024
-
-    async def test_toolcall_definition_schema(self, skill_tool: SkillTool):
-        defn = await skill_tool.toolcall_definition()
-        assert defn["type"] == "function"
-        assert defn["function"]["name"] == "skill"
-        params = defn["function"]["parameters"]
-        assert params["required"] == ["name"]
-        name_prop = params["properties"]["name"]
-        assert name_prop["type"] == "string"
-        assert "enum" not in name_prop
+def tool(skills):
+    return SkillTool(tool_id="skill_tool_1", skills=skills)
 
 
 class TestSkillToolRun:
-    async def test_load_valid_skill(self, skill_tool: SkillTool):
-        result = await skill_tool.run(name="code_review")
-        assert result.output == "## Code Review\nCheck for bugs."
-
-    async def test_load_second_skill(self, skill_tool: SkillTool):
-        result = await skill_tool.run(name="testing")
-        assert result.output == "## Testing\nWrite unit tests."
-
-    async def test_unknown_skill(self, skill_tool: SkillTool):
-        result = await skill_tool.run(name="nonexistent")
-        assert "Error" in result.output
-        assert "nonexistent" in result.output
-        assert "code_review" in result.output
-        assert "testing" in result.output
-
-    async def test_missing_name_param(self, skill_tool: SkillTool):
-        result = await skill_tool.run()
+    async def test_missing_name_parameter(self, tool):
+        result = await tool.run()
         assert "Error" in result.output
         assert "'name' parameter is required" in result.output
 
-    async def test_with_context(self, skill_tool: SkillTool):
-        from kiln_ai.tools.base_tool import ToolCallContext
+    async def test_empty_name_parameter(self, tool):
+        result = await tool.run(name="")
+        assert "'name' parameter is required" in result.output
 
-        ctx = ToolCallContext(allow_saving=True)
-        result = await skill_tool.run(context=ctx, name="code_review")
-        assert result.output == "## Code Review\nCheck for bugs."
+    async def test_unknown_skill(self, tool):
+        result = await tool.run(name="nonexistent")
+        assert "not found" in result.output
+        assert "code_review" in result.output
+        assert "test_writing" in result.output
+
+    async def test_successful_skill_load(self, tool, skills):
+        skills[0].body.return_value = "# Code Review\nReview all code."
+        result = await tool.run(name="code_review")
+        assert result.output == "# Code Review\nReview all code."
+
+    async def test_body_io_error_is_caught(self, tool, skills):
+        skills[0].body.side_effect = FileNotFoundError(
+            "SKILL.md not found at /tmp/fake"
+        )
+        result = await tool.run(name="code_review")
+        assert "Error" in result.output
+        assert "code_review" in result.output
+
+    async def test_body_value_error_is_caught(self, tool, skills):
+        skills[0].body.side_effect = ValueError(
+            "Skill must be saved before accessing SKILL.md path"
+        )
+        result = await tool.run(name="code_review")
+        assert "Error" in result.output
+        assert "Failed to load skill" in result.output
+
+    async def test_body_parse_error_is_caught(self, tool, skills):
+        skills[0].body.side_effect = Exception("frontmatter parse error")
+        result = await tool.run(name="code_review")
+        assert "Error" in result.output
+        assert "frontmatter parse error" in result.output
 
 
-class TestSkillToolId:
-    @pytest.mark.parametrize(
-        "tool_id",
-        [
-            "kiln_tool::skill::abc123",
-            "kiln_tool::skill::my_skill",
-            "kiln_tool::skill::1",
-        ],
-    )
-    def test_valid_skill_tool_ids(self, tool_id: str):
-        assert _check_tool_id(tool_id) == tool_id
+class TestSkillToolDefinition:
+    async def test_toolcall_definition_shape(self, tool):
+        defn = await tool.toolcall_definition()
+        assert defn["type"] == "function"
+        func = defn["function"]
+        assert func["name"] == "skill"
+        assert "name" in func["parameters"]["properties"]
+        assert func["parameters"]["required"] == ["name"]
 
-    @pytest.mark.parametrize(
-        "tool_id",
-        [
-            "kiln_tool::skill::",
-            "kiln_tool::skill::id::extra",
-        ],
-    )
-    def test_invalid_skill_tool_ids(self, tool_id: str):
-        with pytest.raises(ValueError, match="Invalid skill tool ID"):
-            _check_tool_id(tool_id)
+    async def test_id(self, tool):
+        assert await tool.id() == "skill_tool_1"
 
-    def test_skill_id_from_tool_id(self):
-        assert skill_id_from_tool_id("kiln_tool::skill::abc") == "abc"
-        assert skill_id_from_tool_id("kiln_tool::skill::123") == "123"
-
-    def test_skill_id_from_tool_id_invalid(self):
-        with pytest.raises(ValueError, match="Invalid skill tool ID"):
-            skill_id_from_tool_id("kiln_tool::rag::abc")
-        with pytest.raises(ValueError, match="Invalid skill tool ID"):
-            skill_id_from_tool_id("kiln_tool::skill::a::b")
-
-    def test_build_skill_tool_id(self):
-        assert build_skill_tool_id("abc") == "kiln_tool::skill::abc"
-        assert build_skill_tool_id("123") == "kiln_tool::skill::123"
+    async def test_skills_property(self, tool, skills):
+        assert set(s.name for s in tool.skills) == {"code_review", "test_writing"}

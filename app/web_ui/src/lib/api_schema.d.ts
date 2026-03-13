@@ -2368,6 +2368,23 @@ export interface paths {
         patch: operations["update_skill_api_projects__project_id__skills__skill_id__patch"];
         trace?: never;
     };
+    "/api/projects/{project_id}/skills/{skill_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Skill Content */
+        get: operations["get_skill_content_api_projects__project_id__skills__skill_id__content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config": {
         parameters: {
             query?: never;
@@ -6404,6 +6421,11 @@ export interface components {
              */
             breakpoint_percentile_threshold: number;
         };
+        /** SkillContentResponse */
+        SkillContentResponse: {
+            /** Skill Md */
+            skill_md: string;
+        };
         /** SkillCreationRequest */
         SkillCreationRequest: {
             /** Name */
@@ -6421,8 +6443,6 @@ export interface components {
             name: string;
             /** Description */
             description: string;
-            /** Skill Md */
-            skill_md: string;
             /**
              * Is Archived
              * @default false
@@ -12638,6 +12658,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_skill_content_api_projects__project_id__skills__skill_id__content_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillContentResponse"];
                 };
             };
             /** @description Validation Error */

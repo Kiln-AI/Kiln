@@ -22,20 +22,17 @@ class SkillResponse(BaseModel):
     id: str | None = None
     name: str
     description: str
-    skill_md: str
     is_archived: bool = False
     created_by: str | None = None
     created_at: datetime | None = None
 
 
+class SkillContentResponse(BaseModel):
+    skill_md: str
+
+
 def skill_to_response(skill: Skill) -> SkillResponse:
-    try:
-        skill_md = skill.skill_md_raw()
-    except FileNotFoundError:
-        skill_md = ""
-    data = skill.model_dump()
-    data["skill_md"] = skill_md
-    return SkillResponse.model_validate(data)
+    return SkillResponse.model_validate(skill.model_dump())
 
 
 def connect_skill_api(app: FastAPI):
@@ -51,6 +48,18 @@ def connect_skill_api(app: FastAPI):
         if skill is None:
             raise HTTPException(status_code=404, detail="Skill not found")
         return skill_to_response(skill)
+
+    @app.get("/api/projects/{project_id}/skills/{skill_id}/content")
+    async def get_skill_content(project_id: str, skill_id: str) -> SkillContentResponse:
+        project = project_from_id(project_id)
+        skill = Skill.from_id_and_parent_path(skill_id, project.path)
+        if skill is None:
+            raise HTTPException(status_code=404, detail="Skill not found")
+        try:
+            skill_md = skill.skill_md_raw()
+        except FileNotFoundError:
+            skill_md = ""
+        return SkillContentResponse(skill_md=skill_md)
 
     @app.post("/api/projects/{project_id}/skills")
     async def create_skill(

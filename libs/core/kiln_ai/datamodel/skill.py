@@ -75,16 +75,14 @@ class Skill(KilnParentedModel):
             allow_unicode=True,
             sort_keys=False,
         ).rstrip("\n")
-        content = f"---\n{frontmatter}\n---\n{body}"
+        content = f"---\n{frontmatter}\n---\n\n{body}"
         self.skill_md_path().write_text(content, encoding="utf-8")
 
 
 def _parse_skill_md_body(raw: str) -> str:
     """Parse a SKILL.md file and return the body content after frontmatter."""
-    if not raw.startswith("---"):
+    if not raw.startswith("---\n"):
         return raw
-    end_idx = raw.index("---", 3)
-    body = raw[end_idx + 3 :]
-    if body.startswith("\n"):
-        body = body[1:]
-    return body
+    end_idx = raw.index("\n---\n", 3)
+    body = raw[end_idx + 5 :]
+    return body.lstrip("\n")

@@ -132,12 +132,47 @@ class TestGetSkills:
         result = response.json()
         assert result["name"] == "test_skill"
         assert result["description"] == "A test skill for unit tests."
-        assert "## Test Skill" in result["skill_md"]
+        assert "skill_md" not in result
 
     def test_get_skill_not_found(self, client, test_project, mock_project_from_id):
         response = client.get(f"/api/projects/{test_project.id}/skills/nonexistent-id")
         assert response.status_code == 404
         assert response.json()["message"] == "Skill not found"
+
+
+class TestGetSkillContent:
+    def test_get_skill_content(
+        self, client, test_project, mock_project_from_id, saved_skill
+    ):
+        response = client.get(
+            f"/api/projects/{test_project.id}/skills/{saved_skill.id}/content"
+        )
+        assert response.status_code == 200
+        result = response.json()
+        assert "## Test Skill" in result["skill_md"]
+
+    def test_get_skill_content_not_found(
+        self, client, test_project, mock_project_from_id
+    ):
+        response = client.get(
+            f"/api/projects/{test_project.id}/skills/nonexistent-id/content"
+        )
+        assert response.status_code == 404
+
+    def test_get_skill_content_missing_file(
+        self, client, test_project, mock_project_from_id
+    ):
+        skill = Skill(
+            name="no_md_skill",
+            description="Skill without SKILL.md.",
+            parent=test_project,
+        )
+        skill.save_to_file()
+        response = client.get(
+            f"/api/projects/{test_project.id}/skills/{skill.id}/content"
+        )
+        assert response.status_code == 200
+        assert response.json()["skill_md"] == ""
 
 
 class TestUpdateSkill:
