@@ -73,7 +73,7 @@
   function handle_sentinel_selection(current_skills: string[]) {
     if (current_skills.includes(CREATE_NEW_SKILL)) {
       skills = current_skills.filter((v) => v !== CREATE_NEW_SKILL)
-      goto(`/settings/manage_skills/${project_id}/create`)
+      goto(`/skills/${project_id}/create`)
     }
   }
 
@@ -172,7 +172,7 @@
       ? "Loading skills..."
       : "No Skills Available"}
     empty_state_subtitle="New Skill"
-    empty_state_link={`/settings/manage_skills/${project_id}/create`}
+    empty_state_link={`/skills/${project_id}/create`}
     disabled={resolved.disabled}
     optional={resolved.optional}
   />

@@ -18,7 +18,7 @@
         const tool_server_id = persistent_tool_id.substring(
           "kiln_task::".length,
         )
-        return `/settings/manage_tools/${project_id}/kiln_task/${tool_server_id}`
+        return `/tools/${project_id}/kiln_task/${tool_server_id}`
       }
     }
 

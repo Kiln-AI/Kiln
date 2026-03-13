@@ -8,6 +8,7 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
+  import { ui_state } from "$lib/stores"
   import { progress_ui_state } from "$lib/stores/progress_ui_store"
   import {
     rag_config_templates,
@@ -163,16 +164,31 @@
   subtitle="A tool to search for information in documents"
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
-  breadcrumbs={[
-    {
-      label: "Docs & Search",
-      href: `/docs/${project_id}`,
-    },
-    {
-      label: "Search Tools",
-      href: `/docs/rag_configs/${project_id}`,
-    },
-  ]}
+  breadcrumbs={$ui_state.current_task_id
+    ? [
+        {
+          label: "Optimize",
+          href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+        },
+        {
+          label: "Docs & Search",
+          href: `/docs/${project_id}`,
+        },
+        {
+          label: "Search Tools",
+          href: `/docs/rag_configs/${project_id}`,
+        },
+      ]
+    : [
+        {
+          label: "Docs & Search",
+          href: `/docs/${project_id}`,
+        },
+        {
+          label: "Search Tools",
+          href: `/docs/rag_configs/${project_id}`,
+        },
+      ]}
 >
   <div>
     <h2 class="text-lg font-medium">Suggested Configurations</h2>
