@@ -1,6 +1,5 @@
 import json
 import os
-from typing import Union
 from unittest.mock import patch
 
 import pytest
