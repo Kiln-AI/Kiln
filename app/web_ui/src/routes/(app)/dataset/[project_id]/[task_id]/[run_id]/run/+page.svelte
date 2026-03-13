@@ -132,7 +132,7 @@
       badge: Array.isArray(tools_property_value) ? true : false,
     })
     properties.push({
-      name: "Skills",
+      name: "Available Skills",
       value: skills_property_value,
       links: skill_links,
       badge: Array.isArray(skills_property_value) ? true : false,
