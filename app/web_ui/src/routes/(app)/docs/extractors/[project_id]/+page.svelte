@@ -4,7 +4,7 @@
   import type { ExtractorConfig } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
-  import { load_model_info } from "$lib/stores"
+  import { load_model_info, ui_state } from "$lib/stores"
   import { page } from "$app/stores"
   import { replaceState } from "$app/navigation"
   import EmptyExtractorsIntro from "./empty_extractors_intro.svelte"
@@ -118,12 +118,18 @@
   title="Document Extractors"
   subtitle="Extractors convert files like PDFs or images into text your models can use"
   limit_max_width
-  breadcrumbs={[
-    {
-      label: "Docs & Search",
-      href: `/docs/${project_id}`,
-    },
-  ]}
+  breadcrumbs={$ui_state.current_task_id
+    ? [
+        {
+          label: "Optimize",
+          href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+        },
+        {
+          label: "Docs & Search",
+          href: `/docs/${project_id}`,
+        },
+      ]
+    : [{ label: "Docs & Search", href: `/docs/${project_id}` }]}
   no_y_padding={!!(extractor_configs && extractor_configs.length == 0)}
   action_buttons={extractor_configs && extractor_configs.length == 0
     ? []

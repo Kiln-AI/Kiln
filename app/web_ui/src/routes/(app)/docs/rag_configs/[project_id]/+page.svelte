@@ -9,6 +9,7 @@
   } from "$lib/stores"
   import { page } from "$app/stores"
   import { replaceState } from "$app/navigation"
+  import { ui_state } from "$lib/stores"
   import EmptyRagConfigsIntro from "./empty_rag_configs_intro.svelte"
   import TableRagConfigRow from "./table_rag_config_row.svelte"
   import {
@@ -17,7 +18,6 @@
     sortRagConfigs,
     getProjectRagStateStore,
   } from "$lib/stores/rag_progress_store"
-  import { ui_state } from "$lib/stores"
 
   $: projectStateStore = getProjectRagStateStore(project_id)
   $: progressState = $projectStateStore
@@ -103,7 +103,15 @@
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
     no_y_padding={!!(all_rag_configs && all_rag_configs.length == 0)}
-    breadcrumbs={[{ label: "Docs & Search", href: `/docs/${project_id}` }]}
+    breadcrumbs={current_task_id
+      ? [
+          {
+            label: "Optimize",
+            href: `/optimize/${project_id}/${current_task_id}`,
+          },
+          { label: "Docs & Search", href: `/docs/${project_id}` },
+        ]
+      : [{ label: "Docs & Search", href: `/docs/${project_id}` }]}
     action_buttons={all_rag_configs && all_rag_configs.length == 0
       ? []
       : [

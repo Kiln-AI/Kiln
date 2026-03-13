@@ -159,7 +159,7 @@
       if (add_create_kiln_task_tool_action) {
         action_label = "Create New"
         action_handler = () => {
-          goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`)
+          goto(`/tools/${project_id}/add_tools/kiln_task`)
         }
       }
 
@@ -218,7 +218,7 @@
         ? "Loading tools..."
         : "No Tools Available",
     empty_state_subtitle: "Add Tools",
-    empty_state_link: `/settings/manage_tools/${project_id}/add_tools`,
+    empty_state_link: `/tools/${project_id}/add_tools`,
     disabled: tools_selector_settings.disabled,
     optional: tools_selector_settings.optional,
   }

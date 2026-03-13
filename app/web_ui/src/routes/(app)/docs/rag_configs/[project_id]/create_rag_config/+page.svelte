@@ -4,6 +4,7 @@
   import { goto } from "$app/navigation"
   import { rag_config_templates } from "../add_search_tool/rag_config_templates"
   import EditRagConfigForm from "./edit_rag_config_form.svelte"
+  import { ui_state } from "$lib/stores"
 
   $: project_id = $page.params.project_id!
   const template_id = $page.url.searchParams.get("template_id")
@@ -18,20 +19,39 @@
     subtitle="Define parameters for how this tool will search and retrieve your documents"
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
-    breadcrumbs={[
-      {
-        label: "Docs & Search",
-        href: `/docs/${project_id}`,
-      },
-      {
-        label: "Search Tools",
-        href: `/docs/rag_configs/${project_id}`,
-      },
-      {
-        label: "Add Search Tool",
-        href: `/docs/rag_configs/${project_id}/add_search_tool`,
-      },
-    ]}
+    breadcrumbs={$ui_state.current_task_id
+      ? [
+          {
+            label: "Optimize",
+            href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+          },
+          {
+            label: "Docs & Search",
+            href: `/docs/${project_id}`,
+          },
+          {
+            label: "Search Tools",
+            href: `/docs/rag_configs/${project_id}`,
+          },
+          {
+            label: "Add Search Tool",
+            href: `/docs/rag_configs/${project_id}/add_search_tool`,
+          },
+        ]
+      : [
+          {
+            label: "Docs & Search",
+            href: `/docs/${project_id}`,
+          },
+          {
+            label: "Search Tools",
+            href: `/docs/rag_configs/${project_id}`,
+          },
+          {
+            label: "Add Search Tool",
+            href: `/docs/rag_configs/${project_id}/add_search_tool`,
+          },
+        ]}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">

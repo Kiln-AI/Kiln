@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from "$app/stores"
+  import { ui_state } from "$lib/stores"
   import { client } from "$lib/api_client"
   import type { ExtractorConfig } from "$lib/types"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
@@ -106,16 +107,31 @@
 <AppPage
   title="Document Extractor"
   subtitle={loading ? "" : "Name: " + (extractor_config?.name || "Unknown")}
-  breadcrumbs={[
-    {
-      label: "Docs & Search",
-      href: `/docs/${project_id}`,
-    },
-    {
-      label: "Extractors",
-      href: `/docs/extractors/${project_id}`,
-    },
-  ]}
+  breadcrumbs={$ui_state.current_task_id
+    ? [
+        {
+          label: "Optimize",
+          href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+        },
+        {
+          label: "Docs & Search",
+          href: `/docs/${project_id}`,
+        },
+        {
+          label: "Extractors",
+          href: `/docs/extractors/${project_id}`,
+        },
+      ]
+    : [
+        {
+          label: "Docs & Search",
+          href: `/docs/${project_id}`,
+        },
+        {
+          label: "Extractors",
+          href: `/docs/extractors/${project_id}`,
+        },
+      ]}
   action_buttons={[
     {
       label: extractor_config?.is_archived ? "Unarchive" : "Archive",
