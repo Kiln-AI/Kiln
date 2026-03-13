@@ -23,6 +23,7 @@
   import AvailableModelsDropdown from "./available_models_dropdown.svelte"
   import PromptTypeSelector from "./prompt_type_selector.svelte"
   import ToolsSelector from "./tools_selector.svelte"
+  import SkillsSelector from "./skills_selector.svelte"
   import AdvancedRunOptions from "./advanced_run_options.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import McpRunConfigPanel from "$lib/ui/run_config_component/mcp_run_config_panel.svelte"
@@ -33,7 +34,9 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import { arrays_equal } from "$lib/utils/collections"
   import type { ToolsSelectorSettings } from "./tools_selector_settings"
+  import type { SkillsSelectorSettings } from "./skills_selector_settings"
   import { generate_memorable_name } from "$lib/utils/name_generator"
+  import { split_tool_and_skill_ids } from "$lib/stores/tools_store"
 
   // Props
   export let project_id: string
@@ -42,6 +45,7 @@
   export let provider: string = ""
   export let model_dropdown_settings: Partial<ModelDropdownSettings> = {}
   export let tools_selector_settings: Partial<ToolsSelectorSettings> = {}
+  export let skills_selector_settings: Partial<SkillsSelectorSettings> = {}
   export let selected_run_config_id: string | null = null
   export let save_config_error: KilnError | null = null
   export let set_default_error: KilnError | null = null
@@ -60,6 +64,7 @@
   export let model: string = $ui_state.selected_model
   export let prompt_method: string = "simple_prompt_builder"
   export let tools: string[] = []
+  export let skills: string[] = []
   let requires_tool_support: boolean = false
 
   // These defaults are used by every provider I checked (OpenRouter, Fireworks, Together, etc)
@@ -70,7 +75,7 @@
 
   $: model_name = model ? model.split("/").slice(1).join("/") : ""
   $: provider = model ? model.split("/")[0] : ""
-  $: requires_tool_support = tools.length > 0
+  $: requires_tool_support = tools.length > 0 || skills.length > 0
 
   $: updated_model_dropdown_settings = {
     ...model_dropdown_settings,
@@ -155,7 +160,11 @@
     model =
       config_properties.model_provider_name + "/" + config_properties.model_name
     prompt_method = config_properties.prompt_id
-    tools = [...(config_properties.tools_config?.tools ?? [])]
+    const split = split_tool_and_skill_ids(
+      config_properties.tools_config?.tools ?? [],
+    )
+    tools = split.tool_ids
+    skills = split.skill_ids
     temperature = config_properties.temperature
     top_p = config_properties.top_p
     structured_output_mode = config_properties.structured_output_mode
@@ -177,6 +186,7 @@
   top_p,
   structured_output_mode,
   tools,
+  skills,
   $available_models,
   selected_run_config_id,
   debounce_update_for_state_changes())
@@ -332,7 +342,10 @@
       config_properties.temperature !== temperature ||
       config_properties.top_p !== top_p ||
       output_mode_mismatch ||
-      !arrays_equal(config_properties.tools_config?.tools ?? [], tools)
+      !arrays_equal(config_properties.tools_config?.tools ?? [], [
+        ...tools,
+        ...skills,
+      ])
     ) {
       // The user has changed something, so deselect the run config - it no longer matches the selected run config
       selected_run_config_id = "custom"
@@ -344,6 +357,7 @@
     if (selected_mcp_config?.run_config_properties) {
       return selected_mcp_config.run_config_properties
     }
+    const all_tool_ids = [...tools, ...skills]
     return {
       type: "kiln_agent",
       model_name: model_name,
@@ -354,7 +368,7 @@
       top_p: top_p,
       structured_output_mode: structured_output_mode,
       tools_config: {
-        tools: tools,
+        tools: all_tool_ids,
       },
     }
   }
@@ -439,6 +453,14 @@
   export function clear_tools() {
     tools = []
   }
+
+  export function get_skills(): string[] {
+    return [...skills]
+  }
+
+  export function clear_skills() {
+    skills = []
+  }
 </script>
 
 <div class="w-full flex flex-col gap-4">
@@ -480,6 +502,12 @@
           settings={tools_selector_settings}
           {pending_tool_id}
         />
+        <SkillsSelector
+          bind:skills
+          {project_id}
+          task_id={current_task?.id ?? null}
+          settings={skills_selector_settings}
+        />
       {/if}
       <Collapse title="Advanced Options">
         <slot name="advanced" />
@@ -500,6 +528,12 @@
             task_id={current_task?.id ?? null}
             settings={tools_selector_settings}
             {pending_tool_id}
+          />
+          <SkillsSelector
+            bind:skills
+            {project_id}
+            task_id={current_task?.id ?? null}
+            settings={skills_selector_settings}
           />
         {/if}
         <AdvancedRunOptions

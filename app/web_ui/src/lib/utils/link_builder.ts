@@ -42,6 +42,8 @@ export function tool_link(project_id: string, tool_id: string): string | null {
     return `/settings/manage_tools/${project_id}/tool_servers/${tool_id.split("::")[2]}`
   } else if (tool_id.startsWith("kiln_task::")) {
     return `/settings/manage_tools/${project_id}/kiln_task/${tool_id.split("::")[1]}`
+  } else if (tool_id.startsWith("kiln_tool::skill::")) {
+    return `/settings/manage_skills/${project_id}/${tool_id.split("::")[2]}`
   } else if (tool_id.startsWith("kiln_tool::rag::")) {
     return `/docs/rag_configs/${project_id}/${tool_id.split("::")[2]}/rag_config`
   } else if (tool_id.startsWith("kiln_tool::")) {

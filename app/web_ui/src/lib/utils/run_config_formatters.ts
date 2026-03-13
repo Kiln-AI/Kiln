@@ -12,6 +12,7 @@ import {
 import {
   get_tools_property_info,
   get_tool_server_name,
+  split_tool_and_skill_ids,
 } from "$lib/stores/tools_store"
 import { prompt_link, tool_link } from "$lib/utils/link_builder"
 import type { UiProperty } from "$lib/ui/property_list"
@@ -196,10 +197,13 @@ export function getRunConfigUiProperties(
 
       const prompt_info_text = getRunConfigPromptInfoText(run_config)
 
-      const tool_ids =
-        run_config.run_config_properties.tools_config?.tools || []
+      const all_ids = run_config.run_config_properties.tools_config?.tools || []
+      const { tool_ids, skill_ids } = split_tool_and_skill_ids(all_ids)
       const tools_property_info = available_tools
         ? get_tools_property_info(tool_ids, project_id, available_tools)
+        : { value: "Loading...", links: undefined }
+      const skills_property_info = available_tools
+        ? get_tools_property_info(skill_ids, project_id, available_tools)
         : { value: "Loading...", links: undefined }
 
       return [
@@ -230,6 +234,12 @@ export function getRunConfigUiProperties(
           value: tools_property_info.value,
           links: tools_property_info.links,
           badge: Array.isArray(tools_property_info.value) ? true : false,
+        },
+        {
+          name: "Available Skills",
+          value: skills_property_info.value,
+          links: skills_property_info.links,
+          badge: Array.isArray(skills_property_info.value) ? true : false,
         },
         {
           name: "Temperature",

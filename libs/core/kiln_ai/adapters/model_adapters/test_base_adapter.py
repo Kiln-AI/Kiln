@@ -196,7 +196,8 @@ async def test_prompt_builder_json_instructions(
     # Test
     adapter.build_prompt()
     mock_prompt_builder.build_prompt.assert_called_with(
-        include_json_instructions=expected_json_instructions
+        include_json_instructions=expected_json_instructions,
+        skills=[],
     )
 
 
@@ -1030,17 +1031,17 @@ class TestResolveSkills:
         result2 = adapter._resolve_skills()
         assert result1 is result2
 
-    def test_builds_skills_prompt_section(self, base_task, _run_config_with_tools):
+    def test_build_prompt_includes_skills(self, base_task, _run_config_with_tools):
         skill = Skill(name="my_skill", description="A test skill")
         adapter = MockAdapter(
             task=base_task,
             run_config=_run_config_with_tools([f"kiln_tool::skill::{skill.id}"]),
             config=AdapterConfig(skills={skill.id: skill}),
         )
-        section = adapter._build_skills_prompt_section()
-        assert section is not None
-        assert "my_skill" in section
-        assert "A test skill" in section
+        prompt = adapter.build_prompt()
+        assert "my_skill" in prompt
+        assert "A test skill" in prompt
 
-    def test_skills_prompt_section_none_without_skills(self, adapter):
-        assert adapter._build_skills_prompt_section() is None
+    def test_build_prompt_no_skills_section_without_skills(self, adapter):
+        prompt = adapter.build_prompt()
+        assert "## Skills" not in prompt

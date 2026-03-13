@@ -7,6 +7,7 @@
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
+  import { uncache_available_tools } from "$lib/stores"
   import { formatDate } from "$lib/utils/formatters"
   import type { Skill } from "$lib/types"
   import type { UiProperty } from "$lib/ui/property_list"
@@ -50,6 +51,7 @@
 
   function get_properties(skill: Skill): UiProperty[] {
     const props: UiProperty[] = [
+      { name: "ID", value: skill.id ?? "" },
       { name: "Name", value: skill.name },
       { name: "Description", value: skill.description },
     ]
@@ -78,6 +80,7 @@
       if (api_error) {
         throw api_error
       }
+      uncache_available_tools(project_id)
     } catch (e) {
       archive_error = createKilnError(e)
     } finally {
