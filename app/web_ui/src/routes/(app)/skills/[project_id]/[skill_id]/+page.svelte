@@ -53,7 +53,6 @@
     const props: UiProperty[] = [
       { name: "ID", value: skill.id ?? "" },
       { name: "Name", value: skill.name },
-      { name: "Description", value: skill.description },
     ]
     if (skill.created_at) {
       props.push({
@@ -158,7 +157,7 @@
           <h3 class="text-xl font-bold mb-4">SKILL.md</h3>
           <Output raw_output={skill_md ?? ""} />
         </div>
-        <div class="flex flex-col gap-4 max-w-[900px]">
+        <div class="flex flex-col gap-4 max-w-[400px]">
           <PropertyList properties={get_properties(skill)} title="Properties" />
         </div>
       </div>
