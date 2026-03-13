@@ -858,47 +858,6 @@ def test_find_root_task_run_by_id_given_task(task: Task):
     assert found.input == "in"
 
 
-def test_find_deeply_nested_find_task_run_by_id_dfs(task: Task):
-    """Find a run by id when we only have the task; run may be nested several levels.
-    No built-in helper exists for this; test uses a local recursive search.
-    A Task.run_by_id(id) or similar could be added to the datamodel if needed."""
-    assert task.path is not None
-    output = TaskOutput(output="out")
-
-    run1 = TaskRun(input="in1", output=output, parent=task)
-    run1.save_to_file()
-
-    run2 = TaskRun(input="in2", output=output, parent=run1)
-    run2.save_to_file()
-
-    run3 = TaskRun(input="in3", output=output, parent=run2)
-    run3.save_to_file()
-
-    # this is the task run we will be searching for
-    assert run3.id is not None
-
-    def find_run_by_id(
-        parent: Union[Task, TaskRun], task_run_id_to_find: str
-    ) -> Union[TaskRun, None]:
-        for r in parent.runs():
-            if r.id == task_run_id_to_find:
-                return r
-
-            # not ideal that we recurse over FS - might be costly, will need to use this
-            # lightly
-            found = find_run_by_id(r, task_run_id_to_find)
-            if found is not None:
-                return found
-
-        return None
-
-    loaded_task = Task.load_from_file(task.path)
-    found = find_run_by_id(loaded_task, run3.id)
-    assert found is not None
-    assert found.id == run3.id
-    assert found.input == "in3"
-
-
 def test_find_task_run_by_id_dfs_finds_deeply_nested_run(task: Task):
     """Task.find_task_run_by_id_dfs finds a run nested several levels (iterative stack-based DFS)."""
     assert task.path is not None
