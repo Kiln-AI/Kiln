@@ -545,16 +545,37 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
     def parent_type(cls) -> Type[KilnBaseModel]:
         raise NotImplementedError("Parent type must be implemented")
 
-    @model_validator(mode="after")
-    def check_parent_type(self) -> Self:
+    def _check_parent_type(
+        self,
+        expected_parent_types: List[Type[KilnBaseModel]] | None = None,
+    ) -> Self:
         cached_parent = self.cached_parent()
-        if cached_parent is not None:
+        if cached_parent is None:
+            return self
+
+        # some models support having multiple parent types, so we allow overriding the expected parent
+        if expected_parent_types is not None:
+            if not any(
+                isinstance(cached_parent, expected_parent_type)
+                for expected_parent_type in expected_parent_types
+            ):
+                raise ValueError(
+                    f"Parent must be one of {expected_parent_types}, but was {type(cached_parent)}"
+                )
+        else:
+            # default case where we expect a single parent type to be valid
             expected_parent_type = self.__class__.parent_type()
             if not isinstance(cached_parent, expected_parent_type):
                 raise ValueError(
                     f"Parent must be of type {expected_parent_type}, but was {type(cached_parent)}"
                 )
+
         return self
+
+    @model_validator(mode="after")
+    def check_parent_type(self) -> Self:
+        """Default validation for parent type. Can be overridden by subclasses - for example if the parent is polymorphic."""
+        return self._check_parent_type()
 
     def build_child_dirname(self) -> Path:
         # Default implementation for readable folder names.
@@ -602,8 +623,9 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         else:
             parent_folder = parent_path
 
-        parent = cls.parent_type().load_from_file(parent_path)
-        if parent is None:
+        # cannot validate the parent type here because some parentable models are polymorphic
+        # and can be nested under different types of parent models
+        if not parent_path.exists():
             raise ValueError("Parent must be set to load children")
 
         # Ignore type error: this is abstract base class, but children must implement relationship_name
