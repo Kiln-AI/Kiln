@@ -38,6 +38,7 @@
   import { client } from "$lib/api_client"
   import StarIcon from "$lib/ui/icons/star_icon.svelte"
   import Float from "$lib/ui/float.svelte"
+  import BadgeList from "$lib/ui/badge_list.svelte"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -494,49 +495,16 @@
                     {getRunConfigModelDisplayName(config, $model_info) ?? "N/A"}
                   </td>
                   <td class="text-gray-500">
-                    {#if Array.isArray(tools_info.value)}
-                      <div class="flex flex-wrap gap-1">
-                        {#each tools_info.value as tool_name, i}
-                          {@const link = tools_info.links?.[i]}
-                          {#if link}
-                            <a
-                              href={link}
-                              class="badge badge-outline hover:bg-base-200"
-                              on:click|stopPropagation
-                            >
-                              {tool_name}
-                            </a>
-                          {:else}
-                            <span class="badge badge-outline">{tool_name}</span>
-                          {/if}
-                        {/each}
-                      </div>
-                    {:else}
-                      {tools_info.value}
-                    {/if}
+                    <BadgeList
+                      items={tools_info.value}
+                      links={tools_info.links}
+                    />
                   </td>
                   <td class="text-gray-500">
-                    {#if Array.isArray(skills_info.value)}
-                      <div class="flex flex-wrap gap-1">
-                        {#each skills_info.value as skill_name, i}
-                          {@const link = skills_info.links?.[i]}
-                          {#if link}
-                            <a
-                              href={link}
-                              class="badge badge-outline hover:bg-base-200"
-                              on:click|stopPropagation
-                            >
-                              {skill_name}
-                            </a>
-                          {:else}
-                            <span class="badge badge-outline">{skill_name}</span
-                            >
-                          {/if}
-                        {/each}
-                      </div>
-                    {:else}
-                      {skills_info.value}
-                    {/if}
+                    <BadgeList
+                      items={skills_info.value}
+                      links={skills_info.links}
+                    />
                   </td>
                   <td>
                     {#if isKilnAgentRunConfig(config.run_config_properties)}

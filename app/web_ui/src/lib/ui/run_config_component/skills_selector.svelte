@@ -104,7 +104,7 @@
 
     if (unavailable.length > 0) {
       console.warn("Removing unavailable skills:", unavailable)
-      skills = skills.filter((id) => available_skill_ids.has(id))
+      skills = current_skills.filter((id) => available_skill_ids.has(id))
     }
   }
 
@@ -167,6 +167,11 @@
     fancy_select_options={get_skill_options($available_tools[project_id])}
     bind:value={skills}
     empty_label={resolved.empty_label}
+    empty_state_message={$available_tools[project_id] === undefined
+      ? "Loading skills..."
+      : "No Skills Available"}
+    empty_state_subtitle="New Skill"
+    empty_state_link={`/settings/manage_skills/${project_id}/create`}
     disabled={resolved.disabled}
     optional={resolved.optional}
   />

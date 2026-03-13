@@ -5,6 +5,7 @@
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { tool_name_validator } from "$lib/utils/input_validators"
+  import { uncache_available_tools } from "$lib/stores"
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
 
@@ -30,6 +31,7 @@
         throw api_error
       }
       if (data) {
+        uncache_available_tools(project_id)
         goto(`/settings/manage_skills/${project_id}`)
       }
     } catch (err) {
