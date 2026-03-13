@@ -276,21 +276,16 @@ class BaseAdapter(metaclass=ABCMeta):
             == StructuredOutputMode.json_instruction_and_object
         )
 
-        prompt = self.prompt_builder.build_prompt(
-            include_json_instructions=add_json_instructions
+        return self.prompt_builder.build_prompt(
+            include_json_instructions=add_json_instructions,
+            skills=self._resolve_skills(),
         )
-
-        skills_section = self._build_skills_prompt_section()
-        if skills_section:
-            prompt = prompt + "\n\n" + skills_section
-
-        return prompt
 
     def _resolve_skills(self) -> list[Skill]:
         """Resolve skills from the injected skills dict.
 
         Uses the pre-loaded skills dict from AdapterConfig. Caches the result
-        so that _build_skills_prompt_section and available_tools don't repeat
+        so that build_prompt and available_tools don't repeat
         the lookup. Raises ValueError if the run config references a skill
         that is not in the injected dict.
         """
@@ -337,37 +332,6 @@ class BaseAdapter(metaclass=ABCMeta):
 
         self._resolved_skills = skills
         return self._resolved_skills
-
-    def _build_skills_prompt_section(self) -> str | None:
-        """Build a system prompt section listing available skills."""
-        skills = self._resolve_skills()
-        if not skills:
-            return None
-
-        skill_lines = "\n".join(f"- {s.name}\n  {s.description}" for s in skills)
-
-        return (
-            "## Skills\n\n"
-            "Skills extend the assistant's capabilities with domain knowledge and "
-            "structured workflows.\n\n"
-            "Each Skill contains instructions describing how to solve a specific "
-            "type of task.\n\n"
-            "When handling a request:\n\n"
-            "1. Determine whether a Skill is relevant.\n"
-            '2. If a relevant Skill exists, load it by calling skill(name="skill_name").\n'
-            "3. Follow the instructions and workflow defined in the Skill.\n"
-            "4. If the Skill's instructions mention reference files that are relevant to "
-            "the current task, load them on demand by calling "
-            'skill(name="skill_name", resource="references/filename.md"). '
-            "Only load references you actually need.\n\n"
-            "If a Skill provides a workflow, follow that workflow unless there is a "
-            "clear reason not to.\n\n"
-            "Load Skills only when necessary to keep context efficient.\n\n"
-            "If no Skill applies, proceed using general reasoning.\n\n"
-            "## Available Skills\n\n"
-            "The following Skills are available and may be loaded when relevant:\n\n"
-            f"{skill_lines}"
-        )
 
     def build_chat_formatter(self, input: InputType) -> ChatFormatter:
         if self.prompt_builder is None:

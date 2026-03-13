@@ -18,6 +18,7 @@ from kiln_ai.adapters.prompt_builders import (
     SimpleChainOfThoughtPromptBuilder,
     SimplePromptBuilder,
     TaskRunConfigPromptBuilder,
+    build_skills_prompt_section,
     chain_of_thought_prompt,
     prompt_builder_from_id,
 )
@@ -36,6 +37,7 @@ from kiln_ai.datamodel import (
 )
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import TaskRunConfig
 
 logger = logging.getLogger(__name__)
@@ -636,3 +638,48 @@ def test_task_run_config_prompt_builder_validation_errors(tmp_path):
     nonexistent_eval = f"task_run_config::{task.parent.id}::{task.id}::nonexistent_id"
     with pytest.raises(ValueError, match="Task run config ID not found"):
         TaskRunConfigPromptBuilder(task=task, run_config_prompt_id=nonexistent_eval)
+
+
+def test_build_skills_prompt_section_with_skills():
+    skills = [
+        Skill(name="code_review", description="Reviews code for quality"),
+        Skill(name="test_writer", description="Writes unit tests"),
+    ]
+    section = build_skills_prompt_section(skills)
+    assert section is not None
+    assert "## Skills" in section
+    assert "code_review" in section
+    assert "Reviews code for quality" in section
+    assert "test_writer" in section
+    assert "Writes unit tests" in section
+
+
+def test_build_skills_prompt_section_empty():
+    assert build_skills_prompt_section([]) is None
+    assert build_skills_prompt_section(None) is None
+
+
+def test_build_prompt_with_skills(tmp_path):
+    task = build_test_task(tmp_path)
+    builder = SimplePromptBuilder(task=task)
+    skills = [Skill(name="my_skill", description="Does something")]
+
+    prompt_with_skills = builder.build_prompt(
+        include_json_instructions=False, skills=skills
+    )
+    prompt_without_skills = builder.build_prompt(include_json_instructions=False)
+
+    assert "## Skills" in prompt_with_skills
+    assert "my_skill" in prompt_with_skills
+    assert "Does something" in prompt_with_skills
+    assert "## Skills" not in prompt_without_skills
+
+
+def test_build_prompt_for_ui_with_skills(tmp_path):
+    task = build_test_task(tmp_path)
+    builder = SimplePromptBuilder(task=task)
+    skills = [Skill(name="my_skill", description="Does something")]
+
+    ui_prompt = builder.build_prompt_for_ui(skills=skills)
+    assert "my_skill" in ui_prompt
+    assert "Does something" in ui_prompt
