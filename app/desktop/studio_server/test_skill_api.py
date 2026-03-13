@@ -132,12 +132,47 @@ class TestGetSkills:
         result = response.json()
         assert result["name"] == "test_skill"
         assert result["description"] == "A test skill for unit tests."
-        assert "## Test Skill" in result["skill_md"]
+        assert "skill_md" not in result
 
     def test_get_skill_not_found(self, client, test_project, mock_project_from_id):
         response = client.get(f"/api/projects/{test_project.id}/skills/nonexistent-id")
         assert response.status_code == 404
         assert response.json()["message"] == "Skill not found"
+
+
+class TestGetSkillContent:
+    def test_get_skill_content(
+        self, client, test_project, mock_project_from_id, saved_skill
+    ):
+        response = client.get(
+            f"/api/projects/{test_project.id}/skills/{saved_skill.id}/content"
+        )
+        assert response.status_code == 200
+        result = response.json()
+        assert "## Test Skill" in result["skill_md"]
+
+    def test_get_skill_content_not_found(
+        self, client, test_project, mock_project_from_id
+    ):
+        response = client.get(
+            f"/api/projects/{test_project.id}/skills/nonexistent-id/content"
+        )
+        assert response.status_code == 404
+
+    def test_get_skill_content_missing_file(
+        self, client, test_project, mock_project_from_id
+    ):
+        skill = Skill(
+            name="no_md_skill",
+            description="Skill without SKILL.md.",
+            parent=test_project,
+        )
+        skill.save_to_file()
+        response = client.get(
+            f"/api/projects/{test_project.id}/skills/{skill.id}/content"
+        )
+        assert response.status_code == 200
+        assert response.json()["skill_md"] == ""
 
 
 class TestUpdateSkill:
@@ -270,102 +305,3 @@ class TestAvailableToolsSkillIntegration:
         assert skill_set is not None
         assert len(skill_set["tools"]) == 1
         assert skill_set["tools"][0]["name"] == "active_skill"
-
-
-def _ref_url(project_id, skill_id, *parts):
-    base = f"/api/projects/{project_id}/skills/{skill_id}"
-    return "/".join([base, *parts])
-
-
-class TestListReferences:
-    def test_empty(self, client, test_project, saved_skill, mock_project_from_id):
-        resp = client.get(_ref_url(test_project.id, saved_skill.id, "references"))
-        assert resp.status_code == 200
-        assert resp.json() == []
-
-    def test_with_files(self, client, test_project, saved_skill, mock_project_from_id):
-        saved_skill.save_reference("a.md", "content a")
-        saved_skill.save_reference("b.md", "content b")
-        resp = client.get(_ref_url(test_project.id, saved_skill.id, "references"))
-        assert resp.status_code == 200
-        assert resp.json() == ["a.md", "b.md"]
-
-
-class TestGetReference:
-    def test_success(self, client, test_project, saved_skill, mock_project_from_id):
-        saved_skill.save_reference("guide.md", "# Guide")
-        resp = client.get(
-            _ref_url(test_project.id, saved_skill.id, "references", "guide.md")
-        )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["filename"] == "guide.md"
-        assert data["content"] == "# Guide"
-
-    def test_not_found(self, client, test_project, saved_skill, mock_project_from_id):
-        resp = client.get(
-            _ref_url(test_project.id, saved_skill.id, "references", "missing.md")
-        )
-        assert resp.status_code == 404
-
-
-class TestSaveReference:
-    def test_create(self, client, test_project, saved_skill, mock_project_from_id):
-        resp = client.put(
-            _ref_url(test_project.id, saved_skill.id, "references", "new.md"),
-            json={"content": "new content"},
-        )
-        assert resp.status_code == 200
-        assert resp.json()["filename"] == "new.md"
-        assert saved_skill.read_reference("new.md") == "new content"
-
-    def test_overwrite(self, client, test_project, saved_skill, mock_project_from_id):
-        saved_skill.save_reference("doc.md", "v1")
-        resp = client.put(
-            _ref_url(test_project.id, saved_skill.id, "references", "doc.md"),
-            json={"content": "v2"},
-        )
-        assert resp.status_code == 200
-        assert saved_skill.read_reference("doc.md") == "v2"
-
-    def test_empty_content_rejected(
-        self, client, test_project, saved_skill, mock_project_from_id
-    ):
-        resp = client.put(
-            _ref_url(test_project.id, saved_skill.id, "references", "empty.md"),
-            json={"content": ""},
-        )
-        assert resp.status_code == 422
-
-    def test_non_md_rejected(
-        self, client, test_project, saved_skill, mock_project_from_id
-    ):
-        resp = client.put(
-            _ref_url(test_project.id, saved_skill.id, "references", "notes.txt"),
-            json={"content": "content"},
-        )
-        assert resp.status_code == 400
-        assert ".md" in resp.json()["message"]
-
-
-class TestDeleteReference:
-    def test_success(self, client, test_project, saved_skill, mock_project_from_id):
-        saved_skill.save_reference("del.md", "content")
-        resp = client.delete(
-            _ref_url(test_project.id, saved_skill.id, "references", "del.md")
-        )
-        assert resp.status_code == 200
-        assert saved_skill.list_references() == []
-
-    def test_not_found(self, client, test_project, saved_skill, mock_project_from_id):
-        resp = client.delete(
-            _ref_url(test_project.id, saved_skill.id, "references", "missing.md")
-        )
-        assert resp.status_code == 404
-
-
-class TestReferenceSkillNotFound:
-    def test_skill_not_found(self, client, test_project, mock_project_from_id):
-        resp = client.get(_ref_url(test_project.id, "nonexistent-id", "references"))
-        assert resp.status_code == 404
-        assert "Skill not found" in resp.json()["message"]
