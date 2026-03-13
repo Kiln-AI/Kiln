@@ -16,6 +16,7 @@ from kiln_ai.adapters.ml_embedding_model_list import (
     transform_slug_for_litellm,
 )
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.utils.litellm import get_litellm_provider_info
 
@@ -152,12 +153,19 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
                 self.litellm_core_config.default_headers
             )
 
-        response = await litellm.aembedding(
-            model=self.litellm_model_id,
-            input=input_texts,
+        aembedding_kwargs: Dict[str, Any] = {
+            "model": self.litellm_model_id,
+            "input": input_texts,
             **self.build_options().model_dump(exclude_none=True),
             **completion_kwargs,
-        )
+        }
+
+        # OpenRouter rejects encoding_format=None; we must send encoding_format='float'
+        # but we cannot set it for all providers, because the other ones fail if it is set
+        if self.embedding_config.model_provider_name == ModelProviderName.openrouter:
+            aembedding_kwargs["encoding_format"] = "float"
+
+        response = await litellm.aembedding(**aembedding_kwargs)
 
         validated_embeddings = validate_map_to_embeddings(
             response, expected_embedding_count=len(input_texts)
