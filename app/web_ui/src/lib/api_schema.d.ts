@@ -2368,6 +2368,23 @@ export interface paths {
         patch: operations["update_skill_api_projects__project_id__skills__skill_id__patch"];
         trace?: never;
     };
+    "/api/projects/{project_id}/skills/{skill_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Skill Content */
+        get: operations["get_skill_content_api_projects__project_id__skills__skill_id__content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config": {
         parameters: {
             query?: never;
@@ -6404,54 +6421,10 @@ export interface components {
              */
             breakpoint_percentile_threshold: number;
         };
-        /**
-         * Skill
-         * @description A Skill represents reusable agent instructions following the agentskills.io specification.
-         *
-         *     Skills are project-level resources that can be attached to run configs.
-         *     The agent discovers available skills via the skill tool description, then
-         *     loads a skill's body on demand by calling skill(name="skill_name").
-         */
-        Skill: {
-            /**
-             * V
-             * @default 1
-             */
-            v: number;
-            /** Id */
-            id?: string | null;
-            /** Path */
-            path?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at?: string;
-            /** Created By */
-            created_by?: string;
-            /**
-             * Name
-             * @description Skill name. Snake_case: lowercase alphanumeric with underscores, 1-64 chars.
-             */
-            name: string;
-            /**
-             * Description
-             * @description Description of what the skill does and when to use it. 1-1024 chars.
-             */
-            description: string;
-            /**
-             * Body
-             * @description The markdown body content (instructions) of the skill.
-             */
-            body: string;
-            /**
-             * Is Archived
-             * @description Whether the skill is archived. Archived skills are hidden from the UI and not available for use.
-             * @default false
-             */
-            is_archived: boolean;
-            /** Model Type */
-            readonly model_type: string;
+        /** SkillContentResponse */
+        SkillContentResponse: {
+            /** Skill Md */
+            skill_md: string;
         };
         /** SkillCreationRequest */
         SkillCreationRequest: {
@@ -6461,6 +6434,24 @@ export interface components {
             description: string;
             /** Body */
             body: string;
+        };
+        /** SkillResponse */
+        SkillResponse: {
+            /** Id */
+            id?: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /**
+             * Is Archived
+             * @default false
+             */
+            is_archived: boolean;
+            /** Created By */
+            created_by?: string | null;
+            /** Created At */
+            created_at?: string | null;
         };
         /** SkillUpdateRequest */
         SkillUpdateRequest: {
@@ -12563,7 +12554,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Skill"][];
+                    "application/json": components["schemas"]["SkillResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -12598,7 +12589,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Skill"];
+                    "application/json": components["schemas"]["SkillResponse"];
                 };
             };
             /** @description Validation Error */
@@ -12630,7 +12621,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Skill"];
+                    "application/json": components["schemas"]["SkillResponse"];
                 };
             };
             /** @description Validation Error */
@@ -12666,7 +12657,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Skill"];
+                    "application/json": components["schemas"]["SkillResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_skill_content_api_projects__project_id__skills__skill_id__content_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillContentResponse"];
                 };
             };
             /** @description Validation Error */

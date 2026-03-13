@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List
 
 from fastapi import FastAPI, HTTPException
@@ -17,36 +18,67 @@ class SkillUpdateRequest(BaseModel):
     is_archived: bool | None = None
 
 
+class SkillResponse(BaseModel):
+    id: str | None = None
+    name: str
+    description: str
+    is_archived: bool = False
+    created_by: str | None = None
+    created_at: datetime | None = None
+
+
+class SkillContentResponse(BaseModel):
+    skill_md: str
+
+
+def skill_to_response(skill: Skill) -> SkillResponse:
+    return SkillResponse.model_validate(skill.model_dump())
+
+
 def connect_skill_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/skills")
-    async def get_skills(project_id: str) -> List[Skill]:
+    async def get_skills(project_id: str) -> List[SkillResponse]:
         project = project_from_id(project_id)
-        return project.skills(readonly=True)
+        return [skill_to_response(s) for s in project.skills(readonly=True)]
 
     @app.get("/api/projects/{project_id}/skills/{skill_id}")
-    async def get_skill(project_id: str, skill_id: str) -> Skill:
+    async def get_skill(project_id: str, skill_id: str) -> SkillResponse:
         project = project_from_id(project_id)
         skill = Skill.from_id_and_parent_path(skill_id, project.path)
         if skill is None:
             raise HTTPException(status_code=404, detail="Skill not found")
-        return skill
+        return skill_to_response(skill)
+
+    @app.get("/api/projects/{project_id}/skills/{skill_id}/content")
+    async def get_skill_content(project_id: str, skill_id: str) -> SkillContentResponse:
+        project = project_from_id(project_id)
+        skill = Skill.from_id_and_parent_path(skill_id, project.path)
+        if skill is None:
+            raise HTTPException(status_code=404, detail="Skill not found")
+        try:
+            skill_md = skill.skill_md_raw()
+        except FileNotFoundError:
+            skill_md = ""
+        return SkillContentResponse(skill_md=skill_md)
 
     @app.post("/api/projects/{project_id}/skills")
-    async def create_skill(project_id: str, skill_data: SkillCreationRequest) -> Skill:
+    async def create_skill(
+        project_id: str, skill_data: SkillCreationRequest
+    ) -> SkillResponse:
         project = project_from_id(project_id)
         skill = Skill(
             name=skill_data.name,
             description=skill_data.description,
-            body=skill_data.body,
             parent=project,
         )
         skill.save_to_file()
-        return skill
+        skill.save_skill_md(skill_data.body)
+        return skill_to_response(skill)
 
     @app.patch("/api/projects/{project_id}/skills/{skill_id}")
     async def update_skill(
         project_id: str, skill_id: str, updates: SkillUpdateRequest
-    ) -> Skill:
+    ) -> SkillResponse:
         project = project_from_id(project_id)
         skill = Skill.from_id_and_parent_path(skill_id, project.path)
         if skill is None:
@@ -59,4 +91,4 @@ def connect_skill_api(app: FastAPI):
         updated.path = skill.path
         updated.save_to_file()
 
-        return updated
+        return skill_to_response(updated)

@@ -10,11 +10,13 @@
   import { formatDate } from "$lib/utils/formatters"
   import type { Skill } from "$lib/types"
   import type { UiProperty } from "$lib/ui/property_list"
+  import Output from "$lib/ui/output.svelte"
 
   $: project_id = $page.params.project_id!
   $: skill_id = $page.params.skill_id!
 
   let skill: Skill | null = null
+  let skill_md: string | null = null
   let loading = true
   let loading_error: KilnError | null = null
   let archive_error: KilnError | null = null
@@ -27,16 +29,18 @@
     try {
       loading = true
       loading_error = null
-      const { data, error: fetch_error } = await client.GET(
-        "/api/projects/{project_id}/skills/{skill_id}",
-        {
-          params: { path: { project_id, skill_id } },
-        },
-      )
-      if (fetch_error) {
-        throw fetch_error
+      const params = { path: { project_id, skill_id } }
+      const [skill_res, content_res] = await Promise.all([
+        client.GET("/api/projects/{project_id}/skills/{skill_id}", { params }),
+        client.GET("/api/projects/{project_id}/skills/{skill_id}/content", {
+          params,
+        }),
+      ])
+      if (skill_res.error) {
+        throw skill_res.error
       }
-      skill = data
+      skill = skill_res.data
+      skill_md = content_res.data?.skill_md ?? null
     } catch (err) {
       loading_error = createKilnError(err)
     } finally {
@@ -86,8 +90,8 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Skill"
-    subtitle={`Name: ${skill?.name || ""}`}
+    title={`Skill: ${skill?.name || ""}`}
+    subtitle="Reusable instructions for your agents, loaded into context only when needed."
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/skills"
     breadcrumbs={[
@@ -145,12 +149,8 @@
     {:else if skill}
       <div class="grid grid-cols-1 lg:grid-cols-[1fr,auto] gap-12">
         <div class="grow">
-          <h3 class="text-xl font-bold mb-4">Instructions</h3>
-          <div
-            class="bg-base-200 rounded-lg p-6 text-sm whitespace-pre-wrap font-mono max-h-[600px] overflow-y-auto"
-          >
-            {skill.body}
-          </div>
+          <h3 class="text-xl font-bold mb-4">SKILL.md</h3>
+          <Output raw_output={skill_md ?? ""} />
         </div>
         <div class="flex flex-col gap-4 max-w-[900px]">
           <PropertyList properties={get_properties(skill)} title="Properties" />

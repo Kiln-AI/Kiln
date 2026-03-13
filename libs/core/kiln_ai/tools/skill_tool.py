@@ -70,4 +70,10 @@ class SkillTool(KilnToolInterface):
                 output=f"Error: Skill '{skill_name}' not found. Available skills: {available}"
             )
 
-        return ToolCallResult(output=skill.body)
+        try:
+            body = skill.body()
+        except Exception as e:
+            return ToolCallResult(
+                output=f"Error: Failed to load skill '{skill_name}': {e}"
+            )
+        return ToolCallResult(output=body)

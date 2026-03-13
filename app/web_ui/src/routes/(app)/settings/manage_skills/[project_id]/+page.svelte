@@ -167,7 +167,7 @@
                   >{skill.description}</td
                 >
                 <td class="text-sm whitespace-nowrap"
-                  >{formatDate(skill.created_at)}</td
+                  >{formatDate(skill.created_at ?? undefined)}</td
                 >
                 <td class="text-sm">
                   {#if skill.is_archived}
