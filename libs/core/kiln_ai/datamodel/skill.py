@@ -71,32 +71,13 @@ class Skill(KilnParentedModel):
             )
         return self.path.parent / "references"
 
-    def list_references(self) -> list[str]:
-        """List filenames in the references/ directory."""
-        ref_dir = self.references_dir()
-        if not ref_dir.exists():
-            return []
-        return sorted(f.name for f in ref_dir.iterdir() if f.is_file())
-
     def read_reference(self, filename: str) -> str:
         """Read a reference file's content. Raises ValueError if path traversal, FileNotFoundError if missing."""
         path = self._validated_reference_path(filename)
-        if not path.exists():
-            raise FileNotFoundError(f"Reference file not found: {filename}")
-        return path.read_text(encoding="utf-8")
-
-    def save_reference(self, filename: str, content: str) -> None:
-        """Write a reference file. Creates references/ dir if needed."""
-        path = self._validated_reference_path(filename)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
-
-    def delete_reference(self, filename: str) -> None:
-        """Delete a reference file."""
-        path = self._validated_reference_path(filename)
-        if not path.exists():
-            raise FileNotFoundError(f"Reference file not found: {filename}")
-        path.unlink()
+        try:
+            return path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Reference file not found: {filename}") from None
 
     def _validated_reference_path(self, filename: str) -> Path:
         _validate_filename(filename)
@@ -117,30 +98,24 @@ class Skill(KilnParentedModel):
             allow_unicode=True,
             sort_keys=False,
         ).rstrip("\n")
-        content = f"---\n{frontmatter}\n---\n{body}"
+        content = f"---\n{frontmatter}\n---\n\n{body}"
         self.skill_md_path().write_text(content, encoding="utf-8")
 
 
 def _validate_filename(filename: str) -> None:
-    """Validate a filename to prevent path traversal attacks."""
+    """Reject filenames that are empty, contain path separators, or are traversal components."""
     if not filename or not filename.strip():
         raise ValueError("Filename cannot be empty")
     if "/" in filename or "\\" in filename:
         raise ValueError("Filename must not contain path separators")
-    if filename in (".", "..") or ".." in filename:
-        raise ValueError("Filename must not contain path traversal components")
-    if filename != filename.strip():
-        raise ValueError("Filename must not have leading/trailing whitespace")
-    if Path(filename).is_absolute():
-        raise ValueError("Filename must not be an absolute path")
+    if filename == "." or filename == "..":
+        raise ValueError("Filename must not be a path traversal component")
 
 
 def _parse_skill_md_body(raw: str) -> str:
     """Parse a SKILL.md file and return the body content after frontmatter."""
-    if not raw.startswith("---"):
+    if not raw.startswith("---\n"):
         return raw
-    end_idx = raw.index("---", 3)
-    body = raw[end_idx + 3 :]
-    if body.startswith("\n"):
-        body = body[1:]
-    return body
+    end_idx = raw.index("\n---\n", 3)
+    body = raw[end_idx + 5 :]
+    return body.lstrip("\n")

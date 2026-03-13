@@ -1003,6 +1003,22 @@ class TestResolveSkills:
         assert len(result) == 1
         assert result[0].name == "my_skill"
 
+    def test_deduplicates_skill_ids(self, base_task, _run_config_with_tools):
+        skill = Skill(name="my_skill", description="A skill", body="do things")
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=_run_config_with_tools(
+                [
+                    f"kiln_tool::skill::{skill.id}",
+                    f"kiln_tool::skill::{skill.id}",
+                ]
+            ),
+            config=AdapterConfig(skills={skill.id: skill}),
+        )
+        result = adapter._resolve_skills()
+        assert len(result) == 1
+        assert result[0].name == "my_skill"
+
     def test_caches_result(self, base_task, _run_config_with_tools):
         skill = Skill(name="my_skill", description="A skill")
         adapter = MockAdapter(

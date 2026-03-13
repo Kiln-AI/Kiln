@@ -83,7 +83,13 @@ class SkillTool(KilnToolInterface):
         if resource:
             return self._load_resource(skill, resource)
 
-        return ToolCallResult(output=skill.body())
+        try:
+            body = skill.body()
+        except Exception as e:
+            return ToolCallResult(
+                output=f"Error: Failed to load skill '{skill_name}': {e}"
+            )
+        return ToolCallResult(output=body)
 
     def _load_resource(self, skill: Skill, resource: str) -> ToolCallResult:
         """Load a resource file from the references/ directory."""

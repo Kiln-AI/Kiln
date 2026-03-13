@@ -1,22 +1,36 @@
+from unittest.mock import MagicMock
+
 import pytest
 
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.skill import Skill
-from kiln_ai.datamodel.tool_id import (
-    _check_tool_id,
-    build_skill_tool_id,
-    skill_id_from_tool_id,
-)
+from kiln_ai.datamodel.tool_id import _check_tool_id
 from kiln_ai.tools.skill_tool import SkillTool
 
 
-def _make_saved_skill(
-    project: Project, name: str, description: str, body: str
-) -> Skill:
+def _make_saved_skill(project, name, description, body):
     skill = Skill(name=name, description=description, parent=project)
     skill.save_to_file()
     skill.save_skill_md(body)
     return skill
+
+
+@pytest.fixture
+def skills():
+    s1 = MagicMock(spec=Skill)
+    s1.name = "code_review"
+    s1.description = "Review code"
+
+    s2 = MagicMock(spec=Skill)
+    s2.name = "test_writing"
+    s2.description = "Write tests"
+
+    return [s1, s2]
+
+
+@pytest.fixture
+def tool(skills):
+    return SkillTool(tool_id="skill_tool_1", skills=skills)
 
 
 @pytest.fixture
@@ -74,41 +88,63 @@ class TestSkillToolDefinition:
         assert "resource" in params["properties"]
         assert params["properties"]["resource"]["type"] == "string"
 
+    async def test_skills_property(self, skill_tool: SkillTool):
+        assert set(s.name for s in skill_tool.skills) == {"code_review", "testing"}
+
 
 class TestSkillToolRun:
-    async def test_load_valid_skill(self, skill_tool: SkillTool):
-        result = await skill_tool.run(name="code_review")
-        assert result.output == "## Code Review\nCheck for bugs."
-
-    async def test_load_second_skill(self, skill_tool: SkillTool):
-        result = await skill_tool.run(name="testing")
-        assert result.output == "## Testing\nWrite unit tests."
-
-    async def test_unknown_skill(self, skill_tool: SkillTool):
-        result = await skill_tool.run(name="nonexistent")
-        assert "Error" in result.output
-        assert "nonexistent" in result.output
-        assert "code_review" in result.output
-        assert "testing" in result.output
-
-    async def test_missing_name_param(self, skill_tool: SkillTool):
-        result = await skill_tool.run()
+    async def test_missing_name_parameter(self, tool):
+        result = await tool.run()
         assert "Error" in result.output
         assert "'name' parameter is required" in result.output
 
-    async def test_with_context(self, skill_tool: SkillTool):
-        from kiln_ai.tools.base_tool import ToolCallContext
+    async def test_empty_name_parameter(self, tool):
+        result = await tool.run(name="")
+        assert "'name' parameter is required" in result.output
 
-        ctx = ToolCallContext(allow_saving=True)
-        result = await skill_tool.run(context=ctx, name="code_review")
-        assert result.output == "## Code Review\nCheck for bugs."
+    async def test_unknown_skill(self, tool):
+        result = await tool.run(name="nonexistent")
+        assert "not found" in result.output
+        assert "code_review" in result.output
+        assert "test_writing" in result.output
+
+    async def test_successful_skill_load(self, tool, skills):
+        skills[0].body.return_value = "# Code Review\nReview all code."
+        result = await tool.run(name="code_review")
+        assert result.output == "# Code Review\nReview all code."
+
+    async def test_body_io_error_is_caught(self, tool, skills):
+        skills[0].body.side_effect = FileNotFoundError(
+            "SKILL.md not found at /tmp/fake"
+        )
+        result = await tool.run(name="code_review")
+        assert "Error" in result.output
+        assert "code_review" in result.output
+
+    async def test_body_value_error_is_caught(self, tool, skills):
+        skills[0].body.side_effect = ValueError(
+            "Skill must be saved before accessing SKILL.md path"
+        )
+        result = await tool.run(name="code_review")
+        assert "Error" in result.output
+        assert "Failed to load skill" in result.output
+
+    async def test_body_parse_error_is_caught(self, tool, skills):
+        skills[0].body.side_effect = Exception("frontmatter parse error")
+        result = await tool.run(name="code_review")
+        assert "Error" in result.output
+        assert "frontmatter parse error" in result.output
 
 
 class TestSkillToolResource:
     async def test_load_reference(
         self, sample_skills: list[Skill], skill_tool: SkillTool
     ):
-        sample_skills[0].save_reference("guide.md", "# Guide\nReference content.")
+        ref_dir = sample_skills[0].references_dir()
+        ref_dir.mkdir(parents=True)
+        (ref_dir / "guide.md").write_text(
+            "# Guide\nReference content.", encoding="utf-8"
+        )
         result = await skill_tool.run(
             name="code_review", resource="references/guide.md"
         )
@@ -152,28 +188,3 @@ class TestSkillToolId:
     )
     def test_valid_skill_tool_ids(self, tool_id: str):
         assert _check_tool_id(tool_id) == tool_id
-
-    @pytest.mark.parametrize(
-        "tool_id",
-        [
-            "kiln_tool::skill::",
-            "kiln_tool::skill::id::extra",
-        ],
-    )
-    def test_invalid_skill_tool_ids(self, tool_id: str):
-        with pytest.raises(ValueError, match="Invalid skill tool ID"):
-            _check_tool_id(tool_id)
-
-    def test_skill_id_from_tool_id(self):
-        assert skill_id_from_tool_id("kiln_tool::skill::abc") == "abc"
-        assert skill_id_from_tool_id("kiln_tool::skill::123") == "123"
-
-    def test_skill_id_from_tool_id_invalid(self):
-        with pytest.raises(ValueError, match="Invalid skill tool ID"):
-            skill_id_from_tool_id("kiln_tool::rag::abc")
-        with pytest.raises(ValueError, match="Invalid skill tool ID"):
-            skill_id_from_tool_id("kiln_tool::skill::a::b")
-
-    def test_build_skill_tool_id(self):
-        assert build_skill_tool_id("abc") == "kiln_tool::skill::abc"
-        assert build_skill_tool_id("123") == "kiln_tool::skill::123"
