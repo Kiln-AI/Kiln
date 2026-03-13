@@ -92,7 +92,6 @@
       <div class="flex flex-col items-center justify-center min-h-[50vh]">
         <Intro
           title="Extend your agent with Skills"
-          align_title_left={true}
           description_paragraphs={[
             "Skills provide domain knowledge and reusable workflows.",
             "They load on demand so your agent stays focused and efficient.",

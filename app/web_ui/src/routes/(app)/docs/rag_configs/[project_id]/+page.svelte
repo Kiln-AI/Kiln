@@ -132,7 +132,7 @@
         <div class="loading loading-spinner loading-lg"></div>
       </div>
     {:else if all_rag_configs && all_rag_configs.length == 0}
-      <div class="flex flex-col items-center justify-center min-h-[75vh]">
+      <div class="flex flex-col items-center justify-center min-h-[50vh]">
         <EmptyRagConfigsIntro {project_id} />
       </div>
     {:else if all_rag_configs}
