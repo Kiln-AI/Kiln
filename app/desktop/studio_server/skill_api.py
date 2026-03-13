@@ -35,6 +35,14 @@ def skill_to_response(skill: Skill) -> SkillResponse:
     return SkillResponse.model_validate(skill.model_dump())
 
 
+def _get_skill(project_id: str, skill_id: str) -> Skill:
+    project = project_from_id(project_id)
+    skill = Skill.from_id_and_parent_path(skill_id, project.path)
+    if skill is None:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    return skill
+
+
 def connect_skill_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/skills")
     async def get_skills(project_id: str) -> List[SkillResponse]:
@@ -43,10 +51,7 @@ def connect_skill_api(app: FastAPI):
 
     @app.get("/api/projects/{project_id}/skills/{skill_id}")
     async def get_skill(project_id: str, skill_id: str) -> SkillResponse:
-        project = project_from_id(project_id)
-        skill = Skill.from_id_and_parent_path(skill_id, project.path)
-        if skill is None:
-            raise HTTPException(status_code=404, detail="Skill not found")
+        skill = _get_skill(project_id, skill_id)
         return skill_to_response(skill)
 
     @app.get("/api/projects/{project_id}/skills/{skill_id}/content")
@@ -79,10 +84,7 @@ def connect_skill_api(app: FastAPI):
     async def update_skill(
         project_id: str, skill_id: str, updates: SkillUpdateRequest
     ) -> SkillResponse:
-        project = project_from_id(project_id)
-        skill = Skill.from_id_and_parent_path(skill_id, project.path)
-        if skill is None:
-            raise HTTPException(status_code=404, detail="Skill not found")
+        skill = _get_skill(project_id, skill_id)
 
         update_fields = updates.model_dump(exclude_none=True)
         merged = skill.model_dump()

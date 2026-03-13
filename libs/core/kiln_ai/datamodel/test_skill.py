@@ -4,7 +4,11 @@ import pytest
 from pydantic import ValidationError
 
 from kiln_ai.datamodel.project import Project
-from kiln_ai.datamodel.skill import Skill, _parse_skill_md_body
+from kiln_ai.datamodel.skill import (
+    Skill,
+    _parse_skill_md_body,
+    _validate_filename,
+)
 
 
 @pytest.fixture
@@ -330,10 +334,75 @@ def test_parse_skill_md_body_malformed_raises(raw):
 
 
 def test_round_trip_description_with_dashes(mock_project):
-    """Ensure --- in a description survives a write→read round-trip."""
+    """Ensure --- in a description survives a write-read round-trip."""
     skill = save_skill_with_body(
         mock_project,
         description="Check code --- look for bugs",
         body="The body",
     )
     assert skill.body() == "The body"
+
+
+# -- Filename validation tests --
+
+
+class TestValidateFilename:
+    @pytest.mark.parametrize(
+        "filename",
+        [
+            "../etc/passwd",
+            "foo/../bar",
+            "..",
+            ".",
+            "sub/dir.md",
+            "back\\slash.md",
+            "",
+            "   ",
+        ],
+    )
+    def test_invalid_filenames(self, filename):
+        with pytest.raises(ValueError):
+            _validate_filename(filename)
+
+    @pytest.mark.parametrize(
+        "filename",
+        ["REFERENCE.md", "finance.md", "schema.json", "diagram.png", "a"],
+    )
+    def test_valid_filenames(self, filename):
+        _validate_filename(filename)
+
+
+# -- References tests --
+
+
+class TestReferences:
+    def test_read_reference(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        ref_dir = skill.references_dir()
+        ref_dir.mkdir(parents=True)
+        (ref_dir / "guide.md").write_text("# Guide\nContent here.", encoding="utf-8")
+        assert skill.read_reference("guide.md") == "# Guide\nContent here."
+
+    def test_read_reference_not_found(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        with pytest.raises(FileNotFoundError, match="Reference file not found"):
+            skill.read_reference("missing.md")
+
+    @pytest.mark.parametrize("filename", ["../etc/passwd", "sub/dir.md", ".."])
+    def test_reference_path_traversal(self, mock_project, filename):
+        skill = save_skill_with_body(mock_project)
+        with pytest.raises(ValueError):
+            skill.read_reference(filename)
+
+    def test_references_dir_requires_saved_skill(self):
+        skill = make_skill()
+        with pytest.raises(ValueError, match="Skill must be saved"):
+            skill.references_dir()
+
+    @pytest.mark.parametrize(
+        "filename", ["notes.txt", "data.json", "image.png", "readme"]
+    )
+    def test_non_md_extension_rejected(self, mock_project, filename):
+        skill = save_skill_with_body(mock_project)
+        with pytest.raises(ValueError, match=r"\.md extension"):
+            skill.read_reference(filename)

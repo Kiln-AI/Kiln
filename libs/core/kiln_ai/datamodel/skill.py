@@ -62,6 +62,29 @@ class Skill(KilnParentedModel):
         """Read the markdown body from SKILL.md (content after YAML frontmatter)."""
         return _parse_skill_md_body(self.skill_md_raw())
 
+    # -- References --
+
+    def references_dir(self) -> Path:
+        if self.path is None:
+            raise ValueError(
+                "Skill must be saved before accessing references directory"
+            )
+        return self.path.parent / "references"
+
+    def read_reference(self, filename: str) -> str:
+        """Read a reference file's content. Raises ValueError if path traversal, FileNotFoundError if missing."""
+        path = self._validated_reference_path(filename)
+        try:
+            return path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Reference file not found: {filename}") from None
+
+    def _validated_reference_path(self, filename: str) -> Path:
+        _validate_filename(filename)
+        if not filename.endswith(".md"):
+            raise ValueError("Reference files must have a .md extension")
+        return self.references_dir() / filename
+
     def save_skill_md(self, body: str) -> None:
         """Write SKILL.md with YAML frontmatter (name, description) + markdown body.
 
@@ -77,6 +100,16 @@ class Skill(KilnParentedModel):
         ).rstrip("\n")
         content = f"---\n{frontmatter}\n---\n\n{body}"
         self.skill_md_path().write_text(content, encoding="utf-8")
+
+
+def _validate_filename(filename: str) -> None:
+    """Reject filenames that are empty, contain path separators, or are traversal components."""
+    if not filename or not filename.strip():
+        raise ValueError("Filename cannot be empty")
+    if "/" in filename or "\\" in filename:
+        raise ValueError("Filename must not contain path separators")
+    if filename == "." or filename == "..":
+        raise ValueError("Filename must not be a path traversal component")
 
 
 def _parse_skill_md_body(raw: str) -> str:
