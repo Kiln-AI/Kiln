@@ -472,15 +472,13 @@
     no_y_padding
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#document-library"
-    breadcrumbs={$ui_state.current_task_id
-      ? [
-          {
-            label: "Optimize",
-            href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
-          },
-          { label: "Docs & Search", href: `/docs/${project_id}` },
-        ]
-      : [{ label: "Docs & Search", href: `/docs/${project_id}` }]}
+    breadcrumbs={[
+      {
+        label: "Optimize",
+        href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+      },
+      { label: "Docs & Search", href: `/docs/${project_id}` },
+    ]}
     action_buttons={documents && documents.length == 0
       ? []
       : [

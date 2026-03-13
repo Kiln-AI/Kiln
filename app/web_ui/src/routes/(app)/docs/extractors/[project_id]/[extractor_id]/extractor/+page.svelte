@@ -107,31 +107,20 @@
 <AppPage
   title="Document Extractor"
   subtitle={loading ? "" : "Name: " + (extractor_config?.name || "Unknown")}
-  breadcrumbs={$ui_state.current_task_id
-    ? [
-        {
-          label: "Optimize",
-          href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
-        },
-        {
-          label: "Docs & Search",
-          href: `/docs/${project_id}`,
-        },
-        {
-          label: "Extractors",
-          href: `/docs/extractors/${project_id}`,
-        },
-      ]
-    : [
-        {
-          label: "Docs & Search",
-          href: `/docs/${project_id}`,
-        },
-        {
-          label: "Extractors",
-          href: `/docs/extractors/${project_id}`,
-        },
-      ]}
+  breadcrumbs={[
+    {
+      label: "Optimize",
+      href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+    },
+    {
+      label: "Docs & Search",
+      href: `/docs/${project_id}`,
+    },
+    {
+      label: "Extractors",
+      href: `/docs/extractors/${project_id}`,
+    },
+  ]}
   action_buttons={[
     {
       label: extractor_config?.is_archived ? "Unarchive" : "Archive",

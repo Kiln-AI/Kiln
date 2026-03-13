@@ -85,14 +85,10 @@
   title="Edit Tool Server"
   subtitle={edit_server_subtitle(tool_server)}
   breadcrumbs={[
-    ...($ui_state.current_task_id
-      ? [
-          {
-            label: "Optimize",
-            href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
-          },
-        ]
-      : []),
+    {
+      label: "Optimize",
+      href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+    },
     {
       label: "Tools",
       href: `/tools/${project_id}`,

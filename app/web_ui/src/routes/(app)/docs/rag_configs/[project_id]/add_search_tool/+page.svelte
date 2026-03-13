@@ -164,31 +164,20 @@
   subtitle="A tool to search for information in documents"
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
-  breadcrumbs={$ui_state.current_task_id
-    ? [
-        {
-          label: "Optimize",
-          href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
-        },
-        {
-          label: "Docs & Search",
-          href: `/docs/${project_id}`,
-        },
-        {
-          label: "Search Tools",
-          href: `/docs/rag_configs/${project_id}`,
-        },
-      ]
-    : [
-        {
-          label: "Docs & Search",
-          href: `/docs/${project_id}`,
-        },
-        {
-          label: "Search Tools",
-          href: `/docs/rag_configs/${project_id}`,
-        },
-      ]}
+  breadcrumbs={[
+    {
+      label: "Optimize",
+      href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+    },
+    {
+      label: "Docs & Search",
+      href: `/docs/${project_id}`,
+    },
+    {
+      label: "Search Tools",
+      href: `/docs/rag_configs/${project_id}`,
+    },
+  ]}
 >
   <div>
     <h2 class="text-lg font-medium">Suggested Configurations</h2>

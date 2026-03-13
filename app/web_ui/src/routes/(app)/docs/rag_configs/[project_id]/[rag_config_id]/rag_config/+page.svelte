@@ -219,31 +219,20 @@
     subtitle={rag_config?.name ? `Name: ${rag_config.name}` : undefined}
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
-    breadcrumbs={$ui_state.current_task_id
-      ? [
-          {
-            label: "Optimize",
-            href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
-          },
-          {
-            label: "Docs & Search",
-            href: `/docs/${project_id}`,
-          },
-          {
-            label: "Search Tools",
-            href: `/docs/rag_configs/${project_id}`,
-          },
-        ]
-      : [
-          {
-            label: "Docs & Search",
-            href: `/docs/${project_id}`,
-          },
-          {
-            label: "Search Tools",
-            href: `/docs/rag_configs/${project_id}`,
-          },
-        ]}
+    breadcrumbs={[
+      {
+        label: "Optimize",
+        href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+      },
+      {
+        label: "Docs & Search",
+        href: `/docs/${project_id}`,
+      },
+      {
+        label: "Search Tools",
+        href: `/docs/rag_configs/${project_id}`,
+      },
+    ]}
     action_buttons={[
       ...(rag_config?.is_archived
         ? []

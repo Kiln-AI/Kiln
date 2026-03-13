@@ -12,14 +12,10 @@
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/tools-and-mcp#connecting-remote-mcp-servers"
   breadcrumbs={[
-    ...($ui_state.current_task_id
-      ? [
-          {
-            label: "Optimize",
-            href: `/optimize/${$page.params.project_id}/${$ui_state.current_task_id}`,
-          },
-        ]
-      : []),
+    {
+      label: "Optimize",
+      href: `/optimize/${$page.params.project_id}/${$ui_state.current_task_id}`,
+    },
     {
       label: "Tools",
       href: `/tools/${$page.params.project_id}`,
