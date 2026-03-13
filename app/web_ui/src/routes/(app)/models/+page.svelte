@@ -62,6 +62,7 @@
     structured_output_mode: string
     reasoning_capable: boolean
     multimodal_mime_types: string[] | null
+    deprecated?: boolean
   }
 
   interface Model {
@@ -181,6 +182,11 @@
 
     const data: ConfigData = await response.json()
     models = data.model_list
+      .map((model) => ({
+        ...model,
+        providers: model.providers.filter((provider) => !provider.deprecated),
+      }))
+      .filter((model) => model.providers.length > 0)
 
     // Extract unique providers for filters
     providers = [
