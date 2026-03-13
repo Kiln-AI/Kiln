@@ -121,6 +121,7 @@
           label: "New Skill",
           badge: "＋",
           badge_color: "primary",
+          hide_check: true,
         },
       ],
     })
@@ -166,7 +167,7 @@
     inputType="multi_select"
     fancy_select_options={get_skill_options($available_tools[project_id])}
     bind:value={skills}
-    empty_label={resolved.empty_label}
+    empty_label={resolved.empty_label ?? default_settings.empty_label}
     empty_state_message={$available_tools[project_id] === undefined
       ? "Loading skills..."
       : "No Skills Available"}

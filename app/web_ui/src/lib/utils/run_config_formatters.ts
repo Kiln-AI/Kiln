@@ -236,7 +236,7 @@ export function getRunConfigUiProperties(
           badge: Array.isArray(tools_property_info.value) ? true : false,
         },
         {
-          name: "Skills",
+          name: "Available Skills",
           value: skills_property_info.value,
           links: skills_property_info.links,
           badge: Array.isArray(skills_property_info.value) ? true : false,

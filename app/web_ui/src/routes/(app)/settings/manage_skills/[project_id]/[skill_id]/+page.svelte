@@ -51,6 +51,7 @@
 
   function get_properties(skill: Skill): UiProperty[] {
     const props: UiProperty[] = [
+      { name: "ID", value: skill.id ?? "" },
       { name: "Name", value: skill.name },
       { name: "Description", value: skill.description },
     ]
