@@ -1,5 +1,5 @@
 [post-create]
-# deps = "uv sync && cd app/web_ui && npm install"
+deps = "uv sync && cd app/web_ui && npm install"
 
 [pre-remove]
 session = "zellij delete-session {{ branch | sanitize }} 2>/dev/null || true"
