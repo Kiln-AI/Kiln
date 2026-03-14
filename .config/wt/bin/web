@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+open "${KILN_WEB_URL:-http://localhost:8758}"

@@ -3,11 +3,3 @@
 
 [pre-remove]
 session = "zellij delete-session {{ branch | sanitize }} 2>/dev/null || true"
-ports = """
-PORT={{ branch | hash_port }}
-lsof -ti :$PORT -sTCP:LISTEN | xargs kill 2>/dev/null || true
-lsof -ti :$((PORT + 1)) -sTCP:LISTEN | xargs kill 2>/dev/null || true
-"""
-
-[list]
-url = "http://localhost:{{ branch | hash_port }}"
