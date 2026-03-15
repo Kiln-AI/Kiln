@@ -9,7 +9,7 @@ layout {
         }
     }
     tab name="term" focus=true {
-        pane command="bash" start_suspended=false {
+        pane name="terminal" command="bash" start_suspended=false {
             args "-c" "echo \"\nWeb UI: $KILN_WEB_URL\nBackend: http://localhost:$KILN_PORT\n\nType 'web' to open in browser.\n\"; exec $SHELL"
         }
     }

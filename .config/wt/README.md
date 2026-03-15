@@ -4,6 +4,10 @@ We use [Worktrunk](https://worktrunk.dev/) to manage git worktrees for parallel 
 
 ## Setup
 
+Run `utils/setup_env.sh` — it installs project dependencies and optionally sets up workspaces (worktrunk, Zellij, and config).
+
+Or manually:
+
 1. Install worktrunk: `brew install worktrunk && wt config shell install`
 2. Install Zellij: `brew install zellij`
 3. Configure worktree path (one-time, applies to all repos):
@@ -12,8 +16,6 @@ We use [Worktrunk](https://worktrunk.dev/) to manage git worktrees for parallel 
 mkdir -p ~/.config/worktrunk
 echo 'worktree-path = ".worktrees/{{ branch | sanitize }}"' > ~/.config/worktrunk/config.toml
 ```
-
-Or run `utils/setup_env.sh`, which does this automatically.
 
 ## Commands
 
@@ -137,6 +139,19 @@ wt step commit
 
 ```bash
 wt step prune
+```
+
+## Keybinds for Option Left/right to switch tabs
+
+In `~/.config/zellij/config.kdl` add:
+
+```
+keybinds clear-defaults=true {
+  shared_except "locked" {
+      bind "Alt b" { GoToPreviousTab; }
+      bind "Alt f" { GoToNextTab; }
+  }
+}
 ```
 
 ## Architecture
