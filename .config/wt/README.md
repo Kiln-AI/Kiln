@@ -10,14 +10,19 @@ Or manually:
 
 1. Install worktrunk: `brew install worktrunk && wt config shell install`
 2. Install Zellij: `brew install zellij`
-3. Configure worktree path (one-time, applies to all repos):
+3. Install worktree TUI: `uv tool install "git+https://github.com/scosman/worktree_tui"`
+4. Configure worktree path (one-time, applies to all repos):
 
 ```bash
 mkdir -p ~/.config/worktrunk
 echo 'worktree-path = ".worktrees/{{ branch | sanitize }}"' > ~/.config/worktrunk/config.toml
 ```
 
-## Commands
+## Command
+
+Just run `wk` and you can manage workspaces!
+
+## Advanced Commands
 
 ### Create a new worktree and launch it
 

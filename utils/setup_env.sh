@@ -29,6 +29,13 @@ if [[ "$install_workspaces" =~ ^[Yy]$ ]]; then
     echo "  zellij already installed."
   fi
 
+  if ! command -v wk &>/dev/null; then
+    echo "Installing worktree TUI..."
+    uv tool install "git+https://github.com/scosman/worktree_tui"
+  else
+    echo "  worktree TUI already installed."
+  fi
+
   WT_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/worktrunk"
   WT_CONFIG="$WT_CONFIG_DIR/config.toml"
   WT_PROJECT_CONFIG="$PROJECT_ROOT/.config/wt/config.toml"
