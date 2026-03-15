@@ -13,7 +13,7 @@ layout {
             args "-c" "echo \"\nWeb UI: $KILN_WEB_URL\nBackend: http://localhost:$KILN_PORT\n\nType 'web' to open in browser.\n\"; exec $SHELL"
         }
     }
-    tab name="code" {
+    tab name="agent" {
         pane command="bash" start_suspended=false {
             args "-c" "$KILN_CODER_CMD"
         }
