@@ -21,3 +21,6 @@ libs/server/build
 dist/
 
 .mcp.json
+
+.config/wt/user_settings.sh
+.worktrees/
