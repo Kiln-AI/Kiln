@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+RESTART=false
+if [ "${1:-}" = "--restart" ] || [ "${1:-}" = "-r" ]; then
+    RESTART=true
+    shift
+fi
 
 BRANCH="${1:-$(git -C "$REPO_ROOT" branch --show-current 2>/dev/null || echo "main")}"
 SESSION_NAME="${BRANCH//\//-}"
@@ -31,7 +38,17 @@ cd "$REPO_ROOT"
 
 LAYOUT="$REPO_ROOT/.config/wt/layout.kdl"
 
-# Kill any cached/serialized session so we always get a fresh layout
-zellij delete-session "$SESSION_NAME" 2>/dev/null || true
+SESSION_STATUS=$(zellij list-sessions --no-formatting 2>/dev/null \
+    | awk -v name="$SESSION_NAME" '{ n=$1; gsub(/[[:space:]]/, "", n); if (n == name) { print (/EXITED/ ? "exited" : "active"); exit } }') || true
 
-exec zellij -s "$SESSION_NAME" -n "$LAYOUT"
+if $RESTART; then
+    zellij kill-session "$SESSION_NAME" 2>/dev/null || true
+    zellij delete-session "$SESSION_NAME" 2>/dev/null || true
+    exec zellij -s "$SESSION_NAME" -n "$LAYOUT"
+fi
+
+if [ -n "$SESSION_STATUS" ]; then
+    exec zellij attach "$SESSION_NAME"
+else
+    exec zellij -s "$SESSION_NAME" -n "$LAYOUT"
+fi
