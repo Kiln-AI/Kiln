@@ -23,20 +23,18 @@ from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 logger = logging.getLogger(__name__)
 
 STREAMING_MODELS = [
-    ("claude_sonnet_4_5", ModelProviderName.openrouter),
-    ("claude_sonnet_4_5", ModelProviderName.anthropic),
-    ("claude_sonnet_4_6", ModelProviderName.openrouter),
-    ("claude_sonnet_4_6", ModelProviderName.anthropic),
-    ("claude_opus_4_5", ModelProviderName.openrouter),
-    ("claude_opus_4_5", ModelProviderName.anthropic),
-    ("claude_opus_4_6", ModelProviderName.openrouter),
-    ("claude_opus_4_6", ModelProviderName.anthropic),
-    ("minimax_m2_5", ModelProviderName.openrouter),
-    ("claude_4_5_haiku", ModelProviderName.openrouter),
-    ("claude_4_5_haiku", ModelProviderName.anthropic),
+    ("claude_sonnet_4_5", ModelProviderName.openrouter, "medium"),
+    ("claude_sonnet_4_5", ModelProviderName.anthropic, "medium"),
+    ("claude_sonnet_4_6", ModelProviderName.openrouter, "medium"),
+    ("claude_sonnet_4_6", ModelProviderName.anthropic, "medium"),
+    ("claude_opus_4_5", ModelProviderName.openrouter, "medium"),
+    ("claude_opus_4_5", ModelProviderName.anthropic, "medium"),
+    ("claude_opus_4_6", ModelProviderName.openrouter, "medium"),
+    ("claude_opus_4_6", ModelProviderName.anthropic, "medium"),
+    ("minimax_m2_5", ModelProviderName.openrouter, "medium"),
+    ("claude_4_5_haiku", ModelProviderName.openrouter, "medium"),
+    ("claude_4_5_haiku", ModelProviderName.anthropic, "medium"),
 ]
-
-STREAMING_MODELS_NO_HAIKU = [m for m in STREAMING_MODELS if "haiku" not in m[0]]
 
 PAID_TEST_OUTPUT_DIR = Path(__file__).resolve().parents[5] / "test_output"
 
@@ -96,9 +94,11 @@ def task(tmp_path):
 
 
 @pytest.fixture
-def adapter_factory(task: Task) -> Callable[[str, ModelProviderName], LiteLlmAdapter]:
+def adapter_factory(
+    task: Task,
+) -> Callable[[str, ModelProviderName, str | None], LiteLlmAdapter]:
     def create_adapter(
-        model_id: str, provider_name: ModelProviderName
+        model_id: str, provider_name: ModelProviderName, thinking_level: str | None
     ) -> LiteLlmAdapter:
         return LiteLlmAdapter(
             kiln_task=task,
@@ -116,6 +116,7 @@ def adapter_factory(task: Task) -> Callable[[str, ModelProviderName], LiteLlmAda
                             KilnBuiltInToolId.DIVIDE_NUMBERS,
                         ],
                     ),
+                    thinking_level=thinking_level,
                 )
             ),
         )
@@ -124,15 +125,16 @@ def adapter_factory(task: Task) -> Callable[[str, ModelProviderName], LiteLlmAda
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize("model_id,provider_name", STREAMING_MODELS)
+@pytest.mark.parametrize("model_id,provider_name,thinking_level", STREAMING_MODELS)
 async def test_invoke_openai_stream_chunks(
     request: pytest.FixtureRequest,
     model_id: str,
     provider_name: ModelProviderName,
-    adapter_factory: Callable[[str, ModelProviderName], LiteLlmAdapter],
+    thinking_level: str | None,
+    adapter_factory: Callable[[str, ModelProviderName, str | None], LiteLlmAdapter],
 ):
     """Collect all OpenAI-protocol chunks via invoke_openai_stream and verify we got reasoning, content, and tool call data."""
-    adapter = adapter_factory(model_id, provider_name)
+    adapter = adapter_factory(model_id, provider_name, thinking_level)
 
     chunks: list[litellm.ModelResponseStream] = []
     async for chunk in adapter.invoke_openai_stream(input="123 + 321 = ?"):
@@ -146,6 +148,8 @@ async def test_invoke_openai_stream_chunks(
     tool_calls: list[ChatCompletionDeltaToolCall | Any] = []
 
     for chunk in chunks:
+        if len(chunk.choices) == 0:
+            continue
         if chunk.choices[0].finish_reason is not None:
             continue
         delta = chunk.choices[0].delta
@@ -187,15 +191,16 @@ async def test_invoke_openai_stream_chunks(
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize("model_id,provider_name", STREAMING_MODELS)
+@pytest.mark.parametrize("model_id,provider_name,thinking_level", STREAMING_MODELS)
 async def test_invoke_ai_sdk_stream(
     request: pytest.FixtureRequest,
     model_id: str,
     provider_name: ModelProviderName,
-    adapter_factory: Callable[[str, ModelProviderName], LiteLlmAdapter],
+    thinking_level: str | None,
+    adapter_factory: Callable[[str, ModelProviderName, str | None], LiteLlmAdapter],
 ):
     """Collect AI SDK events and verify the full protocol lifecycle including tool events."""
-    adapter = adapter_factory(model_id, provider_name)
+    adapter = adapter_factory(model_id, provider_name, thinking_level)
 
     events: list[AiSdkStreamEvent] = []
     async for event in adapter.invoke_ai_sdk_stream(input="123 + 321 = ?"):
@@ -263,15 +268,16 @@ async def test_invoke_ai_sdk_stream(
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize("model_id,provider_name", STREAMING_MODELS)
+@pytest.mark.parametrize("model_id,provider_name,thinking_level", STREAMING_MODELS)
 async def test_ai_sdk_stream_text_ends_before_tool_calls(
     request: pytest.FixtureRequest,
     model_id: str,
     provider_name: ModelProviderName,
-    adapter_factory: Callable[[str, ModelProviderName], LiteLlmAdapter],
+    thinking_level: str | None,
+    adapter_factory: Callable[[str, ModelProviderName, str | None], LiteLlmAdapter],
 ):
     """Verify text blocks are properly closed before tool-input-start and reopened with a new ID after tool execution."""
-    adapter = adapter_factory(model_id, provider_name)
+    adapter = adapter_factory(model_id, provider_name, thinking_level)
 
     events: list[AiSdkStreamEvent] = []
     async for event in adapter.invoke_ai_sdk_stream(
@@ -322,15 +328,16 @@ async def test_ai_sdk_stream_text_ends_before_tool_calls(
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize("model_id,provider_name", STREAMING_MODELS_NO_HAIKU)
+@pytest.mark.parametrize("model_id,provider_name,thinking_level", STREAMING_MODELS)
 async def test_invoke_openai_stream_non_streaming_still_works(
     request: pytest.FixtureRequest,
     model_id: str,
     provider_name: ModelProviderName,
-    adapter_factory: Callable[[str, ModelProviderName], LiteLlmAdapter],
+    thinking_level: str | None,
+    adapter_factory: Callable[[str, ModelProviderName, str | None], LiteLlmAdapter],
 ):
     """Verify the non-streaming invoke() still works after the refactor."""
-    adapter = adapter_factory(model_id, provider_name)
+    adapter = adapter_factory(model_id, provider_name, thinking_level)
     task_run = await adapter.invoke(input="123 + 321 = ?")
 
     _dump_paid_test_output(request, task_run=task_run)
@@ -342,15 +349,16 @@ async def test_invoke_openai_stream_non_streaming_still_works(
 
 
 @pytest.mark.paid
-@pytest.mark.parametrize("model_id,provider_name", STREAMING_MODELS_NO_HAIKU)
+@pytest.mark.parametrize("model_id,provider_name,thinking_level", STREAMING_MODELS)
 async def test_invoke_openai_stream_with_prior_trace(
     request: pytest.FixtureRequest,
     model_id: str,
     provider_name: ModelProviderName,
-    adapter_factory: Callable[[str, ModelProviderName], LiteLlmAdapter],
+    thinking_level: str | None,
+    adapter_factory: Callable[[str, ModelProviderName, str | None], LiteLlmAdapter],
 ):
     """Test that streaming works when continuing an existing run (session continuation)."""
-    adapter = adapter_factory(model_id, provider_name)
+    adapter = adapter_factory(model_id, provider_name, thinking_level)
 
     initial_run = await adapter.invoke(input="123 + 321 = ?")
     assert initial_run.trace is not None
