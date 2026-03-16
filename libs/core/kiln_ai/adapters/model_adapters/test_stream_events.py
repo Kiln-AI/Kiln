@@ -318,3 +318,70 @@ class TestAiSdkStreamConverter:
         assert len(starts_r2) == 0, (
             "Without reset, started=True blocks duplicate tool-input-start"
         )
+
+    def test_choice_with_none_delta_is_skipped(self):
+        chunk = ModelResponseStream(
+            id="test",
+            choices=[StreamingChoices(index=0, delta=None, finish_reason=None)],
+        )
+        converter = AiSdkStreamConverter()
+        events = converter.convert_chunk(chunk)
+        assert events == []
+
+    def test_usage_data_extracted_from_empty_choices_chunk(self):
+        usage = type(
+            "Usage",
+            (),
+            {
+                "prompt_tokens": 10,
+                "completion_tokens": 20,
+                "total_tokens": 30,
+            },
+        )()
+        chunk = ModelResponseStream(id="test", choices=[])
+        chunk.usage = usage
+
+        converter = AiSdkStreamConverter()
+        converter.convert_chunk(chunk)
+        assert converter._usage_data is usage
+
+    def test_finalize_includes_usage_payload(self):
+        usage = type(
+            "Usage",
+            (),
+            {
+                "prompt_tokens": 15,
+                "completion_tokens": 25,
+                "total_tokens": 40,
+            },
+        )()
+        converter = AiSdkStreamConverter()
+        converter._usage_data = usage
+        converter._finish_reason = "stop"
+
+        events = converter.finalize()
+        finish = next(e for e in events if e.type == AiSdkEventType.FINISH)
+        meta = finish.payload["messageMetadata"]
+        assert meta["finishReason"] == "stop"
+        assert meta["usage"]["promptTokens"] == 15
+        assert meta["usage"]["completionTokens"] == 25
+        assert meta["usage"]["totalTokens"] == 40
+
+    def test_finalize_usage_without_total_tokens(self):
+        usage = type(
+            "Usage",
+            (),
+            {
+                "prompt_tokens": 5,
+                "completion_tokens": 10,
+            },
+        )()
+        converter = AiSdkStreamConverter()
+        converter._usage_data = usage
+
+        events = converter.finalize()
+        finish = next(e for e in events if e.type == AiSdkEventType.FINISH)
+        meta = finish.payload["messageMetadata"]
+        assert meta["usage"]["promptTokens"] == 5
+        assert meta["usage"]["completionTokens"] == 10
+        assert "totalTokens" not in meta["usage"]

@@ -370,3 +370,129 @@ class TestAdapterStreamToolCalls:
         assert len(input_events) == 1
         assert input_events[0].arguments is None
         assert "Failed to parse" in (input_events[0].error or "")
+
+
+class TestAdapterStreamEdgeCases:
+    @pytest.mark.asyncio
+    async def test_too_many_turns_raises(self, mock_adapter, mock_provider):
+        formatter = FakeChatFormatter(num_turns=15)
+        response = _make_model_response(content="ok")
+        fake_stream = FakeStreamingCompletion(response)
+
+        with (
+            patch(
+                "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+                return_value=fake_stream,
+            ),
+            patch(
+                "kiln_ai.adapters.model_adapters.adapter_stream.MAX_CALLS_PER_TURN",
+                2,
+            ),
+        ):
+            stream = AdapterStream(
+                adapter=mock_adapter,
+                provider=mock_provider,
+                chat_formatter=formatter,
+                initial_messages=[],
+                top_logprobs=None,
+            )
+            with pytest.raises(RuntimeError, match="Too many turns"):
+                async for _ in stream:
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_empty_message_content_raises(self, mock_adapter, mock_provider):
+        formatter = MagicMock()
+        turn = MagicMock()
+        turn.messages = [MagicMock(role="user", content=None)]
+        turn.final_call = True
+        formatter.next_turn = MagicMock(side_effect=[turn, None])
+
+        stream = AdapterStream(
+            adapter=mock_adapter,
+            provider=mock_provider,
+            chat_formatter=formatter,
+            initial_messages=[],
+            top_logprobs=None,
+        )
+        with pytest.raises(ValueError, match="Empty message content"):
+            async for _ in stream:
+                pass
+
+    @pytest.mark.asyncio
+    async def test_no_content_or_tool_calls_raises(self, mock_adapter, mock_provider):
+        response = _make_model_response(content=None, tool_calls=None)
+        response.choices[0].message.content = None
+        fake_stream = FakeStreamingCompletion(
+            response, [_make_streaming_chunk(finish_reason="stop")]
+        )
+
+        with patch(
+            "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+            return_value=fake_stream,
+        ):
+            stream = AdapterStream(
+                adapter=mock_adapter,
+                provider=mock_provider,
+                chat_formatter=FakeChatFormatter(),
+                initial_messages=[],
+                top_logprobs=None,
+            )
+            with pytest.raises(ValueError, match="no content or tool calls"):
+                async for _ in stream:
+                    pass
+
+
+class TestValidateResponse:
+    def test_valid_response(self):
+        from kiln_ai.adapters.model_adapters.adapter_stream import _validate_response
+
+        response = _make_model_response(content="hello")
+        result, choice = _validate_response(response)
+        assert result is response
+        assert choice.message.content == "hello"
+
+    def test_none_response_raises(self):
+        from kiln_ai.adapters.model_adapters.adapter_stream import _validate_response
+
+        with pytest.raises(RuntimeError, match="Expected ModelResponse"):
+            _validate_response(None)
+
+    def test_empty_choices_raises(self):
+        from kiln_ai.adapters.model_adapters.adapter_stream import _validate_response
+
+        response = ModelResponse(id="test", choices=[])
+        with pytest.raises(RuntimeError, match="Expected ModelResponse"):
+            _validate_response(response)
+
+
+class TestFindToolName:
+    def test_found(self):
+        from kiln_ai.adapters.model_adapters.adapter_stream import _find_tool_name
+
+        tc = ChatCompletionMessageToolCall(
+            id="call_1",
+            type="function",
+            function=Function(name="add", arguments="{}"),
+        )
+        assert _find_tool_name([tc], "call_1") == "add"
+
+    def test_not_found_returns_unknown(self):
+        from kiln_ai.adapters.model_adapters.adapter_stream import _find_tool_name
+
+        tc = ChatCompletionMessageToolCall(
+            id="call_1",
+            type="function",
+            function=Function(name="add", arguments="{}"),
+        )
+        assert _find_tool_name([tc], "call_999") == "unknown"
+
+    def test_name_is_none_returns_unknown(self):
+        from kiln_ai.adapters.model_adapters.adapter_stream import _find_tool_name
+
+        tc = ChatCompletionMessageToolCall(
+            id="call_1",
+            type="function",
+            function=Function(name=None, arguments="{}"),
+        )
+        assert _find_tool_name([tc], "call_1") == "unknown"
