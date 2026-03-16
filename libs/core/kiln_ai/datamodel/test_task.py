@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from pydantic import ValidationError
 
@@ -6,6 +8,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     StructuredOutputMode,
     TaskOutputRatingType,
 )
+from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import Spec
@@ -15,7 +18,8 @@ from kiln_ai.datamodel.spec_properties import (
     ToxicityProperties,
 )
 from kiln_ai.datamodel.task import Task, TaskRunConfig
-from kiln_ai.datamodel.task_output import normalize_rating
+from kiln_ai.datamodel.task_output import TaskOutput, normalize_rating
+from kiln_ai.datamodel.task_run import TaskRun
 
 
 def test_runconfig_valid_creation():
@@ -457,3 +461,173 @@ def test_task_prompt_optimization_jobs_readonly(tmp_path):
     assert (
         prompt_optimization_jobs_default[0].name == "Readonly Prompt Optimization Job"
     )
+
+
+def test_all_children_of_parent_path_polymorphic(tmp_path):
+    """all_children_of_parent_path works correctly for polymorphic parent models."""
+    # Test with TaskRun and Task
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        path=tmp_path / "task.kiln",
+    )
+    task.save_to_file()
+
+    output = TaskOutput(output="test output")
+
+    # Create direct children of Task
+    run1 = TaskRun(input="input1", output=output, parent=task)
+    run2 = TaskRun(input="input2", output=output, parent=task)
+    run1.save_to_file()
+    run2.save_to_file()
+
+    children = TaskRun.all_children_of_parent_path(task.path)
+    assert len(children) == 2
+    inputs = {child.input for child in children}
+    assert inputs == {"input1", "input2"}
+
+
+def test_taskrun_nested_validates_parent_type_on_load(tmp_path):
+    """Loading a TaskRun validates its parent type is Task or TaskRun."""
+    output = TaskOutput(output="test output")
+
+    # Create a task
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        path=tmp_path / "task.kiln",
+    )
+    task.save_to_file()
+
+    # Create parent TaskRun
+    parent_run = TaskRun(input="parent input", output=output, parent=task)
+    parent_run.save_to_file()
+
+    # Create nested TaskRun
+    nested_run = TaskRun(input="nested input", output=output, parent=parent_run)
+    nested_run.save_to_file()
+
+    # Reload from disk - parent type should be validated
+    # When loading from disk, the parent attribute points to the ultimate parent (Task)
+    # Use load_parent() to get the direct parent (TaskRun)
+    loaded_run = TaskRun.load_from_file(nested_run.path)
+    assert loaded_run is not None
+    assert loaded_run.input == "nested input"
+    # parent_task() returns the ultimate parent task (different instance but same data)
+    loaded_parent_task = loaded_run.parent_task()
+    assert loaded_parent_task is not None
+    assert loaded_parent_task.name == "Test Task"
+    assert loaded_parent_task.instruction == "Test instruction"
+    # Use load_parent() to get the direct parent TaskRun
+    direct_parent = loaded_run.load_parent()
+    assert direct_parent is not None
+    assert direct_parent.id == parent_run.id
+    assert direct_parent.input == "parent input"
+
+
+def test_taskrun_loads_from_task_path(tmp_path):
+    """TaskRun children can be loaded from Task path (valid polymorphic parent)."""
+    output = TaskOutput(output="test output")
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        path=tmp_path / "task.kiln",
+    )
+    task.save_to_file()
+
+    run = TaskRun(input="test input", output=output, parent=task)
+    run.save_to_file()
+
+    # Load children from task path - should succeed
+    children = list(TaskRun.iterate_children_paths_of_parent_path(task.path))
+    assert len(children) == 1
+    assert children[0] == run.path
+
+
+def test_taskrun_loads_from_taskrun_path(tmp_path):
+    """TaskRun children can be loaded from TaskRun path (valid polymorphic parent)."""
+    output = TaskOutput(output="test output")
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        path=tmp_path / "task.kiln",
+    )
+    task.save_to_file()
+
+    parent_run = TaskRun(input="parent input", output=output, parent=task)
+    parent_run.save_to_file()
+
+    nested_run = TaskRun(input="nested input", output=output, parent=parent_run)
+    nested_run.save_to_file()
+
+    # Load children from TaskRun path - should succeed
+    children = list(TaskRun.iterate_children_paths_of_parent_path(parent_run.path))
+    assert len(children) == 1
+    assert children[0] == nested_run.path
+
+
+def test_taskrun_fails_to_load_from_project_path(tmp_path):
+    """TaskRun children cannot be loaded from Project path (invalid polymorphic parent)."""
+    project_path = tmp_path / "project.kiln"
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+
+    # Try to load TaskRun children from a Project path - should fail
+    with pytest.raises(ValueError, match="Parent model_type 'project' is not one of"):
+        list(TaskRun.iterate_children_paths_of_parent_path(project_path))
+
+
+def test_multiple_nested_levels_validates_each_level(tmp_path):
+    """Multi-level nesting validates parent type at each level."""
+    output = TaskOutput(output="test output")
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        path=tmp_path / "task.kiln",
+    )
+    task.save_to_file()
+
+    run1 = TaskRun(input="input1", output=output, parent=task)
+    run1.save_to_file()
+
+    run2 = TaskRun(input="input2", output=output, parent=run1)
+    run2.save_to_file()
+
+    run3 = TaskRun(input="input3", output=output, parent=run2)
+    run3.save_to_file()
+
+    # Load children at each level - all should succeed
+    task_children = TaskRun.all_children_of_parent_path(task.path)
+    assert len(task_children) == 1
+    assert task_children[0].id == run1.id
+
+    run1_children = TaskRun.all_children_of_parent_path(run1.path)
+    assert len(run1_children) == 1
+    assert run1_children[0].id == run2.id
+
+    run2_children = TaskRun.all_children_of_parent_path(run2.path)
+    assert len(run2_children) == 1
+    assert run2_children[0].id == run3.id
+
+
+def test_polymorphic_parent_type_validation_fast_fail(tmp_path):
+    """Polymorphic validation fails fast without loading entire parent model."""
+    # Create a file that's syntactically valid JSON but semantically invalid
+    # for the parent type - the polymorphic path should only read model_type
+    invalid_parent_path = tmp_path / "invalid.kiln"
+
+    # Write a file that would fail if we tried to fully load as Task/TaskRun
+    # but should be caught by the model_type check first
+    invalid_data = {
+        "model_type": "project",  # Wrong type - not Task or TaskRun
+        "extra_field": "this would cause issues",
+    }
+    with open(invalid_parent_path, "w") as f:
+        json.dump(invalid_data, f)
+
+    # Should fail on model_type check, not on full load
+    with pytest.raises(ValueError, match="Parent model_type 'project' is not one of"):
+        list(TaskRun.iterate_children_paths_of_parent_path(invalid_parent_path))

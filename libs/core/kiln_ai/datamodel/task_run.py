@@ -1,5 +1,5 @@
 import json
-from typing import TYPE_CHECKING, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Type, Union
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 from typing_extensions import Self
@@ -163,6 +163,13 @@ class TaskRun(KilnParentedModel, KilnParentModel, parent_of={}):
         if parent is None or not isinstance(parent, TaskRun):
             return None
         return parent
+
+    @classmethod
+    def _parent_types(cls) -> List[Type["KilnBaseModel"]]:
+        # lazy import to avoid circular dependency
+        from kiln_ai.datamodel.task import Task
+
+        return [Task, TaskRun]
 
     def runs(self, readonly: bool = False) -> list["TaskRun"]:
         """The list of child task runs."""

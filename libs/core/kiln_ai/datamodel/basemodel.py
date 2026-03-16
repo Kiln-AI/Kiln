@@ -545,6 +545,17 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
     def parent_type(cls) -> Type[KilnBaseModel]:
         raise NotImplementedError("Parent type must be implemented")
 
+    @classmethod
+    def _parent_types(cls) -> List[Type["KilnBaseModel"]] | None:
+        """Return accepted parent types. This must be implemented by the subclass if
+        the model can have multiple parent types.
+
+        Return None (default) to use the single parent_type() check.
+        Override and return a list of parent types for models that can be nested
+        under more than one parent type (e.g. TaskRun can be nested under Task or TaskRun).
+        """
+        return None
+
     def _check_parent_type(
         self,
         expected_parent_types: List[Type[KilnBaseModel]] | None = None,
@@ -623,10 +634,48 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         else:
             parent_folder = parent_path
 
-        # cannot validate the parent type here because some parentable models are polymorphic
-        # and can be nested under different types of parent models
         if not parent_path.exists():
             raise ValueError("Parent must be set to load children")
+
+        # Validate the parent file's declared type so we fail fast when the caller
+        # passes a wrong path.  For polymorphic children (e.g. TaskRun) the
+        # subclass overrides _accepted_parent_types() to broaden the check to all
+        # accepted parent types
+        parent_types_override = cls._parent_types()
+        if parent_types_override is None:
+            # Default: single expected parent type — original behaviour
+            parent = cls.parent_type().load_from_file(parent_path)
+            if parent is None:
+                raise ValueError("Parent must be set to load children")
+        else:
+            # Polymorphic parent: read only the model_type field to avoid a full load.
+            with open(parent_path, "r", encoding="utf-8") as fh:
+                actual_parent_type_name = json.loads(fh.read()).get("model_type", "")
+            parent_type_names = {t.type_name() for t in parent_types_override}
+            if actual_parent_type_name not in parent_type_names:
+                raise ValueError(
+                    f"Parent model_type '{actual_parent_type_name}' is not one of "
+                    f"{parent_type_names}"
+                )
+            else:
+                # find the parent type that matches the actual parent type name we found on disk
+                # and validate it
+                parent_type = next(
+                    (
+                        t
+                        for t in parent_types_override
+                        if t.type_name() == actual_parent_type_name
+                    ),
+                    None,
+                )
+                if parent_type is None:
+                    raise ValueError(
+                        f"Could not find parent type '{actual_parent_type_name}' in "
+                        f"{parent_types_override}"
+                    )
+                parent = parent_type.load_from_file(parent_path)
+                if parent is None:
+                    raise ValueError("Parent must be set to load children")
 
         # Ignore type error: this is abstract base class, but children must implement relationship_name
         relationship_folder = parent_folder / Path(cls.relationship_name())  # type: ignore
