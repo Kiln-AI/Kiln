@@ -113,19 +113,20 @@ class TestAiSdkStreamConverter:
         assert start_event.payload["toolCallId"] == "call_1"
         assert start_event.payload["toolName"] == "add"
 
-    def test_finalize_closes_open_blocks(self):
+    def test_close_open_blocks_closes_text(self):
         converter = AiSdkStreamConverter()
         converter.convert_chunk(_make_chunk(content="text"))
-        events = converter.finalize()
-        types = [e.type for e in events]
+        block_events = converter.close_open_blocks()
+        types = [e.type for e in block_events]
         assert AiSdkEventType.TEXT_END in types
-        assert AiSdkEventType.FINISH in types
+        finish_events = converter.finalize()
+        assert any(e.type == AiSdkEventType.FINISH for e in finish_events)
 
-    def test_finalize_closes_reasoning(self):
+    def test_close_open_blocks_closes_reasoning(self):
         converter = AiSdkStreamConverter()
         converter.convert_chunk(_make_chunk(reasoning_content="thinking"))
-        events = converter.finalize()
-        types = [e.type for e in events]
+        block_events = converter.close_open_blocks()
+        types = [e.type for e in block_events]
         assert AiSdkEventType.REASONING_END in types
 
     def test_convert_tool_event_input_available(self):
@@ -218,6 +219,7 @@ class TestAiSdkStreamConverter:
     def test_finish_reason_in_finalize(self):
         converter = AiSdkStreamConverter()
         converter.convert_chunk(_make_chunk(content="done", finish_reason="stop"))
+        converter.close_open_blocks()
         events = converter.finalize()
         finish_events = [e for e in events if e.type == AiSdkEventType.FINISH]
         assert len(finish_events) == 1

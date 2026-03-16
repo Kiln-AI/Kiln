@@ -219,6 +219,11 @@ async def test_invoke_ai_sdk_stream(
 
     assert AiSdkEventType.FINISH_STEP in event_types, "Should have FINISH_STEP"
     assert AiSdkEventType.FINISH in event_types, "Should have FINISH"
+    finish_step_idx = event_types.index(AiSdkEventType.FINISH_STEP)
+    finish_idx = event_types.index(AiSdkEventType.FINISH)
+    assert finish_step_idx < finish_idx, (
+        f"FINISH_STEP (idx {finish_step_idx}) must come before FINISH (idx {finish_idx})"
+    )
 
     assert AiSdkEventType.REASONING_START in event_types, "Should have REASONING_START"
     assert AiSdkEventType.REASONING_DELTA in event_types, "Should have REASONING_DELTA"

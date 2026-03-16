@@ -724,7 +724,7 @@ class AiSdkStreamResult:
                     for ai_event in converter.convert_tool_event(event):
                         yield ai_event
 
-            for ai_event in converter.finalize():
+            for ai_event in converter.close_open_blocks():
                 yield ai_event
 
             yield AiSdkStreamEvent(AiSdkEventType.FINISH_STEP)
@@ -732,6 +732,9 @@ class AiSdkStreamResult:
             self._task_run = self._adapter._finalize_stream(
                 adapter_stream, self._input, self._input_source
             )
+
+            for ai_event in converter.finalize():
+                yield ai_event
         finally:
             if is_root_agent:
                 try:
