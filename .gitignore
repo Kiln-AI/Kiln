@@ -21,3 +21,6 @@ libs/server/build
 dist/
 
 .mcp.json
+
+.specs_skill_state/
+
