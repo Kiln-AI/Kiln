@@ -142,33 +142,32 @@ class TaskRun(KilnParentedModel, KilnParentModel, parent_of={}):
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:
         """The Task that this Run is in. Note the TaskRun may be nested in which case we walk back up the tree all the way to the root."""
-        current = self
+        current: TaskRun = self
         while True:
             # should never really happen, except maybe in tests
-            if current.parent is None:
+            parent = current.parent
+            if parent is None:
                 return None
 
             # this task run is the root task run
             # so we just return its parent (a Task)
-            if current.parent.__class__.__name__ == "Task":
-                return current.parent  # type: ignore
+            if parent.__class__.__name__ == "Task":
+                return parent  # type: ignore
 
-            # the parent of this task is not a Task, so it has to be a TaskRun
-            # and we just walk back up the tree of TaskRuns until we find a Task
-            parent_run = current.cached_parent()
-            if isinstance(parent_run, TaskRun):
-                current = parent_run
-            else:
+            if parent.__class__.__name__ != "TaskRun":
                 # the parent is not a TaskRun, but also not a Task, so it is not
                 # a real parent
                 return None
 
+            # the parent is a TaskRun, so we just walk up the tree until we find a Task
+            current = parent  # type: ignore
+
     def parent_run(self) -> "TaskRun | None":
         """The TaskRun that contains this run, if this run is nested; otherwise None."""
-        parent = self.cached_parent()
-        if parent is None or not isinstance(parent, TaskRun):
+        parent = self.parent
+        if parent is None or parent.__class__.__name__ != "TaskRun":
             return None
-        return parent
+        return parent  # type: ignore
 
     @classmethod
     def _parent_types(cls) -> List[Type["KilnBaseModel"]]:
