@@ -208,8 +208,11 @@ class TaskRun(KilnParentedModel, KilnParentModel, parent_of={}):
                 loaded_parent_run = TaskRun.load_from_file(task_run_path)
                 super().__setattr__("parent", loaded_parent_run)
                 return loaded_parent_run
-            except ValueError:
-                pass
+            except ValueError as e:
+                raise ValueError(
+                    f"Failed to load parent TaskRun from {task_run_path}. "
+                    f"This indicates a malformed nested task run. Error: {e}"
+                ) from e
 
         from kiln_ai.datamodel.task import Task
 

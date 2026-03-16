@@ -631,3 +631,137 @@ def test_polymorphic_parent_type_validation_fast_fail(tmp_path):
     # Should fail on model_type check, not on full load
     with pytest.raises(ValueError, match="Parent model_type 'project' is not one of"):
         list(TaskRun.iterate_children_paths_of_parent_path(invalid_parent_path))
+
+
+def test_load_parent_raises_on_malformed_taskrun(tmp_path):
+    """load_parent raises ValueError with context when parent TaskRun is malformed."""
+    output = TaskOutput(output="test output")
+
+    # Create a task
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        path=tmp_path / "task.kiln",
+    )
+    task.save_to_file()
+
+    # Create parent TaskRun directory and valid run
+    parent_run_dir = tmp_path / "runs" / "parent_run"
+    parent_run_dir.mkdir(parents=True)
+    parent_run = TaskRun(
+        input="parent input",
+        output=output,
+        path=parent_run_dir / TaskRun.base_filename(),
+    )
+    parent_run.save_to_file()
+
+    # Create nested TaskRun directory and run (before corrupting parent)
+    nested_run_dir = parent_run_dir / "runs" / "nested_run"
+    nested_run_dir.mkdir(parents=True)
+    nested_run = TaskRun(
+        input="nested input",
+        output=output,
+        path=nested_run_dir / TaskRun.base_filename(),
+    )
+    nested_run.save_to_file()
+
+    # Verify it loads correctly with valid parent
+    loaded_nested = TaskRun.load_from_file(nested_run.path)
+    loaded_parent = loaded_nested.load_parent()
+    assert loaded_parent is not None
+    assert loaded_parent.input == "parent input"
+
+    # Now corrupt the parent TaskRun file
+    with open(parent_run.path, "w") as f:
+        json.dump({"model_type": "task_run", "input": 123}, f)  # Invalid input type
+
+    # Reload nested run and try to load parent - should raise with context
+    loaded_nested = TaskRun.load_from_file(nested_run.path)
+    with pytest.raises(ValueError) as exc_info:
+        loaded_nested.load_parent()
+
+    error_msg = str(exc_info.value)
+    assert "Failed to load parent TaskRun" in error_msg
+    assert str(parent_run.path) in error_msg
+    assert "malformed nested task run" in error_msg
+
+
+def test_load_parent_succeeds_for_valid_taskrun_parent(tmp_path):
+    """load_parent successfully loads a valid TaskRun parent."""
+    output = TaskOutput(output="test output")
+
+    # Create a task
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        path=tmp_path / "task.kiln",
+    )
+    task.save_to_file()
+
+    # Create parent TaskRun
+    parent_run = TaskRun(input="parent input", output=output, parent=task)
+    parent_run.save_to_file()
+
+    # Create nested TaskRun
+    runs_dir = parent_run.path.parent / "runs"
+    runs_dir.mkdir(exist_ok=True)
+    nested_run_dir = runs_dir / "nested_run"
+    nested_run_dir.mkdir(exist_ok=True)
+    nested_run = TaskRun(
+        input="nested input", output=output, path=nested_run_dir / "task_run.kiln"
+    )
+    nested_run.save_to_file()
+
+    # Reload and load parent - should succeed
+    loaded_nested = TaskRun.load_from_file(nested_run.path)
+    loaded_parent = loaded_nested.load_parent()
+
+    assert loaded_parent is not None
+    assert loaded_parent.id == parent_run.id
+    assert loaded_parent.input == "parent input"
+    assert isinstance(loaded_parent, TaskRun)
+
+
+def test_is_root_task_run_true_when_parent_is_task(tmp_path):
+    """is_root_task_run returns True when parent is a Task."""
+    output = TaskOutput(output="test output")
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        path=tmp_path / "task.kiln",
+    )
+    task.save_to_file()
+
+    run = TaskRun(input="test input", output=output, parent=task)
+    run.save_to_file()
+
+    loaded_run = TaskRun.load_from_file(run.path)
+    assert loaded_run.is_root_task_run() is True
+
+
+def test_is_root_task_run_false_when_parent_is_taskrun(tmp_path):
+    """is_root_task_run returns False when parent is another TaskRun."""
+    output = TaskOutput(output="test output")
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        path=tmp_path / "task.kiln",
+    )
+    task.save_to_file()
+
+    parent_run = TaskRun(input="parent input", output=output, parent=task)
+    parent_run.save_to_file()
+
+    runs_dir = parent_run.path.parent / "runs"
+    runs_dir.mkdir(exist_ok=True)
+    nested_run_dir = runs_dir / "nested_run"
+    nested_run_dir.mkdir(exist_ok=True)
+    nested_run = TaskRun(
+        input="nested input", output=output, path=nested_run_dir / "task_run.kiln"
+    )
+    nested_run.save_to_file()
+
+    loaded_nested = TaskRun.load_from_file(nested_run.path)
+    assert loaded_nested.is_root_task_run() is False
