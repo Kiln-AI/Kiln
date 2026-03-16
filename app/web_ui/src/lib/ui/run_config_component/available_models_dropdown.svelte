@@ -87,6 +87,7 @@
 
   let unsupported_models: Option[] = []
   let untested_models: Option[] = []
+  let deprecated_models: Option[] = []
   let previous_model: string = model
 
   function get_model_warning(selected: string): string | null {
@@ -123,6 +124,7 @@
     let options: OptionGroup[] = []
     unsupported_models = []
     untested_models = []
+    deprecated_models = []
     // Clear and rebuild the map
     model_value_to_provider_name = new Map()
 
@@ -137,7 +139,8 @@
       )
       if (
         !model_details ||
-        !model_dropdown_settings.filter_models_predicate(model_details)
+        !model_dropdown_settings.filter_models_predicate(model_details) ||
+        model_details.deprecated
       ) {
         continue
       }
@@ -183,6 +186,15 @@
           untested_models.push({
             value: id,
             label: long_label,
+          })
+          model_value_to_provider_name.set(id, provider.provider_name)
+          continue
+        }
+        if (model.deprecated) {
+          deprecated_models.push({
+            value: id,
+            label: long_label,
+            disabled: true,
           })
           model_value_to_provider_name.set(id, provider.provider_name)
           continue
@@ -265,6 +277,13 @@
       })
     }
 
+    if (deprecated_models.length > 0) {
+      options.push({
+        label: "Deprecated Models",
+        options: deprecated_models,
+      })
+    }
+
     if (settings.suggested_mode === "doc_extraction") {
       for (const option_group of options) {
         for (const option of option_group.options) {
@@ -297,7 +316,7 @@
   // Extra check to make sure the model is available to use
   export function get_selected_model(): string | null {
     for (const provider of model_options) {
-      if (provider.options.find((m) => m.value === model)) {
+      if (provider.options.find((m) => m.value === model && !m.disabled)) {
         return model
       }
     }
@@ -308,22 +327,24 @@
   $: selected_model_unsupported = unsupported_models.find(
     (m) => m.value === model,
   )
+  $: selected_model_details = available_model_details(
+    model_name,
+    provider_name,
+    $available_models,
+  )
+  $: selected_model_deprecated = selected_model_details?.deprecated ?? false
 
   $: selected_model_suggested_data_gen =
-    available_model_details(model_name, provider_name, $available_models)
-      ?.suggested_for_data_gen || false
+    selected_model_details?.suggested_for_data_gen || false
 
   $: selected_model_suggested_uncensored_data_gen =
-    available_model_details(model_name, provider_name, $available_models)
-      ?.suggested_for_uncensored_data_gen || false
+    selected_model_details?.suggested_for_uncensored_data_gen || false
 
   $: selected_model_suggested_evals =
-    available_model_details(model_name, provider_name, $available_models)
-      ?.suggested_for_evals || false
+    selected_model_details?.suggested_for_evals || false
 
   $: selected_model_suggested_doc_extraction =
-    available_model_details(model_name, provider_name, $available_models)
-      ?.suggested_for_doc_extraction || false
+    selected_model_details?.suggested_for_doc_extraction || false
 </script>
 
 <div>
@@ -343,6 +364,10 @@
   {#if selected_model_untested}
     <Warning
       warning_message="This model has not been tested with Kiln. It may not work as expected."
+    />
+  {:else if selected_model_deprecated}
+    <Warning
+      warning_message="This model is deprecated and can no longer be used. Please select a different model or provider."
     />
   {:else if selected_model_unsupported}
     {#if model_dropdown_settings.requires_uncensored_data_gen}
