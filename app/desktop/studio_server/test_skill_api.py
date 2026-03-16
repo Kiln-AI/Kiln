@@ -51,7 +51,7 @@ def mock_project_from_id(test_project):
 @pytest.fixture
 def sample_skill_data():
     return {
-        "name": "code_review",
+        "name": "code-review",
         "description": "Reviews code for quality and best practices.",
         "body": "## Code Review Skill\n\nCheck for:\n- Naming conventions\n- Error handling\n- Test coverage",
     }
@@ -60,7 +60,7 @@ def sample_skill_data():
 @pytest.fixture
 def saved_skill(test_project):
     skill = Skill(
-        name="test_skill",
+        name="test-skill",
         description="A test skill for unit tests.",
         parent=test_project,
     )
@@ -79,9 +79,13 @@ class TestCreateSkill:
         )
         assert response.status_code == 200
         result = response.json()
-        assert result["name"] == "code_review"
+        assert result["name"] == "code-review"
         assert result["description"] == "Reviews code for quality and best practices."
         assert "id" in result
+
+        skill = Skill.from_id_and_parent_path(result["id"], test_project.path)
+        assert skill is not None
+        assert skill.references_dir().is_dir()
 
     def test_create_skill_invalid_name(
         self, client, test_project, mock_project_from_id
@@ -102,7 +106,7 @@ class TestCreateSkill:
         response = client.post(
             f"/api/projects/{test_project.id}/skills",
             json={
-                "name": "no_body",
+                "name": "no-body",
                 "description": "Missing body field.",
             },
         )
@@ -120,7 +124,7 @@ class TestGetSkills:
         assert response.status_code == 200
         result = response.json()
         assert len(result) == 1
-        assert result[0]["name"] == "test_skill"
+        assert result[0]["name"] == "test-skill"
 
     def test_get_skill_by_id(
         self, client, test_project, mock_project_from_id, saved_skill
@@ -130,7 +134,7 @@ class TestGetSkills:
         )
         assert response.status_code == 200
         result = response.json()
-        assert result["name"] == "test_skill"
+        assert result["name"] == "test-skill"
         assert result["description"] == "A test skill for unit tests."
         assert "skill_md" not in result
 
@@ -150,6 +154,7 @@ class TestGetSkillContent:
         assert response.status_code == 200
         result = response.json()
         assert "## Test Skill" in result["skill_md"]
+        assert "## Test Skill" in result["body"]
 
     def test_get_skill_content_not_found(
         self, client, test_project, mock_project_from_id
@@ -163,7 +168,7 @@ class TestGetSkillContent:
         self, client, test_project, mock_project_from_id
     ):
         skill = Skill(
-            name="no_md_skill",
+            name="no-md-skill",
             description="Skill without SKILL.md.",
             parent=test_project,
         )
@@ -173,6 +178,7 @@ class TestGetSkillContent:
         )
         assert response.status_code == 200
         assert response.json()["skill_md"] == ""
+        assert response.json()["body"] == ""
 
 
 class TestUpdateSkill:
@@ -231,7 +237,7 @@ class TestAvailableToolsSkillIntegration:
         assert skill_set is not None
         assert skill_set["set_name"] == "Skills"
         assert len(skill_set["tools"]) == 1
-        assert skill_set["tools"][0]["name"] == "test_skill"
+        assert skill_set["tools"][0]["name"] == "test-skill"
         assert skill_set["tools"][0]["description"] == "A test skill for unit tests."
         assert skill_set["tools"][0]["id"] == f"kiln_tool::skill::{saved_skill.id}"
 
@@ -253,7 +259,7 @@ class TestAvailableToolsSkillIntegration:
     ):
         for i in range(3):
             s = Skill(
-                name=f"skill_{i}",
+                name=f"skill-{i}",
                 description=f"Skill number {i}.",
                 parent=test_project,
             )
@@ -271,7 +277,7 @@ class TestAvailableToolsSkillIntegration:
         assert skill_set is not None
         assert len(skill_set["tools"]) == 3
         tool_names = {t["name"] for t in skill_set["tools"]}
-        assert tool_names == {"skill_0", "skill_1", "skill_2"}
+        assert tool_names == {"skill-0", "skill-1", "skill-2"}
         for tool in skill_set["tools"]:
             assert tool["id"].startswith("kiln_tool::skill::")
 
@@ -279,14 +285,14 @@ class TestAvailableToolsSkillIntegration:
         self, client, test_project, mock_project_from_id
     ):
         active = Skill(
-            name="active_skill",
+            name="active-skill",
             description="Active.",
             parent=test_project,
         )
         active.save_to_file()
         active.save_skill_md("Active body")
         archived = Skill(
-            name="archived_skill",
+            name="archived-skill",
             description="Archived.",
             is_archived=True,
             parent=test_project,
@@ -304,4 +310,4 @@ class TestAvailableToolsSkillIntegration:
         )
         assert skill_set is not None
         assert len(skill_set["tools"]) == 1
-        assert skill_set["tools"][0]["name"] == "active_skill"
+        assert skill_set["tools"][0]["name"] == "active-skill"

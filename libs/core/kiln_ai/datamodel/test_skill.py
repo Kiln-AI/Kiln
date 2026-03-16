@@ -22,7 +22,7 @@ def mock_project(tmp_path):
 
 def make_skill(**overrides) -> Skill:
     defaults = {
-        "name": "code_review",
+        "name": "code-review",
         "description": "Review code for style and correctness.",
     }
     defaults.update(overrides)
@@ -43,7 +43,7 @@ def save_skill_with_body(
 
 @pytest.mark.parametrize(
     "name",
-    ["code_review", "a", "my_skill_123", "x1", "review2go"],
+    ["code-review", "a", "my-skill-123", "x1", "review2go"],
 )
 def test_valid_skill_names(name):
     skill = make_skill(name=name)
@@ -53,14 +53,14 @@ def test_valid_skill_names(name):
 @pytest.mark.parametrize(
     "name,expected_error",
     [
-        ("Code_Review", "snake_case"),
-        ("_start", "cannot start or end with an underscore"),
-        ("end_", "cannot start or end with an underscore"),
-        ("double__underscore", "cannot contain consecutive underscores"),
-        ("", "Tool name cannot be empty"),
-        ("a" * 65, "less than 64 characters"),
-        ("code-review", "snake_case"),
-        ("has space", "snake_case"),
+        ("Code-Review", "only contain lowercase"),
+        ("-start", "must not start or end with a hyphen"),
+        ("end-", "must not start or end with a hyphen"),
+        ("double--hyphen", "must not contain consecutive hyphens"),
+        ("", "Skill name cannot be empty"),
+        ("a" * 65, "64 characters or fewer"),
+        ("has space", "only contain lowercase"),
+        ("has_underscore", "only contain lowercase"),
     ],
 )
 def test_invalid_skill_names(name, expected_error):
@@ -177,7 +177,7 @@ def test_save_and_load(mock_project):
 
     loaded = Skill.from_id_and_parent_path(skill.id, mock_project.path)
     assert loaded is not None
-    assert loaded.name == "code_review"
+    assert loaded.name == "code-review"
     assert loaded.description == "Review code for style and correctness."
     assert loaded.body() == "## Instructions\n\nReview the code carefully."
 
@@ -191,7 +191,7 @@ def test_kiln_file_contents(mock_project):
     assert kiln_file.name == "skill.kiln"
 
     data = json.loads(kiln_file.read_text())
-    assert data["name"] == "code_review"
+    assert data["name"] == "code-review"
     assert data["description"] == "Review code for style and correctness."
 
 
@@ -200,10 +200,10 @@ def test_kiln_file_contents(mock_project):
 
 def test_project_skills_relationship(mock_project):
     s1 = save_skill_with_body(
-        mock_project, name="skill_one", description="First skill.", body="Body one"
+        mock_project, name="skill-one", description="First skill.", body="Body one"
     )
     s2 = save_skill_with_body(
-        mock_project, name="skill_two", description="Second skill.", body="Body two"
+        mock_project, name="skill-two", description="Second skill.", body="Body two"
     )
 
     skills = mock_project.skills()
@@ -216,7 +216,7 @@ def test_skill_directory_structure(mock_project):
 
     assert skill.path is not None
     skill_dir = skill.path.parent
-    assert skill_dir.name.endswith("code_review")
+    assert skill_dir.name.endswith("code-review")
     assert skill_dir.parent.name == "skills"
     assert skill_dir.parent.parent == mock_project.path.parent
 
@@ -376,10 +376,13 @@ class TestValidateFilename:
 
 
 class TestReferences:
+    def test_save_skill_md_creates_references_dir(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        assert skill.references_dir().is_dir()
+
     def test_read_reference(self, mock_project):
         skill = save_skill_with_body(mock_project)
         ref_dir = skill.references_dir()
-        ref_dir.mkdir(parents=True)
         (ref_dir / "guide.md").write_text("# Guide\nContent here.", encoding="utf-8")
         assert skill.read_reference("guide.md") == "# Guide\nContent here."
 

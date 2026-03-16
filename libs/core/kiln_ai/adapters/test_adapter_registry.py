@@ -1003,10 +1003,10 @@ class TestLoadSkillsForTask:
             name="test_task", instruction="do something", parent=project
         )
         task.save_to_file()
-        skill_a = Skill(name="skill_a", description="Skill A", parent=project)
+        skill_a = Skill(name="skill-a", description="Skill A", parent=project)
         skill_a.save_to_file()
         skill_a.save_skill_md("body a")
-        skill_b = Skill(name="skill_b", description="Skill B", parent=project)
+        skill_b = Skill(name="skill-b", description="Skill B", parent=project)
         skill_b.save_to_file()
         skill_b.save_skill_md("body b")
 
@@ -1022,5 +1022,5 @@ class TestLoadSkillsForTask:
         result = load_skills_for_task(task, rc)
 
         assert set(result.keys()) == {skill_a.id, skill_b.id}
-        assert result[skill_a.id].name == "skill_a"
-        assert result[skill_b.id].name == "skill_b"
+        assert result[skill_a.id].name == "skill-a"
+        assert result[skill_b.id].name == "skill-b"

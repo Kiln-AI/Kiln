@@ -11,13 +11,14 @@
   import { formatDate } from "$lib/utils/formatters"
   import type { Skill } from "$lib/types"
   import type { UiProperty } from "$lib/ui/property_list"
-  import Output from "$lib/ui/output.svelte"
+  import SkillPropertiesDisplay from "../../skill_properties_display.svelte"
 
   $: project_id = $page.params.project_id!
   $: skill_id = $page.params.skill_id!
 
   let skill: Skill | null = null
-  let skill_md: string | null = null
+  let skill_description: string | null = null
+  let skill_body: string | null = null
   let loading = true
   let loading_error: KilnError | null = null
   let archive_error: KilnError | null = null
@@ -41,7 +42,8 @@
         throw skill_res.error
       }
       skill = skill_res.data
-      skill_md = content_res.data?.skill_md ?? null
+      skill_description = skill_res.data?.description ?? null
+      skill_body = content_res.data?.body ?? null
     } catch (err) {
       loading_error = createKilnError(err)
     } finally {
@@ -109,6 +111,10 @@
     action_buttons={skill && !loading && !loading_error
       ? [
           {
+            label: "Clone",
+            handler: () => goto(`/skills/${project_id}/clone/${skill_id}`),
+          },
+          {
             label: is_archived ? "Unarchive" : "Archive",
             handler: () => update_archive(!is_archived),
           },
@@ -154,8 +160,10 @@
     {:else if skill}
       <div class="grid grid-cols-1 lg:grid-cols-[1fr,auto] gap-12">
         <div class="grow">
-          <h3 class="text-xl font-bold mb-4">SKILL.md</h3>
-          <Output raw_output={skill_md ?? ""} />
+          <SkillPropertiesDisplay
+            description={skill_description}
+            body={skill_body}
+          />
         </div>
         <div class="flex flex-col gap-4 max-w-[400px]">
           <PropertyList properties={get_properties(skill)} title="Properties" />

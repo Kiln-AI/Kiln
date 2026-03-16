@@ -7,7 +7,7 @@ import yaml
 from pydantic import Field
 
 from kiln_ai.datamodel.basemodel import KilnParentedModel
-from kiln_ai.utils.validation import ToolNameString
+from kiln_ai.utils.validation import SkillNameString
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.project import Project
@@ -27,8 +27,8 @@ class Skill(KilnParentedModel):
     rather than in skill.kiln, following the agentskills.io spec.
     """
 
-    name: ToolNameString = Field(
-        description="Skill name. Snake_case: lowercase alphanumeric with underscores, 1-64 chars.",
+    name: SkillNameString = Field(
+        description="Skill name. Kebab-case: lowercase alphanumeric with hyphens, 1-64 chars.",
     )
     description: str = Field(
         description="Description of what the skill does and when to use it. 1-1024 chars.",
@@ -100,6 +100,7 @@ class Skill(KilnParentedModel):
         ).rstrip("\n")
         content = f"---\n{frontmatter}\n---\n\n{body}"
         self.skill_md_path().write_text(content, encoding="utf-8")
+        self.references_dir().mkdir(exist_ok=True)
 
 
 def _validate_filename(filename: str) -> None:

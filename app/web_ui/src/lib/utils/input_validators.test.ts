@@ -3,6 +3,8 @@ import {
   validate_number,
   number_validator,
   tool_name_validator,
+  skill_name_validator,
+  normalize_skill_name,
   filename_string_short_validator,
 } from "./input_validators"
 
@@ -593,6 +595,149 @@ describe("input_validators", () => {
       it("should return error for name longer than 64 characters", () => {
         const result = tool_name_validator("a".repeat(65))
         expect(result).toBe("Must be less than 65 characters long")
+      })
+    })
+
+    describe("skill_name_validator", () => {
+      describe("empty value validation", () => {
+        it("should return error for null", () => {
+          expect(skill_name_validator(null)).toBe("Cannot be empty")
+        })
+
+        it("should return error for empty string", () => {
+          expect(skill_name_validator("")).toBe("Cannot be empty")
+        })
+
+        it("should return error for whitespace string", () => {
+          expect(skill_name_validator("   ")).toBe("Cannot be empty")
+        })
+      })
+
+      describe("type validation", () => {
+        it("should return error for number input", () => {
+          expect(skill_name_validator(123)).toBe("Must be a string")
+        })
+
+        it("should return error for boolean input", () => {
+          expect(skill_name_validator(true)).toBe("Must be a string")
+        })
+      })
+
+      describe("valid kebab-case validation", () => {
+        it("should accept simple lowercase name", () => {
+          expect(skill_name_validator("tool")).toBe(null)
+        })
+
+        it("should accept name with numbers", () => {
+          expect(skill_name_validator("tool123")).toBe(null)
+        })
+
+        it("should accept name with hyphens", () => {
+          expect(skill_name_validator("my-tool")).toBe(null)
+        })
+
+        it("should accept complex valid kebab-case", () => {
+          expect(skill_name_validator("my-tool-123-name")).toBe(null)
+        })
+      })
+
+      describe("invalid character validation", () => {
+        it("should return error for uppercase letters", () => {
+          expect(skill_name_validator("MyTool")).toBe(
+            "May only contain lowercase letters (a-z), numbers (0-9), and hyphens (-)",
+          )
+        })
+
+        it("should return error for underscores", () => {
+          expect(skill_name_validator("my_tool")).toBe(
+            "May only contain lowercase letters (a-z), numbers (0-9), and hyphens (-)",
+          )
+        })
+
+        it("should return error for spaces", () => {
+          expect(skill_name_validator("my tool")).toBe(
+            "May only contain lowercase letters (a-z), numbers (0-9), and hyphens (-)",
+          )
+        })
+      })
+
+      describe("hyphen position validation", () => {
+        it("should return error for name starting with hyphen", () => {
+          expect(skill_name_validator("-tool")).toBe(
+            "Must not start or end with a hyphen",
+          )
+        })
+
+        it("should return error for name ending with hyphen", () => {
+          expect(skill_name_validator("tool-")).toBe(
+            "Must not start or end with a hyphen",
+          )
+        })
+      })
+
+      describe("consecutive hyphen validation", () => {
+        it("should return error for double hyphens", () => {
+          expect(skill_name_validator("my--tool")).toBe(
+            "Must not contain consecutive hyphens",
+          )
+        })
+      })
+
+      describe("starting character validation", () => {
+        it("should return error for name starting with number", () => {
+          expect(skill_name_validator("1tool")).toBe(
+            "Must start with a lowercase letter",
+          )
+        })
+      })
+
+      describe("length validation", () => {
+        it("should accept exactly 64 characters", () => {
+          expect(skill_name_validator("a".repeat(64))).toBe(null)
+        })
+
+        it("should return error for name longer than 64 characters", () => {
+          expect(skill_name_validator("a".repeat(65))).toBe(
+            "Must be 64 characters or fewer",
+          )
+        })
+      })
+    })
+
+    describe("normalize_skill_name", () => {
+      it("should convert uppercase to lowercase", () => {
+        expect(normalize_skill_name("MyTool")).toBe("mytool")
+      })
+
+      it("should convert spaces to hyphens", () => {
+        expect(normalize_skill_name("my tool")).toBe("my-tool")
+      })
+
+      it("should convert underscores to hyphens", () => {
+        expect(normalize_skill_name("my_tool")).toBe("my-tool")
+      })
+
+      it("should strip invalid characters", () => {
+        expect(normalize_skill_name("my@tool!")).toBe("mytool")
+      })
+
+      it("should handle mixed input", () => {
+        expect(normalize_skill_name("My Cool_Tool 123")).toBe(
+          "my-cool-tool-123",
+        )
+      })
+
+      it("should preserve valid kebab-case", () => {
+        expect(normalize_skill_name("already-valid")).toBe("already-valid")
+      })
+
+      it("should handle empty string", () => {
+        expect(normalize_skill_name("")).toBe("")
+      })
+
+      it("should collapse consecutive spaces/underscores into single hyphen", () => {
+        expect(normalize_skill_name("my__tool")).toBe("my-tool")
+        expect(normalize_skill_name("my  tool")).toBe("my-tool")
       })
     })
 

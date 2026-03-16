@@ -246,6 +246,7 @@
         on:submit={add_kiln_task_tool}
         bind:error
         bind:submitting
+        warn_before_unload={!!selected_task_id}
       >
         <FormElement
           label="Kiln Task"

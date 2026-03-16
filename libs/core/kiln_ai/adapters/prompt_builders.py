@@ -29,28 +29,13 @@ def build_skills_prompt_section(skills: list[Skill] | None) -> str | None:
     if not skills:
         return None
 
-    skill_lines = "\n".join(f"- {s.name}\n  {s.description}" for s in skills)
+    skill_lines = "\n".join(f"- `{s.name}`\n  {s.description}" for s in skills)
 
     return (
-        "## Skills\n\n"
-        "Skills extend the assistant's capabilities with domain knowledge and "
-        "structured workflows.\n\n"
-        "Each Skill contains instructions describing how to solve a specific "
-        "type of task.\n\n"
-        "When handling a request:\n\n"
-        "1. Determine whether a Skill is relevant.\n"
-        '2. If a relevant Skill exists, load it by calling skill(name="skill_name").\n'
-        "3. Follow the instructions and workflow defined in the Skill.\n"
-        "4. If the Skill's instructions mention reference files that are relevant to "
-        "the current task, load them on demand by calling "
-        'skill(name="skill_name", resource="references/filename.md"). '
-        "Only load references you actually need.\n\n"
-        "If a Skill provides a workflow, follow that workflow unless there is a "
-        "clear reason not to.\n\n"
-        "Load Skills only when necessary to keep context efficient.\n\n"
-        "If no Skill applies, proceed using general reasoning.\n\n"
+        "# Skills\n\n"
+        "When a Skill is relevant, load it with `skill(name)` and follow its instructions.\n"
+        "Load additional Skill resources only if needed with `skill(name, resource)`.\n"
         "## Available Skills\n\n"
-        "The following Skills are available and may be loaded when relevant:\n\n"
         f"{skill_lines}"
     )
 

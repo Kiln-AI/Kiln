@@ -1883,7 +1883,7 @@ def test_system_message_from_request_with_skills(tmp_path):
     )
     task.save_to_file()
 
-    skills = [Skill(name="my_skill", description="Helps with things")]
+    skills = [Skill(name="my-skill", description="Helps with things")]
 
     result = system_message_from_request(
         task=task,
@@ -1893,8 +1893,8 @@ def test_system_message_from_request_with_skills(tmp_path):
     )
 
     assert "Do the thing" in result
-    assert "## Skills" in result
-    assert "my_skill" in result
+    assert "# Skills" in result
+    assert "my-skill" in result
     assert "Helps with things" in result
 
 
@@ -1925,7 +1925,7 @@ def test_system_message_custom_ignores_skills(tmp_path):
     task = Task(name="T", instruction="X", parent=project)
     task.save_to_file()
 
-    skills = [Skill(name="my_skill", description="Desc")]
+    skills = [Skill(name="my-skill", description="Desc")]
 
     result = system_message_from_request(
         task=task,
@@ -1935,4 +1935,4 @@ def test_system_message_custom_ignores_skills(tmp_path):
     )
 
     assert result == "My custom message"
-    assert "## Skills" not in result
+    assert "# Skills" not in result

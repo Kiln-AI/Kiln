@@ -6441,6 +6441,8 @@ export interface components {
         SkillContentResponse: {
             /** Skill Md */
             skill_md: string;
+            /** Body */
+            body: string;
         };
         /** SkillCreationRequest */
         SkillCreationRequest: {

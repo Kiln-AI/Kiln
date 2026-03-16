@@ -3,13 +3,13 @@ from typing import List
 
 from fastapi import FastAPI, HTTPException
 from kiln_ai.datamodel.skill import Skill
-from kiln_ai.utils.validation import ToolNameString
+from kiln_ai.utils.validation import SkillNameString
 from kiln_server.project_api import project_from_id
 from pydantic import BaseModel, Field
 
 
 class SkillCreationRequest(BaseModel):
-    name: ToolNameString
+    name: SkillNameString
     description: str = Field(min_length=1, max_length=1024)
     body: str = Field(min_length=1)
 
@@ -29,6 +29,7 @@ class SkillResponse(BaseModel):
 
 class SkillContentResponse(BaseModel):
     skill_md: str
+    body: str
 
 
 def skill_to_response(skill: Skill) -> SkillResponse:
@@ -64,7 +65,11 @@ def connect_skill_api(app: FastAPI):
             skill_md = skill.skill_md_raw()
         except FileNotFoundError:
             skill_md = ""
-        return SkillContentResponse(skill_md=skill_md)
+        try:
+            body = skill.body()
+        except FileNotFoundError:
+            body = ""
+        return SkillContentResponse(skill_md=skill_md, body=body)
 
     @app.post("/api/projects/{project_id}/skills")
     async def create_skill(
