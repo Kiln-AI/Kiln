@@ -327,7 +327,6 @@ class BaseAdapter(metaclass=ABCMeta):
         adapter_stream: AdapterStream,
         input: InputType,
         input_source: DataSource | None,
-        prior_trace: list[ChatCompletionMessageParam] | None,
     ) -> TaskRun:
         """Streaming invocations are only concerned with passing through events as they come in.
         At the end of the stream, we still need to validate the output, create a run and everything
@@ -654,7 +653,7 @@ class OpenAIStreamResult:
                     yield event
 
             self._task_run = self._adapter._finalize_stream(
-                adapter_stream, self._input, self._input_source, self._prior_trace
+                adapter_stream, self._input, self._input_source
             )
         finally:
             if is_root_agent:
@@ -731,7 +730,7 @@ class AiSdkStreamResult:
             yield AiSdkStreamEvent(AiSdkEventType.FINISH_STEP)
 
             self._task_run = self._adapter._finalize_stream(
-                adapter_stream, self._input, self._input_source, self._prior_trace
+                adapter_stream, self._input, self._input_source
             )
         finally:
             if is_root_agent:
