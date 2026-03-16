@@ -1151,3 +1151,56 @@ def collect_all_task_runs(root):
 
     collect(root)
     return runs
+
+
+def test_task_run_wrong_parent_type_raises(tmp_path):
+    project = Project(name="proj", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    with pytest.raises(ValidationError, match="Parent must be one of"):
+        TaskRun(
+            input="bad parent",
+            output=TaskOutput(
+                output="x",
+                source=DataSource(
+                    type=DataSourceType.human, properties={"created_by": "test"}
+                ),
+            ),
+            parent=project,
+        )
+
+
+def test_task_run_runs_on_disk(tmp_path):
+    project = Project(name="proj", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(name="t", instruction="i", parent=project)
+    task.save_to_file()
+
+    parent_run = TaskRun(
+        input="parent",
+        output=TaskOutput(
+            output="parent out",
+            source=DataSource(
+                type=DataSourceType.human, properties={"created_by": "test"}
+            ),
+        ),
+        parent=task,
+    )
+    parent_run.save_to_file()
+
+    child_run = TaskRun(
+        input="child",
+        output=TaskOutput(
+            output="child out",
+            source=DataSource(
+                type=DataSourceType.human, properties={"created_by": "test"}
+            ),
+        ),
+        parent=parent_run,
+    )
+    child_run.save_to_file()
+
+    loaded = TaskRun.load_from_file(parent_run.path)
+    children = loaded.runs()
+    assert len(children) == 1
+    assert children[0].id == child_run.id

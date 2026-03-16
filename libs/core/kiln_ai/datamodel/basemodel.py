@@ -657,25 +657,15 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
                     f"Parent model_type '{actual_parent_type_name}' is not one of "
                     f"{parent_type_names}"
                 )
-            else:
-                # find the parent type that matches the actual parent type name we found on disk
-                # and validate it
-                parent_type = next(
-                    (
-                        t
-                        for t in parent_types_override
-                        if t.type_name() == actual_parent_type_name
-                    ),
-                    None,
-                )
-                if parent_type is None:
-                    raise ValueError(
-                        f"Could not find parent type '{actual_parent_type_name}' in "
-                        f"{parent_types_override}"
-                    )
-                parent = parent_type.load_from_file(parent_path)
-                if parent is None:
-                    raise ValueError("Parent must be set to load children")
+
+            parent_type = next(
+                t
+                for t in parent_types_override
+                if t.type_name() == actual_parent_type_name
+            )
+            parent = parent_type.load_from_file(parent_path)
+            if parent is None:
+                raise ValueError("Parent must be set to load children")
 
         # Ignore type error: this is abstract base class, but children must implement relationship_name
         relationship_folder = parent_folder / Path(cls.relationship_name())  # type: ignore
