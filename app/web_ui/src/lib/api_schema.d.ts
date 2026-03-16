@@ -5382,6 +5382,11 @@ export interface components {
             task_filter?: string[] | null;
             /** Model Specific Run Config */
             model_specific_run_config?: string | null;
+            /**
+             * Deprecated
+             * @default false
+             */
+            deprecated: boolean;
         };
         /**
          * ModelProviderName

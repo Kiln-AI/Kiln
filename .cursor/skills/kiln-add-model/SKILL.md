@@ -73,8 +73,13 @@ If the user asks you to find new models, **do NOT just web search "new AI models
    - Structured output mode (JSON schema vs function calling)?
    - Reasoning model (needs `reasoning_capable`, parsers, OpenRouter options)?
    - Vision/multimodal support? Which MIME types?
-   - Provider-specific flags (`temp_top_p_exclusive`, `thinking_level`, etc.)?
+   - Provider-specific flags (`temp_top_p_exclusive`, etc.)?
    - Rate limit concerns (`max_parallel_requests`)?
+
+6. **Determine thinking levels** — does the model support configurable reasoning effort? See [Thinking Levels Reference](#thinking-levels-reference) for the full lookup chain. Key quick checks:
+   - Check the **vendor model page** (e.g. OpenAI model pages say "Reasoning.effort supports: X, Y, Z")
+   - Check **OpenRouter** `supported_parameters` — if `reasoning` is absent, skip thinking levels
+   - R1-style thinking models (DeepSeek, Qwen thinking variants) do NOT get thinking level dicts
 
 ---
 
@@ -162,6 +167,15 @@ KilnMimeType.MP4, KilnMimeType.MOV
 ### 3e. `ModelFamily` enum (only if needed)
 
 Only add a new family if the vendor is completely new.
+
+### 3f. Thinking Levels (`available_thinking_levels` / `default_thinking_level`)
+
+If the model supports configurable reasoning effort (not just on/off), add `available_thinking_levels` and `default_thinking_level` to each provider entry. See [Thinking Levels Reference](#thinking-levels-reference) for the full lookup chain and existing constants.
+
+**Quick rules:**
+- Reuse an existing `_THINKING_LEVELS` constant if the levels match exactly
+- Create a new constant only if levels differ; name it `{MODEL}_{PROVIDER_CONTEXT}_THINKING_LEVELS`
+- `default_thinking_level` must be one of the values in `available_thinking_levels`
 
 ---
 
@@ -270,6 +284,7 @@ Rules:
 - [ ] `ModelFamily` enum updated (only if new family)
 - [ ] All provider slugs verified from authoritative sources
 - [ ] Flags inherited from predecessor and adjusted for quirks
+- [ ] Thinking levels configured if model supports reasoning effort (see [Thinking Levels Reference](#thinking-levels-reference))
 - [ ] Preserve existing comments from predecessor (e.g. reasoning notes, MIME type groupings)
 - [ ] Zero-sum applied if model is suggested for evals/data gen
 - [ ] RAG config templates updated if the new model replaces one used in `app/web_ui/src/routes/(app)/docs/rag_configs/[project_id]/add_search_tool/rag_config_templates.ts`
@@ -288,12 +303,13 @@ Rules:
 
 ### OpenAI
 - Most GPT models use `json_schema` for structured output
-- Reasoning models (o-series) need `thinking_level` parameter
-- Chat variants sometimes lack JSON schema (use `json_instruction_and_object`)
+- GPT-5.x models support `available_thinking_levels` — see [Thinking Levels Reference](#thinking-levels-reference)
+- Chat/instant variants (e.g. GPT-5.3 Instant) may not support reasoning effort
+- o-series models have fixed thinking tiers (separate model entries per tier, not configurable levels)
 
 ### Google/Gemini
 - `gemini_reasoning_enabled=True` for reasoning-capable models
-- Gemini API often needs `thinking_level="medium"` + `max_parallel_requests=2`
+- Gemini 3.x models support `available_thinking_levels` — see [Thinking Levels Reference](#thinking-levels-reference)
 - Rich multimodal support (audio, video, images, documents)
 
 ### DeepSeek
@@ -312,6 +328,65 @@ Rules:
 - Thinking variants: `reasoning_capable=True`, `parser=ModelParserID.r1_thinking`
 - No-thinking variants: `formatter=ModelFormatterID.qwen3_style_no_think`
 - SiliconFlow may need `siliconflow_enable_thinking=True/False`
+
+---
+
+## Thinking Levels Reference
+
+No API provides the available thinking levels programmatically — they must be manually sourced. Use this lookup chain in priority order:
+
+### Lookup Chain
+
+1. **Vendor model page** (most authoritative)
+   - **OpenAI:** Each model page includes "Reasoning.effort supports: X, Y, Z" in the description text. URL: `https://developers.openai.com/api/docs/models/{model-id}`
+   - **Anthropic:** The [effort docs](https://platform.claude.com/docs/en/build-with-claude/effort) list levels per model. Opus 4.6 supports `low, medium, high, max`; Sonnet 4.6 supports `low, medium, high`.
+   - **Google Gemini:** The models API returns `thinking: true/false` (boolean only). Levels come from docs.
+
+2. **Vercel AI Gateway docs** — clean structured tables per provider:
+   - `https://vercel.com/docs/ai-gateway/capabilities/reasoning/openai`
+   - `https://vercel.com/docs/ai-gateway/capabilities/reasoning/anthropic`
+   - `https://vercel.com/docs/ai-gateway/capabilities/reasoning/google`
+
+3. **Inherit from predecessor** — if the same family/tier model has a `_THINKING_LEVELS` dict, the new model very likely uses the same or a superset.
+
+4. **OpenRouter `supported_parameters`** — check if `reasoning` is present:
+   ```bash
+   curl -s https://openrouter.ai/api/v1/models | jq '.data[] | select(.id == "SLUG") | .supported_parameters'
+   ```
+   If `reasoning` is absent, the model does not support effort levels — skip thinking levels entirely.
+
+5. **Smoke test** — as a last resort, send a request with an invalid effort level and check the error message, which often enumerates the valid values.
+
+### Important Distinctions
+
+- **Effort-level models** (GPT-5.x, Claude 4.x, Gemini 3.x) → add `available_thinking_levels` dicts
+- **R1-style thinking models** (DeepSeek R1, Qwen thinking variants) → on/off thinking, NOT effort levels. Use `reasoning_capable=True` + `parser=ModelParserID.r1_thinking`. Do NOT add thinking level dicts.
+- **Chat/instant models** (e.g. GPT-5.3 Instant) → may not support reasoning effort at all. Verify on the vendor model page.
+
+### Existing Constants
+
+Reuse when levels match exactly. Create a new constant only if levels differ. This is not an exhaustive list.
+
+| Constant | Levels | Default | Used by |
+|----------|--------|---------|---------|
+| `GPT_5_4_OPENAI_THINKING_LEVELS` | none, low, medium, high, xhigh | none | GPT-5.4 |
+| `GPT_5_4_PRO_OPENAI_THINKING_LEVELS` | medium, high, xhigh | medium | GPT-5.4 Pro |
+| `GPT_5_2_OPENAI_THINKING_LEVELS` | none, low, medium, high, xhigh | none | GPT-5.2, GPT-5.2 Chat |
+| `GPT_5_2_PRO_OPENAI_THINKING_LEVELS` | medium, high, xhigh | medium | GPT-5.2 Pro |
+| `GPT_5_1_OPENAI_THINKING_LEVELS` | none, low, medium, high | none | GPT-5.1 |
+| `GPT_5_OPENAI_THINKING_LEVELS` | minimal, low, medium, high | medium | GPT-5, GPT-5 Mini, GPT-5 Nano, GPT-5 Chat |
+| `GEMINI_3_PRO_THINKING_LEVELS` | low, medium, high | high | Gemini 3 Pro, Gemini 3.1 Pro |
+| `GEMINI_3_FLASH_THINKING_LEVELS` | minimal, low, medium, high | high | Gemini 3 Flash, Gemini 3.1 Flash Lite |
+| `CLAUDE_ANTHROPIC_EFFORT_THINKING_LEVELS` | low, medium, high | high | Claude (Anthropic direct) |
+| `CLAUDE_OPENROUTER_THINKING_LEVELS` | none, minimal, low, medium, high, xhigh | none | Claude (OpenRouter) |
+
+### Sources That Do NOT Work
+
+These were investigated and confirmed to lack thinking level data:
+- **OpenRouter API** — only boolean `reasoning` in `supported_parameters`
+- **LiteLLM catalog** — only `supports_reasoning: true/false`
+- **Google Gemini models API** — only `thinking: true/false`
+- **OpenAI `/v1/models` endpoint** — minimal object with no capability fields
 
 ---
 

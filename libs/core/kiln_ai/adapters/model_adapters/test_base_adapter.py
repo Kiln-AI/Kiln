@@ -21,7 +21,7 @@ from kiln_ai.adapters.model_adapters.stream_events import (
     ToolCallEventType,
 )
 from kiln_ai.adapters.prompt_builders import BasePromptBuilder
-from kiln_ai.datamodel import Task, TaskRun
+from kiln_ai.datamodel import Task, TaskRun, Usage
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy, ModelProviderName
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
@@ -1237,3 +1237,171 @@ class TestStreamMethods:
                 pass
 
             assert stream.task_run is expected_run
+
+
+class TestFinalizeStream:
+    """Tests for _finalize_stream post-processing after streaming."""
+
+    @pytest.fixture
+    def finalize_adapter(self, base_task):
+        return MockAdapter(
+            task=base_task,
+            run_config=KilnAgentRunConfigProperties(
+                model_name="test_model",
+                model_provider_name="openai",
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="json_schema",
+            ),
+        )
+
+    def _make_adapter_stream(self, output, usage=None, trace=None):
+        from kiln_ai.adapters.model_adapters.adapter_stream import AdapterStreamResult
+
+        stream = MagicMock()
+        stream.result = AdapterStreamResult(
+            run_output=RunOutput(
+                output=output,
+                intermediate_outputs={},
+                trace=trace,
+            ),
+            usage=usage or Usage(),
+        )
+        return stream
+
+    def test_finalize_stream_plain_text(self, finalize_adapter):
+        provider = MagicMock()
+        provider.parser = None
+        provider.reasoning_capable = False
+        finalize_adapter.model_provider = MagicMock(return_value=provider)
+
+        adapter_stream = self._make_adapter_stream("Hello world")
+        run = finalize_adapter._finalize_stream(adapter_stream, "test input", None)
+
+        assert isinstance(run, TaskRun)
+        assert run.output.output == "Hello world"
+        assert run.id is None
+
+    def _make_structured_adapter(self, base_task, schema):
+        base_task.output_json_schema = schema
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=KilnAgentRunConfigProperties(
+                model_name="test_model",
+                model_provider_name="openai",
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="json_schema",
+            ),
+        )
+        return adapter
+
+    def test_finalize_stream_structured_output(self, base_task):
+        schema = '{"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}'
+        adapter = self._make_structured_adapter(base_task, schema)
+
+        provider = MagicMock()
+        provider.parser = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        adapter_stream = self._make_adapter_stream({"name": "test"})
+        run = adapter._finalize_stream(adapter_stream, "test input", None)
+
+        assert isinstance(run, TaskRun)
+        assert '"name"' in run.output.output
+
+    def test_finalize_stream_structured_output_from_json_string(self, base_task):
+        schema = '{"type": "object", "properties": {"val": {"type": "integer"}}, "required": ["val"]}'
+        adapter = self._make_structured_adapter(base_task, schema)
+
+        provider = MagicMock()
+        provider.parser = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        adapter_stream = self._make_adapter_stream('{"val": 42}')
+        run = adapter._finalize_stream(adapter_stream, "test input", None)
+        assert isinstance(run, TaskRun)
+
+    def test_finalize_stream_structured_output_not_dict_raises(self, base_task):
+        schema = '{"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"]}'
+        adapter = self._make_structured_adapter(base_task, schema)
+
+        provider = MagicMock()
+        provider.parser = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        adapter_stream = self._make_adapter_stream(42)
+        with pytest.raises(RuntimeError, match="structured response is not a dict"):
+            adapter._finalize_stream(adapter_stream, "test input", None)
+
+    def test_finalize_stream_non_structured_non_string_raises(self, finalize_adapter):
+        provider = MagicMock()
+        provider.parser = None
+        provider.reasoning_capable = False
+        finalize_adapter.model_provider = MagicMock(return_value=provider)
+
+        adapter_stream = self._make_adapter_stream({"unexpected": "dict"})
+        with pytest.raises(RuntimeError, match="not a string for non-structured"):
+            finalize_adapter._finalize_stream(adapter_stream, "test input", None)
+
+    def test_finalize_stream_reasoning_required_but_missing(self, finalize_adapter):
+        provider = MagicMock()
+        provider.parser = None
+        provider.reasoning_capable = True
+        provider.reasoning_optional_for_structured_output = False
+        finalize_adapter.model_provider = MagicMock(return_value=provider)
+
+        adapter_stream = self._make_adapter_stream("output")
+        with pytest.raises(RuntimeError, match="Reasoning is required"):
+            finalize_adapter._finalize_stream(adapter_stream, "test input", None)
+
+    def test_finalize_stream_reasoning_not_required_with_tool_calls(
+        self, finalize_adapter
+    ):
+        provider = MagicMock()
+        provider.parser = None
+        provider.reasoning_capable = True
+        provider.reasoning_optional_for_structured_output = False
+        finalize_adapter.model_provider = MagicMock(return_value=provider)
+
+        trace = [
+            {"role": "user", "content": "hi"},
+            {"role": "tool", "content": "result", "tool_call_id": "call_1"},
+        ]
+        adapter_stream = self._make_adapter_stream("output", trace=trace)
+        run = finalize_adapter._finalize_stream(adapter_stream, "test input", None)
+        assert isinstance(run, TaskRun)
+
+    def test_finalize_stream_saves_when_allowed(self, tmp_path):
+        project_path = tmp_path / "proj" / "project.kiln"
+        project_path.parent.mkdir()
+        project = Project(name="test", path=project_path)
+        project.save_to_file()
+        task = Task(name="t", instruction="i", parent=project)
+        task.save_to_file()
+
+        adapter = MockAdapter(
+            task=task,
+            run_config=KilnAgentRunConfigProperties(
+                model_name="test_model",
+                model_provider_name="openai",
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="json_schema",
+            ),
+            config=AdapterConfig(allow_saving=True),
+        )
+
+        provider = MagicMock()
+        provider.parser = None
+        provider.reasoning_capable = False
+        adapter.model_provider = MagicMock(return_value=provider)
+
+        adapter_stream = self._make_adapter_stream("result")
+        with patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.Config"
+        ) as mock_config:
+            mock_config.shared.return_value.autosave_runs = True
+            mock_config.shared.return_value.user_id = "test_user"
+            run = adapter._finalize_stream(adapter_stream, "test input", None)
+        assert run.id is not None

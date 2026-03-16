@@ -247,7 +247,8 @@ class AiSdkStreamConverter:
 
         return events
 
-    def finalize(self) -> list[AiSdkStreamEvent]:
+    def close_open_blocks(self) -> list[AiSdkStreamEvent]:
+        """Close any open text/reasoning blocks. Call before FINISH_STEP."""
         events: list[AiSdkStreamEvent] = []
 
         if self._reasoning_started:
@@ -267,6 +268,12 @@ class AiSdkStreamConverter:
                 )
             )
             self._text_started = False
+
+        return events
+
+    def finalize(self) -> list[AiSdkStreamEvent]:
+        """Emit the terminal FINISH event with usage/finish metadata. Call after FINISH_STEP."""
+        events: list[AiSdkStreamEvent] = []
 
         finish_payload: dict[str, Any] = {}
         if self._finish_reason is not None:
