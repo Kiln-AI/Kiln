@@ -329,7 +329,7 @@ async def test_generate_and_upload_jsonl_success(
         assert mock_client.post.call_count == 2
         assert mock_client.get.call_count == 1
         create_dataset_payload = mock_client.post.call_args_list[0].kwargs["json"]
-        assert create_dataset_payload["dataset"]["exampleCount"] == 3
+        assert create_dataset_payload["dataset"]["exampleCount"] == len(mock_dataset.split_contents.get("train", []))
         assert create_dataset_payload["dataset"]["userUploaded"] == {}
 
 
