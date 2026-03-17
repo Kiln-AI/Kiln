@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import List
 
@@ -6,6 +7,8 @@ from kiln_ai.datamodel.skill import Skill
 from kiln_ai.utils.validation import SkillNameString
 from kiln_server.project_api import project_from_id
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 class SkillCreationRequest(BaseModel):
@@ -63,11 +66,12 @@ def connect_skill_api(app: FastAPI):
             raise HTTPException(status_code=404, detail="Skill not found")
         try:
             skill_md = skill.skill_md_raw()
-        except FileNotFoundError:
+        except (FileNotFoundError, ValueError):
             skill_md = ""
         try:
             body = skill.body()
-        except FileNotFoundError:
+        except (FileNotFoundError, ValueError) as e:
+            logger.warning("Failed to parse body for skill %s: %s", skill_id, e)
             body = ""
         return SkillContentResponse(skill_md=skill_md, body=body)
 

@@ -46,8 +46,8 @@
           params,
         }),
       ])
-      if (skill_res.error) {
-        throw skill_res.error
+      if (skill_res.error || content_res.error) {
+        throw skill_res.error ?? content_res.error
       }
       // Pre-fill form with existing skill data
       name = `copy-of-${skill_res.data.name}`

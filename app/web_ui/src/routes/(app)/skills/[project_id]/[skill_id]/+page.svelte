@@ -38,8 +38,8 @@
           params,
         }),
       ])
-      if (skill_res.error) {
-        throw skill_res.error
+      if (skill_res.error || content_res.error) {
+        throw skill_res.error ?? content_res.error
       }
       skill = skill_res.data
       skill_description = skill_res.data?.description ?? null
