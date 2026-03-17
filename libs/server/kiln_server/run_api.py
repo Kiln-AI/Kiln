@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 # Lock to prevent overwriting via concurrent updates. We use a load/update/write pattern that is not atomic.
 update_run_lock = Lock()
 
+TASK_RUN_NESTING_ENABLED = True
+
 
 def deep_update(
     source: Dict[str, Any] | None, update: Dict[str, Any | None]
@@ -347,7 +349,9 @@ def connect_run_api(app: FastAPI):
             prior_trace = prior_run.trace
 
         return await adapter.invoke(
-            input, prior_trace=prior_trace, parent_task_run=prior_run
+            input,
+            prior_trace=prior_trace,
+            parent_task_run=prior_run if TASK_RUN_NESTING_ENABLED else None,
         )
 
     @app.post("/api/projects/{project_id}/tasks/{task_id}/run/stream")
@@ -390,7 +394,9 @@ def connect_run_api(app: FastAPI):
             prior_trace = prior_run.trace
 
         stream_result = adapter.invoke_openai_stream(
-            input, prior_trace=prior_trace, parent_task_run=prior_run
+            input,
+            prior_trace=prior_trace,
+            parent_task_run=prior_run if TASK_RUN_NESTING_ENABLED else None,
         )
 
         async def stream_generator() -> AsyncIterator[str]:
@@ -443,7 +449,9 @@ def connect_run_api(app: FastAPI):
             prior_trace = prior_run.trace
 
         stream_result = adapter.invoke_ai_sdk_stream(
-            input, prior_trace=prior_trace, parent_task_run=prior_run
+            input,
+            prior_trace=prior_trace,
+            parent_task_run=prior_run if TASK_RUN_NESTING_ENABLED else None,
         )
 
         async def stream_generator() -> AsyncIterator[str]:
