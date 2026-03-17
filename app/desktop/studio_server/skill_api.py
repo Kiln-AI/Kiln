@@ -66,7 +66,7 @@ def connect_skill_api(app: FastAPI):
             raise HTTPException(status_code=404, detail="Skill not found")
         try:
             skill_md = skill.skill_md_raw()
-        except (FileNotFoundError, ValueError):
+        except FileNotFoundError:
             skill_md = ""
         try:
             body = skill.body()
