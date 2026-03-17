@@ -418,10 +418,10 @@ async def test_mcp_adapter_rejects_prior_trace_in_run(
 
 
 @pytest.mark.asyncio
-async def test_mcp_adapter_rejects_parent_task_run_in_invoke(
+async def test_mcp_adapter_rejects_prior_trace_in_invoke(
     project_with_local_mcp_server, local_mcp_tool_id
 ):
-    """invoke with parent_task_run raises NotImplementedError for MCP adapter."""
+    """invoke with prior_trace raises NotImplementedError for MCP adapter."""
     project, _ = project_with_local_mcp_server
     task = Task(
         name="Test Task",
@@ -436,16 +436,16 @@ async def test_mcp_adapter_rejects_parent_task_run_in_invoke(
     adapter = MCPAdapter(task=task, run_config=run_config)
 
     with pytest.raises(NotImplementedError) as exc_info:
-        await adapter.invoke("input", parent_task_run=MagicMock())
+        await adapter.invoke("input", prior_trace=[{"role": "user", "content": "hi"}])
 
     assert "Session continuation is not supported" in str(exc_info.value)
 
 
 @pytest.mark.asyncio
-async def test_mcp_adapter_rejects_parent_task_run_in_invoke_returning_run_output(
+async def test_mcp_adapter_rejects_prior_trace_in_invoke_returning_run_output(
     project_with_local_mcp_server, local_mcp_tool_id
 ):
-    """invoke_returning_run_output with parent_task_run raises NotImplementedError for MCP adapter."""
+    """invoke_returning_run_output with prior_trace raises NotImplementedError for MCP adapter."""
     project, _ = project_with_local_mcp_server
     task = Task(
         name="Test Task",
@@ -460,6 +460,8 @@ async def test_mcp_adapter_rejects_parent_task_run_in_invoke_returning_run_outpu
     adapter = MCPAdapter(task=task, run_config=run_config)
 
     with pytest.raises(NotImplementedError) as exc_info:
-        await adapter.invoke_returning_run_output("input", parent_task_run=MagicMock())
+        await adapter.invoke_returning_run_output(
+            "input", prior_trace=[{"role": "user", "content": "hi"}]
+        )
 
     assert "Session continuation is not supported" in str(exc_info.value)

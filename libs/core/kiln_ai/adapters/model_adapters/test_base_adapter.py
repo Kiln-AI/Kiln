@@ -1392,7 +1392,9 @@ class TestFinalizeStream:
         finalize_adapter.model_provider = MagicMock(return_value=provider)
 
         adapter_stream = self._make_adapter_stream("Hello world")
-        run = finalize_adapter._finalize_stream(adapter_stream, "test input", None, None)
+        run = finalize_adapter._finalize_stream(
+            adapter_stream, "test input", None, None
+        )
 
         assert isinstance(run, TaskRun)
         assert run.output.output == "Hello world"
@@ -1487,7 +1489,9 @@ class TestFinalizeStream:
             {"role": "tool", "content": "result", "tool_call_id": "call_1"},
         ]
         adapter_stream = self._make_adapter_stream("output", trace=trace)
-        run = finalize_adapter._finalize_stream(adapter_stream, "test input", None, None)
+        run = finalize_adapter._finalize_stream(
+            adapter_stream, "test input", None, None
+        )
         assert isinstance(run, TaskRun)
 
     def test_finalize_stream_saves_when_allowed(self, tmp_path):
