@@ -22,6 +22,7 @@
   let submitting = false
   let loading = false
   let loading_error: KilnError | null = null
+  let complete = false
 
   onMount(async () => {
     if (clone_mode && skill_id) {
@@ -82,6 +83,7 @@
       error = createKilnError(err)
     } finally {
       submitting = false
+      complete = true
     }
   }
 
@@ -89,7 +91,8 @@
 
   $: submit_label = clone_mode ? "Clone" : "Add"
 
-  $: warn_before_unload = name !== "" || description !== "" || body !== ""
+  $: warn_before_unload =
+    !complete && (name !== "" || description !== "" || body !== "")
 </script>
 
 {#if clone_mode && loading}
