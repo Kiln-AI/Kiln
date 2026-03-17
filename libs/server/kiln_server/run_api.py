@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 # Lock to prevent overwriting via concurrent updates. We use a load/update/write pattern that is not atomic.
 update_run_lock = Lock()
 
-TASK_RUN_NESTING_ENABLED = True
+TASK_RUN_NESTING_ENABLED = False
 
 
 def deep_update(
