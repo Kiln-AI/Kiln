@@ -21,6 +21,7 @@
   let description = ""
   let selected_task_id: string | null = null
   let selected_run_config_id: string | null = null
+  let complete = false
 
   let created_run_config_in_page = false
 
@@ -222,6 +223,7 @@
       error = createKilnError(e)
     } finally {
       submitting = false
+      complete = true
     }
   }
 
@@ -246,7 +248,8 @@
         on:submit={add_kiln_task_tool}
         bind:error
         bind:submitting
-        warn_before_unload={!!selected_task_id &&
+        warn_before_unload={!complete &&
+          !!selected_task_id &&
           selected_task_id !== "__create_new_kiln_task__"}
       >
         <FormElement
