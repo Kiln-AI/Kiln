@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
-from kiln_ai.datamodel import DataSource, DataSourceType, Project, Task, Usage
+from kiln_ai.datamodel import DataSource, DataSourceType, Project, Task, TaskRun, Usage
 from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.utils.config import Config
@@ -425,3 +425,122 @@ def test_properties_for_task_output_custom_values(test_task):
     assert output.source.properties["structured_output_mode"] == "json_schema"
     assert output.source.properties["temperature"] == 0.7
     assert output.source.properties["top_p"] == 0.9
+
+
+def test_generate_run_with_parent_task_run_sets_parent(test_task, adapter):
+    """Test that generate_run with parent_task_run uses it as parent instead of the task."""
+    prior_run = adapter.generate_run(
+        input="prior input",
+        input_source=None,
+        run_output=RunOutput(output="prior output", intermediate_outputs=None),
+    )
+    prior_run.save_to_file()
+    assert prior_run.id is not None
+
+    new_run = adapter.generate_run(
+        input="new input",
+        input_source=None,
+        run_output=RunOutput(output="new output", intermediate_outputs=None),
+        parent_task_run=prior_run,
+    )
+
+    assert new_run.parent == prior_run
+
+    new_run.save_to_file()
+
+    reloaded_prior_run = TaskRun.load_from_file(prior_run.path)
+    child_runs = reloaded_prior_run.runs()
+    assert len(child_runs) == 1
+    assert child_runs[0].output.output == "new output"
+
+    # The task should only have the prior run as a direct child
+    reloaded_task = Task.load_from_file(test_task.path)
+    task_runs = reloaded_task.runs()
+    assert len(task_runs) == 1
+    assert task_runs[0].id == prior_run.id
+
+
+def test_generate_run_without_parent_task_run_defaults_to_task(test_task, adapter):
+    """Test that generate_run without parent_task_run defaults to using the task as parent."""
+    run = adapter.generate_run(
+        input="input",
+        input_source=None,
+        run_output=RunOutput(output="output", intermediate_outputs=None),
+    )
+    assert run.parent == test_task
+
+
+@pytest.mark.asyncio
+async def test_invoke_with_parent_task_run_saves_as_child(test_task, adapter):
+    """Test that invoke with parent_task_run saves the new run as a child of that run."""
+    trace = [
+        {"role": "user", "content": "Hello"},
+        {"role": "assistant", "content": "Hi there!"},
+    ]
+
+    # Create and save a prior run to act as parent
+    prior_run = adapter.generate_run(
+        input="Hello",
+        input_source=None,
+        run_output=RunOutput(
+            output="Hi there!", intermediate_outputs=None, trace=trace
+        ),
+        trace=trace,
+    )
+    prior_run.save_to_file()
+    assert prior_run.id is not None
+
+    continuation_trace = [
+        *trace,
+        {"role": "user", "content": "Tell me more"},
+        {"role": "assistant", "content": "More details!"},
+    ]
+    continuation_output = RunOutput(
+        output="More details!",
+        intermediate_outputs=None,
+        trace=continuation_trace,
+    )
+
+    adapter._run = AsyncMock(return_value=(continuation_output, None))
+
+    with (
+        patch("kiln_ai.utils.config.Config.shared") as mock_shared,
+        patch.object(
+            adapter,
+            "model_provider",
+            return_value=MagicMock(
+                parser="default",
+                formatter=None,
+                reasoning_capable=False,
+            ),
+        ),
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id",
+            return_value=MagicMock(
+                parse_output=MagicMock(return_value=continuation_output)
+            ),
+        ),
+    ):
+        mock_shared.return_value.autosave_runs = True
+        mock_shared.return_value.user_id = "test_user"
+
+        new_run = await adapter.invoke(
+            "Tell me more",
+            prior_trace=trace,
+            parent_task_run=prior_run,
+        )
+
+    assert new_run.id is not None
+    assert new_run.parent == prior_run
+
+    # The prior run should have the new run as a child
+    reloaded_prior_run = TaskRun.load_from_file(prior_run.path)
+    child_runs = reloaded_prior_run.runs()
+    assert len(child_runs) == 1
+    assert child_runs[0].output.output == "More details!"
+
+    # The task should only have the prior run as a direct child
+    reloaded_task = Task.load_from_file(test_task.path)
+    task_runs = reloaded_task.runs()
+    assert len(task_runs) == 1
+    assert task_runs[0].id == prior_run.id
