@@ -106,11 +106,39 @@ def task_run_setup(tmp_path):
     )
     task_run.save_to_file()
 
+    new_task_run = TaskRun(
+        parent=task,
+        input="New input",
+        input_source=DataSource(
+            type=DataSourceType.human, properties={"created_by": "Test User"}
+        ),
+        output=TaskOutput(
+            output="New run output",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt_4o",
+                    "model_provider": "ollama",
+                    "adapter_name": "kiln_langchain_adapter",
+                    "prompt_id": "simple_prompt_builder",
+                },
+            ),
+        ),
+        trace=[
+            {"role": "user", "content": "Test input"},
+            {"role": "assistant", "content": "Test output"},
+            {"role": "user", "content": "New input"},
+            {"role": "assistant", "content": "New run output"},
+        ],
+    )
+    new_task_run.save_to_file()
+
     return {
         "project": project,
         "task": task,
         "run_task_request": run_task_request,
         "task_run": task_run,
+        "new_task_run": new_task_run,
     }
 
 
@@ -1854,3 +1882,360 @@ async def test_run_task_adapter_sanity_math_tools(
     assert response4.status_code == 200
     res4 = response4.json()
     _assert_math_tools_response(res4, "7")
+
+
+@pytest.mark.asyncio
+async def test_continue_task_run_helper_function(task_run_setup):
+    """Test the global continue_task_run helper function."""
+    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+
+    task = task_run_setup["task"]
+    prior_run = task_run_setup["task_run"]
+
+    # Add a trace to the prior run
+    prior_run.trace = [
+        {"role": "user", "content": "Hello"},
+        {"role": "assistant", "content": "Hi there!"},
+    ]
+    prior_run.save_to_file()
+
+    run_config_properties = KilnAgentRunConfigProperties(
+        model_name="gpt_4o",
+        model_provider_name="ollama",
+        prompt_id="simple_prompt_builder",
+        structured_output_mode="json_schema",
+    )
+
+    # Create a new TaskRun for the continued conversation
+    continued_run = TaskRun(
+        parent=task,
+        input="Follow up",
+        input_source=DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "gpt_4o",
+                "model_provider": "ollama",
+                "adapter_name": "litellm_adapter",
+            },
+        ),
+        output=TaskOutput(
+            output="Response",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt_4o",
+                    "model_provider": "ollama",
+                    "adapter_name": "litellm_adapter",
+                },
+            ),
+        ),
+    )
+
+    with (
+        patch("kiln_server.run_api.task_and_run_from_id") as mock_task_and_run,
+        patch.object(LiteLlmAdapter, "invoke", new_callable=AsyncMock) as mock_invoke,
+    ):
+        mock_task_and_run.return_value = (task, prior_run)
+        mock_invoke.return_value = continued_run
+
+        from kiln_server.run_api import continue_task_run
+
+        result = await continue_task_run(
+            project_id=str(task.parent.id),
+            task_id=str(task.id),
+            prior_run_id=str(prior_run.id),
+            new_input="Follow up",
+            run_config_properties=run_config_properties,
+            tags=["test_tag"],
+        )
+
+    assert result is not None
+    mock_invoke.assert_called_once()
+    call_args = mock_invoke.call_args
+    assert call_args[1]["prior_trace"] == prior_run.trace
+
+
+@pytest.mark.asyncio
+async def test_continue_task_run_helper_function_no_trace(task_run_setup):
+    """Test the global continue_task_run helper function fails when no trace."""
+    from fastapi import HTTPException
+    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+
+    task = task_run_setup["task"]
+    prior_run = task_run_setup["task_run"]
+
+    # Ensure prior run has no trace
+    prior_run.trace = None
+    prior_run.save_to_file()
+
+    run_config_properties = KilnAgentRunConfigProperties(
+        model_name="gpt_4o",
+        model_provider_name="ollama",
+        prompt_id="simple_prompt_builder",
+        structured_output_mode="json_schema",
+    )
+
+    with patch("kiln_server.run_api.task_and_run_from_id") as mock_task_and_run:
+        mock_task_and_run.return_value = (task, prior_run)
+
+        from kiln_server.run_api import continue_task_run
+
+        with pytest.raises(HTTPException) as exc_info:
+            await continue_task_run(
+                project_id=str(task.parent.id),
+                task_id=str(task.id),
+                prior_run_id=str(prior_run.id),
+                new_input="Follow up",
+                run_config_properties=run_config_properties,
+            )
+
+    assert exc_info.value.status_code == 400
+    assert "no trace available" in exc_info.value.detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_run_task_with_task_run_id_success(client, task_run_setup):
+    """Test the /run endpoint with task_run_id to continue from a prior run."""
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    prior_run = task_run_setup["task_run"]
+    run_task_request = task_run_setup["run_task_request"]
+
+    # Add task_run_id to the request
+    run_task_request["task_run_id"] = str(prior_run.id)
+
+    with (
+        patch("kiln_server.run_api.task_from_id") as mock_task_from_id,
+        patch("kiln_server.run_api.task_and_run_from_id") as mock_task_and_run,
+        patch.object(LiteLlmAdapter, "invoke", new_callable=AsyncMock) as mock_invoke,
+        patch("kiln_ai.utils.config.Config.shared") as MockConfig,
+    ):
+        mock_task_from_id.return_value = task
+        mock_task_and_run.return_value = (task, prior_run)
+        mock_invoke.return_value = task_run_setup["new_task_run"]
+
+        # Mock the Config class
+        mock_config_instance = MockConfig.return_value
+        mock_config_instance.ollama_base_url = "http://localhost:11434/v1"
+
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/run", json=run_task_request
+        )
+
+    assert response.status_code == 200
+    res = response.json()
+    assert res["output"]["output"] == "New run output"
+    # Verify prior_trace was passed to invoke
+    call_args = mock_invoke.call_args
+    assert call_args[1]["prior_trace"] == prior_run.trace
+
+
+@pytest.mark.asyncio
+async def test_run_task_with_task_run_id_not_found(client, task_run_setup):
+    """Test the /run endpoint with invalid task_run_id."""
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    run_task_request = task_run_setup["run_task_request"]
+
+    # Add invalid task_run_id to the request
+    run_task_request["task_run_id"] = "non-existent-id"
+
+    with (
+        patch("kiln_server.run_api.task_from_id") as mock_task_from_id,
+        patch("kiln_server.run_api.task_and_run_from_id") as mock_task_and_run,
+        patch("kiln_ai.utils.config.Config.shared") as MockConfig,
+    ):
+        mock_task_from_id.return_value = task
+        mock_task_and_run.side_effect = HTTPException(
+            status_code=404, detail="Run not found"
+        )
+
+        # Mock the Config class
+        mock_config_instance = MockConfig.return_value
+        mock_config_instance.ollama_base_url = "http://localhost:11434/v1"
+
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/run", json=run_task_request
+        )
+
+    assert response.status_code == 404
+    # Response detail may be a string or dict depending on error handling
+    detail = response.json().get("detail", str(response.json()))
+    assert "Run not found" in detail or "not found" in detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_run_task_with_task_run_id_no_trace(client, task_run_setup):
+    """Test the /run endpoint with task_run_id that has no trace."""
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    prior_run = task_run_setup["task_run"]
+    run_task_request = task_run_setup["run_task_request"]
+
+    # Remove trace from prior run
+    prior_run.trace = None
+    prior_run.save_to_file()
+
+    # Add task_run_id to the request
+    run_task_request["task_run_id"] = str(prior_run.id)
+
+    with (
+        patch("kiln_server.run_api.task_from_id") as mock_task_from_id,
+        patch("kiln_server.run_api.task_and_run_from_id") as mock_task_and_run,
+        patch("kiln_ai.utils.config.Config.shared") as MockConfig,
+    ):
+        mock_task_from_id.return_value = task
+        mock_task_and_run.return_value = (task, prior_run)
+
+        # Mock the Config class
+        mock_config_instance = MockConfig.return_value
+        mock_config_instance.ollama_base_url = "http://localhost:11434/v1"
+
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/run", json=run_task_request
+        )
+
+    assert response.status_code == 400
+    # Response detail may be a string or dict depending on error handling
+    detail = response.json().get("detail", str(response.json()))
+    assert "no trace available" in detail.lower()
+
+
+@pytest.mark.asyncio
+async def test_run_task_stream_success(client, task_run_setup):
+    """Test the /run/stream endpoint with OpenAI-style streaming."""
+    from litellm.types.utils import Choices, Message, ModelResponseStream
+
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    run_task_request = task_run_setup["run_task_request"]
+
+    # Create mock chunks
+    mock_chunk = ModelResponseStream(
+        id="test-id",
+        choices=[
+            Choices(
+                message=Message(content="Test chunk"),
+                finish_reason=None,
+                delta={"content": "Test chunk"},
+            )
+        ],
+    )
+
+    async def mock_stream_iter():
+        yield mock_chunk
+
+    with (
+        patch("kiln_server.run_api.task_from_id") as mock_task_from_id,
+        patch.object(LiteLlmAdapter, "invoke_openai_stream") as mock_invoke_stream,
+        patch("kiln_ai.utils.config.Config.shared") as MockConfig,
+    ):
+        mock_task_from_id.return_value = task
+
+        # Mock the stream result as an async iterable
+        mock_stream_result = MagicMock()
+        mock_stream_result.__aiter__ = MagicMock(return_value=mock_stream_iter())
+        mock_invoke_stream.return_value = mock_stream_result
+
+        # Mock the Config class
+        mock_config_instance = MockConfig.return_value
+        mock_config_instance.ollama_base_url = "http://localhost:11434/v1"
+
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/run/stream",
+            json=run_task_request,
+        )
+
+    assert response.status_code == 200
+    assert "text/event-stream" in response.headers["content-type"]
+
+
+@pytest.mark.asyncio
+async def test_run_task_ai_sdk_stream_success(client, task_run_setup):
+    """Test the /run/stream/ai-sdk endpoint with AI SDK-style streaming."""
+    from kiln_ai.adapters.model_adapters.stream_events import (
+        AiSdkEventType,
+        AiSdkStreamEvent,
+    )
+
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    run_task_request = task_run_setup["run_task_request"]
+
+    # Create mock event
+    mock_event = AiSdkStreamEvent(
+        type=AiSdkEventType.TEXT_DELTA,
+        payload={"delta": "Test delta"},
+    )
+
+    async def mock_stream_iter():
+        yield mock_event
+
+    with (
+        patch("kiln_server.run_api.task_from_id") as mock_task_from_id,
+        patch.object(LiteLlmAdapter, "invoke_ai_sdk_stream") as mock_invoke_stream,
+        patch("kiln_ai.utils.config.Config.shared") as MockConfig,
+    ):
+        mock_task_from_id.return_value = task
+
+        # Mock the stream result as an async iterable
+        mock_stream_result = MagicMock()
+        mock_stream_result.__aiter__ = MagicMock(return_value=mock_stream_iter())
+        mock_invoke_stream.return_value = mock_stream_result
+
+        # Mock the Config class
+        mock_config_instance = MockConfig.return_value
+        mock_config_instance.ollama_base_url = "http://localhost:11434/v1"
+
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/run/stream/ai-sdk",
+            json=run_task_request,
+        )
+
+    assert response.status_code == 200
+    assert "text/event-stream" in response.headers["content-type"]
+
+
+@pytest.mark.asyncio
+async def test_run_task_stream_with_task_run_id(client, task_run_setup):
+    """Test the /run/stream endpoint with task_run_id to continue from prior run."""
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    prior_run = task_run_setup["task_run"]
+    run_task_request = task_run_setup["run_task_request"]
+
+    # Add task_run_id to the request
+    run_task_request["task_run_id"] = str(prior_run.id)
+
+    async def mock_stream_iter():
+        # Empty stream for this test
+        return
+        yield  # Make this a proper async generator
+
+    with (
+        patch("kiln_server.run_api.task_from_id") as mock_task_from_id,
+        patch("kiln_server.run_api.task_and_run_from_id") as mock_task_and_run,
+        patch.object(LiteLlmAdapter, "invoke_openai_stream") as mock_invoke_stream,
+        patch("kiln_ai.utils.config.Config.shared") as MockConfig,
+    ):
+        mock_task_from_id.return_value = task
+        mock_task_and_run.return_value = (task, prior_run)
+
+        # Mock the stream result as an async iterable
+        mock_stream_result = MagicMock()
+        mock_stream_result.__aiter__ = MagicMock(return_value=mock_stream_iter())
+        mock_invoke_stream.return_value = mock_stream_result
+
+        # Mock the Config class
+        mock_config_instance = MockConfig.return_value
+        mock_config_instance.ollama_base_url = "http://localhost:11434/v1"
+
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/run/stream",
+            json=run_task_request,
+        )
+
+    assert response.status_code == 200
+    # Verify prior_trace was passed to invoke_openai_stream
+    call_args = mock_invoke_stream.call_args
+    assert call_args[1]["prior_trace"] == prior_run.trace

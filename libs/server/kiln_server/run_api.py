@@ -5,12 +5,14 @@ import os
 import tempfile
 from asyncio import Lock
 from datetime import datetime
-from typing import Annotated, Any, Dict
+from typing import Annotated, Any, AsyncIterator, Dict
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
+from kiln_ai.adapters.model_adapters.stream_events import AiSdkStreamEvent
 from kiln_ai.datamodel import Task, TaskOutputRating, TaskOutputRatingType, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.datamodel_enums import StructuredInputType
@@ -30,6 +32,8 @@ logger = logging.getLogger(__name__)
 
 # Lock to prevent overwriting via concurrent updates. We use a load/update/write pattern that is not atomic.
 update_run_lock = Lock()
+
+TASK_RUN_NESTING_ENABLED = False
 
 
 def deep_update(
@@ -56,6 +60,8 @@ class RunTaskRequest(BaseModel):
     plaintext_input: str | None = None
     structured_input: StructuredInputType | None = None
     tags: list[str] | None = None
+    task_run_id: str | None = None
+    """Optional: ID of an existing TaskRun to continue from. If provided, the prior run's trace will be used."""
 
     # Allows use of the model_name field (usually pydantic will reserve model_*)
     model_config = ConfigDict(protected_namespaces=())
@@ -173,6 +179,53 @@ def task_and_run_from_id(
     )
 
 
+async def continue_task_run(
+    project_id: str,
+    task_id: str,
+    prior_run_id: str,
+    new_input: str,
+    run_config_properties: RunConfigProperties,
+    tags: list[str] | None = None,
+    structured_input: StructuredInputType | None = None,
+) -> TaskRun:
+    """
+    Global helper function to continue a task run from a prior trace.
+
+    Args:
+        project_id: The project ID
+        task_id: The task ID
+        prior_run_id: ID of the existing TaskRun to continue from
+        new_input: The new user input (plaintext)
+        run_config_properties: Configuration for the new run
+        tags: Optional tags for the new run
+        structured_input: Optional structured input (if task uses structured input)
+
+    Returns:
+        The new TaskRun created from continuing the conversation
+
+    Raises:
+        HTTPException: If the prior run is not found or has no trace
+    """
+    task, prior_run = task_and_run_from_id(project_id, task_id, prior_run_id)
+
+    if prior_run.trace is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot continue run: no trace available from the prior run.",
+        )
+
+    adapter = adapter_for_task(
+        task,
+        run_config_properties=run_config_properties,
+        base_adapter_config=AdapterConfig(default_tags=tags),
+    )
+
+    input_data = new_input if structured_input is None else structured_input
+
+    # Pass the prior run's trace to continue the conversation
+    return await adapter.invoke(input_data, prior_trace=prior_run.trace)
+
+
 def connect_run_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}")
     async def get_run(project_id: str, task_id: str, run_id: str) -> TaskRun:
@@ -223,13 +276,13 @@ def connect_run_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/tasks/{task_id}/runs_summaries")
     async def get_runs_summary(project_id: str, task_id: str) -> list[RunSummary]:
         task = task_from_id(project_id, task_id)
-        # Readonly since we are not mutating the runs. Faster as we don't need to copy them.
-        runs = task.runs(readonly=True)
-        run_summaries: list[RunSummary] = []
-        for run in runs:
-            summary = RunSummary.from_run(run)
-            run_summaries.append(summary)
-        return run_summaries
+        runs: list[TaskRun] = []
+        stack: list[TaskRun] = list(task.runs(readonly=True))
+        while stack:
+            run = stack.pop()
+            runs.append(run)
+            stack.extend(run.runs(readonly=True))
+        return [RunSummary.from_run(run) for run in runs]
 
     @app.post("/api/projects/{project_id}/tasks/{task_id}/runs/delete")
     async def delete_runs(project_id: str, task_id: str, run_ids: list[str]):
@@ -281,7 +334,138 @@ def connect_run_api(app: FastAPI):
                 detail="No input provided. Ensure your provided the proper format (plaintext or structured).",
             )
 
-        return await adapter.invoke(input)
+        # Continue from prior run if task_run_id is provided
+        prior_trace = None
+        prior_run = None
+        if request.task_run_id is not None:
+            _, prior_run = task_and_run_from_id(
+                project_id, task_id, request.task_run_id
+            )
+            if prior_run.trace is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot continue run: no trace available from the prior run.",
+                )
+            prior_trace = prior_run.trace
+
+        return await adapter.invoke(
+            input,
+            prior_trace=prior_trace,
+            parent_task_run=prior_run if TASK_RUN_NESTING_ENABLED else None,
+        )
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/run/stream")
+    async def run_task_stream(
+        project_id: str, task_id: str, request: RunTaskRequest
+    ) -> StreamingResponse:
+        """Run a task with OpenAI-style streaming response."""
+        task = task_from_id(project_id, task_id)
+
+        run_config_properties = request.run_config_properties
+
+        adapter = adapter_for_task(
+            task,
+            run_config_properties=run_config_properties,
+            base_adapter_config=AdapterConfig(default_tags=request.tags),
+        )
+
+        input = request.plaintext_input
+        if task.input_schema() is not None:
+            input = request.structured_input
+
+        if input is None:
+            raise HTTPException(
+                status_code=400,
+                detail="No input provided. Ensure your provided the proper format (plaintext or structured).",
+            )
+
+        # Continue from prior run if task_run_id is provided
+        prior_trace = None
+        prior_run = None
+        if request.task_run_id is not None:
+            _, prior_run = task_and_run_from_id(
+                project_id, task_id, request.task_run_id
+            )
+            if prior_run.trace is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot continue run: no trace available from the prior run.",
+                )
+            prior_trace = prior_run.trace
+
+        stream_result = adapter.invoke_openai_stream(
+            input,
+            prior_trace=prior_trace,
+            parent_task_run=prior_run if TASK_RUN_NESTING_ENABLED else None,
+        )
+
+        async def stream_generator() -> AsyncIterator[str]:
+            async for chunk in stream_result:
+                yield f"data: {chunk.model_dump_json()}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(
+            stream_generator(),
+            media_type="text/event-stream",
+        )
+
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/run/stream/ai-sdk")
+    async def run_task_ai_sdk_stream(
+        project_id: str, task_id: str, request: RunTaskRequest
+    ) -> StreamingResponse:
+        """Run a task with AI SDK-style streaming response."""
+        task = task_from_id(project_id, task_id)
+
+        run_config_properties = request.run_config_properties
+
+        adapter = adapter_for_task(
+            task,
+            run_config_properties=run_config_properties,
+            base_adapter_config=AdapterConfig(default_tags=request.tags),
+        )
+
+        input = request.plaintext_input
+        if task.input_schema() is not None:
+            input = request.structured_input
+
+        if input is None:
+            raise HTTPException(
+                status_code=400,
+                detail="No input provided. Ensure your provided the proper format (plaintext or structured).",
+            )
+
+        # Continue from prior run if task_run_id is provided
+        prior_trace = None
+        prior_run = None
+        if request.task_run_id is not None:
+            _, prior_run = task_and_run_from_id(
+                project_id, task_id, request.task_run_id
+            )
+            if prior_run.trace is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot continue run: no trace available from the prior run.",
+                )
+            prior_trace = prior_run.trace
+
+        stream_result = adapter.invoke_ai_sdk_stream(
+            input,
+            prior_trace=prior_trace,
+            parent_task_run=prior_run if TASK_RUN_NESTING_ENABLED else None,
+        )
+
+        async def stream_generator() -> AsyncIterator[str]:
+            async for event in stream_result:
+                if isinstance(event, AiSdkStreamEvent):
+                    yield f"data: {event.model_dump()}\n\n"
+                else:
+                    yield f"data: {event}\n\n"
+            yield "data: [DONE]\n\n"
+
+        return StreamingResponse(
+            stream_generator(),
+            media_type="text/event-stream",
+        )
 
     @app.patch("/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}")
     async def update_run(
