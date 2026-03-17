@@ -83,10 +83,14 @@
                 task_id,
               },
               query:
-                required_tool_ids && required_tool_ids.length > 0
-                  ? {
-                      tool_ids: required_tool_ids,
-                    }
+                required_tool_ids !== undefined
+                  ? required_tool_ids.length > 0
+                    ? {
+                        tool_ids: required_tool_ids,
+                      }
+                    : {
+                        empty_tool_filter: true,
+                      }
                   : undefined,
             },
           },

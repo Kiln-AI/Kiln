@@ -410,12 +410,12 @@ def mock_run_with_tools():
         (
             [["kiln_tool::add_numbers"], ["kiln_tool::multiply_numbers"]],
             True,
-            [],
+            None,
         ),
         # both runs have no tools
         ([None, None], False, []),
         # one run has tools, the other has none
-        ([["kiln_tool::add_numbers"], None], True, []),
+        ([["kiln_tool::add_numbers"], None], True, None),
         ([], False, []),
         ([["kiln_tool::add_numbers"]], False, ["kiln_tool::add_numbers"]),
         ([None], False, []),
@@ -454,4 +454,4 @@ def test_compute_tool_info_treats_missing_config_as_empty_tools(mock_run_with_to
         [run_no_source, run_with_tools, run_no_config]
     )
     assert tool_info.has_tool_mismatch is True
-    assert tool_info.tools == []
+    assert tool_info.tools is None
