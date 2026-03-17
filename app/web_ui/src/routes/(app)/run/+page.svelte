@@ -75,7 +75,7 @@
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
         {
           params: {
-            path: { project_id, task_id, run_id: prior_run_id },
+            path: { project_id, task_id, run_id: prior_run_id! },
           },
         },
       )
@@ -114,8 +114,9 @@
         throw new Error("You must select a model before running")
       }
 
-      let data: TaskRun
-      let fetch_error: components["schemas"]["HTTPValidationError"] | null
+      let data: TaskRun | undefined
+      let fetch_error: components["schemas"]["HTTPValidationError"] | null =
+        null
 
       // Always use the regular run endpoint, passing task_run_id if continuing conversation
       const regular_result = await client.POST(
@@ -137,8 +138,8 @@
           },
         },
       )
-      data = regular_result.data!
-      fetch_error = regular_result.error
+      data = regular_result.data ?? undefined
+      fetch_error = regular_result.error ?? null
 
       if (fetch_error) {
         throw fetch_error
@@ -163,10 +164,10 @@
         })
       }
 
-      response = data
+      response = data ?? null
 
       // Update the conversation tracking to point to the latest run
-      conversation_prior_run_id = response.id
+      conversation_prior_run_id = response?.id ?? null
 
       // Update prior_run to the new response so trace remains available
       prior_run = response

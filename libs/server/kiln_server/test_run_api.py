@@ -2010,7 +2010,7 @@ def test_continue_task_run_not_found(client, task_run_setup):
     with patch("kiln_server.run_api.task_and_run_from_id") as mock_task_and_run:
         mock_task_and_run.side_effect = HTTPException(
             status_code=404,
-            detail=f"Run not found. ID: nonexistent_run_id",
+            detail="Run not found. ID: nonexistent_run_id",
         )
 
         response = client.post(
@@ -2133,8 +2133,8 @@ async def test_continue_task_run_helper_function(task_run_setup):
 @pytest.mark.asyncio
 async def test_continue_task_run_helper_function_no_trace(task_run_setup):
     """Test the global continue_task_run helper function fails when no trace."""
-    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
     from fastapi import HTTPException
+    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
     task = task_run_setup["task"]
     prior_run = task_run_setup["task_run"]
@@ -2279,8 +2279,7 @@ async def test_run_task_with_task_run_id_no_trace(client, task_run_setup):
 @pytest.mark.asyncio
 async def test_run_task_stream_success(client, task_run_setup):
     """Test the /run/stream endpoint with OpenAI-style streaming."""
-    from fastapi.responses import StreamingResponse
-    from litellm.types.utils import ModelResponseStream, Choices, Message
+    from litellm.types.utils import Choices, Message, ModelResponseStream
 
     project = task_run_setup["project"]
     task = task_run_setup["task"]
@@ -2330,8 +2329,8 @@ async def test_run_task_stream_success(client, task_run_setup):
 async def test_run_task_ai_sdk_stream_success(client, task_run_setup):
     """Test the /run/stream/ai-sdk endpoint with AI SDK-style streaming."""
     from kiln_ai.adapters.model_adapters.stream_events import (
-        AiSdkStreamEvent,
         AiSdkEventType,
+        AiSdkStreamEvent,
     )
 
     project = task_run_setup["project"]

@@ -335,7 +335,9 @@ def connect_run_api(app: FastAPI):
         # Continue from prior run if task_run_id is provided
         prior_trace = None
         if request.task_run_id is not None:
-            _, prior_run = task_and_run_from_id(project_id, task_id, request.task_run_id)
+            _, prior_run = task_and_run_from_id(
+                project_id, task_id, request.task_run_id
+            )
             if prior_run.trace is None:
                 raise HTTPException(
                     status_code=400,
@@ -373,7 +375,9 @@ def connect_run_api(app: FastAPI):
         # Continue from prior run if task_run_id is provided
         prior_trace = None
         if request.task_run_id is not None:
-            _, prior_run = task_and_run_from_id(project_id, task_id, request.task_run_id)
+            _, prior_run = task_and_run_from_id(
+                project_id, task_id, request.task_run_id
+            )
             if prior_run.trace is None:
                 raise HTTPException(
                     status_code=400,
@@ -421,7 +425,9 @@ def connect_run_api(app: FastAPI):
         # Continue from prior run if task_run_id is provided
         prior_trace = None
         if request.task_run_id is not None:
-            _, prior_run = task_and_run_from_id(project_id, task_id, request.task_run_id)
+            _, prior_run = task_and_run_from_id(
+                project_id, task_id, request.task_run_id
+            )
             if prior_run.trace is None:
                 raise HTTPException(
                     status_code=400,

@@ -961,8 +961,8 @@ def test_adapter_for_task_rejects_kiln_agent_non_instance(basic_task):
 async def test_run_task_sync_mode(basic_task):
     """Test run_task helper in sync mode."""
     from kiln_ai.adapters.adapter_registry import run_task
+    from kiln_ai.datamodel import DataSource, DataSourceType, TaskOutput, TaskRun
     from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-    from kiln_ai.datamodel import TaskRun, DataSource, DataSourceType, TaskOutput
 
     run_config_properties = KilnAgentRunConfigProperties(
         model_name="gpt_4o",
@@ -1005,17 +1005,15 @@ async def test_run_task_sync_mode(basic_task):
         )
 
     assert result == mock_task_run
-    mock_invoke.assert_called_once_with(
-        "Test input", None, None
-    )
+    mock_invoke.assert_called_once_with("Test input", None, None)
 
 
 @pytest.mark.asyncio
 async def test_run_task_with_task_run_object(basic_task):
     """Test run_task helper continues from a TaskRun object."""
     from kiln_ai.adapters.adapter_registry import run_task
+    from kiln_ai.datamodel import DataSource, DataSourceType, TaskOutput, TaskRun
     from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-    from kiln_ai.datamodel import TaskRun, DataSource, DataSourceType, TaskOutput
 
     prior_run = TaskRun(
         parent=basic_task,
@@ -1082,17 +1080,15 @@ async def test_run_task_with_task_run_object(basic_task):
         )
 
     assert result == mock_task_run
-    mock_invoke.assert_called_once_with(
-        "New input", None, prior_run.trace
-    )
+    mock_invoke.assert_called_once_with("New input", None, prior_run.trace)
 
 
 @pytest.mark.asyncio
 async def test_run_task_with_task_run_id_string(basic_task):
     """Test run_task helper continues from a task run ID string."""
     from kiln_ai.adapters.adapter_registry import run_task
+    from kiln_ai.datamodel import DataSource, DataSourceType, TaskOutput, TaskRun
     from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-    from kiln_ai.datamodel import TaskRun, DataSource, DataSourceType, TaskOutput
 
     prior_run = TaskRun(
         parent=basic_task,
@@ -1163,9 +1159,7 @@ async def test_run_task_with_task_run_id_string(basic_task):
 
     assert result == mock_task_run
     mock_from_id.assert_called_once_with("test-run-id-123", basic_task.path)
-    mock_invoke.assert_called_once_with(
-        "New input", None, prior_run.trace
-    )
+    mock_invoke.assert_called_once_with("New input", None, prior_run.trace)
 
 
 @pytest.mark.asyncio
@@ -1200,8 +1194,8 @@ async def test_run_task_with_task_run_id_not_found(basic_task):
 async def test_run_task_with_task_run_no_trace(basic_task):
     """Test run_task helper raises when prior run has no trace."""
     from kiln_ai.adapters.adapter_registry import run_task
+    from kiln_ai.datamodel import DataSource, DataSourceType, TaskOutput, TaskRun
     from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-    from kiln_ai.datamodel import TaskRun, DataSource, DataSourceType, TaskOutput
 
     prior_run = TaskRun(
         parent=basic_task,
@@ -1244,8 +1238,8 @@ async def test_run_task_with_task_run_no_trace(basic_task):
 async def test_run_task_openai_stream_mode(basic_task):
     """Test run_task helper in OpenAI stream mode."""
     from kiln_ai.adapters.adapter_registry import run_task
-    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
     from kiln_ai.adapters.model_adapters.base_adapter import OpenAIStreamResult
+    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
     run_config_properties = KilnAgentRunConfigProperties(
         model_name="gpt_4o",
@@ -1259,7 +1253,9 @@ async def test_run_task_openai_stream_mode(basic_task):
     with (
         patch("kiln_ai.adapters.adapter_registry.adapter_for_task") as mock_adapter_for,
     ):
-        mock_adapter_for.return_value.invoke_openai_stream = MagicMock(return_value=mock_stream_result)
+        mock_adapter_for.return_value.invoke_openai_stream = MagicMock(
+            return_value=mock_stream_result
+        )
 
         result = await run_task(
             kiln_task=basic_task,
@@ -1278,8 +1274,8 @@ async def test_run_task_openai_stream_mode(basic_task):
 async def test_run_task_ai_sdk_stream_mode(basic_task):
     """Test run_task helper in AI SDK stream mode."""
     from kiln_ai.adapters.adapter_registry import run_task
-    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
     from kiln_ai.adapters.model_adapters.base_adapter import AiSdkStreamResult
+    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
     run_config_properties = KilnAgentRunConfigProperties(
         model_name="gpt_4o",
@@ -1293,7 +1289,9 @@ async def test_run_task_ai_sdk_stream_mode(basic_task):
     with (
         patch("kiln_ai.adapters.adapter_registry.adapter_for_task") as mock_adapter_for,
     ):
-        mock_adapter_for.return_value.invoke_ai_sdk_stream = MagicMock(return_value=mock_stream_result)
+        mock_adapter_for.return_value.invoke_ai_sdk_stream = MagicMock(
+            return_value=mock_stream_result
+        )
 
         result = await run_task(
             kiln_task=basic_task,

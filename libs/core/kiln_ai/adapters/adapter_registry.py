@@ -36,9 +36,7 @@ async def run_task(
     input_source: DataSource | None = None,
     adapter_config: AdapterConfig | None = None,
     stream_mode: Literal["sync", "openai", "ai_sdk"] = "sync",
-) -> Union[
-    datamodel.TaskRun, "OpenAIStreamResult", "AiSdkStreamResult"
-]:
+) -> Union[datamodel.TaskRun, "OpenAIStreamResult", "AiSdkStreamResult"]:
     """
     Unified task execution helper.
 
