@@ -143,9 +143,10 @@ class BaseAdapter(metaclass=ABCMeta):
         input: InputType,
         input_source: DataSource | None = None,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
+        parent_task_run: TaskRun | None = None,
     ) -> TaskRun:
         run_output, _ = await self.invoke_returning_run_output(
-            input, input_source, prior_trace
+            input, input_source, prior_trace, parent_task_run
         )
         return run_output
 
@@ -154,6 +155,7 @@ class BaseAdapter(metaclass=ABCMeta):
         input: InputType,
         input_source: DataSource | None = None,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
+        parent_task_run: TaskRun | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # validate input, allowing arrays
         if self.input_schema is not None:
@@ -224,7 +226,7 @@ class BaseAdapter(metaclass=ABCMeta):
             )
 
         run = self.generate_run(
-            input, input_source, parsed_output, usage, run_output.trace
+            input, input_source, parsed_output, usage, run_output.trace, parent_task_run
         )
 
         # Save the run if configured to do so, and we have a path to save to
@@ -245,6 +247,7 @@ class BaseAdapter(metaclass=ABCMeta):
         input: InputType,
         input_source: DataSource | None = None,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
+        parent_task_run: TaskRun | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # Determine if this is the root agent (no existing run context)
         is_root_agent = get_agent_run_id() is None
@@ -255,7 +258,7 @@ class BaseAdapter(metaclass=ABCMeta):
 
         try:
             return await self._run_returning_run_output(
-                input, input_source, prior_trace
+                input, input_source, prior_trace, parent_task_run
             )
         finally:
             if is_root_agent:
@@ -271,6 +274,7 @@ class BaseAdapter(metaclass=ABCMeta):
         input: InputType,
         input_source: DataSource | None = None,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
+        parent_task_run: TaskRun | None = None,
     ) -> OpenAIStreamResult:
         """Stream raw OpenAI-protocol chunks for the task execution.
 
@@ -282,13 +286,16 @@ class BaseAdapter(metaclass=ABCMeta):
         Tool-call rounds happen internally and are not surfaced; use
         ``invoke_ai_sdk_stream`` if you need tool-call events.
         """
-        return OpenAIStreamResult(self, input, input_source, prior_trace)
+        return OpenAIStreamResult(
+            self, input, input_source, prior_trace, parent_task_run
+        )
 
     def invoke_ai_sdk_stream(
         self,
         input: InputType,
         input_source: DataSource | None = None,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
+        parent_task_run: TaskRun | None = None,
     ) -> AiSdkStreamResult:
         """Stream AI SDK protocol events for the task execution.
 
@@ -297,7 +304,9 @@ class BaseAdapter(metaclass=ABCMeta):
         control events.  After the iterator is exhausted the resulting
         ``TaskRun`` is available via the ``.task_run`` property.
         """
-        return AiSdkStreamResult(self, input, input_source, prior_trace)
+        return AiSdkStreamResult(
+            self, input, input_source, prior_trace, parent_task_run
+        )
 
     def _prepare_stream(
         self,
@@ -327,6 +336,7 @@ class BaseAdapter(metaclass=ABCMeta):
         adapter_stream: AdapterStream,
         input: InputType,
         input_source: DataSource | None,
+        parent_task_run: TaskRun | None = None,
     ) -> TaskRun:
         """Streaming invocations are only concerned with passing through events as they come in.
         At the end of the stream, we still need to validate the output, create a run and everything
@@ -379,7 +389,7 @@ class BaseAdapter(metaclass=ABCMeta):
             )
 
         run = self.generate_run(
-            input, input_source, parsed_output, usage, run_output.trace
+            input, input_source, parsed_output, usage, run_output.trace, parent_task_run
         )
 
         if (
@@ -496,6 +506,7 @@ class BaseAdapter(metaclass=ABCMeta):
         run_output: RunOutput,
         usage: Usage | None = None,
         trace: list[ChatCompletionMessageParam] | None = None,
+        parent_task_run: TaskRun | None = None,
     ) -> TaskRun:
         output_str = (
             json.dumps(run_output.output, ensure_ascii=False)
@@ -530,7 +541,7 @@ class BaseAdapter(metaclass=ABCMeta):
             )
 
         return TaskRun(
-            parent=self.task,
+            parent=parent_task_run if parent_task_run is not None else self.task,
             input=input_str,
             input_source=input_source,
             output=new_output,
@@ -621,11 +632,13 @@ class OpenAIStreamResult:
         input: InputType,
         input_source: DataSource | None,
         prior_trace: list[ChatCompletionMessageParam] | None,
+        parent_task_run: TaskRun | None = None,
     ) -> None:
         self._adapter = adapter
         self._input = input
         self._input_source = input_source
         self._prior_trace = prior_trace
+        self._parent_task_run = parent_task_run
         self._task_run: TaskRun | None = None
 
     @property
@@ -653,7 +666,7 @@ class OpenAIStreamResult:
                     yield event
 
             self._task_run = self._adapter._finalize_stream(
-                adapter_stream, self._input, self._input_source
+                adapter_stream, self._input, self._input_source, self._parent_task_run
             )
         finally:
             if is_root_agent:
@@ -678,11 +691,13 @@ class AiSdkStreamResult:
         input: InputType,
         input_source: DataSource | None,
         prior_trace: list[ChatCompletionMessageParam] | None,
+        parent_task_run: TaskRun | None = None,
     ) -> None:
         self._adapter = adapter
         self._input = input
         self._input_source = input_source
         self._prior_trace = prior_trace
+        self._parent_task_run = parent_task_run
         self._task_run: TaskRun | None = None
 
     @property
@@ -730,7 +745,7 @@ class AiSdkStreamResult:
             yield AiSdkStreamEvent(AiSdkEventType.FINISH_STEP)
 
             self._task_run = self._adapter._finalize_stream(
-                adapter_stream, self._input, self._input_source
+                adapter_stream, self._input, self._input_source, self._parent_task_run
             )
 
             for ai_event in converter.finalize():
