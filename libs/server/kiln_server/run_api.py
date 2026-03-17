@@ -274,13 +274,13 @@ def connect_run_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/tasks/{task_id}/runs_summaries")
     async def get_runs_summary(project_id: str, task_id: str) -> list[RunSummary]:
         task = task_from_id(project_id, task_id)
-        # Readonly since we are not mutating the runs. Faster as we don't need to copy them.
-        runs = task.runs(readonly=True)
-        run_summaries: list[RunSummary] = []
-        for run in runs:
-            summary = RunSummary.from_run(run)
-            run_summaries.append(summary)
-        return run_summaries
+        runs: list[TaskRun] = []
+        stack: list[TaskRun] = list(task.runs(readonly=True))
+        while stack:
+            run = stack.pop()
+            runs.append(run)
+            stack.extend(run.runs(readonly=True))
+        return [RunSummary.from_run(run) for run in runs]
 
     @app.post("/api/projects/{project_id}/tasks/{task_id}/runs/delete")
     async def delete_runs(project_id: str, task_id: str, run_ids: list[str]):
@@ -334,6 +334,7 @@ def connect_run_api(app: FastAPI):
 
         # Continue from prior run if task_run_id is provided
         prior_trace = None
+        prior_run = None
         if request.task_run_id is not None:
             _, prior_run = task_and_run_from_id(
                 project_id, task_id, request.task_run_id
@@ -345,7 +346,9 @@ def connect_run_api(app: FastAPI):
                 )
             prior_trace = prior_run.trace
 
-        return await adapter.invoke(input, prior_trace=prior_trace)
+        return await adapter.invoke(
+            input, prior_trace=prior_trace, parent_task_run=prior_run
+        )
 
     @app.post("/api/projects/{project_id}/tasks/{task_id}/run/stream")
     async def run_task_stream(
@@ -374,6 +377,7 @@ def connect_run_api(app: FastAPI):
 
         # Continue from prior run if task_run_id is provided
         prior_trace = None
+        prior_run = None
         if request.task_run_id is not None:
             _, prior_run = task_and_run_from_id(
                 project_id, task_id, request.task_run_id
@@ -385,7 +389,9 @@ def connect_run_api(app: FastAPI):
                 )
             prior_trace = prior_run.trace
 
-        stream_result = adapter.invoke_openai_stream(input, prior_trace=prior_trace)
+        stream_result = adapter.invoke_openai_stream(
+            input, prior_trace=prior_trace, parent_task_run=prior_run
+        )
 
         async def stream_generator() -> AsyncIterator[str]:
             async for chunk in stream_result:
@@ -424,6 +430,7 @@ def connect_run_api(app: FastAPI):
 
         # Continue from prior run if task_run_id is provided
         prior_trace = None
+        prior_run = None
         if request.task_run_id is not None:
             _, prior_run = task_and_run_from_id(
                 project_id, task_id, request.task_run_id
@@ -435,7 +442,9 @@ def connect_run_api(app: FastAPI):
                 )
             prior_trace = prior_run.trace
 
-        stream_result = adapter.invoke_ai_sdk_stream(input, prior_trace=prior_trace)
+        stream_result = adapter.invoke_ai_sdk_stream(
+            input, prior_trace=prior_trace, parent_task_run=prior_run
+        )
 
         async def stream_generator() -> AsyncIterator[str]:
             async for event in stream_result:
@@ -449,44 +458,6 @@ def connect_run_api(app: FastAPI):
             stream_generator(),
             media_type="text/event-stream",
         )
-
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/continue")
-    async def continue_task_run_endpoint(
-        project_id: str, task_id: str, run_id: str, request: RunTaskRequest
-    ) -> TaskRun:
-        """Continue a task run from a prior trace, creating a new TaskRun.
-
-        Deprecated: Use POST /api/projects/{project_id}/tasks/{task_id}/run
-        with task_run_id in the request body instead.
-        """
-        task, prior_run = task_and_run_from_id(project_id, task_id, run_id)
-
-        if prior_run.trace is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Cannot continue run: no trace available from the prior run.",
-            )
-
-        run_config_properties = request.run_config_properties
-
-        adapter = adapter_for_task(
-            task,
-            run_config_properties=run_config_properties,
-            base_adapter_config=AdapterConfig(default_tags=request.tags),
-        )
-
-        input = request.plaintext_input
-        if task.input_schema() is not None:
-            input = request.structured_input
-
-        if input is None:
-            raise HTTPException(
-                status_code=400,
-                detail="No input provided. Ensure your provided the proper format (plaintext or structured).",
-            )
-
-        # Pass the prior run's trace to continue the conversation
-        return await adapter.invoke(input, prior_trace=prior_run.trace)
 
     @app.patch("/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}")
     async def update_run(
