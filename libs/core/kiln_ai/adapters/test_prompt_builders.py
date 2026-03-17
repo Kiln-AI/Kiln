@@ -642,15 +642,15 @@ def test_task_run_config_prompt_builder_validation_errors(tmp_path):
 
 def test_build_skills_prompt_section_with_skills():
     skills = [
-        Skill(name="code_review", description="Reviews code for quality"),
-        Skill(name="test_writer", description="Writes unit tests"),
+        Skill(name="code-review", description="Reviews code for quality"),
+        Skill(name="test-writer", description="Writes unit tests"),
     ]
     section = build_skills_prompt_section(skills)
     assert section is not None
-    assert "## Skills" in section
-    assert "code_review" in section
+    assert "## Available Skills" in section
+    assert "code-review" in section
     assert "Reviews code for quality" in section
-    assert "test_writer" in section
+    assert "test-writer" in section
     assert "Writes unit tests" in section
 
 
@@ -662,24 +662,24 @@ def test_build_skills_prompt_section_empty():
 def test_build_prompt_with_skills(tmp_path):
     task = build_test_task(tmp_path)
     builder = SimplePromptBuilder(task=task)
-    skills = [Skill(name="my_skill", description="Does something")]
+    skills = [Skill(name="my-skill", description="Does something")]
 
     prompt_with_skills = builder.build_prompt(
         include_json_instructions=False, skills=skills
     )
     prompt_without_skills = builder.build_prompt(include_json_instructions=False)
 
-    assert "## Skills" in prompt_with_skills
-    assert "my_skill" in prompt_with_skills
+    assert "## Available Skills" in prompt_with_skills
+    assert "my-skill" in prompt_with_skills
     assert "Does something" in prompt_with_skills
-    assert "## Skills" not in prompt_without_skills
+    assert "## Available Skills" not in prompt_without_skills
 
 
 def test_build_prompt_for_ui_with_skills(tmp_path):
     task = build_test_task(tmp_path)
     builder = SimplePromptBuilder(task=task)
-    skills = [Skill(name="my_skill", description="Does something")]
+    skills = [Skill(name="my-skill", description="Does something")]
 
     ui_prompt = builder.build_prompt_for_ui(skills=skills)
-    assert "my_skill" in ui_prompt
+    assert "my-skill" in ui_prompt
     assert "Does something" in ui_prompt

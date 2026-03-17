@@ -10,6 +10,8 @@
   import { formatDate } from "$lib/utils/formatters"
   import type { Skill } from "$lib/types"
   import SkillsIcon from "$lib/ui/icons/skills_icon.svelte"
+  import TableButton from "../../generate/[project_id]/[task_id]/table_button.svelte"
+  import Float from "$lib/ui/float.svelte"
   import { ui_state } from "$lib/stores"
 
   $: project_id = $page.params.project_id!
@@ -124,6 +126,7 @@
               <th>Description</th>
               <th>Created At</th>
               <th>Status</th>
+              <th class="w-16">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -163,6 +166,29 @@
                       tight={true}
                     />
                   {/if}
+                </td>
+                <td>
+                  <div class="dropdown dropdown-end dropdown-hover">
+                    <TableButton />
+                    <Float>
+                      <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+                      <ul
+                        tabindex="0"
+                        class="dropdown-content menu bg-base-100 rounded-box z-[1] w-48 p-2 shadow"
+                      >
+                        <li>
+                          <button
+                            on:click={(e) => {
+                              e.stopPropagation()
+                              goto(`/skills/${project_id}/clone/${skill.id}`)
+                            }}
+                          >
+                            Clone
+                          </button>
+                        </li>
+                      </ul>
+                    </Float>
+                  </div>
                 </td>
               </tr>
             {/each}

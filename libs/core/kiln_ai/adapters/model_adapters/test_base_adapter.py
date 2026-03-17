@@ -996,7 +996,7 @@ class TestResolveSkills:
     def test_resolves_skills_from_injected_dict(
         self, base_task, _run_config_with_tools
     ):
-        skill = Skill(name="my_skill", description="A skill")
+        skill = Skill(name="my-skill", description="A skill")
         adapter = MockAdapter(
             task=base_task,
             run_config=_run_config_with_tools([f"kiln_tool::skill::{skill.id}"]),
@@ -1004,10 +1004,10 @@ class TestResolveSkills:
         )
         result = adapter._resolve_skills()
         assert len(result) == 1
-        assert result[0].name == "my_skill"
+        assert result[0].name == "my-skill"
 
     def test_deduplicates_skill_ids(self, base_task, _run_config_with_tools):
-        skill = Skill(name="my_skill", description="A skill", body="do things")
+        skill = Skill(name="my-skill", description="A skill", body="do things")
         adapter = MockAdapter(
             task=base_task,
             run_config=_run_config_with_tools(
@@ -1020,10 +1020,10 @@ class TestResolveSkills:
         )
         result = adapter._resolve_skills()
         assert len(result) == 1
-        assert result[0].name == "my_skill"
+        assert result[0].name == "my-skill"
 
     def test_caches_result(self, base_task, _run_config_with_tools):
-        skill = Skill(name="my_skill", description="A skill")
+        skill = Skill(name="my-skill", description="A skill")
         adapter = MockAdapter(
             task=base_task,
             run_config=_run_config_with_tools([f"kiln_tool::skill::{skill.id}"]),
@@ -1034,14 +1034,14 @@ class TestResolveSkills:
         assert result1 is result2
 
     def test_build_prompt_includes_skills(self, base_task, _run_config_with_tools):
-        skill = Skill(name="my_skill", description="A test skill")
+        skill = Skill(name="my-skill", description="A test skill")
         adapter = MockAdapter(
             task=base_task,
             run_config=_run_config_with_tools([f"kiln_tool::skill::{skill.id}"]),
             config=AdapterConfig(skills={skill.id: skill}),
         )
         prompt = adapter.build_prompt()
-        assert "my_skill" in prompt
+        assert "my-skill" in prompt
         assert "A test skill" in prompt
 
     def test_build_prompt_no_skills_section_without_skills(self, adapter):

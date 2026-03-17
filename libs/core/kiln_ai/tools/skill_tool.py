@@ -34,10 +34,10 @@ class SkillTool(KilnToolInterface):
 
     async def description(self) -> str:
         return (
-            "Load an agent skill by name. Skills provide specialized instructions "
-            "for specific tasks. Call this tool with the skill name to load its "
-            "full instructions. If the skill's instructions mention reference files "
-            "relevant to the current task, load them by passing a 'resource' path "
+            "Load an agent skill by name. Use this tool when a specialized skill "
+            "may help solve the user's task. Calling the tool with a skill name loads that skill's "
+            "full instructions. If the skill references additional files "
+            "relevant to the task, load them by passing a 'resource' path "
             "(e.g. 'references/filename.md')."
         )
 

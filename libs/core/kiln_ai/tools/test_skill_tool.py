@@ -18,11 +18,11 @@ def _make_saved_skill(project, name, description, body):
 @pytest.fixture
 def skills():
     s1 = MagicMock(spec=Skill)
-    s1.name = "code_review"
+    s1.name = "code-review"
     s1.description = "Review code"
 
     s2 = MagicMock(spec=Skill)
-    s2.name = "test_writing"
+    s2.name = "test-writing"
     s2.description = "Write tests"
 
     return [s1, s2]
@@ -47,7 +47,7 @@ def sample_skills(mock_project) -> list[Skill]:
     return [
         _make_saved_skill(
             mock_project,
-            "code_review",
+            "code-review",
             "Review code for quality",
             "## Code Review\nCheck for bugs.",
         ),
@@ -89,7 +89,7 @@ class TestSkillToolDefinition:
         assert params["properties"]["resource"]["type"] == "string"
 
     async def test_skills_property(self, skill_tool: SkillTool):
-        assert set(s.name for s in skill_tool.skills) == {"code_review", "testing"}
+        assert set(s.name for s in skill_tool.skills) == {"code-review", "testing"}
 
 
 class TestSkillToolRun:
@@ -105,33 +105,33 @@ class TestSkillToolRun:
     async def test_unknown_skill(self, tool):
         result = await tool.run(name="nonexistent")
         assert "not found" in result.output
-        assert "code_review" in result.output
-        assert "test_writing" in result.output
+        assert "code-review" in result.output
+        assert "test-writing" in result.output
 
     async def test_successful_skill_load(self, tool, skills):
         skills[0].body.return_value = "# Code Review\nReview all code."
-        result = await tool.run(name="code_review")
+        result = await tool.run(name="code-review")
         assert result.output == "# Code Review\nReview all code."
 
     async def test_body_io_error_is_caught(self, tool, skills):
         skills[0].body.side_effect = FileNotFoundError(
             "SKILL.md not found at /tmp/fake"
         )
-        result = await tool.run(name="code_review")
+        result = await tool.run(name="code-review")
         assert "Error" in result.output
-        assert "code_review" in result.output
+        assert "code-review" in result.output
 
     async def test_body_value_error_is_caught(self, tool, skills):
         skills[0].body.side_effect = ValueError(
             "Skill must be saved before accessing SKILL.md path"
         )
-        result = await tool.run(name="code_review")
+        result = await tool.run(name="code-review")
         assert "Error" in result.output
         assert "Failed to load skill" in result.output
 
     async def test_body_parse_error_is_caught(self, tool, skills):
         skills[0].body.side_effect = Exception("frontmatter parse error")
-        result = await tool.run(name="code_review")
+        result = await tool.run(name="code-review")
         assert "Error" in result.output
         assert "frontmatter parse error" in result.output
 
@@ -141,39 +141,39 @@ class TestSkillToolResource:
         self, sample_skills: list[Skill], skill_tool: SkillTool
     ):
         ref_dir = sample_skills[0].references_dir()
-        ref_dir.mkdir(parents=True)
+        ref_dir.mkdir(parents=True, exist_ok=True)
         (ref_dir / "guide.md").write_text(
             "# Guide\nReference content.", encoding="utf-8"
         )
         result = await skill_tool.run(
-            name="code_review", resource="references/guide.md"
+            name="code-review", resource="references/guide.md"
         )
         assert result.output == "# Guide\nReference content."
 
     async def test_invalid_prefix(self, skill_tool: SkillTool):
-        result = await skill_tool.run(name="code_review", resource="secrets/key.txt")
+        result = await skill_tool.run(name="code-review", resource="secrets/key.txt")
         assert "Error" in result.output
         assert "references/" in result.output
 
     async def test_path_traversal_blocked(self, skill_tool: SkillTool):
         result = await skill_tool.run(
-            name="code_review", resource="references/../../etc/passwd"
+            name="code-review", resource="references/../../etc/passwd"
         )
         assert "Error" in result.output
 
     async def test_missing_reference(self, skill_tool: SkillTool):
         result = await skill_tool.run(
-            name="code_review", resource="references/nonexistent.md"
+            name="code-review", resource="references/nonexistent.md"
         )
         assert "Error" in result.output
         assert "not found" in result.output.lower()
 
     async def test_no_filename_after_prefix(self, skill_tool: SkillTool):
-        result = await skill_tool.run(name="code_review", resource="references/")
+        result = await skill_tool.run(name="code-review", resource="references/")
         assert "Error" in result.output
 
     async def test_without_resource_returns_body(self, skill_tool: SkillTool):
-        result = await skill_tool.run(name="code_review")
+        result = await skill_tool.run(name="code-review")
         assert result.output == "## Code Review\nCheck for bugs."
 
 

@@ -1,11 +1,13 @@
 <script lang="ts">
   import { page } from "$app/stores"
+  import { goto } from "$app/navigation"
   import {
     available_tools,
     get_task_composite_id,
     load_available_models,
     load_available_tools,
     load_model_info,
+    load_task,
     model_info,
   } from "$lib/stores"
   import {
@@ -16,23 +18,26 @@
     load_task_run_configs,
     run_configs_by_task_composite_id,
   } from "$lib/stores/run_configs_store"
-  import type { TaskRunConfig } from "$lib/types"
+  import type { Task, TaskRunConfig } from "$lib/types"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import { getRunConfigUiProperties } from "$lib/utils/run_config_formatters"
   import { onMount } from "svelte"
   import AppPage from "../../../../../app_page.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
+  import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: run_config_id = $page.params.run_config_id!
 
   let run_config: TaskRunConfig | null = null
+  let task: Task | null = null
   let error: KilnError | null = null
   let loading = true
 
   let edit_dialog: EditDialog | null = null
+  let create_run_config_dialog: CreateNewRunConfigDialog | null = null
 
   onMount(async () => {
     try {
@@ -42,6 +47,7 @@
         load_task_prompts(project_id, task_id),
         load_task_run_configs(project_id, task_id),
       ])
+      task = await load_task(project_id, task_id)
     } catch (e) {
       error = createKilnError(e)
     }
@@ -67,6 +73,12 @@
         $available_tools,
       )
     : null
+
+  function handleClone() {
+    if (run_config) {
+      create_run_config_dialog?.showClone(run_config)
+    }
+  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -80,6 +92,11 @@
       },
     ]}
     action_buttons={[
+      {
+        label: "Clone",
+        disabled: loading || error !== null || !run_config,
+        handler: handleClone,
+      },
       {
         label: "Edit",
         disabled: loading || error !== null,
@@ -121,4 +138,14 @@
       max_length: 120,
     },
   ]}
+/>
+
+<CreateNewRunConfigDialog
+  bind:this={create_run_config_dialog}
+  {project_id}
+  {task}
+  new_run_config_created={async (new_config) => {
+    await load_task_run_configs(project_id, task_id, true)
+    goto(`/optimize/${project_id}/${task_id}/run_config/${new_config.id}`)
+  }}
 />

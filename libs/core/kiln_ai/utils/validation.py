@@ -90,6 +90,36 @@ def tool_name_validator(name: str) -> str:
 ToolNameString = Annotated[str, BeforeValidator(tool_name_validator)]
 
 
+def skill_name_validator(name: str) -> str:
+    if name is None or (isinstance(name, str) and len(name.strip()) == 0):
+        raise ValueError("Skill name cannot be empty")
+
+    if not isinstance(name, str):
+        raise ValueError("Skill name must be a string")
+
+    if len(name) > 64:
+        raise ValueError("Skill name must be 64 characters or fewer")
+
+    if not re.compile(r"^[a-z0-9-]+$").match(name):
+        raise ValueError(
+            "Skill name may only contain lowercase letters (a-z), numbers (0-9), and hyphens (-)"
+        )
+
+    if name.startswith("-") or name.endswith("-"):
+        raise ValueError("Skill name must not start or end with a hyphen")
+
+    if "--" in name:
+        raise ValueError("Skill name must not contain consecutive hyphens")
+
+    if not re.match(r"^[a-z]", name):
+        raise ValueError("Skill name must start with a lowercase letter")
+
+    return name
+
+
+SkillNameString = Annotated[str, BeforeValidator(skill_name_validator)]
+
+
 def string_not_empty(s: str) -> str:
     if s == "":
         raise ValueError("String cannot be empty.")

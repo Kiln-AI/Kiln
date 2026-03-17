@@ -102,7 +102,7 @@ export function get_optimizers(
         [METRIC_EASE]: 2,
       },
       on_click: () => {
-        window.open("https://docs.kiln.tech/docs/skills", "_blank")
+        goto(`/skills/${project_id}`)
       },
     },
   ]

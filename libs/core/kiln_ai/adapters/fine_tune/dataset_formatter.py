@@ -17,6 +17,7 @@ from kiln_ai.adapters.fine_tune.vertex_formatter import generate_vertex_gemini
 from kiln_ai.datamodel import DatasetSplit, TaskRun
 from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES, ChatStrategy
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX
 from kiln_ai.tools.base_tool import ToolCallDefinition
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -429,8 +430,16 @@ class DatasetFormatter:
             return None
 
         tool_definitions: list[ToolCallDefinition] = []
-        for tool_id in tools_config.tools:
-            # Check if tool definition is already cached
+        skill_tool_ids = [
+            tid for tid in tools_config.tools if tid.startswith(SKILL_TOOL_ID_PREFIX)
+        ]
+        non_skill_tool_ids = [
+            tid
+            for tid in tools_config.tools
+            if not tid.startswith(SKILL_TOOL_ID_PREFIX)
+        ]
+
+        for tool_id in non_skill_tool_ids:
             if tool_id in self._tool_cache:
                 tool_definitions.append(self._tool_cache[tool_id])
                 continue
@@ -439,12 +448,31 @@ class DatasetFormatter:
                 tool = tool_from_id(tool_id, task)
                 tool_def = await tool.toolcall_definition()
 
-                # cache the definition
                 self._tool_cache[tool_id] = tool_def
                 tool_definitions.append(tool_def)
             except Exception as e:
                 raise RuntimeError(
                     f"Failed to get tool definition for tool ID '{tool_id}': {e}"
                 )
+
+        if skill_tool_ids:
+            cache_key = "::".join(sorted(skill_tool_ids))
+            if cache_key in self._tool_cache:
+                tool_definitions.append(self._tool_cache[cache_key])
+            else:
+                from kiln_ai.adapters.adapter_registry import (
+                    load_skills_from_tool_ids,
+                )
+                from kiln_ai.tools.skill_tool import SkillTool
+
+                skills_dict = load_skills_from_tool_ids(task, skill_tool_ids)
+                if skills_dict:
+                    skill_tool = SkillTool(
+                        f"{SKILL_TOOL_ID_PREFIX}_combined",
+                        list(skills_dict.values()),
+                    )
+                    skill_def = await skill_tool.toolcall_definition()
+                    self._tool_cache[cache_key] = skill_def
+                    tool_definitions.append(skill_def)
 
         return tool_definitions if tool_definitions else None
