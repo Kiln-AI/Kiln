@@ -1,5 +1,5 @@
 from os import getenv
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -1024,3 +1024,374 @@ class TestLoadSkillsForTask:
         assert set(result.keys()) == {skill_a.id, skill_b.id}
         assert result[skill_a.id].name == "skill-a"
         assert result[skill_b.id].name == "skill-b"
+
+
+@pytest.mark.asyncio
+async def test_run_task_sync_mode(basic_task):
+    """Test run_task helper in sync mode."""
+    from kiln_ai.adapters.adapter_registry import run_task
+    from kiln_ai.datamodel import DataSource, DataSourceType, TaskOutput, TaskRun
+    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+
+    run_config_properties = KilnAgentRunConfigProperties(
+        model_name="gpt_4o",
+        model_provider_name="ollama",
+        prompt_id="simple_prompt_builder",
+        structured_output_mode="json_schema",
+    )
+
+    mock_task_run = TaskRun(
+        parent=basic_task,
+        input="Test input",
+        input_source=DataSource(
+            type=DataSourceType.human, properties={"created_by": "Test User"}
+        ),
+        output=TaskOutput(
+            output="Test output",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt_4o",
+                    "model_provider": "ollama",
+                    "adapter_name": "kiln_langchain_adapter",
+                },
+            ),
+        ),
+    )
+
+    mock_invoke = AsyncMock(return_value=mock_task_run)
+
+    with (
+        patch("kiln_ai.adapters.adapter_registry.adapter_for_task") as mock_adapter_for,
+    ):
+        mock_adapter_for.return_value.invoke = mock_invoke
+
+        result = await run_task(
+            kiln_task=basic_task,
+            run_config_properties=run_config_properties,
+            new_input="Test input",
+            stream_mode="sync",
+        )
+
+    assert result == mock_task_run
+    mock_invoke.assert_called_once_with("Test input", None, None)
+
+
+@pytest.mark.asyncio
+async def test_run_task_with_task_run_object(basic_task):
+    """Test run_task helper continues from a TaskRun object."""
+    from kiln_ai.adapters.adapter_registry import run_task
+    from kiln_ai.datamodel import DataSource, DataSourceType, TaskOutput, TaskRun
+    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+
+    prior_run = TaskRun(
+        parent=basic_task,
+        input="Prior input",
+        input_source=DataSource(
+            type=DataSourceType.human, properties={"created_by": "Test User"}
+        ),
+        output=TaskOutput(
+            output="Prior output",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt_4o",
+                    "model_provider": "ollama",
+                    "adapter_name": "kiln_langchain_adapter",
+                },
+            ),
+        ),
+        trace=[
+            {"role": "user", "content": "Prior input"},
+            {"role": "assistant", "content": "Prior output"},
+        ],
+    )
+
+    run_config_properties = KilnAgentRunConfigProperties(
+        model_name="gpt_4o",
+        model_provider_name="ollama",
+        prompt_id="simple_prompt_builder",
+        structured_output_mode="json_schema",
+    )
+
+    mock_task_run = TaskRun(
+        parent=basic_task,
+        input="New input",
+        input_source=DataSource(
+            type=DataSourceType.human, properties={"created_by": "Test User"}
+        ),
+        output=TaskOutput(
+            output="New output",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt_4o",
+                    "model_provider": "ollama",
+                    "adapter_name": "kiln_langchain_adapter",
+                },
+            ),
+        ),
+    )
+
+    mock_invoke = AsyncMock(return_value=mock_task_run)
+
+    with (
+        patch("kiln_ai.adapters.adapter_registry.adapter_for_task") as mock_adapter_for,
+    ):
+        mock_adapter_for.return_value.invoke = mock_invoke
+
+        result = await run_task(
+            kiln_task=basic_task,
+            run_config_properties=run_config_properties,
+            task_run=prior_run,
+            new_input="New input",
+            stream_mode="sync",
+        )
+
+    assert result == mock_task_run
+    mock_invoke.assert_called_once_with("New input", None, prior_run.trace)
+
+
+@pytest.mark.asyncio
+async def test_run_task_with_task_run_id_string(basic_task):
+    """Test run_task helper continues from a task run ID string."""
+    from kiln_ai.adapters.adapter_registry import run_task
+    from kiln_ai.datamodel import DataSource, DataSourceType, TaskOutput, TaskRun
+    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+
+    prior_run = TaskRun(
+        parent=basic_task,
+        input="Prior input",
+        input_source=DataSource(
+            type=DataSourceType.human, properties={"created_by": "Test User"}
+        ),
+        output=TaskOutput(
+            output="Prior output",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt_4o",
+                    "model_provider": "ollama",
+                    "adapter_name": "kiln_langchain_adapter",
+                },
+            ),
+        ),
+        trace=[
+            {"role": "user", "content": "Prior input"},
+            {"role": "assistant", "content": "Prior output"},
+        ],
+    )
+    prior_run.id = "test-run-id-123"
+
+    run_config_properties = KilnAgentRunConfigProperties(
+        model_name="gpt_4o",
+        model_provider_name="ollama",
+        prompt_id="simple_prompt_builder",
+        structured_output_mode="json_schema",
+    )
+
+    mock_task_run = TaskRun(
+        parent=basic_task,
+        input="New input",
+        input_source=DataSource(
+            type=DataSourceType.human, properties={"created_by": "Test User"}
+        ),
+        output=TaskOutput(
+            output="New output",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt_4o",
+                    "model_provider": "ollama",
+                    "adapter_name": "kiln_langchain_adapter",
+                },
+            ),
+        ),
+    )
+
+    mock_invoke = AsyncMock(return_value=mock_task_run)
+
+    with (
+        patch("kiln_ai.adapters.adapter_registry.adapter_for_task") as mock_adapter_for,
+        patch("kiln_ai.datamodel.TaskRun.from_id_and_parent_path") as mock_from_id,
+    ):
+        mock_from_id.return_value = prior_run
+        mock_adapter_for.return_value.invoke = mock_invoke
+
+        result = await run_task(
+            kiln_task=basic_task,
+            run_config_properties=run_config_properties,
+            task_run="test-run-id-123",
+            new_input="New input",
+            stream_mode="sync",
+        )
+
+    assert result == mock_task_run
+    mock_from_id.assert_called_once_with("test-run-id-123", basic_task.path)
+    mock_invoke.assert_called_once_with("New input", None, prior_run.trace)
+
+
+@pytest.mark.asyncio
+async def test_run_task_with_task_run_id_not_found(basic_task):
+    """Test run_task helper raises when task run ID not found."""
+    from kiln_ai.adapters.adapter_registry import run_task
+    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+
+    run_config_properties = KilnAgentRunConfigProperties(
+        model_name="gpt_4o",
+        model_provider_name="ollama",
+        prompt_id="simple_prompt_builder",
+        structured_output_mode="json_schema",
+    )
+
+    with (
+        patch("kiln_ai.datamodel.TaskRun.from_id_and_parent_path") as mock_from_id,
+    ):
+        mock_from_id.return_value = None
+
+        with pytest.raises(ValueError, match="TaskRun not found"):
+            await run_task(
+                kiln_task=basic_task,
+                run_config_properties=run_config_properties,
+                task_run="non-existent-id",
+                new_input="New input",
+                stream_mode="sync",
+            )
+
+
+@pytest.mark.asyncio
+async def test_run_task_with_task_run_no_trace(basic_task):
+    """Test run_task helper raises when prior run has no trace."""
+    from kiln_ai.adapters.adapter_registry import run_task
+    from kiln_ai.datamodel import DataSource, DataSourceType, TaskOutput, TaskRun
+    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+
+    prior_run = TaskRun(
+        parent=basic_task,
+        input="Prior input",
+        input_source=DataSource(
+            type=DataSourceType.human, properties={"created_by": "Test User"}
+        ),
+        output=TaskOutput(
+            output="Prior output",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt_4o",
+                    "model_provider": "ollama",
+                    "adapter_name": "kiln_langchain_adapter",
+                },
+            ),
+        ),
+        trace=None,  # No trace
+    )
+
+    run_config_properties = KilnAgentRunConfigProperties(
+        model_name="gpt_4o",
+        model_provider_name="ollama",
+        prompt_id="simple_prompt_builder",
+        structured_output_mode="json_schema",
+    )
+
+    with pytest.raises(ValueError, match="no trace available"):
+        await run_task(
+            kiln_task=basic_task,
+            run_config_properties=run_config_properties,
+            task_run=prior_run,
+            new_input="New input",
+            stream_mode="sync",
+        )
+
+
+@pytest.mark.asyncio
+async def test_run_task_openai_stream_mode(basic_task):
+    """Test run_task helper in OpenAI stream mode."""
+    from kiln_ai.adapters.adapter_registry import run_task
+    from kiln_ai.adapters.model_adapters.base_adapter import OpenAIStreamResult
+    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+
+    run_config_properties = KilnAgentRunConfigProperties(
+        model_name="gpt_4o",
+        model_provider_name="ollama",
+        prompt_id="simple_prompt_builder",
+        structured_output_mode="json_schema",
+    )
+
+    mock_stream_result = MagicMock(spec=OpenAIStreamResult)
+
+    with (
+        patch("kiln_ai.adapters.adapter_registry.adapter_for_task") as mock_adapter_for,
+    ):
+        mock_adapter_for.return_value.invoke_openai_stream = MagicMock(
+            return_value=mock_stream_result
+        )
+
+        result = await run_task(
+            kiln_task=basic_task,
+            run_config_properties=run_config_properties,
+            new_input="Test input",
+            stream_mode="openai",
+        )
+
+    assert result == mock_stream_result
+    mock_adapter_for.return_value.invoke_openai_stream.assert_called_once_with(
+        "Test input", None, None
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_task_ai_sdk_stream_mode(basic_task):
+    """Test run_task helper in AI SDK stream mode."""
+    from kiln_ai.adapters.adapter_registry import run_task
+    from kiln_ai.adapters.model_adapters.base_adapter import AiSdkStreamResult
+    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+
+    run_config_properties = KilnAgentRunConfigProperties(
+        model_name="gpt_4o",
+        model_provider_name="ollama",
+        prompt_id="simple_prompt_builder",
+        structured_output_mode="json_schema",
+    )
+
+    mock_stream_result = MagicMock(spec=AiSdkStreamResult)
+
+    with (
+        patch("kiln_ai.adapters.adapter_registry.adapter_for_task") as mock_adapter_for,
+    ):
+        mock_adapter_for.return_value.invoke_ai_sdk_stream = MagicMock(
+            return_value=mock_stream_result
+        )
+
+        result = await run_task(
+            kiln_task=basic_task,
+            run_config_properties=run_config_properties,
+            new_input="Test input",
+            stream_mode="ai_sdk",
+        )
+
+    assert result == mock_stream_result
+    mock_adapter_for.return_value.invoke_ai_sdk_stream.assert_called_once_with(
+        "Test input", None, None
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_task_invalid_stream_mode(basic_task):
+    """Test run_task helper rejects invalid stream mode."""
+    from kiln_ai.adapters.adapter_registry import run_task
+    from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+
+    run_config_properties = KilnAgentRunConfigProperties(
+        model_name="gpt_4o",
+        model_provider_name="ollama",
+        prompt_id="simple_prompt_builder",
+        structured_output_mode="json_schema",
+    )
+
+    with pytest.raises(ValueError, match="Invalid stream_mode"):
+        await run_task(
+            kiln_task=basic_task,
+            run_config_properties=run_config_properties,
+            new_input="Test input",
+            stream_mode="invalid_mode",  # type: ignore[arg-type]
+        )

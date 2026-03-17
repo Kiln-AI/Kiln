@@ -417,6 +417,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/run/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Task Stream
+         * @description Run a task with OpenAI-style streaming response.
+         */
+        post: operations["run_task_stream_api_projects__project_id__tasks__task_id__run_stream_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/run/stream/ai-sdk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Task Ai Sdk Stream
+         * @description Run a task with AI SDK-style streaming response.
+         */
+        post: operations["run_task_ai_sdk_stream_api_projects__project_id__tasks__task_id__run_stream_ai_sdk_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/runs/edit_tags": {
         parameters: {
             query?: never;
@@ -6318,6 +6358,8 @@ export interface components {
             } | unknown[] | null;
             /** Tags */
             tags?: string[] | null;
+            /** Task Run Id */
+            task_run_id?: string | null;
         };
         /**
          * SampleApi
@@ -7031,6 +7073,11 @@ export interface components {
          *
          *     Contains the input used, its source, the output produced, and optional
          *     repair information if the output needed correction.
+         *
+         *     Can be nested under another TaskRun; nested runs are stored as child runs
+         *     in a "runs" subfolder (same relationship name as Task's runs).
+         *
+         *     Accepts both Task and TaskRun as parents (polymorphic).
          */
         "TaskRun-Input": {
             /**
@@ -7093,6 +7140,11 @@ export interface components {
          *
          *     Contains the input used, its source, the output produced, and optional
          *     repair information if the output needed correction.
+         *
+         *     Can be nested under another TaskRun; nested runs are stored as child runs
+         *     in a "runs" subfolder (same relationship name as Task's runs).
+         *
+         *     Accepts both Task and TaskRun as parents (polymorphic).
          */
         "TaskRun-Output": {
             /**
@@ -8500,6 +8552,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_task_stream_api_projects__project_id__tasks__task_id__run_stream_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunTaskRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_task_ai_sdk_stream_api_projects__project_id__tasks__task_id__run_stream_ai_sdk_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RunTaskRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

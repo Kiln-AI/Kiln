@@ -7,6 +7,7 @@
   import Run from "./run.svelte"
   import { client } from "$lib/api_client"
   import type { TaskRun, TaskRunConfig } from "$lib/types"
+  import type { components } from "$lib/api_schema"
   import RunInputForm from "./run_input_form.svelte"
   import posthog from "posthog-js"
   import { onMount, tick } from "svelte"
@@ -14,6 +15,7 @@
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import { isMcpRunConfig } from "$lib/types"
   import { page } from "$app/stores"
+  import TraceComponent from "$lib/ui/trace/trace.svelte"
 
   let run_error: KilnError | null = null
   let submitting = false
@@ -40,16 +42,55 @@
   $: input_schema = $current_task?.input_json_schema
   $: pending_tool_id = $page.url.searchParams.get("tool_id")
   $: pending_run_config_id = $page.url.searchParams.get("run_config_id")
+  // Use a local variable to track the latest run in the conversation
+  let conversation_prior_run_id: string | null = null
+  $: prior_run_id =
+    $page.url.searchParams.get("prior_run_id") || conversation_prior_run_id
 
   $: subtitle = $current_task ? "Task: " + $current_task.name : ""
 
-  onMount(() => {
+  // Load prior run data if continuing a conversation
+  let prior_run: TaskRun | null = null
+  let loading_prior_run = false
+  let prior_run_error: KilnError | null = null
+  let prior_run_loaded = false
+
+  // Reactive load of prior run - watches for when all required values are available
+  $: if (!prior_run_loaded && prior_run_id && project_id && task_id) {
+    load_prior_run()
+  }
+
+  onMount(async () => {
     const model_override = $page.url.searchParams.get("model")
     if (model_override) {
       model = model_override
       selected_run_config_id = "custom"
     }
   })
+
+  async function load_prior_run() {
+    loading_prior_run = true
+    try {
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
+        {
+          params: {
+            path: { project_id, task_id, run_id: prior_run_id! },
+          },
+        },
+      )
+      if (error) {
+        throw error
+      }
+      prior_run = data
+      prior_run_loaded = true
+    } catch (error) {
+      prior_run_error = createKilnError(error)
+      console.warn("Failed to load prior run:", error)
+    } finally {
+      loading_prior_run = false
+    }
+  }
 
   async function run_task() {
     try {
@@ -72,27 +113,38 @@
         run_config_component.set_model_dropdown_error("Required")
         throw new Error("You must select a model before running")
       }
-      const {
-        data, // only present if 2XX response
-        error: fetch_error, // only present if 4XX or 5XX response
-      } = await client.POST("/api/projects/{project_id}/tasks/{task_id}/run", {
-        params: {
-          path: {
-            project_id: project_id,
-            task_id: task_id,
+
+      let data: TaskRun | undefined
+      let fetch_error: components["schemas"]["HTTPValidationError"] | null =
+        null
+
+      // Always use the regular run endpoint, passing task_run_id if continuing conversation
+      const regular_result = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/run",
+        {
+          params: {
+            path: {
+              project_id: project_id,
+              task_id: task_id,
+            },
+          },
+          body: {
+            run_config_properties: run_config_properties,
+            plaintext_input: input_form.get_plaintext_input_data(),
+            // @ts-expect-error - let the server verify the type. TS isn't ideal for runtime type checking.
+            structured_input: input_form.get_structured_input_data(),
+            tags: ["manual_run"],
+            task_run_id: prior_run_id,
           },
         },
-        body: {
-          run_config_properties: run_config_properties,
-          plaintext_input: input_form.get_plaintext_input_data(),
-          // @ts-expect-error - let the server verify the type. TS isn't ideal for runtime type checking.
-          structured_input: input_form.get_structured_input_data(),
-          tags: ["manual_run"],
-        },
-      })
+      )
+      data = regular_result.data ?? undefined
+      fetch_error = regular_result.error ?? null
+
       if (fetch_error) {
         throw fetch_error
       }
+
       if (is_mcp_run) {
         posthog.capture("run_mcp_tool_directly")
       } else {
@@ -111,7 +163,18 @@
           ).length,
         })
       }
-      response = data
+
+      response = data ?? null
+
+      // Update the conversation tracking to point to the latest run
+      conversation_prior_run_id = response?.id ?? null
+
+      // Update prior_run to the new response so trace remains available
+      prior_run = response
+      prior_run_loaded = true
+
+      // Clear the input form to allow user to continue the conversation
+      input_form.clear_input()
     } catch (e) {
       run_error = createKilnError(e)
     } finally {
@@ -191,6 +254,46 @@
     bind:subtitle
     action_buttons={[{ label: "Clear All", handler: clear_all }]}
   >
+    {#if prior_run && !loading_prior_run}
+      <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <div class="flex items-center gap-2">
+          <svg
+            class="w-5 h-5 text-blue-600"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+            />
+          </svg>
+          <span class="font-medium text-blue-800">Continuing Conversation</span>
+        </div>
+        <p class="mt-2 text-sm text-blue-700">
+          You're continuing from a previous run. The conversation history will
+          be included in the context.
+          <a
+            href={`/dataset/${project_id}/${task_id}/${prior_run_id}/run`}
+            class="link link-primary ml-1"
+            target="_blank"
+          >
+            View prior run</a
+          >
+        </p>
+      </div>
+    {:else if loading_prior_run}
+      <div class="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+        <span class="loading loading-spinner loading-sm"></span>
+        <span class="ml-2 text-gray-600">Loading prior run...</span>
+      </div>
+    {:else if prior_run_error}
+      <div class="mb-6 p-4 bg-error/10 border border-error/20 rounded-lg">
+        <p class="text-error text-sm">{prior_run_error.getMessage()}</p>
+      </div>
+    {/if}
     <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
       <div class="grow">
         <div class="text-xl font-bold mb-4">Input</div>
@@ -249,6 +352,12 @@
           bind:run_complete
           focus_repair_on_appear={true}
         />
+      </div>
+    {:else if prior_run && prior_run.trace}
+      <!-- Show prior run's trace when continuing a conversation -->
+      <div class="mt-8 xl:mt-12 max-w-4xl">
+        <div class="text-xl font-bold mb-4">Previous Message Trace</div>
+        <TraceComponent trace={prior_run.trace} {project_id} />
       </div>
     {/if}
   </AppPage>
