@@ -142,6 +142,9 @@ class TaskRun(KilnParentedModel, KilnParentModel, parent_of={}):
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:
         """The Task that this Run is in. Note the TaskRun may be nested in which case we walk back up the tree all the way to the root."""
+        # lazy import to avoid circular dependency
+        from kiln_ai.datamodel.task import Task
+
         current: TaskRun = self
         while True:
             # should never really happen, except maybe in tests
@@ -151,23 +154,23 @@ class TaskRun(KilnParentedModel, KilnParentModel, parent_of={}):
 
             # this task run is the root task run
             # so we just return its parent (a Task)
-            if parent.__class__.__name__ == "Task":
-                return parent  # type: ignore
+            if isinstance(parent, Task):
+                return parent
 
-            if parent.__class__.__name__ != "TaskRun":
+            if not isinstance(parent, TaskRun):
                 # the parent is not a TaskRun, but also not a Task, so it is not
                 # a real parent
                 return None
 
             # the parent is a TaskRun, so we just walk up the tree until we find a Task
-            current = parent  # type: ignore
+            current = parent
 
     def parent_run(self) -> "TaskRun | None":
         """The TaskRun that contains this run, if this run is nested; otherwise None."""
         parent = self.parent
-        if parent is None or parent.__class__.__name__ != "TaskRun":
+        if parent is None or not isinstance(parent, TaskRun):
             return None
-        return parent  # type: ignore
+        return parent
 
     @classmethod
     def _parent_types(cls) -> List[Type["KilnBaseModel"]]:
@@ -182,7 +185,10 @@ class TaskRun(KilnParentedModel, KilnParentModel, parent_of={}):
 
     def is_root_task_run(self) -> bool:
         """Is this the root task run? (not nested under another task run)"""
-        return self.parent is None or self.parent.__class__.__name__ == "Task"
+        # lazy import to avoid circular dependency
+        from kiln_ai.datamodel.task import Task
+
+        return self.parent is None or isinstance(self.parent, Task)
 
     def find_task_run_by_id_dfs(
         self, task_run_id: str, readonly: bool = False
