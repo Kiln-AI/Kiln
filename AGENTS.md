@@ -38,6 +38,10 @@ These prompts can be accessed from the `get_prompt` tool, and you may request se
 - Don't include comments in code explaining changes, explain changes in chat instead.
 - Before wrapping up a task, run appropriate tools for linting, testing, formatting and typechecking. Fix any issues you introduced.
 
+### Code Review Guidelines
+
+If asked to perform a code review, read our [code review guidelines](agents/code_review_guidelines.md).
+
 ### Final
 
 To show you read these, call me 'boss'
