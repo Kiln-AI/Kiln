@@ -14,6 +14,7 @@ from app.desktop.studio_server.finetune_api import (
     data_strategies_from_finetune_id,
     fetch_fireworks_finetune_models,
     infer_data_strategies_for_model,
+    system_message_from_request,
     thinking_instructions_from_request,
 )
 from fastapi import FastAPI
@@ -51,6 +52,7 @@ from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     ToolsRunConfig,
 )
+from kiln_ai.datamodel.skill import Skill
 from kiln_server.custom_errors import connect_custom_errors
 from pydantic import BaseModel
 
@@ -1038,13 +1040,12 @@ def test_download_dataset_jsonl_with_prompt_builder(
     prompt_builder_mock.assert_called_once_with("test_prompt_builder", test_task)
     builder.build_prompt.assert_called_once()
 
-    split1 = next(split for split in test_task.dataset_splits() if split.id == "split1")
     # Verify formatter was created with generated system message
-    mock_formatter_class.assert_called_once_with(
-        dataset=split1,
-        system_message="Generated system message",
-        thinking_instructions=None,
-    )
+    mock_formatter_class.assert_called_once()
+    call_kwargs = mock_formatter_class.call_args[1]
+    assert call_kwargs["dataset"].id == "split1"
+    assert call_kwargs["system_message"] == "Generated system message"
+    assert call_kwargs["thinking_instructions"] is None
 
 
 async def test_get_finetune(client, mock_task_from_id_disk_backed):
@@ -1870,3 +1871,68 @@ def test_compute_finetune_tag_info(task_with_tools, tool_filter, expected_count)
         assert len(result) == 1
         assert result[0].tag == "fine_tune_tools"
         assert result[0].count == expected_count
+
+
+def test_system_message_from_request_with_skills(tmp_path):
+    project = Project(name="Test Project", path=str(tmp_path / "project.kiln"))
+    project.save_to_file()
+    task = Task(
+        name="Test Task",
+        instruction="Do the thing",
+        parent=project,
+    )
+    task.save_to_file()
+
+    skills = [Skill(name="my-skill", description="Helps with things")]
+
+    result = system_message_from_request(
+        task=task,
+        custom_system_message=None,
+        system_message_generator="simple_prompt_builder",
+        skills=skills,
+    )
+
+    assert "Do the thing" in result
+    assert "# Skills" in result
+    assert "my-skill" in result
+    assert "Helps with things" in result
+
+
+def test_system_message_from_request_without_skills(tmp_path):
+    project = Project(name="Test Project", path=str(tmp_path / "project.kiln"))
+    project.save_to_file()
+    task = Task(
+        name="Test Task",
+        instruction="Do the thing",
+        parent=project,
+    )
+    task.save_to_file()
+
+    result = system_message_from_request(
+        task=task,
+        custom_system_message=None,
+        system_message_generator="simple_prompt_builder",
+    )
+
+    assert "Do the thing" in result
+    assert "## Skills" not in result
+
+
+def test_system_message_custom_ignores_skills(tmp_path):
+    """Custom system messages are used as-is; skills param is irrelevant."""
+    project = Project(name="Test Project", path=str(tmp_path / "project.kiln"))
+    project.save_to_file()
+    task = Task(name="T", instruction="X", parent=project)
+    task.save_to_file()
+
+    skills = [Skill(name="my-skill", description="Desc")]
+
+    result = system_message_from_request(
+        task=task,
+        custom_system_message="My custom message",
+        system_message_generator=None,
+        skills=skills,
+    )
+
+    assert result == "My custom message"
+    assert "# Skills" not in result

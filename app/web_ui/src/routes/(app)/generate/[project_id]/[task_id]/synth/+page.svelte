@@ -26,6 +26,7 @@
   import type { TaskRunOutput } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
+  import { split_tool_and_skill_ids } from "$lib/stores/tools_store"
 
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
@@ -739,13 +740,22 @@
   }
 
   let mandatory_tools: string[] | null = null
+  let mandatory_skills: string[] | null = null
 
-  $: mandatory_tools = $saved_state.tool_id
-    ? [$saved_state.tool_id]
-    : $saved_state.fine_tuning_tools &&
-        $saved_state.fine_tuning_tools.length > 0
-      ? $saved_state.fine_tuning_tools
-      : null
+  $: {
+    const ft = $saved_state.fine_tuning_tools
+    if ($saved_state.tool_id) {
+      mandatory_tools = [$saved_state.tool_id]
+      mandatory_skills = null
+    } else if (ft && ft.length > 0) {
+      const { tool_ids, skill_ids } = split_tool_and_skill_ids(ft)
+      mandatory_tools = tool_ids.length > 0 ? tool_ids : null
+      mandatory_skills = skill_ids.length > 0 ? skill_ids : null
+    } else {
+      mandatory_tools = null
+      mandatory_skills = null
+    }
+  }
 </script>
 
 <div class="max-w-[1400px]">
@@ -1187,12 +1197,13 @@
             requires_structured_output={!!task.output_json_schema}
             tools_selector_settings={{
               mandatory_tools,
-              optional: mandatory_tools ? false : true,
-              disabled:
-                $saved_state.fine_tuning_tools &&
-                $saved_state.fine_tuning_tools.length > 0
-                  ? true
-                  : false,
+              optional: !mandatory_tools?.length,
+              disabled: !!mandatory_tools?.length,
+            }}
+            skills_selector_settings={{
+              mandatory_skills,
+              optional: !mandatory_skills?.length,
+              disabled: !!mandatory_skills?.length,
             }}
             model_dropdown_settings={{
               requires_structured_output: task.output_json_schema

@@ -18,6 +18,10 @@ from kiln_ai.adapters.ml_model_list import (
     ModelProviderName,
     built_in_models,
 )
+from kiln_ai.adapters.adapter_registry import (
+    load_skills_for_task,
+    load_skills_from_tool_ids,
+)
 from kiln_ai.adapters.prompt_builders import (
     chain_of_thought_prompt,
     prompt_builder_from_id,
@@ -43,6 +47,7 @@ from kiln_ai.datamodel.dataset_split import (
     Train80Val20SplitDefinition,
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.skill import Skill
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
@@ -451,8 +456,16 @@ def connect_fine_tune_api(app: FastAPI):
                 detail="System message generator or custom system message is required",
             )
 
+        skills: list[Skill] = []
+        if request.run_config_properties is not None:
+            skills_dict = load_skills_for_task(task, request.run_config_properties)
+            skills = list(skills_dict.values())
+
         system_message = system_message_from_request(
-            task, request.custom_system_message, request.system_message_generator
+            task,
+            request.custom_system_message,
+            request.system_message_generator,
+            skills=skills,
         )
         thinking_instructions = thinking_instructions_from_request(
             task, request.data_strategy, request.custom_thinking_instructions
@@ -514,8 +527,12 @@ def connect_fine_tune_api(app: FastAPI):
                 detail=f"Dataset split with name '{split_name}' not found",
             )
 
+        tool_info = dataset.tool_info()
+        skills_dict = load_skills_from_tool_ids(task, tool_info.tools)
+        skills = list(skills_dict.values())
+
         system_message = system_message_from_request(
-            task, custom_system_message, system_message_generator
+            task, custom_system_message, system_message_generator, skills=skills
         )
         thinking_instructions = thinking_instructions_from_request(
             task, data_strategy_typed, custom_thinking_instructions
@@ -542,7 +559,10 @@ def connect_fine_tune_api(app: FastAPI):
 
 
 def system_message_from_request(
-    task: Task, custom_system_message: str | None, system_message_generator: str | None
+    task: Task,
+    custom_system_message: str | None,
+    system_message_generator: str | None,
+    skills: list[Skill] | None = None,
 ) -> str:
     system_message = custom_system_message
     if not system_message or (
@@ -556,7 +576,8 @@ def system_message_from_request(
         try:
             prompt_builder = prompt_builder_from_id(system_message_generator, task)
             system_message = prompt_builder.build_prompt(
-                include_json_instructions=False
+                include_json_instructions=False,
+                skills=skills,
             )
         except Exception as e:
             raise HTTPException(

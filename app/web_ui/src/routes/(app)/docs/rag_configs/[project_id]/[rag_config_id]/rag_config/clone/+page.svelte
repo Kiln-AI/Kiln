@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from "$app/stores"
+  import { ui_state } from "$lib/stores"
   import AppPage from "../../../../../../app_page.svelte"
   import { goto } from "$app/navigation"
   import { client } from "$lib/api_client"
@@ -55,6 +56,10 @@
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
     breadcrumbs={[
+      {
+        label: "Optimize",
+        href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+      },
       {
         label: "Docs & Search",
         href: `/docs/${project_id}`,

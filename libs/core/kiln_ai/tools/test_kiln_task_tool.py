@@ -160,6 +160,10 @@ class TestKilnTaskTool:
                 "kiln_ai.adapters.adapter_registry.adapter_for_task"
             ) as mock_adapter_for_task,
             patch(
+                "kiln_ai.adapters.adapter_registry.load_skills_for_task",
+                return_value={},
+            ),
+            patch(
                 "kiln_ai.adapters.model_adapters.base_adapter.AdapterConfig"
             ) as mock_adapter_config,
         ):
@@ -187,10 +191,11 @@ class TestKilnTaskTool:
                 base_adapter_config=mock_adapter_config.return_value,
             )
 
-            # Verify adapter config
+            # Verify adapter config includes skills
             mock_adapter_config.assert_called_once_with(
                 allow_saving=True,
                 default_tags=["tool_call"],
+                skills={},
             )
 
             # Verify adapter invoke was called
@@ -230,9 +235,15 @@ class TestKilnTaskTool:
         kiln_task_tool._task = mock_task
         kiln_task_tool._run_config = mock_run_config
 
-        with patch(
-            "kiln_ai.adapters.adapter_registry.adapter_for_task"
-        ) as mock_adapter_for_task:
+        with (
+            patch(
+                "kiln_ai.adapters.adapter_registry.adapter_for_task"
+            ) as mock_adapter_for_task,
+            patch(
+                "kiln_ai.adapters.adapter_registry.load_skills_for_task",
+                return_value={},
+            ),
+        ):
             # Mock adapter and task run
             mock_adapter = AsyncMock()
             mock_adapter_for_task.return_value = mock_adapter
@@ -450,9 +461,15 @@ class TestKilnTaskTool:
         kiln_task_tool._task = mock_task
         kiln_task_tool._run_config = mock_run_config
 
-        with patch(
-            "kiln_ai.adapters.adapter_registry.adapter_for_task"
-        ) as mock_adapter_for_task:
+        with (
+            patch(
+                "kiln_ai.adapters.adapter_registry.adapter_for_task"
+            ) as mock_adapter_for_task,
+            patch(
+                "kiln_ai.adapters.adapter_registry.load_skills_for_task",
+                return_value={},
+            ),
+        ):
             # Mock adapter to raise an exception
             mock_adapter = AsyncMock()
             mock_adapter.invoke.side_effect = Exception("Adapter failed")
@@ -478,6 +495,10 @@ class TestKilnTaskTool:
                 "kiln_ai.adapters.adapter_registry.adapter_for_task"
             ) as mock_adapter_for_task,
             patch(
+                "kiln_ai.adapters.adapter_registry.load_skills_for_task",
+                return_value={},
+            ),
+            patch(
                 "kiln_ai.adapters.model_adapters.base_adapter.AdapterConfig"
             ) as mock_adapter_config,
         ):
@@ -491,8 +512,9 @@ class TestKilnTaskTool:
 
             await kiln_task_tool.run(context=mock_context_false, input="test input")
 
-            # Verify adapter config was called with allow_saving=False
+            # Verify adapter config was called with allow_saving=False and skills
             mock_adapter_config.assert_called_once_with(
                 allow_saving=False,
                 default_tags=["tool_call"],
+                skills={},
             )
