@@ -390,6 +390,18 @@
         shortcut: isMacOS() ? "Backspace" : "Delete",
       })
     }
+    // Add "Continue Conversation" button if run has a trace
+    if (run?.trace && run.trace.length > 0) {
+      buttons.push({
+        label: "Continue Conversation",
+        icon: "/images/next.svg",
+        handler: () => {
+          goto(
+            `/run?prior_run_id=${run_id}&project_id=${project_id}&task_id=${task_id}`,
+          )
+        },
+      })
+    }
     if (list_page.length > 1) {
       const index = list_page.indexOf(run_id)
       if (index !== -1) {
