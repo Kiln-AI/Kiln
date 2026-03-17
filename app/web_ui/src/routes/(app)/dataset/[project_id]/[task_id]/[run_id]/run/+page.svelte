@@ -327,6 +327,16 @@
     return properties
   }
 
+  let properties_for_list: UiProperty[] = []
+  $: {
+    void tools_property_value
+    void skills_property_value
+    properties_for_list = [
+      ...get_properties(run, $current_task_prompts, $model_info),
+      ...(see_all_properties ? get_advanced_properties(run) : []),
+    ]
+  }
+
   onMount(async () => {
     await Promise.all([
       load_run(),
@@ -479,13 +489,7 @@
           <Output raw_output={run.input} />
         </div>
         <div class="w-72 2xl:w-96 flex-none flex flex-col">
-          <PropertyList
-            properties={[
-              ...get_properties(run, $current_task_prompts, $model_info),
-              ...(see_all_properties ? get_advanced_properties(run) : []),
-            ]}
-            title="Properties"
-          />
+          <PropertyList properties={properties_for_list} title="Properties" />
           <button
             class="text-xs text-gray-500 underline text-left cursor-pointer bg-transparent border-none p-0 mt-4"
             on:click={() => (see_all_properties = !see_all_properties)}
