@@ -543,7 +543,12 @@ def connect_fine_tune_api(app: FastAPI):
             )
 
         tool_info = dataset.tool_info()
-        skills_dict = load_skills_from_tool_ids(task, tool_info.tools or [])
+        if tool_info.tools is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Dataset contains mixed tool/skill selections and cannot be exported",
+            )
+        skills_dict = load_skills_from_tool_ids(task, tool_info.tools)
         skills = list(skills_dict.values())
 
         system_message = system_message_from_request(

@@ -1093,6 +1093,46 @@ def test_download_dataset_jsonl_invalid_split(
     )
 
 
+def test_download_dataset_jsonl_rejects_mismatched_tool_dataset(
+    client, mock_task_from_id_disk_backed, valid_download_params, empty_task
+):
+    create_synthetic_run(
+        empty_task,
+        run_id="run_with_skill_a",
+        name="Run With Skill A",
+        output_text="Test output with skill A",
+        created_by="user1",
+        tool_ids=["kiln_tool::skill::skill_a"],
+    )
+    create_synthetic_run(
+        empty_task,
+        run_id="run_with_skill_b",
+        name="Run With Skill B",
+        output_text="Test output with skill B",
+        created_by="user2",
+        tool_ids=["kiln_tool::skill::skill_b"],
+    )
+    create_dataset_split(
+        empty_task,
+        split_id="split_mismatch",
+        name="Split Mismatch",
+        run_ids=["run_with_skill_a", "run_with_skill_b"],
+    )
+    mock_task_from_id_disk_backed.return_value = empty_task
+
+    valid_download_params["dataset_id"] = "split_mismatch"
+    response = client.get(
+        "/api/download_dataset_jsonl",
+        params=valid_download_params,
+    )
+
+    assert response.status_code == 400
+    assert (
+        response.json()["message"]
+        == "Dataset contains mixed tool/skill selections and cannot be exported"
+    )
+
+
 def test_download_dataset_jsonl_with_prompt_builder(
     client,
     mock_task_from_id_disk_backed,

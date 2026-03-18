@@ -235,6 +235,10 @@
       const fine_tuning_tools_list: string[] | null = has_fine_tuning_tools
         ? fine_tuning_tools_param?.split(",").filter((t) => t.length > 0) ?? []
         : null
+      const fine_tuning_tools_key =
+        fine_tuning_tools_list === null
+          ? null
+          : fine_tuning_tools_list.join(",")
 
       const has_saved_state = $saved_state.gen_type !== null
       if (!has_saved_state) {
@@ -256,7 +260,11 @@
           $saved_state.gen_type === gen_type &&
           $saved_state.template_id === template_id &&
           $saved_state.eval_id === eval_id &&
-          $saved_state.tool_id === tool_id
+          $saved_state.tool_id === tool_id &&
+          ($saved_state.fine_tuning_tools === null
+            ? null
+            : $saved_state.fine_tuning_tools.join(",")) ===
+            fine_tuning_tools_key
         ) {
           // Case 2: URL state matches saved state: load the saved state
           setup(
