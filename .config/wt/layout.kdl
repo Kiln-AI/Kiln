@@ -1,0 +1,31 @@
+layout {
+    default_tab_template {
+        pane size=1 borderless=true {
+            plugin location="zellij:tab-bar"
+        }
+        children
+        pane size=2 borderless=true {
+            plugin location="zellij:status-bar"
+        }
+    }
+    tab name="term" focus=true {
+        pane name="terminal" command="bash" start_suspended=false {
+            args "-c" "echo \"\nWeb UI: $KILN_WEB_URL\nBackend: http://localhost:$KILN_PORT\n\nType 'web' to open in browser.\n\"; exec $SHELL"
+        }
+    }
+    tab name="agent" {
+        pane command="bash" start_suspended=false {
+            args "-c" "$KILN_CODER_CMD"
+        }
+    }
+    tab name="backend" {
+        pane command="bash" start_suspended=false {
+            args "-c" "uv run python -m app.desktop.dev_server"
+        }
+    }
+    tab name="webui" cwd="app/web_ui" {
+        pane command="bash" start_suspended=false {
+            args "-c" "npm run dev -- --host --port $KILN_FRONTEND_PORT"
+        }
+    }
+}

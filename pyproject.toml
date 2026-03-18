@@ -40,10 +40,10 @@ kiln-studio-desktop = { workspace = true }
 kiln-ai = { workspace = true }
 
 [tool.ruff]
-exclude = []
+exclude = [".worktrees"]
 
 [tool.ty.src]
-exclude = ["**/test_*.py", "app/desktop/build/**", "app/web_ui/**", "**/.venv", "**/kiln_ai_server_client/**"]
+exclude = [".worktrees", "**/test_*.py", "app/desktop/build/**", "app/web_ui/**", "**/.venv", "**/kiln_ai_server_client/**"]
 
 [tool.ty.rules]
 invalid-key = "ignore"

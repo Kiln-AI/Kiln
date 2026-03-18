@@ -87,20 +87,20 @@ prompts:
 
   - name: "python_test_guide.md"
     description: "Guide for testing best practices for python code"
-    prompt-file: "agents/python_test_guide.md"
+    prompt-file: ".agents/python_test_guide.md"
 
   - name: "frontend_design_guide.md"
     description: "Guide for UI design including color, typography, and controls"
-    prompt-file: "agents/frontend_design_guide.md"
+    prompt-file: ".agents/frontend_design_guide.md"
 
   - name: "frontend_controls.md"
     description: "Guide for UI controls available in the web app (spinners, buttons, dialogs, etc)"
-    prompt-file: "agents/frontend_controls.md"
+    prompt-file: ".agents/frontend_controls.md"
 
   - name: "tables_style.md"
     description: "Guide for css table styling"
-    prompt-file: "agents/tables_style.md"
+    prompt-file: ".agents/tables_style.md"
 
   - name: "card_style.md"
     description: "Guide for css card styling"
-    prompt-file: "agents/card_style.md"
+    prompt-file: ".agents/card_style.md"
