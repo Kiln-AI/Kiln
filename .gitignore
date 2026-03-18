@@ -23,4 +23,6 @@ dist/
 .mcp.json
 
 .specs_skill_state/
+.config/wt/user_settings.sh
+.worktrees/
 
