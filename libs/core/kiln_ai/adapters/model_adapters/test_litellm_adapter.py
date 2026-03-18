@@ -10,6 +10,7 @@ from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel import Project, Task, Usage
+from kiln_ai.datamodel.json_schema import close_object_schemas
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     McpRunConfigProperties,
@@ -191,12 +192,13 @@ async def test_response_format_options_json_schema(config, mock_task):
         patch.object(adapter, "has_structured_output", return_value=True),
     ):
         options = await adapter.response_format_options()
+        expected_schema = close_object_schemas(mock_task.output_schema())
         assert options == {
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
                     "name": "task_response",
-                    "schema": mock_task.output_schema(),
+                    "schema": expected_schema,
                 },
             }
         }
@@ -206,8 +208,7 @@ def test_tool_call_params_weak(config, mock_task):
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
 
     params = adapter.tool_call_params(strict=False)
-    expected_schema = mock_task.output_schema()
-    expected_schema["additionalProperties"] = False
+    expected_schema = close_object_schemas(mock_task.output_schema())
 
     assert params == {
         "tools": [
@@ -231,8 +232,7 @@ def test_tool_call_params_strict(config, mock_task):
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
 
     params = adapter.tool_call_params(strict=True)
-    expected_schema = mock_task.output_schema()
-    expected_schema["additionalProperties"] = False
+    expected_schema = close_object_schemas(mock_task.output_schema())
 
     assert params == {
         "tools": [
