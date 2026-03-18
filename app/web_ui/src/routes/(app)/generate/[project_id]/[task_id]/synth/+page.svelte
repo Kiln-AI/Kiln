@@ -1216,12 +1216,12 @@
             requires_structured_output={!!task.output_json_schema}
             tools_selector_settings={{
               mandatory_tools,
-              optional: !fine_tuning_tools_locked,
+              optional: !mandatory_tools?.length,
               disabled: fine_tuning_tools_locked,
             }}
             skills_selector_settings={{
               mandatory_skills,
-              optional: !fine_tuning_tools_locked,
+              optional: !mandatory_skills?.length,
               disabled: fine_tuning_tools_locked,
             }}
             model_dropdown_settings={{
