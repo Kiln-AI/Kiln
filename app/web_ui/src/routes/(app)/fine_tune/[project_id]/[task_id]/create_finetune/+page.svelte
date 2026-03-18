@@ -77,14 +77,16 @@
     !selected_model.model.supports_function_calling &&
     run_config_component
   ) {
-    // Clear tools if the model doesn't support function calling
+    // Clear tools and skills if the model doesn't support function calling
     run_config_component.clear_tools()
+    run_config_component.clear_skills()
   }
 
   $: disabled_tools_selector =
     selected_model && !selected_model.model.supports_function_calling
 
   let selected_tool_ids: string[] = []
+  let selected_skill_ids: string[] = []
 
   let available_model_select: OptionGroup[] = []
 
@@ -102,6 +104,7 @@
     data_strategy?: ChatStrategy
     system_prompt_method?: string
     tools?: string[]
+    skills?: string[]
   }
 
   // IndexedDB-backed store for persisting form state
@@ -145,8 +148,9 @@
       }
     }
 
-    // Tools
+    // Tools and skills
     selected_tool_ids = state.tools || []
+    selected_skill_ids = state.skills || []
   }
 
   // Reactively update saved_state when form values change
@@ -166,6 +170,7 @@
       system_prompt_method: system_prompt_method,
       data_strategy: data_strategy,
       tools: selected_tool_ids.length > 0 ? selected_tool_ids : undefined,
+      skills: selected_skill_ids.length > 0 ? selected_skill_ids : undefined,
     })
   }
 
@@ -198,6 +203,7 @@
       data_strategy: "final_only",
       system_prompt_method: "simple_prompt_builder",
       tools: undefined,
+      skills: undefined,
     }))
   }
 
@@ -503,6 +509,7 @@
         prompt_method: system_prompt_method,
         supports_tools: disabled_tools_selector ? "no" : "yes",
         tool_count: selected_tool_ids.length,
+        skill_count: selected_skill_ids.length,
       })
       created_finetune = create_finetune_response
 
@@ -806,6 +813,7 @@
           <RunConfigComponent
             bind:this={run_config_component}
             bind:tools={selected_tool_ids}
+            bind:skills={selected_skill_ids}
             {project_id}
             tools_selector_settings={{
               hide_create_kiln_task_tool_button: true,
@@ -816,6 +824,15 @@
                 : undefined,
               description:
                 "Choose which tools the model should learn to call during fine-tuning.",
+            }}
+            skills_selector_settings={{
+              hide_info_description: true,
+              disabled: !!disabled_tools_selector,
+              empty_label: disabled_tools_selector
+                ? "Skills not supported with this model"
+                : undefined,
+              description:
+                "Choose which skills the model should learn to use during fine-tuning.",
             }}
             hide_model_selector={true}
             hide_prompt_selector={true}
@@ -840,9 +857,7 @@
             <SelectFinetuneDataset
               {project_id}
               {task_id}
-              required_tool_ids={selected_tool_ids.length > 0
-                ? selected_tool_ids
-                : undefined}
+              required_tool_ids={[...selected_tool_ids, ...selected_skill_ids]}
               {saved_dataset_id}
               bind:selected_dataset
             />

@@ -83,10 +83,14 @@
                 task_id,
               },
               query:
-                required_tool_ids && required_tool_ids.length > 0
-                  ? {
-                      tool_ids: required_tool_ids,
-                    }
+                required_tool_ids !== undefined
+                  ? required_tool_ids.length > 0
+                    ? {
+                        tool_ids: required_tool_ids,
+                      }
+                    : {
+                        empty_tool_filter: true,
+                      }
                   : undefined,
             },
           },
@@ -281,7 +285,7 @@
       splits: "fine_tune_data:1.0",
       finetune_link: `/fine_tune/${project_id}/${task_id}/create_finetune`,
     })
-    if (required_tool_ids && required_tool_ids.length > 0) {
+    if (required_tool_ids !== undefined) {
       params.set("fine_tuning_tools", required_tool_ids.join(","))
     }
     let link = `/dataset/${project_id}/${task_id}/add_data?${params.toString()}`

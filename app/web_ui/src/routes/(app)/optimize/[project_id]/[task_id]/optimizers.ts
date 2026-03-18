@@ -92,6 +92,19 @@ export function get_optimizers(
         window.open("https://docs.kiln.tech/docs/agents", "_blank")
       },
     },
+    {
+      title: "Add Skills",
+      description:
+        "Add reusable instructions for your agents, loaded into context only when needed.",
+      metrics: {
+        [METRIC_IMPACT]: 3,
+        [METRIC_COST_EFFICIENCY]: 4,
+        [METRIC_EASE]: 2,
+      },
+      on_click: () => {
+        goto(`/skills/${project_id}`)
+      },
+    },
   ]
   return optimizers
 }

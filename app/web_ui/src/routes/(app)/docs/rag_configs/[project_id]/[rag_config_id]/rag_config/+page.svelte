@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from "$app/stores"
+  import { ui_state } from "$lib/stores"
   import { client } from "$lib/api_client"
   import type { RagConfigWithSubConfigs } from "$lib/types"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
@@ -219,6 +220,10 @@
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
     breadcrumbs={[
+      {
+        label: "Optimize",
+        href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+      },
       {
         label: "Docs & Search",
         href: `/docs/${project_id}`,

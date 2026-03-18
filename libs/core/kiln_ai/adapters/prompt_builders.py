@@ -1,8 +1,14 @@
+from __future__ import annotations
+
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from kiln_ai.datamodel import PromptGenerators, PromptId, Task, TaskRun
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+
+if TYPE_CHECKING:
+    from kiln_ai.datamodel.skill import Skill
 
 
 @dataclass
@@ -11,6 +17,27 @@ class PromptExample:
 
     input: str
     output: str
+
+
+def build_skills_prompt_section(skills: list[Skill] | None) -> str | None:
+    """Build a system prompt section listing available skills.
+
+    This is a standalone function so both the inference adapter and the
+    fine-tune pipeline can include the same skills instructions in the
+    system prompt.
+    """
+    if not skills:
+        return None
+
+    skill_lines = "\n".join(f"- `{s.name}`\n  {s.description}" for s in skills)
+
+    return (
+        "# Skills\n\n"
+        "When a Skill is relevant, load it with `skill(name)` and follow its instructions.\n"
+        "Load additional Skill resources only if needed with `skill(name, resource)`.\n"
+        "## Available Skills\n\n"
+        f"{skill_lines}"
+    )
 
 
 class BasePromptBuilder(metaclass=ABCMeta):
@@ -35,8 +62,18 @@ class BasePromptBuilder(metaclass=ABCMeta):
         """
         return None
 
-    def build_prompt(self, include_json_instructions) -> str:
+    def build_prompt(
+        self,
+        include_json_instructions: bool,
+        skills: list[Skill] | None = None,
+    ) -> str:
         """Build and return the complete prompt string.
+
+        Args:
+            include_json_instructions: Whether to include JSON schema formatting instructions.
+            skills: Optional list of skills to include in the prompt. When provided,
+                a skills instruction section is appended so the model knows which
+                skills are available.
 
         Returns:
             str: The constructed prompt.
@@ -48,6 +85,10 @@ class BasePromptBuilder(metaclass=ABCMeta):
                 prompt
                 + f"\n\n# Format Instructions\n\nReturn a JSON object conforming to the following schema:\n```\n{self.task.output_schema()}\n```"
             )
+
+        skills_section = build_skills_prompt_section(skills)
+        if skills_section:
+            prompt = prompt + "\n\n" + skills_section
 
         return prompt
 
@@ -68,15 +109,18 @@ class BasePromptBuilder(metaclass=ABCMeta):
         """
         return None
 
-    def build_prompt_for_ui(self) -> str:
+    def build_prompt_for_ui(self, skills: list[Skill] | None = None) -> str:
         """Build a prompt for the UI. It includes additional instructions (like chain of thought), even if they are passed to the model in stages.
 
         Designed for end-user consumption, not for model consumption.
 
+        Args:
+            skills: Optional list of skills to include in the prompt display.
+
         Returns:
             str: The constructed prompt string.
         """
-        base_prompt = self.build_prompt(include_json_instructions=False)
+        base_prompt = self.build_prompt(include_json_instructions=False, skills=skills)
         cot_prompt = self.chain_of_thought_prompt()
         if cot_prompt:
             base_prompt += "\n\n# Thinking Instructions\n\n" + cot_prompt

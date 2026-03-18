@@ -10,7 +10,11 @@ from kiln_ai.adapters.eval.eval_utils.eval_utils import EvalUtils
 from kiln_ai.adapters.ml_model_list import (
     default_structured_output_mode_for_model_provider,
 )
-from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, RunOutput
+from kiln_ai.adapters.model_adapters.base_adapter import (
+    AdapterConfig,
+    RunOutput,
+    SkillsDict,
+)
 from kiln_ai.adapters.prompt_builders import PromptGenerators
 from kiln_ai.datamodel import Project, Task, TaskRun
 from kiln_ai.datamodel.eval import EvalConfig, EvalConfigType, EvalDataType, EvalScores
@@ -96,7 +100,12 @@ class GEval(BaseEval):
     }
     """
 
-    def __init__(self, eval_config: EvalConfig, run_config: RunConfigProperties | None):
+    def __init__(
+        self,
+        eval_config: EvalConfig,
+        run_config: RunConfigProperties | None,
+        skills: SkillsDict | None = None,
+    ):
         if (
             eval_config.config_type != EvalConfigType.g_eval
             and eval_config.config_type != EvalConfigType.llm_as_judge
@@ -105,7 +114,7 @@ class GEval(BaseEval):
                 f"GEval must be initialized with a GEval or LLM as Judge config_type. Got {eval_config.config_type}"
             )
 
-        super().__init__(eval_config, run_config)
+        super().__init__(eval_config, run_config, skills=skills)
 
         self.geval_task = GEvalTask(eval_config)
 

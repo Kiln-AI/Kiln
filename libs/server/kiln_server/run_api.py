@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Annotated, Any, Dict
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from kiln_ai.adapters.adapter_registry import adapter_for_task
+from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import Task, TaskOutputRating, TaskOutputRatingType, TaskRun
@@ -264,11 +264,12 @@ def connect_run_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
 
         run_config_properties = request.run_config_properties
+        skills = load_skills_for_task(task, run_config_properties)
 
         adapter = adapter_for_task(
             task,
             run_config_properties=run_config_properties,
-            base_adapter_config=AdapterConfig(default_tags=request.tags),
+            base_adapter_config=AdapterConfig(default_tags=request.tags, skills=skills),
         )
 
         input = request.plaintext_input

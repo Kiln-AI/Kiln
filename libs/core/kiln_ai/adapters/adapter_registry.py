@@ -1,6 +1,10 @@
 from kiln_ai import datamodel
 from kiln_ai.adapters.ml_model_list import ModelProviderName
-from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, BaseAdapter
+from kiln_ai.adapters.model_adapters.base_adapter import (
+    AdapterConfig,
+    BaseAdapter,
+    SkillsDict,
+)
 from kiln_ai.adapters.model_adapters.litellm_adapter import (
     LiteLlmAdapter,
     LiteLlmConfig,
@@ -14,9 +18,51 @@ from kiln_ai.adapters.provider_tools import (
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     McpRunConfigProperties,
+    as_kiln_agent_run_config,
 )
+from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX, skill_id_from_tool_id
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+
+
+def load_skills_from_tool_ids(
+    task: datamodel.Task,
+    tool_ids: list[str],
+) -> SkillsDict:
+    """Load Skill objects for any skill tool IDs in the given list.
+
+    Performs a single directory scan of the parent project to resolve all
+    referenced skills at once.
+    """
+    skill_ids = {
+        skill_id_from_tool_id(tid)
+        for tid in tool_ids
+        if tid.startswith(SKILL_TOOL_ID_PREFIX)
+    }
+    if not skill_ids:
+        return {}
+    project = task.parent_project()
+    if project is None:
+        return {}
+    return Skill.from_ids_and_parent_path(skill_ids, project.path)
+
+
+def load_skills_for_task(
+    task: datamodel.Task,
+    run_config: RunConfigProperties,
+) -> SkillsDict:
+    """Pre-load all skills referenced by a run config in a single directory scan.
+
+    Call once at the orchestration layer and pass the result to adapter(s) via
+    AdapterConfig(skills=...).
+    """
+    if run_config.type != "kiln_agent":
+        return {}
+    tool_config = as_kiln_agent_run_config(run_config).tools_config
+    if tool_config is None or tool_config.tools is None:
+        return {}
+    return load_skills_from_tool_ids(task, tool_config.tools)
 
 
 def litellm_core_provider_config(
