@@ -123,6 +123,14 @@ class TaskRun(KilnParentedModel, KilnParentModel, parent_of={}):
         description="The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.",
     )
 
+    @property
+    def is_toolcall_pending(self) -> bool:
+        """True if the last message in the trace is an assistant message with pending tool calls."""
+        if not self.trace:
+            return False
+        last_msg = self.trace[-1]
+        return last_msg.get("role") == "assistant" and bool(last_msg.get("tool_calls"))
+
     def thinking_training_data(self) -> str | None:
         """
         Get the thinking training data from the task run.
@@ -289,6 +297,12 @@ class TaskRun(KilnParentedModel, KilnParentModel, parent_of={}):
         # Note: we still validate if editing a loaded model's output.
         if self.loading_from_file(info):
             # Consider loading an existing model as validated.
+            self._last_validated_output = self.output.output if self.output else None
+            return self
+
+        # Skip output validation when the run is waiting for tool call results.
+        # The output field is empty/partial in this state.
+        if self.is_toolcall_pending:
             self._last_validated_output = self.output.output if self.output else None
             return self
 

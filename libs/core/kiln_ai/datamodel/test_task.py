@@ -765,3 +765,65 @@ def test_is_root_task_run_false_when_parent_is_taskrun(tmp_path):
 
     loaded_nested = TaskRun.load_from_file(nested_run.path)
     assert loaded_nested.is_root_task_run() is False
+
+
+def test_is_toolcall_pending_false_when_no_trace():
+    run = TaskRun(input="test", output=TaskOutput(output="response"))
+    assert run.is_toolcall_pending is False
+
+
+def test_is_toolcall_pending_false_when_last_message_has_no_tool_calls():
+    run = TaskRun(
+        input="test",
+        output=TaskOutput(output="response"),
+        trace=[
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "world"},
+        ],
+    )
+    assert run.is_toolcall_pending is False
+
+
+def test_is_toolcall_pending_true_when_last_message_has_tool_calls():
+    run = TaskRun(
+        input="test",
+        output=TaskOutput(output=""),
+        trace=[
+            {"role": "user", "content": "hello"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "function": {"name": "add", "arguments": '{"a":1,"b":2}'},
+                        "type": "function",
+                    }
+                ],
+            },
+        ],
+    )
+    assert run.is_toolcall_pending is True
+
+
+def test_is_toolcall_pending_false_when_tool_calls_followed_by_tool_response():
+    run = TaskRun(
+        input="test",
+        output=TaskOutput(output="3"),
+        trace=[
+            {"role": "user", "content": "hello"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "function": {"name": "add", "arguments": '{"a":1,"b":2}'},
+                        "type": "function",
+                    }
+                ],
+            },
+            {"role": "tool", "content": "3", "tool_call_id": "call_1"},
+        ],
+    )
+    assert run.is_toolcall_pending is False

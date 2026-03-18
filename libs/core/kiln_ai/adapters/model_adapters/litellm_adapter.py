@@ -20,6 +20,7 @@ from openai.types.chat.chat_completion_message_tool_call_param import (
 
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
+from kiln_ai.adapters.chat.chat_formatter import ToolResponseMessage
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     ModelProviderName,
@@ -66,6 +67,7 @@ class ModelTurnResult:
     model_response: ModelResponse | None
     model_choice: Choices | None
     usage: Usage
+    interrupted_by_tool_calls: list[ChatCompletionMessageToolCall] | None = None
 
 
 class LiteLlmAdapter(BaseAdapter):
@@ -140,6 +142,24 @@ class LiteLlmAdapter(BaseAdapter):
 
             # Process tool calls if any
             if tool_calls and len(tool_calls) > 0:
+                # check if we should return control to caller
+                if self.base_adapter_config.return_on_tool_call:
+                    # filter out task_response tool (task_response tools are internal)
+                    standard_tool_calls = [
+                        tc for tc in tool_calls if tc.function.name != "task_response"
+                    ]
+                    if standard_tool_calls:
+                        return ModelTurnResult(
+                            # we don't have any content, we are waiting for toolcall output to come back from client
+                            assistant_message="",
+                            all_messages=messages,
+                            model_response=model_response,
+                            model_choice=response_choice,
+                            usage=usage,
+                            interrupted_by_tool_calls=standard_tool_calls,
+                        )
+
+                # otherwise: process tool calls internally until final output
                 (
                     assistant_message_from_toolcall,
                     tool_call_messages,
@@ -222,7 +242,10 @@ class LiteLlmAdapter(BaseAdapter):
                 if message.content is None:
                     raise ValueError("Empty message content isn't allowed")
                 # pyright incorrectly warns about this, but it's valid so we can ignore. It can't handle the multi-value role.
-                messages.append({"role": message.role, "content": message.content})  # type: ignore
+                msg_dict: dict = {"role": message.role, "content": message.content}
+                if isinstance(message, ToolResponseMessage):
+                    msg_dict["tool_call_id"] = message.tool_call_id
+                messages.append(msg_dict)  # type: ignore
 
             skip_response_format = not turn.final_call
             turn_result = await self._run_model_turn(
@@ -237,6 +260,18 @@ class LiteLlmAdapter(BaseAdapter):
             prior_output = turn_result.assistant_message
             messages = turn_result.all_messages
             final_choice = turn_result.model_choice
+
+            # Check if we were interrupted by tool calls
+            if turn_result.interrupted_by_tool_calls:
+                trace = self.all_messages_to_trace(messages)
+                intermediate_outputs = chat_formatter.intermediate_outputs()
+                output = RunOutput(
+                    output=prior_output or "",
+                    intermediate_outputs=intermediate_outputs,
+                    output_logprobs=None,
+                    trace=trace,
+                )
+                return output, usage
 
             if not prior_output:
                 raise RuntimeError("No assistant message/output returned from model")
