@@ -40,7 +40,7 @@ These prompts can be accessed from the `get_prompt` tool, and you may request se
 
 ### Code Review Guidelines
 
-If asked to perform a code review, read our [code review guidelines](agents/code_review_guidelines.md).
+If asked to perform a code review, read our [code review guidelines](.agents/code_review_guidelines.md).
 
 ### Final
 
