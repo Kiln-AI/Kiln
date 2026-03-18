@@ -77,13 +77,13 @@
       }
       if (data) {
         uncache_available_tools(project_id)
+        complete = true
         goto(`/skills/${project_id}/${data.id}`)
       }
     } catch (err) {
       error = createKilnError(err)
     } finally {
       submitting = false
-      complete = true
     }
   }
 

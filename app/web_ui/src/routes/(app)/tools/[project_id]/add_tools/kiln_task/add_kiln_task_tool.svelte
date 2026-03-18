@@ -217,13 +217,14 @@
         created_run_config_in_page: created_run_config_in_page,
       })
 
+      complete = true
+
       // Navigate to the manage tools page for the created tool
       goto(`/tools/${project_id}/kiln_task_tools`)
     } catch (e) {
       error = createKilnError(e)
     } finally {
       submitting = false
-      complete = true
     }
   }
 
