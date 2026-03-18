@@ -27,6 +27,7 @@
     optional: true,
   }
   $: resolved = { ...default_settings, ...settings }
+  $: has_explicit_mandatory_skills = settings.mandatory_skills !== undefined
 
   const CREATE_NEW_SKILL = "__create_new_skill__"
 
@@ -37,6 +38,18 @@
   })
 
   $: load_skills(project_id, task_id)
+
+  // When fine-tuning locks skills to an explicit empty set, clear any stale
+  // persisted selections so the bound value matches the disabled UI state.
+  $: if (
+    resolved.disabled &&
+    has_explicit_mandatory_skills &&
+    Array.isArray(resolved.mandatory_skills) &&
+    resolved.mandatory_skills.length === 0 &&
+    skills.length > 0
+  ) {
+    skills = []
+  }
 
   async function load_skills(project_id: string, task_id: string | null) {
     load_available_tools(project_id)

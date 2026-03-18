@@ -226,11 +226,19 @@
         tool_id_param && tool_id_param.length > 0 ? tool_id_param : null
       const splitsParam = $page.url.searchParams.get("splits")
       const splits = get_splits_from_url_param(splitsParam)
+      // Distinguish "no inherited fine-tuning tools" from an inherited empty set.
+      // `fine_tuning_tools=` should round-trip as [] so SDG can lock to no tools/skills.
+      const has_fine_tuning_tools =
+        $page.url.searchParams.has("fine_tuning_tools")
       const fine_tuning_tools_param =
         $page.url.searchParams.get("fine_tuning_tools")
-      const fine_tuning_tools_list: string[] | null = fine_tuning_tools_param
-        ? fine_tuning_tools_param.split(",").filter((t) => t.length > 0)
+      const fine_tuning_tools_list: string[] | null = has_fine_tuning_tools
+        ? fine_tuning_tools_param?.split(",").filter((t) => t.length > 0) ?? []
         : null
+      const fine_tuning_tools_key =
+        fine_tuning_tools_list === null
+          ? null
+          : fine_tuning_tools_list.join(",")
 
       const has_saved_state = $saved_state.gen_type !== null
       if (!has_saved_state) {
@@ -252,7 +260,11 @@
           $saved_state.gen_type === gen_type &&
           $saved_state.template_id === template_id &&
           $saved_state.eval_id === eval_id &&
-          $saved_state.tool_id === tool_id
+          $saved_state.tool_id === tool_id &&
+          ($saved_state.fine_tuning_tools === null
+            ? null
+            : $saved_state.fine_tuning_tools.join(",")) ===
+            fine_tuning_tools_key
         ) {
           // Case 2: URL state matches saved state: load the saved state
           setup(
@@ -741,19 +753,25 @@
 
   let mandatory_tools: string[] | null = null
   let mandatory_skills: string[] | null = null
+  let fine_tuning_tools_locked = false
 
+  // Fine-tuning-derived tool/skill requirements are mandatory in SDG even when empty.
+  // An inherited empty set means "generate without tools/skills", not "unlocked".
   $: {
     const ft = $saved_state.fine_tuning_tools
     if ($saved_state.tool_id) {
       mandatory_tools = [$saved_state.tool_id]
       mandatory_skills = null
-    } else if (ft && ft.length > 0) {
+      fine_tuning_tools_locked = true
+    } else if (ft !== null) {
       const { tool_ids, skill_ids } = split_tool_and_skill_ids(ft)
-      mandatory_tools = tool_ids.length > 0 ? tool_ids : null
-      mandatory_skills = skill_ids.length > 0 ? skill_ids : null
+      mandatory_tools = tool_ids
+      mandatory_skills = skill_ids
+      fine_tuning_tools_locked = true
     } else {
       mandatory_tools = null
       mandatory_skills = null
+      fine_tuning_tools_locked = false
     }
   }
 </script>
@@ -1190,6 +1208,7 @@
           <SynthDataGuidance guidance_type="outputs" {guidance_data} />
         </div>
         {#if task}
+          <!-- Lock tools and skills whenever SDG inherits fine-tuning tool state, including the empty set. -->
           <RunConfigComponent
             bind:this={run_config_component}
             {project_id}
@@ -1198,12 +1217,12 @@
             tools_selector_settings={{
               mandatory_tools,
               optional: !mandatory_tools?.length,
-              disabled: !!mandatory_tools?.length,
+              disabled: fine_tuning_tools_locked,
             }}
             skills_selector_settings={{
               mandatory_skills,
               optional: !mandatory_skills?.length,
-              disabled: !!mandatory_skills?.length,
+              disabled: fine_tuning_tools_locked,
             }}
             model_dropdown_settings={{
               requires_structured_output: task.output_json_schema

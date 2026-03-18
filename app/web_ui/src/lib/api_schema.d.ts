@@ -11182,6 +11182,7 @@ export interface operations {
         parameters: {
             query?: {
                 tool_ids?: string[] | null;
+                empty_tool_filter?: boolean;
             };
             header?: never;
             path: {

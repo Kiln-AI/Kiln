@@ -180,6 +180,95 @@ def client():
     return TestClient(app)
 
 
+@pytest.fixture
+def empty_task(tmp_path):
+    project = Project(name="Test Project", path=str(tmp_path / "project.kiln"))
+    project.save_to_file()
+
+    task = Task(
+        name="Test Task",
+        instruction="This is a test instruction",
+        description="This is a test task",
+        parent=project,
+    )
+    task.save_to_file()
+    return task
+
+
+def create_synthetic_run(
+    task: Task,
+    *,
+    run_id: str,
+    name: str,
+    output_text: str,
+    created_by: str,
+    tags: list[str] | None = None,
+    tool_ids: list[str] | None = None,
+) -> TaskRun:
+    output_source: dict[str, object] = {
+        "type": "synthetic",
+        "properties": {
+            "model_name": "gpt-4",
+            "model_provider": "openai",
+            "adapter_name": "test",
+            "prompt_id": "simple_prompt_builder",
+        },
+    }
+    if tool_ids is not None:
+        output_source["run_config"] = KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name="openai",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="default",
+            tools_config=ToolsRunConfig(tools=tool_ids),
+        )
+
+    run = TaskRun(
+        id=run_id,
+        name=name,
+        parent=task,
+        tags=tags or ["fine_tune_tools"],
+        input=f"Test input {run_id}",
+        input_source={"type": "human", "properties": {"created_by": created_by}},
+        output=TaskOutput(
+            output=output_text,
+            source=output_source,
+        ),
+    )
+    run.save_to_file()
+    return run
+
+
+def create_dataset_split(
+    task: Task, *, split_id: str, name: str, run_ids: list[str]
+) -> DatasetSplit:
+    split = DatasetSplit(
+        id=split_id,
+        name=name,
+        split_contents={"train": run_ids},
+        splits=AllSplitDefinition,
+    )
+    split.parent = task
+    split.save_to_file()
+    return split
+
+
+def create_finetune(
+    task: Task, *, finetune_id: str, name: str, split_id: str
+) -> Finetune:
+    finetune = Finetune(
+        id=finetune_id,
+        name=name,
+        provider="openai",
+        base_model_id="model1",
+        dataset_split_id=split_id,
+        system_message="System prompt",
+    )
+    finetune.parent = task
+    finetune.save_to_file()
+    return finetune
+
+
 def test_finetune_provider_model_defaults():
     model = FinetuneProviderModel(
         name="Test Provider",
@@ -1004,6 +1093,46 @@ def test_download_dataset_jsonl_invalid_split(
     )
 
 
+def test_download_dataset_jsonl_rejects_mismatched_tool_dataset(
+    client, mock_task_from_id_disk_backed, valid_download_params, empty_task
+):
+    create_synthetic_run(
+        empty_task,
+        run_id="run_with_skill_a",
+        name="Run With Skill A",
+        output_text="Test output with skill A",
+        created_by="user1",
+        tool_ids=["kiln_tool::skill::skill_a"],
+    )
+    create_synthetic_run(
+        empty_task,
+        run_id="run_with_skill_b",
+        name="Run With Skill B",
+        output_text="Test output with skill B",
+        created_by="user2",
+        tool_ids=["kiln_tool::skill::skill_b"],
+    )
+    create_dataset_split(
+        empty_task,
+        split_id="split_mismatch",
+        name="Split Mismatch",
+        run_ids=["run_with_skill_a", "run_with_skill_b"],
+    )
+    mock_task_from_id_disk_backed.return_value = empty_task
+
+    valid_download_params["dataset_id"] = "split_mismatch"
+    response = client.get(
+        "/api/download_dataset_jsonl",
+        params=valid_download_params,
+    )
+
+    assert response.status_code == 400
+    assert (
+        response.json()["message"]
+        == "Dataset contains mixed tool/skill selections and cannot be exported"
+    )
+
+
 def test_download_dataset_jsonl_with_prompt_builder(
     client,
     mock_task_from_id_disk_backed,
@@ -1750,120 +1879,45 @@ def test_finetune_dataset_info_no_datasets_or_finetunes(
     mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
 
 
-@pytest.fixture
-def task_with_tools(tmp_path):
-    project_path = tmp_path / "project.kiln"
-    project = Project(name="Test Project", path=str(project_path))
-    project.save_to_file()
-
-    task = Task(
-        name="Test Task",
-        instruction="This is a test instruction",
-        description="This is a test task",
-        parent=project,
-    )
-    task.save_to_file()
-
-    runs = [
-        TaskRun(
-            id="run_with_tool_a",
-            name="Run with tool A",
-            parent=task,
-            tags=["fine_tune_tools"],
-            input="Test input with tool A",
-            input_source={"type": "human", "properties": {"created_by": "user1"}},
-            output=TaskOutput(
-                output="Test output A",
-                source={
-                    "type": "synthetic",
-                    "properties": {
-                        "model_name": "gpt-4",
-                        "model_provider": "openai",
-                        "adapter_name": "test",
-                        "prompt_id": "simple_prompt_builder",
-                    },
-                    "run_config": KilnAgentRunConfigProperties(
-                        model_name="gpt-4",
-                        model_provider_name="openai",
-                        prompt_id="simple_prompt_builder",
-                        structured_output_mode="default",
-                        tools_config=ToolsRunConfig(
-                            tools=["mcp::remote::server_a::tool_a"]
-                        ),
-                    ),
-                },
-            ),
-        ),
-        TaskRun(
-            id="run_with_tool_a_b",
-            name="Run with tool A and B",
-            parent=task,
-            tags=["fine_tune_tools"],
-            input="Test input with tool A and B",
-            input_source={"type": "human", "properties": {"created_by": "user2"}},
-            output=TaskOutput(
-                output="Test output AB",
-                source={
-                    "type": "synthetic",
-                    "properties": {
-                        "model_name": "gpt-4",
-                        "model_provider": "openai",
-                        "adapter_name": "test",
-                        "prompt_id": "simple_prompt_builder",
-                    },
-                    "run_config": KilnAgentRunConfigProperties(
-                        model_name="gpt-4",
-                        model_provider_name="openai",
-                        prompt_id="simple_prompt_builder",
-                        structured_output_mode="default",
-                        tools_config=ToolsRunConfig(
-                            tools=[
-                                "mcp::remote::server_a::tool_a",
-                                "mcp::remote::server_b::tool_b",
-                            ]
-                        ),
-                    ),
-                },
-            ),
-        ),
-        TaskRun(
-            id="run_no_tools",
-            name="Run without tools",
-            parent=task,
-            tags=["fine_tune_tools"],
-            input="Test input no tools",
-            input_source={"type": "human", "properties": {"created_by": "user3"}},
-            output=TaskOutput(
-                output="Test output no tools",
-                source={
-                    "type": "synthetic",
-                    "properties": {
-                        "model_name": "gpt-4",
-                        "model_provider": "openai",
-                        "adapter_name": "test",
-                        "prompt_id": "simple_prompt_builder",
-                    },
-                },
-            ),
-        ),
-    ]
-    for run in runs:
-        run.save_to_file()
-
-    return task
-
-
 @pytest.mark.parametrize(
     "tool_filter, expected_count",
     [
         (None, 3),
+        ([], 1),
         (["mcp::remote::server_a::tool_a"], 1),
         (["mcp::remote::server_a::tool_a", "mcp::remote::server_b::tool_b"], 1),
         (["mcp::remote::server_x::tool_x"], 0),
     ],
 )
-def test_compute_finetune_tag_info(task_with_tools, tool_filter, expected_count):
-    result = compute_finetune_tag_info(task_with_tools, tool_filter=tool_filter)
+def test_compute_finetune_tag_info(empty_task, tool_filter, expected_count):
+    create_synthetic_run(
+        empty_task,
+        run_id="run_with_tool_a",
+        name="Run with tool A",
+        output_text="Test output A",
+        created_by="user1",
+        tool_ids=["mcp::remote::server_a::tool_a"],
+    )
+    create_synthetic_run(
+        empty_task,
+        run_id="run_with_tool_a_b",
+        name="Run with tool A and B",
+        output_text="Test output AB",
+        created_by="user2",
+        tool_ids=[
+            "mcp::remote::server_a::tool_a",
+            "mcp::remote::server_b::tool_b",
+        ],
+    )
+    create_synthetic_run(
+        empty_task,
+        run_id="run_no_tools",
+        name="Run without tools",
+        output_text="Test output no tools",
+        created_by="user3",
+    )
+
+    result = compute_finetune_tag_info(empty_task, tool_filter=tool_filter)
 
     if expected_count == 0:
         assert len(result) == 0
@@ -1871,6 +1925,149 @@ def test_compute_finetune_tag_info(task_with_tools, tool_filter, expected_count)
         assert len(result) == 1
         assert result[0].tag == "fine_tune_tools"
         assert result[0].count == expected_count
+
+
+@pytest.mark.parametrize(
+    "tool_filter, expected_tag",
+    [
+        ([], "fine_tune_without_skill"),
+        (["kiln_tool::skill::skill_a"], "fine_tune_with_skill"),
+    ],
+)
+def test_compute_finetune_tag_info_with_skill_filters(
+    empty_task, tool_filter, expected_tag
+):
+    skill_a = "kiln_tool::skill::skill_a"
+    create_synthetic_run(
+        empty_task,
+        run_id="run_with_skill",
+        name="Run With Skill",
+        output_text="Test output with skill",
+        created_by="user1",
+        tags=["fine_tune_with_skill"],
+        tool_ids=[skill_a],
+    )
+    create_synthetic_run(
+        empty_task,
+        run_id="run_without_skill",
+        name="Run Without Skill",
+        output_text="Test output without skill",
+        created_by="user2",
+        tags=["fine_tune_without_skill"],
+    )
+
+    result = compute_finetune_tag_info(empty_task, tool_filter=tool_filter)
+
+    assert len(result) == 1
+    assert result[0].tag == expected_tag
+    assert result[0].count == 1
+
+
+def test_finetune_dataset_info_filters_datasets_by_selected_tool(
+    client,
+    mock_task_from_id_disk_backed,
+    empty_task,
+):
+    create_synthetic_run(
+        empty_task,
+        run_id="run_with_tool",
+        name="Run With Tool",
+        output_text="Test output with tool",
+        created_by="user1",
+        tool_ids=["mcp::remote::server_a::tool_a"],
+    )
+    create_synthetic_run(
+        empty_task,
+        run_id="run_without_tool",
+        name="Run Without Tool",
+        output_text="Test output without tool",
+        created_by="user2",
+    )
+
+    create_dataset_split(
+        empty_task,
+        split_id="split_with_tool",
+        name="Split With Tool",
+        run_ids=["run_with_tool"],
+    )
+    create_dataset_split(
+        empty_task,
+        split_id="split_without_tool",
+        name="Split Without Tool",
+        run_ids=["run_without_tool"],
+    )
+
+    create_finetune(
+        empty_task,
+        finetune_id="ft_with_tool",
+        name="ft_with_tool",
+        split_id="split_with_tool",
+    )
+    create_finetune(
+        empty_task,
+        finetune_id="ft_without_tool",
+        name="ft_without_tool",
+        split_id="split_without_tool",
+    )
+
+    mock_task_from_id_disk_backed.return_value = empty_task
+
+    response = client.get(
+        "/api/projects/project1/tasks/task1/finetune_dataset_info",
+        params={"tool_ids": ["mcp::remote::server_a::tool_a"]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert {ds["id"] for ds in data["eligible_datasets"]} == {"split_with_tool"}
+    assert len(data["eligible_finetune_tags"]) == 1
+    assert data["eligible_finetune_tags"][0]["tag"] == "fine_tune_tools"
+    assert data["eligible_finetune_tags"][0]["count"] == 1
+
+
+def test_finetune_dataset_info_empty_tool_filter_excludes_mismatched_datasets(
+    client,
+    mock_task_from_id_disk_backed,
+    empty_task,
+):
+    for run_id, skill_id in [
+        ("run_with_skill_a", "kiln_tool::skill::skill_a"),
+        ("run_with_skill_b", "kiln_tool::skill::skill_b"),
+    ]:
+        create_synthetic_run(
+            empty_task,
+            run_id=run_id,
+            name=run_id,
+            output_text=f"Test output {run_id}",
+            created_by="user1",
+            tool_ids=[skill_id],
+        )
+
+    create_dataset_split(
+        empty_task,
+        split_id="split_mismatch",
+        name="Split Mismatch",
+        run_ids=["run_with_skill_a", "run_with_skill_b"],
+    )
+    create_finetune(
+        empty_task,
+        finetune_id="ft_mismatch",
+        name="Finetune Mismatch",
+        split_id="split_mismatch",
+    )
+
+    mock_task_from_id_disk_backed.return_value = empty_task
+
+    # Mixed-skill datasets should not appear reusable when the fine-tune UI is
+    # filtering for no tools and no skills.
+    response = client.get(
+        "/api/projects/project1/tasks/task1/finetune_dataset_info",
+        params={"empty_tool_filter": True},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["eligible_datasets"] == []
 
 
 def test_system_message_from_request_with_skills(tmp_path):

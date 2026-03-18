@@ -857,10 +857,7 @@
             <SelectFinetuneDataset
               {project_id}
               {task_id}
-              required_tool_ids={[...selected_tool_ids, ...selected_skill_ids]
-                .length > 0
-                ? [...selected_tool_ids, ...selected_skill_ids]
-                : undefined}
+              required_tool_ids={[...selected_tool_ids, ...selected_skill_ids]}
               {saved_dataset_id}
               bind:selected_dataset
             />
