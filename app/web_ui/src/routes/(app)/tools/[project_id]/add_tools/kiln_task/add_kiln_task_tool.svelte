@@ -21,6 +21,7 @@
   let description = ""
   let selected_task_id: string | null = null
   let selected_run_config_id: string | null = null
+  let complete = false
 
   let created_run_config_in_page = false
 
@@ -216,6 +217,8 @@
         created_run_config_in_page: created_run_config_in_page,
       })
 
+      complete = true
+
       // Navigate to the manage tools page for the created tool
       goto(`/tools/${project_id}/kiln_task_tools`)
     } catch (e) {
@@ -246,7 +249,8 @@
         on:submit={add_kiln_task_tool}
         bind:error
         bind:submitting
-        warn_before_unload={!!selected_task_id &&
+        warn_before_unload={!complete &&
+          !!selected_task_id &&
           selected_task_id !== "__create_new_kiln_task__"}
       >
         <FormElement

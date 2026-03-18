@@ -22,6 +22,7 @@
   let submitting = false
   let loading = false
   let loading_error: KilnError | null = null
+  let complete = false
 
   onMount(async () => {
     if (clone_mode && skill_id) {
@@ -76,6 +77,7 @@
       }
       if (data) {
         uncache_available_tools(project_id)
+        complete = true
         goto(`/skills/${project_id}/${data.id}`)
       }
     } catch (err) {
@@ -89,7 +91,8 @@
 
   $: submit_label = clone_mode ? "Clone" : "Add"
 
-  $: warn_before_unload = name !== "" || description !== "" || body !== ""
+  $: warn_before_unload =
+    !complete && (name !== "" || description !== "" || body !== "")
 </script>
 
 {#if clone_mode && loading}
