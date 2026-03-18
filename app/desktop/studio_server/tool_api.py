@@ -20,6 +20,7 @@ from kiln_ai.datamodel.tool_id import (
     ToolId,
     build_kiln_task_tool_id,
     build_rag_tool_id,
+    build_skill_tool_id,
 )
 from kiln_ai.tools.kiln_task_tool import KilnTaskTool
 from kiln_ai.tools.mcp_session_manager import (
@@ -154,6 +155,7 @@ class ToolSetType(Enum):
     MCP = "mcp"
     KILN_TASK = "kiln_task"
     DEMO = "demo"
+    SKILL = "skill"
 
 
 class ToolSetApiDescription(BaseModel):
@@ -316,6 +318,26 @@ def connect_tool_servers_api(app: FastAPI):
         # Add MCP tool sets
         if len(mcp_tool_sets) > 0:
             tool_sets.extend(mcp_tool_sets)
+
+        skills = project.skills(readonly=True)
+        if skills:
+            skill_tools = [
+                ToolApiDescription(
+                    id=build_skill_tool_id(skill.id),
+                    name=skill.name,
+                    description=skill.description,
+                )
+                for skill in skills
+                if skill.id is not None and not skill.is_archived
+            ]
+            if skill_tools:
+                tool_sets.append(
+                    ToolSetApiDescription(
+                        type=ToolSetType.SKILL,
+                        set_name="Skills",
+                        tools=skill_tools,
+                    )
+                )
 
         # Add demo tools if enabled
         if Config.shared().enable_demo_tools:

@@ -238,9 +238,11 @@ class FireworksFinetune(BaseFinetuneAdapter):
         url = f"https://api.fireworks.ai/v1/accounts/{account_id}/datasets"
         # First char can't be a digit: https://discord.com/channels/1137072072808472616/1363214412395184350/1363214412395184350
         dataset_id = "kiln-" + str(uuid4())
+        example_count = len(dataset.split_contents.get(split_name, []))
         payload = {
             "datasetId": dataset_id,
             "dataset": {
+                "exampleCount": example_count,
                 "displayName": f"Kiln AI fine-tuning for dataset ID [{dataset.id}] split [{split_name}]",
                 "userUploaded": {},
             },

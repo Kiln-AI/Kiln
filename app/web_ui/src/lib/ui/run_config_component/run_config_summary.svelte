@@ -6,6 +6,7 @@
   import { getRunConfigPromptDisplayName } from "$lib/utils/run_config_formatters"
   import { prompts_by_task_composite_id } from "$lib/stores/prompts_store"
   import { goto } from "$app/navigation"
+  import { split_tool_and_skill_ids } from "$lib/stores/tools_store"
 
   export let project_id: string
   export let task_id: string
@@ -23,7 +24,10 @@
     ? task_run_config.run_config_properties
     : null
   $: is_mcp = mcp_props !== null
-  $: tools_count = kiln_props?.tools_config?.tools?.length ?? 0
+  $: all_ids = kiln_props?.tools_config?.tools ?? []
+  $: ({ tool_ids, skill_ids } = split_tool_and_skill_ids(all_ids))
+  $: tools_count = tool_ids.length
+  $: skills_count = skill_ids.length
 
   function openRunConfig() {
     goto(`/optimize/${project_id}/${task_id}/run_config/${task_run_config.id}`)
@@ -66,6 +70,9 @@
       </div>
       <div>
         Tools: {tools_count > 0 ? `${tools_count} available` : "None"}
+      </div>
+      <div>
+        Skills: {skills_count > 0 ? `${skills_count} available` : "None"}
       </div>
     {/if}
   </div>

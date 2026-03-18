@@ -4,7 +4,7 @@ from typing import Dict
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.ml_model_list import ModelProviderName
-from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
+from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, SkillsDict
 from kiln_ai.datamodel.eval import Eval, EvalConfig, EvalScores
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.task import RunConfigProperties, TaskOutputRatingType, TaskRun
@@ -18,7 +18,12 @@ class BaseEval:
     Should be subclassed, and the run_eval method implemented.
     """
 
-    def __init__(self, eval_config: EvalConfig, run_config: RunConfigProperties | None):
+    def __init__(
+        self,
+        eval_config: EvalConfig,
+        run_config: RunConfigProperties | None,
+        skills: SkillsDict | None = None,
+    ):
         self.eval_config = eval_config
         eval = eval_config.parent_eval()
         if not eval:
@@ -30,6 +35,7 @@ class BaseEval:
         self.target_task = task
         self.score_schema = BaseEval.build_score_schema(eval, allow_float_scores=True)
         self.run_config = run_config
+        self.skills = skills
 
     def model_and_provider(self) -> tuple[str, ModelProviderName]:
         model_name = self.eval_config.model_name
@@ -60,7 +66,10 @@ class BaseEval:
         run_adapter = adapter_for_task(
             self.target_task,
             self.run_config,
-            base_adapter_config=AdapterConfig(allow_saving=False),
+            base_adapter_config=AdapterConfig(
+                allow_saving=False,
+                skills=self.skills,
+            ),
         )
 
         # Parse structured input if needed

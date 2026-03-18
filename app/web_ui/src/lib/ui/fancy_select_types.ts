@@ -12,4 +12,5 @@ export type Option = {
   // Defaults to ghost if not specified
   badge_color?: "primary"
   disabled?: boolean
+  hide_check?: boolean
 }

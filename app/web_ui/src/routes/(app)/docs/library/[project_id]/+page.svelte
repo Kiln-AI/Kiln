@@ -4,7 +4,7 @@
   import type { KilnDocument } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
-  import { load_model_info } from "$lib/stores"
+  import { load_model_info, ui_state } from "$lib/stores"
   import { page } from "$app/stores"
   import { goto, replaceState } from "$app/navigation"
   import Dialog from "$lib/ui/dialog.svelte"
@@ -472,7 +472,13 @@
     no_y_padding
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#document-library"
-    breadcrumbs={[{ label: "Docs & Search", href: `/docs/${project_id}` }]}
+    breadcrumbs={[
+      {
+        label: "Optimize",
+        href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+      },
+      { label: "Docs & Search", href: `/docs/${project_id}` },
+    ]}
     action_buttons={documents && documents.length == 0
       ? []
       : [

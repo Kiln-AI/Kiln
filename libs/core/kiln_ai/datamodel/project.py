@@ -7,6 +7,7 @@ from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.extraction import Document, ExtractorConfig
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.reranker import RerankerConfig
+from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import Task
 from kiln_ai.datamodel.vector_store import VectorStoreConfig
 
@@ -23,6 +24,7 @@ class Project(
         "vector_store_configs": VectorStoreConfig,
         "external_tool_servers": ExternalToolServer,
         "reranker_configs": RerankerConfig,
+        "skills": Skill,
     },
 ):
     """
@@ -65,3 +67,6 @@ class Project(
 
     def reranker_configs(self, readonly: bool = False) -> list[RerankerConfig]:
         return super().reranker_configs(readonly=readonly)  # type: ignore
+
+    def skills(self, readonly: bool = False) -> list[Skill]:
+        return super().skills(readonly=readonly)  # type: ignore

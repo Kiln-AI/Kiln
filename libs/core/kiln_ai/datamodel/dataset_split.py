@@ -29,9 +29,9 @@ class DatasetToolInfo(BaseModel):
     has_tool_mismatch: bool = Field(
         description="Whether the tools from each run match across all runs in the dataset split."
     )
-    tools: list[str] = Field(
+    tools: list[str] | None = Field(
         default_factory=list,
-        description="Common tool IDs shared by every run; empty when tools are mismatched or no tools exist.",
+        description="Common tool IDs shared by every run. Empty means every run has no tools. None means the dataset contains mismatched tool sets.",
     )
 
 
@@ -246,14 +246,18 @@ class DatasetSplit(KilnParentedModel):
             elif run_tools != tools:
                 # Mismatch found
                 has_tool_mismatch = True
-                tools = set()
+                tools = None
                 break
 
         # If no valid runs were processed, return empty tools
         if tools is None:
-            tools = set()
+            if not has_tool_mismatch:
+                tools = set()
 
-        return DatasetToolInfo(has_tool_mismatch=has_tool_mismatch, tools=sorted(tools))
+        return DatasetToolInfo(
+            has_tool_mismatch=has_tool_mismatch,
+            tools=None if tools is None else sorted(tools),
+        )
 
     def tool_info(self) -> DatasetToolInfo:
         """

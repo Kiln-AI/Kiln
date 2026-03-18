@@ -14,6 +14,8 @@
   import FinetuneIcon from "$lib/ui/icons/finetune_icon.svelte"
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import OptimizeIcon from "$lib/ui/icons/optimize_icon.svelte"
+  import SkillsIcon from "$lib/ui/icons/skills_icon.svelte"
+  import ToolsIcon from "$lib/ui/icons/tools_icon.svelte"
 
   onMount(async () => {
     update_update_store()
@@ -32,6 +34,8 @@
     Run,
     FineTune,
     Models,
+    Tools,
+    Skills,
     Optimize,
     None,
   }
@@ -57,6 +61,10 @@
       section = Section.Generate
     } else if (path_start("/fine_tune", $page.url.pathname)) {
       section = Section.FineTune
+    } else if (path_start("/tools", $page.url.pathname)) {
+      section = Section.Tools
+    } else if (path_start("/skills", $page.url.pathname)) {
+      section = Section.Skills
     } else if (path_start("/prompts", $page.url.pathname)) {
       section = Section.Prompts
     } else if (path_start("/docs", $page.url.pathname)) {
@@ -301,13 +309,24 @@
           </li>
           <li class="menu-md menu-nested">
             <a
-              href={`/fine_tune/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
-              class={section == Section.FineTune ? "active" : ""}
+              href={`/tools/${$ui_state.current_project_id}`}
+              class={section == Section.Tools ? "active" : ""}
             >
               <div class="h-6 w-6 mr-2">
-                <FinetuneIcon />
+                <ToolsIcon />
               </div>
-              Fine Tune
+              Tools
+            </a>
+          </li>
+          <li class="menu-md menu-nested">
+            <a
+              href={`/skills/${$ui_state.current_project_id}`}
+              class={section == Section.Skills ? "active" : ""}
+            >
+              <div class="h-6 w-6 mr-2">
+                <SkillsIcon />
+              </div>
+              Skills
             </a>
           </li>
           <li class="menu-md menu-nested">
@@ -319,6 +338,17 @@
                 <FileIcon kind="document" />
               </div>
               Docs &amp; Search
+            </a>
+          </li>
+          <li class="menu-md menu-nested">
+            <a
+              href={`/fine_tune/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
+              class={section == Section.FineTune ? "active" : ""}
+            >
+              <div class="h-6 w-6 mr-2">
+                <FinetuneIcon />
+              </div>
+              Fine Tune
             </a>
           </li>
         </ul>

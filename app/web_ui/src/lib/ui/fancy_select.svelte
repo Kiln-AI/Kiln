@@ -739,7 +739,7 @@
                 }}
               >
                 <div class="flex flex-row gap-3 items-center flex-1">
-                  {#if multi_select}
+                  {#if multi_select && !item.hide_check}
                     <input
                       type="checkbox"
                       class="checkbox checkbox-sm no-animation pointer-events-none"
