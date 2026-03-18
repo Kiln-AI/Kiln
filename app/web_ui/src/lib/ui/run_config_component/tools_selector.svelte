@@ -34,6 +34,7 @@
     ...default_tools_selector_settings,
     ...settings,
   }
+  $: has_explicit_mandatory_tools = settings.mandatory_tools !== undefined
 
   onMount(async () => {
     await load_tools(project_id, task_id)
@@ -46,6 +47,7 @@
   // persisted selections so the bound value matches the disabled UI state.
   $: if (
     tools_selector_settings.disabled &&
+    has_explicit_mandatory_tools &&
     Array.isArray(tools_selector_settings.mandatory_tools) &&
     tools_selector_settings.mandatory_tools.length === 0 &&
     tools.length > 0
