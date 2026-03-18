@@ -729,6 +729,33 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         assert "numeric_property" not in call_args[1]
         assert "boolean_property" not in call_args[1]
 
+    async def test_openrouter_receives_encoding_format_float(
+        self, mock_litellm_core_config
+    ):
+        """OpenRouter rejects encoding_format=None; we must send encoding_format='float'."""
+        openrouter_config = EmbeddingConfig(
+            name="openrouter-embedding",
+            model_provider_name=ModelProviderName.openrouter,
+            model_name="gemini_embedding_001",
+            properties={},
+        )
+        adapter = LitellmEmbeddingAdapter(
+            openrouter_config, litellm_core_config=mock_litellm_core_config
+        )
+        mock_response = AsyncMock(spec=EmbeddingResponse)
+        mock_response.data = [
+            {"object": "embedding", "index": 0, "embedding": [0.1, 0.2, 0.3]}
+        ]
+        mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
+
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ) as mock_aembedding:
+            await adapter._generate_embeddings(["test text"])
+
+        call_args = mock_aembedding.call_args
+        assert call_args[1]["encoding_format"] == "float"
+
 
 @pytest.mark.paid
 @pytest.mark.parametrize(

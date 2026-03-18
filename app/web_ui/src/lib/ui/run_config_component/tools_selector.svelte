@@ -34,6 +34,7 @@
     ...default_tools_selector_settings,
     ...settings,
   }
+  $: has_explicit_mandatory_tools = settings.mandatory_tools !== undefined
 
   onMount(async () => {
     await load_tools(project_id, task_id)
@@ -41,6 +42,18 @@
 
   // Load tools if project_id or task_id changes
   $: load_tools(project_id, task_id)
+
+  // When fine-tuning locks tools to an explicit empty set, clear any stale
+  // persisted selections so the bound value matches the disabled UI state.
+  $: if (
+    tools_selector_settings.disabled &&
+    has_explicit_mandatory_tools &&
+    Array.isArray(tools_selector_settings.mandatory_tools) &&
+    tools_selector_settings.mandatory_tools.length === 0 &&
+    tools.length > 0
+  ) {
+    tools = []
+  }
 
   function is_tool_available(tool_id: string, project_id: string): boolean {
     const available = $available_tools[project_id]
@@ -159,7 +172,7 @@
       if (add_create_kiln_task_tool_action) {
         action_label = "Create New"
         action_handler = () => {
-          goto(`/settings/manage_tools/${project_id}/add_tools/kiln_task`)
+          goto(`/tools/${project_id}/add_tools/kiln_task`)
         }
       }
 
@@ -218,7 +231,7 @@
         ? "Loading tools..."
         : "No Tools Available",
     empty_state_subtitle: "Add Tools",
-    empty_state_link: `/settings/manage_tools/${project_id}/add_tools`,
+    empty_state_link: `/tools/${project_id}/add_tools`,
     disabled: tools_selector_settings.disabled,
     optional: tools_selector_settings.optional,
   }

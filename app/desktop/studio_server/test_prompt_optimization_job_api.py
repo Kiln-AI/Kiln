@@ -36,6 +36,7 @@ from app.desktop.studio_server.prompt_optimization_job_api import (
 )
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from kiln_server.custom_errors import connect_custom_errors
 from kiln_ai.cli.commands.package_project import PackageForTrainingConfig
 from kiln_ai.datamodel import Project, PromptOptimizationJob, Task
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
@@ -68,6 +69,7 @@ def _make_sdk_response(
 @pytest.fixture
 def app():
     app = FastAPI()
+    connect_custom_errors(app)
     connect_prompt_optimization_job_api(app)
     return app
 
@@ -152,7 +154,7 @@ def test_get_prompt_optimization_job_result_no_output(client, mock_api_key):
         response = client.get(f"/api/prompt_optimization_jobs/{job_id}/result")
 
         assert response.status_code == 500
-        assert "has no output" in response.json()["detail"]
+        assert "has no output" in response.json()["message"]
 
 
 def test_get_prompt_optimization_job_result_api_error(client, mock_api_key):
@@ -168,7 +170,7 @@ def test_get_prompt_optimization_job_result_api_error(client, mock_api_key):
 
         assert response.status_code == 500
         assert (
-            "Failed to get Prompt Optimization job result" in response.json()["detail"]
+            "Failed to get Prompt Optimization job result" in response.json()["message"]
         )
 
 
@@ -223,7 +225,7 @@ def test_get_prompt_optimization_job_result_no_api_key(client):
         response = client.get(f"/api/prompt_optimization_jobs/{job_id}/result")
 
         assert response.status_code == 401
-        assert "API key not configured" in response.json()["detail"]
+        assert "API key not configured" in response.json()["message"]
 
 
 def test_get_prompt_optimization_job_result_validation_error(client, mock_api_key):
@@ -1450,7 +1452,7 @@ def test_check_run_config_server_none_response(client, mock_api_key, tmp_path):
         )
 
         assert response.status_code == 500
-        assert "unknown error" in response.json()["detail"].lower()
+        assert "unknown error" in response.json()["message"].lower()
 
 
 def test_check_run_config_exception(client, mock_api_key, tmp_path):
@@ -1479,7 +1481,7 @@ def test_check_run_config_exception(client, mock_api_key, tmp_path):
         )
 
         assert response.status_code == 500
-        assert "Failed to check run config" in response.json()["detail"]
+        assert "Failed to check run config" in response.json()["message"]
 
 
 def test_check_eval_no_current_config(client, mock_api_key, tmp_path):
@@ -1748,7 +1750,7 @@ def test_check_eval_server_none_response(client, mock_api_key, tmp_path):
         )
 
         assert response.status_code == 500
-        assert "unknown error" in response.json()["detail"].lower()
+        assert "unknown error" in response.json()["message"].lower()
 
 
 def test_check_eval_exception(client, mock_api_key, tmp_path):
@@ -1777,7 +1779,7 @@ def test_check_eval_exception(client, mock_api_key, tmp_path):
         )
 
         assert response.status_code == 500
-        assert "Failed to check eval" in response.json()["detail"]
+        assert "Failed to check eval" in response.json()["message"]
 
 
 @pytest.mark.parametrize(
@@ -1865,7 +1867,7 @@ def test_start_prompt_optimization_job_no_parent_project(
         )
 
         assert response.status_code == 404
-        assert "Project not found" in response.json()["detail"]
+        assert "Project not found" in response.json()["message"]
 
 
 def test_start_prompt_optimization_job_with_tools_in_run_config(
@@ -1909,8 +1911,8 @@ def test_start_prompt_optimization_job_with_tools_in_run_config(
         )
 
         assert response.status_code == 400
-        assert "does not support" in response.json()["detail"]
-        assert "tools" in response.json()["detail"]
+        assert "does not support" in response.json()["message"]
+        assert "tools" in response.json()["message"]
 
 
 def test_start_prompt_optimization_job_server_not_authenticated(
@@ -1957,7 +1959,7 @@ def test_start_prompt_optimization_job_server_not_authenticated(
         )
 
         assert response.status_code == 500
-        assert "not authenticated" in response.json()["detail"]
+        assert "not authenticated" in response.json()["message"]
 
 
 def test_start_prompt_optimization_job_server_validation_error(
@@ -2012,7 +2014,7 @@ def test_start_prompt_optimization_job_server_validation_error(
         )
 
         assert response.status_code == 422
-        assert "Upstream validation error" in response.json()["detail"]
+        assert "Upstream validation error" in response.json()["message"]
 
 
 def test_start_prompt_optimization_job_server_none_response(
@@ -2064,7 +2066,7 @@ def test_start_prompt_optimization_job_server_none_response(
         )
 
         assert response.status_code == 500
-        assert "unknown error" in response.json()["detail"].lower()
+        assert "unknown error" in response.json()["message"].lower()
 
 
 def test_start_prompt_optimization_job_connection_error(client, mock_api_key, tmp_path):
@@ -2117,8 +2119,8 @@ def test_start_prompt_optimization_job_connection_error(client, mock_api_key, tm
         )
 
         assert response.status_code == 500
-        assert "Connection error" in response.json()["detail"]
-        assert "too large" in response.json()["detail"]
+        assert "Connection error" in response.json()["message"]
+        assert "too large" in response.json()["message"]
 
 
 def test_start_prompt_optimization_job_timeout_error(client, mock_api_key, tmp_path):
@@ -2168,7 +2170,7 @@ def test_start_prompt_optimization_job_timeout_error(client, mock_api_key, tmp_p
         )
 
         assert response.status_code == 500
-        assert "Connection error" in response.json()["detail"]
+        assert "Connection error" in response.json()["message"]
 
 
 def test_start_prompt_optimization_job_general_exception(
@@ -2215,7 +2217,7 @@ def test_start_prompt_optimization_job_general_exception(
         )
 
         assert response.status_code == 500
-        assert "Failed to start Prompt Optimization job" in response.json()["detail"]
+        assert "Failed to start Prompt Optimization job" in response.json()["message"]
 
 
 def test_prompt_optimization_job_creates_run_config_on_success(

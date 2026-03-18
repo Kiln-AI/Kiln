@@ -1,7 +1,7 @@
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
-from kiln_ai.adapters.adapter_registry import adapter_for_task
+from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
 from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenCategoriesTask,
     DataGenCategoriesTaskInput,
@@ -145,9 +145,11 @@ def connect_data_gen_api(app: FastAPI):
         run_config_properties = input.run_config_properties.model_copy()
         # Override prompt id to simple just in case we change the default in the UI in the future.
         run_config_properties.prompt_id = PromptGenerators.SIMPLE
+        skills = load_skills_for_task(categories_task, run_config_properties)
         adapter = adapter_for_task(
             categories_task,
             run_config_properties=run_config_properties,
+            base_adapter_config=AdapterConfig(skills=skills),
         )
 
         categories_run = await adapter.invoke(task_input.model_dump())
@@ -175,9 +177,11 @@ def connect_data_gen_api(app: FastAPI):
         run_config_properties = input.run_config_properties.model_copy()
         # Override prompt id to simple just in case we change the default in the UI in the future.
         run_config_properties.prompt_id = PromptGenerators.SIMPLE
+        skills = load_skills_for_task(sample_task, run_config_properties)
         adapter = adapter_for_task(
             sample_task,
             run_config_properties=run_config_properties,
+            base_adapter_config=AdapterConfig(skills=skills),
         )
 
         samples_run = await adapter.invoke(task_input.model_dump())
@@ -218,10 +222,11 @@ The topic path for this sample is:
         if guidance.strip() != "":
             task.instruction = wrap_task_with_guidance(task.instruction, guidance)
 
+        skills = load_skills_for_task(task, sample.run_config_properties)
         adapter = adapter_for_task(
             task,
             run_config_properties=sample.run_config_properties,
-            base_adapter_config=AdapterConfig(allow_saving=False),
+            base_adapter_config=AdapterConfig(allow_saving=False, skills=skills),
         )
 
         properties: dict[str, str | int | float] = {
@@ -280,9 +285,11 @@ The topic path for this sample is:
             kiln_data_gen_part_text=input.part_text,
             kiln_data_gen_num_samples=input.num_samples,
         )
+        skills = load_skills_for_task(qna_task, input.run_config_properties)
         adapter = adapter_for_task(
             qna_task,
             run_config_properties=input.run_config_properties,
+            base_adapter_config=AdapterConfig(skills=skills),
         )
         qna_run = await adapter.invoke(task_input.model_dump())
 

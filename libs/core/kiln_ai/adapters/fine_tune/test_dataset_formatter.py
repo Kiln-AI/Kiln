@@ -36,6 +36,8 @@ from kiln_ai.datamodel import (
     TaskRun,
 )
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
+from kiln_ai.datamodel.skill import Skill
 
 logger = logging.getLogger(__name__)
 
@@ -1184,3 +1186,101 @@ def test_generate_chat_message_response_with_tools_json(mock_tool_definitions):
         ],
         "tools": mock_tool_definitions,
     }
+
+
+class TestGetToolDefinitionsWithSkills:
+    @pytest.fixture
+    def task_with_skills(self, tmp_path):
+        from kiln_ai.datamodel import Project
+
+        project = Project(name="test_project", path=tmp_path / "project.kiln")
+        project.save_to_file()
+        task = Task(
+            name="test_task",
+            instruction="do something",
+            parent=project,
+        )
+        task.save_to_file()
+        skill = Skill(name="my-skill", description="A test skill", parent=project)
+        skill.save_to_file()
+        return task, skill
+
+    def _make_task_run_with_skill_tool(self, task, skill_id):
+        run_config = KilnAgentRunConfigProperties(
+            model_name="gpt-4o",
+            model_provider_name="openai",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+            tools_config=ToolsRunConfig(
+                tools=[f"kiln_tool::skill::{skill_id}"],
+            ),
+        )
+        return Mock(
+            spec=TaskRun,
+            output=Mock(
+                source=Mock(run_config=run_config),
+            ),
+            parent_task=Mock(return_value=task),
+        )
+
+    async def test_skill_tool_ids_resolved(self, task_with_skills):
+        task, skill = task_with_skills
+        dataset = Mock(spec=DatasetSplit)
+        dataset.parent_task.return_value = task
+        dataset.split_contents = {"train": []}
+
+        formatter = DatasetFormatter(dataset, "system message")
+
+        task_run = self._make_task_run_with_skill_tool(task, skill.id)
+        tool_defs = await formatter._get_tool_definitions_from_config(task_run)
+
+        assert tool_defs is not None
+        assert len(tool_defs) == 1
+        assert tool_defs[0]["function"]["name"] == "skill"
+
+    async def test_skill_tool_ids_mixed_with_builtin(self, task_with_skills):
+        task, skill = task_with_skills
+        run_config = KilnAgentRunConfigProperties(
+            model_name="gpt-4o",
+            model_provider_name="openai",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+            tools_config=ToolsRunConfig(
+                tools=[
+                    "kiln_tool::add_numbers",
+                    f"kiln_tool::skill::{skill.id}",
+                ],
+            ),
+        )
+        task_run = Mock(
+            spec=TaskRun,
+            output=Mock(source=Mock(run_config=run_config)),
+            parent_task=Mock(return_value=task),
+        )
+
+        dataset = Mock(spec=DatasetSplit)
+        dataset.parent_task.return_value = task
+        dataset.split_contents = {"train": []}
+        formatter = DatasetFormatter(dataset, "system message")
+
+        tool_defs = await formatter._get_tool_definitions_from_config(task_run)
+
+        assert tool_defs is not None
+        assert len(tool_defs) == 2
+        names = {d["function"]["name"] for d in tool_defs}
+        assert "add" in names
+        assert "skill" in names
+
+    async def test_skill_tool_cached(self, task_with_skills):
+        task, skill = task_with_skills
+        dataset = Mock(spec=DatasetSplit)
+        dataset.parent_task.return_value = task
+        dataset.split_contents = {"train": []}
+        formatter = DatasetFormatter(dataset, "system message")
+
+        task_run = self._make_task_run_with_skill_tool(task, skill.id)
+        defs1 = await formatter._get_tool_definitions_from_config(task_run)
+        defs2 = await formatter._get_tool_definitions_from_config(task_run)
+
+        assert defs1 == defs2
+        assert len(formatter._tool_cache) == 1

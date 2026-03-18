@@ -5,6 +5,10 @@ from typing import Annotated, Dict
 import httpx
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from kiln_ai.adapters.adapter_registry import (
+    load_skills_for_task,
+    load_skills_from_tool_ids,
+)
 from kiln_ai.adapters.fine_tune.base_finetune import FineTuneParameter, FineTuneStatus
 from kiln_ai.adapters.fine_tune.dataset_formatter import (
     DatasetFormat,
@@ -43,6 +47,7 @@ from kiln_ai.datamodel.dataset_split import (
     Train80Val20SplitDefinition,
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.skill import Skill
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
@@ -195,7 +200,8 @@ def compute_finetune_tag_info(
     high_quality_count: Dict[str, int] = {}
     reasoning_and_high_quality_count: Dict[str, int] = {}
 
-    required_tools_set = set(tool_filter) if tool_filter else None
+    # None means no filter; [] means explicitly match runs with no tools/skills.
+    required_tools_set = None if tool_filter is None else set(tool_filter)
 
     for sample in task.runs(readonly=True):
         # filter by tools if provided
@@ -371,7 +377,14 @@ def connect_fine_tune_api(app: FastAPI):
         project_id: str,
         task_id: str,
         tool_ids: Annotated[list[str] | None, Query()] = None,
+        empty_tool_filter: bool = False,
     ) -> FinetuneDatasetInfo:
+        # In the fine-tune UI, "no tools/skills selected" should mean `tool_ids=[]`,
+        # but `openapi-fetch` omits empty arrays, so we recover that state from
+        # `empty_tool_filter=true`.
+        if empty_tool_filter and tool_ids is None:
+            tool_ids = []
+
         task = task_from_id(project_id, task_id)
         # Only include datasets that is part of a finetune.
         # Orphan datasets are created when user creates a dataset but didn't create a finetune.
@@ -389,13 +402,20 @@ def connect_fine_tune_api(app: FastAPI):
         eligible_finetune_tags = compute_finetune_tag_info(task, tool_filter=tool_ids)
 
         eligible_datasets = existing_datasets
-        if tool_ids:
+        # Only filter datasets when the caller provided a tool/skill selection.
+        # `tool_ids=[]` is a real filter meaning "match datasets with no tools/skills".
+        if tool_ids is not None:
             required_tools_set = set(tool_ids)
-            eligible_datasets = [
-                dataset
-                for dataset in existing_datasets
-                if set(dataset.tool_info().tools) == required_tools_set
-            ]
+            eligible_datasets = []
+            for dataset in existing_datasets:
+                tool_info = dataset.tool_info()
+                # Reusable datasets must have a uniform tool/skill set.
+                # `tool_info.tools=None` means the dataset mixes different tool/skill selections.
+                if (
+                    tool_info.tools is not None
+                    and set(tool_info.tools) == required_tools_set
+                ):
+                    eligible_datasets.append(dataset)
 
         return FinetuneDatasetInfo(
             existing_datasets=existing_datasets,
@@ -451,8 +471,16 @@ def connect_fine_tune_api(app: FastAPI):
                 detail="System message generator or custom system message is required",
             )
 
+        skills: list[Skill] = []
+        if request.run_config_properties is not None:
+            skills_dict = load_skills_for_task(task, request.run_config_properties)
+            skills = list(skills_dict.values())
+
         system_message = system_message_from_request(
-            task, request.custom_system_message, request.system_message_generator
+            task,
+            request.custom_system_message,
+            request.system_message_generator,
+            skills=skills,
         )
         thinking_instructions = thinking_instructions_from_request(
             task, request.data_strategy, request.custom_thinking_instructions
@@ -514,8 +542,17 @@ def connect_fine_tune_api(app: FastAPI):
                 detail=f"Dataset split with name '{split_name}' not found",
             )
 
+        tool_info = dataset.tool_info()
+        if tool_info.tools is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Dataset contains mixed tool/skill selections and cannot be exported",
+            )
+        skills_dict = load_skills_from_tool_ids(task, tool_info.tools)
+        skills = list(skills_dict.values())
+
         system_message = system_message_from_request(
-            task, custom_system_message, system_message_generator
+            task, custom_system_message, system_message_generator, skills=skills
         )
         thinking_instructions = thinking_instructions_from_request(
             task, data_strategy_typed, custom_thinking_instructions
@@ -542,7 +579,10 @@ def connect_fine_tune_api(app: FastAPI):
 
 
 def system_message_from_request(
-    task: Task, custom_system_message: str | None, system_message_generator: str | None
+    task: Task,
+    custom_system_message: str | None,
+    system_message_generator: str | None,
+    skills: list[Skill] | None = None,
 ) -> str:
     system_message = custom_system_message
     if not system_message or (
@@ -556,7 +596,8 @@ def system_message_from_request(
         try:
             prompt_builder = prompt_builder_from_id(system_message_generator, task)
             system_message = prompt_builder.build_prompt(
-                include_json_instructions=False
+                include_json_instructions=False,
+                skills=skills,
             )
         except Exception as e:
             raise HTTPException(

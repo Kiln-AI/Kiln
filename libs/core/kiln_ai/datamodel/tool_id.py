@@ -32,6 +32,7 @@ MCP_REMOTE_TOOL_ID_PREFIX = "mcp::remote::"
 RAG_TOOL_ID_PREFIX = "kiln_tool::rag::"
 MCP_LOCAL_TOOL_ID_PREFIX = "mcp::local::"
 KILN_TASK_TOOL_ID_PREFIX = "kiln_task::"
+SKILL_TOOL_ID_PREFIX = "kiln_tool::skill::"
 
 
 def _check_tool_id(id: str) -> str:
@@ -81,6 +82,15 @@ def _check_tool_id(id: str) -> str:
             )
         return id
 
+    # Skill tools must have format: kiln_tool::skill::<skill_id>
+    if id.startswith(SKILL_TOOL_ID_PREFIX):
+        skill_id = skill_id_from_tool_id(id)
+        if not skill_id:
+            raise ValueError(
+                f"Invalid skill tool ID: {id}. Expected format: 'kiln_tool::skill::<skill_id>'."
+            )
+        return id
+
     raise ValueError(f"Invalid tool ID: {id}")
 
 
@@ -127,6 +137,21 @@ def build_rag_tool_id(rag_config_id: ID_TYPE) -> str:
 def build_kiln_task_tool_id(server_id: ID_TYPE) -> str:
     """Construct the tool ID for a Kiln task server."""
     return f"{KILN_TASK_TOOL_ID_PREFIX}{server_id}"
+
+
+def skill_id_from_tool_id(id: str) -> str:
+    """Get the skill ID from a skill tool ID."""
+    parts = id.split("::")
+    if not id.startswith(SKILL_TOOL_ID_PREFIX) or len(parts) != 3:
+        raise ValueError(
+            f"Invalid skill tool ID: {id}. Expected format: 'kiln_tool::skill::<skill_id>'."
+        )
+    return parts[2]
+
+
+def build_skill_tool_id(skill_id: str) -> str:
+    """Construct the tool ID for a skill."""
+    return f"{SKILL_TOOL_ID_PREFIX}{skill_id}"
 
 
 def kiln_task_server_id_from_tool_id(tool_id: str) -> str:

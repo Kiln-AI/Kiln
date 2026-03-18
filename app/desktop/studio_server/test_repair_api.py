@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from kiln_server.custom_errors import connect_custom_errors
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -24,6 +25,7 @@ from app.desktop.studio_server.repair_api import (
 @pytest.fixture
 def app():
     app = FastAPI()
+    connect_custom_errors(app)
     connect_repair_api(app)
     return app
 
@@ -201,7 +203,7 @@ def test_repair_run_missing_model_info(
 
     # Assert
     assert response.status_code == 422
-    assert response.json()["detail"] == "Model name and provider must be specified."
+    assert response.json()["message"] == "Model name and provider must be specified."
 
 
 def test_repair_run_human_source(

@@ -78,6 +78,9 @@
   let initial_property_values: Record<string, string | null> = {}
   let evaluate_full_trace = false
 
+  // Tool use spec: tool_id is not a form field but is required in the saved properties
+  let selected_tool_id: string | null = null
+
   // Copilot availability
   let has_kiln_copilot = false
   let default_run_config_has_tools = false
@@ -237,13 +240,14 @@
       property_values = values
       initial_property_values = { ...values }
 
-      // Override tool_function_name if provided in URL
+      // Override tool fields if provided in URL
       const tool_function_name_param =
         $page.url.searchParams.get("tool_function_name")
       if (tool_function_name_param) {
         property_values["tool_function_name"] = tool_function_name_param
         initial_property_values["tool_function_name"] = tool_function_name_param
       }
+      selected_tool_id = $page.url.searchParams.get("tool_id")
     } catch (e) {
       loading_error = createKilnError(e)
     } finally {
@@ -379,6 +383,7 @@
     const properties = {
       spec_type: spec_type,
       ...filteredValues,
+      ...(selected_tool_id ? { tool_id: selected_tool_id } : {}),
     } as SpecProperties
 
     // Call the appropriate endpoint based on whether copilot is being used

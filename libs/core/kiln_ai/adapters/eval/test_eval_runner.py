@@ -510,7 +510,7 @@ async def test_run_job_success_task_run_eval(
 
     with patch(
         "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
-        return_value=lambda *args: MockEvaluator(*args),
+        return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
     ):
         success = await mock_eval_runner.run_job(job)
 
@@ -566,7 +566,7 @@ async def test_run_job_success_eval_config_eval(
 
     with patch(
         "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
-        return_value=lambda *args: MockEvaluator(*args),
+        return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
     ):
         success = await mock_eval_runner.run_job(job)
 
@@ -606,7 +606,7 @@ async def test_run_job_invalid_evaluator(
     # Return an invalid evaluator type
     with patch(
         "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
-        return_value=lambda *args: object(),
+        return_value=lambda *args, **kwargs: object(),
     ):
         success = await mock_eval_runner.run_job(job)
 
@@ -638,7 +638,7 @@ async def test_run_job_evaluator_error(
 
     with patch(
         "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
-        return_value=lambda *args: ErrorEvaluator(*args),
+        return_value=lambda *args, **kwargs: ErrorEvaluator(*args, **kwargs),
     ):
         success = await mock_eval_runner.run_job(job)
 
@@ -697,7 +697,7 @@ async def test_run_job_with_full_trace_evaluation_data_type(
 
     with patch(
         "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
-        return_value=lambda *args: MockEvaluator(*args),
+        return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
     ):
         success = await mock_eval_runner.run_job(job)
 
@@ -765,7 +765,7 @@ async def test_run_job_with_final_answer_evaluation_data_type(
 
     with patch(
         "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
-        return_value=lambda *args: MockEvaluator(*args),
+        return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
     ):
         success = await mock_eval_runner.run_job(job)
 
@@ -823,7 +823,7 @@ async def test_run_job_with_none_trace(
 
     with patch(
         "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
-        return_value=lambda *args: MockEvaluator(*args),
+        return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
     ):
         success = await mock_eval_runner.run_job(job)
 

@@ -3,10 +3,12 @@ from collections import Counter
 import pytest
 
 from kiln_ai.adapters.ml_model_list import (
+    KilnModelProvider,
     ModelName,
     built_in_models,
     built_in_models_from_provider,
     default_structured_output_mode_for_model_provider,
+    default_thinking_level_for_model_provider,
     get_model_by_name,
 )
 from kiln_ai.adapters.user_model_entry import UserModelEntry
@@ -161,6 +163,54 @@ class TestDefaultStructuredOutputModeForModelProvider:
             provider=first_provider.name,
         )
         assert result == first_provider.structured_output_mode
+
+
+class TestDefaultThinkingLevelForModelProvider:
+    def test_uses_default_thinking_level(self):
+        result = default_thinking_level_for_model_provider(
+            model_name=ModelName.gpt_5.value,
+            provider=ModelProviderName.openai,
+        )
+        assert result == "medium"
+
+    def test_missing_default_returns_none(self):
+        result = default_thinking_level_for_model_provider(
+            model_name=ModelName.gpt_4o.value,
+            provider=ModelProviderName.openai,
+        )
+        assert result is None
+
+    def test_unknown_model_returns_none(self):
+        result = default_thinking_level_for_model_provider(
+            model_name="unknown-model",
+            provider=ModelProviderName.openrouter,
+        )
+        assert result is None
+
+
+class TestThinkingLevelMetadata:
+    def test_default_thinking_level_validator(self):
+        with pytest.raises(
+            ValueError,
+            match="default_thinking_level must be one of the available_thinking_levels values",
+        ):
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="test-model",
+                available_thinking_levels={"Low": "low"},
+                default_thinking_level="high",
+            )
+
+    def test_openrouter_reasoning_object_requires_openrouter(self):
+        with pytest.raises(
+            ValueError,
+            match="openrouter_reasoning_object can only be true when provider is openrouter",
+        ):
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-4.1",
+                openrouter_reasoning_object=True,
+            )
 
 
 class TestBuiltInModelsFromProvider:

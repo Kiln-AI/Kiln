@@ -16,6 +16,7 @@ from app.desktop.studio_server.run_config_api import (
 )
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from kiln_server.custom_errors import connect_custom_errors
 from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.basemodel import string_to_valid_name
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
@@ -24,6 +25,7 @@ from kiln_ai.tools.mcp_server_tool import MCPServerTool
 @pytest.fixture
 def app():
     app = FastAPI()
+    connect_custom_errors(app)
     connect_run_config_api(app)
     return app
 
@@ -788,7 +790,7 @@ def test_tasks_compatible_with_tool_invalid_tool(client, project_and_tasks):
         )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "Tool selected is not an MCP tool."
+    assert response.json()["message"] == "Tool selected is not an MCP tool."
 
 
 def test_tasks_compatible_with_tool_empty_project(client, tmp_path):
