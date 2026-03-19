@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import json
 import logging
 import os
@@ -7,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, List
 
-import requests
+import httpx
 from pydantic import ValidationError
 
 from kiln_ai.adapters.ml_embedding_model_list import (
@@ -25,6 +26,13 @@ from kiln_ai.datamodel.datamodel_enums import KilnMimeType
 from .ml_model_list import KilnModel, KilnModelProvider, built_in_models
 
 logger = logging.getLogger(__name__)
+
+refresh_lock = threading.Lock()
+
+
+def should_skip_remote_model_list() -> bool:
+    """Check if remote model list fetching should be skipped."""
+    return os.environ.get("KILN_SKIP_REMOTE_MODEL_LIST") == "true"
 
 
 @dataclass
@@ -187,11 +195,12 @@ def deserialize_config_data(
     )
 
 
-def load_from_url(url: str) -> KilnRemoteConfig:
-    response = requests.get(url, timeout=10)
-    response.raise_for_status()
-    data = response.json()
-    return deserialize_config_data(data)
+async def load_from_url(url: str) -> KilnRemoteConfig:
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, timeout=10.0)
+        response.raise_for_status()
+        data = response.json()
+        return deserialize_config_data(data)
 
 
 def dump_builtin_config(path: str | Path) -> None:
@@ -203,21 +212,26 @@ def dump_builtin_config(path: str | Path) -> None:
     )
 
 
-def load_remote_models(url: str) -> None:
-    if os.environ.get("KILN_SKIP_REMOTE_MODEL_LIST") == "true":
-        return
+async def refresh_model_list(url: str) -> None:
+    """Refresh the model list from a URL. This is not thread safe, only asyncio is safe.
+    If you call this from threads, make sure to wrap in an actual lock."""
+    models = await load_from_url(url)
+    with refresh_lock:
+        built_in_models[:] = models.model_list
+        built_in_embedding_models[:] = models.embedding_model_list
+        built_in_rerankers[:] = models.reranker_model_list
 
-    def fetch_and_replace() -> None:
+
+def refresh_model_list_background(url: str) -> None:
+    """Refresh the model list in a background thread."""
+
+    def run_async_in_thread() -> None:
         try:
-            models = load_from_url(url)
-            built_in_models[:] = models.model_list
-            built_in_embedding_models[:] = models.embedding_model_list
-            built_in_rerankers[:] = models.reranker_model_list
+            asyncio.run(refresh_model_list(url))
         except Exception as exc:
-            # Do not crash startup, but surface the issue
             logger.warning("Failed to fetch remote model list from %s: %s", url, exc)
 
-    thread = threading.Thread(target=fetch_and_replace, daemon=True)
+    thread = threading.Thread(target=run_async_in_thread, daemon=True)
     thread.start()
 
 

@@ -10,7 +10,10 @@ import kiln_ai.datamodel.strict_mode as datamodel_strict_mode
 import kiln_server.server as kiln_server
 import uvicorn
 from fastapi import FastAPI
-from kiln_ai.adapters.remote_config import load_remote_models
+from kiln_ai.adapters.remote_config import (
+    refresh_model_list_background,
+    should_skip_remote_model_list,
+)
 from kiln_ai.utils.logging import setup_litellm_logging
 
 from app.desktop.log_config import log_config
@@ -58,7 +61,8 @@ async def lifespan(app: FastAPI):
 def make_app(tk_root: tk.Tk | None = None):
     setup_litellm_logging()
 
-    load_remote_models(REMOTE_MODEL_LIST_URL)
+    if not should_skip_remote_model_list():
+        refresh_model_list_background(REMOTE_MODEL_LIST_URL)
 
     app = kiln_server.make_app(lifespan=lifespan)
     connect_provider_api(app)
