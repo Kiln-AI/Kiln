@@ -298,52 +298,64 @@ async def test_refresh_model_list_background_success(
     sample_embedding_models = [mock_embedding_model]
     sample_reranker_models = [mock_reranker_model]
 
-    # Save original state to restore later
-    original_models = built_in_models.copy()
-    original_embedding = built_in_embedding_models.copy()
-    original_rerankers = built_in_rerankers.copy()
+    # Create temporary lists to patch the global ones
+    temp_models: list = []
+    temp_embedding: list = []
+    temp_rerankers: list = []
 
-    try:
-        # Mock the load_from_url function to return our test data
-        async def mock_load_from_url(url):
-            return KilnRemoteConfig(
-                model_list=sample_models,
-                embedding_model_list=sample_embedding_models,
-                reranker_model_list=sample_reranker_models,
-            )
+    # Mock the load_from_url function to return our test data
+    async def mock_load_from_url(url):
+        return KilnRemoteConfig(
+            model_list=sample_models,
+            embedding_model_list=sample_embedding_models,
+            reranker_model_list=sample_reranker_models,
+        )
 
-        # Mock the function call
-        with (
-            patch(
-                "kiln_ai.adapters.remote_config.load_from_url",
-                side_effect=mock_load_from_url,
-            ),
-            patch(
-                "kiln_ai.adapters.remote_config.should_skip_remote_model_list",
-                return_value=False,
-            ),
-        ):
-            # Call the function
-            refresh_model_list_background("http://example.com/models.json")
+    # Patch the global lists to use our temporary lists
+    with (
+        patch(
+            "kiln_ai.adapters.remote_config.load_from_url",
+            side_effect=mock_load_from_url,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_models",
+            temp_models,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_embedding_models",
+            temp_embedding,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_rerankers",
+            temp_rerankers,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.should_skip_remote_model_list",
+            return_value=False,
+        ),
+    ):
+        # Call the function
+        refresh_model_list_background("http://example.com/models.json")
 
-            # Wait for the thread to complete
-            await asyncio.sleep(0.1)
+        # Wait for the thread to complete
+        await asyncio.sleep(0.5)
 
-            # Verify the global state was modified as expected
-            assert built_in_models == sample_models
-            assert built_in_embedding_models == sample_embedding_models
-            assert built_in_rerankers == sample_reranker_models
-    finally:
-        # Restore original state to prevent test pollution
-        built_in_models[:] = original_models
-        built_in_embedding_models[:] = original_embedding
-        built_in_rerankers[:] = original_rerankers
+        # Verify the temporary lists were modified as expected
+        assert temp_models == sample_models
+        assert temp_embedding == sample_embedding_models
+        assert temp_rerankers == sample_reranker_models
+
+    # Verify global lists were NOT modified
+    assert len(built_in_models) > 1
+    assert len(built_in_embedding_models) > 1
+    assert len(built_in_rerankers) > 1
 
 
 async def test_refresh_model_list_background_failure():
-    original_models = built_in_models.copy()
-    original_embedding = built_in_embedding_models.copy()
-    original_rerankers = built_in_rerankers.copy()
+    # Create temporary lists to patch the global ones
+    temp_models: list = []
+    temp_embedding: list = []
+    temp_rerankers: list = []
 
     async def fake_fetch(url):
         raise RuntimeError("fail")
@@ -355,16 +367,33 @@ async def test_refresh_model_list_background_failure():
             return_value=False,
         ),
         patch("kiln_ai.adapters.remote_config.load_from_url", fake_fetch),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_models",
+            temp_models,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_embedding_models",
+            temp_embedding,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_rerankers",
+            temp_rerankers,
+        ),
     ):
         refresh_model_list_background("http://example.com/models.json")
         # Wait for the daemon thread to complete
-        await asyncio.sleep(0.1)
-        assert built_in_models == original_models
-        assert built_in_embedding_models == original_embedding
-        assert built_in_rerankers == original_rerankers
+        await asyncio.sleep(0.5)
+        assert temp_models == []
+        assert temp_embedding == []
+        assert temp_rerankers == []
 
         # assert that logger.warning was called
         mock_logger.warning.assert_called_once()
+
+    # Verify global lists were NOT modified
+    assert len(built_in_models) > 1
+    assert len(built_in_embedding_models) > 1
+    assert len(built_in_rerankers) > 1
 
 
 def test_deserialize_config_with_extra_keys(tmp_path, mock_model, mock_reranker_model):
@@ -1223,76 +1252,93 @@ async def test_refresh_model_list_success(
     sample_embedding_models = [mock_embedding_model]
     sample_reranker_models = [mock_reranker_model]
 
-    # Save original state to restore later
-    original_models = built_in_models.copy()
-    original_embedding = built_in_embedding_models.copy()
-    original_rerankers = built_in_rerankers.copy()
+    # Create temporary lists to patch the global ones
+    temp_models: list = []
+    temp_embedding: list = []
+    temp_rerankers: list = []
 
-    try:
-        # Mock the load_from_url function to return our test data
-        async def mock_load_from_url(url):
-            return KilnRemoteConfig(
-                model_list=sample_models,
-                embedding_model_list=sample_embedding_models,
-                reranker_model_list=sample_reranker_models,
-            )
+    # Mock the load_from_url function to return our test data
+    async def mock_load_from_url(url):
+        return KilnRemoteConfig(
+            model_list=sample_models,
+            embedding_model_list=sample_embedding_models,
+            reranker_model_list=sample_reranker_models,
+        )
 
-        # Mock the function call
-        with (
-            patch(
-                "kiln_ai.adapters.remote_config.load_from_url",
-                side_effect=mock_load_from_url,
-            ),
-            patch(
-                "kiln_ai.adapters.remote_config.should_skip_remote_model_list",
-                return_value=False,
-            ),
-        ):
-            # Call the async function directly
-            await refresh_model_list("http://example.com/models.json")
+    # Patch the global lists to use our temporary lists
+    with (
+        patch(
+            "kiln_ai.adapters.remote_config.load_from_url",
+            side_effect=mock_load_from_url,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_models",
+            temp_models,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_embedding_models",
+            temp_embedding,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_rerankers",
+            temp_rerankers,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.should_skip_remote_model_list",
+            return_value=False,
+        ),
+    ):
+        # Call the async function directly
+        await refresh_model_list("http://example.com/models.json")
 
-            # Verify the global state was modified as expected
-            assert built_in_models == sample_models
-            assert built_in_embedding_models == sample_embedding_models
-            assert built_in_rerankers == sample_reranker_models
-    finally:
-        # Restore original state to prevent test pollution
-        built_in_models[:] = original_models
-        built_in_embedding_models[:] = original_embedding
-        built_in_rerankers[:] = original_rerankers
+        # Verify the temporary lists were modified as expected
+        assert temp_models == sample_models
+        assert temp_embedding == sample_embedding_models
+        assert temp_rerankers == sample_reranker_models
+
+    # Verify global lists were NOT modified
+    assert len(built_in_models) > 1
+    assert len(built_in_embedding_models) > 1
+    assert len(built_in_rerankers) > 1
 
 
 async def test_refresh_model_list_failure():
     """Test that refresh_model_list raises exceptions on failure."""
-    original_models = built_in_models.copy()
-    original_embedding = built_in_embedding_models.copy()
-    original_rerankers = built_in_rerankers.copy()
+    # Create temporary lists to patch the global ones
+    temp_models: list = []
+    temp_embedding: list = []
+    temp_rerankers: list = []
 
-    try:
+    async def fake_load(url):
+        raise RuntimeError("fail")
 
-        async def fake_load(url):
-            raise RuntimeError("fail")
+    # Should raise the exception, not swallow it
+    with (
+        pytest.raises(RuntimeError, match="fail"),
+        patch(
+            "kiln_ai.adapters.remote_config.should_skip_remote_model_list",
+            return_value=False,
+        ),
+        patch("kiln_ai.adapters.remote_config.load_from_url", fake_load),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_models",
+            temp_models,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_embedding_models",
+            temp_embedding,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_rerankers",
+            temp_rerankers,
+        ),
+    ):
+        await refresh_model_list("http://example.com/models.json")
 
-        # Should raise the exception, not swallow it
-        with (
-            pytest.raises(RuntimeError, match="fail"),
-            patch(
-                "kiln_ai.adapters.remote_config.should_skip_remote_model_list",
-                return_value=False,
-            ),
-            patch("kiln_ai.adapters.remote_config.load_from_url", fake_load),
-        ):
-            await refresh_model_list("http://example.com/models.json")
-
-        # Verify that the original state is unchanged since the update never completed
-        assert built_in_models == original_models
-        assert built_in_embedding_models == original_embedding
-        assert built_in_rerankers == original_rerankers
-    finally:
-        # Restore original state to prevent test pollution
-        built_in_models[:] = original_models
-        built_in_embedding_models[:] = original_embedding
-        built_in_rerankers[:] = original_rerankers
+    # Verify that the temporary lists are unchanged since the update never completed
+    assert temp_models == []
+    assert temp_embedding == []
+    assert temp_rerankers == []
 
 
 async def test_refresh_model_list_background_skip_env_var(
@@ -1308,99 +1354,127 @@ async def test_refresh_model_list_background_skip_env_var(
     sample_embedding_models = [mock_embedding_model]
     sample_reranker_models = [mock_reranker_model]
 
-    original_models = built_in_models.copy()
-    original_embedding = built_in_embedding_models.copy()
-    original_rerankers = built_in_rerankers.copy()
+    # Create temporary lists to patch the global ones
+    temp_models: list = []
+    temp_embedding: list = []
+    temp_rerankers: list = []
 
-    try:
-        # Mock the load_from_url function
-        async def mock_load_from_url(url):
-            return KilnRemoteConfig(
-                model_list=sample_models,
-                embedding_model_list=sample_embedding_models,
-                reranker_model_list=sample_reranker_models,
-            )
+    # Mock the load_from_url function
+    async def mock_load_from_url(url):
+        return KilnRemoteConfig(
+            model_list=sample_models,
+            embedding_model_list=sample_embedding_models,
+            reranker_model_list=sample_reranker_models,
+        )
 
-        with patch(
+    with (
+        patch(
             "kiln_ai.adapters.remote_config.load_from_url",
             side_effect=mock_load_from_url,
-        ):
-            # Call the function - it should run (env var check is a caller concern)
-            refresh_model_list_background("http://example.com/models.json")
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_models",
+            temp_models,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_embedding_models",
+            temp_embedding,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_rerankers",
+            temp_rerankers,
+        ),
+    ):
+        # Call the function - it should run (env var check is a caller concern)
+        refresh_model_list_background("http://example.com/models.json")
 
-            # Wait for the thread to complete
-            await asyncio.sleep(0.1)
+        # Wait for the thread to complete
+        await asyncio.sleep(0.5)
 
-            # Verify the global state WAS modified (env var is a caller concern)
-            assert built_in_models == sample_models
-            assert built_in_embedding_models == sample_embedding_models
-            assert built_in_rerankers == sample_reranker_models
-    finally:
-        # Restore original state to prevent test pollution
-        built_in_models[:] = original_models
-        built_in_embedding_models[:] = original_embedding
-        built_in_rerankers[:] = original_rerankers
+        # Verify the temporary lists were modified (env var is a caller concern)
+        assert temp_models == sample_models
+        assert temp_embedding == sample_embedding_models
+        assert temp_rerankers == sample_reranker_models
+
+    # Verify global lists were NOT modified
+    assert len(built_in_models) > 1
+    assert len(built_in_embedding_models) > 1
+    assert len(built_in_rerankers) > 1
 
 
 async def test_refresh_model_list_concurrent(
     mock_model, mock_embedding_model, mock_reranker_model
 ):
     """Test that refresh_model_list's lock prevents concurrent modifications."""
-    original_models = built_in_models.copy()
-    original_embedding = built_in_embedding_models.copy()
-    original_rerankers = built_in_rerankers.copy()
+    # Create temporary lists to patch the global ones
+    temp_models: list = []
+    temp_embedding: list = []
+    temp_rerankers: list = []
 
-    try:
-        # Track the order of calls to verify lock is working
-        call_order = []
+    # Track the order of calls to verify lock is working
+    call_order = []
 
-        # Mock the load_from_url function with a delay to simulate network I/O
-        async def mock_load_from_url(url):
-            # Record that we started fetching (outside the lock)
-            call_order.append("fetch_start")
-            # Simulate network delay
-            await asyncio.sleep(0.01)
-            # Record that we finished fetching
-            call_order.append("fetch_end")
-            return KilnRemoteConfig(
-                model_list=[mock_model],
-                embedding_model_list=[mock_embedding_model],
-                reranker_model_list=[mock_reranker_model],
-            )
+    # Mock the load_from_url function with a delay to simulate network I/O
+    async def mock_load_from_url(url):
+        # Record that we started fetching (outside the lock)
+        call_order.append("fetch_start")
+        # Simulate network delay
+        await asyncio.sleep(0.01)
+        # Record that we finished fetching
+        call_order.append("fetch_end")
+        return KilnRemoteConfig(
+            model_list=[mock_model],
+            embedding_model_list=[mock_embedding_model],
+            reranker_model_list=[mock_reranker_model],
+        )
 
-        with (
-            patch(
-                "kiln_ai.adapters.remote_config.load_from_url",
-                side_effect=mock_load_from_url,
-            ),
-            patch(
-                "kiln_ai.adapters.remote_config.should_skip_remote_model_list",
-                return_value=False,
-            ),
-        ):
-            # Start two concurrent calls
-            task1 = asyncio.create_task(
-                refresh_model_list("http://example.com/models1.json")
-            )
-            task2 = asyncio.create_task(
-                refresh_model_list("http://example.com/models2.json")
-            )
+    with (
+        patch(
+            "kiln_ai.adapters.remote_config.load_from_url",
+            side_effect=mock_load_from_url,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_models",
+            temp_models,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_embedding_models",
+            temp_embedding,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_rerankers",
+            temp_rerankers,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.should_skip_remote_model_list",
+            return_value=False,
+        ),
+    ):
+        # Start two concurrent calls
+        task1 = asyncio.create_task(
+            refresh_model_list("http://example.com/models1.json")
+        )
+        task2 = asyncio.create_task(
+            refresh_model_list("http://example.com/models2.json")
+        )
 
-            # Wait for both to complete
-            await asyncio.gather(task1, task2)
+        # Wait for both to complete
+        await asyncio.gather(task1, task2)
 
-            # Both fetches should have started (network I/O is not blocked by lock)
-            assert call_order.count("fetch_start") == 2
-            assert call_order.count("fetch_end") == 2
+        # Both fetches should have started (network I/O is not blocked by lock)
+        assert call_order.count("fetch_start") == 2
+        assert call_order.count("fetch_end") == 2
 
-            # Verify the global state was modified (the second one may have overwritten)
-            # The important thing is that we didn't crash due to concurrent modifications
-            assert len(built_in_models) > 0
-    finally:
-        # Restore original state to prevent test pollution
-        built_in_models[:] = original_models
-        built_in_embedding_models[:] = original_embedding
-        built_in_rerankers[:] = original_rerankers
+        # Verify the temporary lists were modified (the second one may have overwritten)
+        # The important thing is that we didn't crash due to concurrent modifications
+        assert len(temp_models) > 0
+        assert len(temp_embedding) > 0
+        assert len(temp_rerankers) > 0
+
+    # Verify global lists were NOT modified
+    assert len(built_in_models) > 1
+    assert len(built_in_embedding_models) > 1
+    assert len(built_in_rerankers) > 1
 
 
 def test_backwards_compatibility_with_v0_19(tmp_path):
@@ -1507,39 +1581,10 @@ async def test_refresh_model_list_uses_default_url():
     """Test that refresh_model_list uses the default URL when none is provided."""
     from kiln_ai.adapters.remote_config import REMOTE_MODEL_LIST_URL, refresh_model_list
 
-    original_models = built_in_models.copy()
-    original_embedding = built_in_embedding_models.copy()
-    original_rerankers = built_in_rerankers.copy()
-
-    try:
-
-        async def mock_load_from_url(url):
-            # Verify the default URL is used
-            assert url == REMOTE_MODEL_LIST_URL
-            return KilnRemoteConfig(
-                model_list=[],
-                embedding_model_list=[],
-                reranker_model_list=[],
-            )
-
-        with patch(
-            "kiln_ai.adapters.remote_config.load_from_url",
-            side_effect=mock_load_from_url,
-        ):
-            await refresh_model_list()  # Call without URL argument
-
-    finally:
-        built_in_models[:] = original_models
-        built_in_embedding_models[:] = original_embedding
-        built_in_rerankers[:] = original_rerankers
-
-
-async def test_refresh_model_list_background_uses_default_url():
-    """Test that refresh_model_list_background uses the default URL when none is provided."""
-    from kiln_ai.adapters.remote_config import (
-        REMOTE_MODEL_LIST_URL,
-        refresh_model_list_background,
-    )
+    # Create temporary lists to patch the global ones
+    temp_models: list = []
+    temp_embedding: list = []
+    temp_rerankers: list = []
 
     async def mock_load_from_url(url):
         # Verify the default URL is used
@@ -1550,9 +1595,75 @@ async def test_refresh_model_list_background_uses_default_url():
             reranker_model_list=[],
         )
 
-    with patch(
-        "kiln_ai.adapters.remote_config.load_from_url",
-        side_effect=mock_load_from_url,
+    with (
+        patch(
+            "kiln_ai.adapters.remote_config.load_from_url",
+            side_effect=mock_load_from_url,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_models",
+            temp_models,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_embedding_models",
+            temp_embedding,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_rerankers",
+            temp_rerankers,
+        ),
+    ):
+        await refresh_model_list()  # Call without URL argument
+
+    # Verify global lists were NOT modified
+    assert len(built_in_models) > 1
+    assert len(built_in_embedding_models) > 1
+    assert len(built_in_rerankers) > 1
+
+
+async def test_refresh_model_list_background_uses_default_url():
+    """Test that refresh_model_list_background uses the default URL when none is provided."""
+    from kiln_ai.adapters.remote_config import (
+        REMOTE_MODEL_LIST_URL,
+        refresh_model_list_background,
+    )
+
+    # Create temporary lists to patch the global ones
+    temp_models: list = []
+    temp_embedding: list = []
+    temp_rerankers: list = []
+
+    async def mock_load_from_url(url):
+        # Verify the default URL is used
+        assert url == REMOTE_MODEL_LIST_URL
+        return KilnRemoteConfig(
+            model_list=[],
+            embedding_model_list=[],
+            reranker_model_list=[],
+        )
+
+    with (
+        patch(
+            "kiln_ai.adapters.remote_config.load_from_url",
+            side_effect=mock_load_from_url,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_models",
+            temp_models,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_embedding_models",
+            temp_embedding,
+        ),
+        patch(
+            "kiln_ai.adapters.remote_config.built_in_rerankers",
+            temp_rerankers,
+        ),
     ):
         refresh_model_list_background()  # Call without URL argument
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.5)
+
+    # Verify global lists were NOT modified
+    assert len(built_in_models) > 1
+    assert len(built_in_embedding_models) > 1
+    assert len(built_in_rerankers) > 1
