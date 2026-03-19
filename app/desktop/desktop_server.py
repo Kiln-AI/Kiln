@@ -22,11 +22,11 @@ from app.desktop.studio_server.data_gen_api import connect_data_gen_api
 from app.desktop.studio_server.dev_tools import connect_dev_tools
 from app.desktop.studio_server.eval_api import connect_evals_api
 from app.desktop.studio_server.finetune_api import connect_fine_tune_api
+from app.desktop.studio_server.import_api import connect_import_api
+from app.desktop.studio_server.prompt_api import connect_prompt_api
 from app.desktop.studio_server.prompt_optimization_job_api import (
     connect_prompt_optimization_job_api,
 )
-from app.desktop.studio_server.import_api import connect_import_api
-from app.desktop.studio_server.prompt_api import connect_prompt_api
 from app.desktop.studio_server.provider_api import connect_provider_api
 from app.desktop.studio_server.repair_api import connect_repair_api
 from app.desktop.studio_server.run_config_api import connect_run_config_api
@@ -34,12 +34,6 @@ from app.desktop.studio_server.settings_api import connect_settings
 from app.desktop.studio_server.skill_api import connect_skill_api
 from app.desktop.studio_server.tool_api import connect_tool_servers_api
 from app.desktop.studio_server.webhost import connect_webhost
-
-# Loads github pages hosted JSON config.
-# You can see public config build logs here: https://github.com/Kiln-AI/remote_config/actions/workflows/publish_remote_config.yml
-# Content is hosted on Github Pages: https://kiln-ai.github.io/remote_config/kiln_config_v1.json
-# V2 explained: Kiln v0.18 was the first release with remote config, but had bugs. We no longer publish v1 URL (client falls back to local) and instead use v2.
-REMOTE_MODEL_LIST_URL = "https://remote-config.getkiln.ai/kiln_config_v2.json"
 
 
 @asynccontextmanager
@@ -62,7 +56,7 @@ def make_app(tk_root: tk.Tk | None = None):
     setup_litellm_logging()
 
     if not should_skip_remote_model_list():
-        refresh_model_list_background(REMOTE_MODEL_LIST_URL)
+        refresh_model_list_background()
 
     app = kiln_server.make_app(lifespan=lifespan)
     connect_provider_api(app)

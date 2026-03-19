@@ -27,6 +27,12 @@ from .ml_model_list import KilnModel, KilnModelProvider, built_in_models
 
 logger = logging.getLogger(__name__)
 
+# Loads github pages hosted JSON config.
+# You can see public config build logs here: https://github.com/Kiln-AI/remote_config/actions/workflows/publish_remote_config.yml
+# Content is hosted on Github Pages: https://kiln-ai.github.io/remote_config/kiln_config_v1.json
+# V2 explained: Kiln v0.18 was the first release with remote config, but had bugs. We no longer publish v1 URL (client falls back to local) and instead use v2.
+REMOTE_MODEL_LIST_URL = "https://remote-config.getkiln.ai/kiln_config_v2.json"
+
 refresh_lock = threading.Lock()
 
 
@@ -212,9 +218,13 @@ def dump_builtin_config(path: str | Path) -> None:
     )
 
 
-async def refresh_model_list(url: str) -> None:
+async def refresh_model_list(url: str = REMOTE_MODEL_LIST_URL) -> None:
     """Refresh the model list from a URL. This is not thread safe, only asyncio is safe.
-    If you call this from threads, make sure to wrap in an actual lock."""
+    If you call this from threads, make sure to wrap in an actual lock.
+
+    Args:
+        url: The URL to fetch the model list from. Defaults to REMOTE_MODEL_LIST_URL.
+    """
     models = await load_from_url(url)
     with refresh_lock:
         built_in_models[:] = models.model_list
@@ -222,8 +232,12 @@ async def refresh_model_list(url: str) -> None:
         built_in_rerankers[:] = models.reranker_model_list
 
 
-def refresh_model_list_background(url: str) -> None:
-    """Refresh the model list in a background thread."""
+def refresh_model_list_background(url: str = REMOTE_MODEL_LIST_URL) -> None:
+    """Refresh the model list in a background thread.
+
+    Args:
+        url: The URL to fetch the model list from. Defaults to REMOTE_MODEL_LIST_URL.
+    """
 
     def run_async_in_thread() -> None:
         try:

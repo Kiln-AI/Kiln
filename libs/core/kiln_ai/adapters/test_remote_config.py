@@ -1501,3 +1501,58 @@ except Exception as e:
     except FileNotFoundError:
         # If uv command not found
         pytest.skip("uv command not found for compatibility test")
+
+
+async def test_refresh_model_list_uses_default_url():
+    """Test that refresh_model_list uses the default URL when none is provided."""
+    from kiln_ai.adapters.remote_config import REMOTE_MODEL_LIST_URL, refresh_model_list
+
+    original_models = built_in_models.copy()
+    original_embedding = built_in_embedding_models.copy()
+    original_rerankers = built_in_rerankers.copy()
+
+    try:
+
+        async def mock_load_from_url(url):
+            # Verify the default URL is used
+            assert url == REMOTE_MODEL_LIST_URL
+            return KilnRemoteConfig(
+                model_list=[],
+                embedding_model_list=[],
+                reranker_model_list=[],
+            )
+
+        with patch(
+            "kiln_ai.adapters.remote_config.load_from_url",
+            side_effect=mock_load_from_url,
+        ):
+            await refresh_model_list()  # Call without URL argument
+
+    finally:
+        built_in_models[:] = original_models
+        built_in_embedding_models[:] = original_embedding
+        built_in_rerankers[:] = original_rerankers
+
+
+async def test_refresh_model_list_background_uses_default_url():
+    """Test that refresh_model_list_background uses the default URL when none is provided."""
+    from kiln_ai.adapters.remote_config import (
+        REMOTE_MODEL_LIST_URL,
+        refresh_model_list_background,
+    )
+
+    async def mock_load_from_url(url):
+        # Verify the default URL is used
+        assert url == REMOTE_MODEL_LIST_URL
+        return KilnRemoteConfig(
+            model_list=[],
+            embedding_model_list=[],
+            reranker_model_list=[],
+        )
+
+    with patch(
+        "kiln_ai.adapters.remote_config.load_from_url",
+        side_effect=mock_load_from_url,
+    ):
+        refresh_model_list_background()  # Call without URL argument
+        await asyncio.sleep(0.1)
