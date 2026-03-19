@@ -1,0 +1,2 @@
+open_workspace_cmd: "./.config/wt/start.sh"
+restart_workspace_cmd: "./.config/wt/start.sh --restart"

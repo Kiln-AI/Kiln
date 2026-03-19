@@ -19,7 +19,9 @@ libs/core/build
 libs/server/build
 
 dist/
+test_output/
 
 .mcp.json
 
-test_output/
+.config/wt/user_settings.sh
+.worktrees/
