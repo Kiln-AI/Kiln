@@ -161,10 +161,12 @@ def close_object_schemas(schema: Dict) -> Dict:
     """Return a deep-copied schema with object nodes closed by default.
 
     Any schema node with 'type == "object"' gets 'additionalProperties: false'
-    if it is not already set. This normalization is recursive and walks nested
-    schema structures such as 'properties', 'items', '$defs', and composed
-    schemas like 'anyOf'/'oneOf'/'allOf'. Existing explicit
-    'additionalProperties' values are preserved.
+    if it is not already set. If an object has 'properties' but no explicit
+    'required', it gets a required array containing all property keys in their
+    existing order. This normalization is recursive and walks nested schema
+    structures such as 'properties', 'items', '$defs', and composed schemas
+    like 'anyOf'/'oneOf'/'allOf'. Existing explicit 'additionalProperties' and
+    'required' values are preserved.
     """
 
     def _normalize(node: Any) -> Any:
@@ -202,6 +204,12 @@ def close_object_schemas(schema: Dict) -> Dict:
             and "additionalProperties" not in normalized
         ):
             normalized["additionalProperties"] = False
+        if (
+            normalized.get("type") == "object"
+            and "required" not in normalized
+            and isinstance(normalized.get("properties"), dict)
+        ):
+            normalized["required"] = list(normalized["properties"].keys())
 
         return normalized
 

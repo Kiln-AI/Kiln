@@ -201,7 +201,6 @@ def test_close_object_schemas_sets_missing_additional_properties_recursively():
             "child": {
                 "type": "object",
                 "properties": {"name": {"type": "string"}},
-                "required": ["name"],
             },
             "items": {
                 "type": "array",
@@ -225,9 +224,13 @@ def test_close_object_schemas_sets_missing_additional_properties_recursively():
 
     assert "additionalProperties" not in schema
     assert normalized["additionalProperties"] is False
+    assert normalized["required"] == ["child", "items"]
     assert normalized["properties"]["child"]["additionalProperties"] is False
+    assert normalized["properties"]["child"]["required"] == ["name"]
     assert normalized["properties"]["items"]["items"]["additionalProperties"] is False
+    assert normalized["properties"]["items"]["items"]["required"] == ["value"]
     assert normalized["$defs"]["Nested"]["additionalProperties"] is False
+    assert normalized["$defs"]["Nested"]["required"] == ["enabled"]
 
 
 def test_close_object_schemas_preserves_explicit_additional_properties():
@@ -246,6 +249,21 @@ def test_close_object_schemas_preserves_explicit_additional_properties():
 
     assert normalized["additionalProperties"] is False
     assert normalized["properties"]["metadata"]["additionalProperties"] is True
+
+
+def test_close_object_schemas_preserves_explicit_required():
+    schema = {
+        "type": "object",
+        "properties": {
+            "sessionId": {"type": "string"},
+            "message": {"type": "string"},
+        },
+        "required": ["message"],
+    }
+
+    normalized = close_object_schemas(schema)
+
+    assert normalized["required"] == ["message"]
 
 
 @pytest.mark.parametrize(

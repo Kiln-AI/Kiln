@@ -204,6 +204,54 @@ async def test_response_format_options_json_schema(config, mock_task):
         }
 
 
+@pytest.mark.asyncio
+async def test_response_format_options_json_schema_adds_required_to_nested_objects(
+    config, tmp_path
+):
+    config.run_config_properties.structured_output_mode = (
+        StructuredOutputMode.json_schema
+    )
+
+    project_path = tmp_path / "nested_project" / "project.kiln"
+    project_path.parent.mkdir()
+    project = Project(name="Nested Project", path=str(project_path))
+    project.save_to_file()
+
+    nested_schema = {
+        "type": "object",
+        "properties": {
+            "generated_samples": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "sessionId": {"type": "string"},
+                        "message": {"type": "string"},
+                    },
+                },
+            }
+        },
+        "required": ["generated_samples"],
+    }
+    task = Task(
+        name="Nested Schema Task",
+        instruction="Generate structured output",
+        parent=project,
+        output_json_schema=json.dumps(nested_schema),
+    )
+    task.save_to_file()
+
+    adapter = LiteLlmAdapter(config=config, kiln_task=task)
+
+    with patch.object(adapter, "has_structured_output", return_value=True):
+        options = await adapter.response_format_options()
+
+    nested_items_schema = options["response_format"]["json_schema"]["schema"][
+        "properties"
+    ]["generated_samples"]["items"]
+    assert nested_items_schema["required"] == ["sessionId", "message"]
+
+
 def test_tool_call_params_weak(config, mock_task):
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
 
