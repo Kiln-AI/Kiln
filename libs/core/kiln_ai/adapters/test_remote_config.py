@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 import subprocess
+import threading
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -1288,31 +1289,61 @@ async def test_refresh_model_list_failure():
     assert temp_rerankers == []
 
 
-async def test_refresh_model_list_concurrent(
+def test_refresh_model_list_concurrent(
     mock_model, mock_embedding_model, mock_reranker_model
 ):
-    """Test that refresh_model_list's lock prevents concurrent modifications."""
-    # Create temporary lists to patch the global ones
+    """Test that refresh_model_list's threading lock serializes concurrent updates.
+
+    Two real OS threads each call asyncio.run(refresh_model_list(url)), so the
+    threading.Lock inside the critical section is actually contended.  The lock
+    guarantees that the three list assignments are written atomically, so the
+    final state must be consistent with exactly one of the two payloads.
+    """
     temp_models: list = []
     temp_embedding: list = []
     temp_rerankers: list = []
 
-    # Track the order of calls to verify lock is working
-    call_order = []
+    call_order: list = []
 
-    # Mock the load_from_url function with a delay to simulate network I/O
+    url1 = "http://example.com/models1.json"
+    url2 = "http://example.com/models2.json"
+
+    # Two payloads distinguished by friendly_name so we can tell them apart later.
+    config1 = KilnRemoteConfig(
+        model_list=[mock_model],
+        embedding_model_list=[mock_embedding_model],
+        reranker_model_list=[mock_reranker_model],
+    )
+    model2 = KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_4_1,
+        friendly_name="GPT 4.1 (alt)",
+        providers=[],
+    )
+    embedding2 = KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.openai,
+        name=EmbeddingModelName.openai_text_embedding_3_small,
+        friendly_name="text-embedding-3-small (alt)",
+        providers=[],
+    )
+    reranker2 = KilnRerankerModel(
+        family=KilnRerankerModelFamily.llama_rank,
+        name=RerankerModelName.llama_rank,
+        friendly_name="LlamaRank (alt)",
+        providers=[],
+    )
+    config2 = KilnRemoteConfig(
+        model_list=[model2],
+        embedding_model_list=[embedding2],
+        reranker_model_list=[reranker2],
+    )
+
     async def mock_load_from_url(url):
-        # Record that we started fetching (outside the lock)
-        call_order.append("fetch_start")
-        # Simulate network delay
-        await asyncio.sleep(0.01)
-        # Record that we finished fetching
-        call_order.append("fetch_end")
-        return KilnRemoteConfig(
-            model_list=[mock_model],
-            embedding_model_list=[mock_embedding_model],
-            reranker_model_list=[mock_reranker_model],
-        )
+        call_order.append(("fetch_start", url))
+        # Simulate network latency so both threads are in-flight simultaneously.
+        await asyncio.sleep(0.05)
+        call_order.append(("fetch_end", url))
+        return config1 if url == url1 else config2
 
     with (
         patch(
@@ -1331,33 +1362,36 @@ async def test_refresh_model_list_concurrent(
             "kiln_ai.adapters.remote_config.built_in_rerankers",
             temp_rerankers,
         ),
-        patch(
-            "kiln_ai.adapters.remote_config.should_skip_remote_model_list",
-            return_value=False,
-        ),
     ):
-        # Start two concurrent calls
-        task1 = asyncio.create_task(
-            refresh_model_list("http://example.com/models1.json")
-        )
-        task2 = asyncio.create_task(
-            refresh_model_list("http://example.com/models2.json")
-        )
+        t1 = threading.Thread(target=lambda: asyncio.run(refresh_model_list(url1)))
+        t2 = threading.Thread(target=lambda: asyncio.run(refresh_model_list(url2)))
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
 
-        # Wait for both to complete
-        await asyncio.gather(task1, task2)
+    # Both fetches must have started and finished (network I/O is outside the lock).
+    fetch_starts = [e for e in call_order if e[0] == "fetch_start"]
+    fetch_ends = [e for e in call_order if e[0] == "fetch_end"]
+    assert len(fetch_starts) == 2
+    assert len(fetch_ends) == 2
 
-        # Both fetches should have started (network I/O is not blocked by lock)
-        assert call_order.count("fetch_start") == 2
-        assert call_order.count("fetch_end") == 2
+    # Each payload contains exactly one item per list.
+    assert len(temp_models) == 1
+    assert len(temp_embedding) == 1
+    assert len(temp_rerankers) == 1
 
-        # Verify the temporary lists were modified (the second one may have overwritten)
-        # The important thing is that we didn't crash due to concurrent modifications
-        assert len(temp_models) > 0
-        assert len(temp_embedding) > 0
-        assert len(temp_rerankers) > 0
+    # All three lists must come from the same payload (the lock serialized writes,
+    # so no cross-payload mixing is possible).
+    if temp_models[0].friendly_name == mock_model.friendly_name:
+        assert temp_embedding[0].friendly_name == mock_embedding_model.friendly_name
+        assert temp_rerankers[0].friendly_name == mock_reranker_model.friendly_name
+    else:
+        assert temp_models[0].friendly_name == model2.friendly_name
+        assert temp_embedding[0].friendly_name == embedding2.friendly_name
+        assert temp_rerankers[0].friendly_name == reranker2.friendly_name
 
-    # Verify global lists were NOT modified
+    # Global lists must be untouched by the patched run.
     assert len(built_in_models) > 1
     assert len(built_in_embedding_models) > 1
     assert len(built_in_rerankers) > 1
