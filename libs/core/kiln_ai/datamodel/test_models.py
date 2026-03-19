@@ -743,3 +743,464 @@ def test_generate_model_id():
     # check it is a valid name - as we typically use model ids in filenames on FS
     validator = name_validator(min_length=1, max_length=12)
     validator(model_id)
+
+
+# project and task fixture
+@pytest.fixture
+def task(tmp_path):
+    project_path = tmp_path / "project.kiln"
+    project = Project(name="P", path=project_path)
+    project.save_to_file()
+    task = Task(name="T", instruction="Do it", parent=project)
+    task.save_to_file()
+    return task
+
+
+def test_nested_task_run_folder_structure(task: Task):
+    output = TaskOutput(output="out")
+
+    parent_run = TaskRun(input="in", output=output, parent=task)
+    parent_run.save_to_file()
+
+    nested_run = TaskRun(input="nested in", output=output, parent=parent_run)
+    nested_run.save_to_file()
+
+    assert task.path is not None
+    assert parent_run.path is not None
+    assert nested_run.path is not None
+    task_dir = task.path.parent
+    runs_dir = task_dir / "runs"
+    parent_run_dir = runs_dir / parent_run.build_child_dirname()
+    nested_runs_dir = parent_run_dir / "runs"
+
+    assert runs_dir.is_dir()
+    assert (parent_run_dir / "task_run.kiln").is_file()
+    assert nested_runs_dir.is_dir()
+    assert nested_run.path.is_file()
+    assert nested_run.path.parent.parent.parent == parent_run_dir
+    assert nested_run.path.name == TaskRun.base_filename()
+
+    assert parent_run.parent_task() == task
+    assert parent_run.parent_run() is None
+    assert nested_run.parent_task() == task
+    assert nested_run.parent_run() == parent_run
+    assert len(parent_run.runs()) == 1
+    assert parent_run.runs()[0].id == nested_run.id
+
+
+def test_nested_task_runs_multiple_levels(task: Task):
+    output = TaskOutput(output="out")
+
+    run1 = TaskRun(input="in1", output=output, parent=task)
+    run1.save_to_file()
+    run2 = TaskRun(input="in2", output=output, parent=run1)
+    run2.save_to_file()
+    run3 = TaskRun(input="in3", output=output, parent=run2)
+    run3.save_to_file()
+
+    assert run1.parent_run() is None
+    assert run1.parent_task() == task
+    assert len(run1.runs()) == 1
+    assert run1.runs()[0].id == run2.id
+
+    assert run2.parent_run() == run1
+    assert run2.parent_task() == task
+    assert len(run2.runs()) == 1
+    assert run2.runs()[0].id == run3.id
+
+    assert run3.parent_run() == run2
+    assert run3.parent_task() == task
+    assert len(run3.runs()) == 0
+
+
+def test_parent_task_deeply_nested_task_run(task: Task):
+    output = TaskOutput(output="out")
+    run1 = TaskRun(input="in1", output=output, parent=task)
+    run1.save_to_file()
+    run2 = TaskRun(input="in2", output=output, parent=run1)
+    run2.save_to_file()
+    run3 = TaskRun(input="in3", output=output, parent=run2)
+    run3.save_to_file()
+
+    assert run3.parent_task() == task
+
+
+def test_find_nested_task_run_by_id_given_parent_run(task: Task):
+    assert task.path is not None
+
+    output = TaskOutput(output="out")
+    parent_run = TaskRun(input="in", output=output, parent=task)
+    parent_run.save_to_file()
+    nested_run = TaskRun(input="nested in", output=output, parent=parent_run)
+    nested_run.save_to_file()
+    target_id = nested_run.id
+
+    loaded_task = Task.load_from_file(task.path)
+    loaded_parent = next(r for r in loaded_task.runs() if r.id == parent_run.id)
+    found = next(r for r in loaded_parent.runs() if r.id == target_id)
+    assert found is not None
+    assert found.id == target_id
+    assert found.input == "nested in"
+
+
+def test_find_root_task_run_by_id_given_task(task: Task):
+    output = TaskOutput(output="out")
+    root_run = TaskRun(input="in", output=output, parent=task)
+    root_run.save_to_file()
+    target_id = root_run.id
+
+    assert task.path is not None
+    loaded_task = Task.load_from_file(task.path)
+    found = next(r for r in loaded_task.runs() if r.id == target_id)
+    assert found is not None
+    assert found.id == target_id
+    assert found.input == "in"
+
+
+def test_find_task_run_by_id_dfs_finds_deeply_nested_run(task: Task):
+    """Task.find_task_run_by_id_dfs finds a run nested several levels (iterative stack-based DFS)."""
+    assert task.path is not None
+    output = TaskOutput(output="out")
+
+    run1 = TaskRun(input="in1", output=output, parent=task)
+    run1.save_to_file()
+
+    run2 = TaskRun(input="in2", output=output, parent=run1)
+    run2.save_to_file()
+
+    run3 = TaskRun(input="in3", output=output, parent=run2)
+    run3.save_to_file()
+
+    assert run3.id is not None
+
+    loaded_task = Task.load_from_file(task.path)
+    found = loaded_task.find_task_run_by_id_dfs(run3.id)
+    assert found is not None
+    assert found.id == run3.id
+    assert found.input == "in3"
+
+
+def test_find_task_run_by_id_dfs_finds_root_run(task: Task):
+    """Task.find_task_run_by_id_dfs finds the root run when it is the only run."""
+    assert task.path is not None
+    output = TaskOutput(output="out")
+    root_run = TaskRun(input="root in", output=output, parent=task)
+    root_run.save_to_file()
+    assert root_run.id is not None
+
+    loaded_task = Task.load_from_file(task.path)
+    found = loaded_task.find_task_run_by_id_dfs(root_run.id)
+    assert found is not None
+    assert found.id == root_run.id
+    assert found.input == "root in"
+
+
+def test_find_task_run_by_id_dfs_returns_none_when_not_found(task: Task):
+    """Task.find_task_run_by_id_dfs returns None when no run has the given id."""
+    assert task.path is not None
+    output = TaskOutput(output="out")
+    TaskRun(input="in", output=output, parent=task).save_to_file()
+
+    loaded_task = Task.load_from_file(task.path)
+    found = loaded_task.find_task_run_by_id_dfs("nonexistent-id")
+    assert found is None
+
+
+def test_task_run_find_task_run_by_id_dfs_finds_deeply_nested_run(task: Task):
+    """TaskRun.find_task_run_by_id_dfs finds a run nested several levels in its subtree."""
+    assert task.path is not None
+    output = TaskOutput(output="out")
+
+    run1 = TaskRun(input="in1", output=output, parent=task)
+    run1.save_to_file()
+
+    run2 = TaskRun(input="in2", output=output, parent=run1)
+    run2.save_to_file()
+
+    run3 = TaskRun(input="in3", output=output, parent=run2)
+    run3.save_to_file()
+
+    assert run3.id is not None
+
+    assert run1.path is not None
+    loaded_run1 = TaskRun.load_from_file(run1.path)
+    found = loaded_run1.find_task_run_by_id_dfs(run3.id)
+    assert found is not None
+    assert found.id == run3.id
+    assert found.input == "in3"
+
+
+def test_task_run_find_task_run_by_id_dfs_finds_direct_child(task: Task):
+    """TaskRun.find_task_run_by_id_dfs finds a direct child run."""
+    assert task.path is not None
+    output = TaskOutput(output="out")
+
+    run1 = TaskRun(input="in1", output=output, parent=task)
+    run1.save_to_file()
+
+    run2 = TaskRun(input="in2", output=output, parent=run1)
+    run2.save_to_file()
+
+    assert run2.id is not None
+
+    loaded_run1 = TaskRun.load_from_file(run1.path)
+    found = loaded_run1.find_task_run_by_id_dfs(run2.id)
+    assert found is not None
+    assert found.id == run2.id
+    assert found.input == "in2"
+
+
+def test_task_run_find_task_run_by_id_dfs_returns_none_when_not_found(task: Task):
+    """TaskRun.find_task_run_by_id_dfs returns None when no run in its subtree has the given id."""
+    assert task.path is not None
+    output = TaskOutput(output="out")
+
+    run1 = TaskRun(input="in1", output=output, parent=task)
+    run1.save_to_file()
+
+    TaskRun(input="in2", output=output, parent=run1).save_to_file()
+
+    loaded_run1 = TaskRun.load_from_file(run1.path)
+    found = loaded_run1.find_task_run_by_id_dfs("nonexistent-id")
+    assert found is None
+
+
+def test_is_root_task_run(task: Task):
+    output = TaskOutput(output="out")
+    root_run = TaskRun(input="in", output=output, parent=task)
+    root_run.save_to_file()
+    assert root_run.is_root_task_run()
+    nested_run = TaskRun(input="nested in", output=output, parent=root_run)
+    nested_run.save_to_file()
+    assert not nested_run.is_root_task_run()
+
+
+def test_comprehensive_nested_task_run_hierarchy(tmp_path):
+    """Comprehensive integration test for polymorphic parent support on TaskRun.
+
+    Tests:
+    - Project -> Task -> TaskRun hierarchy
+    - Multiple levels of nested TaskRuns (Task -> TaskRun -> TaskRun -> TaskRun -> TaskRun)
+    - Sibling TaskRuns at various levels
+    - Retrieval of all runs from the hierarchy
+    - is_root_task_run() correctness at all levels
+    - parent_task() and parent_run() correctness at all levels
+    """
+    project_path = tmp_path / "project.kiln"
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+    task = Task(name="Test Task", instruction="Test instruction", parent=project)
+    task.save_to_file()
+
+    output = TaskOutput(output="test output")
+
+    # Level 1: Two sibling TaskRuns under Task
+    run1_l1 = TaskRun(input="level1_run1", output=output, parent=task)
+    run1_l1.save_to_file()
+
+    run2_l1 = TaskRun(input="level1_run2", output=output, parent=task)
+    run2_l1.save_to_file()
+
+    # Level 2: Nested TaskRuns under run1_l1 (with sibling)
+    run1_l2 = TaskRun(input="level2_run1", output=output, parent=run1_l1)
+    run1_l2.save_to_file()
+
+    run2_l2 = TaskRun(input="level2_run2", output=output, parent=run1_l1)
+    run2_l2.save_to_file()
+
+    # Level 3: Nested TaskRuns under run1_l2 (with sibling)
+    run1_l3 = TaskRun(input="level3_run1", output=output, parent=run1_l2)
+    run1_l3.save_to_file()
+
+    run2_l3 = TaskRun(input="level3_run2", output=output, parent=run1_l2)
+    run2_l3.save_to_file()
+
+    # Level 4: Deepest nested TaskRun under run1_l3
+    run1_l4 = TaskRun(input="level4_run1", output=output, parent=run1_l3)
+    run1_l4.save_to_file()
+
+    # Level 4 sibling of run1_l4 under run2_l3
+    run2_l4 = TaskRun(input="level4_sibling", output=output, parent=run2_l3)
+    run2_l4.save_to_file()
+
+    # Reload everything from disk to test persistence and retrieval
+    loaded_project = Project.load_from_file(project_path)
+    loaded_task = loaded_project.tasks()[0]
+
+    # Verify Task has 2 root-level runs
+    root_runs = loaded_task.runs()
+    assert len(root_runs) == 2
+    root_run_ids = {r.id for r in root_runs}
+    assert run1_l1.id in root_run_ids
+    assert run2_l1.id in root_run_ids
+
+    # Verify run1_l1 hierarchy
+    loaded_run1_l1 = next(r for r in root_runs if r.id == run1_l1.id)
+    assert loaded_run1_l1.parent_task() == loaded_task
+    assert loaded_run1_l1.parent_run() is None
+    assert loaded_run1_l1.is_root_task_run() is True
+
+    level2_runs = loaded_run1_l1.runs()
+    assert len(level2_runs) == 2
+    level2_run_ids = {r.id for r in level2_runs}
+    assert run1_l2.id in level2_run_ids
+    assert run2_l2.id in level2_run_ids
+
+    # Verify run1_l2 hierarchy
+    loaded_run1_l2 = next(r for r in level2_runs if r.id == run1_l2.id)
+    assert loaded_run1_l2.parent_task() == loaded_task
+    assert loaded_run1_l2.parent_run() == loaded_run1_l1
+    assert loaded_run1_l2.is_root_task_run() is False
+
+    level3_runs = loaded_run1_l2.runs()
+    assert len(level3_runs) == 2
+    level3_run_ids = {r.id for r in level3_runs}
+    assert run1_l3.id in level3_run_ids
+    assert run2_l3.id in level3_run_ids
+
+    # Verify run1_l3 hierarchy (level 3)
+    loaded_run1_l3 = next(r for r in level3_runs if r.id == run1_l3.id)
+    assert loaded_run1_l3.parent_task() == loaded_task
+    assert loaded_run1_l3.parent_run().id == loaded_run1_l2.id
+    assert loaded_run1_l3.is_root_task_run() is False
+
+    level4_runs = loaded_run1_l3.runs()
+    assert len(level4_runs) == 1
+    assert level4_runs[0].id == run1_l4.id
+
+    # Verify run1_l4 (deepest run)
+    loaded_run1_l4 = level4_runs[0]
+    assert loaded_run1_l4.parent_task() == loaded_task
+    assert loaded_run1_l4.parent_run().id == loaded_run1_l3.id
+    assert loaded_run1_l4.is_root_task_run() is False
+    assert len(loaded_run1_l4.runs()) == 0
+
+    # Verify run2_l3's nested run (sibling at level 3 has child at level 4)
+    loaded_run2_l3 = next(r for r in level3_runs if r.id == run2_l3.id)
+    assert loaded_run2_l3.parent_task() == loaded_task
+    assert loaded_run2_l3.parent_run().id == loaded_run1_l2.id
+    assert loaded_run2_l3.is_root_task_run() is False
+
+    level4_sibling_runs = loaded_run2_l3.runs()
+    assert len(level4_sibling_runs) == 1
+    assert level4_sibling_runs[0].id == run2_l4.id
+
+    # Verify run2_l4 (sibling at level 4)
+    loaded_run2_l4 = level4_sibling_runs[0]
+    assert loaded_run2_l4.parent_task() == loaded_task
+    assert loaded_run2_l4.parent_run().id == loaded_run2_l3.id
+    assert loaded_run2_l4.is_root_task_run() is False
+
+    # Verify run2_l1 (sibling at level 1 has no children)
+    loaded_run2_l1 = next(r for r in root_runs if r.id == run2_l1.id)
+    assert loaded_run2_l1.parent_task() == loaded_task
+    assert loaded_run2_l1.parent_run() is None
+    assert loaded_run2_l1.is_root_task_run() is True
+    assert len(loaded_run2_l1.runs()) == 0
+
+    # Verify run2_l2 (sibling at level 2 has no children)
+    loaded_run2_l2 = next(r for r in level2_runs if r.id == run2_l2.id)
+    assert loaded_run2_l2.parent_task() == loaded_task
+    assert loaded_run2_l2.parent_run() == loaded_run1_l1
+    assert loaded_run2_l2.is_root_task_run() is False
+    assert len(loaded_run2_l2.runs()) == 0
+
+    # Test finding runs by ID from Task (DFS)
+    found_run1_l4 = loaded_task.find_task_run_by_id_dfs(run1_l4.id)
+    assert found_run1_l4 is not None
+    assert found_run1_l4.id == run1_l4.id
+    assert found_run1_l4.input == "level4_run1"
+
+    found_run2_l4 = loaded_task.find_task_run_by_id_dfs(run2_l4.id)
+    assert found_run2_l4 is not None
+    assert found_run2_l4.id == run2_l4.id
+    assert found_run2_l4.input == "level4_sibling"
+
+    # Test finding runs by ID from a TaskRun (DFS)
+    found_from_run1_l1 = loaded_run1_l1.find_task_run_by_id_dfs(run1_l4.id)
+    assert found_from_run1_l1 is not None
+    assert found_from_run1_l1.id == run1_l4.id
+
+    # Count total runs in the hierarchy (should be 8)
+    all_runs = collect_all_task_runs(loaded_task)
+    assert len(all_runs) == 8
+
+    # Verify all levels are represented correctly
+    is_root_runs = [r for r in all_runs if r.is_root_task_run()]
+    assert len(is_root_runs) == 2  # run1_l1 and run2_l1
+
+    # Verify all non-root runs have parent_run set correctly
+    non_root_runs = [r for r in all_runs if not r.is_root_task_run()]
+    assert len(non_root_runs) == 6
+    for run in non_root_runs:
+        assert run.parent_run() is not None
+
+
+def collect_all_task_runs(root):
+    """Helper to recursively collect all TaskRuns in a hierarchy."""
+    runs = []
+
+    def collect(node):
+        if isinstance(node, TaskRun):
+            runs.append(node)
+            for child in node.runs():
+                collect(child)
+        elif hasattr(node, "runs"):
+            for child in node.runs():
+                collect(child)
+
+    collect(root)
+    return runs
+
+
+def test_task_run_wrong_parent_type_raises(tmp_path):
+    project = Project(name="proj", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    with pytest.raises(ValidationError, match="Parent must be one of"):
+        TaskRun(
+            input="bad parent",
+            output=TaskOutput(
+                output="x",
+                source=DataSource(
+                    type=DataSourceType.human, properties={"created_by": "test"}
+                ),
+            ),
+            parent=project,
+        )
+
+
+def test_task_run_runs_on_disk(tmp_path):
+    project = Project(name="proj", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(name="t", instruction="i", parent=project)
+    task.save_to_file()
+
+    parent_run = TaskRun(
+        input="parent",
+        output=TaskOutput(
+            output="parent out",
+            source=DataSource(
+                type=DataSourceType.human, properties={"created_by": "test"}
+            ),
+        ),
+        parent=task,
+    )
+    parent_run.save_to_file()
+
+    child_run = TaskRun(
+        input="child",
+        output=TaskOutput(
+            output="child out",
+            source=DataSource(
+                type=DataSourceType.human, properties={"created_by": "test"}
+            ),
+        ),
+        parent=parent_run,
+    )
+    child_run.save_to_file()
+
+    loaded = TaskRun.load_from_file(parent_run.path)
+    children = loaded.runs()
+    assert len(children) == 1
+    assert children[0].id == child_run.id
