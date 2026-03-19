@@ -232,11 +232,16 @@ async def refresh_model_list(url: str = REMOTE_MODEL_LIST_URL) -> None:
         built_in_rerankers[:] = models.reranker_model_list
 
 
-def refresh_model_list_background(url: str = REMOTE_MODEL_LIST_URL) -> None:
+def refresh_model_list_background(
+    url: str = REMOTE_MODEL_LIST_URL,
+) -> threading.Thread:
     """Refresh the model list in a background thread.
 
     Args:
         url: The URL to fetch the model list from. Defaults to REMOTE_MODEL_LIST_URL.
+
+    Returns:
+        The background thread, so callers can join() it if needed.
     """
 
     def run_async_in_thread() -> None:
@@ -247,6 +252,7 @@ def refresh_model_list_background(url: str = REMOTE_MODEL_LIST_URL) -> None:
 
     thread = threading.Thread(target=run_async_in_thread, daemon=True)
     thread.start()
+    return thread
 
 
 def main() -> None:
