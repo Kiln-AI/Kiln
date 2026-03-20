@@ -146,6 +146,9 @@ async def test_extract_success(
     assert not result.is_passthrough
     assert result.content_format == OutputFormat.MARKDOWN
 
+    # Verify page_offsets is None for non-PDF extractions
+    assert result.page_offsets is None
+
 
 def test_build_completion_kwargs_with_all_options(mock_file_factory):
     """Test that _build_completion_kwargs properly includes all litellm_core_config options."""
@@ -721,6 +724,14 @@ async def test_extract_document_success(
     assert not output.is_passthrough
     assert output.content_format == OutputFormat.MARKDOWN
 
+    # Verify page_offsets is None for non-PDF extractions
+    if mime_type != MockFileFactoryMimeType.PDF:
+        assert output.page_offsets is None
+    else:
+        # For PDFs, page_offsets should be present
+        assert output.page_offsets is not None
+        assert len(output.page_offsets) > 0
+
     text_probe_str = ", ".join(text_probe)
 
     # check that any of the expected substrings are in the output
@@ -761,6 +772,90 @@ async def test_extract_pdf_page_by_page(mock_file_factory, mock_litellm_extracto
 
     assert not result.is_passthrough
     assert result.content_format == OutputFormat.MARKDOWN
+
+    # Verify page_offsets are present and correct
+    assert result.page_offsets is not None
+    assert len(result.page_offsets) == 2
+    assert result.page_offsets[0] == 0
+    expected_page_1_offset = len("Content from page 1") + 2
+    assert result.page_offsets[1] == expected_page_1_offset
+
+    # Verify page_offsets are present and correct
+    assert result.page_offsets is not None
+    assert len(result.page_offsets) == 2
+    assert result.page_offsets[0] == 0
+    # Page 1 starts after page 0 content + separator (2 chars for "\n\n")
+    expected_page_1_offset = len("Content from page 1") + 2
+    assert result.page_offsets[1] == expected_page_1_offset
+
+
+async def test_extract_pdf_page_offsets_calculation(
+    mock_file_factory, mock_litellm_extractor, tmp_path
+):
+    """Test that page_offsets correctly mark the start of each page in the combined content."""
+    test_file = mock_file_factory(MockFileFactoryMimeType.PDF)
+
+    # Use specific content lengths to verify offset calculations
+    page_contents = ["Page0", "Page1Content", "Page2LongerContent"]
+
+    # Create mock page paths for 3 pages
+    mock_page_paths = [tmp_path / f"page_{i + 1}.pdf" for i in range(3)]
+    for page_path in mock_page_paths:
+        page_path.write_bytes(b"%PDF-1.4 test")
+
+    # Mock split_pdf_into_pages to return 3 pages
+    from contextlib import asynccontextmanager
+
+    from kiln_ai.adapters.extractors.litellm_extractor import PdfPageResult
+
+    @asynccontextmanager
+    async def mock_split_pdf_into_pages(pdf_path):
+        yield mock_page_paths
+
+    # Mock _extract_single_pdf_page to return PdfPageResult directly
+    async def mock_extract_single_pdf_page(pdf_path, page_path, prompt, page_number):
+        return PdfPageResult(
+            content=page_contents[page_number], page_number=page_number
+        )
+
+    with (
+        patch(
+            "kiln_ai.adapters.extractors.litellm_extractor.split_pdf_into_pages",
+            side_effect=mock_split_pdf_into_pages,
+        ),
+        patch.object(
+            mock_litellm_extractor,
+            "_extract_single_pdf_page",
+            side_effect=mock_extract_single_pdf_page,
+        ),
+    ):
+        result = await mock_litellm_extractor.extract(
+            ExtractionInput(
+                path=str(test_file),
+                mime_type="application/pdf",
+            )
+        )
+
+    # Verify page_offsets are present
+    assert result.page_offsets is not None
+    assert len(result.page_offsets) == 3
+
+    # Verify offsets are correct
+    # Page 0 starts at offset 0
+    assert result.page_offsets[0] == 0
+    # Page 1 starts after page 0 (5 chars) + separator (2 chars) = 7
+    assert result.page_offsets[1] == len("Page0") + 2
+    # Page 2 starts after page 0 + separator + page 1 (13 chars) + separator (2 chars)
+    assert result.page_offsets[2] == len("Page0") + 2 + len("Page1Content") + 2
+
+    # Verify that the offsets actually point to the start of each page in the content
+    assert result.content[result.page_offsets[0] :].startswith("Page0")
+    assert result.content[result.page_offsets[1] :].startswith("Page1Content")
+    assert result.content[result.page_offsets[2] :].startswith("Page2LongerContent")
+
+    # Verify the content is joined correctly with "\n\n"
+    expected_content = "\n\n".join(page_contents)
+    assert result.content == expected_content
 
 
 async def test_extract_pdf_page_by_page_pdf_as_image(
@@ -817,6 +912,20 @@ async def test_extract_pdf_page_by_page_pdf_as_image(
 
     assert not result.is_passthrough
     assert result.content_format == OutputFormat.MARKDOWN
+
+    # Verify page_offsets are present and correct
+    assert result.page_offsets is not None
+    assert len(result.page_offsets) == 2
+    assert result.page_offsets[0] == 0
+    expected_page_1_offset = len("Content from page 1") + 2
+    assert result.page_offsets[1] == expected_page_1_offset
+
+    # Verify page_offsets are present and correct
+    assert result.page_offsets is not None
+    assert len(result.page_offsets) == 2
+    assert result.page_offsets[0] == 0
+    expected_page_1_offset = len("Content from page 1") + 2
+    assert result.page_offsets[1] == expected_page_1_offset
 
 
 async def test_convert_pdf_page_to_image_input_success(
@@ -1121,6 +1230,13 @@ async def test_extract_pdf_with_cache_retrieval(
     assert "Fresh content from page 1" not in result.content
     assert "Fresh content from page 2" not in result.content
 
+    # Verify page_offsets are present and correct
+    assert result.page_offsets is not None
+    assert len(result.page_offsets) == 2
+    assert result.page_offsets[0] == 0
+    expected_page_1_offset = len("Cached content from page 1") + 2
+    assert result.page_offsets[1] == expected_page_1_offset
+
 
 async def test_extract_pdf_without_cache(
     mock_file_factory, mock_litellm_extractor_without_cache
@@ -1191,6 +1307,13 @@ async def test_extract_pdf_mixed_cache_hits_and_misses(
     assert "Cached content from page 1" in result.content
     assert "Fresh content from page 2" in result.content
 
+    # Verify page_offsets are present and correct
+    assert result.page_offsets is not None
+    assert len(result.page_offsets) == 2
+    assert result.page_offsets[0] == 0
+    expected_page_1_offset = len("Cached content from page 1") + 2
+    assert result.page_offsets[1] == expected_page_1_offset
+
 
 async def test_extract_pdf_cache_write_failure_does_not_throw(
     mock_file_factory, mock_litellm_extractor_with_cache
@@ -1240,6 +1363,13 @@ async def test_extract_pdf_cache_write_failure_does_not_throw(
     assert not result.is_passthrough
     assert result.content_format == OutputFormat.MARKDOWN
 
+    # Verify page_offsets are present and correct
+    assert result.page_offsets is not None
+    assert len(result.page_offsets) == 2
+    assert result.page_offsets[0] == 0
+    expected_page_1_offset = len("Content from page 1") + 2
+    assert result.page_offsets[1] == expected_page_1_offset
+
 
 async def test_extract_pdf_cache_decode_failure_does_not_throw(
     mock_file_factory, mock_litellm_extractor_with_cache
@@ -1287,6 +1417,13 @@ async def test_extract_pdf_cache_decode_failure_does_not_throw(
     # Verify the extraction completed successfully
     assert not result.is_passthrough
     assert result.content_format == OutputFormat.MARKDOWN
+
+    # Verify page_offsets are present and correct
+    assert result.page_offsets is not None
+    assert len(result.page_offsets) == 2
+    assert result.page_offsets[0] == 0
+    expected_page_1_offset = len("Content from page 1") + 2
+    assert result.page_offsets[1] == expected_page_1_offset
 
 
 async def test_extract_pdf_parallel_processing_error_handling(
@@ -1360,6 +1497,13 @@ async def test_extract_pdf_parallel_processing_all_cached(
     assert "Cached content from page 2" in result.content
     assert "Fresh content from page 1" not in result.content
     assert "Fresh content from page 2" not in result.content
+
+    # Verify page_offsets are present and correct
+    assert result.page_offsets is not None
+    assert len(result.page_offsets) == 2
+    assert result.page_offsets[0] == 0
+    expected_page_1_offset = len("Cached content from page 1") + 2
+    assert result.page_offsets[1] == expected_page_1_offset
 
 
 async def test_clear_cache_for_file_path(

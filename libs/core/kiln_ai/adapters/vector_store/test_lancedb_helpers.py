@@ -152,6 +152,7 @@ def test_convert_to_llama_index_node_builds_expected_structure():
     assert node.embedding == [0.1, 0.2]
     assert node.metadata["kiln_doc_id"] == "doc-123"
     assert node.metadata["kiln_chunk_idx"] == 0
+    assert "kiln_page_number" not in node.metadata
 
     # relationship exists and points to the source document id
     from llama_index.core.schema import NodeRelationship, RelatedNodeInfo
@@ -162,6 +163,36 @@ def test_convert_to_llama_index_node_builds_expected_structure():
     assert related.node_id == "doc-123"
     assert related.node_type == "1"
     assert isinstance(related.metadata, dict)
+
+
+def test_convert_to_llama_index_node_with_page_number():
+    node = convert_to_llama_index_node(
+        document_id="doc-123",
+        chunk_idx=0,
+        node_id="11111111-1111-5111-8111-111111111111",
+        text="hello",
+        vector=[0.1, 0.2],
+        page_number=5,
+    )
+
+    assert node.metadata["kiln_doc_id"] == "doc-123"
+    assert node.metadata["kiln_chunk_idx"] == 0
+    assert node.metadata["kiln_page_number"] == 5
+
+
+def test_convert_to_llama_index_node_with_page_number_none():
+    node = convert_to_llama_index_node(
+        document_id="doc-123",
+        chunk_idx=0,
+        node_id="11111111-1111-5111-8111-111111111111",
+        text="hello",
+        vector=[0.1, 0.2],
+        page_number=None,
+    )
+
+    assert node.metadata["kiln_doc_id"] == "doc-123"
+    assert node.metadata["kiln_chunk_idx"] == 0
+    assert "kiln_page_number" not in node.metadata
 
 
 def test_deterministic_chunk_id_uses_uuid_v5_namespace():

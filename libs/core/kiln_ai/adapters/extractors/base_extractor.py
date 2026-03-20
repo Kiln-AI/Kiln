@@ -26,6 +26,10 @@ class ExtractionOutput(BaseModel):
         description="The format of the extracted data."
     )
     content: str = Field(description="The extracted data.")
+    page_offsets: list[int] | None = Field(
+        default=None,
+        description="Character offsets marking the start of each page. The int at index i is the char offset marking the start of page i (0-indexed).",
+    )
 
 
 class BaseExtractor(ABC):
