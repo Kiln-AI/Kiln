@@ -3321,7 +3321,7 @@ async def test_archive_tool_server_skips_connectivity_validation(
             "app.desktop.studio_server.tool_api.validate_tool_server_connectivity",
             new_callable=AsyncMock,
         ) as mock_validate:
-            response = client.patch(
+            response = client.post(
                 f"/api/projects/{test_project.id}/tool_servers/{tool_server.id}/archive",
                 json={"is_archived": True},
             )

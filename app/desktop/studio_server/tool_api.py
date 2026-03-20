@@ -655,7 +655,7 @@ def connect_tool_servers_api(app: FastAPI):
 
         return tool_server
 
-    @app.patch("/api/projects/{project_id}/tool_servers/{tool_server_id}/archive")
+    @app.post("/api/projects/{project_id}/tool_servers/{tool_server_id}/archive")
     async def archive_tool_server(
         project_id: str,
         tool_server_id: str,
@@ -663,10 +663,7 @@ def connect_tool_servers_api(app: FastAPI):
     ) -> ExternalToolServer:
         tool_server = tool_server_from_id(project_id, tool_server_id)
 
-        tool_server.properties = {
-            **tool_server.properties,
-            "is_archived": archive_request.is_archived,
-        }
+        tool_server.properties["is_archived"] = archive_request.is_archived
         tool_server.save_to_file()
 
         return tool_server

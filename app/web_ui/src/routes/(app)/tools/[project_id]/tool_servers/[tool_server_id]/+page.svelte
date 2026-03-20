@@ -353,7 +353,7 @@
       switch (current_tool_server.type) {
         case "remote_mcp":
         case "local_mcp": {
-          await client.PATCH(
+          const { error: archive_request_error } = await client.POST(
             "/api/projects/{project_id}/tool_servers/{tool_server_id}/archive",
             {
               params: {
@@ -367,6 +367,9 @@
               },
             },
           )
+          if (archive_request_error) {
+            throw archive_request_error
+          }
           tool_server = {
             ...current_tool_server,
             properties: {

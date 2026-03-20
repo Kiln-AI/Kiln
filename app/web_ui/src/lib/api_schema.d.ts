@@ -2244,12 +2244,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post?: never;
+        /** Archive Tool Server */
+        post: operations["archive_tool_server_api_projects__project_id__tool_servers__tool_server_id__archive_post"];
         delete?: never;
         options?: never;
         head?: never;
-        /** Archive Tool Server */
-        patch: operations["archive_tool_server_api_projects__project_id__tool_servers__tool_server_id__archive_patch"];
+        patch?: never;
         trace?: never;
     };
     "/api/projects/{project_id}/kiln_task_tool": {
@@ -12392,7 +12392,7 @@ export interface operations {
             };
         };
     };
-    archive_tool_server_api_projects__project_id__tool_servers__tool_server_id__archive_patch: {
+    archive_tool_server_api_projects__project_id__tool_servers__tool_server_id__archive_post: {
         parameters: {
             query?: never;
             header?: never;
