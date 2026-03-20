@@ -1577,7 +1577,7 @@ wheels = [
 
 [[package]]
 name = "kiln-ai"
-version = "0.25.0"
+version = "0.26.0"
 source = { editable = "libs/core" }
 dependencies = [
     { name = "anyio" },
@@ -1586,6 +1586,7 @@ dependencies = [
     { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
     { name = "google-cloud-aiplatform" },
     { name = "google-genai" },
+    { name = "httpx" },
     { name = "jsonschema" },
     { name = "lancedb" },
     { name = "litellm" },
@@ -1625,6 +1626,7 @@ requires-dist = [
     { name = "exceptiongroup", marker = "python_full_version < '3.11'", specifier = ">=1.0.0" },
     { name = "google-cloud-aiplatform", specifier = ">=1.84.0" },
     { name = "google-genai", specifier = ">=1.21.1" },
+    { name = "httpx", specifier = ">=0.24.0" },
     { name = "jsonschema", specifier = ">=4.23.0" },
     { name = "lancedb", specifier = ">=0.24.2" },
     { name = "litellm", specifier = ">=1.81.16" },
@@ -1705,7 +1707,7 @@ dev = [
 
 [[package]]
 name = "kiln-server"
-version = "0.25.0"
+version = "0.26.0"
 source = { editable = "libs/server" }
 dependencies = [
     { name = "fastapi" },
@@ -1752,7 +1754,7 @@ dev = [
 
 [[package]]
 name = "kiln-studio-desktop"
-version = "0.25.0"
+version = "0.26.0"
 source = { editable = "app/desktop" }
 dependencies = [
     { name = "kiln-server" },

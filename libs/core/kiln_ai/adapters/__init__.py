@@ -27,6 +27,7 @@ from . import (
     ml_model_list,
     model_adapters,
     prompt_builders,
+    remote_config,
     repair,
 )
 
@@ -41,5 +42,6 @@ __all__ = [
     "ml_model_list",
     "model_adapters",
     "prompt_builders",
+    "remote_config",
     "repair",
 ]

@@ -1,4 +1,5 @@
 import argparse
+import os
 from importlib.metadata import version
 from typing import Sequence
 
@@ -25,9 +26,9 @@ def _get_version() -> str:
 
 def make_app(lifespan=None):
     app = FastAPI(
-        title="Kiln AI Server",
-        summary="A REST API for the Kiln AI datamodel.",
-        description="Learn more about Kiln AI at https://github.com/kiln-ai/kiln",
+        title="Kiln AI API",
+        summary="A REST API for Kiln AI.",
+        description="This API is used to interact with all aspects of Kiln AI. For example, it can create and manage the data model (projects, tasks, prompts, evals, etc). It can also control the execution of the application including running tasks, evals, and more.",
         version=_get_version(),
         lifespan=lifespan,
     )
@@ -45,11 +46,12 @@ def make_app(lifespan=None):
     connect_document_api(app)
     connect_custom_errors(app)
 
+    frontend_port = os.environ.get("KILN_FRONTEND_PORT", "5173")
     allowed_origins = [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "https://localhost:5173",
-        "https://127.0.0.1:5173",
+        f"http://localhost:{frontend_port}",
+        f"http://127.0.0.1:{frontend_port}",
+        f"https://localhost:{frontend_port}",
+        f"https://127.0.0.1:{frontend_port}",
     ]
 
     app.add_middleware(

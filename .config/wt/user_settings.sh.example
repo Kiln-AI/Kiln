@@ -1,0 +1,9 @@
+# Per-user settings for the Kiln dev environment.
+# Copy this file to user_settings.sh and customize:
+#   cp user_settings.sh.example user_settings.sh
+#
+# user_settings.sh is gitignored — your changes stay local.
+
+# Coding agent command (default: claude)
+# Examples: "claude", "cursor .", "aider", "zed ."
+KILN_CODER_CMD="claude"

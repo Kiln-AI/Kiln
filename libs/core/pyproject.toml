@@ -1,6 +1,6 @@
 [project]
 name = "kiln-ai"
-version = "0.25.0"
+version = "0.26.0"
 requires-python = ">=3.10"
 readme = "README.md"
 description = 'Kiln AI'
@@ -20,6 +20,7 @@ classifiers = [
 dependencies = [
     "boto3>=1.37.10",
     "coverage>=7.6.4",
+    "httpx>=0.24.0",
     "exceptiongroup>=1.0.0; python_version<'3.11'",
     "google-cloud-aiplatform>=1.84.0",
     "google-genai>=1.21.1",
