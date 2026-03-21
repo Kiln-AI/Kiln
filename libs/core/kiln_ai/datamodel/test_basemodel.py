@@ -192,6 +192,18 @@ def test_build_child_dirname_run_config_style_name_no_trailing_space(tmp_path):
     assert child_path.parent.name == child_path.parent.name.rstrip()
 
 
+def test_build_child_dirname_raises_when_sanitized_prefix_empty(tmp_path):
+    parent = BaseParentExample(path=tmp_path)
+    name = " " * 32 + "suffix"
+    assert name[:32].strip() == ""
+    child = DefaultParentedModel(parent=parent, name=name)
+    with pytest.raises(
+        ValueError,
+        match="first 32 characters of `name` produced an empty string",
+    ):
+        child.build_child_dirname()
+
+
 def test_serialize_child(tmp_path):
     parent = BaseParentExample(path=tmp_path)
     child = DefaultParentedModel(parent=parent, name="Name")

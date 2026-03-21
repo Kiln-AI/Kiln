@@ -323,7 +323,7 @@ def test_task_run_config_long_name_folder_has_no_trailing_space(tmp_path):
     )
     task.save_to_file()
 
-    long_name = "Deepseek 3p2 + KilnOptimized (3 tokens)"
+    long_name = "Deepseek 3p2 + KilnOptimized (3 xyz)"
     assert len(long_name[:32]) == 32 and long_name[:32].endswith(" ")
 
     run_config = TaskRunConfig(
