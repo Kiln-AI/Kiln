@@ -2235,6 +2235,23 @@ export interface paths {
     patch: operations["edit_local_mcp_api_projects__project_id__edit_local_mcp__tool_server_id__patch"]
     trace?: never
   }
+  "/api/projects/{project_id}/tool_servers/{tool_server_id}/archive": {
+    parameters: {
+      query?: never
+      header?: never
+      path?: never
+      cookie?: never
+    }
+    get?: never
+    put?: never
+    /** Archive Tool Server */
+    post: operations["archive_tool_server_api_projects__project_id__tool_servers__tool_server_id__archive_post"]
+    delete?: never
+    options?: never
+    head?: never
+    patch?: never
+    trace?: never
+  }
   "/api/projects/{project_id}/kiln_task_tool": {
     parameters: {
       query?: never
@@ -5175,6 +5192,11 @@ export interface components {
       temperature: number
       /** @description The structured output mode to use for this run config. */
       structured_output_mode: components["schemas"]["StructuredOutputMode"]
+      /**
+       * Thinking Level
+       * @description The thinking level to use for this run config. If None, defaults may apply.
+       */
+      thinking_level?: string | null
       /** @description The tools config to use for this run config, defining which tools are available to the model. */
       tools_config?: components["schemas"]["ToolsRunConfig"] | null
     }
@@ -5553,6 +5575,12 @@ export interface components {
       /** Multimodal Mime Types */
       multimodal_mime_types?: string[] | null
       structured_output_mode: components["schemas"]["StructuredOutputMode"]
+      /** Available Thinking Levels */
+      available_thinking_levels?: {
+        [key: string]: string
+      } | null
+      /** Default Thinking Level */
+      default_thinking_level?: string | null
       /**
        * Untested Model
        * @default false
@@ -5562,6 +5590,11 @@ export interface components {
       task_filter?: string[] | null
       /** Model Specific Run Config */
       model_specific_run_config?: string | null
+      /**
+       * Deprecated
+       * @default false
+       */
+      deprecated: boolean
     }
     /**
      * ModelProviderName
@@ -6586,6 +6619,8 @@ export interface components {
     SkillContentResponse: {
       /** Skill Md */
       skill_md: string
+      /** Body */
+      body: string
     }
     /** SkillCreationRequest */
     SkillCreationRequest: {
@@ -7223,6 +7258,11 @@ export interface components {
      *
      *     Contains the input used, its source, the output produced, and optional
      *     repair information if the output needed correction.
+     *
+     *     Can be nested under another TaskRun; nested runs are stored as child runs
+     *     in a "runs" subfolder (same relationship name as Task's runs).
+     *
+     *     Accepts both Task and TaskRun as parents (polymorphic).
      */
     "TaskRun-Input": {
       /**
@@ -7294,6 +7334,11 @@ export interface components {
      *
      *     Contains the input used, its source, the output produced, and optional
      *     repair information if the output needed correction.
+     *
+     *     Can be nested under another TaskRun; nested runs are stored as child runs
+     *     in a "runs" subfolder (same relationship name as Task's runs).
+     *
+     *     Accepts both Task and TaskRun as parents (polymorphic).
      */
     "TaskRun-Output": {
       /**
@@ -7481,6 +7526,11 @@ export interface components {
       parameters: {
         [key: string]: unknown
       }
+    }
+    /** ToolServerArchiveRequest */
+    ToolServerArchiveRequest: {
+      /** Is Archived */
+      is_archived: boolean
     }
     /**
      * ToolServerType
@@ -11417,6 +11467,7 @@ export interface operations {
     parameters: {
       query?: {
         tool_ids?: string[] | null
+        empty_tool_filter?: boolean
       }
       header?: never
       path: {
@@ -12581,6 +12632,42 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": components["schemas"]["LocalToolServerCreationRequest"]
+      }
+    }
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          "application/json": components["schemas"]["ExternalToolServer"]
+        }
+      }
+      /** @description Validation Error */
+      422: {
+        headers: {
+          [name: string]: unknown
+        }
+        content: {
+          "application/json": components["schemas"]["HTTPValidationError"]
+        }
+      }
+    }
+  }
+  archive_tool_server_api_projects__project_id__tool_servers__tool_server_id__archive_post: {
+    parameters: {
+      query?: never
+      header?: never
+      path: {
+        project_id: string
+        tool_server_id: string
+      }
+      cookie?: never
+    }
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ToolServerArchiveRequest"]
       }
     }
     responses: {

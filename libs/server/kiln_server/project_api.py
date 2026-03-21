@@ -1,15 +1,15 @@
 import os
-from pathlib import Path
-from typing import Any, Dict
+from pathlib import Path as FilePath
+from typing import Annotated, Any, Dict
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException, Path
 from kiln_ai.datamodel import Project
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.project_utils import project_from_id as project_from_id_core
 
 
 def default_project_path():
-    return os.path.join(Path.home(), "Kiln Projects")
+    return os.path.join(FilePath.home(), "Kiln Projects")
 
 
 def project_from_id(project_id: str) -> Project:
@@ -32,7 +32,7 @@ def add_project_to_config(project_path: str):
 
 
 def connect_project_api(app: FastAPI):
-    @app.post("/api/project")
+    @app.post("/api/project", summary="Create Project", tags=["Projects"])
     async def create_project(project: Project) -> Project:
         project_path = os.path.join(default_project_path(), project.name)
         if os.path.exists(project_path):
@@ -43,7 +43,7 @@ def connect_project_api(app: FastAPI):
 
         os.makedirs(project_path)
         project_file = os.path.join(project_path, "project.kiln")
-        project.path = Path(project_file)
+        project.path = FilePath(project_file)
         project.save_to_file()
 
         # add to projects list
@@ -52,9 +52,14 @@ def connect_project_api(app: FastAPI):
         # Add path, which is usually excluded
         return project
 
-    @app.patch("/api/project/{project_id}")
+    @app.patch("/api/project/{project_id}", summary="Update Project", tags=["Projects"])
     async def update_project(
-        project_id: str, project_updates: Dict[str, Any]
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        project_updates: Annotated[
+            Dict[str, Any], Body(description="Fields to update on the project.")
+        ],
     ) -> Project:
         original_project = project_from_id(project_id)
         updated_project = original_project.model_copy(update=project_updates)
@@ -63,7 +68,7 @@ def connect_project_api(app: FastAPI):
         updated_project.save_to_file()
         return updated_project
 
-    @app.get("/api/projects")
+    @app.get("/api/projects", summary="List Projects", tags=["Projects"])
     async def get_projects() -> list[Project]:
         project_paths = Config.shared().projects
         projects = []
@@ -79,13 +84,23 @@ def connect_project_api(app: FastAPI):
 
         return projects
 
-    @app.get("/api/projects/{project_id}")
-    async def get_project(project_id: str) -> Project:
+    @app.get("/api/projects/{project_id}", summary="Get Project", tags=["Projects"])
+    async def get_project(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+    ) -> Project:
         return project_from_id(project_id)
 
-    # Removes the project, but does not delete the files from disk
-    @app.delete("/api/projects/{project_id}")
-    async def delete_project(project_id: str) -> dict:
+    @app.delete(
+        "/api/projects/{project_id}", summary="Delete Project", tags=["Projects"]
+    )
+    async def delete_project(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+    ) -> dict:
+        """Removes the project from Kiln but does not delete the files from disk."""
         project = project_from_id(project_id)
 
         # Remove from config
@@ -95,7 +110,7 @@ def connect_project_api(app: FastAPI):
 
         return {"message": f"Project removed. ID: {project_id}"}
 
-    @app.post("/api/import_project")
+    @app.post("/api/import_project", summary="Import Project", tags=["Projects"])
     async def import_project(project_path: str) -> Project:
         if project_path is None or not os.path.exists(project_path):
             raise HTTPException(
@@ -104,7 +119,7 @@ def connect_project_api(app: FastAPI):
             )
 
         try:
-            project = Project.load_from_file(Path(project_path))
+            project = Project.load_from_file(FilePath(project_path))
         except Exception as e:
             raise HTTPException(
                 status_code=500,

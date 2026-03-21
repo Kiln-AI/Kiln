@@ -2235,6 +2235,23 @@ export interface paths {
         patch: operations["edit_local_mcp_api_projects__project_id__edit_local_mcp__tool_server_id__patch"];
         trace?: never;
     };
+    "/api/projects/{project_id}/tool_servers/{tool_server_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive Tool Server */
+        post: operations["archive_tool_server_api_projects__project_id__tool_servers__tool_server_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/kiln_task_tool": {
         parameters: {
             query?: never;
@@ -7279,6 +7296,11 @@ export interface components {
             parameters: {
                 [key: string]: unknown;
             };
+        };
+        /** ToolServerArchiveRequest */
+        ToolServerArchiveRequest: {
+            /** Is Archived */
+            is_archived: boolean;
         };
         /**
          * ToolServerType
@@ -12357,6 +12379,42 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["LocalToolServerCreationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalToolServer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_tool_server_api_projects__project_id__tool_servers__tool_server_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                tool_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ToolServerArchiveRequest"];
             };
         };
         responses: {
