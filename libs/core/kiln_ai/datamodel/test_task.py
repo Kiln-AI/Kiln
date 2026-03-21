@@ -6,6 +6,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     StructuredOutputMode,
     TaskOutputRatingType,
 )
+from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import Spec
@@ -307,6 +308,41 @@ def test_run_config_upgrade_old_entries():
 def test_task_name_unicode_name():
     task = Task(name="你好", instruction="Do something")
     assert task.name == "你好"
+
+
+def test_task_run_config_long_name_folder_has_no_trailing_space(tmp_path):
+    """Test task folder name cannot end with a trailing space - as that breaks on Windows."""
+    project_path = tmp_path / "project.kiln"
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+
+    task = Task(
+        name="run_agent_brand_mentions_feed_cl",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    long_name = "Deepseek 3p2 + KilnOptimized (3 tokens)"
+    assert len(long_name[:32]) == 32 and long_name[:32].endswith(" ")
+
+    run_config = TaskRunConfig(
+        name=long_name,
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=task,
+    )
+    run_config.save_to_file()
+
+    assert run_config.path is not None
+    assert "run_configs" in run_config.path.parts
+    folder_name = run_config.path.parent.name
+    assert folder_name == folder_name.rstrip()
+    assert not folder_name.endswith(" ")
 
 
 def test_task_default_run_config_id_property(tmp_path):

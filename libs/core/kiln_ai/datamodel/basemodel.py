@@ -565,7 +565,8 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         path = self.id
         name = getattr(self, "name", None)
         if name is not None:
-            path = f"{path} - {name[:32]}"
+            name_part = string_to_valid_name(name[:32], truncate_to_max_length=False)
+            path = f"{path} - {name_part}"
         return Path(path)
 
     def build_path(self) -> Path | None:
