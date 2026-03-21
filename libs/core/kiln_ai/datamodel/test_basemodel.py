@@ -169,6 +169,41 @@ def test_build_default_child_filename(tmp_path):
     assert child_path.parent.parent.parent == tmp_path.parent
 
 
+def test_build_child_dirname_truncation_no_trailing_space(tmp_path):
+    parent = BaseParentExample(path=tmp_path)
+    long_name = "a" * 31 + " suffix"
+    child = DefaultParentedModel(parent=parent, name=long_name)
+    dirname = child.build_child_dirname()
+    assert str(dirname).endswith("a" * 31)
+    assert not str(dirname).endswith(" ")
+
+
+def test_build_child_dirname_run_config_style_name_no_trailing_space(tmp_path):
+    """Prefix can end with a space while the full name is valid; trailing space in a path segment breaks git and some tools."""
+    parent = BaseParentExample(path=tmp_path)
+    name = "Deepseek 3p2 + KilnOptimized (3 tokens)"
+    assert len(name[:32]) == 32 and name[:32].endswith(" ")
+    child = DefaultParentedModel(parent=parent, name=name)
+    dirname = child.build_child_dirname()
+    segment = str(dirname)
+    assert segment == segment.rstrip()
+    child_path = child.build_path()
+    assert child_path is not None
+    assert child_path.parent.name == child_path.parent.name.rstrip()
+
+
+def test_build_child_dirname_raises_when_sanitized_prefix_empty(tmp_path):
+    parent = BaseParentExample(path=tmp_path)
+    name = " " * 32 + "suffix"
+    assert name[:32].strip() == ""
+    child = DefaultParentedModel(parent=parent, name=name)
+    with pytest.raises(
+        ValueError,
+        match="first 32 characters of `name` produced an empty string",
+    ):
+        child.build_child_dirname()
+
+
 def test_serialize_child(tmp_path):
     parent = BaseParentExample(path=tmp_path)
     child = DefaultParentedModel(parent=parent, name="Name")
