@@ -18,6 +18,7 @@ class ModelProviderName(str, Enum):
     OPENAI_COMPATIBLE = "openai_compatible"
     OPENROUTER = "openrouter"
     SILICONFLOW_CN = "siliconflow_cn"
+    MINIMAX = "minimax"
     TOGETHER_AI = "together_ai"
     VERTEX = "vertex"
 

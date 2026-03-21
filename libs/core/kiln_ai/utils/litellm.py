@@ -72,6 +72,8 @@ def get_litellm_provider_info(
             litellm_provider_name = "cerebras"
         case ModelProviderName.siliconflow_cn:
             is_custom = True
+        case ModelProviderName.minimax:
+            is_custom = True
         case ModelProviderName.openai_compatible:
             is_custom = True
         case ModelProviderName.kiln_custom_registry:

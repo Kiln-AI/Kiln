@@ -534,6 +534,8 @@ def provider_name_from_id(id: str) -> str:
                 return "Cerebras"
             case ModelProviderName.docker_model_runner:
                 return "Docker Model Runner"
+            case ModelProviderName.minimax:
+                return "MiniMax"
             case _:
                 # triggers pyright warning if I miss a case
                 raise_exhaustive_enum_error(enum_id)
@@ -599,6 +601,10 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
     ModelProviderName.cerebras: ModelProviderWarning(
         required_config_keys=["cerebras_api_key"],
         message="Attempted to use Cerebras without an API key set. \nGet your API key from https://cloud.cerebras.ai/platform",
+    ),
+    ModelProviderName.minimax: ModelProviderWarning(
+        required_config_keys=["minimax_api_key"],
+        message="Attempted to use MiniMax without an API key set. \nGet your API key from https://platform.minimaxi.com/user-center/basic-information/interface-key",
     ),
 }
 
@@ -743,6 +749,14 @@ def lite_llm_core_config_for_provider(
             return LiteLlmCoreConfig(
                 additional_body_options={
                     "api_key": Config.shared().cerebras_api_key,
+                },
+            )
+        case ModelProviderName.minimax:
+            return LiteLlmCoreConfig(
+                base_url=os.getenv("MINIMAX_BASE_URL")
+                or "https://api.minimax.io/v1",
+                additional_body_options={
+                    "api_key": Config.shared().minimax_api_key,
                 },
             )
         case ModelProviderName.openai_compatible:

@@ -27,6 +27,7 @@ from app.desktop.studio_server.provider_api import (
     connect_provider_api,
     connect_siliconflow,
     connect_together,
+    connect_minimax,
     connect_vertex,
     connect_wandb,
     embedding_models_from_ollama_tag,
@@ -3865,3 +3866,91 @@ def test_delete_user_model_bad_request_no_params():
 
     assert response.status_code == 400
     assert "Must specify" in response.json()["message"]
+
+
+# MiniMax connection tests
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_minimax_success(mock_config_shared, mock_requests_get):
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.text = '{"data": []}'
+    mock_requests_get.return_value = mock_response
+
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    result = await connect_minimax("test_api_key")
+
+    mock_requests_get.assert_called_once_with(
+        "https://api.minimax.io/v1/models",
+        headers={
+            "Authorization": "Bearer test_api_key",
+            "Content-Type": "application/json",
+        },
+    )
+    assert mock_config.minimax_api_key == "test_api_key"
+    assert result.status_code == 200
+    assert result.body == b'{"message":"Connected to MiniMax"}'
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_minimax_invalid_api_key(
+    mock_config_shared, mock_requests_get
+):
+    mock_response = MagicMock()
+    mock_response.status_code = 401
+    mock_response.text = '{"error": "Unauthorized"}'
+    mock_requests_get.return_value = mock_response
+
+    result = await connect_minimax("invalid_api_key")
+
+    mock_requests_get.assert_called_once_with(
+        "https://api.minimax.io/v1/models",
+        headers={
+            "Authorization": "Bearer invalid_api_key",
+            "Content-Type": "application/json",
+        },
+    )
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 401
+    assert (
+        result.body
+        == b'{"message":"Failed to connect to MiniMax. Invalid API key."}'
+    )
+
+
+@pytest.mark.asyncio
+@patch("app.desktop.studio_server.provider_api.requests.get")
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+async def test_connect_minimax_request_exception(
+    mock_config_shared, mock_requests_get
+):
+    mock_requests_get.side_effect = Exception("Connection error")
+
+    result = await connect_minimax("test_api_key")
+
+    mock_requests_get.assert_called_once()
+    mock_config_shared.assert_not_called()
+    assert result.status_code == 400
+    assert (
+        result.body
+        == b'{"message":"Failed to connect to MiniMax. Error: Connection error"}'
+    )
+
+
+@patch("app.desktop.studio_server.provider_api.connect_minimax")
+def test_connect_api_key_minimax_success(mock_connect_minimax, client):
+    mock_connect_minimax.return_value = {"message": "Connected to MiniMax"}
+    response = client.post(
+        "/api/provider/connect_api_key",
+        json={"provider": "minimax", "key_data": {"API Key": "test_key"}},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"message": "Connected to MiniMax"}
+    mock_connect_minimax.assert_called_once_with("test_key")
