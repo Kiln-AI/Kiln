@@ -167,6 +167,11 @@ class Config:
                 env_var="CEREBRAS_API_KEY",
                 sensitive=True,
             ),
+            "minimax_api_key": ConfigProperty(
+                str,
+                env_var="MINIMAX_API_KEY",
+                sensitive=True,
+            ),
             "kiln_copilot_api_key": ConfigProperty(
                 str,
                 env_var="KILN_COPILOT_API_KEY",

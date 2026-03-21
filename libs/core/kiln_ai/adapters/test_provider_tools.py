@@ -208,6 +208,7 @@ def test_provider_name_from_id_case_sensitivity():
         (ModelProviderName.openai, "OpenAI"),
         (ModelProviderName.fireworks_ai, "Fireworks AI"),
         (ModelProviderName.siliconflow_cn, "SiliconFlow"),
+        (ModelProviderName.minimax, "MiniMax"),
         (ModelProviderName.kiln_fine_tune, "Fine Tuned Models"),
         (ModelProviderName.kiln_custom_registry, "Custom Models"),
     ],
@@ -1002,6 +1003,7 @@ def mock_config_for_lite_llm_core_config():
         config_instance.azure_openai_api_key = "test-azure-key"
         config_instance.azure_openai_endpoint = "https://test.openai.azure.com"
         config_instance.huggingface_api_key = "test-hf-key"
+        config_instance.minimax_api_key = "test-minimax-key"
 
         yield mock
 
@@ -1089,6 +1091,13 @@ def mock_config_for_lite_llm_core_config():
         (
             ModelProviderName.huggingface,
             LiteLlmCoreConfig(additional_body_options={"api_key": "test-hf-key"}),
+        ),
+        (
+            ModelProviderName.minimax,
+            LiteLlmCoreConfig(
+                base_url="https://api.minimax.io/v1",
+                additional_body_options={"api_key": "test-minimax-key"},
+            ),
         ),
         (ModelProviderName.kiln_fine_tune, None),
         (ModelProviderName.kiln_custom_registry, None),

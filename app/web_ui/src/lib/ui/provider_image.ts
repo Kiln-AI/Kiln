@@ -23,6 +23,7 @@ const provider_image_map: Record<
   wandb: "/images/wandb.svg",
   siliconflow_cn: "/images/siliconflow.svg",
   cerebras: "/images/cerebras.svg",
+  minimax: "/images/minimax.svg",
   kiln_copilot: "/images/kiln_logo_black.svg",
 }
 

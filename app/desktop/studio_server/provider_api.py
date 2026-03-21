@@ -774,6 +774,8 @@ def connect_provider_api(app: FastAPI):
                 return await connect_siliconflow(parse_api_key(key_data))
             case ModelProviderName.cerebras:
                 return await connect_cerebras(parse_api_key(key_data))
+            case ModelProviderName.minimax:
+                return await connect_minimax(parse_api_key(key_data))
             case (
                 ModelProviderName.kiln_custom_registry
                 | ModelProviderName.kiln_fine_tune
@@ -838,6 +840,8 @@ def connect_provider_api(app: FastAPI):
                     Config.shared().siliconflow_cn_api_key = None
                 case ModelProviderName.cerebras:
                     Config.shared().cerebras_api_key = None
+                case ModelProviderName.minimax:
+                    Config.shared().minimax_api_key = None
                 case (
                     ModelProviderName.kiln_custom_registry
                     | ModelProviderName.kiln_fine_tune
@@ -1318,6 +1322,37 @@ async def connect_cerebras(key: str):
         return JSONResponse(
             status_code=400,
             content={"message": f"Failed to connect to Cerebras. Error: {e!s}"},
+        )
+
+
+async def connect_minimax(key: str):
+    try:
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        response = requests.get(
+            "https://api.minimax.io/v1/models",
+            headers=headers,
+        )
+
+        if response.status_code == 401:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "message": "Failed to connect to MiniMax. Invalid API key."
+                },
+            )
+        else:
+            Config.shared().minimax_api_key = key
+            return JSONResponse(
+                status_code=200,
+                content={"message": "Connected to MiniMax"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=400,
+            content={"message": f"Failed to connect to MiniMax. Error: {e!s}"},
         )
 
 

@@ -557,6 +557,7 @@ const provider_name_map: Record<ModelProviderName, string> = {
   together_ai: "Together AI",
   siliconflow_cn: "SiliconFlow CN",
   cerebras: "Cerebras",
+  minimax: "MiniMax",
   docker_model_runner: "Docker Model Runner",
 }
 

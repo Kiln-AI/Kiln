@@ -228,6 +228,19 @@
       api_key_fields: ["API Key"],
     },
     {
+      name: "MiniMax",
+      id: "minimax",
+      description:
+        "MiniMax offers powerful reasoning models including M2.7 with 1M context window.",
+      featured: false,
+      api_key_steps: [
+        "Go to https://platform.minimaxi.com/user-center/basic-information/interface-key",
+        "Create a new API Key",
+        "Copy the new API Key, paste it below and click 'Connect'",
+      ],
+      api_key_fields: ["API Key"],
+    },
+    {
       name: "Weights & Biases",
       id: "wandb",
       hide_in_onboarding: true,
@@ -359,6 +372,12 @@
       custom_description: null,
     },
     cerebras: {
+      connected: false,
+      connecting: false,
+      error: null,
+      custom_description: null,
+    },
+    minimax: {
       connected: false,
       connecting: false,
       error: null,
@@ -749,6 +768,9 @@
       }
       if (data["cerebras_api_key"]) {
         status.cerebras.connected = true
+      }
+      if (data["minimax_api_key"]) {
+        status.minimax.connected = true
       }
       if (data["kiln_copilot_api_key"]) {
         status.kiln_copilot.connected = true
