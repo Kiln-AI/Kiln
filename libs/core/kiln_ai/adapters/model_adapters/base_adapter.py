@@ -63,6 +63,7 @@ from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+from kiln_ai.utils.timing_logger import time_operation
 
 if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.adapter_stream import AdapterStream
@@ -170,6 +171,17 @@ class BaseAdapter(metaclass=ABCMeta):
         prior_trace: list[ChatCompletionMessageParam] | None = None,
         parent_task_run: TaskRun | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
+        with time_operation("invoke_task", self.task.name):
+            return await self.invoke_returning_run_output_core(input, input_source)
+
+    async def invoke_returning_run_output_core(
+        self,
+        input: InputType,
+        input_source: DataSource | None = None,
+    ) -> Tuple[TaskRun, RunOutput]:
+        """
+        Core implementation of invoke_returning_run_output. Wrapped by time_operation to log the time it takes.
+        """
         # validate input, allowing arrays
         if self.input_schema is not None:
             validate_schema_with_value_error(
