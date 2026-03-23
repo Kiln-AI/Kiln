@@ -360,7 +360,7 @@ class LiteLlmAdapter(BaseAdapter):
         output_schema = self.task.output_schema()
         if output_schema is None:
             raise ValueError(
-                "Invalid output schema for this task. Can not use JSON schema response format."
+                "Invalid output schema for this task. Cannot use JSON schema response format."
             )
         output_schema = close_object_schemas(output_schema)
         return {
