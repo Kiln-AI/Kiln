@@ -144,11 +144,14 @@ class TestChatStreaming:
 class TestParseSSEEvents:
     def test_passthrough_normal_events(self):
         raw = b'data: {"type":"text-delta","delta":"hi"}\n\n'
-        lines, tool_event, fin_tool, tool_inputs, text_delta = _parse_sse_events(raw)
+        lines, tool_event, fin_tool, tool_inputs, text_delta, trace_id = (
+            _parse_sse_events(raw)
+        )
         assert tool_event is None
         assert fin_tool is False
         assert tool_inputs == []
         assert text_delta == "hi"
+        assert trace_id is None
         assert any(b"text-delta" in line for line in lines)
 
     def test_detects_client_tool_call(self):
@@ -156,32 +159,44 @@ class TestParseSSEEvents:
             b'data: {"type":"text-delta","delta":"hi"}\n'
             b'data: {"type":"client-tool-call","toolCallId":"tc1","toolName":"read_task_run","input":{"path":"/x"}}\n\n'
         )
-        lines, tool_event, fin_tool, tool_inputs, text_delta = _parse_sse_events(raw)
+        lines, tool_event, fin_tool, tool_inputs, text_delta, trace_id = (
+            _parse_sse_events(raw)
+        )
         assert tool_event is not None
         assert fin_tool is False
         assert tool_event["toolName"] == "read_task_run"
         assert tool_event["toolCallId"] == "tc1"
+        assert trace_id is None
         assert not any(b"client-tool-call" in line for line in lines)
 
     def test_detects_ai_sdk_tool_calls_finish(self):
         raw = b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n'
-        lines, tool_event, fin_tool, tool_inputs, text_delta = _parse_sse_events(raw)
+        lines, tool_event, fin_tool, tool_inputs, text_delta, trace_id = (
+            _parse_sse_events(raw)
+        )
         assert tool_event is None
         assert fin_tool is True
         assert tool_inputs == []
+        assert trace_id is None
         assert any(b"finish" in line for line in lines)
 
     def test_handles_empty_input(self):
-        lines, tool_event, fin_tool, tool_inputs, text_delta = _parse_sse_events(b"")
+        lines, tool_event, fin_tool, tool_inputs, text_delta, trace_id = (
+            _parse_sse_events(b"")
+        )
         assert tool_event is None
         assert fin_tool is False
         assert tool_inputs == []
         assert text_delta == ""
+        assert trace_id is None
 
     def test_detects_tool_input_available(self):
         raw = b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"multiply","input":{"a":2,"b":8}}\n\n'
-        lines, tool_event, fin_tool, tool_inputs, text_delta = _parse_sse_events(raw)
+        lines, tool_event, fin_tool, tool_inputs, text_delta, trace_id = (
+            _parse_sse_events(raw)
+        )
         assert tool_event is None
+        assert trace_id is None
         assert len(tool_inputs) == 1
         assert tool_inputs[0]["toolCallId"] == "tc1"
         assert tool_inputs[0]["toolName"] == "multiply"
@@ -190,15 +205,38 @@ class TestParseSSEEvents:
 
     def test_accumulates_text_delta(self):
         raw = b'data: {"type":"text-delta","delta":"hello "}\ndata: {"type":"text-delta","delta":"world"}\n\n'
-        lines, tool_event, fin_tool, tool_inputs, text_delta = _parse_sse_events(raw)
+        lines, tool_event, fin_tool, tool_inputs, text_delta, trace_id = (
+            _parse_sse_events(raw)
+        )
         assert text_delta == "hello world"
+        assert trace_id is None
 
     def test_buffers_split_line(self):
         buf = bytearray()
-        _, _, _, _, _ = _parse_sse_events(b'data: {"type":"text-delta","del', buf)
-        lines, _, _, _, text_delta = _parse_sse_events(b'ta":"hi"}\n\n', buf)
+        _, _, _, _, _, _ = _parse_sse_events(b'data: {"type":"text-delta","del', buf)
+        lines, _, _, _, text_delta, trace_id = _parse_sse_events(
+            b'ta":"hi"}\n\n', buf
+        )
         assert text_delta == "hi"
+        assert trace_id is None
         assert any(b"text-delta" in line for line in lines)
+
+    def test_detects_kiln_chat_trace(self):
+        tid = "d5804b96-851f-4ed6-acb6-b4107968a85a"
+        raw = (
+            f'data: {{"type":"kiln_chat_trace","trace_id":"{tid}"}}\n\n'.encode()
+        )
+        lines, _, _, _, _, trace_id = _parse_sse_events(raw)
+        assert trace_id == tid
+        assert any(b"kiln_chat_trace" in line for line in lines)
+
+    def test_kiln_chat_trace_last_wins_in_chunk(self):
+        raw = (
+            b'data: {"type":"kiln_chat_trace","trace_id":"first-id"}\n'
+            b'data: {"type":"kiln_chat_trace","trace_id":"second-id"}\n\n'
+        )
+        _, _, _, _, _, trace_id = _parse_sse_events(raw)
+        assert trace_id == "second-id"
 
 
 # --- Client tool execution tests ---
@@ -369,10 +407,12 @@ class TestDedupeToolInputs:
 class TestClientToolRoundTrip:
     def test_detects_and_continues_after_client_tool(self, client, mock_api_key):
         """First request returns client-tool-call, proxy executes locally and sends continuation."""
+        trace_tid = "d5804b96-851f-4ed6-acb6-b4107968a85a"
         first_response_chunks = [
             b'data: {"type":"text-delta","delta":"Let me read that"}\n\n',
             b'data: {"type":"client-tool-call","toolCallId":"tc1","toolName":"read_task_run","input":{"path":"/fake"}}\n\n',
             b'data: {"type":"finish"}\n\n',
+            f'data: {{"type":"kiln_chat_trace","trace_id":"{trace_tid}"}}\n\n'.encode(),
         ]
         second_response_chunks = [
             b'data: {"type":"text-delta","delta":"Here is the result"}\n\n',
@@ -428,6 +468,7 @@ class TestClientToolRoundTrip:
         continuation_call = mock_client.stream.call_args_list[1]
         continuation_body = json.loads(continuation_call.kwargs["content"])
         assert len(continuation_body["messages"]) == 2
+        assert continuation_body["trace_id"] == trace_tid
 
 
 # --- Remote (server-side AI SDK) tool round-trip test ---

@@ -5,6 +5,7 @@
   import {
     streamChat,
     chatGenerateId,
+    traceIdForNextChatRequest,
     type ChatMessage,
     type ChatMessagePart,
   } from "$lib/chat/streaming_chat"
@@ -275,12 +276,20 @@
     setTimeout(() => adjustTextareaHeight(), 0)
     abortController = new AbortController()
 
+    const historyForRequest = messages.slice(0, -1)
     streamChat({
       apiUrl: CHAT_API_URL,
-      messages: messages.slice(0, -1),
+      messages: historyForRequest,
+      traceId: traceIdForNextChatRequest(historyForRequest),
       onAssistantMessage: (update) => {
         status = "streaming"
         updateLastAssistant(update)
+      },
+      onChatTrace: (traceId) => {
+        const last = messages[messages.length - 1]
+        if (last?.role === "assistant") {
+          messages = [...messages.slice(0, -1), { ...last, traceId }]
+        }
       },
       onFinish: () => {
         status = "ready"

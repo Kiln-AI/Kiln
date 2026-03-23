@@ -22,6 +22,8 @@ export interface ChatMessage {
   role: "user" | "assistant" | "system"
   content?: string
   parts?: ChatMessagePart[]
+  /** Server-issued id from ``kiln_chat_trace`` for this assistant turn */
+  traceId?: string
 }
 
 /** Body the backend expects: POST /api/chat */
@@ -31,6 +33,7 @@ export interface BackendChatRequest {
     content?: string
     parts?: Array<Record<string, unknown>>
   }>
+  trace_id?: string
 }
 
 function toBackendMessage(m: ChatMessage): BackendChatRequest["messages"][0] {
@@ -69,13 +72,18 @@ interface StreamEvent {
   inputTextDelta?: string
   output?: unknown
   errorText?: string
+  trace_id?: string
   messageMetadata?: { finishReason?: string; usage?: unknown }
 }
 
 export interface StreamChatOptions {
   apiUrl: string
   messages: ChatMessage[]
+  /** Send on continuations so the server can tie the request to prior traces */
+  traceId?: string
   onAssistantMessage: (update: (draft: ChatMessage) => void) => void
+  /** Fired when upstream sends ``kiln_chat_trace`` (typically end of a turn) */
+  onChatTrace?: (traceId: string) => void
   onFinish: () => void
   onError: (error: Error) => void
   signal?: AbortSignal
@@ -85,17 +93,41 @@ function generateId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
+/** Latest stored assistant ``traceId`` for continuing the conversation. */
+export function traceIdForNextChatRequest(
+  msgs: ChatMessage[],
+): string | undefined {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i]
+    if (m.role === "assistant" && m.traceId) {
+      return m.traceId
+    }
+  }
+  return undefined
+}
+
 /**
  * POST to apiUrl with messages, then parse SSE stream and call onAssistantMessage
  * for each event that updates the assistant reply. Calls onFinish when stream ends
  * or onError on failure. Respects signal for abort.
  */
 export async function streamChat(options: StreamChatOptions): Promise<void> {
-  const { apiUrl, messages, onAssistantMessage, onFinish, onError, signal } =
-    options
+  const {
+    apiUrl,
+    messages,
+    traceId,
+    onAssistantMessage,
+    onChatTrace,
+    onFinish,
+    onError,
+    signal,
+  } = options
 
   const body: BackendChatRequest = {
     messages: messages.map(toBackendMessage),
+  }
+  if (traceId) {
+    body.trace_id = traceId
   }
 
   let response: Response
@@ -319,8 +351,11 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
               entry.output = { error: event.errorText }
               flushAssistant()
             }
-          } else if (typ === "finish" || typ === "finish-step") {
-            break
+          } else if (typ === "kiln_chat_trace") {
+            const tid = event.trace_id
+            if (typeof tid === "string" && tid) {
+              onChatTrace?.(tid)
+            }
           }
         }
       }

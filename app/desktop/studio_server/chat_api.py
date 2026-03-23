@@ -76,7 +76,14 @@ def _execute_client_tool(tool_name: str, arguments: dict[str, Any]) -> str:
 def _parse_sse_events(
     raw: bytes,
     line_buffer: bytearray | None = None,
-) -> tuple[list[bytes], dict[str, Any] | None, bool, list[dict[str, Any]], str]:
+) -> tuple[
+    list[bytes],
+    dict[str, Any] | None,
+    bool,
+    list[dict[str, Any]],
+    str,
+    str | None,
+]:
     """Parse raw SSE bytes into forwarding lines and extracted event data.
 
     Maintains a line buffer so that chunks split mid-line are handled correctly:
@@ -93,6 +100,8 @@ def _parse_sse_events(
             ``messageMetadata.finishReason == "tool-calls"``
         tool_input_events: list of ``tool-input-available`` event dicts
         text_delta: concatenated ``text-delta`` content from this chunk
+        chat_trace_id: ``trace_id`` from the last ``kiln_chat_trace`` event in
+            this chunk, if any (non-empty string only)
     """
     if line_buffer is None:
         line_buffer = bytearray()
@@ -111,6 +120,7 @@ def _parse_sse_events(
     upstream_finish_tool_calls = False
     tool_input_events: list[dict[str, Any]] = []
     text_delta = ""
+    chat_trace_id: str | None = None
 
     for line in complete_lines:
         if line.startswith(b"data: "):
@@ -133,6 +143,10 @@ def _parse_sse_events(
                         delta = event.get("delta")
                         if isinstance(delta, str):
                             text_delta += delta
+                    elif event.get("type") == "kiln_chat_trace":
+                        tid = event.get("trace_id")
+                        if isinstance(tid, str) and tid:
+                            chat_trace_id = tid
                 except (json.JSONDecodeError, TypeError):
                     pass
         lines_to_forward.append(line)
@@ -143,6 +157,7 @@ def _parse_sse_events(
         upstream_finish_tool_calls,
         tool_input_events,
         text_delta,
+        chat_trace_id,
     )
 
 
@@ -174,6 +189,7 @@ def connect_chat_api(app: FastAPI) -> None:
                 upstream_finish_tool_calls = False
                 tool_input_events_this_round: list[dict[str, Any]] = []
                 assistant_text_this_round = ""
+                upstream_trace_id: str | None = None
                 line_buffer = bytearray()
 
                 async with httpx.AsyncClient(timeout=_CHAT_TIMEOUT) as client:
@@ -205,6 +221,7 @@ def connect_chat_api(app: FastAPI) -> None:
                                     fin_tool_calls,
                                     tool_inputs,
                                     text_delta,
+                                    chunk_trace_id,
                                 ) = _parse_sse_events(chunk, line_buffer)
                                 if tool_event:
                                     client_tool_event = tool_event
@@ -212,6 +229,8 @@ def connect_chat_api(app: FastAPI) -> None:
                                     upstream_finish_tool_calls = True
                                 tool_input_events_this_round.extend(tool_inputs)
                                 assistant_text_this_round += text_delta
+                                if chunk_trace_id is not None:
+                                    upstream_trace_id = chunk_trace_id
                                 forward_bytes = b"\n".join(lines)
                                 if forward_bytes.strip():
                                     yield forward_bytes + b"\n"
@@ -226,6 +245,9 @@ def connect_chat_api(app: FastAPI) -> None:
                                 )
                             else:
                                 raise
+
+                if upstream_trace_id:
+                    current_body = {**current_body, "trace_id": upstream_trace_id}
 
                 # client-tool-call takes precedence when both appear in one round
                 if client_tool_event is not None:
