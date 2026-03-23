@@ -14,7 +14,10 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
     get_kiln_server_client,
 )
 from app.desktop.studio_server.chat_api import (
+    _CANNED_TOOL_RESULT,
     _build_continuation_body,
+    _build_openai_tool_continuation,
+    _dedupe_tool_inputs,
     _execute_client_tool,
     _parse_sse_events,
     connect_chat_api,
@@ -141,9 +144,11 @@ class TestChatStreaming:
 class TestParseSSEEvents:
     def test_passthrough_normal_events(self):
         raw = b'data: {"type":"text-delta","delta":"hi"}\n\n'
-        lines, tool_event, fin_tool = _parse_sse_events(raw)
+        lines, tool_event, fin_tool, tool_inputs, text_delta = _parse_sse_events(raw)
         assert tool_event is None
         assert fin_tool is False
+        assert tool_inputs == []
+        assert text_delta == "hi"
         assert any(b"text-delta" in line for line in lines)
 
     def test_detects_client_tool_call(self):
@@ -151,7 +156,7 @@ class TestParseSSEEvents:
             b'data: {"type":"text-delta","delta":"hi"}\n'
             b'data: {"type":"client-tool-call","toolCallId":"tc1","toolName":"read_task_run","input":{"path":"/x"}}\n\n'
         )
-        lines, tool_event, fin_tool = _parse_sse_events(raw)
+        lines, tool_event, fin_tool, tool_inputs, text_delta = _parse_sse_events(raw)
         assert tool_event is not None
         assert fin_tool is False
         assert tool_event["toolName"] == "read_task_run"
@@ -160,15 +165,40 @@ class TestParseSSEEvents:
 
     def test_detects_ai_sdk_tool_calls_finish(self):
         raw = b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n'
-        lines, tool_event, fin_tool = _parse_sse_events(raw)
+        lines, tool_event, fin_tool, tool_inputs, text_delta = _parse_sse_events(raw)
         assert tool_event is None
         assert fin_tool is True
+        assert tool_inputs == []
         assert any(b"finish" in line for line in lines)
 
     def test_handles_empty_input(self):
-        lines, tool_event, fin_tool = _parse_sse_events(b"")
+        lines, tool_event, fin_tool, tool_inputs, text_delta = _parse_sse_events(b"")
         assert tool_event is None
         assert fin_tool is False
+        assert tool_inputs == []
+        assert text_delta == ""
+
+    def test_detects_tool_input_available(self):
+        raw = b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"multiply","input":{"a":2,"b":8}}\n\n'
+        lines, tool_event, fin_tool, tool_inputs, text_delta = _parse_sse_events(raw)
+        assert tool_event is None
+        assert len(tool_inputs) == 1
+        assert tool_inputs[0]["toolCallId"] == "tc1"
+        assert tool_inputs[0]["toolName"] == "multiply"
+        assert tool_inputs[0]["input"] == {"a": 2, "b": 8}
+        assert any(b"tool-input-available" in line for line in lines)
+
+    def test_accumulates_text_delta(self):
+        raw = b'data: {"type":"text-delta","delta":"hello "}\ndata: {"type":"text-delta","delta":"world"}\n\n'
+        lines, tool_event, fin_tool, tool_inputs, text_delta = _parse_sse_events(raw)
+        assert text_delta == "hello world"
+
+    def test_buffers_split_line(self):
+        buf = bytearray()
+        _, _, _, _, _ = _parse_sse_events(b'data: {"type":"text-delta","del', buf)
+        lines, _, _, _, text_delta = _parse_sse_events(b'ta":"hi"}\n\n', buf)
+        assert text_delta == "hi"
+        assert any(b"text-delta" in line for line in lines)
 
 
 # --- Client tool execution tests ---
@@ -238,6 +268,101 @@ class TestBuildContinuationBody:
         assert result["task_id"] == "test_task"
 
 
+# --- _build_openai_tool_continuation tests ---
+
+
+class TestBuildOpenAIToolContinuation:
+    def _event(self, tc_id: str, tool_name: str, inp: Any) -> dict[str, Any]:
+        return {"toolCallId": tc_id, "toolName": tool_name, "input": inp}
+
+    def test_appends_assistant_and_tool_messages(self):
+        original = {"messages": [{"role": "user", "content": "hi"}]}
+        events = [self._event("tc1", "multiply", {"a": 2, "b": 8})]
+        result = _build_openai_tool_continuation(original, "Let me check", events)
+
+        messages = result["messages"]
+        assert len(messages) == 3
+
+        assistant = messages[1]
+        assert assistant["role"] == "assistant"
+        assert assistant["content"] == "Let me check"
+        assert len(assistant["tool_calls"]) == 1
+        tc = assistant["tool_calls"][0]
+        assert tc["id"] == "tc1"
+        assert tc["type"] == "function"
+        assert tc["function"]["name"] == "multiply"
+        assert json.loads(tc["function"]["arguments"]) == {"a": 2, "b": 8}
+
+        tool_msg = messages[2]
+        assert tool_msg["role"] == "tool"
+        assert tool_msg["tool_call_id"] == "tc1"
+        assert tool_msg["content"] == _CANNED_TOOL_RESULT
+
+    def test_null_content_when_no_assistant_text(self):
+        original = {"messages": [{"role": "user", "content": "hi"}]}
+        result = _build_openai_tool_continuation(
+            original, "   ", [self._event("tc1", "add", {})]
+        )
+        assert result["messages"][1]["content"] is None
+
+    def test_multiple_tool_calls(self):
+        original = {"messages": [{"role": "user", "content": "hi"}]}
+        events = [
+            self._event("tc1", "add", {"a": 1, "b": 2}),
+            self._event("tc2", "multiply", {"a": 3, "b": 4}),
+        ]
+        result = _build_openai_tool_continuation(original, "", events)
+        messages = result["messages"]
+        assert len(messages) == 4  # user + assistant + 2 tool
+        assert messages[1]["role"] == "assistant"
+        assert len(messages[1]["tool_calls"]) == 2
+        assert messages[2]["role"] == "tool"
+        assert messages[2]["tool_call_id"] == "tc1"
+        assert messages[3]["role"] == "tool"
+        assert messages[3]["tool_call_id"] == "tc2"
+
+    def test_string_input_used_verbatim_as_arguments(self):
+        original = {"messages": []}
+        raw_args = '{"x": 1}'
+        result = _build_openai_tool_continuation(
+            original, "", [self._event("tc1", "tool", raw_args)]
+        )
+        tc = result["messages"][0]["tool_calls"][0]
+        assert tc["function"]["arguments"] == raw_args
+
+    def test_preserves_original_body_fields(self):
+        original = {"messages": [], "task_id": "t1", "session_id": "s1"}
+        result = _build_openai_tool_continuation(
+            original, "", [self._event("tc1", "tool", {})]
+        )
+        assert result["task_id"] == "t1"
+        assert result["session_id"] == "s1"
+
+
+# --- _dedupe_tool_inputs tests ---
+
+
+class TestDedupeToolInputs:
+    def test_returns_unique_entries(self):
+        events = [
+            {"toolCallId": "tc1", "toolName": "add"},
+            {"toolCallId": "tc2", "toolName": "multiply"},
+        ]
+        assert _dedupe_tool_inputs(events) == events
+
+    def test_last_entry_wins_on_duplicate(self):
+        events = [
+            {"toolCallId": "tc1", "toolName": "add", "input": {"a": 1}},
+            {"toolCallId": "tc1", "toolName": "add", "input": {"a": 99}},
+        ]
+        result = _dedupe_tool_inputs(events)
+        assert len(result) == 1
+        assert result[0]["input"] == {"a": 99}
+
+    def test_empty_list(self):
+        assert _dedupe_tool_inputs([]) == []
+
+
 # --- Client tool round-trip test ---
 
 
@@ -303,6 +428,159 @@ class TestClientToolRoundTrip:
         continuation_call = mock_client.stream.call_args_list[1]
         continuation_body = json.loads(continuation_call.kwargs["content"])
         assert len(continuation_body["messages"]) == 2
+
+
+# --- Remote (server-side AI SDK) tool round-trip test ---
+
+
+class TestRemoteToolRoundTrip:
+    def _make_stream_mock(self, chunks: list[bytes]):
+        async def mock_aiter_bytes():
+            for chunk in chunks:
+                yield chunk
+
+        mock_upstream = MagicMock()
+        mock_upstream.status_code = 200
+        mock_upstream.aiter_bytes.return_value = mock_aiter_bytes()
+        mock_upstream.__aenter__ = AsyncMock(return_value=mock_upstream)
+        mock_upstream.__aexit__ = AsyncMock(return_value=None)
+        return mock_upstream
+
+    def _make_mock_client(self, first_chunks: list[bytes], second_chunks: list[bytes]):
+        call_count = 0
+        first_mock = self._make_stream_mock(first_chunks)
+        second_mock = self._make_stream_mock(second_chunks)
+
+        def side_effect(*args, **kwargs):
+            nonlocal call_count
+            call_count_ref = call_count
+            call_count += 1
+            return first_mock if call_count_ref == 0 else second_mock
+
+        mock_client = MagicMock()
+        mock_client.stream.side_effect = side_effect
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        return mock_client, lambda: call_count
+
+    def test_continues_after_tool_input_available(self, client, mock_api_key):
+        """First request returns tool-input-available + finish tool-calls; proxy continues with canned result."""
+        first_chunks = [
+            b'data: {"type":"text-delta","delta":"Let me compute that"}\n\n',
+            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"multiply","input":{"a":2,"b":8}}\n\n',
+            b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
+        ]
+        second_chunks = [
+            b'data: {"type":"text-delta","delta":"The answer is 16"}\n\n',
+            b'data: {"type":"finish"}\n\n',
+        ]
+
+        mock_client, get_call_count = self._make_mock_client(first_chunks, second_chunks)
+        mock_class = MagicMock(return_value=mock_client)
+
+        with patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class):
+            response = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "compute 2*8"}]},
+            )
+
+        assert response.status_code == 200
+        content = response.content
+        assert b"Let me compute that" in content
+        assert b"The answer is 16" in content
+        assert get_call_count() == 2
+
+        continuation_call = mock_client.stream.call_args_list[1]
+        continuation_body = json.loads(continuation_call.kwargs["content"])
+        messages = continuation_body["messages"]
+
+        # original user + assistant(tool_calls) + tool result
+        assert len(messages) == 3
+        assert messages[0]["role"] == "user"
+
+        assistant_msg = messages[1]
+        assert assistant_msg["role"] == "assistant"
+        assert assistant_msg["content"] == "Let me compute that"
+        assert len(assistant_msg["tool_calls"]) == 1
+        tc = assistant_msg["tool_calls"][0]
+        assert tc["id"] == "tc1"
+        assert tc["type"] == "function"
+        assert tc["function"]["name"] == "multiply"
+        assert json.loads(tc["function"]["arguments"]) == {"a": 2, "b": 8}
+
+        tool_msg = messages[2]
+        assert tool_msg["role"] == "tool"
+        assert tool_msg["tool_call_id"] == "tc1"
+        assert tool_msg["content"] == _CANNED_TOOL_RESULT
+
+    def test_emits_tool_output_available_to_ui(self, client, mock_api_key):
+        """Proxy should emit tool-output-available SSE so the UI can show the result."""
+        first_chunks = [
+            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"add","input":{"a":1,"b":2}}\n\n',
+            b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
+        ]
+        second_chunks = [b'data: {"type":"finish"}\n\n']
+
+        mock_client, _ = self._make_mock_client(first_chunks, second_chunks)
+        mock_class = MagicMock(return_value=mock_client)
+
+        with patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class):
+            response = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "add 1+2"}]},
+            )
+
+        content = response.content
+        assert b"tool-output-available" in content
+        assert b"tc1" in content
+        assert _CANNED_TOOL_RESULT.encode() in content
+
+    def test_multiple_tool_calls_in_one_round(self, client, mock_api_key):
+        """All tools in a single round are handled and forwarded as continuation."""
+        first_chunks = [
+            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"add","input":{"a":1,"b":2}}\n\n',
+            b'data: {"type":"tool-input-available","toolCallId":"tc2","toolName":"multiply","input":{"a":3,"b":4}}\n\n',
+            b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
+        ]
+        second_chunks = [b'data: {"type":"finish"}\n\n']
+
+        mock_client, get_call_count = self._make_mock_client(first_chunks, second_chunks)
+        mock_class = MagicMock(return_value=mock_client)
+
+        with patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class):
+            client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "compute"}]},
+            )
+
+        assert get_call_count() == 2
+        continuation_body = json.loads(
+            mock_client.stream.call_args_list[1].kwargs["content"]
+        )
+        messages = continuation_body["messages"]
+        # user + assistant(2 tool_calls) + 2 tool messages
+        assert len(messages) == 4
+        assert len(messages[1]["tool_calls"]) == 2
+        assert messages[2]["role"] == "tool"
+        assert messages[3]["role"] == "tool"
+
+    def test_no_continuation_when_finish_not_tool_calls(self, client, mock_api_key):
+        """When finish reason is not tool-calls, only one upstream request is made."""
+        chunks = [
+            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"add","input":{}}\n\n',
+            b'data: {"type":"finish","messageMetadata":{"finishReason":"stop"}}\n\n',
+        ]
+        mock_class, _, _ = _make_httpx_mock(chunks=chunks)
+
+        with patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class):
+            response = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "hi"}]},
+            )
+
+        assert response.status_code == 200
+        # Only one stream call
+        assert mock_class.return_value.stream.call_count == 1
 
 
 _MAX_TOOL_ROUNDS_INTEGRATION = 5
