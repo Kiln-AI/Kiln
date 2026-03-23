@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from typing import Any
@@ -23,6 +24,14 @@ _MAX_CLIENT_TOOL_ROUNDS = 5
 # restrict which tool names are auto-handled (reserved for future use).
 _REMOTE_TOOL_AUTO_EXECUTE: frozenset[str] | None = None
 _CANNED_TOOL_RESULT = "The result is 58"
+_TOOL_SIMULATION_DELAY_SEC = 5.0
+
+
+async def execute_tool(tool_name: str, args: dict[str, Any]) -> str:
+    """Simulate remote tool execution (delay + canned result) for UX testing."""
+    await asyncio.sleep(_TOOL_SIMULATION_DELAY_SEC)
+    _ = tool_name, args
+    return _CANNED_TOOL_RESULT
 
 
 def _build_upstream_headers(api_key: str) -> dict[str, str]:
@@ -128,7 +137,13 @@ def _parse_sse_events(
                     pass
         lines_to_forward.append(line)
 
-    return lines_to_forward, client_tool_event, upstream_finish_tool_calls, tool_input_events, text_delta
+    return (
+        lines_to_forward,
+        client_tool_event,
+        upstream_finish_tool_calls,
+        tool_input_events,
+        text_delta,
+    )
 
 
 def _dedupe_tool_inputs(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -239,10 +254,13 @@ def connect_chat_api(app: FastAPI) -> None:
                     for event in deduped:
                         tc_id = event.get("toolCallId", "")
                         tool_name = event.get("toolName", "")
+                        raw_input = event.get("input", {})
+                        tool_args = raw_input if isinstance(raw_input, dict) else {}
                         logger.info(
-                            f"Returning canned result for remote tool: {tool_name} (call_id={tc_id})"
+                            f"Simulating remote tool: {tool_name} (call_id={tc_id})"
                         )
-                        yield f"data: {json.dumps({'type': 'tool-output-available', 'toolCallId': tc_id, 'output': _CANNED_TOOL_RESULT})}\n\n".encode()
+                        tool_result = await execute_tool(tool_name, tool_args)
+                        yield f"data: {json.dumps({'type': 'tool-output-available', 'toolCallId': tc_id, 'output': tool_result})}\n\n".encode()
                     current_body = _build_openai_tool_continuation(
                         current_body, assistant_text_this_round, deduped
                     )

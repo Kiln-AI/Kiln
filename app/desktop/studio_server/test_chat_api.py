@@ -434,6 +434,13 @@ class TestClientToolRoundTrip:
 
 
 class TestRemoteToolRoundTrip:
+    @pytest.fixture(autouse=True)
+    def _skip_tool_simulation_delay(self):
+        with patch(
+            "app.desktop.studio_server.chat_api.asyncio.sleep", new_callable=AsyncMock
+        ):
+            yield
+
     def _make_stream_mock(self, chunks: list[bytes]):
         async def mock_aiter_bytes():
             for chunk in chunks:
@@ -475,7 +482,9 @@ class TestRemoteToolRoundTrip:
             b'data: {"type":"finish"}\n\n',
         ]
 
-        mock_client, get_call_count = self._make_mock_client(first_chunks, second_chunks)
+        mock_client, get_call_count = self._make_mock_client(
+            first_chunks, second_chunks
+        )
         mock_class = MagicMock(return_value=mock_client)
 
         with patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class):
@@ -544,7 +553,9 @@ class TestRemoteToolRoundTrip:
         ]
         second_chunks = [b'data: {"type":"finish"}\n\n']
 
-        mock_client, get_call_count = self._make_mock_client(first_chunks, second_chunks)
+        mock_client, get_call_count = self._make_mock_client(
+            first_chunks, second_chunks
+        )
         mock_class = MagicMock(return_value=mock_client)
 
         with patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class):
