@@ -18,10 +18,10 @@ def client():
     with (
         tempfile.TemporaryDirectory() as temp_dir,
         patch(
-            "app.desktop.desktop_server.load_remote_models"
-        ) as mock_load_remote_models,
+            "app.desktop.desktop_server.refresh_model_list_background"
+        ) as mock_refresh_model_list_background,
     ):
-        mock_load_remote_models.return_value = None
+        mock_refresh_model_list_background.return_value = None
         os.makedirs(temp_dir, exist_ok=True)
         with patch(
             "app.desktop.studio_server.webhost.studio_path", new=lambda: temp_dir

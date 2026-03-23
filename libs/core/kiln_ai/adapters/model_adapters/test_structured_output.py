@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from typing import Any, Callable, Dict
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from litellm.types.utils import ModelResponse
@@ -14,6 +14,7 @@ from kiln_ai.adapters.ml_model_list import (
     built_in_models,
 )
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput, Usage
+from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 from kiln_ai.adapters.model_adapters.test_paid_utils import (
     skip_if_missing_provider_keys,
 )
@@ -96,7 +97,7 @@ class MockAdapter(BaseAdapter):
         )
         self.response = response
 
-    async def _run(self, input: str) -> tuple[RunOutput, Usage | None]:
+    async def _run(self, input: str, **kwargs) -> tuple[RunOutput, Usage | None]:
         return RunOutput(output=self.response, intermediate_outputs=None), None
 
     def adapter_name(self) -> str:
@@ -539,9 +540,10 @@ async def test_all_built_in_models_structured_input_mocked(tmp_path):
     mock_config.groq_api_key = "mock_api_key"
 
     with (
-        patch(
-            "litellm.acompletion",
-            side_effect=[mock_response],
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=AsyncMock(return_value=(mock_response, mock_response.choices[0])),
         ),
         patch("kiln_ai.utils.config.Config.shared", return_value=mock_config),
     ):
@@ -594,9 +596,15 @@ async def test_structured_input_cot_prompt_builder_mocked(tmp_path):
     mock_config.groq_api_key = "mock_api_key"
 
     with (
-        patch(
-            "litellm.acompletion",
-            side_effect=[mock_response_1, mock_response_2],
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=AsyncMock(
+                side_effect=[
+                    (mock_response_1, mock_response_1.choices[0]),
+                    (mock_response_2, mock_response_2.choices[0]),
+                ]
+            ),
         ),
         patch("kiln_ai.utils.config.Config.shared", return_value=mock_config),
     ):

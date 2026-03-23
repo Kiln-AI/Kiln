@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version < '3.11'",
@@ -1586,6 +1586,7 @@ dependencies = [
     { name = "exceptiongroup", marker = "python_full_version < '3.11'" },
     { name = "google-cloud-aiplatform" },
     { name = "google-genai" },
+    { name = "httpx" },
     { name = "jsonschema" },
     { name = "lancedb" },
     { name = "litellm" },
@@ -1625,6 +1626,7 @@ requires-dist = [
     { name = "exceptiongroup", marker = "python_full_version < '3.11'", specifier = ">=1.0.0" },
     { name = "google-cloud-aiplatform", specifier = ">=1.84.0" },
     { name = "google-genai", specifier = ">=1.21.1" },
+    { name = "httpx", specifier = ">=0.24.0" },
     { name = "jsonschema", specifier = ">=4.23.0" },
     { name = "lancedb", specifier = ">=0.24.2" },
     { name = "litellm", specifier = ">=1.81.16" },

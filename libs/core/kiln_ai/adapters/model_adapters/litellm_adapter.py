@@ -3,7 +3,7 @@ import copy
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple, TypeAlias, Union
+from typing import Any, Dict, List, Tuple
 
 import litellm
 from litellm.types.utils import (
@@ -19,11 +19,13 @@ from openai.types.chat.chat_completion_message_tool_call_param import (
 )
 
 import kiln_ai.datamodel as datamodel
+from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     ModelProviderName,
     StructuredOutputMode,
 )
+from kiln_ai.adapters.model_adapters.adapter_stream import AdapterStream
 from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterConfig,
     BaseAdapter,
@@ -58,10 +60,6 @@ MAX_CALLS_PER_TURN = 10
 MAX_TOOL_CALLS_PER_TURN = 30
 
 logger = logging.getLogger(__name__)
-
-ChatCompletionMessageIncludingLiteLLM: TypeAlias = Union[
-    ChatCompletionMessageParam, LiteLLMMessage
-]
 
 
 @dataclass
@@ -187,20 +185,29 @@ class LiteLlmAdapter(BaseAdapter):
             f"Too many tool calls ({tool_calls_count}). Stopping iteration to avoid using too many tokens."
         )
 
-    async def _run(self, input: InputType) -> tuple[RunOutput, Usage | None]:
+    async def _run(
+        self,
+        input: InputType,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
+    ) -> tuple[RunOutput, Usage | None]:
         usage = Usage()
 
         provider = self.model_provider()
         if not provider.model_id:
             raise ValueError("Model ID is required for OpenAI compatible models")
 
-        chat_formatter = self.build_chat_formatter(input)
-        messages: list[ChatCompletionMessageIncludingLiteLLM] = []
+        # build_chat_formatter returns MultiturnFormatter when prior_trace is set, else prompt-based formatter
+        chat_formatter = self.build_chat_formatter(input, prior_trace)
+        messages: list[ChatCompletionMessageIncludingLiteLLM] = copy.deepcopy(
+            chat_formatter.initial_messages()
+        )
 
         prior_output: str | None = None
         final_choice: Choices | None = None
         turns = 0
 
+        # Same loop for both fresh runs and prior_trace continuation.
+        # _run_model_turn has its own internal loop for tool calls (model calls tool -> we run it -> model continues).
         while True:
             turns += 1
             if turns > MAX_CALLS_PER_TURN:
@@ -258,6 +265,28 @@ class LiteLlmAdapter(BaseAdapter):
 
         return output, usage
 
+    def _create_run_stream(
+        self,
+        input: InputType,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
+    ) -> AdapterStream:
+        provider = self.model_provider()
+        if not provider.model_id:
+            raise ValueError("Model ID is required for OpenAI compatible models")
+
+        chat_formatter = self.build_chat_formatter(input, prior_trace)
+        initial_messages: list[ChatCompletionMessageIncludingLiteLLM] = copy.deepcopy(
+            chat_formatter.initial_messages()
+        )
+
+        return AdapterStream(
+            adapter=self,
+            provider=provider,
+            chat_formatter=chat_formatter,
+            initial_messages=initial_messages,
+            top_logprobs=self.base_adapter_config.top_logprobs,
+        )
+
     def _extract_and_validate_logprobs(
         self, final_choice: Choices | None
     ) -> ChoiceLogprobs | None:
@@ -294,9 +323,10 @@ class LiteLlmAdapter(BaseAdapter):
                     intermediate_outputs["reasoning"] = stripped_reasoning_content
 
     async def acompletion_checking_response(
-        self, **kwargs
+        self, **kwargs: Any
     ) -> Tuple[ModelResponse, Choices]:
         response = await litellm.acompletion(**kwargs)
+
         if (
             not isinstance(response, ModelResponse)
             or not response.choices
