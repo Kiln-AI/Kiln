@@ -7,12 +7,16 @@ from .body_start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_p
     BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost,
 )
 from .body_start_sample_job_v1_jobs_sample_job_start_post import BodyStartSampleJobV1JobsSampleJobStartPost
+from .chat_request import ChatRequest
 from .check_entitlements_v1_check_entitlements_get_response_check_entitlements_v1_check_entitlements_get import (
     CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet,
 )
 from .check_model_supported_response import CheckModelSupportedResponse
 from .clarify_spec_input import ClarifySpecInput
 from .clarify_spec_output import ClarifySpecOutput
+from .client_message import ClientMessage
+from .client_message_part import ClientMessagePart
+from .client_message_tool_calls_type_0_item import ClientMessageToolCallsType0Item
 from .examples_for_feedback_item import ExamplesForFeedbackItem
 from .examples_with_feedback_item import ExamplesWithFeedbackItem
 from .generate_batch_input import GenerateBatchInput
@@ -51,6 +55,8 @@ from .synthetic_data_generation_step_config import SyntheticDataGenerationStepCo
 from .synthetic_data_generation_step_config_input import SyntheticDataGenerationStepConfigInput
 from .task_info import TaskInfo
 from .task_metadata import TaskMetadata
+from .tool_invocation import ToolInvocation
+from .tool_invocation_state import ToolInvocationState
 from .validation_error import ValidationError
 
 __all__ = (
@@ -59,10 +65,14 @@ __all__ = (
     "ApiKeyVerificationResult",
     "BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost",
     "BodyStartSampleJobV1JobsSampleJobStartPost",
+    "ChatRequest",
     "CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet",
     "CheckModelSupportedResponse",
     "ClarifySpecInput",
     "ClarifySpecOutput",
+    "ClientMessage",
+    "ClientMessagePart",
+    "ClientMessageToolCallsType0Item",
     "ExamplesForFeedbackItem",
     "ExamplesWithFeedbackItem",
     "GenerateBatchInput",
@@ -101,5 +111,7 @@ __all__ = (
     "SyntheticDataGenerationStepConfigInput",
     "TaskInfo",
     "TaskMetadata",
+    "ToolInvocation",
+    "ToolInvocationState",
     "ValidationError",
 )
