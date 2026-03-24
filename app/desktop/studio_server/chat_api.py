@@ -247,7 +247,11 @@ def connect_chat_api(app: FastAPI) -> None:
                                 raise
 
                 if upstream_trace_id:
-                    current_body = {**current_body, "trace_id": upstream_trace_id}
+                    current_body = {
+                        **current_body,
+                        "trace_id": upstream_trace_id,
+                        "messages": [],
+                    }
 
                 # client-tool-call takes precedence when both appear in one round
                 if client_tool_event is not None:

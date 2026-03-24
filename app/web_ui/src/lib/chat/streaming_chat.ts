@@ -26,7 +26,7 @@ export interface ChatMessage {
   traceId?: string
 }
 
-/** Body the backend expects: POST /api/chat */
+/** Body for POST /api/chat: typically one new user message plus optional trace_id for continuation. */
 export interface BackendChatRequest {
   messages: Array<{
     role: string
@@ -79,7 +79,7 @@ interface StreamEvent {
 export interface StreamChatOptions {
   apiUrl: string
   messages: ChatMessage[]
-  /** Send on continuations so the server can tie the request to prior traces */
+  /** Prior-turn id from kiln_chat_trace; send with the new user message only */
   traceId?: string
   onAssistantMessage: (update: (draft: ChatMessage) => void) => void
   /** Fired when upstream sends ``kiln_chat_trace`` (typically end of a turn) */
@@ -107,9 +107,8 @@ export function traceIdForNextChatRequest(
 }
 
 /**
- * POST to apiUrl with messages, then parse SSE stream and call onAssistantMessage
- * for each event that updates the assistant reply. Calls onFinish when stream ends
- * or onError on failure. Respects signal for abort.
+ * POST to apiUrl with the request messages (usually one user turn) and optional trace_id,
+ * then parse SSE and call onAssistantMessage for assistant updates. Respects signal for abort.
  */
 export async function streamChat(options: StreamChatOptions): Promise<void> {
   const {

@@ -467,8 +467,9 @@ class TestClientToolRoundTrip:
 
         continuation_call = mock_client.stream.call_args_list[1]
         continuation_body = json.loads(continuation_call.kwargs["content"])
-        assert len(continuation_body["messages"]) == 2
+        assert len(continuation_body["messages"]) == 1
         assert continuation_body["trace_id"] == trace_tid
+        assert continuation_body["messages"][0]["role"] == "assistant"
 
 
 # --- Remote (server-side AI SDK) tool round-trip test ---
@@ -562,6 +563,45 @@ class TestRemoteToolRoundTrip:
         assert tool_msg["role"] == "tool"
         assert tool_msg["tool_call_id"] == "tc1"
         assert tool_msg["content"] == _CANNED_TOOL_RESULT
+
+    def test_openai_tool_continuation_omits_user_when_trace_in_stream(
+        self, client, mock_api_key
+    ):
+        """After kiln_chat_trace, the persisted trace already has the user turn; do not resend it."""
+        trace_tid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        first_chunks = [
+            b'data: {"type":"text-delta","delta":"Let me compute that"}\n\n',
+            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"multiply","input":{"a":2,"b":8}}\n\n',
+            b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
+            f'data: {{"type":"kiln_chat_trace","trace_id":"{trace_tid}"}}\n\n'.encode(),
+        ]
+        second_chunks = [
+            b'data: {"type":"text-delta","delta":"The answer is 16"}\n\n',
+            b'data: {"type":"finish"}\n\n',
+        ]
+
+        mock_client, get_call_count = self._make_mock_client(
+            first_chunks, second_chunks
+        )
+        mock_class = MagicMock(return_value=mock_client)
+
+        with patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class):
+            response = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "compute 2*8"}]},
+            )
+
+        assert response.status_code == 200
+        assert get_call_count() == 2
+
+        continuation_body = json.loads(
+            mock_client.stream.call_args_list[1].kwargs["content"]
+        )
+        messages = continuation_body["messages"]
+        roles = [m["role"] for m in messages]
+        assert roles == ["assistant", "tool"]
+        assert continuation_body["trace_id"] == trace_tid
+        assert messages[0]["tool_calls"][0]["id"] == "tc1"
 
     def test_emits_tool_output_available_to_ui(self, client, mock_api_key):
         """Proxy should emit tool-output-available SSE so the UI can show the result."""

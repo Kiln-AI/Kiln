@@ -260,6 +260,7 @@
     const text = input.trim()
     if (!text || isLoading) return
     error = null
+    const traceId = traceIdForNextChatRequest(messages)
     const userMessage: ChatMessage = {
       id: chatGenerateId(),
       role: "user",
@@ -276,11 +277,10 @@
     setTimeout(() => adjustTextareaHeight(), 0)
     abortController = new AbortController()
 
-    const historyForRequest = messages.slice(0, -1)
     streamChat({
       apiUrl: CHAT_API_URL,
-      messages: historyForRequest,
-      traceId: traceIdForNextChatRequest(historyForRequest),
+      messages: [userMessage],
+      traceId,
       onAssistantMessage: (update) => {
         status = "streaming"
         updateLastAssistant(update)
