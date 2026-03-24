@@ -254,7 +254,7 @@ After all tests finish, present results to the user as:
 
 2. **Per-model per-test dump** – organized by model name and provider, using this format:
 
-```
+```text
 Model Name (provider):
 ✅ test_name[model_enum-provider]
 ❌ test_name[model_enum-provider] -- brief failure reason
