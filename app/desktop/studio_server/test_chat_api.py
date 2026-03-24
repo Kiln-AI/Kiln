@@ -14,13 +14,13 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
     get_kiln_server_client,
 )
 from app.desktop.studio_server.chat_api import (
-    _CANNED_TOOL_RESULT,
     _build_continuation_body,
     _build_openai_tool_continuation,
     _dedupe_tool_inputs,
     _execute_client_tool,
     _parse_sse_events,
     connect_chat_api,
+    execute_tool,
 )
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -316,7 +316,9 @@ class TestBuildOpenAIToolContinuation:
     def test_appends_assistant_and_tool_messages(self):
         original = {"messages": [{"role": "user", "content": "hi"}]}
         events = [self._event("tc1", "multiply", {"a": 2, "b": 8})]
-        result = _build_openai_tool_continuation(original, "Let me check", events)
+        result = _build_openai_tool_continuation(
+            original, "Let me check", events, {"tc1": "16"}
+        )
 
         messages = result["messages"]
         assert len(messages) == 3
@@ -334,12 +336,12 @@ class TestBuildOpenAIToolContinuation:
         tool_msg = messages[2]
         assert tool_msg["role"] == "tool"
         assert tool_msg["tool_call_id"] == "tc1"
-        assert tool_msg["content"] == _CANNED_TOOL_RESULT
+        assert tool_msg["content"] == "16"
 
     def test_null_content_when_no_assistant_text(self):
         original = {"messages": [{"role": "user", "content": "hi"}]}
         result = _build_openai_tool_continuation(
-            original, "   ", [self._event("tc1", "add", {})]
+            original, "   ", [self._event("tc1", "add", {})], {"tc1": "0"}
         )
         assert result["messages"][1]["content"] is None
 
@@ -349,21 +351,25 @@ class TestBuildOpenAIToolContinuation:
             self._event("tc1", "add", {"a": 1, "b": 2}),
             self._event("tc2", "multiply", {"a": 3, "b": 4}),
         ]
-        result = _build_openai_tool_continuation(original, "", events)
+        result = _build_openai_tool_continuation(
+            original, "", events, {"tc1": "3", "tc2": "12"}
+        )
         messages = result["messages"]
         assert len(messages) == 4  # user + assistant + 2 tool
         assert messages[1]["role"] == "assistant"
         assert len(messages[1]["tool_calls"]) == 2
         assert messages[2]["role"] == "tool"
         assert messages[2]["tool_call_id"] == "tc1"
+        assert messages[2]["content"] == "3"
         assert messages[3]["role"] == "tool"
         assert messages[3]["tool_call_id"] == "tc2"
+        assert messages[3]["content"] == "12"
 
     def test_string_input_used_verbatim_as_arguments(self):
         original = {"messages": []}
         raw_args = '{"x": 1}'
         result = _build_openai_tool_continuation(
-            original, "", [self._event("tc1", "tool", raw_args)]
+            original, "", [self._event("tc1", "tool", raw_args)], {"tc1": "ok"}
         )
         tc = result["messages"][0]["tool_calls"][0]
         assert tc["function"]["arguments"] == raw_args
@@ -371,10 +377,27 @@ class TestBuildOpenAIToolContinuation:
     def test_preserves_original_body_fields(self):
         original = {"messages": [], "task_id": "t1", "session_id": "s1"}
         result = _build_openai_tool_continuation(
-            original, "", [self._event("tc1", "tool", {})]
+            original, "", [self._event("tc1", "tool", {})], {"tc1": "x"}
         )
         assert result["task_id"] == "t1"
         assert result["session_id"] == "s1"
+
+
+class TestExecuteTool:
+    @pytest.mark.asyncio
+    async def test_runs_multiply_builtin(self):
+        assert await execute_tool("multiply", {"a": 2, "b": 8}) == "16"
+
+    @pytest.mark.asyncio
+    async def test_runs_add_builtin(self):
+        assert await execute_tool("add", {"a": 1, "b": 2}) == "3"
+
+    @pytest.mark.asyncio
+    async def test_unknown_tool_returns_json_error(self):
+        out = await execute_tool("nonexistent_tool_xyz", {})
+        data = json.loads(out)
+        assert "error" in data
+        assert "nonexistent_tool_xyz" in data["error"]
 
 
 # --- _dedupe_tool_inputs tests ---
@@ -476,13 +499,6 @@ class TestClientToolRoundTrip:
 
 
 class TestRemoteToolRoundTrip:
-    @pytest.fixture(autouse=True)
-    def _skip_tool_simulation_delay(self):
-        with patch(
-            "app.desktop.studio_server.chat_api.asyncio.sleep", new_callable=AsyncMock
-        ):
-            yield
-
     def _make_stream_mock(self, chunks: list[bytes]):
         async def mock_aiter_bytes():
             for chunk in chunks:
@@ -513,7 +529,7 @@ class TestRemoteToolRoundTrip:
         return mock_client, lambda: call_count
 
     def test_continues_after_tool_input_available(self, client, mock_api_key):
-        """First request returns tool-input-available + finish tool-calls; proxy continues with canned result."""
+        """First request returns tool-input-available + finish tool-calls; proxy runs the built-in tool and continues."""
         first_chunks = [
             b'data: {"type":"text-delta","delta":"Let me compute that"}\n\n',
             b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"multiply","input":{"a":2,"b":8}}\n\n',
@@ -562,7 +578,7 @@ class TestRemoteToolRoundTrip:
         tool_msg = messages[2]
         assert tool_msg["role"] == "tool"
         assert tool_msg["tool_call_id"] == "tc1"
-        assert tool_msg["content"] == _CANNED_TOOL_RESULT
+        assert tool_msg["content"] == "16"
 
     def test_openai_tool_continuation_omits_user_when_trace_in_stream(
         self, client, mock_api_key
@@ -623,7 +639,7 @@ class TestRemoteToolRoundTrip:
         content = response.content
         assert b"tool-output-available" in content
         assert b"tc1" in content
-        assert _CANNED_TOOL_RESULT.encode() in content
+        assert b'"output": "3"' in content
 
     def test_multiple_tool_calls_in_one_round(self, client, mock_api_key):
         """All tools in a single round are handled and forwarded as continuation."""
@@ -654,7 +670,9 @@ class TestRemoteToolRoundTrip:
         assert len(messages) == 4
         assert len(messages[1]["tool_calls"]) == 2
         assert messages[2]["role"] == "tool"
+        assert messages[2]["content"] == "3"
         assert messages[3]["role"] == "tool"
+        assert messages[3]["content"] == "12"
 
     def test_no_continuation_when_finish_not_tool_calls(self, client, mock_api_key):
         """When finish reason is not tool-calls, only one upstream request is made."""

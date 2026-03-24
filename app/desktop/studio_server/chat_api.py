@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 from typing import Any
@@ -12,6 +11,8 @@ from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from kiln_ai.datamodel import Project, TaskRun
+from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
+from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 
 logger = logging.getLogger(__name__)
@@ -19,19 +20,29 @@ logger = logging.getLogger(__name__)
 _CHAT_TIMEOUT = httpx.Timeout(timeout=300.0, connect=30.0)
 _MAX_CLIENT_TOOL_ROUNDS = 5
 
-# Canned result returned for every server-side (remote) tool call.
-# None means "execute all tools with this constant answer"; a frozenset would
-# restrict which tool names are auto-handled (reserved for future use).
-_REMOTE_TOOL_AUTO_EXECUTE: frozenset[str] | None = None
-_CANNED_TOOL_RESULT = "The result is 58"
-_TOOL_SIMULATION_DELAY_SEC = 5.0
+_BUILTIN_FUNCTION_NAME_TO_TOOL_ID: dict[str, str] = {
+    "call_kiln_api": KilnBuiltInToolId.CALL_KILN_API.value,
+}
 
 
 async def execute_tool(tool_name: str, args: dict[str, Any]) -> str:
-    """Simulate remote tool execution (delay + canned result) for UX testing."""
-    await asyncio.sleep(_TOOL_SIMULATION_DELAY_SEC)
-    _ = tool_name, args
-    return _CANNED_TOOL_RESULT
+    """Run a Kiln built-in tool by OpenAI function name; return its output string."""
+    logger.info(
+        "Executing server tool %s with args: %s",
+        tool_name,
+        json.dumps(args, default=str),
+    )
+    tool_id = _BUILTIN_FUNCTION_NAME_TO_TOOL_ID.get(tool_name)
+    if tool_id is None:
+        logger.warning("No local executor for server tool name: %s", tool_name)
+        return json.dumps({"error": f"Unknown server tool: {tool_name}"})
+    try:
+        tool = tool_from_id(tool_id)
+        result = await tool.run(**args)
+        return result.output
+    except Exception as e:
+        logger.exception("Built-in tool %s failed", tool_name)
+        return json.dumps({"error": str(e)})
 
 
 def _build_upstream_headers(api_key: str) -> dict[str, str]:
@@ -277,18 +288,23 @@ def connect_chat_api(app: FastAPI) -> None:
                 # AI SDK server-side tool round: the model stopped to call remote tools
                 if upstream_finish_tool_calls and tool_input_events_this_round:
                     deduped = _dedupe_tool_inputs(tool_input_events_this_round)
+                    tool_results_by_call_id: dict[str, str] = {}
                     for event in deduped:
                         tc_id = event.get("toolCallId", "")
                         tool_name = event.get("toolName", "")
                         raw_input = event.get("input", {})
                         tool_args = raw_input if isinstance(raw_input, dict) else {}
                         logger.info(
-                            f"Simulating remote tool: {tool_name} (call_id={tc_id})"
+                            f"Executing server tool: {tool_name} (call_id={tc_id})"
                         )
                         tool_result = await execute_tool(tool_name, tool_args)
+                        tool_results_by_call_id[tc_id] = tool_result
                         yield f"data: {json.dumps({'type': 'tool-output-available', 'toolCallId': tc_id, 'output': tool_result})}\n\n".encode()
                     current_body = _build_openai_tool_continuation(
-                        current_body, assistant_text_this_round, deduped
+                        current_body,
+                        assistant_text_this_round,
+                        deduped,
+                        tool_results_by_call_id,
                     )
                     continue
 
@@ -304,13 +320,14 @@ def _build_openai_tool_continuation(
     original_body: dict[str, Any],
     assistant_text: str,
     tool_input_events: list[dict[str, Any]],
+    tool_results_by_call_id: dict[str, str],
 ) -> dict[str, Any]:
     """Build the request body for continuing after server-side AI SDK tool calls.
 
     Appends an ``assistant`` message with ``tool_calls`` followed by one
-    ``role: tool`` message per call (each carrying the canned result), matching
-    the OpenAI message schema the backend's ``convert_to_openai_messages``
-    expects.
+    ``role: tool`` message per call (each carrying the matching execution
+    result from *tool_results_by_call_id*), matching the OpenAI message schema
+    the backend's ``convert_to_openai_messages`` expects.
     """
     tool_calls: list[dict[str, Any]] = []
     tool_messages: list[dict[str, Any]] = []
@@ -320,6 +337,7 @@ def _build_openai_tool_continuation(
         tool_name = event.get("toolName", "")
         inp = event.get("input", {})
         arg_str = inp if isinstance(inp, str) else json.dumps(inp)
+        tool_content = tool_results_by_call_id.get(tc_id, "")
 
         tool_calls.append(
             {
@@ -335,7 +353,7 @@ def _build_openai_tool_continuation(
             {
                 "role": "tool",
                 "tool_call_id": tc_id,
-                "content": _CANNED_TOOL_RESULT,
+                "content": tool_content,
             }
         )
 
