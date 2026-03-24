@@ -38,7 +38,7 @@ class SkillTool(KilnToolInterface):
             "may help solve the user's task. Calling the tool with a skill name loads that skill's "
             "full instructions. If the skill references additional files "
             "relevant to the task, load them by passing a 'resource' path "
-            "(e.g. 'references/filename.md')."
+            "(e.g. 'references/filename.md' or 'references/subdir/filename.md')."
         )
 
     async def toolcall_definition(self) -> ToolCallDefinition:
@@ -56,7 +56,7 @@ class SkillTool(KilnToolInterface):
                         },
                         "resource": {
                             "type": "string",
-                            "description": "Optional. Path to a specific resource file within the skill (e.g. 'references/REFERENCE.md'). If omitted, returns the skill's main instructions.",
+                            "description": "Optional. Path to a specific resource file within the skill (e.g. 'references/REFERENCE.md' or 'references/subdir/file.md'). If omitted, returns the skill's main instructions.",
                         },
                     },
                     "required": ["name"],
@@ -107,10 +107,10 @@ class SkillTool(KilnToolInterface):
                 output="Error: Resource path must include a filename after the directory prefix."
             )
 
-        _, filename = parts
+        _, relative_path = parts
 
         try:
-            content = skill.read_reference(filename)
+            content = skill.read_reference(relative_path)
             return ToolCallResult(output=content)
         except FileNotFoundError:
             return ToolCallResult(output=f"Error: Resource not found: {resource}")

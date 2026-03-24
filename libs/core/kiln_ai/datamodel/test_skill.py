@@ -7,7 +7,7 @@ from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.skill import (
     Skill,
     _parse_skill_md_body,
-    _validate_filename,
+    _validate_reference_path,
 )
 
 
@@ -346,30 +346,39 @@ def test_round_trip_description_with_dashes(mock_project):
 # -- Filename validation tests --
 
 
-class TestValidateFilename:
+class TestValidateReferencePath:
     @pytest.mark.parametrize(
-        "filename",
+        "path",
         [
             "../etc/passwd",
             "foo/../bar",
             "..",
             ".",
-            "sub/dir.md",
             "back\\slash.md",
             "",
             "   ",
+            "a//b.md",
+            "/leading-slash.md",
         ],
     )
-    def test_invalid_filenames(self, filename):
+    def test_invalid_paths(self, path):
         with pytest.raises(ValueError):
-            _validate_filename(filename)
+            _validate_reference_path(path)
 
     @pytest.mark.parametrize(
-        "filename",
-        ["REFERENCE.md", "finance.md", "schema.json", "diagram.png", "a"],
+        "path",
+        [
+            "REFERENCE.md",
+            "finance.md",
+            "schema.json",
+            "diagram.png",
+            "a",
+            "sub/dir.md",
+            "deeply/nested/path/file.md",
+        ],
     )
-    def test_valid_filenames(self, filename):
-        _validate_filename(filename)
+    def test_valid_paths(self, path):
+        _validate_reference_path(path)
 
 
 # -- References tests --
@@ -391,11 +400,25 @@ class TestReferences:
         with pytest.raises(FileNotFoundError, match="Reference file not found"):
             skill.read_reference("missing.md")
 
-    @pytest.mark.parametrize("filename", ["../etc/passwd", "sub/dir.md", ".."])
-    def test_reference_path_traversal(self, mock_project, filename):
+    @pytest.mark.parametrize("path", ["../etc/passwd", "..", "foo/../bar.md"])
+    def test_reference_path_traversal(self, mock_project, path):
         skill = save_skill_with_body(mock_project)
         with pytest.raises(ValueError):
-            skill.read_reference(filename)
+            skill.read_reference(path)
+
+    def test_read_reference_in_subdirectory(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        sub_dir = skill.references_dir() / "guides"
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        (sub_dir / "style.md").write_text("# Style Guide", encoding="utf-8")
+        assert skill.read_reference("guides/style.md") == "# Style Guide"
+
+    def test_read_reference_in_deeply_nested_subdirectory(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        nested_dir = skill.references_dir() / "a" / "b" / "c"
+        nested_dir.mkdir(parents=True, exist_ok=True)
+        (nested_dir / "deep.md").write_text("Deep content", encoding="utf-8")
+        assert skill.read_reference("a/b/c/deep.md") == "Deep content"
 
     def test_references_dir_requires_saved_skill(self):
         skill = make_skill()

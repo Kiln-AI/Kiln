@@ -150,6 +150,17 @@ class TestSkillToolResource:
         )
         assert result.output == "# Guide\nReference content."
 
+    async def test_load_reference_in_subdirectory(
+        self, sample_skills: list[Skill], skill_tool: SkillTool
+    ):
+        sub_dir = sample_skills[0].references_dir() / "guides"
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        (sub_dir / "style.md").write_text("# Style Guide", encoding="utf-8")
+        result = await skill_tool.run(
+            name="code-review", resource="references/guides/style.md"
+        )
+        assert result.output == "# Style Guide"
+
     async def test_invalid_prefix(self, skill_tool: SkillTool):
         result = await skill_tool.run(name="code-review", resource="secrets/key.txt")
         assert "Error" in result.output

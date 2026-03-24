@@ -71,19 +71,21 @@ class Skill(KilnParentedModel):
             )
         return self.path.parent / "references"
 
-    def read_reference(self, filename: str) -> str:
+    def read_reference(self, relative_path: str) -> str:
         """Read a reference file's content. Raises ValueError if path traversal, FileNotFoundError if missing."""
-        path = self._validated_reference_path(filename)
+        path = self._validated_reference_path(relative_path)
         try:
             return path.read_text(encoding="utf-8")
         except FileNotFoundError:
-            raise FileNotFoundError(f"Reference file not found: {filename}") from None
+            raise FileNotFoundError(
+                f"Reference file not found: {relative_path}"
+            ) from None
 
-    def _validated_reference_path(self, filename: str) -> Path:
-        _validate_filename(filename)
-        if not filename.endswith(".md"):
+    def _validated_reference_path(self, relative_path: str) -> Path:
+        _validate_reference_path(relative_path)
+        if not relative_path.endswith(".md"):
             raise ValueError("Reference files must have a .md extension")
-        return self.references_dir() / filename
+        return self.references_dir() / relative_path
 
     def save_skill_md(self, body: str) -> None:
         """Write SKILL.md with YAML frontmatter (name, description) + markdown body.
@@ -103,14 +105,17 @@ class Skill(KilnParentedModel):
         self.references_dir().mkdir(exist_ok=True)
 
 
-def _validate_filename(filename: str) -> None:
-    """Reject filenames that are empty, contain path separators, or are traversal components."""
-    if not filename or not filename.strip():
-        raise ValueError("Filename cannot be empty")
-    if "/" in filename or "\\" in filename:
-        raise ValueError("Filename must not contain path separators")
-    if filename == "." or filename == "..":
-        raise ValueError("Filename must not be a path traversal component")
+def _validate_reference_path(relative_path: str) -> None:
+    """Reject paths that are empty, use backslashes, or contain traversal components."""
+    if not relative_path or not relative_path.strip():
+        raise ValueError("Path cannot be empty")
+    if "\\" in relative_path:
+        raise ValueError("Path must not contain backslash separators")
+    for segment in relative_path.split("/"):
+        if not segment or not segment.strip():
+            raise ValueError("Path must not contain empty segments")
+        if segment == "." or segment == "..":
+            raise ValueError("Path must not contain traversal components")
 
 
 def _parse_skill_md_body(raw: str) -> str:
