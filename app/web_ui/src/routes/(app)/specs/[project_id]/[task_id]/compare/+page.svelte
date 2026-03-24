@@ -37,6 +37,7 @@
   import { prompt_link } from "$lib/utils/link_builder"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
+  import RunEval from "$lib/components/run_eval.svelte"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -519,6 +520,21 @@
     )
   }
 
+  function getModelDefaultEvalConfigID(
+    modelKey: string | null,
+    evalID: string | null,
+  ): string | null | undefined {
+    if (evalID === "kiln_cost_section") return null
+    if (!modelKey || !eval_scores_cache[modelKey]) return null
+
+    const evalScores = eval_scores_cache[modelKey]
+    const evalResult = evalScores.eval_results.find((e) => e.eval_id === evalID)
+
+    if (!evalResult) return null
+
+    return evalResult.eval_config_result?.eval_config_id
+  }
+
   function getPercentageDifference(
     baseValue: string,
     compareValue: string,
@@ -841,22 +857,53 @@
                                 <div class="text-warning text-sm font-medium">
                                   Eval Incomplete
                                 </div>
-                                <div class="text-xs text-gray-500 mb-2">
-                                  Run eval to see scores
-                                </div>
-                                {#if section.spec_id}
-                                  <button
-                                    class="btn btn-xs"
-                                    on:click={() =>
-                                      navigateToEvalPage(
-                                        section.spec_id,
+                                <div class="text-left">
+                                  {#if getModelDefaultEvalConfigID(selectedModels[i], section.eval_id)}
+                                    <RunEval
+                                      eval_id={section.eval_id}
+                                      run_config_ids={[
+                                        getSelectedRunConfig(selectedModels[i])
+                                          ?.id || "",
+                                      ]}
+                                      {project_id}
+                                      {task_id}
+                                      current_eval_config_id={getModelDefaultEvalConfigID(
+                                        selectedModels[i],
                                         section.eval_id,
-                                        eval_templates_cache[section.eval_id],
                                       )}
-                                  >
-                                    Go to Eval
-                                  </button>
-                                {/if}
+                                      eval_type="run_config"
+                                      btn_size="xs"
+                                      btn_primary={false}
+                                      on_run_complete={() => {
+                                        const runConfigId = selectedModels[i]
+                                        if (runConfigId) {
+                                          delete eval_scores_cache[runConfigId]
+                                          delete eval_scores_errors[runConfigId]
+                                          fetch_eval_scores(runConfigId)
+                                        }
+                                      }}
+                                    />
+                                  {:else}
+                                    <div class="text-xs text-gray-500">
+                                      Select a default judge to run evals
+                                    </div>
+                                    {#if section.spec_id}
+                                      <button
+                                        class="btn btn-xs mt-1"
+                                        on:click={() =>
+                                          navigateToEvalPage(
+                                            section.spec_id,
+                                            section.eval_id,
+                                            eval_templates_cache[
+                                              section.eval_id
+                                            ],
+                                          )}
+                                      >
+                                        Select Judge
+                                      </button>
+                                    {/if}
+                                  {/if}
+                                </div>
                               </div>
                             {/if}
                           </div>
