@@ -43,7 +43,7 @@ dependencies = [
     "llama-index-vector-stores-lancedb>=0.4.2",
     "mcp[cli]>=1.10.1",
     "typer>=0.9.0",
-    "litellm>=1.81.16",
+    "litellm>=1.81.16,<1.82.7",
 ]
 
 [project.scripts]
