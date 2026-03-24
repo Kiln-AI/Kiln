@@ -26,6 +26,7 @@ class KilnBuiltInToolId(str, Enum):
     SUBTRACT_NUMBERS = "kiln_tool::subtract_numbers"
     MULTIPLY_NUMBERS = "kiln_tool::multiply_numbers"
     DIVIDE_NUMBERS = "kiln_tool::divide_numbers"
+    CALL_KILN_API = "kiln_tool::call_kiln_api"
 
 
 MCP_REMOTE_TOOL_ID_PREFIX = "mcp::remote::"

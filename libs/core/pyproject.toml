@@ -24,6 +24,7 @@ dependencies = [
     "exceptiongroup>=1.0.0; python_version<'3.11'",
     "google-cloud-aiplatform>=1.84.0",
     "google-genai>=1.21.1",
+    "jq>=1.8.0",
     "jsonschema>=4.23.0",
     "lancedb>=0.24.2",
     "openai>=1.53.0",
@@ -56,6 +57,7 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "pytest>=8.3.3",
     "python-dotenv>=1.0.1",
+    "respx>=0.22.0",
     "ruff>=0.9.0",
 ]
 

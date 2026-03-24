@@ -1158,6 +1158,7 @@ class TestClassifyToolId:
         [
             (KilnBuiltInToolId.ADD_NUMBERS.value, "builtin"),
             (KilnBuiltInToolId.SUBTRACT_NUMBERS.value, "builtin"),
+            (KilnBuiltInToolId.CALL_KILN_API.value, "builtin"),
             (f"{KILN_TASK_TOOL_ID_PREFIX}some_server_id", "kiln_task"),
             (f"{MCP_REMOTE_TOOL_ID_PREFIX}server_id::tool_name", "mcp_remote"),
             (f"{MCP_LOCAL_TOOL_ID_PREFIX}server_id::tool_name", "mcp_local"),

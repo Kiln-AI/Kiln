@@ -177,6 +177,10 @@ class Config:
                 env_var="ENABLE_DEMO_TOOLS",
                 default=False,
             ),
+            "kiln_local_api_base_url": ConfigProperty(
+                str,
+                env_var="KILN_LOCAL_API_BASE_URL",
+            ),
             # Allow the user to set the path to lookup MCP server commands, like npx.
             "custom_mcp_path": ConfigProperty(
                 str,

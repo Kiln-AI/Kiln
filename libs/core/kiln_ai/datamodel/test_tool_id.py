@@ -23,12 +23,14 @@ class TestKilnBuiltInToolId:
         assert KilnBuiltInToolId.SUBTRACT_NUMBERS == "kiln_tool::subtract_numbers"
         assert KilnBuiltInToolId.MULTIPLY_NUMBERS == "kiln_tool::multiply_numbers"
         assert KilnBuiltInToolId.DIVIDE_NUMBERS == "kiln_tool::divide_numbers"
+        assert KilnBuiltInToolId.CALL_KILN_API == "kiln_tool::call_kiln_api"
         for enum_value in KilnBuiltInToolId.__members__.values():
             assert _check_tool_id(enum_value) == enum_value
 
     def test_enum_membership(self):
         """Test enum membership checks."""
         assert "kiln_tool::add_numbers" in KilnBuiltInToolId.__members__.values()
+        assert "kiln_tool::call_kiln_api" in KilnBuiltInToolId.__members__.values()
         assert "invalid_tool" not in KilnBuiltInToolId.__members__.values()
 
 

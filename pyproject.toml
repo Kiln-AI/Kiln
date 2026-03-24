@@ -18,6 +18,7 @@ dev = [
     "isort>=5.13.2",
     "pytest-asyncio>=0.24.0",
     "pytest>=8.3.3",
+    "respx>=0.22.0",
     "pytest-xdist>=3.5",
     "python-dotenv>=1.0.1",
     "ruff>=0.15.0",

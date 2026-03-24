@@ -12,6 +12,7 @@ from kiln_ai.datamodel.tool_id import (
     rag_config_id_from_id,
 )
 from kiln_ai.tools.base_tool import KilnToolInterface, ToolCallDefinition
+from kiln_ai.tools.built_in_tools.kiln_api_call_tool import KilnApiCallTool
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
     DivideTool,
@@ -39,6 +40,8 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
                 return MultiplyTool()
             case KilnBuiltInToolId.DIVIDE_NUMBERS:
                 return DivideTool()
+            case KilnBuiltInToolId.CALL_KILN_API:
+                return KilnApiCallTool()
             case _:
                 raise_exhaustive_enum_error(typed_tool_id)
 
