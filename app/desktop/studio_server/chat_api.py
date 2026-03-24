@@ -339,16 +339,16 @@ def _build_openai_tool_continuation(
         arg_str = inp if isinstance(inp, str) else json.dumps(inp)
         tool_content = tool_results_by_call_id.get(tc_id, "")
 
-        tool_calls.append(
-            {
-                "id": tc_id,
-                "type": "function",
-                "function": {
-                    "name": tool_name,
-                    "arguments": arg_str,
-                },
-            }
-        )
+        # tool_calls.append(
+        #     {
+        #         "id": tc_id,
+        #         "type": "function",
+        #         "function": {
+        #             "name": tool_name,
+        #             "arguments": arg_str,
+        #         },
+        #     }
+        # )
         tool_messages.append(
             {
                 "role": "tool",

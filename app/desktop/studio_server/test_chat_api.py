@@ -382,6 +382,23 @@ class TestBuildOpenAIToolContinuation:
         assert result["task_id"] == "t1"
         assert result["session_id"] == "s1"
 
+    def test_trace_id_with_empty_messages_sends_only_tool_results(self):
+        original = {
+            "trace_id": "tr-1",
+            "messages": [],
+        }
+        events = [self._event("tc1", "call_kiln_api", {"method": "GET"})]
+        result = _build_openai_tool_continuation(
+            original, "ignored assistant text", events, {"tc1": '{"ok": true}'}
+        )
+        assert result["messages"] == [
+            {
+                "role": "tool",
+                "tool_call_id": "tc1",
+                "content": '{"ok": true}',
+            }
+        ]
+
 
 class TestExecuteTool:
     @pytest.mark.asyncio
@@ -583,7 +600,7 @@ class TestRemoteToolRoundTrip:
     def test_openai_tool_continuation_omits_user_when_trace_in_stream(
         self, client, mock_api_key
     ):
-        """After kiln_chat_trace, the persisted trace already has the user turn; do not resend it."""
+        """After kiln_chat_trace, the persisted trace already has user + assistant(tool_calls); send only tool results."""
         trace_tid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         first_chunks = [
             b'data: {"type":"text-delta","delta":"Let me compute that"}\n\n',
@@ -615,9 +632,10 @@ class TestRemoteToolRoundTrip:
         )
         messages = continuation_body["messages"]
         roles = [m["role"] for m in messages]
-        assert roles == ["assistant", "tool"]
+        assert roles == ["tool"]
         assert continuation_body["trace_id"] == trace_tid
-        assert messages[0]["tool_calls"][0]["id"] == "tc1"
+        assert messages[0]["tool_call_id"] == "tc1"
+        assert messages[0]["content"] == "16"
 
     def test_emits_tool_output_available_to_ui(self, client, mock_api_key):
         """Proxy should emit tool-output-available SSE so the UI can show the result."""
