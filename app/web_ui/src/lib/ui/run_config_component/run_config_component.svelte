@@ -10,7 +10,6 @@
     run_configs_by_task_composite_id,
     save_new_task_run_config,
   } from "$lib/stores/run_configs_store"
-  import { createKilnError } from "$lib/utils/error_handlers"
   import { KilnError } from "$lib/utils/error_handlers"
   import type {
     RunConfigProperties,

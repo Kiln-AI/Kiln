@@ -67,7 +67,7 @@
     submitting = true
     try {
       save_config_error = null
-      const saved_config = await run_config_component?.save_new_run_config()
+      await run_config_component?.save_new_run_config()
       goto(`/optimize/${project_id}/${task_id}`)
     } catch (e) {
       save_config_error = createKilnError(e)
