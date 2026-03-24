@@ -152,12 +152,12 @@
   </div>
   <div class="flex flex-col gap-6">
     <div class="rounded-lg border">
-      <table class="table">
+      <table class="table table-fixed">
         <thead>
           <tr>
-            <th class="w-2/5">Input</th>
-            <th class="w-2/5">Output</th>
-            <th class="whitespace-nowrap">
+            <th style="max-width: 2/5">Input</th>
+            <th style="max-width: 2/5">Output</th>
+            <th class="whitespace-nowrap" style="width: 140px">
               <div class="flex flex-row items-center gap-2">
                 <span>Meets Spec</span>
                 <span class="font-normal">
@@ -168,7 +168,8 @@
                 </span>
               </div>
             </th>
-            <th class="whitespace-nowrap">Judge Correct</th>
+            <th class="whitespace-nowrap" style="width: 140px">Judge Correct</th
+            >
           </tr>
         </thead>
         <tbody>
@@ -180,20 +181,22 @@
                 {#if input_content.isJson}
                   <!-- eslint-disable svelte/no-at-html-tags -->
                   <pre
-                    class="whitespace-pre-wrap">{@html input_content.value}</pre>
+                    class="whitespace-pre-wrap break-words">{@html input_content.value}</pre>
                   <!-- eslint-enable svelte/no-at-html-tags -->
                 {:else}
-                  <pre class="whitespace-pre-wrap">{input_content.value}</pre>
+                  <pre
+                    class="whitespace-pre-wrap break-words">{input_content.value}</pre>
                 {/if}
               </td>
               <td class="py-2">
                 {#if output_content.isJson}
                   <!-- eslint-disable svelte/no-at-html-tags -->
                   <pre
-                    class="whitespace-pre-wrap">{@html output_content.value}</pre>
+                    class="whitespace-pre-wrap break-words">{@html output_content.value}</pre>
                   <!-- eslint-enable svelte/no-at-html-tags -->
                 {:else}
-                  <pre class="whitespace-pre-wrap">{output_content.value}</pre>
+                  <pre
+                    class="whitespace-pre-wrap break-words">{output_content.value}</pre>
                 {/if}
               </td>
               <td class="py-2">
@@ -221,7 +224,7 @@
                   <div class="flex items-center gap-1 justify-center">
                     {#if is_row_aligned(row)}
                       <div
-                        class="text-success w-5 h-5 tooltip tooltip-left"
+                        class="text-success w-5 h-5 tooltip tooltip-top"
                         data-tip="Our automated judge got this right!"
                       >
                         <CheckCircleIcon />
