@@ -2717,6 +2717,12 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 require_openrouter_reasoning=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="nemotron-3-super",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+            ),
         ],
     ),
     # Nemotron 3 Nano
