@@ -215,7 +215,7 @@ If it fails, fix the slug/config before proceeding. Use `--collect-only` to find
 ### 4c. Full test suite
 
 ```bash
-uv run pytest --runpaid --ollama -k "MODEL_ENUM" -v
+uv run pytest --runpaid --ollama -k "MODEL_ENUM" -v 2>&1 | grep -E "PASSED|FAILED|ERROR|short test|=====|collected"
 ```
 
 **If tests fail — debug one at a time:**
