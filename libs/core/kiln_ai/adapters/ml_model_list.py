@@ -43,6 +43,7 @@ class ModelFamily(str, Enum):
     bytedance = "bytedance"
     stepfun = "stepfun"
     mimo = "mimo"
+    nemotron = "nemotron"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -2706,7 +2707,7 @@ built_in_models: List[KilnModel] = [
     ),
     # Nemotron 3 Super
     KilnModel(
-        family=ModelFamily.llama,
+        family=ModelFamily.nemotron,
         name=ModelName.nemotron_3_super,
         friendly_name="Nemotron 3 Super",
         providers=[
@@ -2727,7 +2728,7 @@ built_in_models: List[KilnModel] = [
     ),
     # Nemotron 3 Nano
     KilnModel(
-        family=ModelFamily.llama,
+        family=ModelFamily.nemotron,
         name=ModelName.nemotron_3_nano,
         friendly_name="Nemotron 3 Nano",
         providers=[

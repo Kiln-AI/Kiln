@@ -207,7 +207,7 @@ addopts = -n 8
 Run a single test+provider combo first:
 
 ```bash
-uv run pytest --runpaid --ollama -k "test_tools_all_built_in_models[MODEL_ENUM-PROVIDER]"
+uv run pytest --runpaid --ollama -k "test_data_gen_sample_all_models_providers[MODEL_ENUM-PROVIDER]"
 ```
 
 If it fails, fix the slug/config before proceeding. Use `--collect-only` to find exact parameter IDs if unsure.
