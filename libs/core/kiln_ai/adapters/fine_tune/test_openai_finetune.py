@@ -102,7 +102,11 @@ def mock_task():
 
 
 async def test_setup(openai_finetune):
-    if not Config.shared().open_ai_api_key:
+    # "proxy-managed" is fake value used in Docker Sandbox
+    if (
+        not Config.shared().open_ai_api_key
+        or Config.shared().open_ai_api_key == "proxy-managed"
+    ):
         pytest.skip("OpenAI API key not set")
     openai_finetune.provider_id = "openai-123"
     openai_finetune.provider = "openai"
