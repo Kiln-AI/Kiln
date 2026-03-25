@@ -1,0 +1,22 @@
+FROM docker/sandbox-templates:opencode
+
+USER root
+
+# Install system packages
+RUN apt-get update && apt-get install -y python3-tk curl
+
+# Install Node.js 22
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install misspell in /usr/local/bin
+RUN mkdir -p /usr/local/bin
+ENV GOBIN="/usr/local/bin"
+RUN go install github.com/golangci/misspell/cmd/misspell@latest
+
+USER agent
+
+ENV UV_PROJECT_ENVIRONMENT=".venv-sandbox-opencode"
+ENV DOCKER_SANDBOX="true"
+
