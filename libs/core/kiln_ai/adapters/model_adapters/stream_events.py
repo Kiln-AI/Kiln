@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Annotated, Any, Literal, Union
 
 from litellm.types.utils import ModelResponseStream
+from pydantic import BaseModel, ConfigDict, Discriminator
 
 
 class AiSdkEventType(str, Enum):
@@ -39,16 +40,156 @@ class AiSdkEventType(str, Enum):
     FILE = "file"
 
 
-@dataclass
-class AiSdkStreamEvent:
-    type: AiSdkEventType
-    payload: dict[str, Any] = field(default_factory=dict)
+class UsageInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-    def model_dump(self) -> dict[str, Any]:
-        return {
-            "type": self.type.value,
-            **self.payload,
-        }
+    promptTokens: int
+    completionTokens: int
+    totalTokens: int | None = None
+
+
+class FinishMessageMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    finishReason: str | None = None
+    usage: UsageInfo | None = None
+
+
+class StartEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["start"] = "start"
+    messageId: str
+
+
+class FinishEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["finish"] = "finish"
+    messageMetadata: FinishMessageMetadata | None = None
+
+    def model_dump(self, **kwargs: Any) -> dict[str, Any]:
+        kwargs.setdefault("exclude_none", True)
+        return super().model_dump(**kwargs)
+
+
+class StartStepEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["start-step"] = "start-step"
+
+
+class FinishStepEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["finish-step"] = "finish-step"
+
+
+class TextStartEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["text-start"] = "text-start"
+    id: str
+
+
+class TextEndEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["text-end"] = "text-end"
+    id: str
+
+
+class TextDeltaEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["text-delta"] = "text-delta"
+    id: str
+    delta: str
+
+
+class ReasoningStartEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["reasoning-start"] = "reasoning-start"
+    id: str
+
+
+class ReasoningEndEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["reasoning-end"] = "reasoning-end"
+    id: str
+
+
+class ReasoningDeltaEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["reasoning-delta"] = "reasoning-delta"
+    id: str
+    delta: str
+
+
+class ToolInputStartEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["tool-input-start"] = "tool-input-start"
+    toolCallId: str
+    toolName: str
+
+
+class ToolInputDeltaEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["tool-input-delta"] = "tool-input-delta"
+    toolCallId: str
+    inputTextDelta: str
+
+
+class ToolInputAvailableEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["tool-input-available"] = "tool-input-available"
+    toolCallId: str
+    toolName: str
+    input: dict[str, Any]
+
+
+class ToolOutputAvailableEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["tool-output-available"] = "tool-output-available"
+    toolCallId: str
+    output: str | None = None
+
+
+class ToolOutputErrorEvent(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["tool-output-error"] = "tool-output-error"
+    toolCallId: str
+    errorText: str
+
+
+AiSdkStreamEvent = Annotated[
+    Union[
+        StartEvent,
+        FinishEvent,
+        StartStepEvent,
+        FinishStepEvent,
+        TextStartEvent,
+        TextEndEvent,
+        TextDeltaEvent,
+        ReasoningStartEvent,
+        ReasoningEndEvent,
+        ReasoningDeltaEvent,
+        ToolInputStartEvent,
+        ToolInputDeltaEvent,
+        ToolInputAvailableEvent,
+        ToolOutputAvailableEvent,
+        ToolOutputErrorEvent,
+    ],
+    Discriminator("type"),
+]
 
 
 class ToolCallEventType(str, Enum):
@@ -99,63 +240,30 @@ class AiSdkStreamConverter:
                 if not self._reasoning_started:
                     self._reasoning_block_count += 1
                     self._reasoning_id = f"reasoning-{uuid.uuid4().hex[:12]}"
-                    events.append(
-                        AiSdkStreamEvent(
-                            AiSdkEventType.REASONING_START,
-                            {"id": self._reasoning_id},
-                        )
-                    )
+                    events.append(ReasoningStartEvent(id=self._reasoning_id))
                     self._reasoning_started = True
                 events.append(
-                    AiSdkStreamEvent(
-                        AiSdkEventType.REASONING_DELTA,
-                        {"id": self._reasoning_id, "delta": reasoning_content},
-                    )
+                    ReasoningDeltaEvent(id=self._reasoning_id, delta=reasoning_content)
                 )
 
             if delta.content:
                 if self._reasoning_started:
-                    events.append(
-                        AiSdkStreamEvent(
-                            AiSdkEventType.REASONING_END,
-                            {"id": self._reasoning_id},
-                        )
-                    )
+                    events.append(ReasoningEndEvent(id=self._reasoning_id))
                     self._reasoning_started = False
 
                 if not self._text_started:
                     self._text_id = f"text-{uuid.uuid4().hex[:12]}"
-                    events.append(
-                        AiSdkStreamEvent(
-                            AiSdkEventType.TEXT_START,
-                            {"id": self._text_id},
-                        )
-                    )
+                    events.append(TextStartEvent(id=self._text_id))
                     self._text_started = True
-                events.append(
-                    AiSdkStreamEvent(
-                        AiSdkEventType.TEXT_DELTA,
-                        {"id": self._text_id, "delta": delta.content},
-                    )
-                )
+                events.append(TextDeltaEvent(id=self._text_id, delta=delta.content))
 
             if delta.tool_calls:
                 if self._reasoning_started:
-                    events.append(
-                        AiSdkStreamEvent(
-                            AiSdkEventType.REASONING_END,
-                            {"id": self._reasoning_id},
-                        )
-                    )
+                    events.append(ReasoningEndEvent(id=self._reasoning_id))
                     self._reasoning_started = False
 
                 if self._text_started:
-                    events.append(
-                        AiSdkStreamEvent(
-                            AiSdkEventType.TEXT_END,
-                            {"id": self._text_id},
-                        )
-                    )
+                    events.append(TextEndEvent(id=self._text_id))
                     self._text_started = False
 
                 for tc_delta in delta.tool_calls:
@@ -182,24 +290,18 @@ class AiSdkStreamConverter:
 
                     if tc_state["id"] and tc_state["name"] and not tc_state["started"]:
                         events.append(
-                            AiSdkStreamEvent(
-                                AiSdkEventType.TOOL_INPUT_START,
-                                {
-                                    "toolCallId": tc_state["id"],
-                                    "toolName": tc_state["name"],
-                                },
+                            ToolInputStartEvent(
+                                toolCallId=tc_state["id"],
+                                toolName=tc_state["name"],
                             )
                         )
                         tc_state["started"] = True
 
                     if func and func.arguments and tc_state["id"]:
                         events.append(
-                            AiSdkStreamEvent(
-                                AiSdkEventType.TOOL_INPUT_DELTA,
-                                {
-                                    "toolCallId": tc_state["id"],
-                                    "inputTextDelta": func.arguments,
-                                },
+                            ToolInputDeltaEvent(
+                                toolCallId=tc_state["id"],
+                                inputTextDelta=func.arguments,
                             )
                         )
 
@@ -215,33 +317,24 @@ class AiSdkStreamConverter:
 
         if event.event_type == ToolCallEventType.INPUT_AVAILABLE:
             events.append(
-                AiSdkStreamEvent(
-                    AiSdkEventType.TOOL_INPUT_AVAILABLE,
-                    {
-                        "toolCallId": event.tool_call_id,
-                        "toolName": event.tool_name,
-                        "input": event.arguments or {},
-                    },
+                ToolInputAvailableEvent(
+                    toolCallId=event.tool_call_id,
+                    toolName=event.tool_name,
+                    input=event.arguments or {},
                 )
             )
         elif event.event_type == ToolCallEventType.OUTPUT_AVAILABLE:
             events.append(
-                AiSdkStreamEvent(
-                    AiSdkEventType.TOOL_OUTPUT_AVAILABLE,
-                    {
-                        "toolCallId": event.tool_call_id,
-                        "output": event.result,
-                    },
+                ToolOutputAvailableEvent(
+                    toolCallId=event.tool_call_id,
+                    output=event.result,
                 )
             )
         elif event.event_type == ToolCallEventType.OUTPUT_ERROR:
             events.append(
-                AiSdkStreamEvent(
-                    AiSdkEventType.TOOL_OUTPUT_ERROR,
-                    {
-                        "toolCallId": event.tool_call_id,
-                        "errorText": event.error or "Unknown error",
-                    },
+                ToolOutputErrorEvent(
+                    toolCallId=event.tool_call_id,
+                    errorText=event.error or "Unknown error",
                 )
             )
 
@@ -252,21 +345,11 @@ class AiSdkStreamConverter:
         events: list[AiSdkStreamEvent] = []
 
         if self._reasoning_started:
-            events.append(
-                AiSdkStreamEvent(
-                    AiSdkEventType.REASONING_END,
-                    {"id": self._reasoning_id},
-                )
-            )
+            events.append(ReasoningEndEvent(id=self._reasoning_id))
             self._reasoning_started = False
 
         if self._text_started:
-            events.append(
-                AiSdkStreamEvent(
-                    AiSdkEventType.TEXT_END,
-                    {"id": self._text_id},
-                )
-            )
+            events.append(TextEndEvent(id=self._text_id))
             self._text_started = False
 
         return events
@@ -275,29 +358,27 @@ class AiSdkStreamConverter:
         """Emit the terminal FINISH event with usage/finish metadata. Call after FINISH_STEP."""
         events: list[AiSdkStreamEvent] = []
 
-        finish_payload: dict[str, Any] = {}
+        finish_reason: str | None = None
         if self._finish_reason is not None:
-            finish_payload["finishReason"] = self._finish_reason.replace("_", "-")
+            finish_reason = self._finish_reason.replace("_", "-")
 
+        usage_info: UsageInfo | None = None
         if self._usage_data is not None:
-            usage_payload: dict[str, Any] = {
-                "promptTokens": self._usage_data.prompt_tokens,
-                "completionTokens": self._usage_data.completion_tokens,
-            }
             total = getattr(self._usage_data, "total_tokens", None)
-            if total is not None:
-                usage_payload["totalTokens"] = total
-            finish_payload["usage"] = usage_payload
-
-        if finish_payload:
-            events.append(
-                AiSdkStreamEvent(
-                    AiSdkEventType.FINISH,
-                    {"messageMetadata": finish_payload},
-                )
+            usage_info = UsageInfo(
+                promptTokens=self._usage_data.prompt_tokens,
+                completionTokens=self._usage_data.completion_tokens,
+                totalTokens=total,
             )
+
+        if finish_reason is not None or usage_info is not None:
+            meta = FinishMessageMetadata(
+                finishReason=finish_reason,
+                usage=usage_info,
+            )
+            events.append(FinishEvent(messageMetadata=meta))
         else:
-            events.append(AiSdkStreamEvent(AiSdkEventType.FINISH))
+            events.append(FinishEvent())
 
         return events
 

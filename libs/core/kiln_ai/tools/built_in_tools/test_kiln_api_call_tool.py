@@ -80,9 +80,7 @@ class TestHappyPath:
                 return_value=httpx.Response(201, json={"id": "new-project"})
             )
             body = json.dumps({"name": "test-project"})
-            result = await tool.run(
-                method="POST", url_path="/api/projects", body=body
-            )
+            result = await tool.run(method="POST", url_path="/api/projects", body=body)
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 201
             assert route.calls.last.request.content == body.encode()
@@ -119,9 +117,7 @@ class TestJqFilter:
             respx.get("http://test-server:8757/test").mock(
                 return_value=httpx.Response(200, json={"name": "test-value"})
             )
-            result = await tool.run(
-                method="GET", url_path="/test", jq_filter=".name"
-            )
+            result = await tool.run(method="GET", url_path="/test", jq_filter=".name")
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 200
             assert parsed["body"] == '"test-value"'
@@ -130,9 +126,7 @@ class TestJqFilter:
     async def test_jq_filter_extracts_array(self, tool):
         with respx.mock:
             respx.get("http://test-server:8757/test").mock(
-                return_value=httpx.Response(
-                    200, json={"items": [{"id": 1}, {"id": 2}]}
-                )
+                return_value=httpx.Response(200, json={"items": [{"id": 1}, {"id": 2}]})
             )
             result = await tool.run(
                 method="GET", url_path="/test", jq_filter=".items[] | .id"
@@ -147,9 +141,7 @@ class TestJqFilter:
             respx.get("http://test-server:8757/test").mock(
                 return_value=httpx.Response(404, json={"error": "not found"})
             )
-            result = await tool.run(
-                method="GET", url_path="/test", jq_filter=".name"
-            )
+            result = await tool.run(method="GET", url_path="/test", jq_filter=".name")
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 404
             assert "error" in parsed["body"]
@@ -160,9 +152,7 @@ class TestJqFilter:
             respx.get("http://test-server:8757/test").mock(
                 return_value=httpx.Response(500, text="Internal Server Error")
             )
-            result = await tool.run(
-                method="GET", url_path="/test", jq_filter=".name"
-            )
+            result = await tool.run(method="GET", url_path="/test", jq_filter=".name")
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 500
             assert parsed["body"] == "Internal Server Error"
@@ -176,9 +166,7 @@ class TestJqErrors:
                 return_value=httpx.Response(200, json={"name": "test"})
             )
             with pytest.raises(ValueError, match="jq filter error"):
-                await tool.run(
-                    method="GET", url_path="/test", jq_filter=".[invalid"
-                )
+                await tool.run(method="GET", url_path="/test", jq_filter=".[invalid")
 
     @pytest.mark.asyncio
     async def test_jq_runtime_error(self, tool):
@@ -187,9 +175,7 @@ class TestJqErrors:
                 return_value=httpx.Response(200, json={"value": 10})
             )
             with pytest.raises(ValueError, match="jq filter error"):
-                await tool.run(
-                    method="GET", url_path="/test", jq_filter=".value / 0"
-                )
+                await tool.run(method="GET", url_path="/test", jq_filter=".value / 0")
 
     @pytest.mark.asyncio
     async def test_jq_on_non_json_response(self, tool):
@@ -198,9 +184,7 @@ class TestJqErrors:
                 return_value=httpx.Response(200, text="not json")
             )
             with pytest.raises(ValueError, match="Response is not valid JSON"):
-                await tool.run(
-                    method="GET", url_path="/test", jq_filter=".name"
-                )
+                await tool.run(method="GET", url_path="/test", jq_filter=".name")
 
 
 class TestHttpErrors:

@@ -1159,8 +1159,8 @@ class TestStreamMethods:
         assert len(tool_input_starts) == 2, (
             "tool-input-start must fire once per tool-call round"
         )
-        assert tool_input_starts[0].payload["toolCallId"] == "call_r1"
-        assert tool_input_starts[1].payload["toolCallId"] == "call_r2"
+        assert tool_input_starts[0].toolCallId == "call_r1"
+        assert tool_input_starts[1].toolCallId == "call_r2"
 
     @pytest.mark.asyncio
     async def test_openai_stream_exposes_task_run_after_iteration(self, stream_adapter):

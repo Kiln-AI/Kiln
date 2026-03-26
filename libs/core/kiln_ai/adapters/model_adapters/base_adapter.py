@@ -20,9 +20,13 @@ from kiln_ai.adapters.ml_model_list import (
 )
 from kiln_ai.adapters.model_adapters.adapter_stream import AdapterStreamResult
 from kiln_ai.adapters.model_adapters.stream_events import (
-    AiSdkEventType,
     AiSdkStreamConverter,
     AiSdkStreamEvent,
+    FinishEvent,
+    FinishMessageMetadata,
+    FinishStepEvent,
+    StartEvent,
+    StartStepEvent,
     ToolCallEvent,
 )
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
@@ -821,8 +825,8 @@ class AiSdkStreamResult:
             message_id = f"msg-{uuid.uuid4().hex}"
             converter = AiSdkStreamConverter()
 
-            yield AiSdkStreamEvent(AiSdkEventType.START, {"messageId": message_id})
-            yield AiSdkStreamEvent(AiSdkEventType.START_STEP)
+            yield StartEvent(messageId=message_id)
+            yield StartStepEvent()
 
             last_event_was_tool_call = False
             async for event in adapter_stream:
@@ -840,16 +844,15 @@ class AiSdkStreamResult:
             for ai_event in converter.close_open_blocks():
                 yield ai_event
 
-            yield AiSdkStreamEvent(AiSdkEventType.FINISH_STEP)
+            yield FinishStepEvent()
 
             self._task_run = self._adapter._finalize_stream(
                 adapter_stream, self._input, self._input_source, self._parent_task_run
             )
 
             if self._task_run.is_toolcall_pending:
-                yield AiSdkStreamEvent(
-                    AiSdkEventType.FINISH,
-                    {"messageMetadata": {"finishReason": "tool-calls"}},
+                yield FinishEvent(
+                    messageMetadata=FinishMessageMetadata(finishReason="tool-calls"),
                 )
             else:
                 for ai_event in converter.finalize():

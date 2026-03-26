@@ -7,6 +7,7 @@ requires-python = ">=3.10"
 
 dependencies = [
     "certifi>=2024.8.30",
+    "jq>=1.11.0",
     "kiln-ai==0.5.3",
     "kiln-server",
     "kiln-studio-desktop",
@@ -45,6 +46,9 @@ exclude = [".worktrees"]
 
 [tool.ty.src]
 exclude = [".worktrees", "**/test_*.py", "app/desktop/build/**", "app/web_ui/**", "**/.venv", "**/kiln_ai_server_client/**"]
+
+[tool.ty.environment]
+extra-paths = ["./typings"]
 
 [tool.ty.rules]
 invalid-key = "ignore"

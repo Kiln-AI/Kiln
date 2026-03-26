@@ -17,6 +17,7 @@ from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.adapters.model_adapters.stream_events import (
     AiSdkEventType,
     AiSdkStreamEvent,
+    FinishEvent,
 )
 from kiln_ai.adapters.model_adapters.test_adapter_stream import (
     FakeStreamingCompletion,
@@ -61,8 +62,6 @@ def _serialize_for_dump(obj: Any) -> Any:
         if not obj:
             return []
         first = obj[0]
-        if hasattr(first, "type") and hasattr(first, "payload"):
-            return [{"type": e.type.value, "payload": e.payload} for e in obj]
         if hasattr(first, "model_dump"):
             return [item.model_dump(mode="json") for item in obj]
         return [_serialize_for_dump(x) for x in obj]
@@ -246,7 +245,7 @@ async def test_invoke_ai_sdk_stream(
     events: list[AiSdkStreamEvent] = []
     async for event in adapter.invoke_ai_sdk_stream(input="123 + 321 = ?"):
         events.append(event)
-        logger.info(f"AI SDK event: {event.type.value} {event.payload}")
+        logger.info(f"AI SDK event: {event.type} {event.model_dump()}")
 
     _dump_paid_test_output(request, events=events)
     assert len(events) > 0, "No events collected"
@@ -283,11 +282,7 @@ async def test_invoke_ai_sdk_stream(
         "Should have TOOL_OUTPUT_AVAILABLE"
     )
 
-    text_deltas = [
-        e.payload.get("delta", "")
-        for e in events
-        if e.type == AiSdkEventType.TEXT_DELTA
-    ]
+    text_deltas = [e.delta for e in events if e.type == AiSdkEventType.TEXT_DELTA]
     full_text = "".join(text_deltas)
     assert len(full_text) > 0, "Text content is empty"
 
@@ -297,7 +292,7 @@ async def test_invoke_ai_sdk_stream(
     assert len(tool_input_available) >= 1, (
         "Should have at least one tool-input-available"
     )
-    tool_input = tool_input_available[0].payload.get("input", {})
+    tool_input = tool_input_available[0].input
     assert "a" in tool_input and "b" in tool_input, (
         f"Tool input should have a and b keys: {tool_input}"
     )
@@ -308,9 +303,7 @@ async def test_invoke_ai_sdk_stream(
     assert len(tool_output_available) >= 1, (
         "Should have at least one tool-output-available"
     )
-    assert tool_output_available[0].payload.get("output") is not None, (
-        "Tool output should not be None"
-    )
+    assert tool_output_available[0].output is not None, "Tool output should not be None"
 
 
 @pytest.mark.paid
@@ -347,7 +340,7 @@ async def test_ai_sdk_stream_text_ends_before_tool_calls(
                 "text-start emitted while a text block was already open"
             )
             text_open = True
-            text_ids_seen.append(event.payload["id"])
+            text_ids_seen.append(event.id)
 
         elif event.type == AiSdkEventType.TEXT_END:
             assert text_open, "text-end emitted without a preceding text-start"
@@ -355,7 +348,7 @@ async def test_ai_sdk_stream_text_ends_before_tool_calls(
 
         elif event.type == AiSdkEventType.TEXT_DELTA:
             assert text_open, (
-                f"text-delta emitted outside an open text block: {event.payload}"
+                f"text-delta emitted outside an open text block: {event.model_dump()}"
             )
 
         elif event.type == AiSdkEventType.TOOL_INPUT_START:
@@ -595,8 +588,10 @@ async def test_ai_sdk_stream_with_return_on_tool_call_and_resume(
 
     finish_events_1 = [e for e in events_1 if e.type == AiSdkEventType.FINISH]
     assert len(finish_events_1) == 1, "Should have exactly one FINISH event"
+    finish_1 = finish_events_1[0]
+    assert isinstance(finish_1, FinishEvent)
     finish_reason_1 = (
-        finish_events_1[0].payload.get("messageMetadata", {}).get("finishReason")
+        finish_1.messageMetadata.finishReason if finish_1.messageMetadata else None
     )
     assert finish_reason_1 == "tool-calls", (
         f"Expected finishReason 'tool-calls', got {finish_reason_1!r}"
@@ -628,8 +623,10 @@ async def test_ai_sdk_stream_with_return_on_tool_call_and_resume(
     assert len(finish_events_2) == 1, (
         "Should have exactly one FINISH event in second stream"
     )
+    finish_2 = finish_events_2[0]
+    assert isinstance(finish_2, FinishEvent)
     finish_reason_2 = (
-        finish_events_2[0].payload.get("messageMetadata", {}).get("finishReason")
+        finish_2.messageMetadata.finishReason if finish_2.messageMetadata else None
     )
     assert finish_reason_2 == "stop", (
         f"Expected finishReason 'stop', got {finish_reason_2!r}"
@@ -833,10 +830,10 @@ async def test_mocked_ai_sdk_stream_return_on_tool_call_and_resume(task: Task):
 
     finish_events_1 = [e for e in events_1 if e.type == AiSdkEventType.FINISH]
     assert len(finish_events_1) == 1
-    assert (
-        finish_events_1[0].payload.get("messageMetadata", {}).get("finishReason")
-        == "tool-calls"
-    )
+    fe1 = finish_events_1[0]
+    assert isinstance(fe1, FinishEvent)
+    assert fe1.messageMetadata is not None
+    assert fe1.messageMetadata.finishReason == "tool-calls"
 
     task_run_1 = first_stream.task_run
     assert task_run_1.is_toolcall_pending
@@ -859,10 +856,10 @@ async def test_mocked_ai_sdk_stream_return_on_tool_call_and_resume(task: Task):
 
     finish_events_2 = [e for e in events_2 if e.type == AiSdkEventType.FINISH]
     assert len(finish_events_2) == 1
-    assert (
-        finish_events_2[0].payload.get("messageMetadata", {}).get("finishReason")
-        == "stop"
-    )
+    fe2 = finish_events_2[0]
+    assert isinstance(fe2, FinishEvent)
+    assert fe2.messageMetadata is not None
+    assert fe2.messageMetadata.finishReason == "stop"
 
     task_run_2 = second_stream.task_run
     assert not task_run_2.is_toolcall_pending

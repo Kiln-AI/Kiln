@@ -21,6 +21,10 @@ _CHAT_TIMEOUT = httpx.Timeout(timeout=300.0, connect=30.0)
 _MAX_CLIENT_TOOL_ROUNDS = 5
 
 _BUILTIN_FUNCTION_NAME_TO_TOOL_ID: dict[str, str] = {
+    "add": KilnBuiltInToolId.ADD_NUMBERS.value,
+    "subtract": KilnBuiltInToolId.SUBTRACT_NUMBERS.value,
+    "multiply": KilnBuiltInToolId.MULTIPLY_NUMBERS.value,
+    "divide": KilnBuiltInToolId.DIVIDE_NUMBERS.value,
     "call_kiln_api": KilnBuiltInToolId.CALL_KILN_API.value,
 }
 
@@ -329,7 +333,6 @@ def _build_openai_tool_continuation(
     result from *tool_results_by_call_id*), matching the OpenAI message schema
     the backend's ``convert_to_openai_messages`` expects.
     """
-    tool_calls: list[dict[str, Any]] = []
     tool_messages: list[dict[str, Any]] = []
 
     for event in tool_input_events:
@@ -343,24 +346,47 @@ def _build_openai_tool_continuation(
             }
         )
 
-    messages = list(original_body.get("messages", []))
-    # assistant_content = assistant_text.strip() or None
-    # messages.append(
-    #     {
-    #         "role": "assistant",
-    #         "content": assistant_content,
-    #         "tool_calls": tool_calls,
-    #     }
-    # )
-    messages.extend(tool_messages)
+    prior_messages = list(original_body.get("messages", []))
+    trace_only_continuation = bool(original_body.get("trace_id")) and not prior_messages
 
-    return {**original_body, "messages": messages}
+    if trace_only_continuation:
+        new_messages = tool_messages
+    else:
+        tool_calls: list[dict[str, Any]] = []
+        for event in tool_input_events:
+            tc_id = event.get("toolCallId", "")
+            tool_name = event.get("toolName", "")
+            raw_input = event.get("input", {})
+            if isinstance(raw_input, dict):
+                args_str = json.dumps(raw_input)
+            elif isinstance(raw_input, str):
+                args_str = raw_input
+            else:
+                args_str = json.dumps(raw_input)
+            tool_calls.append(
+                {
+                    "id": tc_id,
+                    "type": "function",
+                    "function": {"name": tool_name, "arguments": args_str},
+                }
+            )
+        content: str | None = (
+            assistant_text if assistant_text and assistant_text.strip() else None
+        )
+        assistant_msg: dict[str, Any] = {
+            "role": "assistant",
+            "content": content,
+            "tool_calls": tool_calls,
+        }
+        new_messages = prior_messages + [assistant_msg] + tool_messages
+
+    return {**original_body, "messages": new_messages}
 
 
 def _build_continuation_body(
     original_body: dict[str, Any],
     tool_call_id: str,
-    tool_name: str,
+    _tool_name: str,
     tool_input: Any,
     tool_result: str,
 ) -> dict[str, Any]:
@@ -371,27 +397,17 @@ def _build_continuation_body(
     assistant(tool_calls) + tool(result) sequence.
     """
     messages = list(original_body.get("messages", []))
-
-    # messages.append(
-    #     {
-    #         "role": "assistant",
-    #         "parts": [
-    #             {
-    #                 "type": f"tool-{tool_name}",
-    #                 "toolCallId": tool_call_id,
-    #                 "toolName": tool_name,
-    #                 "input": tool_input,
-    #                 "state": "call",
-    #             },
-    #             {
-    #                 "type": f"tool-{tool_name}",
-    #                 "toolCallId": tool_call_id,
-    #                 "toolName": tool_name,
-    #                 "output": tool_result,
-    #                 "state": "output-available",
-    #             },
-    #         ],
-    #     }
-    # )
-
-    return {**original_body, "messages": messages}
+    parts: list[dict[str, Any]] = [
+        {
+            "toolCallId": tool_call_id,
+            "state": "call",
+            "input": tool_input,
+        },
+        {
+            "toolCallId": tool_call_id,
+            "state": "output-available",
+            "output": tool_result,
+        },
+    ]
+    assistant_msg = {"role": "assistant", "parts": parts}
+    return {**original_body, "messages": messages + [assistant_msg]}

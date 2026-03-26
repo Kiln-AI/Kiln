@@ -214,18 +214,14 @@ class TestParseSSEEvents:
     def test_buffers_split_line(self):
         buf = bytearray()
         _, _, _, _, _, _ = _parse_sse_events(b'data: {"type":"text-delta","del', buf)
-        lines, _, _, _, text_delta, trace_id = _parse_sse_events(
-            b'ta":"hi"}\n\n', buf
-        )
+        lines, _, _, _, text_delta, trace_id = _parse_sse_events(b'ta":"hi"}\n\n', buf)
         assert text_delta == "hi"
         assert trace_id is None
         assert any(b"text-delta" in line for line in lines)
 
     def test_detects_kiln_chat_trace(self):
         tid = "d5804b96-851f-4ed6-acb6-b4107968a85a"
-        raw = (
-            f'data: {{"type":"kiln_chat_trace","trace_id":"{tid}"}}\n\n'.encode()
-        )
+        raw = f'data: {{"type":"kiln_chat_trace","trace_id":"{tid}"}}\n\n'.encode()
         lines, _, _, _, _, trace_id = _parse_sse_events(raw)
         assert trace_id == tid
         assert any(b"kiln_chat_trace" in line for line in lines)
