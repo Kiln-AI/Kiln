@@ -82,8 +82,24 @@
     "hr",
     "span",
     "div",
+    "table",
+    "thead",
+    "tbody",
+    "tfoot",
+    "tr",
+    "th",
+    "td",
+    "caption",
   ]
-  const ALLOWED_ATTR = ["href", "target", "rel", "class"]
+  const ALLOWED_ATTR = [
+    "href",
+    "target",
+    "rel",
+    "class",
+    "colspan",
+    "rowspan",
+    "scope",
+  ]
 
   export let text: string = ""
 
@@ -99,7 +115,7 @@
 
 {#if sanitized}
   <div
-    class="chat-markdown prose prose-sm max-w-none prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5 prose-headings:mt-4 prose-headings:mb-2 prose-pre:my-2 prose-blockquote:my-2 prose-a:link"
+    class="chat-markdown prose prose-sm max-w-none overflow-x-auto prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5 prose-headings:mt-4 prose-headings:mb-2 prose-pre:my-2 prose-blockquote:my-2 prose-table:my-3 prose-a:link"
   >
     {@html sanitized}
   </div>

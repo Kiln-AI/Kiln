@@ -334,21 +334,7 @@ def _build_openai_tool_continuation(
 
     for event in tool_input_events:
         tc_id = event.get("toolCallId", "")
-        tool_name = event.get("toolName", "")
-        inp = event.get("input", {})
-        arg_str = inp if isinstance(inp, str) else json.dumps(inp)
         tool_content = tool_results_by_call_id.get(tc_id, "")
-
-        # tool_calls.append(
-        #     {
-        #         "id": tc_id,
-        #         "type": "function",
-        #         "function": {
-        #             "name": tool_name,
-        #             "arguments": arg_str,
-        #         },
-        #     }
-        # )
         tool_messages.append(
             {
                 "role": "tool",
@@ -358,14 +344,14 @@ def _build_openai_tool_continuation(
         )
 
     messages = list(original_body.get("messages", []))
-    assistant_content = assistant_text.strip() or None
-    messages.append(
-        {
-            "role": "assistant",
-            "content": assistant_content,
-            "tool_calls": tool_calls,
-        }
-    )
+    # assistant_content = assistant_text.strip() or None
+    # messages.append(
+    #     {
+    #         "role": "assistant",
+    #         "content": assistant_content,
+    #         "tool_calls": tool_calls,
+    #     }
+    # )
     messages.extend(tool_messages)
 
     return {**original_body, "messages": messages}
@@ -386,26 +372,26 @@ def _build_continuation_body(
     """
     messages = list(original_body.get("messages", []))
 
-    messages.append(
-        {
-            "role": "assistant",
-            "parts": [
-                {
-                    "type": f"tool-{tool_name}",
-                    "toolCallId": tool_call_id,
-                    "toolName": tool_name,
-                    "input": tool_input,
-                    "state": "call",
-                },
-                {
-                    "type": f"tool-{tool_name}",
-                    "toolCallId": tool_call_id,
-                    "toolName": tool_name,
-                    "output": tool_result,
-                    "state": "output-available",
-                },
-            ],
-        }
-    )
+    # messages.append(
+    #     {
+    #         "role": "assistant",
+    #         "parts": [
+    #             {
+    #                 "type": f"tool-{tool_name}",
+    #                 "toolCallId": tool_call_id,
+    #                 "toolName": tool_name,
+    #                 "input": tool_input,
+    #                 "state": "call",
+    #             },
+    #             {
+    #                 "type": f"tool-{tool_name}",
+    #                 "toolCallId": tool_call_id,
+    #                 "toolName": tool_name,
+    #                 "output": tool_result,
+    #                 "state": "output-available",
+    #             },
+    #         ],
+    #     }
+    # )
 
     return {**original_body, "messages": messages}
