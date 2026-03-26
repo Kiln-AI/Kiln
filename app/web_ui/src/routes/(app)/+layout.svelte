@@ -1,5 +1,6 @@
 <script lang="ts">
   import "../../app.css"
+  import { t } from "$lib/i18n"
   import { current_project, current_task } from "$lib/stores"
   import SelectTasksMenu from "./select_tasks_menu.svelte"
   import { page } from "$app/stores"
@@ -179,7 +180,7 @@
               stroke-width="1.5"
             />
           </svg>
-          Run</a
+          {$t('nav.run')}</a
         >
       </li>
       <li class="menu-md">
@@ -222,7 +223,7 @@
               stroke-width="1.5"
             />
           </svg>
-          Dataset</a
+          {$t('nav.dataset')}</a
         >
       </li>
 
@@ -235,7 +236,7 @@
             <EvalIcon />
           </div>
 
-          Specs &amp; Evals</a
+          {$t('nav.specs_evals')}</a
         >
       </li>
 
@@ -247,7 +248,7 @@
           <div class="h-6 w-6 mr-2">
             <OptimizeIcon />
           </div>
-          Optimize
+          {$t('nav.optimize')}
         </a>
         <ul>
           <li class="menu-md menu-nested">
@@ -271,7 +272,7 @@
                   stroke-width="1.5"
                 />
               </svg>
-              Prompts
+              {$t('nav.prompts')}
             </a>
           </li>
           <li class="menu-md menu-nested">
@@ -304,7 +305,7 @@
                   stroke-width="1.5"
                 />
               </svg>
-              Models
+              {$t('nav.models')}
             </a>
           </li>
           <li class="menu-md menu-nested">
@@ -315,7 +316,7 @@
               <div class="h-6 w-6 mr-2">
                 <ToolsIcon />
               </div>
-              Tools
+              {$t('nav.tools')}
             </a>
           </li>
           <li class="menu-md menu-nested">
@@ -326,7 +327,7 @@
               <div class="h-6 w-6 mr-2">
                 <SkillsIcon />
               </div>
-              Skills
+              {$t('nav.skills')}
             </a>
           </li>
           <li class="menu-md menu-nested">
@@ -337,7 +338,7 @@
               <div class="h-6 w-6 mr-2">
                 <FileIcon kind="document" />
               </div>
-              Docs &amp; Search
+              {$t('nav.docs_search')}
             </a>
           </li>
           <li class="menu-md menu-nested">
@@ -348,7 +349,7 @@
               <div class="h-6 w-6 mr-2">
                 <FinetuneIcon />
               </div>
-              Fine Tune
+              {$t('nav.fine_tune')}
             </a>
           </li>
         </ul>
@@ -378,7 +379,7 @@
               stroke-width="1.5"
             />
           </svg>
-          Synthetic Data</a
+          {$t('nav.synthetic_data')}</a
         >
       </li>
 
@@ -405,7 +406,7 @@
             />
           </svg>
 
-          Settings</a
+          {$t('nav.settings')}</a
         >
       </li>
       {#if $update_info.update_result && $update_info.update_result.has_update}
