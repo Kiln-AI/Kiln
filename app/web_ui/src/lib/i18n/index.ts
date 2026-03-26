@@ -1,6 +1,13 @@
 import { derived } from "svelte/store"
 import { localStorageStore } from "$lib/stores/local_storage_store"
-import { translate, type SupportedLocale } from "./translations"
+import { translate, localeNames, type SupportedLocale } from "./translations"
+
+// Derive supported locales from localeNames (single source of truth)
+const supportedLocales = new Set<string>(Object.keys(localeNames))
+
+function isSupportedLocale(value: unknown): value is SupportedLocale {
+  return typeof value === "string" && supportedLocales.has(value)
+}
 
 /**
  * The user's selected locale, persisted in localStorage.
@@ -13,13 +20,19 @@ function createLocaleStore() {
   if (isBrowser) {
     const stored = localStorage.getItem("kiln_locale")
     if (stored) {
-      initialLocale = JSON.parse(stored) as SupportedLocale
+      try {
+        const parsed: unknown = JSON.parse(stored)
+        if (isSupportedLocale(parsed)) {
+          initialLocale = parsed
+        }
+      } catch {
+        // Ignore malformed persisted value; fall through to browser detection
+      }
     } else {
       // Auto-detect from browser language
       const browserLang = navigator.language.split("-")[0]
-      const supported: SupportedLocale[] = ["en", "es", "zh", "ja", "ko", "fr", "de", "pt"]
-      if (supported.includes(browserLang as SupportedLocale)) {
-        initialLocale = browserLang as SupportedLocale
+      if (isSupportedLocale(browserLang)) {
+        initialLocale = browserLang
       }
     }
   }
