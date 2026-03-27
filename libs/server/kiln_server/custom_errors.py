@@ -1,6 +1,7 @@
 import json
 import logging
 
+import httpx
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -84,6 +85,17 @@ def connect_custom_errors(app: FastAPI):
             status_code=exc.status_code,
             headers={"Access-Control-Allow-Origin": "*"},
             content={"message": exc.detail},
+        )
+
+    @app.exception_handler(httpx.TimeoutException)
+    async def timeout_error_handler(request: Request, exc: httpx.TimeoutException):
+        return JSONResponse(
+            status_code=status.HTTP_408_REQUEST_TIMEOUT,
+            headers={"Access-Control-Allow-Origin": "*"},
+            content={
+                "message": "Request timed out. Please try again.",
+                "raw_error": str(exc),
+            },
         )
 
     # Fallback error handler for any other exception
