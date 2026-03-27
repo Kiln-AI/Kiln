@@ -89,13 +89,14 @@ def connect_custom_errors(app: FastAPI):
 
     @app.exception_handler(httpx.TimeoutException)
     async def timeout_error_handler(request: Request, exc: httpx.TimeoutException):
+        logger.warning(
+            f"Request timed out on {request.method} {request.url.path}",
+            exc_info=exc,
+        )
         return JSONResponse(
             status_code=status.HTTP_408_REQUEST_TIMEOUT,
             headers={"Access-Control-Allow-Origin": "*"},
-            content={
-                "message": "Request timed out. Please try again.",
-                "raw_error": str(exc),
-            },
+            content={"message": "Request timed out. Please try again."},
         )
 
     # Fallback error handler for any other exception

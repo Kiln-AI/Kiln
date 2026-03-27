@@ -109,18 +109,18 @@ def test_format_error_loc_with_empty_string():
 
 
 class TestTimeoutErrorHandler:
-    def test_timeout_exception_returns_408(self, client):
-        response = client.get("/timeout")
+    def test_timeout_exception_returns_408(self, client_no_raise):
+        response = client_no_raise.get("/timeout")
         assert response.status_code == 408
 
-    def test_timeout_exception_message(self, client):
-        response = client.get("/timeout")
+    def test_timeout_exception_message(self, client_no_raise):
+        response = client_no_raise.get("/timeout")
         body = response.json()
         assert body["message"] == "Request timed out. Please try again."
-        assert "raw_error" in body
+        assert "raw_error" not in body
 
-    def test_timeout_exception_has_cors_header(self, client):
-        response = client.get("/timeout")
+    def test_timeout_exception_has_cors_header(self, client_no_raise):
+        response = client_no_raise.get("/timeout")
         assert response.headers.get("access-control-allow-origin") == "*"
 
     def test_other_exceptions_still_return_500(self, client_no_raise):
