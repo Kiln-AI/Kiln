@@ -148,7 +148,10 @@ class LiteLlmAdapter(BaseAdapter):
                     standard_tool_calls = [
                         tc for tc in tool_calls if tc.function.name != "task_response"
                     ]
-                    if standard_tool_calls:
+                    has_task_response = any(
+                        tc.function.name == "task_response" for tc in tool_calls
+                    )
+                    if standard_tool_calls and not has_task_response:
                         return ModelTurnResult(
                             # we don't have any content, we are waiting for toolcall output to come back from client
                             assistant_message="",

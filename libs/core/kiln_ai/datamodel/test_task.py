@@ -3,6 +3,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
+from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
@@ -827,3 +828,62 @@ def test_is_toolcall_pending_false_when_tool_calls_followed_by_tool_response():
         ],
     )
     assert run.is_toolcall_pending is False
+
+
+def test_is_toolcall_pending_false_when_only_task_response_tool_calls():
+    trace = [
+        {"role": "user", "content": "hello"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_tr",
+                    "function": {
+                        "name": "task_response",
+                        "arguments": '{"answer": 42}',
+                    },
+                    "type": "function",
+                }
+            ],
+        },
+    ]
+    run = TaskRun(input="test", output=TaskOutput(output='{"answer": 42}'), trace=trace)
+    assert run.is_toolcall_pending is False
+    assert (
+        RunOutput(
+            output='{"answer": 42}', intermediate_outputs=None, trace=trace
+        ).is_toolcall_pending
+        is False
+    )
+
+
+def test_is_toolcall_pending_true_when_task_response_mixed_with_external_tools():
+    trace = [
+        {"role": "user", "content": "hello"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_tr",
+                    "function": {
+                        "name": "task_response",
+                        "arguments": '{"x": 1}',
+                    },
+                    "type": "function",
+                },
+                {
+                    "id": "call_ext",
+                    "function": {"name": "add", "arguments": "{}"},
+                    "type": "function",
+                },
+            ],
+        },
+    ]
+    run = TaskRun(input="test", output=TaskOutput(output=""), trace=trace)
+    assert run.is_toolcall_pending is True
+    assert (
+        RunOutput(output="", intermediate_outputs=None, trace=trace).is_toolcall_pending
+        is True
+    )
