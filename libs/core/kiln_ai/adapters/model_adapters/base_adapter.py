@@ -227,11 +227,12 @@ class BaseAdapter(metaclass=ABCMeta):
                         f"response is not a string for non-structured task: {parsed_output.output}"
                     )
 
-            # Validate reasoning content is present and required
-            # We don't require reasoning when using tools as models tend not to return any on the final turn (both Sonnet and Gemini).
             trace_has_toolcalls = parsed_output.trace is not None and any(
                 message.get("role", None) == "tool" for message in parsed_output.trace
             )
+
+            # Validate reasoning content is present and required
+            # We don't require reasoning when using tools as models tend not to return any on the final turn (both Sonnet and Gemini).
             if (
                 provider.reasoning_capable
                 and (
