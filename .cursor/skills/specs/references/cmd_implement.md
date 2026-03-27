@@ -63,8 +63,8 @@ You're willing to flag when a requirement leads to bad technical outcomes — bu
 7. **Run tests**. Iterate until passing.
 8. **Run automated checks again** (tests/fixes may introduce lint/format issues). Iterate until clean.
 9. **Self code-review via sub-agent**:
-   - → Read [references/spawning_subagents.md](references/spawning_subagents.md) for how to spawn
-   - Pass the prompt from [references/cr_agent_prompt.md](references/cr_agent_prompt.md) to the sub-agent
+   - → Read [spawning_subagents.md](.cursor/skills/specs/references/spawning_subagents.md) for how to spawn
+   - Pass the prompt from [cr_agent_prompt.md](.cursor/skills/specs/references/cr_agent_prompt.md) to the sub-agent
    - Include: "A coding agent just implemented phase N of [project]. Review the changes using `git diff`. The spec for this project can be found [here](link_to_spec_folder)."
    - Iterate per CR Iteration Loop below
 10. **Run automated checks one final time** (CR fixes may introduce issues). Iterate until clean.
@@ -99,7 +99,7 @@ A lightweight coordinator that runs all remaining phases in sequence.
 
 1. Get next incomplete phase from `implementation_plan.md`
 2. Spawn a sub-agent with clean context to run the single-phase implementation flow above
-   - → Read [references/spawning_subagents.md](references/spawning_subagents.md) for how to spawn
+   - → Read [spawning_subagents.md](.cursor/skills/specs/references/spawning_subagents.md) for how to spawn
    - Pass: phase number, project path, instruction to follow single-phase implementation
 3. **Auto-commit**: `"Phase N implementation of [project name]\n\n[description of work in phase]"`
 4. Show the phase summary from the subagent to the user
@@ -114,10 +114,10 @@ CR happens inside each phase's implementation loop, not at coordinator level.
 
 ### Passed to Phase Sub-Agents
 
-For implement-all, pass the content of [references/coding_phase_prompt.md](references/coding_phase_prompt.md) to each phase sub-agent. This prompt contains the full single-phase implementation instructions.
+For implement-all, pass the content of [coding_phase_prompt.md](.cursor/skills/specs/references/coding_phase_prompt.md) to each phase sub-agent. This prompt contains the full single-phase implementation instructions.
 
 ## References
 
-- [references/spawning_subagents.md](references/spawning_subagents.md) — How to spawn sub-agents
-- [references/coding_phase_prompt.md](references/coding_phase_prompt.md) — Prompt passed to coding sub-agents
-- [references/cr_agent_prompt.md](references/cr_agent_prompt.md) — Prompt passed to CR sub-agents
+- [spawning_subagents.md](.cursor/skills/specs/references/spawning_subagents.md) — How to spawn sub-agents
+- [coding_phase_prompt.md](.cursor/skills/specs/references/coding_phase_prompt.md) — Prompt passed to coding sub-agents
+- [cr_agent_prompt.md](.cursor/skills/specs/references/cr_agent_prompt.md) — Prompt passed to CR sub-agents

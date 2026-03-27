@@ -54,7 +54,7 @@ status: draft
 4. Run tests. Iterate until passing.
 5. Run automated checks again. Iterate until clean.
 6. Self code-review via sub-agent:
-   - Read `spec/references/cr_agent_prompt.md` for the CR process
+   - Read `.cursor/skills/specs/references/cr_agent_prompt.md` for the CR process
    - Spawn a CR sub-agent with clean context
    - Pass: "A coding agent just implemented phase N of [project]. Review using `git diff`."
    - Iterate per CR loop below
@@ -64,7 +64,7 @@ status: draft
 
 ## CR Iteration Loop
 
-1. Spawn CR sub-agent with the CR prompt from `spec/references/cr_agent_prompt.md`
+1. Spawn CR sub-agent with the CR prompt from `.cursor/skills/specs/references/cr_agent_prompt.md`
 2. CR returns feedback with severity labels
 3. If issues exist:
    - Fix each issue (or add a code comment explaining technical rationale)
