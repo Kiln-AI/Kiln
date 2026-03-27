@@ -10,37 +10,50 @@ function isSupportedLocale(value: unknown): value is SupportedLocale {
 }
 
 /**
+ * Sanitize the persisted locale value in localStorage before
+ * localStorageStore reads it. This prevents localStorageStore from
+ * returning an invalid locale if the stored value is malformed or
+ * unsupported — it independently calls JSON.parse on the raw value.
+ */
+function sanitizePersistedLocale(): SupportedLocale {
+  const isBrowser = typeof window !== "undefined"
+  const fallback: SupportedLocale = "en"
+
+  if (!isBrowser) {
+    return fallback
+  }
+
+  const raw = localStorage.getItem("kiln_locale")
+  if (raw !== null) {
+    try {
+      const parsed: unknown = JSON.parse(raw)
+      if (isSupportedLocale(parsed)) {
+        return parsed
+      }
+    } catch {
+      // Malformed JSON — fall through
+    }
+    // Stored value is invalid; remove it so localStorageStore uses our default
+    localStorage.removeItem("kiln_locale")
+    return fallback
+  }
+
+  // No stored value — auto-detect from browser language
+  const browserLang = navigator.language.split("-")[0]
+  if (isSupportedLocale(browserLang)) {
+    return browserLang
+  }
+  return fallback
+}
+
+/**
  * The user's selected locale, persisted in localStorage.
  * Defaults to English. Auto-detects browser language on first load.
  */
-function createLocaleStore() {
-  const isBrowser = typeof window !== "undefined"
-  let initialLocale: SupportedLocale = "en"
-
-  if (isBrowser) {
-    const stored = localStorage.getItem("kiln_locale")
-    if (stored) {
-      try {
-        const parsed: unknown = JSON.parse(stored)
-        if (isSupportedLocale(parsed)) {
-          initialLocale = parsed
-        }
-      } catch {
-        // Ignore malformed persisted value; fall through to browser detection
-      }
-    } else {
-      // Auto-detect from browser language
-      const browserLang = navigator.language.split("-")[0]
-      if (isSupportedLocale(browserLang)) {
-        initialLocale = browserLang
-      }
-    }
-  }
-
-  return localStorageStore<SupportedLocale>("kiln_locale", initialLocale)
-}
-
-export const locale = createLocaleStore()
+export const locale = localStorageStore<SupportedLocale>(
+  "kiln_locale",
+  sanitizePersistedLocale(),
+)
 
 /**
  * Reactive translation function.
