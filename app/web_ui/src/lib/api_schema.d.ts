@@ -7048,11 +7048,6 @@ export interface components {
          *
          *     Contains the input used, its source, the output produced, and optional
          *     repair information if the output needed correction.
-         *
-         *     Can be nested under another TaskRun; nested runs are stored as child runs
-         *     in a "runs" subfolder (same relationship name as Task's runs).
-         *
-         *     Accepts both Task and TaskRun as parents (polymorphic).
          */
         "TaskRun-Input": {
             /**
@@ -7108,6 +7103,11 @@ export interface components {
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
             trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Input"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            /**
+             * Parent Task Run Id
+             * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
+             */
+            parent_task_run_id?: string | null;
         };
         /**
          * TaskRun
@@ -7115,11 +7115,6 @@ export interface components {
          *
          *     Contains the input used, its source, the output produced, and optional
          *     repair information if the output needed correction.
-         *
-         *     Can be nested under another TaskRun; nested runs are stored as child runs
-         *     in a "runs" subfolder (same relationship name as Task's runs).
-         *
-         *     Accepts both Task and TaskRun as parents (polymorphic).
          */
         "TaskRun-Output": {
             /**
@@ -7174,6 +7169,11 @@ export interface components {
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
             trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Output"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Output"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            /**
+             * Parent Task Run Id
+             * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
+             */
+            parent_task_run_id?: string | null;
             /** Model Type */
             readonly model_type: string;
         };

@@ -606,7 +606,10 @@ class BaseAdapter(metaclass=ABCMeta):
             )
 
         return TaskRun(
-            parent=parent_task_run if parent_task_run is not None else self.task,
+            parent=self.task,
+            parent_task_run_id=parent_task_run.id
+            if parent_task_run is not None
+            else None,
             input=input_str,
             input_source=input_source,
             output=new_output,
