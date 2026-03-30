@@ -18,8 +18,7 @@
 
   let messages: ChatMessage[] = []
   let input = ""
-  let status: "ready" | "submitted" | "streaming" | "error" = "ready"
-  let error: Error | null = null
+  let status: "ready" | "submitted" | "streaming" = "ready"
   let abortController: AbortController | null = null
   let messagesContainer: HTMLDivElement | null = null
   let messagesEndRef: HTMLDivElement | null = null
@@ -240,6 +239,26 @@
     el.style.height = `${Math.min(el.scrollHeight + 2, window.innerHeight * 0.4)}px`
   }
 
+  function removeErrors() {
+    messages = messages.filter((m) => m.role !== "error")
+  }
+
+  function retryLastRequest() {
+    // Find the last user message and trim everything from it onward
+    let lastUserIdx = -1
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        lastUserIdx = i
+        break
+      }
+    }
+    if (lastUserIdx === -1) return
+    const userText = messages[lastUserIdx].content ?? ""
+    messages = messages.slice(0, lastUserIdx)
+    input = userText
+    handleSubmit()
+  }
+
   function stop() {
     if (abortController) {
       abortController.abort()
@@ -259,7 +278,7 @@
     if (e) e.preventDefault()
     const text = input.trim()
     if (!text || isLoading) return
-    error = null
+    removeErrors()
     const traceId = traceIdForNextChatRequest(messages)
     const userMessage: ChatMessage = {
       id: chatGenerateId(),
@@ -291,13 +310,29 @@
           messages = [...messages.slice(0, -1), { ...last, traceId }]
         }
       },
+      onInlineError: (message, traceId) => {
+        const errorMsg: ChatMessage = {
+          id: chatGenerateId(),
+          role: "error",
+          content: message,
+          traceId,
+        }
+        messages = [...messages, errorMsg]
+        status = "ready"
+        abortController = null
+      },
       onFinish: () => {
         status = "ready"
         abortController = null
       },
       onError: (err) => {
-        status = "error"
-        error = err
+        const errorMsg: ChatMessage = {
+          id: chatGenerateId(),
+          role: "error",
+          content: err.message,
+        }
+        messages = [...messages, errorMsg]
+        status = "ready"
         abortController = null
       },
       signal: abortController.signal,
@@ -314,14 +349,6 @@
   <div
     class="flex flex-col h-[calc(100vh-14rem)] overflow-hidden w-full md:max-w-3xl mx-auto px-4"
   >
-    {#if error}
-      <div
-        class="flex-none rounded-lg bg-error/10 border border-error/30 p-3 text-error text-sm"
-      >
-        {error?.message}
-      </div>
-    {/if}
-
     <div
       bind:this={messagesContainer}
       class="chat-messages-scroll flex-1 min-h-0 flex flex-col gap-4 overflow-y-auto overflow-x-hidden"
@@ -334,187 +361,203 @@
           out:fly={{ y: -4, duration: 150 }}
           class={message.role === "user"
             ? "rounded-xl bg-base-content/[0.06] px-3 py-2.5 max-w-2xl ml-auto"
-            : "flex flex-col gap-3"}
+            : message.role === "error"
+              ? "rounded-lg bg-error/10 border border-error/30 px-3 py-2.5 text-error text-sm"
+              : "flex flex-col gap-3"}
         >
-          <div class="flex flex-col gap-3">
-            {#if message.parts && message.parts.length > 0}
-              {#each message.parts as part, partIndex (partKey(message, part, partIndex))}
-                {#if part.type === "text"}
-                  <ChatMarkdown text={part.text ?? ""} />
-                {:else if part.type === "reasoning"}
-                  {@const collapsed = isPartCollapsed(
-                    collapsedPartKeys,
-                    message,
-                    part,
-                    partIndex,
-                    message.parts ?? [],
-                  )}
-                  {@const key = partKey(message, part, partIndex)}
-                  {@const streaming = isReasoningStreaming(
-                    message,
-                    partIndex,
-                    message.parts ?? [],
-                  )}
-                  {@const duration = reasoningDurationSeconds(key)}
-                  <div
-                    class="mt-2 overflow-hidden text-sm text-base-content/60"
-                  >
-                    <button
-                      type="button"
-                      class="group/btn w-full flex items-center gap-1.5 py-1 text-left text-base-content/60 hover:text-base-content/80 transition-colors cursor-pointer"
-                      on:click={() =>
-                        togglePartCollapsed(message, part, partIndex)}
+          {#if message.role === "error"}
+            <div class="flex items-center justify-between gap-3">
+              <span>{message.content}</span>
+              <button
+                type="button"
+                class="shrink-0 rounded-md bg-error/20 px-2 py-1 text-xs font-medium hover:bg-error/30 transition-colors"
+                on:click={retryLastRequest}
+                disabled={isLoading}
+              >
+                Retry
+              </button>
+            </div>
+          {:else}
+            <div class="flex flex-col gap-3">
+              {#if message.parts && message.parts.length > 0}
+                {#each message.parts as part, partIndex (partKey(message, part, partIndex))}
+                  {#if part.type === "text"}
+                    <ChatMarkdown text={part.text ?? ""} />
+                  {:else if part.type === "reasoning"}
+                    {@const collapsed = isPartCollapsed(
+                      collapsedPartKeys,
+                      message,
+                      part,
+                      partIndex,
+                      message.parts ?? [],
+                    )}
+                    {@const key = partKey(message, part, partIndex)}
+                    {@const streaming = isReasoningStreaming(
+                      message,
+                      partIndex,
+                      message.parts ?? [],
+                    )}
+                    {@const duration = reasoningDurationSeconds(key)}
+                    <div
+                      class="mt-2 overflow-hidden text-sm text-base-content/60"
                     >
-                      <span class="flex items-center gap-1.5 min-w-0">
-                        {#if streaming}
-                          <span class="inline-flex items-baseline gap-px">
-                            Thinking
-                            <span
-                              class="thinking-dot"
-                              style="animation-delay: 0ms">.</span
-                            ><span
-                              class="thinking-dot"
-                              style="animation-delay: 160ms">.</span
-                            ><span
-                              class="thinking-dot"
-                              style="animation-delay: 320ms">.</span
-                            >
-                          </span>
-                        {:else}
-                          <span
-                            ><span class="font-semibold">Thought</span>
-                            {#if duration != null}
-                              for {durationLabel(duration)}
-                            {:else}
-                              …
-                            {/if}</span
-                          >
-                        {/if}
-                        {#if collapsed}
-                          <span
-                            class="shrink-0 text-base-content/40 transition-opacity opacity-0 group-hover/btn:opacity-100"
-                            aria-hidden="true">▶</span
-                          >
-                        {:else}
-                          <span
-                            class="shrink-0 text-base-content/40"
-                            aria-hidden="true">▼</span
-                          >
-                        {/if}
-                      </span>
-                    </button>
-                    {#if !collapsed}
-                      <div class="pt-1">
-                        <ChatMarkdown text={part.reasoning ?? ""} />
-                      </div>
-                    {/if}
-                  </div>
-                {:else if typeof part.type === "string" && part.type.startsWith("tool-")}
-                  {@const toolCollapsed = isPartCollapsed(
-                    collapsedPartKeys,
-                    message,
-                    part,
-                    partIndex,
-                    message.parts ?? [],
-                  )}
-                  {@const hasOutput = part.output !== undefined}
-                  {@const hasError =
-                    hasOutput &&
-                    typeof part.output === "object" &&
-                    part.output !== null &&
-                    "error" in part.output}
-                  <div class="mt-2 overflow-hidden text-sm">
-                    <button
-                      type="button"
-                      class="group/btn w-full flex items-center gap-1.5 py-1 text-left text-base-content/60 hover:text-base-content/80 transition-colors cursor-pointer"
-                      on:click={() =>
-                        togglePartCollapsed(message, part, partIndex)}
-                    >
-                      <span class="flex items-center gap-1.5">
-                        {formatToolName(part.type)} was called
-                        {#if toolCollapsed}
-                          <span
-                            class="shrink-0 text-base-content/40 transition-opacity opacity-0 group-hover/btn:opacity-100"
-                            aria-hidden="true">▶</span
-                          >
-                        {:else}
-                          <span
-                            class="shrink-0 text-base-content/40"
-                            aria-hidden="true">▼</span
-                          >
-                        {/if}
-                      </span>
-                    </button>
-                    {#if !toolCollapsed}
-                      <div
-                        class="mt-2 overflow-hidden rounded-md {hasError
-                          ? 'bg-error/5 text-error'
-                          : 'bg-base-content/[0.04]'}"
+                      <button
+                        type="button"
+                        class="group/btn w-full flex items-center gap-1.5 py-1 text-left text-base-content/60 hover:text-base-content/80 transition-colors cursor-pointer"
+                        on:click={() =>
+                          togglePartCollapsed(message, part, partIndex)}
                       >
-                        <div class="px-3 py-2.5 flex flex-col gap-2.5">
-                          <div>
+                        <span class="flex items-center gap-1.5 min-w-0">
+                          {#if streaming}
+                            <span class="inline-flex items-baseline gap-px">
+                              Thinking
+                              <span
+                                class="thinking-dot"
+                                style="animation-delay: 0ms">.</span
+                              ><span
+                                class="thinking-dot"
+                                style="animation-delay: 160ms">.</span
+                              ><span
+                                class="thinking-dot"
+                                style="animation-delay: 320ms">.</span
+                              >
+                            </span>
+                          {:else}
                             <span
-                              class="text-base-content/50 text-xs font-medium"
-                              >Input</span
-                            >
-                            <div class="mt-0.5">
-                              {#if hasToolInput(part)}
-                                <pre
-                                  class="text-xs overflow-x-auto rounded py-1.5 font-mono text-base-content/80">{formatToolInput(
-                                    part.input,
-                                  )}</pre>
+                              ><span class="font-semibold">Thought</span>
+                              {#if duration != null}
+                                for {durationLabel(duration)}
                               {:else}
-                                <span
-                                  class="text-base-content/50 italic text-xs"
-                                  >Calling…</span
-                                >
-                              {/if}
-                            </div>
-                          </div>
-                          <div>
+                                …
+                              {/if}</span
+                            >
+                          {/if}
+                          {#if collapsed}
                             <span
-                              class="text-base-content/50 text-xs font-medium"
-                              >Output</span
+                              class="shrink-0 text-base-content/40 transition-opacity opacity-0 group-hover/btn:opacity-100"
+                              aria-hidden="true">▶</span
                             >
-                            <div class="mt-0.5">
-                              {#if hasError}
-                                <div class="text-xs">
-                                  {getToolOutputError(part)}
-                                </div>
-                              {:else if hasOutput}
-                                <pre
-                                  class="text-xs overflow-x-auto rounded py-1.5 font-mono text-base-content/80">{formatToolOutput(
-                                    part.output,
-                                  )}</pre>
-                              {:else}
-                                <div
-                                  class="flex items-center gap-2 text-base-content/50 italic text-xs"
-                                >
+                          {:else}
+                            <span
+                              class="shrink-0 text-base-content/40"
+                              aria-hidden="true">▼</span
+                            >
+                          {/if}
+                        </span>
+                      </button>
+                      {#if !collapsed}
+                        <div class="pt-1">
+                          <ChatMarkdown text={part.reasoning ?? ""} />
+                        </div>
+                      {/if}
+                    </div>
+                  {:else if typeof part.type === "string" && part.type.startsWith("tool-")}
+                    {@const toolCollapsed = isPartCollapsed(
+                      collapsedPartKeys,
+                      message,
+                      part,
+                      partIndex,
+                      message.parts ?? [],
+                    )}
+                    {@const hasOutput = part.output !== undefined}
+                    {@const hasError =
+                      hasOutput &&
+                      typeof part.output === "object" &&
+                      part.output !== null &&
+                      "error" in part.output}
+                    <div class="mt-2 overflow-hidden text-sm">
+                      <button
+                        type="button"
+                        class="group/btn w-full flex items-center gap-1.5 py-1 text-left text-base-content/60 hover:text-base-content/80 transition-colors cursor-pointer"
+                        on:click={() =>
+                          togglePartCollapsed(message, part, partIndex)}
+                      >
+                        <span class="flex items-center gap-1.5">
+                          {formatToolName(part.type)} was called
+                          {#if toolCollapsed}
+                            <span
+                              class="shrink-0 text-base-content/40 transition-opacity opacity-0 group-hover/btn:opacity-100"
+                              aria-hidden="true">▶</span
+                            >
+                          {:else}
+                            <span
+                              class="shrink-0 text-base-content/40"
+                              aria-hidden="true">▼</span
+                            >
+                          {/if}
+                        </span>
+                      </button>
+                      {#if !toolCollapsed}
+                        <div
+                          class="mt-2 overflow-hidden rounded-md {hasError
+                            ? 'bg-error/5 text-error'
+                            : 'bg-base-content/[0.04]'}"
+                        >
+                          <div class="px-3 py-2.5 flex flex-col gap-2.5">
+                            <div>
+                              <span
+                                class="text-base-content/50 text-xs font-medium"
+                                >Input</span
+                              >
+                              <div class="mt-0.5">
+                                {#if hasToolInput(part)}
+                                  <pre
+                                    class="text-xs overflow-x-auto rounded py-1.5 font-mono text-base-content/80">{formatToolInput(
+                                      part.input,
+                                    )}</pre>
+                                {:else}
                                   <span
-                                    class="inline-block w-3 h-3 rounded-full border border-base-content/30 border-t-base-content/60 animate-spin"
-                                  />
-                                  <span>…</span>
-                                </div>
-                              {/if}
+                                    class="text-base-content/50 italic text-xs"
+                                    >Calling…</span
+                                  >
+                                {/if}
+                              </div>
+                            </div>
+                            <div>
+                              <span
+                                class="text-base-content/50 text-xs font-medium"
+                                >Output</span
+                              >
+                              <div class="mt-0.5">
+                                {#if hasError}
+                                  <div class="text-xs">
+                                    {getToolOutputError(part)}
+                                  </div>
+                                {:else if hasOutput}
+                                  <pre
+                                    class="text-xs overflow-x-auto rounded py-1.5 font-mono text-base-content/80">{formatToolOutput(
+                                      part.output,
+                                    )}</pre>
+                                {:else}
+                                  <div
+                                    class="flex items-center gap-2 text-base-content/50 italic text-xs"
+                                  >
+                                    <span
+                                      class="inline-block w-3 h-3 rounded-full border border-base-content/30 border-t-base-content/60 animate-spin"
+                                    />
+                                    <span>…</span>
+                                  </div>
+                                {/if}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    {/if}
-                  </div>
-                {/if}
-              {/each}
-            {:else if message.role === "assistant" && showStreamingCursor && message.id === lastMessage?.id}
-              <div class="flex items-center py-0.5" aria-hidden="true">
-                <span
-                  class="inline-block w-2 h-2 rounded-full bg-base-content/60 animate-pulse"
-                  style="animation-duration: 1.2s"
-                />
-              </div>
-            {:else if message.content}
-              <div class="whitespace-pre-wrap">{message.content}</div>
-            {/if}
-          </div>
+                      {/if}
+                    </div>
+                  {/if}
+                {/each}
+              {:else if message.role === "assistant" && showStreamingCursor && message.id === lastMessage?.id}
+                <div class="flex items-center py-0.5" aria-hidden="true">
+                  <span
+                    class="inline-block w-2 h-2 rounded-full bg-base-content/60 animate-pulse"
+                    style="animation-duration: 1.2s"
+                  />
+                </div>
+              {:else if message.content}
+                <div class="whitespace-pre-wrap">{message.content}</div>
+              {/if}
+            </div>
+          {/if}
         </div>
       {/each}
       <div

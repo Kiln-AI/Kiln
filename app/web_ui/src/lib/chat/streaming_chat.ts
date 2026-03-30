@@ -19,7 +19,7 @@ export type ChatMessagePart =
 
 export interface ChatMessage {
   id: string
-  role: "user" | "assistant" | "system"
+  role: "user" | "assistant" | "system" | "error"
   content?: string
   parts?: ChatMessagePart[]
   /** Server-issued id from ``kiln_chat_trace`` for this assistant turn */
@@ -73,6 +73,7 @@ interface StreamEvent {
   output?: unknown
   errorText?: string
   trace_id?: string
+  message?: string
   messageMetadata?: { finishReason?: string; usage?: unknown }
 }
 
@@ -84,6 +85,8 @@ export interface StreamChatOptions {
   onAssistantMessage: (update: (draft: ChatMessage) => void) => void
   /** Fired when upstream sends ``kiln_chat_trace`` (typically end of a turn) */
   onChatTrace?: (traceId: string) => void
+  /** Fired when backend sends an inline error event */
+  onInlineError?: (message: string, traceId?: string) => void
   onFinish: () => void
   onError: (error: Error) => void
   signal?: AbortSignal
@@ -106,6 +109,247 @@ export function traceIdForNextChatRequest(
   return undefined
 }
 
+type PartSlot =
+  | { kind: "text"; id: string }
+  | { kind: "reasoning"; id: string }
+  | { kind: "tool"; id: string }
+
+class StreamEventProcessor {
+  private partOrder: PartSlot[] = []
+  private textBlocks = new Map<string, string>()
+  private reasoningBlocks = new Map<string, string>()
+  private toolMap = new Map<
+    string,
+    {
+      type: `tool-${string}`
+      toolCallId: string
+      toolName?: string
+      input?: unknown
+      output?: unknown
+    }
+  >()
+  private toolInputBuffer = new Map<string, string>()
+  private currentTextId: string | null = null
+  private currentReasoningId: string | null = null
+  private slotIdCounter = 0
+
+  private onAssistantMessage: (update: (draft: ChatMessage) => void) => void
+  private onChatTrace?: (traceId: string) => void
+  private onInlineError?: (message: string, traceId?: string) => void
+
+  private HANDLERS: Record<string, (event: StreamEvent) => void>
+
+  constructor(opts: {
+    onAssistantMessage: (update: (draft: ChatMessage) => void) => void
+    onChatTrace?: (traceId: string) => void
+    onInlineError?: (message: string, traceId?: string) => void
+  }) {
+    this.onAssistantMessage = opts.onAssistantMessage
+    this.onChatTrace = opts.onChatTrace
+    this.onInlineError = opts.onInlineError
+
+    this.HANDLERS = {
+      "text-start": (e) => this.handleTextStart(e),
+      "text-delta": (e) => this.handleTextDelta(e),
+      "text-end": () => this.handleTextEnd(),
+      "reasoning-start": () => this.handleReasoningStart(),
+      "reasoning-delta": (e) => this.handleReasoningDelta(e),
+      "reasoning-end": () => this.handleReasoningEnd(),
+      "tool-input-start": (e) => this.handleToolInputStart(e),
+      "tool-input-delta": (e) => this.handleToolInputDelta(e),
+      "tool-input-available": (e) => this.handleToolInputAvailable(e),
+      "tool-output-available": (e) => this.handleToolOutputAvailable(e),
+      "tool-output-error": (e) => this.handleToolOutputError(e),
+      kiln_chat_trace: (e) => this.handleChatTrace(e),
+      error: (e) => this.handleError(e),
+    }
+  }
+
+  handleEvent(event: StreamEvent): void {
+    const handler = this.HANDLERS[event.type]
+    if (handler) {
+      handler(event)
+    }
+  }
+
+  private nextSlotId(): string {
+    this.slotIdCounter += 1
+    return `slot-${this.slotIdCounter}`
+  }
+
+  private flushAssistant() {
+    this.onAssistantMessage((draft) => {
+      const next: ChatMessagePart[] = []
+      for (const slot of this.partOrder) {
+        if (slot.kind === "text") {
+          const text = this.textBlocks.get(slot.id)
+          if (text) next.push({ type: "text", text })
+        } else if (slot.kind === "reasoning") {
+          const reasoning = this.reasoningBlocks.get(slot.id)
+          if (reasoning) next.push({ type: "reasoning", reasoning })
+        } else {
+          const tool = this.toolMap.get(slot.id)
+          if (tool) next.push(tool)
+        }
+      }
+      draft.parts = next
+    })
+  }
+
+  private ensureTextSlot(): void {
+    if (this.currentTextId === null) {
+      const id = this.nextSlotId()
+      this.partOrder.push({ kind: "text", id })
+      this.currentTextId = id
+      this.textBlocks.set(id, "")
+    }
+  }
+
+  private ensureReasoningSlot(): void {
+    if (this.currentReasoningId === null) {
+      const id = this.nextSlotId()
+      this.partOrder.push({ kind: "reasoning", id })
+      this.currentReasoningId = id
+      this.reasoningBlocks.set(id, "")
+    }
+  }
+
+  private ensureToolSlot(key: string, event: StreamEvent): void {
+    if (!this.toolMap.has(key)) {
+      this.partOrder.push({ kind: "tool", id: key })
+      this.toolMap.set(key, {
+        type: `tool-${event.toolName ?? "unknown"}`,
+        toolCallId: key,
+        toolName: event.toolName,
+      })
+    }
+  }
+
+  // -- Individual handlers --
+
+  private handleTextStart(_event: StreamEvent): void {
+    if (this.currentTextId !== null) {
+      this.currentTextId = null
+    }
+    this.ensureTextSlot()
+  }
+
+  private handleTextDelta(event: StreamEvent): void {
+    if (this.currentTextId === null) {
+      this.ensureTextSlot()
+    }
+    if (event.delta != null && this.currentTextId !== null) {
+      this.textBlocks.set(
+        this.currentTextId,
+        (this.textBlocks.get(this.currentTextId) ?? "") + event.delta,
+      )
+      this.flushAssistant()
+    }
+  }
+
+  private handleTextEnd(): void {
+    this.currentTextId = null
+  }
+
+  private handleReasoningStart(): void {
+    if (this.currentReasoningId !== null) {
+      this.currentReasoningId = null
+    }
+    this.ensureReasoningSlot()
+  }
+
+  private handleReasoningDelta(event: StreamEvent): void {
+    if (this.currentReasoningId === null) {
+      this.ensureReasoningSlot()
+    }
+    if (event.delta != null && this.currentReasoningId !== null) {
+      this.reasoningBlocks.set(
+        this.currentReasoningId,
+        (this.reasoningBlocks.get(this.currentReasoningId) ?? "") + event.delta,
+      )
+      this.flushAssistant()
+    }
+  }
+
+  private handleReasoningEnd(): void {
+    this.currentReasoningId = null
+  }
+
+  private handleToolInputStart(event: StreamEvent): void {
+    if (!event.toolCallId) return
+    this.ensureToolSlot(event.toolCallId, event)
+    this.flushAssistant()
+  }
+
+  private handleToolInputDelta(event: StreamEvent): void {
+    if (!event.toolCallId || event.inputTextDelta == null) return
+    const key = event.toolCallId
+    const prev = this.toolInputBuffer.get(key) ?? ""
+    this.toolInputBuffer.set(key, prev + event.inputTextDelta)
+    this.ensureToolSlot(key, event)
+    const entry = this.toolMap.get(key)!
+    try {
+      entry.input = JSON.parse(this.toolInputBuffer.get(key) ?? "{}") as unknown
+    } catch {
+      entry.input = this.toolInputBuffer.get(key)
+    }
+    this.flushAssistant()
+  }
+
+  private handleToolInputAvailable(event: StreamEvent): void {
+    if (!event.toolCallId) return
+    const key = event.toolCallId
+    let entry = this.toolMap.get(key)
+    if (!entry) {
+      this.partOrder.push({ kind: "tool", id: key })
+      entry = {
+        type: `tool-${event.toolName ?? "unknown"}`,
+        toolCallId: event.toolCallId,
+        toolName: event.toolName,
+        input: event.input,
+      }
+      this.toolMap.set(key, entry)
+    } else {
+      entry.input = event.input
+    }
+    this.toolInputBuffer.delete(key)
+    this.flushAssistant()
+  }
+
+  private handleToolOutputAvailable(event: StreamEvent): void {
+    if (!event.toolCallId) return
+    const entry = this.toolMap.get(event.toolCallId)
+    if (entry) {
+      entry.output = event.output
+      this.flushAssistant()
+    }
+  }
+
+  private handleToolOutputError(event: StreamEvent): void {
+    if (!event.toolCallId) return
+    const entry = this.toolMap.get(event.toolCallId)
+    if (entry) {
+      entry.output = { error: event.errorText }
+      this.flushAssistant()
+    }
+  }
+
+  private handleChatTrace(event: StreamEvent): void {
+    const tid = event.trace_id
+    if (typeof tid === "string" && tid) {
+      this.onChatTrace?.(tid)
+    }
+  }
+
+  private handleError(event: StreamEvent): void {
+    this.onInlineError?.(event.message ?? "An error occurred.", event.trace_id)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// streamChat
+// ---------------------------------------------------------------------------
+
 /**
  * POST to apiUrl with the request messages (usually one user turn) and optional trace_id,
  * then parse SSE and call onAssistantMessage for assistant updates. Respects signal for abort.
@@ -117,6 +361,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     traceId,
     onAssistantMessage,
     onChatTrace,
+    onInlineError,
     onFinish,
     onError,
     signal,
@@ -165,50 +410,11 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
   const decoder = new TextDecoder()
   let buffer = ""
 
-  type PartSlot =
-    | { kind: "text"; id: string }
-    | { kind: "reasoning"; id: string }
-    | { kind: "tool"; id: string }
-  const partOrder: PartSlot[] = []
-  const textBlocks = new Map<string, string>()
-  const reasoningBlocks = new Map<string, string>()
-  const toolMap = new Map<
-    string,
-    {
-      type: `tool-${string}`
-      toolCallId: string
-      toolName?: string
-      input?: unknown
-      output?: unknown
-    }
-  >()
-  const toolInputBuffer = new Map<string, string>()
-  let currentTextId: string | null = null
-  let currentReasoningId: string | null = null
-  let slotIdCounter = 0
-  function nextSlotId(): string {
-    slotIdCounter += 1
-    return `slot-${slotIdCounter}`
-  }
-
-  function flushAssistant() {
-    onAssistantMessage((draft) => {
-      const next: ChatMessagePart[] = []
-      for (const slot of partOrder) {
-        if (slot.kind === "text") {
-          const text = textBlocks.get(slot.id)
-          if (text) next.push({ type: "text", text })
-        } else if (slot.kind === "reasoning") {
-          const reasoning = reasoningBlocks.get(slot.id)
-          if (reasoning) next.push({ type: "reasoning", reasoning })
-        } else {
-          const tool = toolMap.get(slot.id)
-          if (tool) next.push(tool)
-        }
-      }
-      draft.parts = next
-    })
-  }
+  const processor = new StreamEventProcessor({
+    onAssistantMessage,
+    onChatTrace,
+    onInlineError,
+  })
 
   try {
     while (true) {
@@ -227,135 +433,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
           } catch {
             continue
           }
-          const typ = event.type
-          if (
-            typ === "text-start" ||
-            (typ === "text-delta" && currentTextId === null)
-          ) {
-            if (typ === "text-start" && currentTextId !== null) {
-              currentTextId = null
-            }
-            if (currentTextId === null) {
-              const id = nextSlotId()
-              partOrder.push({ kind: "text", id })
-              currentTextId = id
-              textBlocks.set(id, "")
-            }
-          }
-          if (typ === "text-delta" && event.delta != null) {
-            if (currentTextId === null) {
-              const id = nextSlotId()
-              partOrder.push({ kind: "text", id })
-              currentTextId = id
-              textBlocks.set(id, "")
-            }
-            textBlocks.set(
-              currentTextId,
-              (textBlocks.get(currentTextId) ?? "") + event.delta,
-            )
-            flushAssistant()
-          } else if (typ === "text-end") {
-            currentTextId = null
-          } else if (
-            typ === "reasoning-start" ||
-            (typ === "reasoning-delta" && currentReasoningId === null)
-          ) {
-            if (typ === "reasoning-start" && currentReasoningId !== null) {
-              currentReasoningId = null
-            }
-            if (currentReasoningId === null) {
-              const id = nextSlotId()
-              partOrder.push({ kind: "reasoning", id })
-              currentReasoningId = id
-              reasoningBlocks.set(id, "")
-            }
-          }
-          if (typ === "reasoning-delta" && event.delta != null) {
-            if (currentReasoningId === null) {
-              const id = nextSlotId()
-              partOrder.push({ kind: "reasoning", id })
-              currentReasoningId = id
-              reasoningBlocks.set(id, "")
-            }
-            reasoningBlocks.set(
-              currentReasoningId,
-              (reasoningBlocks.get(currentReasoningId) ?? "") + event.delta,
-            )
-            flushAssistant()
-          } else if (typ === "reasoning-end") {
-            currentReasoningId = null
-          } else if (typ === "tool-input-start" && event.toolCallId) {
-            const key = event.toolCallId
-            if (!toolMap.has(key)) {
-              partOrder.push({ kind: "tool", id: key })
-              toolMap.set(key, {
-                type: `tool-${event.toolName ?? "unknown"}`,
-                toolCallId: event.toolCallId,
-                toolName: event.toolName,
-              })
-            }
-            flushAssistant()
-          } else if (
-            typ === "tool-input-delta" &&
-            event.toolCallId &&
-            event.inputTextDelta != null
-          ) {
-            const key = event.toolCallId
-            const prev = toolInputBuffer.get(key) ?? ""
-            toolInputBuffer.set(key, prev + event.inputTextDelta)
-            let entry = toolMap.get(key)
-            if (!entry) {
-              partOrder.push({ kind: "tool", id: key })
-              entry = {
-                type: `tool-${event.toolName ?? "unknown"}`,
-                toolCallId: event.toolCallId,
-                toolName: event.toolName,
-              }
-              toolMap.set(key, entry)
-            }
-            try {
-              entry.input = JSON.parse(
-                toolInputBuffer.get(key) ?? "{}",
-              ) as unknown
-            } catch {
-              entry.input = toolInputBuffer.get(key)
-            }
-            flushAssistant()
-          } else if (typ === "tool-input-available" && event.toolCallId) {
-            const key = event.toolCallId
-            let entry = toolMap.get(key)
-            if (!entry) {
-              partOrder.push({ kind: "tool", id: key })
-              entry = {
-                type: `tool-${event.toolName ?? "unknown"}`,
-                toolCallId: event.toolCallId,
-                toolName: event.toolName,
-                input: event.input,
-              }
-              toolMap.set(key, entry)
-            } else {
-              entry.input = event.input
-            }
-            toolInputBuffer.delete(key)
-            flushAssistant()
-          } else if (typ === "tool-output-available" && event.toolCallId) {
-            const entry = toolMap.get(event.toolCallId)
-            if (entry) {
-              entry.output = event.output
-              flushAssistant()
-            }
-          } else if (typ === "tool-output-error" && event.toolCallId) {
-            const entry = toolMap.get(event.toolCallId)
-            if (entry) {
-              entry.output = { error: event.errorText }
-              flushAssistant()
-            }
-          } else if (typ === "kiln_chat_trace") {
-            const tid = event.trace_id
-            if (typeof tid === "string" && tid) {
-              onChatTrace?.(tid)
-            }
-          }
+          processor.handleEvent(event)
         }
       }
     }

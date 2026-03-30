@@ -14,11 +14,8 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
     get_kiln_server_client,
 )
 from app.desktop.studio_server.chat_api import (
-    _build_continuation_body,
+    EventParser,
     _build_openai_tool_continuation,
-    _dedupe_tool_inputs,
-    _execute_client_tool,
-    _parse_sse_events,
     connect_chat_api,
     execute_tool,
 )
@@ -151,175 +148,77 @@ class TestChatStreaming:
 # --- SSE parsing tests ---
 
 
-class TestParseSSEEvents:
+class TestEventParser:
     def test_passthrough_normal_events(self):
         raw = _sse_text_delta("hi")
-        lines, tool_event, fin_tool, tool_inputs, text_delta, trace_id = (
-            _parse_sse_events(raw)
-        )
-        assert tool_event is None
-        assert fin_tool is False
-        assert tool_inputs == []
-        assert text_delta == "hi"
-        assert trace_id is None
-        assert any(b"text-delta" in line for line in lines)
+        result = EventParser().parse(raw)
+        assert result.finish_tool_calls is False
+        assert result.tool_input_events == []
+        assert result.text_delta == "hi"
+        assert result.chat_trace_id is None
+        assert any(b"text-delta" in line for line in result.lines_to_forward)
 
     def test_invalid_ai_sdk_shape_skipped_for_extraction(self):
         raw = b'data: {"type":"text-delta","delta":"noid"}\n\n'
-        lines, _, _, _, text_delta, _ = _parse_sse_events(raw)
-        assert text_delta == ""
-        assert any(b"text-delta" in line for line in lines)
-
-    def test_detects_client_tool_call(self):
-        raw = (
-            _sse_text_delta("hi")
-            + b'data: {"type":"client-tool-call","toolCallId":"tc1","toolName":"read_task_run","input":{"path":"/x"}}\n\n'
-        )
-        lines, tool_event, fin_tool, tool_inputs, text_delta, trace_id = (
-            _parse_sse_events(raw)
-        )
-        assert tool_event is not None
-        assert fin_tool is False
-        assert tool_event["toolName"] == "read_task_run"
-        assert tool_event["toolCallId"] == "tc1"
-        assert trace_id is None
-        assert not any(b"client-tool-call" in line for line in lines)
+        result = EventParser().parse(raw)
+        assert result.text_delta == ""
+        assert any(b"text-delta" in line for line in result.lines_to_forward)
 
     def test_detects_ai_sdk_tool_calls_finish(self):
         raw = b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n'
-        lines, tool_event, fin_tool, tool_inputs, text_delta, trace_id = (
-            _parse_sse_events(raw)
-        )
-        assert tool_event is None
-        assert fin_tool is True
-        assert tool_inputs == []
-        assert trace_id is None
-        assert any(b"finish" in line for line in lines)
+        result = EventParser().parse(raw)
+        assert result.finish_tool_calls is True
+        assert result.tool_input_events == []
+        assert result.chat_trace_id is None
+        assert any(b"finish" in line for line in result.lines_to_forward)
 
     def test_handles_empty_input(self):
-        lines, tool_event, fin_tool, tool_inputs, text_delta, trace_id = (
-            _parse_sse_events(b"")
-        )
-        assert tool_event is None
-        assert fin_tool is False
-        assert tool_inputs == []
-        assert text_delta == ""
-        assert trace_id is None
+        result = EventParser().parse(b"")
+        assert result.finish_tool_calls is False
+        assert result.tool_input_events == []
+        assert result.text_delta == ""
+        assert result.chat_trace_id is None
 
     def test_detects_tool_input_available(self):
-        raw = b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"multiply","input":{"a":2,"b":8}}\n\n'
-        lines, tool_event, fin_tool, tool_inputs, text_delta, trace_id = (
-            _parse_sse_events(raw)
-        )
-        assert tool_event is None
-        assert trace_id is None
-        assert len(tool_inputs) == 1
-        assert tool_inputs[0].toolCallId == "tc1"
-        assert tool_inputs[0].toolName == "multiply"
-        assert tool_inputs[0].input == {"a": 2, "b": 8}
-        assert any(b"tool-input-available" in line for line in lines)
+        raw = b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_tool::multiply_numbers","input":{"a":2,"b":8}}\n\n'
+        result = EventParser().parse(raw)
+        assert result.chat_trace_id is None
+        assert len(result.tool_input_events) == 1
+        assert result.tool_input_events[0].toolCallId == "tc1"
+        assert result.tool_input_events[0].toolName == "kiln_tool::multiply_numbers"
+        assert result.tool_input_events[0].input == {"a": 2, "b": 8}
+        assert any(b"tool-input-available" in line for line in result.lines_to_forward)
 
     def test_accumulates_text_delta(self):
         raw = _sse_text_delta("hello ") + _sse_text_delta(
             "world", text_id="text-test-2"
         )
-        lines, tool_event, fin_tool, tool_inputs, text_delta, trace_id = (
-            _parse_sse_events(raw)
-        )
-        assert text_delta == "hello world"
-        assert trace_id is None
+        result = EventParser().parse(raw)
+        assert result.text_delta == "hello world"
+        assert result.chat_trace_id is None
 
     def test_buffers_split_line(self):
-        buf = bytearray()
-        _, _, _, _, _, _ = _parse_sse_events(
-            b'data: {"type":"text-delta","id":"t1","del', buf
-        )
-        lines, _, _, _, text_delta, trace_id = _parse_sse_events(b'ta":"hi"}\n\n', buf)
-        assert text_delta == "hi"
-        assert trace_id is None
-        assert any(b"text-delta" in line for line in lines)
+        parser = EventParser()
+        parser.parse(b'data: {"type":"text-delta","id":"t1","del')
+        result = parser.parse(b'ta":"hi"}\n\n')
+        assert result.text_delta == "hi"
+        assert result.chat_trace_id is None
+        assert any(b"text-delta" in line for line in result.lines_to_forward)
 
     def test_detects_kiln_chat_trace(self):
         tid = "d5804b96-851f-4ed6-acb6-b4107968a85a"
         raw = f'data: {{"type":"kiln_chat_trace","trace_id":"{tid}"}}\n\n'.encode()
-        lines, _, _, _, _, trace_id = _parse_sse_events(raw)
-        assert trace_id == tid
-        assert any(b"kiln_chat_trace" in line for line in lines)
+        result = EventParser().parse(raw)
+        assert result.chat_trace_id == tid
+        assert any(b"kiln_chat_trace" in line for line in result.lines_to_forward)
 
     def test_kiln_chat_trace_last_wins_in_chunk(self):
         raw = (
             b'data: {"type":"kiln_chat_trace","trace_id":"first-id"}\n'
             b'data: {"type":"kiln_chat_trace","trace_id":"second-id"}\n\n'
         )
-        _, _, _, _, _, trace_id = _parse_sse_events(raw)
-        assert trace_id == "second-id"
-
-
-# --- Client tool execution tests ---
-
-
-class TestExecuteClientTool:
-    def test_read_task_run_success(self):
-        mock_run = MagicMock()
-        mock_run.model_dump_json.return_value = '{"id": "42", "input": "hello"}'
-
-        with patch(
-            "app.desktop.studio_server.chat_api._find_task_run_by_id",
-            return_value=mock_run,
-        ):
-            result = _execute_client_tool("read_task_run", {"task_run_id": "42"})
-        assert '"id": "42"' in result
-
-    def test_read_task_run_not_found(self):
-        with patch(
-            "app.desktop.studio_server.chat_api._find_task_run_by_id",
-            return_value=None,
-        ):
-            result = _execute_client_tool("read_task_run", {"task_run_id": "999"})
-        parsed = json.loads(result)
-        assert "error" in parsed
-        assert "999" in parsed["error"]
-
-    def test_read_task_run_missing_id(self):
-        result = _execute_client_tool("read_task_run", {})
-        parsed = json.loads(result)
-        assert "error" in parsed
-
-    def test_unknown_tool(self):
-        result = _execute_client_tool("unknown_tool", {})
-        assert "Unknown client tool" in result
-
-
-# --- Continuation body tests ---
-
-
-class TestBuildContinuationBody:
-    def test_appends_tool_messages(self):
-        original = {"messages": [{"role": "user", "content": "hi"}]}
-        result = _build_continuation_body(
-            original, "tc1", "read_task_run", {"path": "/x"}, '{"data": "result"}'
-        )
-
-        assert len(result["messages"]) == 2
-        assert result["messages"][0]["role"] == "user"
-
-        parts = result["messages"][1]["parts"]
-        assert result["messages"][1]["role"] == "assistant"
-        assert len(parts) == 2
-        assert parts[0]["toolCallId"] == "tc1"
-        assert parts[0]["state"] == "call"
-        assert parts[0]["input"] == {"path": "/x"}
-        assert parts[1]["state"] == "output-available"
-        assert parts[1]["output"] == '{"data": "result"}'
-        assert "input" not in parts[1]
-
-    def test_preserves_original_body_fields(self):
-        original = {
-            "messages": [{"role": "user", "content": "hi"}],
-            "task_id": "test_task",
-        }
-        result = _build_continuation_body(original, "tc1", "tool", {}, "result")
-        assert result["task_id"] == "test_task"
+        result = EventParser().parse(raw)
+        assert result.chat_trace_id == "second-id"
 
 
 # --- _build_openai_tool_continuation tests ---
@@ -416,11 +315,11 @@ class TestBuildOpenAIToolContinuation:
 class TestExecuteTool:
     @pytest.mark.asyncio
     async def test_runs_multiply_builtin(self):
-        assert await execute_tool("multiply", {"a": 2, "b": 8}) == "16"
+        assert await execute_tool("kiln_tool::multiply_numbers", {"a": 2, "b": 8}) == "16"
 
     @pytest.mark.asyncio
     async def test_runs_add_builtin(self):
-        assert await execute_tool("add", {"a": 1, "b": 2}) == "3"
+        assert await execute_tool("kiln_tool::add_numbers", {"a": 1, "b": 2}) == "3"
 
     @pytest.mark.asyncio
     async def test_unknown_tool_returns_json_error(self):
@@ -428,101 +327,6 @@ class TestExecuteTool:
         data = json.loads(out)
         assert "error" in data
         assert "nonexistent_tool_xyz" in data["error"]
-
-
-# --- _dedupe_tool_inputs tests ---
-
-
-class TestDedupeToolInputs:
-    def test_returns_unique_entries(self):
-        events = [
-            ToolInputAvailableEvent(toolCallId="tc1", toolName="add", input={}),
-            ToolInputAvailableEvent(toolCallId="tc2", toolName="multiply", input={}),
-        ]
-        assert _dedupe_tool_inputs(events) == events
-
-    def test_last_entry_wins_on_duplicate(self):
-        events = [
-            ToolInputAvailableEvent(toolCallId="tc1", toolName="add", input={"a": 1}),
-            ToolInputAvailableEvent(toolCallId="tc1", toolName="add", input={"a": 99}),
-        ]
-        result = _dedupe_tool_inputs(events)
-        assert len(result) == 1
-        assert result[0].input == {"a": 99}
-
-    def test_empty_list(self):
-        assert _dedupe_tool_inputs([]) == []
-
-
-# --- Client tool round-trip test ---
-
-
-class TestClientToolRoundTrip:
-    def test_detects_and_continues_after_client_tool(self, client, mock_api_key):
-        """First request returns client-tool-call, proxy executes locally and sends continuation."""
-        trace_tid = "d5804b96-851f-4ed6-acb6-b4107968a85a"
-        first_response_chunks = [
-            _sse_text_delta("Let me read that"),
-            b'data: {"type":"client-tool-call","toolCallId":"tc1","toolName":"read_task_run","input":{"path":"/fake"}}\n\n',
-            b'data: {"type":"finish"}\n\n',
-            f'data: {{"type":"kiln_chat_trace","trace_id":"{trace_tid}"}}\n\n'.encode(),
-        ]
-        second_response_chunks = [
-            _sse_text_delta("Here is the result"),
-            b'data: {"type":"finish"}\n\n',
-        ]
-
-        call_count = 0
-
-        def make_stream_mock(chunks):
-            async def mock_aiter_bytes():
-                for chunk in chunks:
-                    yield chunk
-
-            mock_upstream = MagicMock()
-            mock_upstream.status_code = 200
-            mock_upstream.aiter_bytes.return_value = mock_aiter_bytes()
-            mock_upstream.__aenter__ = AsyncMock(return_value=mock_upstream)
-            mock_upstream.__aexit__ = AsyncMock(return_value=None)
-            return mock_upstream
-
-        def side_effect_stream(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return make_stream_mock(first_response_chunks)
-            return make_stream_mock(second_response_chunks)
-
-        mock_client = MagicMock()
-        mock_client.stream.side_effect = side_effect_stream
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-
-        mock_class = MagicMock(return_value=mock_client)
-
-        with (
-            patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class),
-            patch(
-                "app.desktop.studio_server.chat_api._execute_client_tool",
-                return_value='{"data": "mock result"}',
-            ),
-        ):
-            response = client.post(
-                "/api/chat",
-                json={"messages": [{"role": "user", "content": "read my task run"}]},
-            )
-
-        assert response.status_code == 200
-        content = response.content
-        assert b"Let me read that" in content
-        assert b"Here is the result" in content
-        assert call_count == 2
-
-        continuation_call = mock_client.stream.call_args_list[1]
-        continuation_body = json.loads(continuation_call.kwargs["content"])
-        assert len(continuation_body["messages"]) == 1
-        assert continuation_body["trace_id"] == trace_tid
-        assert continuation_body["messages"][0]["role"] == "assistant"
 
 
 # --- Remote (server-side AI SDK) tool round-trip test ---
@@ -562,7 +366,7 @@ class TestRemoteToolRoundTrip:
         """First request returns tool-input-available + finish tool-calls; proxy runs the built-in tool and continues."""
         first_chunks = [
             _sse_text_delta("Let me compute that"),
-            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"multiply","input":{"a":2,"b":8}}\n\n',
+            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_tool::multiply_numbers","input":{"a":2,"b":8}}\n\n',
             b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
         ]
         second_chunks = [
@@ -602,7 +406,7 @@ class TestRemoteToolRoundTrip:
         tc = assistant_msg["tool_calls"][0]
         assert tc["id"] == "tc1"
         assert tc["type"] == "function"
-        assert tc["function"]["name"] == "multiply"
+        assert tc["function"]["name"] == "kiln_tool::multiply_numbers"
         assert json.loads(tc["function"]["arguments"]) == {"a": 2, "b": 8}
 
         tool_msg = messages[2]
@@ -617,7 +421,7 @@ class TestRemoteToolRoundTrip:
         trace_tid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         first_chunks = [
             _sse_text_delta("Let me compute that"),
-            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"multiply","input":{"a":2,"b":8}}\n\n',
+            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_tool::multiply_numbers","input":{"a":2,"b":8}}\n\n',
             b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
             f'data: {{"type":"kiln_chat_trace","trace_id":"{trace_tid}"}}\n\n'.encode(),
         ]
@@ -653,7 +457,7 @@ class TestRemoteToolRoundTrip:
     def test_emits_tool_output_available_to_ui(self, client, mock_api_key):
         """Proxy should emit tool-output-available SSE so the UI can show the result."""
         first_chunks = [
-            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"add","input":{"a":1,"b":2}}\n\n',
+            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_tool::add_numbers","input":{"a":1,"b":2}}\n\n',
             b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
         ]
         second_chunks = [b'data: {"type":"finish"}\n\n']
@@ -675,8 +479,8 @@ class TestRemoteToolRoundTrip:
     def test_multiple_tool_calls_in_one_round(self, client, mock_api_key):
         """All tools in a single round are handled and forwarded as continuation."""
         first_chunks = [
-            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"add","input":{"a":1,"b":2}}\n\n',
-            b'data: {"type":"tool-input-available","toolCallId":"tc2","toolName":"multiply","input":{"a":3,"b":4}}\n\n',
+            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_tool::add_numbers","input":{"a":1,"b":2}}\n\n',
+            b'data: {"type":"tool-input-available","toolCallId":"tc2","toolName":"kiln_tool::multiply_numbers","input":{"a":3,"b":4}}\n\n',
             b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
         ]
         second_chunks = [b'data: {"type":"finish"}\n\n']
@@ -708,7 +512,7 @@ class TestRemoteToolRoundTrip:
     def test_no_continuation_when_finish_not_tool_calls(self, client, mock_api_key):
         """When finish reason is not tool-calls, only one upstream request is made."""
         chunks = [
-            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"add","input":{}}\n\n',
+            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_tool::add_numbers","input":{}}\n\n',
             b'data: {"type":"finish","messageMetadata":{"finishReason":"stop"}}\n\n',
         ]
         mock_class, _, _ = _make_httpx_mock(chunks=chunks)
