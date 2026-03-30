@@ -8,7 +8,7 @@ Two PRs: first for documentation-only changes (no frontend impact), second for p
 
 ## PR 1: Documentation-Only Changes
 
-- [ ] Phase 1: Operation descriptions, summaries, and tags
+- [x] Phase 1: Operation descriptions, summaries, and tags
 - [ ] Phase 2: Parameter descriptions
 - [ ] Phase 3: Schema and property descriptions
 

@@ -1,8 +1,8 @@
 import json
-from typing import Any, Dict
+from typing import Annotated, Any, Dict
 
 from app.desktop.studio_server.tool_api import tool_server_from_id
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path, Query
 from kiln_ai.datamodel.basemodel import string_to_valid_name
 from kiln_ai.datamodel.json_schema import single_string_field_name
 from kiln_ai.datamodel.run_config import McpRunConfigProperties, MCPToolReference
@@ -178,7 +178,12 @@ def _create_mcp_run_config_properties(
 def connect_run_config_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/tasks_compatible_with_tool")
     async def tasks_compatible_with_tool(
-        project_id: str, tool_id: str
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        tool_id: Annotated[
+            str, Query(description="The unique identifier of the tool.")
+        ],
     ) -> list[TaskToolCompatibility]:
         project = project_from_id(project_id)
 
@@ -215,8 +220,13 @@ def connect_run_config_api(app: FastAPI):
 
     @app.post("/api/projects/{project_id}/tasks/{task_id}/mcp_run_config")
     async def create_mcp_run_config(
-        project_id: str,
-        task_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
         request: CreateMcpRunConfigRequest,
     ) -> TaskRunConfig:
         task = task_from_id(project_id, task_id)
@@ -252,7 +262,10 @@ def connect_run_config_api(app: FastAPI):
 
     @app.post("/api/projects/{project_id}/create_task_from_tool")
     async def create_task_from_tool(
-        project_id: str, request: CreateTaskFromToolRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        request: CreateTaskFromToolRequest,
     ) -> Task:
         project = project_from_id(project_id)
 

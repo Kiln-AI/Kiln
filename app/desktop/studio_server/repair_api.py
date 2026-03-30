@@ -1,4 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from typing import Annotated
+
+from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.ml_model_list import (
@@ -30,9 +32,23 @@ class RepairRunPost(BaseModel):
 
 
 def connect_repair_api(app: FastAPI):
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/run_repair")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/run_repair",
+        summary="Generate Repair",
+        tags=["Runs"],
+    )
     async def run_repair(
-        project_id: str, task_id: str, run_id: str, input: RepairTaskApiInput
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_id: Annotated[
+            str, Path(description="The unique identifier of the task run.")
+        ],
+        input: RepairTaskApiInput,
     ) -> TaskRun:
         task, run = task_and_run_from_id(project_id, task_id, run_id)
         repair_task = RepairTaskRun(task)
@@ -104,9 +120,23 @@ def connect_repair_api(app: FastAPI):
         repair_run = await adapter.invoke(repair_task_input.model_dump())
         return repair_run
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/repair")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/repair",
+        summary="Save Repair",
+        tags=["Runs"],
+    )
     async def post_repair_run(
-        project_id: str, task_id: str, run_id: str, input: RepairRunPost
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_id: Annotated[
+            str, Path(description="The unique identifier of the task run.")
+        ],
+        input: RepairRunPost,
     ) -> TaskRun:
         _, run = task_and_run_from_id(project_id, task_id, run_id)
 

@@ -1,7 +1,7 @@
 import logging
-from typing import List
+from typing import Annotated, List
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.datamodel.basemodel import FilenameString
 from kiln_ai.datamodel.datamodel_enums import Priority
 from kiln_ai.datamodel.eval import Eval
@@ -59,9 +59,20 @@ class SpecCreationRequest(BaseModel):
 
 
 def connect_spec_api(app: FastAPI):
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/spec")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/spec",
+        summary="Create Spec",
+        tags=["Specs"],
+    )
     async def create_spec(
-        project_id: str, task_id: str, spec_data: SpecCreationRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        spec_data: SpecCreationRequest,
     ) -> Spec:
         task = task_from_id(project_id, task_id)
 
@@ -112,18 +123,55 @@ def connect_spec_api(app: FastAPI):
 
         return spec
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/specs")
-    async def get_specs(project_id: str, task_id: str) -> List[Spec]:
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/specs",
+        summary="List Specs",
+        tags=["Specs"],
+    )
+    async def get_specs(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> List[Spec]:
         parent_task = task_from_id(project_id, task_id)
         return parent_task.specs(readonly=True)
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}")
-    async def get_spec(project_id: str, task_id: str, spec_id: str) -> Spec:
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
+        summary="Get Spec",
+        tags=["Specs"],
+    )
+    async def get_spec(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        spec_id: Annotated[str, Path(description="The unique identifier of the spec.")],
+    ) -> Spec:
         return spec_from_id(project_id, task_id, spec_id)
 
-    @app.patch("/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}")
+    @app.patch(
+        "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
+        summary="Update Spec",
+        tags=["Specs"],
+    )
     async def update_spec(
-        project_id: str, task_id: str, spec_id: str, request: UpdateSpecRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        spec_id: Annotated[str, Path(description="The unique identifier of the spec.")],
+        request: UpdateSpecRequest,
     ) -> Spec:
         spec = spec_from_id(project_id, task_id, spec_id)
 
@@ -144,8 +192,21 @@ def connect_spec_api(app: FastAPI):
         spec.save_to_file()
         return spec
 
-    @app.delete("/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}")
-    async def delete_spec(project_id: str, task_id: str, spec_id: str) -> None:
+    @app.delete(
+        "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
+        summary="Delete Spec",
+        tags=["Specs"],
+    )
+    async def delete_spec(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        spec_id: Annotated[str, Path(description="The unique identifier of the spec.")],
+    ) -> None:
         spec = spec_from_id(project_id, task_id, spec_id)
 
         # Delete associated eval if it exists

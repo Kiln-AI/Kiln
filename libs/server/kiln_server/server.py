@@ -33,9 +33,9 @@ def make_app(lifespan=None):
         lifespan=lifespan,
     )
 
-    @app.get("/ping")
+    @app.get("/ping", summary="Ping Server", tags=["Settings & Utilities"])
     def ping():
-        """Ping the server 🏓"""
+        """Ping the server to check connectivity."""
         return "pong"
 
     connect_project_api(app)

@@ -1,7 +1,7 @@
 import json
 from typing import Annotated, Any, Dict, List, Set, Tuple
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.eval.eval_runner import EvalRunner
 from kiln_ai.adapters.fine_tune.finetune_run_config_id import (
@@ -346,10 +346,19 @@ def count_human_evals(
 
 
 def connect_evals_api(app: FastAPI):
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/create_evaluator")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/create_evaluator",
+        summary="Create Evaluator",
+        tags=["Evals"],
+    )
     async def create_evaluator(
-        project_id: str,
-        task_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
         request: CreateEvaluatorRequest,
     ) -> Eval:
         task = task_from_id(project_id, task_id)
@@ -367,24 +376,71 @@ def connect_evals_api(app: FastAPI):
         eval.save_to_file()
         return eval
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/run_configs/")
-    async def get_run_configs(project_id: str, task_id: str) -> list[TaskRunConfig]:
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/",
+        summary="List Run Configs",
+        tags=["Run Configs"],
+    )
+    async def get_run_configs(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> list[TaskRunConfig]:
         return get_all_run_configs(project_id, task_id)
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
-    async def get_eval(project_id: str, task_id: str, eval_id: str) -> Eval:
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
+        summary="Get Eval",
+        tags=["Evals"],
+    )
+    async def get_eval(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+    ) -> Eval:
         return eval_from_id(project_id, task_id, eval_id)
 
-    @app.delete("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
-    async def delete_eval(project_id: str, task_id: str, eval_id: str) -> None:
+    @app.delete(
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
+        summary="Delete Eval",
+        tags=["Evals"],
+    )
+    async def delete_eval(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+    ) -> None:
         eval = eval_from_id(project_id, task_id, eval_id)
         eval.delete()
 
-    @app.patch("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
+    @app.patch(
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
+        summary="Update Eval",
+        tags=["Evals"],
+    )
     async def update_eval(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
         request: UpdateEvalRequest,
     ) -> Eval:
         eval = eval_from_id(project_id, task_id, eval_id)
@@ -409,31 +465,76 @@ def connect_evals_api(app: FastAPI):
         eval.save_to_file()
         return eval
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/evals")
-    async def get_evals(project_id: str, task_id: str) -> list[Eval]:
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/evals",
+        summary="List Evals",
+        tags=["Evals"],
+    )
+    async def get_evals(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> list[Eval]:
+        """List all evals for a task."""
         task = task_from_id(project_id, task_id)
         return task.evals()
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs",
+        summary="List Eval Configs",
+        tags=["Evals"],
+    )
     async def get_eval_configs(
-        project_id: str, task_id: str, eval_id: str
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
     ) -> list[EvalConfig]:
         eval = eval_from_id(project_id, task_id, eval_id)
         return eval.configs()
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}"
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}",
+        summary="Get Eval Config",
+        tags=["Evals"],
     )
     async def get_eval_config(
-        project_id: str, task_id: str, eval_id: str, eval_config_id: str
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+        eval_config_id: Annotated[
+            str, Path(description="The unique identifier of the eval configuration.")
+        ],
     ) -> EvalConfig:
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
         return eval_config
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/task_run_config")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/task_run_config",
+        summary="Create Run Config",
+        tags=["Run Configs"],
+    )
     async def create_task_run_config(
-        project_id: str,
-        task_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
         request: CreateTaskRunConfigRequest,
     ) -> TaskRunConfig:
         task = task_from_id(project_id, task_id)
@@ -478,11 +579,22 @@ def connect_evals_api(app: FastAPI):
         task_run_config.save_to_file()
         return task_run_config
 
-    @app.patch("/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}")
+    @app.patch(
+        "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}",
+        summary="Update Run Config",
+        tags=["Run Configs"],
+    )
     async def update_run_config(
-        project_id: str,
-        task_id: str,
-        run_config_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_config_id: Annotated[
+            str, Path(description="The unique identifier of the run configuration.")
+        ],
         request: UpdateRunConfigRequest,
     ) -> TaskRunConfig:
         run_config = task_run_config_from_id(project_id, task_id, run_config_id)
@@ -508,12 +620,19 @@ def connect_evals_api(app: FastAPI):
         return run_config
 
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/create_eval_config"
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/create_eval_config",
+        summary="Create Eval Config",
+        tags=["Evals"],
     )
     async def create_eval_config(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
         request: CreateEvalConfigRequest,
     ) -> EvalConfig:
         eval = eval_from_id(project_id, task_id, eval_id)
@@ -532,15 +651,32 @@ def connect_evals_api(app: FastAPI):
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/run_task_run_eval"
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/run_task_run_eval",
+        summary="Run Run Config Comparison",
+        tags=["Evals"],
     )
     async def run_eval_config(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
-        eval_config_id: str,
-        run_config_ids: Annotated[list[str], Query()] = [],
-        all_run_configs: Annotated[bool, Query()] = False,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+        eval_config_id: Annotated[
+            str, Path(description="The unique identifier of the eval configuration.")
+        ],
+        run_config_ids: Annotated[
+            list[str],
+            Query(description="The list of run configuration IDs to evaluate."),
+        ] = [],
+        all_run_configs: Annotated[
+            bool,
+            Query(
+                description="Whether to evaluate all run configurations for the task."
+            ),
+        ] = False,
     ) -> StreamingResponse:
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
 
@@ -569,13 +705,25 @@ def connect_evals_api(app: FastAPI):
         return await run_eval_runner_with_status(eval_runner)
 
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/set_current_eval_config/{eval_config_id}"
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/set_current_eval_config/{eval_config_id}",
+        summary="Set Default Eval Config",
+        tags=["Evals"],
     )
     async def set_default_eval_config(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
-        eval_config_id: str | None,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+        eval_config_id: Annotated[
+            str | None,
+            Path(
+                description="The unique identifier of the eval configuration to set as default, or 'None' to clear the default."
+            ),
+        ],
     ) -> Eval:
         eval = eval_from_id(project_id, task_id, eval_id)
 
@@ -603,12 +751,19 @@ def connect_evals_api(app: FastAPI):
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/run_eval_config_eval"
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/run_eval_config_eval",
+        summary="Run Eval Config Comparison",
+        tags=["Evals"],
     )
     async def run_eval_config_eval(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
     ) -> StreamingResponse:
         eval = eval_from_id(project_id, task_id, eval_id)
         eval_configs = eval.configs()
@@ -621,14 +776,25 @@ def connect_evals_api(app: FastAPI):
         return await run_eval_runner_with_status(eval_runner)
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/results"
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/results",
+        summary="Get Eval Run Results",
+        tags=["Evals"],
     )
     async def get_eval_run_results(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
-        eval_config_id: str,
-        run_config_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+        eval_config_id: Annotated[
+            str, Path(description="The unique identifier of the eval configuration.")
+        ],
+        run_config_id: Annotated[
+            str, Path(description="The unique identifier of the run configuration.")
+        ],
     ) -> EvalRunResult:
         eval = eval_from_id(project_id, task_id, eval_id)
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
@@ -646,11 +812,20 @@ def connect_evals_api(app: FastAPI):
         )
 
     # Overview of the eval progress
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress",
+        summary="Get Eval Progress",
+        tags=["Evals"],
+    )
     async def get_eval_progress(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
     ) -> EvalProgress:
         task = task_from_id(project_id, task_id)
         eval = eval_from_id(project_id, task_id, eval_id)
@@ -697,13 +872,22 @@ def connect_evals_api(app: FastAPI):
 
     # This compares run_configs to each other on a given eval_config. Compare to below which compares eval_configs to each other.
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/score_summary"
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/score_summary",
+        summary="Get Run Config Score Summary",
+        tags=["Evals"],
     )
     async def get_eval_config_score_summary(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
-        eval_config_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+        eval_config_id: Annotated[
+            str, Path(description="The unique identifier of the eval configuration.")
+        ],
     ) -> EvalResultSummary:
         task = task_from_id(project_id, task_id)
         eval = eval_from_id(project_id, task_id, eval_id)
@@ -801,12 +985,19 @@ def connect_evals_api(app: FastAPI):
 
     # Compared to above, this is comparing all eval configs to each other, not looking at a single eval config
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs_score_summary"
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs_score_summary",
+        summary="Get Eval Config Comparison Summary",
+        tags=["Evals"],
     )
     async def get_eval_configs_score_summary(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
     ) -> EvalConfigCompareSummary:
         task = task_from_id(project_id, task_id)
         eval = eval_from_id(project_id, task_id, eval_id)
@@ -940,12 +1131,21 @@ def connect_evals_api(app: FastAPI):
         )
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}/eval_scores"
+        "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}/eval_scores",
+        summary="Get Run Config Eval Scores",
+        tags=["Run Configs"],
     )
     async def get_run_config_eval_scores(
-        project_id: str,
-        task_id: str,
-        run_config_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_config_id: Annotated[
+            str, Path(description="The unique identifier of the run configuration.")
+        ],
     ) -> RunConfigEvalScoresSummary:
         task = task_from_id(project_id, task_id)
 

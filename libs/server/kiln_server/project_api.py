@@ -2,7 +2,7 @@ import os
 from pathlib import Path as FilePath
 from typing import Annotated, Any, Dict
 
-from fastapi import Body, FastAPI, HTTPException, Path
+from fastapi import Body, FastAPI, HTTPException, Path, Query
 from kiln_ai.datamodel import Project
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.project_utils import project_from_id as project_from_id_core
@@ -111,7 +111,11 @@ def connect_project_api(app: FastAPI):
         return {"message": f"Project removed. ID: {project_id}"}
 
     @app.post("/api/import_project", summary="Import Project", tags=["Projects"])
-    async def import_project(project_path: str) -> Project:
+    async def import_project(
+        project_path: Annotated[
+            str, Query(description="File path to the project.kiln file to import.")
+        ],
+    ) -> Project:
         if project_path is None or not os.path.exists(project_path):
             raise HTTPException(
                 status_code=400,

@@ -1,9 +1,9 @@
 import logging
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Annotated, Any, Dict, List
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path, Query
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.external_tool_server import (
     ExternalToolServer,
@@ -243,7 +243,9 @@ async def validate_tool_server_connectivity(tool_server: ExternalToolServer):
 def connect_tool_servers_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/available_tools")
     async def get_available_tools(
-        project_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
     ) -> List[ToolSetApiDescription]:
         project = project_from_id(project_id)
 
@@ -374,7 +376,9 @@ def connect_tool_servers_api(app: FastAPI):
 
     @app.get("/api/projects/{project_id}/available_tool_servers")
     async def get_available_tool_servers(
-        project_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
     ) -> List[KilnToolServerDescription]:
         project = project_from_id(project_id)
 
@@ -398,7 +402,9 @@ def connect_tool_servers_api(app: FastAPI):
 
     @app.get("/api/projects/{project_id}/kiln_task_tools")
     async def get_kiln_task_tools(
-        project_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
     ) -> List[KilnTaskToolDescription]:
         project = project_from_id(project_id)
 
@@ -432,7 +438,12 @@ def connect_tool_servers_api(app: FastAPI):
 
     @app.get("/api/projects/{project_id}/tool_servers/{tool_server_id}")
     async def get_tool_server(
-        project_id: str, tool_server_id: str
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        tool_server_id: Annotated[
+            str, Path(description="The unique identifier of the tool server.")
+        ],
     ) -> ExternalToolServerApiDescription:
         tool_server = tool_server_from_id(project_id, tool_server_id)
 
@@ -529,7 +540,12 @@ def connect_tool_servers_api(app: FastAPI):
 
     @app.get("/api/projects/{project_id}/tool_servers/{tool_server_id}/config")
     async def get_tool_server_config(
-        project_id: str, tool_server_id: str
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        tool_server_id: Annotated[
+            str, Path(description="The unique identifier of the tool server.")
+        ],
     ) -> ExternalToolServerApiDescription:
         tool_server = tool_server_from_id(project_id, tool_server_id)
         return ExternalToolServerApiDescription(
@@ -546,7 +562,10 @@ def connect_tool_servers_api(app: FastAPI):
 
     @app.post("/api/projects/{project_id}/connect_remote_mcp")
     async def connect_remote_mcp(
-        project_id: str, tool_data: ExternalToolServerCreationRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        tool_data: ExternalToolServerCreationRequest,
     ) -> ExternalToolServer:
         project = project_from_id(project_id)
 
@@ -568,8 +587,12 @@ def connect_tool_servers_api(app: FastAPI):
 
     @app.patch("/api/projects/{project_id}/edit_remote_mcp/{tool_server_id}")
     async def edit_remote_mcp(
-        project_id: str,
-        tool_server_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        tool_server_id: Annotated[
+            str, Path(description="The unique identifier of the tool server.")
+        ],
         tool_data: ExternalToolServerCreationRequest,
     ) -> ExternalToolServer:
         existing_tool_server = tool_server_from_id(project_id, tool_server_id)
@@ -604,7 +627,10 @@ def connect_tool_servers_api(app: FastAPI):
 
     @app.post("/api/projects/{project_id}/connect_local_mcp")
     async def connect_local_mcp(
-        project_id: str, tool_data: LocalToolServerCreationRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        tool_data: LocalToolServerCreationRequest,
     ) -> ExternalToolServer:
         project = project_from_id(project_id)
 
@@ -627,7 +653,13 @@ def connect_tool_servers_api(app: FastAPI):
 
     @app.patch("/api/projects/{project_id}/edit_local_mcp/{tool_server_id}")
     async def edit_local_mcp(
-        project_id: str, tool_server_id: str, tool_data: LocalToolServerCreationRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        tool_server_id: Annotated[
+            str, Path(description="The unique identifier of the tool server.")
+        ],
+        tool_data: LocalToolServerCreationRequest,
     ) -> ExternalToolServer:
         existing_tool_server = tool_server_from_id(project_id, tool_server_id)
         if existing_tool_server.type != ToolServerType.local_mcp:
@@ -683,7 +715,10 @@ def connect_tool_servers_api(app: FastAPI):
 
     @app.post("/api/projects/{project_id}/kiln_task_tool")
     async def add_kiln_task_tool(
-        project_id: str, tool_data: KilnTaskToolServerCreationRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        tool_data: KilnTaskToolServerCreationRequest,
     ) -> ExternalToolServer:
         _validate_kiln_task_tool_task_and_run_config(project_id, tool_data)
 
@@ -710,8 +745,12 @@ def connect_tool_servers_api(app: FastAPI):
 
     @app.patch("/api/projects/{project_id}/edit_kiln_task_tool/{tool_server_id}")
     async def edit_kiln_task_tool(
-        project_id: str,
-        tool_server_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        tool_server_id: Annotated[
+            str, Path(description="The unique identifier of the tool server.")
+        ],
         tool_data: KilnTaskToolServerCreationRequest,
     ) -> ExternalToolServer:
         _validate_kiln_task_tool_task_and_run_config(project_id, tool_data)
@@ -739,7 +778,14 @@ def connect_tool_servers_api(app: FastAPI):
         return existing_tool_server
 
     @app.delete("/api/projects/{project_id}/tool_servers/{tool_server_id}")
-    async def delete_tool_server(project_id: str, tool_server_id: str):
+    async def delete_tool_server(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        tool_server_id: Annotated[
+            str, Path(description="The unique identifier of the tool server.")
+        ],
+    ):
         tool_server = tool_server_from_id(project_id, tool_server_id)
         # Delete the secrets from the settings
         tool_server.delete_secrets()
@@ -751,12 +797,20 @@ def connect_tool_servers_api(app: FastAPI):
         return Config.shared().enable_demo_tools
 
     @app.post("/api/demo_tools")
-    async def set_demo_tools(enable_demo_tools: bool) -> bool:
+    async def set_demo_tools(
+        enable_demo_tools: Annotated[
+            bool, Query(description="Whether to enable demo tools.")
+        ],
+    ) -> bool:
         Config.shared().enable_demo_tools = enable_demo_tools
         return Config.shared().enable_demo_tools
 
     @app.get("/api/projects/{project_id}/search_tools")
-    async def get_search_tools(project_id: str) -> list[SearchToolApiDescription]:
+    async def get_search_tools(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+    ) -> list[SearchToolApiDescription]:
         project = project_from_id(project_id)
         return [
             SearchToolApiDescription(
@@ -771,7 +825,14 @@ def connect_tool_servers_api(app: FastAPI):
 
     @app.get("/api/projects/{project_id}/tasks/{task_id}/tools/{tool_id}/definition")
     async def get_tool_definition(
-        project_id: str, task_id: str, tool_id: str
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        tool_id: Annotated[str, Path(description="The unique identifier of the tool.")],
     ) -> ToolDefinitionResponse:
         """
         Get the actual OpenAI tool definition for a specific tool ID.

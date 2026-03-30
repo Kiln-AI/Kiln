@@ -1,8 +1,8 @@
 import logging
 from datetime import datetime
-from typing import List
+from typing import Annotated, List
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.utils.validation import SkillNameString
 from kiln_server.project_api import project_from_id
@@ -49,17 +49,35 @@ def _get_skill(project_id: str, skill_id: str) -> Skill:
 
 def connect_skill_api(app: FastAPI):
     @app.get("/api/projects/{project_id}/skills")
-    async def get_skills(project_id: str) -> List[SkillResponse]:
+    async def get_skills(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+    ) -> List[SkillResponse]:
         project = project_from_id(project_id)
         return [skill_to_response(s) for s in project.skills(readonly=True)]
 
     @app.get("/api/projects/{project_id}/skills/{skill_id}")
-    async def get_skill(project_id: str, skill_id: str) -> SkillResponse:
+    async def get_skill(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        skill_id: Annotated[
+            str, Path(description="The unique identifier of the skill.")
+        ],
+    ) -> SkillResponse:
         skill = _get_skill(project_id, skill_id)
         return skill_to_response(skill)
 
     @app.get("/api/projects/{project_id}/skills/{skill_id}/content")
-    async def get_skill_content(project_id: str, skill_id: str) -> SkillContentResponse:
+    async def get_skill_content(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        skill_id: Annotated[
+            str, Path(description="The unique identifier of the skill.")
+        ],
+    ) -> SkillContentResponse:
         project = project_from_id(project_id)
         skill = Skill.from_id_and_parent_path(skill_id, project.path)
         if skill is None:
@@ -77,7 +95,10 @@ def connect_skill_api(app: FastAPI):
 
     @app.post("/api/projects/{project_id}/skills")
     async def create_skill(
-        project_id: str, skill_data: SkillCreationRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        skill_data: SkillCreationRequest,
     ) -> SkillResponse:
         project = project_from_id(project_id)
         skill = Skill(
@@ -91,7 +112,13 @@ def connect_skill_api(app: FastAPI):
 
     @app.patch("/api/projects/{project_id}/skills/{skill_id}")
     async def update_skill(
-        project_id: str, skill_id: str, updates: SkillUpdateRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        skill_id: Annotated[
+            str, Path(description="The unique identifier of the skill.")
+        ],
+        updates: SkillUpdateRequest,
     ) -> SkillResponse:
         skill = _get_skill(project_id, skill_id)
 

@@ -1,7 +1,7 @@
 import logging
-from typing import Any, Dict, List
+from typing import Annotated, Any, Dict, List
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException, Path
 from kiln_ai.datamodel import Task, TaskRequirement
 from kiln_ai.datamodel.external_tool_server import (
     ToolServerType,
@@ -36,8 +36,15 @@ class RatingOptionResponse(BaseModel):
 
 
 def connect_task_api(app: FastAPI):
-    @app.post("/api/projects/{project_id}/task")
-    async def create_task(project_id: str, task_data: Dict[str, Any]) -> Task:
+    @app.post("/api/projects/{project_id}/task", summary="Create Task", tags=["Tasks"])
+    async def create_task(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_data: Annotated[
+            Dict[str, Any], Body(description="The task data to create.")
+        ],
+    ) -> Task:
         if "id" in task_data:
             raise HTTPException(
                 status_code=400,
@@ -61,9 +68,22 @@ def connect_task_api(app: FastAPI):
 
         return task
 
-    @app.patch("/api/projects/{project_id}/task/{task_id}")
+    @app.patch(
+        "/api/projects/{project_id}/task/{task_id}",
+        summary="Update Task",
+        tags=["Tasks"],
+    )
     async def update_task(
-        project_id: str, task_id: str, task_updates: Dict[str, Any]
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        task_updates: Annotated[
+            Dict[str, Any], Body(description="Fields to update on the task.")
+        ],
     ) -> Task:
         if "input_json_schema" in task_updates or "output_json_schema" in task_updates:
             raise HTTPException(
@@ -93,8 +113,20 @@ def connect_task_api(app: FastAPI):
 
         return updated_task
 
-    @app.delete("/api/projects/{project_id}/task/{task_id}")
-    async def delete_task(project_id: str, task_id: str) -> None:
+    @app.delete(
+        "/api/projects/{project_id}/task/{task_id}",
+        summary="Delete Task",
+        tags=["Tasks"],
+    )
+    async def delete_task(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> None:
         task = task_from_id(project_id, task_id)
         task.delete()
 
@@ -114,20 +146,44 @@ def connect_task_api(app: FastAPI):
 
                     tool_server.save_to_file()
 
-    @app.get("/api/projects/{project_id}/tasks")
-    async def get_tasks(project_id: str) -> List[Task]:
+    @app.get("/api/projects/{project_id}/tasks", summary="List Tasks", tags=["Tasks"])
+    async def get_tasks(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+    ) -> List[Task]:
         parent_project = project_from_id(project_id)
         return parent_project.tasks()
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}")
-    async def get_task(project_id: str, task_id: str) -> Task:
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}", summary="Get Task", tags=["Tasks"]
+    )
+    async def get_task(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> Task:
         return task_from_id(project_id, task_id)
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/rating_options")
-    async def get_rating_options(project_id: str, task_id: str) -> RatingOptionResponse:
-        """
-        Generates an object which determines which rating options should be shown for a given dataset item.
-        """
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/rating_options",
+        summary="Get Rating Options",
+        tags=["Tasks"],
+    )
+    async def get_rating_options(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> RatingOptionResponse:
+        """Determines which rating options should be shown for a given dataset item."""
         task = task_from_id(project_id, task_id)
         results: List[RatingOption] = []
 

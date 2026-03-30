@@ -1,6 +1,7 @@
 from datetime import datetime
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.adapters.prompt_builders import CustomExamplePromptBuilder, PromptExample
 from kiln_ai.datamodel import BasePrompt, Prompt, PromptId
 from pydantic import BaseModel
@@ -72,9 +73,20 @@ class BuildPromptResponse(BaseModel):
 
 
 def connect_prompt_api(app: FastAPI):
-    @app.post("/api/projects/{project_id}/task/{task_id}/prompt")
+    @app.post(
+        "/api/projects/{project_id}/task/{task_id}/prompt",
+        summary="Create Prompt",
+        tags=["Prompts"],
+    )
     async def create_prompt(
-        project_id: str, task_id: str, prompt_data: PromptCreateRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        prompt_data: PromptCreateRequest,
     ) -> Prompt:
         parent_task = task_from_id(project_id, task_id)
         prompt = Prompt(
@@ -88,8 +100,20 @@ def connect_prompt_api(app: FastAPI):
         prompt.save_to_file()
         return prompt
 
-    @app.get("/api/projects/{project_id}/task/{task_id}/prompts")
-    async def get_prompts(project_id: str, task_id: str) -> PromptResponse:
+    @app.get(
+        "/api/projects/{project_id}/task/{task_id}/prompts",
+        summary="List Prompts",
+        tags=["Prompts"],
+    )
+    async def get_prompts(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> PromptResponse:
         parent_task = task_from_id(project_id, task_id)
 
         prompts: list[ApiPrompt] = []
@@ -115,9 +139,23 @@ def connect_prompt_api(app: FastAPI):
             prompts=prompts,
         )
 
-    @app.patch("/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}")
+    @app.patch(
+        "/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}",
+        summary="Update Prompt",
+        tags=["Prompts"],
+    )
     async def update_prompt(
-        project_id: str, task_id: str, prompt_id: str, prompt_data: PromptUpdateRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        prompt_id: Annotated[
+            str, Path(description="The unique identifier of the prompt.")
+        ],
+        prompt_data: PromptUpdateRequest,
     ) -> ApiPrompt:
         prompt = editable_prompt_from_id(project_id, task_id, prompt_id)
         prompt.name = prompt_data.name
@@ -126,14 +164,40 @@ def connect_prompt_api(app: FastAPI):
         properties = prompt.model_dump(exclude={"id"})
         return ApiPrompt(id=f"id::{prompt.id}", **properties)
 
-    @app.delete("/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}")
-    async def delete_prompt(project_id: str, task_id: str, prompt_id: str) -> None:
+    @app.delete(
+        "/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}",
+        summary="Delete Prompt",
+        tags=["Prompts"],
+    )
+    async def delete_prompt(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        prompt_id: Annotated[
+            str, Path(description="The unique identifier of the prompt.")
+        ],
+    ) -> None:
         prompt = editable_prompt_from_id(project_id, task_id, prompt_id)
         prompt.delete()
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/build_prompt_with_examples")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/build_prompt_with_examples",
+        summary="Build Prompt With Examples",
+        tags=["Prompts"],
+    )
     async def build_prompt_with_examples(
-        project_id: str, task_id: str, request: BuildPromptRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        request: BuildPromptRequest,
     ) -> BuildPromptResponse:
         """Build a prompt with task instruction, requirements, and optional custom examples.
 
