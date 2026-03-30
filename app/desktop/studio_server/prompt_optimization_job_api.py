@@ -44,6 +44,7 @@ from kiln_ai.utils.config import Config
 from kiln_ai.utils.lock import shared_async_lock_manager
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -462,7 +463,10 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             )
 
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start"
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start",
+        openapi_extra=agent_policy_require_approval(
+            "Running prompt optimizer uses many credits"
+        ),
     )
     async def start_prompt_optimization_job(
         project_id: str,
