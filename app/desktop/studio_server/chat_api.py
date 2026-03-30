@@ -10,22 +10,36 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
-from kiln_ai.datamodel import Project, TaskRun
+from kiln_ai.adapters.model_adapters.stream_events import (
+    AiSdkStreamEvent,
+    FinishEvent,
+    TextDeltaEvent,
+    ToolInputAvailableEvent,
+)
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.tool_registry import tool_from_id
-from kiln_ai.utils.config import Config
+from pydantic import TypeAdapter, ValidationError
 
 logger = logging.getLogger(__name__)
 
 _CHAT_TIMEOUT = httpx.Timeout(timeout=300.0, connect=30.0)
-_MAX_CLIENT_TOOL_ROUNDS = 5
+_MAX_CLIENT_TOOL_ROUNDS = 25
 
-_BUILTIN_FUNCTION_NAME_TO_TOOL_ID: dict[str, str] = {
-    "add": KilnBuiltInToolId.ADD_NUMBERS.value,
-    "subtract": KilnBuiltInToolId.SUBTRACT_NUMBERS.value,
-    "multiply": KilnBuiltInToolId.MULTIPLY_NUMBERS.value,
-    "divide": KilnBuiltInToolId.DIVIDE_NUMBERS.value,
-    "call_kiln_api": KilnBuiltInToolId.CALL_KILN_API.value,
+KILN_SSE_CLIENT_TOOL_CALL = "client-tool-call"
+KILN_SSE_CHAT_TRACE = "kiln_chat_trace"
+
+_ai_sdk_stream_event_adapter = TypeAdapter(AiSdkStreamEvent)
+
+
+def _try_parse_ai_sdk_event(data: dict[str, Any]) -> AiSdkStreamEvent | None:
+    try:
+        return _ai_sdk_stream_event_adapter.validate_python(data)
+    except ValidationError:
+        return None
+
+
+FUNCTION_NAME_TO_TOOL_ID: dict[str, KilnBuiltInToolId] = {
+    "call_kiln_api": KilnBuiltInToolId.CALL_KILN_API,
 }
 
 
@@ -36,7 +50,7 @@ async def execute_tool(tool_name: str, args: dict[str, Any]) -> str:
         tool_name,
         json.dumps(args, default=str),
     )
-    tool_id = _BUILTIN_FUNCTION_NAME_TO_TOOL_ID.get(tool_name)
+    tool_id = FUNCTION_NAME_TO_TOOL_ID.get(tool_name)
     if tool_id is None:
         logger.warning("No local executor for server tool name: %s", tool_name)
         return json.dumps({"error": f"Unknown server tool: {tool_name}"})
@@ -57,37 +71,6 @@ def _build_upstream_headers(api_key: str) -> dict[str, str]:
     }
 
 
-def _find_task_run_by_id(task_run_id: str) -> TaskRun | None:
-    """Search all projects and tasks for a task run with the given ID."""
-    project_paths = Config.shared().projects or []
-    for project_path in project_paths:
-        try:
-            project = Project.load_from_file(project_path)
-        except Exception:
-            continue
-        for task in project.tasks():
-            run = TaskRun.from_id_and_parent_path(task_run_id, task.path)
-            if run is not None:
-                return run
-    return None
-
-
-def _execute_client_tool(tool_name: str, arguments: dict[str, Any]) -> str:
-    """Execute a client-side tool and return the result as a string."""
-    if tool_name == "read_task_run":
-        task_run_id = arguments.get("task_run_id", "")
-        if not task_run_id:
-            return json.dumps({"error": "task_run_id is required"})
-        try:
-            run = _find_task_run_by_id(task_run_id)
-            if run is None:
-                return json.dumps({"error": f"Task run not found: {task_run_id}"})
-            return run.model_dump_json(indent=2)
-        except Exception as e:
-            return json.dumps({"error": f"Failed to read task run: {e}"})
-    return json.dumps({"error": f"Unknown client tool: {tool_name}"})
-
-
 def _parse_sse_events(
     raw: bytes,
     line_buffer: bytearray | None = None,
@@ -95,7 +78,7 @@ def _parse_sse_events(
     list[bytes],
     dict[str, Any] | None,
     bool,
-    list[dict[str, Any]],
+    list[ToolInputAvailableEvent],
     str,
     str | None,
 ]:
@@ -107,14 +90,22 @@ def _parse_sse_events(
     consecutive calls for a single upstream response; pass ``None`` (or omit)
     when processing a standalone, complete chunk (e.g. in unit tests).
 
+    Each ``data:`` JSON object is deserialized with Pydantic
+    :class:`~kiln_ai.adapters.model_adapters.stream_events.AiSdkStreamEvent`
+    when possible; payloads that fail validation are still forwarded but do
+    not contribute to extracted fields (except Kiln-only types below).
+
+    Kiln extension types ``client-tool-call`` and ``kiln_chat_trace`` are not
+    part of ``AiSdkStreamEvent`` and are handled separately from raw dicts.
+
     Returns:
         lines_to_forward: complete lines to stream back to the UI
         client_tool_event: the ``client-tool-call`` event dict, if present
             (suppressed from *lines_to_forward*)
-        upstream_finish_tool_calls: True when a ``finish`` event carries
+        upstream_finish_tool_calls: True when a validated ``finish`` event has
             ``messageMetadata.finishReason == "tool-calls"``
-        tool_input_events: list of ``tool-input-available`` event dicts
-        text_delta: concatenated ``text-delta`` content from this chunk
+        tool_input_events: validated ``tool-input-available`` events
+        text_delta: concatenated ``text-delta`` content from validated events
         chat_trace_id: ``trace_id`` from the last ``kiln_chat_trace`` event in
             this chunk, if any (non-empty string only)
     """
@@ -133,7 +124,7 @@ def _parse_sse_events(
     lines_to_forward: list[bytes] = []
     client_tool_event: dict[str, Any] | None = None
     upstream_finish_tool_calls = False
-    tool_input_events: list[dict[str, Any]] = []
+    tool_input_events: list[ToolInputAvailableEvent] = []
     text_delta = ""
     chat_trace_id: str | None = None
 
@@ -145,24 +136,30 @@ def _parse_sse_events(
                     event = json.loads(payload)
                     if not isinstance(event, dict):
                         pass
-                    elif event.get("type") == "client-tool-call":
-                        client_tool_event = event
-                        continue  # strip from forwarded stream
-                    elif event.get("type") == "finish":
-                        meta = event.get("messageMetadata") or {}
-                        if meta.get("finishReason") == "tool-calls":
-                            upstream_finish_tool_calls = True
-                    elif event.get("type") == "tool-input-available":
-                        tool_input_events.append(event)
-                    elif event.get("type") == "text-delta":
-                        delta = event.get("delta")
-                        if isinstance(delta, str):
-                            text_delta += delta
-                    elif event.get("type") == "kiln_chat_trace":
-                        tid = event.get("trace_id")
-                        if isinstance(tid, str) and tid:
-                            chat_trace_id = tid
+                    else:
+                        event_type = event.get("type")
+                        if event_type == KILN_SSE_CLIENT_TOOL_CALL:
+                            client_tool_event = event
+                            continue
+                        if event_type == KILN_SSE_CHAT_TRACE:
+                            tid = event.get("trace_id")
+                            if isinstance(tid, str) and tid:
+                                chat_trace_id = tid
+                        else:
+                            parsed = _try_parse_ai_sdk_event(event)
+                            if isinstance(parsed, FinishEvent):
+                                meta = parsed.messageMetadata
+                                if (
+                                    meta is not None
+                                    and meta.finishReason == "tool-calls"
+                                ):
+                                    upstream_finish_tool_calls = True
+                            elif isinstance(parsed, TextDeltaEvent):
+                                text_delta += parsed.delta
+                            elif isinstance(parsed, ToolInputAvailableEvent):
+                                tool_input_events.append(parsed)
                 except (json.JSONDecodeError, TypeError):
+                    logger.exception("Failed to parse AI SDK event", exc_info=True)
                     pass
         lines_to_forward.append(line)
 
@@ -174,14 +171,6 @@ def _parse_sse_events(
         text_delta,
         chat_trace_id,
     )
-
-
-def _dedupe_tool_inputs(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Deduplicate tool-input-available events by toolCallId; last entry wins."""
-    seen: dict[str, dict[str, Any]] = {}
-    for ev in events:
-        seen[ev.get("toolCallId", "")] = ev
-    return list(seen.values())
 
 
 def connect_chat_api(app: FastAPI) -> None:
@@ -202,7 +191,7 @@ def connect_chat_api(app: FastAPI) -> None:
                 rounds += 1
                 client_tool_event = None
                 upstream_finish_tool_calls = False
-                tool_input_events_this_round: list[dict[str, Any]] = []
+                tool_input_events_this_round: list[ToolInputAvailableEvent] = []
                 assistant_text_this_round = ""
                 upstream_trace_id: str | None = None
                 line_buffer = bytearray()
@@ -261,6 +250,7 @@ def connect_chat_api(app: FastAPI) -> None:
                             else:
                                 raise
 
+                # upstream send the trace_id that we need to send back in the next request to continue the trace
                 if upstream_trace_id:
                     current_body = {
                         **current_body,
@@ -268,50 +258,32 @@ def connect_chat_api(app: FastAPI) -> None:
                         "messages": [],
                     }
 
-                # client-tool-call takes precedence when both appear in one round
-                if client_tool_event is not None:
-                    tool_name = client_tool_event.get("toolName", "")
-                    tool_call_id = client_tool_event.get("toolCallId", "")
-                    tool_input = client_tool_event.get("input", {})
-
-                    logger.info(
-                        f"Executing client tool: {tool_name} (call_id={tool_call_id})"
-                    )
-
-                    yield f"data: {json.dumps({'type': 'tool-output-available', 'toolCallId': tool_call_id, 'output': '(executing locally...)'})}\n\n".encode()
-
-                    tool_result = _execute_client_tool(tool_name, tool_input)
-
-                    yield f"data: {json.dumps({'type': 'tool-output-available', 'toolCallId': tool_call_id, 'output': tool_result})}\n\n".encode()
-
-                    current_body = _build_continuation_body(
-                        current_body, tool_call_id, tool_name, tool_input, tool_result
-                    )
-                    continue
-
                 # AI SDK server-side tool round: the model stopped to call remote tools
-                if upstream_finish_tool_calls and tool_input_events_this_round:
-                    deduped = _dedupe_tool_inputs(tool_input_events_this_round)
+                if upstream_finish_tool_calls:
+                    deduped = tool_input_events_this_round
                     tool_results_by_call_id: dict[str, str] = {}
                     for event in deduped:
-                        tc_id = event.get("toolCallId", "")
-                        tool_name = event.get("toolName", "")
-                        raw_input = event.get("input", {})
-                        tool_args = raw_input if isinstance(raw_input, dict) else {}
+                        tc_id = event.toolCallId
+                        tool_name = event.toolName
+                        tool_args = event.input
                         logger.info(
                             f"Executing server tool: {tool_name} (call_id={tc_id})"
                         )
                         tool_result = await execute_tool(tool_name, tool_args)
                         tool_results_by_call_id[tc_id] = tool_result
                         yield f"data: {json.dumps({'type': 'tool-output-available', 'toolCallId': tc_id, 'output': tool_result})}\n\n".encode()
+
                     current_body = _build_openai_tool_continuation(
                         current_body,
                         assistant_text_this_round,
                         deduped,
                         tool_results_by_call_id,
                     )
+
+                    # we ran the tools we needed to, continue on to sending back the results upstream
                     continue
 
+                # stream is over but nothing to do here
                 return
 
         return StreamingResponse(
@@ -323,7 +295,7 @@ def connect_chat_api(app: FastAPI) -> None:
 def _build_openai_tool_continuation(
     original_body: dict[str, Any],
     assistant_text: str,
-    tool_input_events: list[dict[str, Any]],
+    tool_input_events: list[ToolInputAvailableEvent],
     tool_results_by_call_id: dict[str, str],
 ) -> dict[str, Any]:
     """Build the request body for continuing after server-side AI SDK tool calls.
@@ -336,7 +308,7 @@ def _build_openai_tool_continuation(
     tool_messages: list[dict[str, Any]] = []
 
     for event in tool_input_events:
-        tc_id = event.get("toolCallId", "")
+        tc_id = event.toolCallId
         tool_content = tool_results_by_call_id.get(tc_id, "")
         tool_messages.append(
             {
@@ -354,15 +326,9 @@ def _build_openai_tool_continuation(
     else:
         tool_calls: list[dict[str, Any]] = []
         for event in tool_input_events:
-            tc_id = event.get("toolCallId", "")
-            tool_name = event.get("toolName", "")
-            raw_input = event.get("input", {})
-            if isinstance(raw_input, dict):
-                args_str = json.dumps(raw_input)
-            elif isinstance(raw_input, str):
-                args_str = raw_input
-            else:
-                args_str = json.dumps(raw_input)
+            tc_id = event.toolCallId
+            tool_name = event.toolName
+            args_str = json.dumps(event.input)
             tool_calls.append(
                 {
                     "id": tc_id,
@@ -381,33 +347,3 @@ def _build_openai_tool_continuation(
         new_messages = prior_messages + [assistant_msg] + tool_messages
 
     return {**original_body, "messages": new_messages}
-
-
-def _build_continuation_body(
-    original_body: dict[str, Any],
-    tool_call_id: str,
-    _tool_name: str,
-    tool_input: Any,
-    tool_result: str,
-) -> dict[str, Any]:
-    """Build the request body for continuing after a client tool call.
-
-    Appends a single assistant message containing both the tool call and its
-    result so the backend's convert_to_openai_messages produces the correct
-    assistant(tool_calls) + tool(result) sequence.
-    """
-    messages = list(original_body.get("messages", []))
-    parts: list[dict[str, Any]] = [
-        {
-            "toolCallId": tool_call_id,
-            "state": "call",
-            "input": tool_input,
-        },
-        {
-            "toolCallId": tool_call_id,
-            "state": "output-available",
-            "output": tool_result,
-        },
-    ]
-    assistant_msg = {"role": "assistant", "parts": parts}
-    return {**original_body, "messages": messages + [assistant_msg]}

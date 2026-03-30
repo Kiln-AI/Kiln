@@ -24,8 +24,18 @@ from app.desktop.studio_server.chat_api import (
 )
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
 from kiln_ai.utils.config import Config
 from kiln_server.custom_errors import connect_custom_errors
+
+
+def _sse_text_delta(delta: str, text_id: str = "text-test") -> bytes:
+    payload = {
+        "type": "text-delta",
+        "id": text_id,
+        "delta": delta,
+    }
+    return f"data: {json.dumps(payload)}\n\n".encode()
 
 
 @pytest.fixture
@@ -53,7 +63,7 @@ def mock_api_key():
 
 def _make_httpx_mock(status_code: int = 200, chunks: list[bytes] | None = None):
     if chunks is None:
-        chunks = [b'data: {"type":"text-delta","delta":"hello"}\n\n']
+        chunks = [_sse_text_delta("hello")]
 
     async def mock_aiter_bytes():
         for chunk in chunks:
@@ -83,7 +93,7 @@ def _make_httpx_mock(status_code: int = 200, chunks: list[bytes] | None = None):
 class TestChatStreaming:
     def test_streams_chunks(self, client, mock_api_key):
         chunks = [
-            b'data: {"type":"text-delta","delta":"hello"}\n\n',
+            _sse_text_delta("hello"),
             b'data: {"type":"finish"}\n\n',
         ]
         mock_class, _, _ = _make_httpx_mock(chunks=chunks)
@@ -143,7 +153,7 @@ class TestChatStreaming:
 
 class TestParseSSEEvents:
     def test_passthrough_normal_events(self):
-        raw = b'data: {"type":"text-delta","delta":"hi"}\n\n'
+        raw = _sse_text_delta("hi")
         lines, tool_event, fin_tool, tool_inputs, text_delta, trace_id = (
             _parse_sse_events(raw)
         )
@@ -154,10 +164,16 @@ class TestParseSSEEvents:
         assert trace_id is None
         assert any(b"text-delta" in line for line in lines)
 
+    def test_invalid_ai_sdk_shape_skipped_for_extraction(self):
+        raw = b'data: {"type":"text-delta","delta":"noid"}\n\n'
+        lines, _, _, _, text_delta, _ = _parse_sse_events(raw)
+        assert text_delta == ""
+        assert any(b"text-delta" in line for line in lines)
+
     def test_detects_client_tool_call(self):
         raw = (
-            b'data: {"type":"text-delta","delta":"hi"}\n'
-            b'data: {"type":"client-tool-call","toolCallId":"tc1","toolName":"read_task_run","input":{"path":"/x"}}\n\n'
+            _sse_text_delta("hi")
+            + b'data: {"type":"client-tool-call","toolCallId":"tc1","toolName":"read_task_run","input":{"path":"/x"}}\n\n'
         )
         lines, tool_event, fin_tool, tool_inputs, text_delta, trace_id = (
             _parse_sse_events(raw)
@@ -198,13 +214,15 @@ class TestParseSSEEvents:
         assert tool_event is None
         assert trace_id is None
         assert len(tool_inputs) == 1
-        assert tool_inputs[0]["toolCallId"] == "tc1"
-        assert tool_inputs[0]["toolName"] == "multiply"
-        assert tool_inputs[0]["input"] == {"a": 2, "b": 8}
+        assert tool_inputs[0].toolCallId == "tc1"
+        assert tool_inputs[0].toolName == "multiply"
+        assert tool_inputs[0].input == {"a": 2, "b": 8}
         assert any(b"tool-input-available" in line for line in lines)
 
     def test_accumulates_text_delta(self):
-        raw = b'data: {"type":"text-delta","delta":"hello "}\ndata: {"type":"text-delta","delta":"world"}\n\n'
+        raw = _sse_text_delta("hello ") + _sse_text_delta(
+            "world", text_id="text-test-2"
+        )
         lines, tool_event, fin_tool, tool_inputs, text_delta, trace_id = (
             _parse_sse_events(raw)
         )
@@ -213,7 +231,9 @@ class TestParseSSEEvents:
 
     def test_buffers_split_line(self):
         buf = bytearray()
-        _, _, _, _, _, _ = _parse_sse_events(b'data: {"type":"text-delta","del', buf)
+        _, _, _, _, _, _ = _parse_sse_events(
+            b'data: {"type":"text-delta","id":"t1","del', buf
+        )
         lines, _, _, _, text_delta, trace_id = _parse_sse_events(b'ta":"hi"}\n\n', buf)
         assert text_delta == "hi"
         assert trace_id is None
@@ -306,8 +326,14 @@ class TestBuildContinuationBody:
 
 
 class TestBuildOpenAIToolContinuation:
-    def _event(self, tc_id: str, tool_name: str, inp: Any) -> dict[str, Any]:
-        return {"toolCallId": tc_id, "toolName": tool_name, "input": inp}
+    def _event(
+        self, tc_id: str, tool_name: str, inp: dict[str, Any]
+    ) -> ToolInputAvailableEvent:
+        return ToolInputAvailableEvent(
+            toolCallId=tc_id,
+            toolName=tool_name,
+            input=inp,
+        )
 
     def test_appends_assistant_and_tool_messages(self):
         original = {"messages": [{"role": "user", "content": "hi"}]}
@@ -361,15 +387,6 @@ class TestBuildOpenAIToolContinuation:
         assert messages[3]["tool_call_id"] == "tc2"
         assert messages[3]["content"] == "12"
 
-    def test_string_input_used_verbatim_as_arguments(self):
-        original = {"messages": []}
-        raw_args = '{"x": 1}'
-        result = _build_openai_tool_continuation(
-            original, "", [self._event("tc1", "tool", raw_args)], {"tc1": "ok"}
-        )
-        tc = result["messages"][0]["tool_calls"][0]
-        assert tc["function"]["arguments"] == raw_args
-
     def test_preserves_original_body_fields(self):
         original = {"messages": [], "task_id": "t1", "session_id": "s1"}
         result = _build_openai_tool_continuation(
@@ -419,19 +436,19 @@ class TestExecuteTool:
 class TestDedupeToolInputs:
     def test_returns_unique_entries(self):
         events = [
-            {"toolCallId": "tc1", "toolName": "add"},
-            {"toolCallId": "tc2", "toolName": "multiply"},
+            ToolInputAvailableEvent(toolCallId="tc1", toolName="add", input={}),
+            ToolInputAvailableEvent(toolCallId="tc2", toolName="multiply", input={}),
         ]
         assert _dedupe_tool_inputs(events) == events
 
     def test_last_entry_wins_on_duplicate(self):
         events = [
-            {"toolCallId": "tc1", "toolName": "add", "input": {"a": 1}},
-            {"toolCallId": "tc1", "toolName": "add", "input": {"a": 99}},
+            ToolInputAvailableEvent(toolCallId="tc1", toolName="add", input={"a": 1}),
+            ToolInputAvailableEvent(toolCallId="tc1", toolName="add", input={"a": 99}),
         ]
         result = _dedupe_tool_inputs(events)
         assert len(result) == 1
-        assert result[0]["input"] == {"a": 99}
+        assert result[0].input == {"a": 99}
 
     def test_empty_list(self):
         assert _dedupe_tool_inputs([]) == []
@@ -445,13 +462,13 @@ class TestClientToolRoundTrip:
         """First request returns client-tool-call, proxy executes locally and sends continuation."""
         trace_tid = "d5804b96-851f-4ed6-acb6-b4107968a85a"
         first_response_chunks = [
-            b'data: {"type":"text-delta","delta":"Let me read that"}\n\n',
+            _sse_text_delta("Let me read that"),
             b'data: {"type":"client-tool-call","toolCallId":"tc1","toolName":"read_task_run","input":{"path":"/fake"}}\n\n',
             b'data: {"type":"finish"}\n\n',
             f'data: {{"type":"kiln_chat_trace","trace_id":"{trace_tid}"}}\n\n'.encode(),
         ]
         second_response_chunks = [
-            b'data: {"type":"text-delta","delta":"Here is the result"}\n\n',
+            _sse_text_delta("Here is the result"),
             b'data: {"type":"finish"}\n\n',
         ]
 
@@ -544,12 +561,12 @@ class TestRemoteToolRoundTrip:
     def test_continues_after_tool_input_available(self, client, mock_api_key):
         """First request returns tool-input-available + finish tool-calls; proxy runs the built-in tool and continues."""
         first_chunks = [
-            b'data: {"type":"text-delta","delta":"Let me compute that"}\n\n',
+            _sse_text_delta("Let me compute that"),
             b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"multiply","input":{"a":2,"b":8}}\n\n',
             b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
         ]
         second_chunks = [
-            b'data: {"type":"text-delta","delta":"The answer is 16"}\n\n',
+            _sse_text_delta("The answer is 16"),
             b'data: {"type":"finish"}\n\n',
         ]
 
@@ -599,13 +616,13 @@ class TestRemoteToolRoundTrip:
         """After kiln_chat_trace, the persisted trace already has user + assistant(tool_calls); send only tool results."""
         trace_tid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         first_chunks = [
-            b'data: {"type":"text-delta","delta":"Let me compute that"}\n\n',
+            _sse_text_delta("Let me compute that"),
             b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"multiply","input":{"a":2,"b":8}}\n\n',
             b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
             f'data: {{"type":"kiln_chat_trace","trace_id":"{trace_tid}"}}\n\n'.encode(),
         ]
         second_chunks = [
-            b'data: {"type":"text-delta","delta":"The answer is 16"}\n\n',
+            _sse_text_delta("The answer is 16"),
             b'data: {"type":"finish"}\n\n',
         ]
 
