@@ -467,6 +467,23 @@ def test_generate_run_without_parent_task_run_defaults_to_task(test_task, adapte
     assert run.parent == test_task
 
 
+def test_generate_run_with_unsaved_parent_task_run_raises(adapter):
+    prior_run = adapter.generate_run(
+        input="prior input",
+        input_source=None,
+        run_output=RunOutput(output="prior output", intermediate_outputs=None),
+    )
+    prior_run.id = None
+
+    with pytest.raises(ValueError, match="parent_task_run must be persisted"):
+        adapter.generate_run(
+            input="new input",
+            input_source=None,
+            run_output=RunOutput(output="new output", intermediate_outputs=None),
+            parent_task_run=prior_run,
+        )
+
+
 @pytest.mark.asyncio
 async def test_invoke_with_parent_task_run_saves_under_task_with_link(
     test_task, adapter
