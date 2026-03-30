@@ -577,7 +577,7 @@ def test_create_mcp_run_config_success(client, tmp_path):
     ):
         mock_task_from_id.return_value = task
         response = client.post(
-            "/api/projects/project4/tasks/task_run_config/mcp_run_config",
+            "/api/projects/project4/tasks/task_run_config/run_configs/mcp",
             json={"tool_id": "mcp::local::server::fake_tool"},
         )
 
@@ -631,7 +631,7 @@ def test_create_mcp_run_config_plaintext_success(client, tmp_path):
         mock_task_from_id.return_value = task
 
         response = client.post(
-            "/api/projects/project5/tasks/task_plaintext_rc/mcp_run_config",
+            "/api/projects/project5/tasks/task_plaintext_rc/run_configs/mcp",
             json={
                 "name": "Plaintext MCP Config",
                 "description": "A test description",
@@ -707,7 +707,7 @@ def test_create_mcp_run_config_input_schema_mismatch(client, tmp_path):
         mock_task_from_id.return_value = task
 
         response = client.post(
-            "/api/projects/project6/tasks/task_bad_input_rc/mcp_run_config",
+            "/api/projects/project6/tasks/task_bad_input_rc/run_configs/mcp",
             json={
                 "name": "MCP Config",
                 "tool_id": "mcp::local::server123::test_tool",

@@ -35,7 +35,7 @@ class RepairRunPost(BaseModel):
 
 def connect_repair_api(app: FastAPI):
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/run_repair",
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/generate_repair",
         summary="Generate Repair",
         tags=["Runs"],
     )
@@ -123,7 +123,7 @@ def connect_repair_api(app: FastAPI):
         return repair_run
 
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/repair",
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/save_repair",
         summary="Save Repair",
         tags=["Runs"],
     )

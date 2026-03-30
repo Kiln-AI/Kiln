@@ -466,7 +466,7 @@ def connect_evals_api(app: FastAPI):
         return eval
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/run_configs/",
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs",
         summary="List Run Configs",
         tags=["Run Configs"],
     )
@@ -482,7 +482,7 @@ def connect_evals_api(app: FastAPI):
         return get_all_run_configs(project_id, task_id)
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
         summary="Get Eval",
         tags=["Evals"],
     )
@@ -499,7 +499,7 @@ def connect_evals_api(app: FastAPI):
         return eval_from_id(project_id, task_id, eval_id)
 
     @app.delete(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
         summary="Delete Eval",
         tags=["Evals"],
     )
@@ -517,7 +517,7 @@ def connect_evals_api(app: FastAPI):
         eval.delete()
 
     @app.patch(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
         summary="Update Eval",
         tags=["Evals"],
     )
@@ -573,7 +573,7 @@ def connect_evals_api(app: FastAPI):
         return task.evals()
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs",
         summary="List Eval Configs",
         tags=["Evals"],
     )
@@ -591,7 +591,7 @@ def connect_evals_api(app: FastAPI):
         return eval.configs()
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}",
         summary="Get Eval Config",
         tags=["Evals"],
     )
@@ -612,7 +612,7 @@ def connect_evals_api(app: FastAPI):
         return eval_config
 
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/task_run_config",
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs",
         summary="Create Run Config",
         tags=["Run Configs"],
     )
@@ -669,7 +669,7 @@ def connect_evals_api(app: FastAPI):
         return task_run_config
 
     @app.patch(
-        "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}",
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}",
         summary="Update Run Config",
         tags=["Run Configs"],
     )
@@ -709,7 +709,7 @@ def connect_evals_api(app: FastAPI):
         return run_config
 
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/create_eval_config",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/create_eval_config",
         summary="Create Eval Config",
         tags=["Evals"],
     )
@@ -740,7 +740,7 @@ def connect_evals_api(app: FastAPI):
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/run_task_run_eval",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_comparison",
         summary="Run Run Config Comparison",
         tags=["Evals"],
     )
@@ -794,7 +794,7 @@ def connect_evals_api(app: FastAPI):
         return await run_eval_runner_with_status(eval_runner)
 
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/set_current_eval_config/{eval_config_id}",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/set_current_eval_config/{eval_config_id}",
         summary="Set Default Eval Config",
         tags=["Evals"],
     )
@@ -840,7 +840,7 @@ def connect_evals_api(app: FastAPI):
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/run_eval_config_eval",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/run_calibration",
         summary="Run Eval Config Comparison",
         tags=["Evals"],
     )
@@ -865,7 +865,7 @@ def connect_evals_api(app: FastAPI):
         return await run_eval_runner_with_status(eval_runner)
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/results",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/results",
         summary="Get Eval Run Results",
         tags=["Evals"],
     )
@@ -902,7 +902,7 @@ def connect_evals_api(app: FastAPI):
 
     # Overview of the eval progress
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/progress",
         summary="Get Eval Progress",
         tags=["Evals"],
     )
@@ -961,7 +961,7 @@ def connect_evals_api(app: FastAPI):
 
     # This compares run_configs to each other on a given eval_config. Compare to below which compares eval_configs to each other.
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/score_summary",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/score_summary",
         summary="Get Run Config Score Summary",
         tags=["Evals"],
     )
@@ -1074,7 +1074,7 @@ def connect_evals_api(app: FastAPI):
 
     # Compared to above, this is comparing all eval configs to each other, not looking at a single eval config
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs_score_summary",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs_score_summary",
         summary="Get Eval Config Comparison Summary",
         tags=["Evals"],
     )
@@ -1220,7 +1220,7 @@ def connect_evals_api(app: FastAPI):
         )
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}/eval_scores",
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}/eval_scores",
         summary="Get Run Config Eval Scores",
         tags=["Run Configs"],
     )

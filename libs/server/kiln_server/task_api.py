@@ -44,7 +44,7 @@ class RatingOptionResponse(BaseModel):
 
 
 def connect_task_api(app: FastAPI):
-    @app.post("/api/projects/{project_id}/task", summary="Create Task", tags=["Tasks"])
+    @app.post("/api/projects/{project_id}/tasks", summary="Create Task", tags=["Tasks"])
     async def create_task(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -77,7 +77,7 @@ def connect_task_api(app: FastAPI):
         return task
 
     @app.patch(
-        "/api/projects/{project_id}/task/{task_id}",
+        "/api/projects/{project_id}/tasks/{task_id}",
         summary="Update Task",
         tags=["Tasks"],
     )
@@ -122,7 +122,7 @@ def connect_task_api(app: FastAPI):
         return updated_task
 
     @app.delete(
-        "/api/projects/{project_id}/task/{task_id}",
+        "/api/projects/{project_id}/tasks/{task_id}",
         summary="Delete Task",
         tags=["Tasks"],
     )

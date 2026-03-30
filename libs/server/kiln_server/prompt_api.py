@@ -109,7 +109,7 @@ class BuildPromptResponse(BaseModel):
 
 def connect_prompt_api(app: FastAPI):
     @app.post(
-        "/api/projects/{project_id}/task/{task_id}/prompt",
+        "/api/projects/{project_id}/tasks/{task_id}/prompts",
         summary="Create Prompt",
         tags=["Prompts"],
     )
@@ -136,7 +136,7 @@ def connect_prompt_api(app: FastAPI):
         return prompt
 
     @app.get(
-        "/api/projects/{project_id}/task/{task_id}/prompts",
+        "/api/projects/{project_id}/tasks/{task_id}/prompts",
         summary="List Prompts",
         tags=["Prompts"],
     )

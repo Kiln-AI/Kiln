@@ -98,7 +98,7 @@
       let network_error: unknown | null = null
       if (creating) {
         const { data: post_data, error: post_error } = await client.POST(
-          "/api/projects/{project_id}/task",
+          "/api/projects/{project_id}/tasks",
           {
             params: {
               path: {
@@ -115,7 +115,7 @@
         }
       } else {
         const { data: patch_data, error: patch_error } = await client.PATCH(
-          "/api/projects/{project_id}/task/{task_id}",
+          "/api/projects/{project_id}/tasks/{task_id}",
           {
             params: {
               path: {

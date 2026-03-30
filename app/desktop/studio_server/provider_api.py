@@ -495,7 +495,7 @@ def connect_provider_api(app: FastAPI):
 
         return models
 
-    @app.get(
+    @app.post(
         "/api/provider/ollama/connect",
         summary="Connect Ollama",
         tags=["Providers & Models"],
@@ -507,7 +507,7 @@ def connect_provider_api(app: FastAPI):
     ) -> OllamaConnection:
         return await connect_ollama(custom_ollama_url)
 
-    @app.get(
+    @app.post(
         "/api/provider/docker_model_runner/connect",
         summary="Connect Docker Model Runner",
         tags=["Providers & Models"],

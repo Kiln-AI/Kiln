@@ -11,7 +11,7 @@ class PromptApiResponse(BaseModel):
 
 
 def connect_prompt_api(app: FastAPI):
-    @app.get("/api/projects/{project_id}/task/{task_id}/gen_prompt/{prompt_id}")
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/gen_prompt/{prompt_id}")
     async def generate_prompt(
         project_id: str,
         task_id: str,

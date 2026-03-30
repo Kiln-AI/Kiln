@@ -464,7 +464,7 @@
 
     let data: OllamaConnection | null = null
     try {
-      const { data: req_data, error: req_error } = await client.GET(
+      const { data: req_data, error: req_error } = await client.POST(
         "/api/provider/ollama/connect",
         {
           params: {
@@ -553,14 +553,12 @@
 
     let data: DockerModelRunnerConnection | null = null
     try {
-      const { data: req_data, error: req_error } = await client.GET(
+      const { data: req_data, error: req_error } = await client.POST(
         "/api/provider/docker_model_runner/connect",
         {
-          params: {
-            query: {
-              docker_model_runner_custom_url:
-                docker_model_runner_custom_url || undefined,
-            },
+          query: {
+            docker_model_runner_custom_url:
+              docker_model_runner_custom_url || undefined,
           },
         },
       )

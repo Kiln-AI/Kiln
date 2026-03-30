@@ -597,7 +597,7 @@ async def test_connect_docker_model_runner_api_endpoint(client):
     ) as mock_connect:
         mock_connect.return_value = mock_connection
 
-        response = client.get("/api/provider/docker_model_runner/connect")
+        response = client.post("/api/provider/docker_model_runner/connect")
 
         assert response.status_code == 200
         mock_connect.assert_called_once_with(None)
@@ -618,7 +618,7 @@ async def test_connect_docker_model_runner_api_endpoint_with_custom_url(client):
         mock_connect.return_value = mock_connection
 
         custom_url = "http://custom:8080/engines/llama.cpp"
-        response = client.get(
+        response = client.post(
             "/api/provider/docker_model_runner/connect",
             params={"docker_model_runner_custom_url": custom_url},
         )

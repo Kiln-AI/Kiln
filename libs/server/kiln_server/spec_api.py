@@ -77,7 +77,7 @@ class SpecCreationRequest(BaseModel):
 
 def connect_spec_api(app: FastAPI):
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/spec",
+        "/api/projects/{project_id}/tasks/{task_id}/specs",
         summary="Create Spec",
         tags=["Specs"],
     )

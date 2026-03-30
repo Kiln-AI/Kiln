@@ -176,7 +176,7 @@ def test_get_evals_success(client, mock_task, mock_task_from_id, mock_eval):
 def test_get_eval_success(client, mock_task, mock_task_from_id, mock_eval):
     mock_task_from_id.return_value = mock_task
 
-    response = client.get("/api/projects/project1/tasks/task1/eval/eval1")
+    response = client.get("/api/projects/project1/tasks/task1/evals/eval1")
 
     assert response.status_code == 200
     result = response.json()
@@ -188,7 +188,7 @@ def test_get_eval_success(client, mock_task, mock_task_from_id, mock_eval):
 def test_get_eval_not_found(client, mock_task, mock_task_from_id):
     mock_task_from_id.return_value = mock_task
 
-    response = client.get("/api/projects/project1/tasks/task1/eval/non_existent")
+    response = client.get("/api/projects/project1/tasks/task1/evals/non_existent")
 
     assert response.status_code == 404
     assert response.json()["message"] == "Eval not found. ID: non_existent"
@@ -269,7 +269,7 @@ async def test_create_task_run_config_with_freezing(
         mock_generate_memorable_name.return_value = "Custom Name"
 
         response = client.post(
-            "/api/projects/project1/tasks/task1/task_run_config",
+            "/api/projects/project1/tasks/task1/run_configs",
             json={
                 "name": "Test Task Run Config",
                 "description": "Test Description",
@@ -304,7 +304,7 @@ async def test_create_task_run_config_with_freezing(
         == "Frozen copy of prompt 'simple_chain_of_thought_prompt_builder'."
     )
     # Fetch it from API
-    fetch_response = client.get("/api/projects/project1/tasks/task1/run_configs/")
+    fetch_response = client.get("/api/projects/project1/tasks/task1/run_configs")
     assert fetch_response.status_code == 200
     configs = fetch_response.json()
     assert len(configs) == 1
@@ -336,7 +336,7 @@ async def test_create_task_run_config_without_freezing(
         mock_generate_memorable_name.return_value = "Custom Name"
 
         response = client.post(
-            "/api/projects/project1/tasks/task1/task_run_config",
+            "/api/projects/project1/tasks/task1/run_configs",
             json={
                 "name": "Test Task Run Config",
                 "description": "Test Description",
@@ -371,7 +371,7 @@ async def test_create_eval_config(
         mock_eval_from_id.return_value = mock_eval
 
         response = client.post(
-            "/api/projects/project1/tasks/task1/eval/eval1/create_eval_config",
+            "/api/projects/project1/tasks/task1/evals/eval1/create_eval_config",
             json=valid_eval_config_request.model_dump(),
         )
 
@@ -402,7 +402,7 @@ def test_get_eval_config(
     with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
         mock_eval_from_id.return_value = mock_eval
         response = client.get(
-            "/api/projects/project1/tasks/task1/eval/eval1/eval_config/eval_config1"
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1"
         )
 
     assert response.status_code == 200
@@ -425,7 +425,7 @@ def test_get_eval_configs(
     with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
         mock_eval_from_id.return_value = mock_eval
         response = client.get(
-            "/api/projects/project1/tasks/task1/eval/eval1/eval_configs"
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_configs"
         )
 
     assert response.status_code == 200
@@ -473,7 +473,7 @@ async def test_run_eval_config(
 
         # Make request with specific run_config_ids
         response = client.get(
-            "/api/projects/project1/tasks/task1/eval/eval1/eval_config/eval_config1/run_task_run_eval",
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1/run_comparison",
             params={"run_config_ids": ["run_config1", "run_config2"]},
         )
 
@@ -510,7 +510,7 @@ async def test_run_eval_config_no_run_configs_error(
 
         # Make request with no run_config_ids and all_run_configs=False
         response = client.get(
-            "/api/projects/project1/tasks/task1/eval/eval1/eval_config/eval_config1/run_task_run_eval"
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1/run_comparison"
         )
 
         assert response.status_code == 400
@@ -693,7 +693,7 @@ def test_update_run_config_starred(client, mock_task_from_id, mock_run_config):
     assert mock_run_config.starred is False
 
     response = client.patch(
-        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        "/api/projects/project1/tasks/task1/run_configs/run_config1",
         json={"starred": True},
     )
     assert response.status_code == 200
@@ -710,7 +710,7 @@ def test_update_run_config_unstar(client, mock_task_from_id, mock_run_config):
     mock_run_config.save_to_file()
 
     response = client.patch(
-        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        "/api/projects/project1/tasks/task1/run_configs/run_config1",
         json={"starred": False},
     )
     assert response.status_code == 200
@@ -724,7 +724,7 @@ def test_update_run_config_unstar(client, mock_task_from_id, mock_run_config):
 def test_update_run_config_not_found(client, mock_task_from_id, mock_task):
     """Test the PATCH endpoint returns 404 for non-existent run config."""
     response = client.patch(
-        "/api/projects/project1/tasks/task1/run_config/non_existent",
+        "/api/projects/project1/tasks/task1/run_configs/non_existent",
         json={"starred": True},
     )
     assert response.status_code == 404
@@ -749,7 +749,7 @@ def test_update_run_config_no_path(client, mock_task_from_id, mock_task):
     ) as mock_from_id:
         mock_from_id.return_value = finetune_run_config
         response = client.patch(
-            "/api/projects/project1/tasks/task1/run_config/finetune_run_config::project1::task1::ft1",
+            "/api/projects/project1/tasks/task1/run_configs/finetune_run_config::project1::task1::ft1",
             json={"starred": True},
         )
     assert response.status_code == 400
@@ -764,7 +764,7 @@ def test_update_run_config_prompt_name(client, mock_task_from_id, mock_run_confi
     mock_run_config.save_to_file()
 
     response = client.patch(
-        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        "/api/projects/project1/tasks/task1/run_configs/run_config1",
         json={"prompt_name": "Updated Name"},
     )
     assert response.status_code == 200
@@ -783,7 +783,7 @@ def test_update_run_config_prompt_name_no_prompt(
     assert mock_run_config.prompt is None
 
     response = client.patch(
-        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        "/api/projects/project1/tasks/task1/run_configs/run_config1",
         json={"prompt_name": "New Name"},
     )
     assert response.status_code == 400
@@ -881,7 +881,7 @@ async def test_get_eval_config_score_summary(
         mock_task_from_id.return_value = mock_task
 
         response = client.get(
-            "/api/projects/project1/tasks/task1/eval/eval1/eval_config/eval_config1/score_summary"
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1/score_summary"
         )
 
         assert response.status_code == 200
@@ -953,7 +953,7 @@ async def test_get_eval_run_results(
 
     # Test successful retrieval
     response = client.get(
-        "/api/projects/project1/tasks/task1/eval/eval1"
+        "/api/projects/project1/tasks/task1/evals/eval1"
         "/eval_config/eval_config1/run_config/run_config1/results"
     )
 
@@ -974,21 +974,21 @@ async def test_get_eval_run_results(
 
     # Test with invalid eval ID
     response = client.get(
-        "/api/projects/project1/tasks/task1/eval/invalid_eval"
+        "/api/projects/project1/tasks/task1/evals/invalid_eval"
         "/eval_config/eval_config1/run_config/run_config1/results"
     )
     assert response.status_code == 404
 
     # Test with invalid eval config ID
     response = client.get(
-        "/api/projects/project1/tasks/task1/eval/eval1"
+        "/api/projects/project1/tasks/task1/evals/eval1"
         "/eval_config/invalid_config/run_config/run_config1/results"
     )
     assert response.status_code == 404
 
     # Test with invalid run config ID
     response = client.get(
-        "/api/projects/project1/tasks/task1/eval/eval1"
+        "/api/projects/project1/tasks/task1/evals/eval1"
         "/eval_config/eval_config1/run_config/invalid_run_config/results"
     )
     assert response.status_code == 404
@@ -1160,7 +1160,7 @@ async def test_get_eval_config_compare_summary(
 
     # Test successful retrieval
     response = client.get(
-        "/api/projects/project1/tasks/task1/eval/eval1/eval_configs_score_summary"
+        "/api/projects/project1/tasks/task1/evals/eval1/eval_configs_score_summary"
     )
 
     assert response.status_code == 200
@@ -1270,7 +1270,7 @@ async def test_run_eval_config_eval(
 
         # Call the endpoint
         response = client.get(
-            "/api/projects/project1/tasks/task1/eval/eval1/run_eval_config_eval"
+            "/api/projects/project1/tasks/task1/evals/eval1/run_calibration"
         )
 
         # Verify the response
@@ -1297,7 +1297,7 @@ async def test_set_current_eval_config(
     mock_task_from_id.return_value = mock_task
 
     # Get the eval before updating to verify the change
-    response = client.get("/api/projects/project1/tasks/task1/eval/eval1")
+    response = client.get("/api/projects/project1/tasks/task1/evals/eval1")
     assert response.status_code == 200
     eval_before = response.json()
 
@@ -1309,7 +1309,7 @@ async def test_set_current_eval_config(
     with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
         mock_eval_from_id.return_value = mock_eval
         response = client.post(
-            "/api/projects/project1/tasks/task1/eval/eval1/set_current_eval_config/eval_config1"
+            "/api/projects/project1/tasks/task1/evals/eval1/set_current_eval_config/eval_config1"
         )
         assert response.status_code == 200
         updated_eval = response.json()
@@ -1330,7 +1330,7 @@ def test_delete_eval_success(client, mock_task_from_id, mock_eval, mock_task):
         mock_eval_from_id.return_value = mock_eval
 
         # Make the delete request
-        response = client.delete("/api/projects/project1/tasks/task1/eval/eval1")
+        response = client.delete("/api/projects/project1/tasks/task1/evals/eval1")
 
     # Verify the response
     assert response.status_code == 200
@@ -1351,7 +1351,7 @@ def test_delete_eval_not_found(client):
 
         # Make the delete request
         response = client.delete(
-            "/api/projects/project1/tasks/task1/eval/nonexistent_eval"
+            "/api/projects/project1/tasks/task1/evals/nonexistent_eval"
         )
 
     # Verify the response
@@ -1394,7 +1394,7 @@ async def test_create_eval_then_delete_on_spec_failure(
         mock_eval_from_id.return_value = created_eval
 
         delete_response = client.delete(
-            f"/api/projects/project1/tasks/task1/eval/{eval_id}"
+            f"/api/projects/project1/tasks/task1/evals/{eval_id}"
         )
 
     assert delete_response.status_code == 200
@@ -1414,7 +1414,7 @@ def test_update_eval_name_and_description(
         }
 
         response = client.patch(
-            "/api/projects/project1/tasks/task1/eval/eval1",
+            "/api/projects/project1/tasks/task1/evals/eval1",
             json=update_request,
         )
 
@@ -1444,7 +1444,7 @@ def test_update_eval_train_set_filter_id_when_none(
         }
 
         response = client.patch(
-            "/api/projects/project1/tasks/task1/eval/eval1",
+            "/api/projects/project1/tasks/task1/evals/eval1",
             json=update_request,
         )
 
@@ -1472,7 +1472,7 @@ def test_update_eval_train_set_filter_id_when_already_set(
         }
 
         response = client.patch(
-            "/api/projects/project1/tasks/task1/eval/eval1",
+            "/api/projects/project1/tasks/task1/evals/eval1",
             json=update_request,
         )
 
@@ -1498,7 +1498,7 @@ def test_update_eval_partial_update(client, mock_task_from_id, mock_eval, mock_t
         }
 
         response = client.patch(
-            "/api/projects/project1/tasks/task1/eval/eval1",
+            "/api/projects/project1/tasks/task1/evals/eval1",
             json=update_request,
         )
 
@@ -1524,7 +1524,7 @@ def test_update_eval_not_found(client):
         }
 
         response = client.patch(
-            "/api/projects/project1/tasks/task1/eval/nonexistent_eval",
+            "/api/projects/project1/tasks/task1/evals/nonexistent_eval",
             json=update_request,
         )
 
@@ -1545,7 +1545,7 @@ def test_update_eval_empty_request(client, mock_task_from_id, mock_eval, mock_ta
         update_request = {}
 
         response = client.patch(
-            "/api/projects/project1/tasks/task1/eval/eval1",
+            "/api/projects/project1/tasks/task1/evals/eval1",
             json=update_request,
         )
 
@@ -1716,7 +1716,7 @@ async def test_get_eval_progress(client, mock_task_from_id, mock_task, mock_eval
         )  # fully_rated, partially_rated, not_rated
 
         # Call the endpoint
-        response = client.get("/api/projects/project1/tasks/task1/eval/eval1/progress")
+        response = client.get("/api/projects/project1/tasks/task1/evals/eval1/progress")
 
         # Verify the response
         assert response.status_code == 200
@@ -1756,7 +1756,7 @@ async def test_get_eval_progress_not_found(client, mock_task_from_id, mock_task)
 
         # Call the endpoint with non-existent eval ID
         response = client.get(
-            "/api/projects/project1/tasks/task1/eval/non_existent/progress"
+            "/api/projects/project1/tasks/task1/evals/non_existent/progress"
         )
 
         # Verify the response
@@ -1783,7 +1783,7 @@ async def test_set_current_eval_config_none(
     with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
         mock_eval_from_id.return_value = mock_eval
         response = client.post(
-            "/api/projects/project1/tasks/task1/eval/eval1/set_current_eval_config/None"
+            "/api/projects/project1/tasks/task1/evals/eval1/set_current_eval_config/None"
         )
         assert response.status_code == 200
         updated_eval = response.json()
@@ -1807,7 +1807,7 @@ async def test_set_current_eval_config_not_found(
     with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
         mock_eval_from_id.return_value = mock_eval
         response = client.post(
-            "/api/projects/project1/tasks/task1/eval/eval1/set_current_eval_config/non_existent_eval_config"
+            "/api/projects/project1/tasks/task1/evals/eval1/set_current_eval_config/non_existent_eval_config"
         )
 
     # Verify the response
@@ -1890,7 +1890,7 @@ async def test_create_task_run_config_invalid_temperature_values(
 
     # Test temperature below 0
     response = client.post(
-        "/api/projects/project1/tasks/task1/task_run_config",
+        "/api/projects/project1/tasks/task1/run_configs",
         json={
             "name": "Test Task Run Config",
             "run_config_properties": {
@@ -1908,7 +1908,7 @@ async def test_create_task_run_config_invalid_temperature_values(
 
     # Test temperature above 2
     response = client.post(
-        "/api/projects/project1/tasks/task1/task_run_config",
+        "/api/projects/project1/tasks/task1/run_configs",
         json={
             "name": "Test Task Run Config",
             "run_config_properties": {
@@ -1934,7 +1934,7 @@ async def test_create_task_run_config_invalid_top_p_values(
 
     # Test top_p below 0
     response = client.post(
-        "/api/projects/project1/tasks/task1/task_run_config",
+        "/api/projects/project1/tasks/task1/run_configs",
         json={
             "name": "Test Task Run Config",
             "run_config_properties": {
@@ -1952,7 +1952,7 @@ async def test_create_task_run_config_invalid_top_p_values(
 
     # Test top_p above 1
     response = client.post(
-        "/api/projects/project1/tasks/task1/task_run_config",
+        "/api/projects/project1/tasks/task1/run_configs",
         json={
             "name": "Test Task Run Config",
             "run_config_properties": {
@@ -1978,7 +1978,7 @@ async def test_create_task_run_config_valid_boundary_values(
 
     # Test valid boundary values - temperature = 0, top_p = 0
     response = client.post(
-        "/api/projects/project1/tasks/task1/task_run_config",
+        "/api/projects/project1/tasks/task1/run_configs",
         json={
             "name": "Test Task Run Config Min",
             "run_config_properties": {
@@ -1998,7 +1998,7 @@ async def test_create_task_run_config_valid_boundary_values(
 
     # Test valid boundary values - temperature = 2, top_p = 1
     response = client.post(
-        "/api/projects/project1/tasks/task1/task_run_config",
+        "/api/projects/project1/tasks/task1/run_configs",
         json={
             "name": "Test Task Run Config Max",
             "run_config_properties": {
@@ -2162,7 +2162,7 @@ async def test_get_run_config_eval_scores_with_usage(
             }
 
             response = client.get(
-                f"/api/projects/project1/tasks/task1/run_config/{mock_run_config.id}/eval_scores"
+                f"/api/projects/project1/tasks/task1/run_configs/{mock_run_config.id}/eval_scores"
             )
 
     assert response.status_code == 200
@@ -2223,7 +2223,7 @@ def test_get_eval_configs_score_summary_no_filter_id(
         mock_eval_from_id.return_value = eval_without_filter
 
         response = client.get(
-            "/api/projects/project1/tasks/task1/eval/eval1/eval_configs_score_summary"
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_configs_score_summary"
         )
 
         assert response.status_code == 400
@@ -2334,7 +2334,7 @@ async def test_get_run_config_eval_scores_includes_spec_id(
         mock_dataset_ids_in_filter.return_value = set()
 
         response = client.get(
-            f"/api/projects/project1/tasks/task1/run_config/{mock_run_config.id}/eval_scores"
+            f"/api/projects/project1/tasks/task1/run_configs/{mock_run_config.id}/eval_scores"
         )
 
     assert response.status_code == 200
@@ -2441,7 +2441,7 @@ async def test_get_run_configs_includes_finetunes_with_run_config(
     for finetune in finetunes:
         finetune.save_to_file()
 
-    response = client.get("/api/projects/project1/tasks/task1/run_configs/")
+    response = client.get("/api/projects/project1/tasks/task1/run_configs")
 
     assert response.status_code == 200
     configs = response.json()

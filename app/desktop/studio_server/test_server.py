@@ -52,7 +52,7 @@ def test_connect_ollama_success(client):
             {"models": [{"model": "phi3.5:latest"}]},
             {"version": "0.5.0"},
         ]
-        response = client.get("/api/provider/ollama/connect")
+        response = client.post("/api/provider/ollama/connect")
         assert response.status_code == 200
         assert response.json() == {
             "message": "Ollama connected",
@@ -66,7 +66,7 @@ def test_connect_ollama_success(client):
 def test_connect_ollama_connection_error(client):
     with patch("requests.get") as mock_get:
         mock_get.side_effect = requests.exceptions.ConnectionError
-        response = client.get("/api/provider/ollama/connect")
+        response = client.post("/api/provider/ollama/connect")
         assert response.status_code == 417
         assert response.json() == {
             "message": "Failed to connect. Ensure Ollama app is running."
@@ -76,7 +76,7 @@ def test_connect_ollama_connection_error(client):
 def test_connect_ollama_general_exception(client):
     with patch("requests.get") as mock_get:
         mock_get.side_effect = Exception("Test exception")
-        response = client.get("/api/provider/ollama/connect")
+        response = client.post("/api/provider/ollama/connect")
         assert response.status_code == 500
         assert response.json() == {
             "message": "Failed to connect to Ollama: Test exception"
@@ -86,7 +86,7 @@ def test_connect_ollama_general_exception(client):
 def test_connect_ollama_no_models(client):
     with patch("requests.get") as mock_get:
         mock_get.return_value.json.return_value = {"models": []}
-        response = client.get("/api/provider/ollama/connect")
+        response = client.post("/api/provider/ollama/connect")
         assert response.status_code == 200
         r = response.json()
         assert (

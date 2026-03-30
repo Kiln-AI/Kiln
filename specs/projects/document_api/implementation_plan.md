@@ -14,7 +14,7 @@ Two PRs: first for documentation-only changes (no frontend impact), second for p
 
 ## PR 2: Functional Changes
 
-- [ ] Phase 4: Path renames, HTTP method changes, and frontend updates
+- [x] Phase 4: Path renames, HTTP method changes, and frontend updates
 - [ ] Phase 5: Guided manual validation
 
 ## Phase Details
