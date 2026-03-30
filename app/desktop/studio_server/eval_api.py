@@ -29,7 +29,7 @@ from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .correlation_calculator import (
     CorrelationCalculator,
@@ -137,126 +137,215 @@ async def run_eval_runner_with_status(eval_runner: EvalRunner) -> StreamingRespo
 
 
 class CreateEvaluatorRequest(BaseModel):
-    name: str
-    description: str | None = None
-    template: EvalTemplateId | None
-    output_scores: list[EvalOutputScore]
-    eval_set_filter_id: DatasetFilterId
-    eval_configs_filter_id: DatasetFilterId | None
-    template_properties: dict[str, str | float | int | bool] | None
-    evaluation_data_type: EvalDataType
+    """Request to create a new evaluator."""
+
+    name: str = Field(description="The name of the evaluator.")
+    description: str | None = Field(
+        default=None, description="The description of the evaluator."
+    )
+    template: EvalTemplateId | None = Field(
+        default=None, description="The eval template to use."
+    )
+    output_scores: list[EvalOutputScore] = Field(
+        description="The scores this evaluator should produce."
+    )
+    eval_set_filter_id: DatasetFilterId = Field(
+        description="The dataset filter for the eval set."
+    )
+    eval_configs_filter_id: DatasetFilterId | None = Field(
+        default=None, description="The dataset filter for comparing eval configs."
+    )
+    template_properties: dict[str, str | float | int | bool] | None = Field(
+        default=None, description="Template-specific properties."
+    )
+    evaluation_data_type: EvalDataType = Field(
+        description="The type of task output to evaluate."
+    )
 
 
 class CreateEvalConfigRequest(BaseModel):
-    name: str | None = None
-    type: EvalConfigType
-    properties: dict[str, Any]
-    model_name: str
-    provider: ModelProviderName
+    """Request to create a new eval configuration."""
+
+    name: str | None = Field(default=None, description="The name of the eval config.")
+    type: EvalConfigType = Field(description="The type of eval config.")
+    properties: dict[str, Any] = Field(
+        description="Properties for the eval config, specific to the type."
+    )
+    model_name: str = Field(description="The model to use for evaluation.")
+    provider: ModelProviderName = Field(
+        description="The provider of the evaluation model."
+    )
 
 
 class CreateTaskRunConfigRequest(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    run_config_properties: RunConfigProperties
+    """Request to create a new run config for eval."""
+
+    name: str | None = Field(default=None, description="The name of the run config.")
+    description: str | None = Field(
+        default=None, description="The description of the run config."
+    )
+    run_config_properties: RunConfigProperties = Field(
+        description="The run configuration properties."
+    )
 
 
 class UpdateRunConfigRequest(BaseModel):
-    name: str | None = None
-    starred: bool | None = None
-    prompt_name: str | None = None
+    """Request to update a run config."""
+
+    name: str | None = Field(default=None, description="The updated name.")
+    starred: bool | None = Field(
+        default=None, description="The updated starred status."
+    )
+    prompt_name: str | None = Field(
+        default=None, description="The updated prompt name."
+    )
 
 
 class RunEvalConfigRequest(BaseModel):
-    run_config_ids: list[str]
+    """Request to run an eval with specific run configs."""
+
+    run_config_ids: list[str] = Field(description="The run config IDs to evaluate.")
 
 
 class ScoreSummary(BaseModel):
-    mean_score: float
+    """Summary of scores for an eval run."""
+
+    mean_score: float = Field(description="The mean score across all runs.")
 
 
 class MeanUsage(BaseModel):
-    mean_input_tokens: float | None = None
-    mean_output_tokens: float | None = None
-    mean_total_tokens: float | None = None
-    mean_cost: float | None = None
+    """Average token usage across eval runs."""
+
+    mean_input_tokens: float | None = Field(
+        default=None, description="Average input tokens per run."
+    )
+    mean_output_tokens: float | None = Field(
+        default=None, description="Average output tokens per run."
+    )
+    mean_total_tokens: float | None = Field(
+        default=None, description="Average total tokens per run."
+    )
+    mean_cost: float | None = Field(
+        default=None, description="Average cost per run in USD."
+    )
 
 
 class EvalRunResult(BaseModel):
-    results: List[EvalRun]
-    eval: Eval
-    eval_config: EvalConfig
-    run_config: TaskRunConfig
+    """Results of an eval run including the eval and run config."""
+
+    results: List[EvalRun] = Field(description="The individual eval run results.")
+    eval: Eval = Field(description="The parent eval.")
+    eval_config: EvalConfig = Field(description="The eval config used.")
+    run_config: TaskRunConfig = Field(description="The run config used.")
 
 
 class UpdateFavouriteRequest(BaseModel):
-    favourite: bool
+    """Request to update the favourite status of an eval."""
+
+    favourite: bool = Field(description="Whether the eval is a favourite.")
 
 
 class UpdateEvalRequest(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    train_set_filter_id: str | None = None
+    """Request to update an eval."""
+
+    name: str | None = Field(default=None, description="The updated name.")
+    description: str | None = Field(
+        default=None, description="The updated description."
+    )
+    train_set_filter_id: str | None = Field(
+        default=None, description="The updated train set filter ID."
+    )
 
 
 class EvalProgress(BaseModel):
-    # The total size of the dataset used for the eval
-    dataset_size: int
-    # The total size of the golden dataset used for the eval
-    golden_dataset_size: int
-    # The number of golden dataset items, by rating progress
-    golden_dataset_not_rated_count: int
-    golden_dataset_partially_rated_count: int
-    golden_dataset_fully_rated_count: int
-    # The total size of the train dataset used for the eval
-    train_dataset_size: int
-    # The current selected eval method
-    current_eval_method: EvalConfig | None
+    """Progress information for an eval."""
+
+    dataset_size: int = Field(description="The total size of the eval dataset.")
+    golden_dataset_size: int = Field(
+        description="The total size of the golden dataset."
+    )
+    golden_dataset_not_rated_count: int = Field(
+        description="Number of unrated golden dataset items."
+    )
+    golden_dataset_partially_rated_count: int = Field(
+        description="Number of partially rated golden dataset items."
+    )
+    golden_dataset_fully_rated_count: int = Field(
+        description="Number of fully rated golden dataset items."
+    )
+    train_dataset_size: int = Field(description="The total size of the train dataset.")
+    current_eval_method: EvalConfig | None = Field(
+        default=None, description="The currently selected eval config."
+    )
 
 
 class EvalResultSummary(BaseModel):
-    # run_config_id -> output_score_id -> ScoreSummary
-    results: Dict[ID_TYPE, Dict[str, ScoreSummary]]
-    # run_config_id -> percent of the dataset that has been processed
-    run_config_percent_complete: Dict[ID_TYPE, float]
-    # The total size of the dataset used for the eval
-    dataset_size: int
+    """Summary of eval results across run configs."""
+
+    results: Dict[ID_TYPE, Dict[str, ScoreSummary]] = Field(
+        description="Scores keyed by run_config_id then output_score_id."
+    )
+    run_config_percent_complete: Dict[ID_TYPE, float] = Field(
+        description="Percent of dataset processed per run config."
+    )
+    dataset_size: int = Field(description="Total size of the eval dataset.")
 
 
 class EvalConfigCompareSummary(BaseModel):
-    # Summary of results. eval_config_id -> output_score_id -> CorrelationResult
-    results: Dict[ID_TYPE, Dict[str, CorrelationResult]]
-    # eval_config_id -> percent of the dataset that has been processed (run with eval scores)
-    eval_config_percent_complete: Dict[ID_TYPE, float]
-    # The total size of the dataset used for the eval config comparisons (eval.eval_configs_filter_id set size)
-    dataset_size: int
-    # The number of dataset items which are fully rated, partially rated, or not rated at all.
-    fully_rated_count: int
-    partially_rated_count: int
-    not_rated_count: int
+    """Summary comparing eval configs against human ratings."""
+
+    results: Dict[ID_TYPE, Dict[str, CorrelationResult]] = Field(
+        description="Correlation results keyed by eval_config_id then output_score_id."
+    )
+    eval_config_percent_complete: Dict[ID_TYPE, float] = Field(
+        description="Percent of dataset processed per eval config."
+    )
+    dataset_size: int = Field(
+        description="Total size of the eval config comparison dataset."
+    )
+    fully_rated_count: int = Field(description="Number of fully rated dataset items.")
+    partially_rated_count: int = Field(
+        description="Number of partially rated dataset items."
+    )
+    not_rated_count: int = Field(description="Number of unrated dataset items.")
 
 
 class EvalConfigResult(BaseModel):
-    eval_config_id: ID_TYPE
-    # output_score_id -> ScoreSummary | None (None when no data available)
-    results: Dict[str, ScoreSummary | None]
-    # percent of the dataset that has been processed
-    percent_complete: float
+    """Results for a single eval config."""
+
+    eval_config_id: ID_TYPE = Field(description="The eval config ID.")
+    results: Dict[str, ScoreSummary | None] = Field(
+        description="Scores keyed by output_score_id. None when no data."
+    )
+    percent_complete: float = Field(description="Percent of the dataset processed.")
 
 
 class RunConfigEvalResult(BaseModel):
-    eval_id: ID_TYPE
-    eval_name: str
-    dataset_size: int
-    eval_config_result: EvalConfigResult | None
-    missing_default_eval_config: bool
-    spec_id: ID_TYPE | None
+    """Eval results for a specific run config."""
+
+    eval_id: ID_TYPE = Field(description="The eval ID.")
+    eval_name: str = Field(description="The eval name.")
+    dataset_size: int = Field(description="The dataset size for this eval.")
+    eval_config_result: EvalConfigResult | None = Field(
+        default=None, description="The eval config results, if available."
+    )
+    missing_default_eval_config: bool = Field(
+        description="Whether the default eval config is missing."
+    )
+    spec_id: ID_TYPE | None = Field(
+        default=None, description="The associated spec ID, if any."
+    )
 
 
 class RunConfigEvalScoresSummary(BaseModel):
-    eval_results: List[RunConfigEvalResult]
-    # mean usage statistics across all eval runs for this run config
-    mean_usage: MeanUsage | None = None
+    """Summary of all eval scores for a run config."""
+
+    eval_results: List[RunConfigEvalResult] = Field(
+        description="Eval results for each eval."
+    )
+    mean_usage: MeanUsage | None = Field(
+        default=None, description="Average usage statistics across eval runs."
+    )
 
 
 def dataset_ids_in_filter(

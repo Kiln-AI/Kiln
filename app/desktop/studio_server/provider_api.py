@@ -221,9 +221,13 @@ class ProviderRerankerModels(BaseModel):
 
 
 class AvailableProviderInfo(BaseModel):
-    id: str  # Provider identifier
-    name: str  # Display name
-    provider_type: Literal["builtin", "custom"]
+    """Information about an available AI provider."""
+
+    id: str = Field(description="The provider identifier.")
+    name: str = Field(description="The display name of the provider.")
+    provider_type: Literal["builtin", "custom"] = Field(
+        description="Whether the provider is built-in or user-configured."
+    )
 
 
 def connect_provider_api(app: FastAPI):

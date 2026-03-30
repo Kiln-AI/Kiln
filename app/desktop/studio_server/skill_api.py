@@ -12,27 +12,49 @@ logger = logging.getLogger(__name__)
 
 
 class SkillCreationRequest(BaseModel):
-    name: SkillNameString
-    description: str = Field(min_length=1, max_length=1024)
-    body: str = Field(min_length=1)
+    """Request to create a new skill."""
+
+    name: SkillNameString = Field(description="The name of the skill.")
+    description: str = Field(
+        min_length=1,
+        max_length=1024,
+        description="What the skill does and when to use it.",
+    )
+    body: str = Field(min_length=1, description="The markdown body of the skill.")
 
 
 class SkillUpdateRequest(BaseModel):
-    is_archived: bool | None = None
+    """Request to update a skill."""
+
+    is_archived: bool | None = Field(
+        default=None, description="Whether the skill is archived."
+    )
 
 
 class SkillResponse(BaseModel):
-    id: str | None = None
-    name: str
-    description: str
-    is_archived: bool = False
-    created_by: str | None = None
-    created_at: datetime | None = None
+    """A skill with its metadata."""
+
+    id: str | None = Field(default=None, description="The skill ID.")
+    name: str = Field(description="The skill name.")
+    description: str = Field(description="What the skill does.")
+    is_archived: bool = Field(
+        default=False, description="Whether the skill is archived."
+    )
+    created_by: str | None = Field(
+        default=None, description="The user who created the skill."
+    )
+    created_at: datetime | None = Field(
+        default=None, description="When the skill was created."
+    )
 
 
 class SkillContentResponse(BaseModel):
-    skill_md: str
-    body: str
+    """The full content of a skill including its markdown body."""
+
+    skill_md: str = Field(
+        description="The full SKILL.md content including frontmatter."
+    )
+    body: str = Field(description="The markdown body of the skill.")
 
 
 def skill_to_response(skill: Skill) -> SkillResponse:

@@ -10,7 +10,7 @@ Two PRs: first for documentation-only changes (no frontend impact), second for p
 
 - [x] Phase 1: Operation descriptions, summaries, and tags
 - [x] Phase 2: Parameter descriptions
-- [ ] Phase 3: Schema and property descriptions
+- [x] Phase 3: Schema and property descriptions
 
 ## PR 2: Functional Changes
 

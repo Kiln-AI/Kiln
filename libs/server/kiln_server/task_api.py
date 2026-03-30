@@ -6,7 +6,7 @@ from kiln_ai.datamodel import Task, TaskRequirement
 from kiln_ai.datamodel.external_tool_server import (
     ToolServerType,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from kiln_server.project_api import project_from_id
 
@@ -26,13 +26,21 @@ def task_from_id(project_id: str, task_id: str) -> Task:
 
 
 class RatingOption(BaseModel):
-    requirement: TaskRequirement
-    show_for_all: bool
-    show_for_tags: List[str]
+    """A rating requirement with display rules."""
+
+    requirement: TaskRequirement = Field(description="The task requirement to rate.")
+    show_for_all: bool = Field(
+        description="Whether this rating option is shown for all outputs."
+    )
+    show_for_tags: List[str] = Field(
+        description="Tags for which this rating option is shown."
+    )
 
 
 class RatingOptionResponse(BaseModel):
-    options: List[RatingOption]
+    """The available rating options for a task."""
+
+    options: List[RatingOption] = Field(description="The list of rating options.")
 
 
 def connect_task_api(app: FastAPI):

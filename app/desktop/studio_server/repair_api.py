@@ -27,8 +27,10 @@ class RepairTaskApiInput(BaseModel):
 
 
 class RepairRunPost(BaseModel):
-    repair_run: TaskRun
-    evaluator_feedback: str
+    """Request to save a repair for a task run."""
+
+    repair_run: TaskRun = Field(description="The repaired task run.")
+    evaluator_feedback: str = Field(description="The feedback that guided the repair.")
 
 
 def connect_repair_api(app: FastAPI):

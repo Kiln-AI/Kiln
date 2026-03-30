@@ -4,7 +4,7 @@ from typing import Annotated
 from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.adapters.prompt_builders import CustomExamplePromptBuilder, PromptExample
 from kiln_ai.datamodel import BasePrompt, Prompt, PromptId
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from kiln_server.task_api import task_from_id
 
@@ -28,48 +28,83 @@ def editable_prompt_from_id(project_id: str, task_id: str, prompt_id: str) -> Pr
 
 # This is a wrapper around the Prompt datamodel that adds an id field which represents the PromptID and not the data model ID.
 class ApiPrompt(BasePrompt):
-    id: PromptId
-    created_at: datetime | None = None
-    created_by: str | None = None
+    """A prompt with its PromptId and metadata."""
+
+    id: PromptId = Field(description="The prompt ID used to reference this prompt.")
+    created_at: datetime | None = Field(
+        default=None, description="When the prompt was created."
+    )
+    created_by: str | None = Field(
+        default=None, description="The user who created the prompt."
+    )
 
 
 class PromptCreateRequest(BaseModel):
-    generator_id: str | None = None
-    name: str
-    description: str | None = None
-    prompt: str
-    chain_of_thought_instructions: str | None = None
+    """Request to create a new prompt."""
+
+    generator_id: str | None = Field(
+        default=None, description="The generator ID if this prompt was auto-generated."
+    )
+    name: str = Field(description="The name of the prompt.")
+    description: str | None = Field(
+        default=None, description="A description of the prompt."
+    )
+    prompt: str = Field(description="The prompt text.")
+    chain_of_thought_instructions: str | None = Field(
+        default=None,
+        description="Chain of thought instructions to include in the prompt.",
+    )
 
 
 class PromptGenerator(BaseModel):
-    id: str
-    short_description: str
-    description: str
-    name: str
-    chain_of_thought: bool
+    """A built-in prompt generator that can construct prompts from a task."""
+
+    id: str = Field(description="The unique identifier of the generator.")
+    short_description: str = Field(description="A brief description of the generator.")
+    description: str = Field(description="A detailed description of the generator.")
+    name: str = Field(description="The display name of the generator.")
+    chain_of_thought: bool = Field(
+        description="Whether the generator includes chain of thought instructions."
+    )
 
 
 class PromptResponse(BaseModel):
-    generators: list[PromptGenerator]
-    prompts: list[ApiPrompt]
+    """The available prompt generators and saved prompts for a task."""
+
+    generators: list[PromptGenerator] = Field(
+        description="The available prompt generators."
+    )
+    prompts: list[ApiPrompt] = Field(description="The saved prompts for the task.")
 
 
 class PromptUpdateRequest(BaseModel):
-    name: str
-    description: str | None = None
+    """Request to update a prompt."""
+
+    name: str = Field(description="The updated name.")
+    description: str | None = Field(
+        default=None, description="The updated description."
+    )
 
 
 class FewShotExample(BaseModel):
-    input: str
-    output: str
+    """An input/output example for few-shot prompting."""
+
+    input: str = Field(description="The example input.")
+    output: str = Field(description="The example output.")
 
 
 class BuildPromptRequest(BaseModel):
-    examples: list[FewShotExample] = []
+    """Request to build a prompt from examples."""
+
+    examples: list[FewShotExample] = Field(
+        default=[], description="Few-shot examples to include in the prompt."
+    )
 
 
 class BuildPromptResponse(BaseModel):
-    prompt: str
+    """The generated prompt text."""
+
+    prompt: str = Field(description="The generated prompt text.")
 
 
 def connect_prompt_api(app: FastAPI):

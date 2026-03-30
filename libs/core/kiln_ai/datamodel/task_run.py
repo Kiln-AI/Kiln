@@ -19,6 +19,8 @@ if TYPE_CHECKING:
 
 
 class Usage(BaseModel):
+    """Token usage and cost information for a task run."""
+
     input_tokens: int | None = Field(
         default=None,
         description="The number of input tokens used in the task run.",

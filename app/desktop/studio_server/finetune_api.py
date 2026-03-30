@@ -57,48 +57,62 @@ logger = logging.getLogger(__name__)
 
 
 class FinetuneProviderModel(BaseModel):
-    """Finetune provider model: a model a provider supports for fine-tuning"""
+    """A model available for fine-tuning from a provider."""
 
-    name: str
-    id: str
+    name: str = Field(description="The display name of the model.")
+    id: str = Field(description="The provider's model identifier.")
     data_strategies_supported: list[ChatStrategy] = Field(
         default_factory=lambda: [
             ChatStrategy.single_turn,
             ChatStrategy.two_message_cot,
-        ]
+        ],
+        description="The data strategies supported by this model.",
     )
-    supports_function_calling: bool = True
+    supports_function_calling: bool = Field(
+        default=True, description="Whether the model supports function calling."
+    )
 
 
 class FinetuneProvider(BaseModel):
-    """Finetune provider: list of models a provider supports for fine-tuning"""
+    """A provider that offers fine-tuning."""
 
-    name: str
-    id: str
-    enabled: bool
-    models: list[FinetuneProviderModel]
+    name: str = Field(description="The display name of the provider.")
+    id: str = Field(description="The provider identifier.")
+    enabled: bool = Field(description="Whether this provider is enabled.")
+    models: list[FinetuneProviderModel] = Field(
+        description="The models available for fine-tuning."
+    )
 
 
 class FinetuneDatasetTagInfo(BaseModel):
-    """Finetune dataset tag info"""
+    """Statistics about task runs with a specific tag."""
 
-    tag: str
-    count: int
-    reasoning_count: int
-    high_quality_count: int
-    reasoning_and_high_quality_count: int
+    tag: str = Field(description="The tag name.")
+    count: int = Field(description="Total number of runs with this tag.")
+    reasoning_count: int = Field(description="Number of runs with reasoning data.")
+    high_quality_count: int = Field(description="Number of high-quality runs.")
+    reasoning_and_high_quality_count: int = Field(
+        description="Number of high-quality runs with reasoning data."
+    )
 
 
 class FinetuneDatasetInfo(BaseModel):
-    """Finetune dataset info"""
+    """Information about datasets and finetunes for a task."""
 
-    existing_datasets: list[DatasetSplit]
-    existing_finetunes: list[Finetune]
-    finetune_tags: list[FinetuneDatasetTagInfo]
+    existing_datasets: list[DatasetSplit] = Field(
+        description="Existing dataset splits."
+    )
+    existing_finetunes: list[Finetune] = Field(description="Existing finetunes.")
+    finetune_tags: list[FinetuneDatasetTagInfo] = Field(
+        description="Tag statistics for finetune data."
+    )
 
-    # eligible finetune data based on tool selection
-    eligible_datasets: list[DatasetSplit]
-    eligible_finetune_tags: list[FinetuneDatasetTagInfo]
+    eligible_datasets: list[DatasetSplit] = Field(
+        description="Eligible dataset splits based on tool selection."
+    )
+    eligible_finetune_tags: list[FinetuneDatasetTagInfo] = Field(
+        description="Eligible tag statistics based on tool selection."
+    )
 
 
 class DatasetSplitType(Enum):
@@ -121,12 +135,16 @@ api_split_types = {
 
 
 class CreateDatasetSplitRequest(BaseModel):
-    """Request to create a dataset split"""
+    """Request to create a dataset split."""
 
-    dataset_split_type: DatasetSplitType
-    filter_id: DatasetFilterId
-    name: str | None = None
-    description: str | None = None
+    dataset_split_type: DatasetSplitType = Field(
+        description="The type of split to create."
+    )
+    filter_id: DatasetFilterId = Field(description="The dataset filter to use.")
+    name: str | None = Field(default=None, description="The name of the dataset split.")
+    description: str | None = Field(
+        default=None, description="The description of the dataset split."
+    )
 
 
 class CreateFinetuneRequest(BaseModel):
@@ -158,17 +176,19 @@ class CreateFinetuneRequest(BaseModel):
 
 
 class FinetuneWithStatus(BaseModel):
-    """Finetune with status"""
+    """A finetune with its current status."""
 
-    finetune: Finetune
-    status: FineTuneStatus
+    finetune: Finetune = Field(description="The finetune.")
+    status: FineTuneStatus = Field(description="The current status of the finetune.")
 
 
 class UpdateFinetuneRequest(BaseModel):
-    """Request to update a finetune"""
+    """Request to update a finetune."""
 
-    name: str
-    description: str | None = None
+    name: str = Field(description="The updated name.")
+    description: str | None = Field(
+        default=None, description="The updated description."
+    )
 
 
 def finetune_from_id(project_id: str, task_id: str, finetune_id: str) -> Finetune:

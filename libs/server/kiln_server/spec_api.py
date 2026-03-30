@@ -22,15 +22,18 @@ logger = logging.getLogger(__name__)
 
 
 class UpdateSpecRequest(BaseModel):
-    name: FilenameString | None = None
-    definition: str | None = None
+    """Request to update a spec."""
+
+    name: FilenameString | None = Field(default=None, description="The updated name.")
+    definition: str | None = Field(default=None, description="The updated definition.")
     properties: SpecProperties | None = Field(
         default=None,
+        description="The updated spec properties.",
         discriminator="spec_type",
     )
-    priority: Priority | None = None
-    status: SpecStatus | None = None
-    tags: List[str] | None = None
+    priority: Priority | None = Field(default=None, description="The updated priority.")
+    status: SpecStatus | None = Field(default=None, description="The updated status.")
+    tags: List[str] | None = Field(default=None, description="The updated tags.")
 
 
 def spec_from_id(project_id: str, task_id: str, spec_id: str) -> Spec:
@@ -46,16 +49,30 @@ def spec_from_id(project_id: str, task_id: str, spec_id: str) -> Spec:
 
 
 class SpecCreationRequest(BaseModel):
-    name: FilenameString
-    definition: str
+    """Request to create a new spec."""
+
+    name: FilenameString = Field(description="The name of the spec.", min_length=1)
+    definition: str = Field(
+        description="A detailed definition of the spec.", min_length=1
+    )
     properties: SpecProperties = Field(
+        description="The properties of the spec.",
         discriminator="spec_type",
     )
-    priority: Priority = Field(default=Priority.p1)
-    status: SpecStatus = Field(default=SpecStatus.active)
-    tags: List[str] = Field(default_factory=list)
-    evaluate_full_trace: bool = Field(default=False)
-    task_sample: TaskSample | None = None
+    priority: Priority = Field(
+        default=Priority.p1, description="The priority of the spec."
+    )
+    status: SpecStatus = Field(
+        default=SpecStatus.active, description="The status of the spec."
+    )
+    tags: List[str] = Field(default_factory=list, description="The tags of the spec.")
+    evaluate_full_trace: bool = Field(
+        default=False,
+        description="Whether to evaluate the full trace instead of the final answer.",
+    )
+    task_sample: TaskSample | None = Field(
+        default=None, description="An example task input/output pair."
+    )
 
 
 def connect_spec_api(app: FastAPI):

@@ -8,16 +8,16 @@ from pydantic import BaseModel, Field
 class TaskInfoApi(BaseModel):
     """Task information for copilot API calls."""
 
-    task_prompt: str
-    task_input_schema: str
-    task_output_schema: str
+    task_prompt: str = Field(description="The task's prompt.")
+    task_input_schema: str = Field(description="The task's input JSON schema.")
+    task_output_schema: str = Field(description="The task's output JSON schema.")
 
 
 class TaskMetadataApi(BaseModel):
     """Metadata about the model used for a task."""
 
-    model_name: str
-    model_provider_name: ModelProviderName
+    model_name: str = Field(description="The model name.")
+    model_provider_name: ModelProviderName = Field(description="The model provider.")
 
 
 class SyntheticDataGenerationStepConfigApi(BaseModel):

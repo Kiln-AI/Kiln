@@ -50,27 +50,52 @@ def deep_update(
 
 
 class RunTaskRequest(BaseModel):
-    """Request model for running a task."""
+    """Request to invoke an AI model on a task."""
 
-    run_config_properties: RunConfigProperties
-    plaintext_input: str | None = None
-    structured_input: StructuredInputType | None = None
-    tags: list[str] | None = None
+    run_config_properties: RunConfigProperties = Field(
+        description="The run configuration specifying model, prompt, and generation parameters."
+    )
+    plaintext_input: str | None = Field(
+        default=None,
+        description="The task input as plaintext. Use for unstructured tasks.",
+    )
+    structured_input: StructuredInputType | None = Field(
+        default=None,
+        description="The task input as structured JSON. Use for tasks with an input schema.",
+    )
+    tags: list[str] | None = Field(
+        default=None, description="Tags to apply to the resulting task run."
+    )
 
     # Allows use of the model_name field (usually pydantic will reserve model_*)
     model_config = ConfigDict(protected_namespaces=())
 
 
 class RunSummary(BaseModel):
-    id: ID_TYPE
-    rating: TaskOutputRating | None = None
-    created_at: datetime
-    input_preview: str | None = None
-    output_preview: str | None = None
-    repair_state: str | None = None
-    model_name: str | None = None
-    input_source: str | None = None
-    tags: list[str] | None = None
+    """A summary of a task run for list views."""
+
+    id: ID_TYPE = Field(description="The unique identifier of the task run.")
+    rating: TaskOutputRating | None = Field(
+        default=None, description="The rating of the task run output."
+    )
+    created_at: datetime = Field(description="When the run was created.")
+    input_preview: str | None = Field(
+        default=None, description="A truncated preview of the task input."
+    )
+    output_preview: str | None = Field(
+        default=None, description="A truncated preview of the task output."
+    )
+    repair_state: str | None = Field(
+        default=None,
+        description="The repair state of the run (e.g., 'Repaired', 'No repair needed').",
+    )
+    model_name: str | None = Field(
+        default=None, description="The model used for this run."
+    )
+    input_source: str | None = Field(
+        default=None, description="The source of the input (human, synthetic, etc.)."
+    )
+    tags: list[str] | None = Field(default=None, description="Tags applied to the run.")
 
     @classmethod
     def format_preview(cls, text: str | None, max_length: int = 100) -> str | None:
@@ -129,9 +154,11 @@ class RunSummary(BaseModel):
 
 
 class BulkUploadResponse(BaseModel):
-    success: bool
-    filename: str
-    imported_count: int
+    """Response from a bulk import of task runs."""
+
+    success: bool = Field(description="Whether the import succeeded.")
+    filename: str = Field(description="The filename that was imported.")
+    imported_count: int = Field(description="The number of task runs imported.")
 
 
 class CreateTaskRunRequest(BaseModel):

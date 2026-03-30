@@ -17,22 +17,36 @@ from pydantic import BaseModel, Field
 
 
 class CreateTaskFromToolRequest(BaseModel):
-    tool_id: str
-    task_name: str
-    instruction: str = Field(min_length=1)
+    """Request to create a new task from an MCP tool."""
+
+    tool_id: str = Field(description="The tool ID to create the task from.")
+    task_name: str = Field(description="The name for the new task.")
+    instruction: str = Field(
+        min_length=1, description="The instruction for the new task."
+    )
 
 
 class CreateMcpRunConfigRequest(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    tool_id: str
+    """Request to create a run config from an MCP tool."""
+
+    name: str | None = Field(default=None, description="The name of the run config.")
+    description: str | None = Field(
+        default=None, description="The description of the run config."
+    )
+    tool_id: str = Field(description="The MCP tool ID to use.")
 
 
 class TaskToolCompatibility(BaseModel):
-    task_id: str
-    task_name: str
-    compatible: bool
-    incompatibility_reason: str | None = None
+    """Whether a task is compatible with a specific tool."""
+
+    task_id: str = Field(description="The task ID.")
+    task_name: str = Field(description="The task name.")
+    compatible: bool = Field(
+        description="Whether the task is compatible with the tool."
+    )
+    incompatibility_reason: str | None = Field(
+        default=None, description="Why the task is incompatible, if applicable."
+    )
 
 
 def _resolve_mcp_tool_from_id(project_id: str, tool_id: str) -> MCPServerTool:

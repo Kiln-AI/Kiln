@@ -294,11 +294,22 @@ class KilnBaseModel(BaseModel):
 
     model_config = ConfigDict(validate_assignment=True)
 
-    v: int = Field(default=1)  # schema_version
-    id: ID_TYPE = ID_FIELD
-    path: Optional[Path] = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.now)
-    created_by: str = Field(default_factory=lambda: Config.shared().user_id)
+    v: int = Field(default=1, description="Schema version for migration support.")
+    id: ID_TYPE = Field(
+        default_factory=generate_model_id,
+        description="Unique identifier for the model instance.",
+    )
+    path: Optional[Path] = Field(
+        default=None, description="File system path where the model is stored."
+    )
+    created_at: datetime = Field(
+        default_factory=datetime.now,
+        description="Timestamp when the model was created.",
+    )
+    created_by: str = Field(
+        default_factory=lambda: Config.shared().user_id,
+        description="User ID of the creator.",
+    )
 
     _loaded_from_file: bool = False
     _readonly: bool = False

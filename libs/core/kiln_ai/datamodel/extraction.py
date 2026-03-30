@@ -34,6 +34,8 @@ logger = logging.getLogger(__name__)
 
 
 class Kind(str, Enum):
+    """The kind of content a document contains."""
+
     DOCUMENT = "document"
     IMAGE = "image"
     VIDEO = "video"
@@ -41,11 +43,15 @@ class Kind(str, Enum):
 
 
 class OutputFormat(str, Enum):
+    """The output format for extraction results."""
+
     TEXT = "text/plain"
     MARKDOWN = "text/markdown"
 
 
 class ExtractorType(str, Enum):
+    """The type of extractor used to process documents."""
+
     LITELLM = "litellm"
 
 
@@ -74,11 +80,15 @@ SUPPORTED_MIME_TYPES = {
 
 
 class ExtractionModel(BaseModel):
-    name: str
-    label: str
+    """A model available for document extraction."""
+
+    name: str = Field(description="The model identifier.")
+    label: str = Field(description="A human-readable name for the model.")
 
 
 class ExtractionSource(str, Enum):
+    """The source status of an extraction."""
+
     PROCESSED = "processed"
     PASSTHROUGH = "passthrough"
 
@@ -86,6 +96,8 @@ class ExtractionSource(str, Enum):
 class Extraction(
     KilnParentedModel, KilnParentModel, parent_of={"chunked_documents": ChunkedDocument}
 ):
+    """The result of extracting content from a document."""
+
     source: ExtractionSource = Field(
         description="The source of the extraction.",
     )
@@ -130,6 +142,8 @@ class LitellmExtractorConfigProperties(TypedDict, total=True):
 
 
 class ExtractorConfig(KilnParentedModel):
+    """Configuration for extracting content from documents using a specific model and prompts."""
+
     name: FilenameString = Field(
         description="A name to identify the extractor config.",
     )
@@ -209,6 +223,8 @@ class ExtractorConfig(KilnParentedModel):
 
 
 class FileInfo(BaseModel):
+    """Metadata about an uploaded file."""
+
     filename: str = Field(description="The filename of the file")
 
     size: int = Field(description="The size of the file in bytes")
@@ -241,7 +257,8 @@ class FileInfo(BaseModel):
 class Document(
     KilnParentedModel, KilnParentModel, parent_of={"extractions": Extraction}
 ):
-    # this field should not be changed after creation
+    """A document uploaded to a project for extraction and RAG."""
+
     name: FilenameString = Field(
         description="A name to identify the document.",
     )

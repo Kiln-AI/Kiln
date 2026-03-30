@@ -67,30 +67,54 @@ class KilnTaskToolDescription(BaseModel):
 
 
 class ExternalToolServerCreationRequest(BaseModel):
-    name: str
-    description: str | None = None
-    server_url: str
-    headers: Dict[str, str] = Field(default_factory=dict)
-    secret_header_keys: List[str] = Field(default_factory=list)
-    is_archived: bool
+    """Request to create a remote MCP tool server."""
+
+    name: str = Field(description="The name of the tool server.")
+    description: str | None = Field(
+        default=None, description="A description of the tool server."
+    )
+    server_url: str = Field(description="The URL of the MCP server.")
+    headers: Dict[str, str] = Field(
+        default_factory=dict, description="HTTP headers to send with requests."
+    )
+    secret_header_keys: List[str] = Field(
+        default_factory=list,
+        description="Header keys whose values are stored as secrets.",
+    )
+    is_archived: bool = Field(description="Whether the tool server is archived.")
 
 
 class LocalToolServerCreationRequest(BaseModel):
-    name: str
-    description: str | None = None
-    command: str
-    args: List[str]
-    env_vars: Dict[str, str] = Field(default_factory=dict)
-    secret_env_var_keys: List[str] = Field(default_factory=list)
-    is_archived: bool
+    """Request to create a local MCP tool server."""
+
+    name: str = Field(description="The name of the tool server.")
+    description: str | None = Field(
+        default=None, description="A description of the tool server."
+    )
+    command: str = Field(description="The command to start the local MCP server.")
+    args: List[str] = Field(
+        default_factory=list, description="Command-line arguments for the server."
+    )
+    env_vars: Dict[str, str] = Field(
+        default_factory=dict, description="Environment variables for the server."
+    )
+    secret_env_var_keys: List[str] = Field(
+        default_factory=list,
+        description="Environment variable keys whose values are stored as secrets.",
+    )
+    is_archived: bool = Field(description="Whether the tool server is archived.")
 
 
 class KilnTaskToolServerCreationRequest(BaseModel):
-    name: str
-    description: str
-    task_id: str
-    run_config_id: str
-    is_archived: bool
+    """Request to create a Kiln task tool server."""
+
+    name: str = Field(description="The name of the tool server.")
+    description: str = Field(description="A description of the tool server.")
+    task_id: str = Field(description="The task ID to expose as a tool.")
+    run_config_id: str = Field(
+        description="The run config ID to use when running the task."
+    )
+    is_archived: bool = Field(description="Whether the tool server is archived.")
 
 
 class ExternalToolApiDescription(BaseModel):

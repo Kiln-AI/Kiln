@@ -87,8 +87,12 @@ background_tasks: set[asyncio.Task] = set()
 
 
 class BulkCreateDocumentsResponse(BaseModel):
-    created_documents: List[Document]
-    failed_files: List[str]
+    """Response from bulk document creation."""
+
+    created_documents: List[Document] = Field(
+        description="The documents that were created."
+    )
+    failed_files: List[str] = Field(description="Filenames that failed to upload.")
 
 
 class EphemeralSplitRequest(BaseModel):
@@ -104,12 +108,16 @@ class EphemeralSplitRequest(BaseModel):
 
 
 class EphemeralSplitChunk(BaseModel):
-    id: str
-    text: str
+    """A single chunk from an ephemeral split."""
+
+    id: str = Field(description="The chunk index as a string.")
+    text: str = Field(description="The text content of the chunk.")
 
 
 class EphemeralSplitResponse(BaseModel):
-    chunks: list[EphemeralSplitChunk]
+    """Response from ephemeral document splitting."""
+
+    chunks: list[EphemeralSplitChunk] = Field(description="The resulting chunks.")
 
 
 def parse_comma_separated_tags(tags: str | None) -> list[str] | None:
@@ -230,49 +238,83 @@ async def run_rag_workflow_runner_with_status(
 
 
 class OpenFileResponse(BaseModel):
-    path: str
+    """Response containing the filesystem path to a file."""
+
+    path: str = Field(description="The filesystem path to the file.")
 
 
 class ExtractionProgress(BaseModel):
-    document_count_total: int
-    document_count_successful: int
-    extractor_config: ExtractorConfig | None
+    """Progress of a document extraction run."""
+
+    document_count_total: int = Field(
+        description="The total number of documents to extract."
+    )
+    document_count_successful: int = Field(
+        description="The number of documents successfully extracted."
+    )
+    extractor_config: ExtractorConfig | None = Field(
+        default=None, description="The extractor config used."
+    )
 
 
 class ExtractorSummary(BaseModel):
-    id: str
-    name: str
-    description: str | None
-    output_format: OutputFormat
-    passthrough_mimetypes: list[OutputFormat]
-    extractor_type: ExtractorType
+    """A summary of an extractor config."""
+
+    id: str = Field(description="The extractor config ID.")
+    name: str = Field(description="The name of the extractor config.")
+    description: str | None = Field(
+        default=None, description="The description of the extractor config."
+    )
+    output_format: OutputFormat = Field(
+        description="The output format of the extractor."
+    )
+    passthrough_mimetypes: list[OutputFormat] = Field(
+        description="MIME types that pass through without extraction."
+    )
+    extractor_type: ExtractorType = Field(description="The type of extractor.")
 
 
 class ExtractionSummary(BaseModel):
-    id: str
-    created_at: datetime.datetime
-    created_by: str
-    source: str
-    output_content: str
-    extractor: ExtractorSummary
-    output_content_truncated: bool
+    """A summary of an extraction result."""
+
+    id: str = Field(description="The extraction ID.")
+    created_at: datetime.datetime = Field(
+        description="When the extraction was created."
+    )
+    created_by: str = Field(description="The user who created the extraction.")
+    source: str = Field(description="The source type of the extraction.")
+    output_content: str = Field(description="The extracted text content.")
+    extractor: ExtractorSummary = Field(description="The extractor config used.")
+    output_content_truncated: bool = Field(
+        description="Whether the output content was truncated."
+    )
 
 
 class RagConfigWithSubConfigs(BaseModel):
-    id: ID_TYPE
-    name: str
-    description: str | None
-    tool_name: str
-    tool_description: str
-    created_at: datetime.datetime
-    created_by: str
-    is_archived: bool
-    extractor_config: ExtractorConfig
-    chunker_config: ChunkerConfig
-    embedding_config: EmbeddingConfig
-    vector_store_config: VectorStoreConfig
-    reranker_config: RerankerConfig | None
-    tags: list[str] | None
+    """A RAG config with all its sub-configurations."""
+
+    id: ID_TYPE = Field(description="The RAG config ID.")
+    name: str = Field(description="The name of the RAG config.")
+    description: str | None = Field(
+        default=None, description="The description of the RAG config."
+    )
+    tool_name: str = Field(description="The tool name for the model.")
+    tool_description: str = Field(description="The tool description for the model.")
+    created_at: datetime.datetime = Field(description="When the config was created.")
+    created_by: str = Field(description="The user who created the config.")
+    is_archived: bool = Field(description="Whether the config is archived.")
+    extractor_config: ExtractorConfig = Field(description="The extractor config.")
+    chunker_config: ChunkerConfig = Field(description="The chunker config.")
+    embedding_config: EmbeddingConfig = Field(description="The embedding config.")
+    vector_store_config: VectorStoreConfig = Field(
+        description="The vector store config."
+    )
+    reranker_config: RerankerConfig | None = Field(
+        default=None, description="The reranker config, if any."
+    )
+    tags: list[str] | None = Field(
+        default=None, description="Tags for document filtering."
+    )
 
 
 class CreateRagConfigRequest(BaseModel):
@@ -684,9 +726,15 @@ class PatchExtractorConfigRequest(BaseModel):
 
 
 class UpdateRagConfigRequest(BaseModel):
-    name: FilenameString | None = None
-    description: str | None = None
-    is_archived: bool | None = None
+    """Request to update a RAG config."""
+
+    name: FilenameString | None = Field(default=None, description="The updated name.")
+    description: str | None = Field(
+        default=None, description="The updated description."
+    )
+    is_archived: bool | None = Field(
+        default=None, description="Whether the config is archived."
+    )
 
 
 def truncate_output_content(

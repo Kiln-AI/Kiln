@@ -3,12 +3,12 @@ from typing import TYPE_CHECKING, Dict, List, Union
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 
 from kiln_ai.datamodel.basemodel import (
-    ID_FIELD,
     ID_TYPE,
     FilenameString,
     FilenameStringShort,
     KilnParentedModel,
     KilnParentModel,
+    generate_model_id,
 )
 from kiln_ai.datamodel.datamodel_enums import (
     Priority,
@@ -41,12 +41,24 @@ class TaskRequirement(BaseModel):
     priority level, and rating type (five_star, pass_fail, pass_fail_critical, custom).
     """
 
-    id: ID_TYPE = ID_FIELD
+    id: ID_TYPE = Field(
+        default_factory=generate_model_id,
+        description="Unique identifier for the requirement.",
+    )
     name: FilenameStringShort = Field(description="The name of the task requirement.")
-    description: str | None = Field(default=None)
-    instruction: str = Field(min_length=1)
-    priority: Priority = Field(default=Priority.p2)
-    type: TaskOutputRatingType = Field(default=TaskOutputRatingType.five_star)
+    description: str | None = Field(
+        default=None, description="A description of the requirement."
+    )
+    instruction: str = Field(
+        min_length=1, description="Instructions for meeting the requirement."
+    )
+    priority: Priority = Field(
+        default=Priority.p2, description="The priority level of the requirement."
+    )
+    type: TaskOutputRatingType = Field(
+        default=TaskOutputRatingType.five_star,
+        description="The rating type used to evaluate this requirement.",
+    )
 
 
 class TaskRunConfig(KilnParentedModel):
@@ -146,10 +158,14 @@ class Task(
         default=[],
         description="Deprecated: Use specs and prompts instead.",
     )
-    # Output must be an object schema, as things like tool calls only allow objects
-    output_json_schema: JsonObjectSchema | None = None
-    # Inputs are more flexible, allowing arrays
-    input_json_schema: JsonSchema | None = None
+    output_json_schema: JsonObjectSchema | None = Field(
+        default=None,
+        description="JSON schema for structured task output. Must be an object schema.",
+    )
+    input_json_schema: JsonSchema | None = Field(
+        default=None,
+        description="JSON schema for structured task input. Can be an object or array schema.",
+    )
     thinking_instruction: str | None = Field(
         default=None,
         description="Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting.",
