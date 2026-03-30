@@ -44,6 +44,33 @@ Approximate by:
 
 This is less ideal since it can't run in parallel with the parent, but works for the clean context requirement.
 
+## Resuming Sub-Agents
+
+Some workflows need to send follow-up messages to an existing sub-agent
+rather than spawning a fresh one. This preserves the agent's context.
+
+Use when: the sub-agent needs to continue work it already started
+(e.g., a coding agent addressing CR feedback on code it just wrote).
+
+### Claude Code
+
+When continuing prior subagent work, save the agent ID from the initial Agent call and resume it with:
+
+Agent({ "resume": agent_id, "prompt": "Continue with the next step." })
+
+### Cursor
+
+Use Cursor's `resume` options
+
+### Generic / Unknown
+
+Generic tools typically don't support resuming — use a fresh spawn with accumulated context if needed.
+
+### When to Resume vs. Fresh Spawn
+
+- **Resume**: coding agent receiving CR feedback or commit approval (needs its prior context)
+- **Fresh spawn**: CR agent (must NOT have coding context)
+
 ## Fallback Language
 
 If unsure about tool capabilities, use:
