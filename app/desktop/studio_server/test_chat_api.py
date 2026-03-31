@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,8 @@ from fastapi.testclient import TestClient
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
 from kiln_ai.utils.config import Config
 from kiln_server.custom_errors import connect_custom_errors
+
+logger = logging.getLogger(__name__)
 
 
 def _sse_text_delta(delta: str, text_id: str = "text-test") -> bytes:
@@ -687,7 +690,7 @@ def test_chat_api_integration(app):
                 assert ctype.startswith("text/event-stream")
                 for line in response.iter_lines():
                     text = line or ""
-                    print(text, flush=True)
+                    logger.info(text, flush=True)
                     collected.extend(text.encode("utf-8"))
                     collected.extend(b"\n")
 
