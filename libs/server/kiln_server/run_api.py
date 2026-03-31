@@ -503,7 +503,9 @@ def connect_run_api(app: FastAPI):
         ],
         splits: Annotated[
             str | None,
-            Form(description="JSON string mapping split names to numeric proportions (0-1)."),
+            Form(
+                description="JSON string mapping split names to numeric proportions (0-1)."
+            ),
         ] = None,
     ) -> BulkUploadResponse:
         task = task_from_id(project_id, task_id)
