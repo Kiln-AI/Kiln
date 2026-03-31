@@ -25,3 +25,11 @@ The SDK in `/libs/core` is a SDK/library we expose to third parties. We code rev
 - Changing existing APIs that break current users should be avoided. Call out breaking API changes, and confirm with user that we're okay with this break.
 - All visible classes/vars should have docstrings explaining their purpose. These will be pulled into 3rd party docs automatically. The doc strings should be written for 3rd party devs learning the SDK.
 - Performance: the base_adapter and litellm_adapter are performance critical. They are the core run-loop of our agent system. We should avoid anything that would slow them down (file reads should be done once and passed in, etc). It's critical to avoid blocking IO - a process may be executing hundreds of these in parallel.
+
+### FastAPI / OpenAPI Standards
+
+If the change impacts API endpoints, read `.agents/api_code_review.md` for instructions on how to code review API endpoints.
+
+Changes impacting APIs include:
+ - adding/removing/modifying a FastAPI endpoint `@app.get`, `@app.delete`, etc
+ - adding/removing/modifing a pydantic model which is used in an API endpoint, as a input/return value (including nested models)
