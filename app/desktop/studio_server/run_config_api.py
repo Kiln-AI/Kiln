@@ -233,7 +233,7 @@ def connect_run_config_api(app: FastAPI):
         return results
 
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/run_configs/mcp",
+        "/api/projects/{project_id}/tasks/{task_id}/mcp_run_config",
         tags=["Run Configs"],
     )
     async def create_mcp_run_config(

@@ -24,6 +24,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/project": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Project */
+        post: operations["create_project_api_project_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/project/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Project */
+        patch: operations["update_project_api_project__project_id__patch"];
+        trace?: never;
+    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -34,8 +68,7 @@ export interface paths {
         /** List Projects */
         get: operations["get_projects_api_projects_get"];
         put?: never;
-        /** Create Project */
-        post: operations["create_project_api_projects_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -60,8 +93,7 @@ export interface paths {
         delete: operations["delete_project_api_projects__project_id__delete"];
         options?: never;
         head?: never;
-        /** Update Project */
-        patch: operations["update_project_api_projects__project_id__patch"];
+        patch?: never;
         trace?: never;
     };
     "/api/import_project": {
@@ -316,7 +348,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Execute Run */
+        /**
+         * Execute Run
+         * @description Invoke an AI model on a task and return the result. Unlike 'Create Run', this actually executes the model.
+         */
         post: operations["run_task_api_projects__project_id__tasks__task_id__run_post"];
         delete?: never;
         options?: never;
@@ -1277,7 +1312,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Generate Repair */
+        /**
+         * Generate Repair
+         * @description Invoke an AI model to generate a repaired output for a task run based on evaluator feedback. Returns the repair as a new TaskRun without persisting it.
+         */
         post: operations["run_repair_api_projects__project_id__tasks__task_id__runs__run_id__generate_repair_post"];
         delete?: never;
         options?: never;
@@ -1294,7 +1332,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Save Repair */
+        /**
+         * Save Repair
+         * @description Persist a repaired output for a task run. Use after reviewing the result from Generate Repair or creating a manual repair.
+         */
         post: operations["post_repair_run_api_projects__project_id__tasks__task_id__runs__run_id__save_repair_post"];
         delete?: never;
         options?: never;
@@ -1781,7 +1822,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Run Run Config Comparison */
+        /**
+         * Run Run Config Comparison
+         * @description Run a specific eval config against one or more run configs and stream progress via SSE. Executes model runs and scores them.
+         */
         get: operations["run_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_comparison_get"];
         put?: never;
         post?: never;
@@ -1815,7 +1859,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Run Eval Config Comparison */
+        /**
+         * Run Calibration
+         * @description Run all eval configs against each other for calibration and stream progress via SSE. Used to check that eval configs produce consistent scores.
+         */
         get: operations["run_eval_config_eval_api_projects__project_id__tasks__task_id__evals__eval_id__run_calibration_get"];
         put?: never;
         post?: never;
@@ -2702,27 +2749,6 @@ export interface components {
             provider_type: "builtin" | "custom";
         };
         /**
-         * OpenAICompatibleProviderConfig
-         * @description Configuration for an OpenAI compatible provider.
-         */
-        OpenAICompatibleProviderConfig: {
-            /**
-             * Name
-             * @description Name for the OpenAI compatible provider.
-             */
-            name: string;
-            /**
-             * Base Url
-             * @description Base URL for the OpenAI compatible API.
-             */
-            base_url: string;
-            /**
-             * Api Key
-             * @description API key for authentication.
-             */
-            api_key: string;
-        };
-        /**
          * BasePrompt
          * @description A prompt for a task. This is the basic data storage format which can be used throughout a project.
          *
@@ -2777,7 +2803,7 @@ export interface components {
             file: string;
             /**
              * Splits
-             * @description JSON string mapping split names to tag lists.
+             * @description JSON string mapping split names to numeric proportions (0-1).
              */
             splits?: string | null;
         };
@@ -3381,7 +3407,7 @@ export interface components {
             output_format: components["schemas"]["OutputFormat"];
             /**
              * Passthrough Mimetypes
-             * @description The mimetypes to pass through to the extractor
+             * @description MIME types that bypass extraction and return the file content as-is.
              */
             passthrough_mimetypes?: components["schemas"]["OutputFormat"][];
             /** @description The properties of the extractor config, specific to the selected extractor_type. */
@@ -3757,7 +3783,7 @@ export interface components {
             num_samples: number;
             /**
              * Gen Type
-             * @description The type of task to generate topics for
+             * @description The type of data generation: eval or training.
              * @enum {string}
              */
             gen_type: "training" | "eval";
@@ -4928,7 +4954,7 @@ export interface components {
             output_format: components["schemas"]["OutputFormat"];
             /**
              * Passthrough Mimetypes
-             * @description MIME types that pass through without extraction.
+             * @description MIME types that bypass extraction and return the file content as-is.
              */
             passthrough_mimetypes: components["schemas"]["OutputFormat"][];
             /** @description The type of extractor. */
@@ -6010,6 +6036,27 @@ export interface components {
             untested_models?: string[];
             /** Supported Embedding Models */
             supported_embedding_models?: string[];
+        };
+        /**
+         * OpenAICompatibleProviderConfig
+         * @description Configuration for an OpenAI compatible provider.
+         */
+        OpenAICompatibleProviderConfig: {
+            /**
+             * Name
+             * @description Name for the OpenAI compatible provider.
+             */
+            name: string;
+            /**
+             * Base Url
+             * @description Base URL for the OpenAI compatible API.
+             */
+            base_url: string;
+            /**
+             * Api Key
+             * @description API key for authentication.
+             */
+            api_key: string;
         };
         /**
          * OpenFileResponse
@@ -8605,7 +8652,7 @@ export interface operations {
             };
         };
     };
-    create_project_api_projects_post: {
+    create_project_api_project_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -8638,7 +8685,7 @@ export interface operations {
             };
         };
     };
-    update_project_api_projects__project_id__patch: {
+    update_project_api_project__project_id__patch: {
         parameters: {
             query?: never;
             header?: never;
@@ -11664,8 +11711,11 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The prompt generator ID to use. */
                 prompt_id: string;
             };
             cookie?: never;
@@ -13011,7 +13061,7 @@ export interface operations {
                 /** @description The unique identifier of the eval. */
                 eval_id: string;
                 /** @description The unique identifier of the eval configuration to set as default, or 'None' to clear the default. */
-                eval_config_id: string | null;
+                eval_config_id: string;
             };
             cookie?: never;
         };
@@ -13751,7 +13801,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the tool server. */
                 tool_server_id: string;
             };
             cookie?: never;
