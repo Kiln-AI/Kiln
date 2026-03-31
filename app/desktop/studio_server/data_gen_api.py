@@ -55,7 +55,7 @@ class DataGenSampleApiInput(BaseModel):
     topic: list[str] = Field(description="Topic path for sample generation", default=[])
     num_samples: int = Field(description="Number of samples to generate", default=8)
     gen_type: Literal["training", "eval"] = Field(
-        description="The type of task to generate topics for"
+        description="The type of data generation: eval or training."
     )
     guidance: str | None = Field(
         description="Optional custom guidance for generation",

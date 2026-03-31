@@ -269,7 +269,7 @@ class ExtractorSummary(BaseModel):
         description="The output format of the extractor."
     )
     passthrough_mimetypes: list[OutputFormat] = Field(
-        description="MIME types that pass through without extraction."
+        description="MIME types that bypass extraction and return the file content as-is."
     )
     extractor_type: ExtractorType = Field(description="The type of extractor.")
 
@@ -622,7 +622,7 @@ class CreateExtractorConfigRequest(BaseModel):
         description="The output format of the extractor config",
     )
     passthrough_mimetypes: list[OutputFormat] = Field(
-        description="The mimetypes to pass through to the extractor",
+        description="MIME types that bypass extraction and return the file content as-is.",
         default_factory=list,
     )
     properties: LitellmExtractorConfigProperties = Field(

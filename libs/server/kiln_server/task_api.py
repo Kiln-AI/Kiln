@@ -111,7 +111,7 @@ def connect_task_api(app: FastAPI):
         if updated_task is None:
             raise HTTPException(
                 status_code=400,
-                detail="Failed to create task.",
+                detail="Failed to update task.",
             )
         if not isinstance(updated_task, Task):
             raise HTTPException(
