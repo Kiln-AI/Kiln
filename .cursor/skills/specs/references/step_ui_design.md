@@ -54,7 +54,7 @@ Follow platform conventions. Users already know how standard patterns work — d
 
 ## Pushback
 
-→ Load [references/pushback.md](references/pushback.md) if not already loaded.
+→ Load [pushback.md](.cursor/skills/specs/references/pushback.md) if not already loaded.
 
 Challenge UX decisions:
 

@@ -76,6 +76,7 @@ class TestSkillToolDefinition:
         desc = await skill_tool.description()
         assert "Load an agent skill by name" in desc
         assert "resource" in desc
+        assert "assets/" in desc
         assert len(desc) <= 1024
 
     async def test_toolcall_definition_schema(self, skill_tool: SkillTool):
@@ -150,10 +151,42 @@ class TestSkillToolResource:
         )
         assert result.output == "# Guide\nReference content."
 
+    async def test_load_reference_in_subdirectory(
+        self, sample_skills: list[Skill], skill_tool: SkillTool
+    ):
+        sub_dir = sample_skills[0].references_dir() / "guides"
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        (sub_dir / "style.md").write_text("# Style Guide", encoding="utf-8")
+        result = await skill_tool.run(
+            name="code-review", resource="references/guides/style.md"
+        )
+        assert result.output == "# Style Guide"
+
+    async def test_load_asset(self, sample_skills: list[Skill], skill_tool: SkillTool):
+        assets_dir = sample_skills[0].assets_dir()
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        (assets_dir / "prices.csv").write_text(
+            "item,price\nwidget,9.99", encoding="utf-8"
+        )
+        result = await skill_tool.run(name="code-review", resource="assets/prices.csv")
+        assert result.output == "item,price\nwidget,9.99"
+
+    async def test_load_asset_in_subdirectory(
+        self, sample_skills: list[Skill], skill_tool: SkillTool
+    ):
+        sub_dir = sample_skills[0].assets_dir() / "data"
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        (sub_dir / "config.json").write_text('{"key": "val"}', encoding="utf-8")
+        result = await skill_tool.run(
+            name="code-review", resource="assets/data/config.json"
+        )
+        assert result.output == '{"key": "val"}'
+
     async def test_invalid_prefix(self, skill_tool: SkillTool):
         result = await skill_tool.run(name="code-review", resource="secrets/key.txt")
         assert "Error" in result.output
         assert "references/" in result.output
+        assert "assets/" in result.output
 
     async def test_path_traversal_blocked(self, skill_tool: SkillTool):
         result = await skill_tool.run(
@@ -175,6 +208,18 @@ class TestSkillToolResource:
     async def test_without_resource_returns_body(self, skill_tool: SkillTool):
         result = await skill_tool.run(name="code-review")
         assert result.output == "## Code Review\nCheck for bugs."
+
+    async def test_binary_resource_rejected(
+        self, sample_skills: list[Skill], skill_tool: SkillTool
+    ):
+        ref_dir = sample_skills[0].references_dir()
+        ref_dir.mkdir(parents=True, exist_ok=True)
+        (ref_dir / "image.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00")
+        result = await skill_tool.run(
+            name="code-review", resource="references/image.png"
+        )
+        assert "Error" in result.output
+        assert "not a readable text file" in result.output
 
 
 class TestSkillToolId:
