@@ -25,7 +25,7 @@ class TestKilnApiCallToolInit:
     @pytest.mark.asyncio
     async def test_tool_metadata(self, tool):
         assert await tool.name() == "call_kiln_api"
-        assert "Kiln API server" in await tool.description()
+        assert "Kiln REST API" in await tool.description()
         assert await tool.id() == KilnBuiltInToolId.CALL_KILN_API
 
 

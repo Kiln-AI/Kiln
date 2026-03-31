@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 import jq
 
+from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.base_tool import KilnTool, ToolCallResult
 
 
@@ -15,7 +16,7 @@ class KilnApiCallTool(KilnTool):
     def __init__(self, api_base_url: str = "http://localhost:8757"):
         self._api_base_url = api_base_url
         super().__init__(
-            tool_id="kiln_tool::call_kiln_api",  # type: ignore[arg-type]
+            tool_id=KilnBuiltInToolId.CALL_KILN_API,
             name="call_kiln_api",
             description=self._build_description(),
             parameters_schema=self._build_parameters_schema(),
@@ -23,15 +24,17 @@ class KilnApiCallTool(KilnTool):
 
     @staticmethod
     def _build_description() -> str:
-        return """Call the Kiln API server. Makes an HTTP request to the specified path and returns the response.
+        return """Call the Kiln REST API. Makes an HTTP request and returns the response.
 
-The url_path is appended to the API base URL — provide only the path component (e.g. '/api/projects'), not a full URL.
+**Parameters:** method (GET/POST/PATCH/DELETE), url_path (full API path — exact paths are in the endpoint docs), body (JSON string or object for POST/PATCH), jq_filter (optional jq expression applied to 2xx responses).
 
-For POST and PATCH requests, pass the request payload in the 'body' parameter. It can be a JSON string, a object, or a array. Objects and arrays are automatically serialized to JSON.
+**Before every call:** load the endpoint's doc from `references/knowledge/api_docs/<endpoint>.md` when the active knowledge file's API Docs section lists it — those are mandatory imports, not suggestions. For simple GET list endpoints NOT listed in the knowledge file (list projects, list tasks), `references/knowledge/api_reference.md` provides sufficient context. Do NOT guess request bodies, response schemas, or jq filters — wrong paths and wrong field names waste calls.
 
-Use 'jq_filter' to extract specific fields from the response using jq syntax (e.g. '.name', '.items[] | .id'). This reduces the response size. The filter is only applied to successful (2xx) responses; error responses are returned in full. If the filter produces no output, the body will be an empty string.
+**jq_filter:** Always use when listing or scanning to reduce response size. Only applied to successful (2xx) responses; errors are returned in full. If the filter produces no output the body will be an empty string. Endpoint docs list the properties available for filtering.
 
-The response is a JSON object with 'status_code' (integer) and 'body' (string) fields."""
+**Response:** JSON object with `status_code` (integer) and `body` (string) fields.
+
+Load `references/knowledge/api_reference.md` for broad knowledge about the API."""
 
     @staticmethod
     def _build_parameters_schema() -> dict[str, Any]:
@@ -45,14 +48,14 @@ The response is a JSON object with 'status_code' (integer) and 'body' (string) f
                 },
                 "url_path": {
                     "type": "string",
-                    "description": "API path (e.g. '/api/projects'). Appended to the base URL.",
+                    "description": "API path appended to the base URL. Exact paths are in the endpoint docs — load the relevant doc from references/knowledge/api_docs/ BEFORE calling. Do not guess paths or schemas.",
                 },
                 "body": {
                     "description": "Request body for POST/PATCH requests. Can be a JSON string, a JSON object, or a JSON array. Objects and arrays are automatically serialized.",
                 },
                 "jq_filter": {
                     "type": "string",
-                    "description": "A jq filter program (e.g. '.items[].name') to extract specific data from the response, reducing output size.",
+                    "description": "jq filter to extract specific fields from 2xx responses. Always use when listing or scanning to reduce output size. Available properties and correct field names are in the endpoint doc.",
                 },
             },
             "required": ["method", "url_path"],
