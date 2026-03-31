@@ -24,40 +24,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/project": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create Project */
-        post: operations["create_project_api_project_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/project/{project_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update Project */
-        patch: operations["update_project_api_project__project_id__patch"];
-        trace?: never;
-    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -68,7 +34,8 @@ export interface paths {
         /** List Projects */
         get: operations["get_projects_api_projects_get"];
         put?: never;
-        post?: never;
+        /** Create Project */
+        post: operations["create_project_api_projects_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -93,7 +60,8 @@ export interface paths {
         delete: operations["delete_project_api_projects__project_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update Project */
+        patch: operations["update_project_api_projects__project_id__patch"];
         trace?: never;
     };
     "/api/import_project": {
@@ -1974,7 +1942,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/run_configs/mcp": {
+    "/api/projects/{project_id}/tasks/{task_id}/mcp_run_config": {
         parameters: {
             query?: never;
             header?: never;
@@ -1984,7 +1952,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Create Mcp Run Config */
-        post: operations["create_mcp_run_config_api_projects__project_id__tasks__task_id__run_configs_mcp_post"];
+        post: operations["create_mcp_run_config_api_projects__project_id__tasks__task_id__mcp_run_config_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2733,12 +2701,12 @@ export interface components {
         AvailableProviderInfo: {
             /**
              * Id
-             * @description The provider identifier.
+             * @description The unique provider identifier used in API calls.
              */
             id: string;
             /**
              * Name
-             * @description The display name of the provider.
+             * @description The human-readable display name of the provider.
              */
             name: string;
             /**
@@ -2875,7 +2843,7 @@ export interface components {
         };
         /**
          * BuildPromptResponse
-         * @description The generated prompt text.
+         * @description Response containing a fully constructed prompt with examples.
          */
         BuildPromptResponse: {
             /**
@@ -3139,12 +3107,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -3911,12 +3879,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -4027,12 +3995,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -4048,7 +4016,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name to identify the document.
+             * @description A name to identify the document. Should not be changed after creation.
              */
             name: string;
             /**
@@ -4096,12 +4064,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -4225,12 +4193,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -4317,12 +4285,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -4548,12 +4516,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -4695,12 +4663,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -4865,12 +4833,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -5089,12 +5057,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -5235,7 +5203,7 @@ export interface components {
         FinetuneDatasetTagInfo: {
             /**
              * Tag
-             * @description The tag name.
+             * @description The tag applied to matching runs.
              */
             tag: string;
             /**
@@ -5271,7 +5239,7 @@ export interface components {
             name: string;
             /**
              * Id
-             * @description The provider identifier.
+             * @description The unique provider identifier used in API calls.
              */
             id: string;
             /**
@@ -5317,7 +5285,7 @@ export interface components {
          * @description A finetune with its current status.
          */
         FinetuneWithStatus: {
-            /** @description The finetune. */
+            /** @description The finetune configuration and metadata. */
             finetune: components["schemas"]["Finetune"];
             /** @description The current status of the finetune. */
             status: components["schemas"]["FineTuneStatus"];
@@ -5552,12 +5520,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -6133,12 +6101,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -6179,12 +6147,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -6249,12 +6217,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -6365,12 +6333,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -6575,12 +6543,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -6936,12 +6904,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -7030,12 +6998,12 @@ export interface components {
         RunConfigEvalResult: {
             /**
              * Eval Id
-             * @description The eval ID.
+             * @description The unique identifier of the eval.
              */
             eval_id: string | null;
             /**
              * Eval Name
-             * @description The eval name.
+             * @description The human-readable name of the eval.
              */
             eval_name: string;
             /**
@@ -7314,12 +7282,12 @@ export interface components {
         SkillResponse: {
             /**
              * Id
-             * @description The skill ID.
+             * @description The unique identifier of the skill.
              */
             id?: string | null;
             /**
              * Name
-             * @description The skill name.
+             * @description The human-readable name of the skill.
              */
             name: string;
             /**
@@ -7368,12 +7336,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -7679,12 +7647,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -7770,10 +7738,10 @@ export interface components {
         TaskMetadataApi: {
             /**
              * Model Name
-             * @description The model name.
+             * @description The name of the AI model used.
              */
             model_name: string;
-            /** @description The model provider. */
+            /** @description The provider hosting the model (e.g. OpenAI, Anthropic). */
             model_provider_name: components["schemas"]["ModelProviderName"];
         };
         /**
@@ -7792,12 +7760,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -7837,12 +7805,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -7886,12 +7854,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -7945,12 +7913,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -8004,7 +7972,7 @@ export interface components {
         TaskRequirement: {
             /**
              * Id
-             * @description Unique identifier for the requirement.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
@@ -8014,7 +7982,7 @@ export interface components {
             name: string;
             /**
              * Description
-             * @description A description of the requirement.
+             * @description Optional elaboration on the requirement's purpose.
              */
             description?: string | null;
             /**
@@ -8054,12 +8022,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -8132,12 +8100,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -8207,12 +8175,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -8275,12 +8243,12 @@ export interface components {
         TaskToolCompatibility: {
             /**
              * Task Id
-             * @description The task ID.
+             * @description The unique identifier of the task.
              */
             task_id: string;
             /**
              * Task Name
-             * @description The task name.
+             * @description The human-readable name of the task.
              */
             task_name: string;
             /**
@@ -8578,12 +8546,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -8652,7 +8620,27 @@ export interface operations {
             };
         };
     };
-    create_project_api_project_post: {
+    get_projects_api_projects_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project-Output"][];
+                };
+            };
+        };
+    };
+    create_project_api_projects_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -8681,64 +8669,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_project_api_project__project_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Project-Output"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_projects_api_projects_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Project-Output"][];
                 };
             };
         };
@@ -8796,6 +8726,44 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_project_api_projects__project_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project-Output"];
                 };
             };
             /** @description Validation Error */
@@ -13344,7 +13312,7 @@ export interface operations {
             };
         };
     };
-    create_mcp_run_config_api_projects__project_id__tasks__task_id__run_configs_mcp_post: {
+    create_mcp_run_config_api_projects__project_id__tasks__task_id__mcp_run_config_post: {
         parameters: {
             query?: never;
             header?: never;

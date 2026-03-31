@@ -34,7 +34,9 @@ class SkillUpdateRequest(BaseModel):
 class SkillResponse(BaseModel):
     """A skill with its metadata."""
 
-    id: str | None = Field(default=None, description="The unique identifier of the skill.")
+    id: str | None = Field(
+        default=None, description="The unique identifier of the skill."
+    )
     name: str = Field(description="The human-readable name of the skill.")
     description: str = Field(description="What the skill does.")
     is_archived: bool = Field(

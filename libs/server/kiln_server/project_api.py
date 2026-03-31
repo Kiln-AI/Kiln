@@ -52,7 +52,9 @@ def connect_project_api(app: FastAPI):
         # Add path, which is usually excluded
         return project
 
-    @app.patch("/api/projects/{project_id}", summary="Update Project", tags=["Projects"])
+    @app.patch(
+        "/api/projects/{project_id}", summary="Update Project", tags=["Projects"]
+    )
     async def update_project(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
