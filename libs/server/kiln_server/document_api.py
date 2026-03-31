@@ -1181,7 +1181,7 @@ def connect_document_api(app: FastAPI):
             )
         return document
 
-    @app.patch("/api/projects/{project_id}/documents/{document_id}")
+    @app.patch("/api/projects/{project_id}/documents/{document_id}", tags=["Documents"])
     async def patch_document(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1214,7 +1214,7 @@ def connect_document_api(app: FastAPI):
 
         return document
 
-    @app.post("/api/projects/{project_id}/documents/edit_tags")
+    @app.post("/api/projects/{project_id}/documents/edit_tags", tags=["Documents"])
     async def edit_tags(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1279,7 +1279,7 @@ def connect_document_api(app: FastAPI):
             )
         return {"success": True}
 
-    @app.post("/api/projects/{project_id}/create_extractor_config")
+    @app.post("/api/projects/{project_id}/create_extractor_config", tags=["Documents"])
     async def create_extractor_config(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1306,7 +1306,7 @@ def connect_document_api(app: FastAPI):
 
         return extractor_config
 
-    @app.get("/api/projects/{project_id}/extractor_configs")
+    @app.get("/api/projects/{project_id}/extractor_configs", tags=["Documents"])
     async def get_extractor_configs(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1315,7 +1315,10 @@ def connect_document_api(app: FastAPI):
         project = project_from_id(project_id)
         return project.extractor_configs(readonly=True)
 
-    @app.get("/api/projects/{project_id}/extractor_configs/{extractor_config_id}")
+    @app.get(
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
+        tags=["Documents"],
+    )
     async def get_extractor_config(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1338,7 +1341,8 @@ def connect_document_api(app: FastAPI):
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
     @app.get(
-        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/run_extractor_config"
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/run_extractor_config",
+        tags=["Documents"],
     )
     async def run_extractor_config(
         project_id: Annotated[
@@ -1390,7 +1394,10 @@ def connect_document_api(app: FastAPI):
 
             return await run_extractor_runner_with_status(extractor_runner)
 
-    @app.get("/api/projects/{project_id}/documents/{document_id}/extractions")
+    @app.get(
+        "/api/projects/{project_id}/documents/{document_id}/extractions",
+        tags=["Documents"],
+    )
     async def get_extractions(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1427,7 +1434,8 @@ def connect_document_api(app: FastAPI):
         return summaries
 
     @app.get(
-        "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}"
+        "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}",
+        tags=["Documents"],
     )
     async def get_extraction(
         project_id: Annotated[
@@ -1471,7 +1479,10 @@ def connect_document_api(app: FastAPI):
             extractor_config=extractor_config,
         )
 
-    @app.get("/api/projects/{project_id}/documents/{document_id}/download")
+    @app.get(
+        "/api/projects/{project_id}/documents/{document_id}/download",
+        tags=["Documents"],
+    )
     async def download_document_file(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1500,7 +1511,8 @@ def connect_document_api(app: FastAPI):
         return FileResponse(path=path, filename=document.original_file.filename)
 
     @app.get(
-        "/api/projects/{project_id}/documents/{document_id}/download_extraction/{extraction_id}"
+        "/api/projects/{project_id}/documents/{document_id}/download_extraction/{extraction_id}",
+        tags=["Documents"],
     )
     async def download_extraction(
         project_id: Annotated[
@@ -1543,7 +1555,8 @@ def connect_document_api(app: FastAPI):
         )
 
     @app.post(
-        "/api/projects/{project_id}/documents/{document_id}/open_enclosing_folder"
+        "/api/projects/{project_id}/documents/{document_id}/open_enclosing_folder",
+        tags=["Documents"],
     )
     async def open_document_enclosing_folder(
         project_id: Annotated[
@@ -1572,7 +1585,7 @@ def connect_document_api(app: FastAPI):
 
         return OpenFileResponse(path=str(document.path.parent))
 
-    @app.post("/api/projects/{project_id}/documents/delete")
+    @app.post("/api/projects/{project_id}/documents/delete", tags=["Documents"])
     async def delete_documents(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1594,7 +1607,9 @@ def connect_document_api(app: FastAPI):
 
         return {"message": f"Documents removed. IDs: {document_ids}"}
 
-    @app.delete("/api/projects/{project_id}/documents/{document_id}")
+    @app.delete(
+        "/api/projects/{project_id}/documents/{document_id}", tags=["Documents"]
+    )
     async def delete_document(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1616,7 +1631,8 @@ def connect_document_api(app: FastAPI):
         return {"message": f"Document removed. ID: {document_id}"}
 
     @app.get(
-        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/progress"
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/progress",
+        tags=["Documents"],
     )
     async def get_extraction_progress(
         project_id: Annotated[
@@ -1654,7 +1670,9 @@ def connect_document_api(app: FastAPI):
             extractor_config=extractor_config,
         )
 
-    @app.post("/api/projects/{project_id}/documents/{document_id}/extract")
+    @app.post(
+        "/api/projects/{project_id}/documents/{document_id}/extract", tags=["Documents"]
+    )
     async def extract_file(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1708,7 +1726,8 @@ def connect_document_api(app: FastAPI):
         return await run_extractor_runner_with_status(extractor_runner)
 
     @app.delete(
-        "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}"
+        "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}",
+        tags=["Documents"],
     )
     async def delete_extraction(
         project_id: Annotated[
@@ -1782,7 +1801,10 @@ def connect_document_api(app: FastAPI):
 
         return {"message": f"Extraction removed. ID: {extraction_id}"}
 
-    @app.patch("/api/projects/{project_id}/extractor_configs/{extractor_config_id}")
+    @app.patch(
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
+        tags=["Documents"],
+    )
     async def patch_extractor_config(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1815,7 +1837,7 @@ def connect_document_api(app: FastAPI):
 
         return {"message": f"Extractor config updated. ID: {extractor_config_id}"}
 
-    @app.post("/api/projects/{project_id}/create_chunker_config")
+    @app.post("/api/projects/{project_id}/create_chunker_config", tags=["Documents"])
     async def create_chunker_config(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1847,7 +1869,7 @@ def connect_document_api(app: FastAPI):
 
         return chunker_config
 
-    @app.get("/api/projects/{project_id}/chunker_configs")
+    @app.get("/api/projects/{project_id}/chunker_configs", tags=["Documents"])
     async def get_chunker_configs(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1856,7 +1878,7 @@ def connect_document_api(app: FastAPI):
         project = project_from_id(project_id)
         return project.chunker_configs(readonly=True)
 
-    @app.post("/api/projects/{project_id}/create_embedding_config")
+    @app.post("/api/projects/{project_id}/create_embedding_config", tags=["Documents"])
     async def create_embedding_config(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1882,7 +1904,7 @@ def connect_document_api(app: FastAPI):
 
         return embedding_config
 
-    @app.get("/api/projects/{project_id}/embedding_configs")
+    @app.get("/api/projects/{project_id}/embedding_configs", tags=["Documents"])
     async def get_embedding_configs(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1891,7 +1913,7 @@ def connect_document_api(app: FastAPI):
         project = project_from_id(project_id)
         return project.embedding_configs(readonly=True)
 
-    @app.post("/api/projects/{project_id}/create_reranker_config")
+    @app.post("/api/projects/{project_id}/create_reranker_config", tags=["Documents"])
     async def create_reranker_config(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1913,7 +1935,7 @@ def connect_document_api(app: FastAPI):
 
         return reranker_config
 
-    @app.get("/api/projects/{project_id}/reranker_configs")
+    @app.get("/api/projects/{project_id}/reranker_configs", tags=["Documents"])
     async def get_reranker_configs(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1922,7 +1944,10 @@ def connect_document_api(app: FastAPI):
         project = project_from_id(project_id)
         return project.reranker_configs(readonly=True)
 
-    @app.get("/api/projects/{project_id}/embedding_configs/{embedding_config_id}")
+    @app.get(
+        "/api/projects/{project_id}/embedding_configs/{embedding_config_id}",
+        tags=["Documents"],
+    )
     async def get_embedding_config(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1943,7 +1968,9 @@ def connect_document_api(app: FastAPI):
             )
         return embedding_config
 
-    @app.post("/api/projects/{project_id}/create_vector_store_config")
+    @app.post(
+        "/api/projects/{project_id}/create_vector_store_config", tags=["Documents"]
+    )
     async def create_vector_store_config(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1962,7 +1989,7 @@ def connect_document_api(app: FastAPI):
 
         return vector_store_config
 
-    @app.get("/api/projects/{project_id}/vector_store_configs")
+    @app.get("/api/projects/{project_id}/vector_store_configs", tags=["Documents"])
     async def get_vector_store_configs(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1971,7 +1998,9 @@ def connect_document_api(app: FastAPI):
         project = project_from_id(project_id)
         return project.vector_store_configs(readonly=True)
 
-    @app.patch("/api/projects/{project_id}/rag_configs/{rag_config_id}")
+    @app.patch(
+        "/api/projects/{project_id}/rag_configs/{rag_config_id}", tags=["Documents"]
+    )
     async def update_rag_config(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1992,7 +2021,9 @@ def connect_document_api(app: FastAPI):
         rag_config.save_to_file()
         return rag_config
 
-    @app.post("/api/projects/{project_id}/rag_configs/create_rag_config")
+    @app.post(
+        "/api/projects/{project_id}/rag_configs/create_rag_config", tags=["Documents"]
+    )
     async def create_rag_config(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -2065,7 +2096,7 @@ def connect_document_api(app: FastAPI):
 
         return rag_config
 
-    @app.get("/api/projects/{project_id}/rag_configs")
+    @app.get("/api/projects/{project_id}/rag_configs", tags=["Documents"])
     async def get_rag_configs(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -2144,7 +2175,9 @@ def connect_document_api(app: FastAPI):
 
         return rag_configs
 
-    @app.get("/api/projects/{project_id}/rag_configs/{rag_config_id}")
+    @app.get(
+        "/api/projects/{project_id}/rag_configs/{rag_config_id}", tags=["Documents"]
+    )
     async def get_rag_config(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -2221,7 +2254,9 @@ def connect_document_api(app: FastAPI):
         )
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
-    @app.get("/api/projects/{project_id}/rag_configs/{rag_config_id}/run")
+    @app.get(
+        "/api/projects/{project_id}/rag_configs/{rag_config_id}/run", tags=["Documents"]
+    )
     async def run_rag_config(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -2245,7 +2280,7 @@ def connect_document_api(app: FastAPI):
         # the workflow runner handles locking
         return await run_rag_workflow_runner_with_status(runner_factory)
 
-    @app.post("/api/projects/{project_id}/rag_configs/progress")
+    @app.post("/api/projects/{project_id}/rag_configs/progress", tags=["Documents"])
     async def get_rag_config_progress(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -2274,7 +2309,10 @@ def connect_document_api(app: FastAPI):
         ] = await compute_current_progress_for_rag_configs(project, rag_configs)
         return progress_map
 
-    @app.post("/api/projects/{project_id}/rag_configs/{rag_config_id}/search")
+    @app.post(
+        "/api/projects/{project_id}/rag_configs/{rag_config_id}/search",
+        tags=["Documents"],
+    )
     async def search_rag_config(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -2330,7 +2368,7 @@ def connect_document_api(app: FastAPI):
                 detail=f"Search failed: {e!s}",
             )
 
-    @app.get("/api/projects/{project_id}/check_library_state")
+    @app.get("/api/projects/{project_id}/check_library_state", tags=["Documents"])
     async def check_library_state(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -2341,7 +2379,8 @@ def connect_document_api(app: FastAPI):
         return DocumentLibraryState(is_empty=len(documents) == 0)
 
     @app.post(
-        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/documents/{document_id}/ephemeral_split"
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/documents/{document_id}/ephemeral_split",
+        tags=["Documents"],
     )
     async def ephemeral_split_document(
         project_id: Annotated[

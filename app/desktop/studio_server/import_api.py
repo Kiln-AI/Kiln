@@ -12,7 +12,7 @@ class KilnFileResponse(BaseModel):
 
 
 def connect_import_api(app: FastAPI, tk_root: tk.Tk | None = None):
-    @app.get("/api/select_kiln_file")
+    @app.get("/api/select_kiln_file", tags=["Settings & Utilities"])
     async def select_kiln_file(
         title: Annotated[
             str, Query(description="The title for the file dialog window.")

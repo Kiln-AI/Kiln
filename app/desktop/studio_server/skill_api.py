@@ -70,7 +70,7 @@ def _get_skill(project_id: str, skill_id: str) -> Skill:
 
 
 def connect_skill_api(app: FastAPI):
-    @app.get("/api/projects/{project_id}/skills")
+    @app.get("/api/projects/{project_id}/skills", tags=["Skills"])
     async def get_skills(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -79,7 +79,7 @@ def connect_skill_api(app: FastAPI):
         project = project_from_id(project_id)
         return [skill_to_response(s) for s in project.skills(readonly=True)]
 
-    @app.get("/api/projects/{project_id}/skills/{skill_id}")
+    @app.get("/api/projects/{project_id}/skills/{skill_id}", tags=["Skills"])
     async def get_skill(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -91,7 +91,7 @@ def connect_skill_api(app: FastAPI):
         skill = _get_skill(project_id, skill_id)
         return skill_to_response(skill)
 
-    @app.get("/api/projects/{project_id}/skills/{skill_id}/content")
+    @app.get("/api/projects/{project_id}/skills/{skill_id}/content", tags=["Skills"])
     async def get_skill_content(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -115,7 +115,7 @@ def connect_skill_api(app: FastAPI):
             body = ""
         return SkillContentResponse(skill_md=skill_md, body=body)
 
-    @app.post("/api/projects/{project_id}/skills")
+    @app.post("/api/projects/{project_id}/skills", tags=["Skills"])
     async def create_skill(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -132,7 +132,7 @@ def connect_skill_api(app: FastAPI):
         skill.save_skill_md(skill_data.body)
         return skill_to_response(skill)
 
-    @app.patch("/api/projects/{project_id}/skills/{skill_id}")
+    @app.patch("/api/projects/{project_id}/skills/{skill_id}", tags=["Skills"])
     async def update_skill(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")

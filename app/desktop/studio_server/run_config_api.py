@@ -190,7 +190,7 @@ def _create_mcp_run_config_properties(
 
 
 def connect_run_config_api(app: FastAPI):
-    @app.get("/api/projects/{project_id}/tasks_compatible_with_tool")
+    @app.get("/api/projects/{project_id}/tasks_compatible_with_tool", tags=["Tasks"])
     async def tasks_compatible_with_tool(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -232,7 +232,10 @@ def connect_run_config_api(app: FastAPI):
             )
         return results
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/run_configs/mcp")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/mcp",
+        tags=["Run Configs"],
+    )
     async def create_mcp_run_config(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -274,7 +277,7 @@ def connect_run_config_api(app: FastAPI):
         task_run_config.save_to_file()
         return task_run_config
 
-    @app.post("/api/projects/{project_id}/create_task_from_tool")
+    @app.post("/api/projects/{project_id}/create_task_from_tool", tags=["Tasks"])
     async def create_task_from_tool(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")

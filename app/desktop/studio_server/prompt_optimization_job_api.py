@@ -337,7 +337,8 @@ async def update_prompt_optimization_job_and_create_artifacts(
 
 def connect_prompt_optimization_job_api(app: FastAPI):
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config"
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config",
+        tags=["Prompt Optimization"],
     )
     async def check_run_config(
         project_id: Annotated[
@@ -400,7 +401,8 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             )
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval"
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval",
+        tags=["Prompt Optimization"],
     )
     async def check_eval(
         project_id: Annotated[
@@ -481,7 +483,8 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             )
 
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start"
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start",
+        tags=["Prompt Optimization"],
     )
     async def start_prompt_optimization_job(
         project_id: Annotated[
@@ -597,7 +600,10 @@ def connect_prompt_optimization_job_api(app: FastAPI):
                 detail=f"Failed to start Prompt Optimization job: {str(e)}",
             )
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs",
+        tags=["Prompt Optimization"],
+    )
     async def list_prompt_optimization_jobs(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -655,7 +661,8 @@ def connect_prompt_optimization_job_api(app: FastAPI):
         return prompt_optimization_jobs
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}"
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}",
+        tags=["Prompt Optimization"],
     )
     async def get_prompt_optimization_job(
         project_id: Annotated[
@@ -699,7 +706,9 @@ def connect_prompt_optimization_job_api(app: FastAPI):
 
         return prompt_optimization_job
 
-    @app.get("/api/prompt_optimization_jobs/{job_id}/status")
+    @app.get(
+        "/api/prompt_optimization_jobs/{job_id}/status", tags=["Prompt Optimization"]
+    )
     async def get_prompt_optimization_job_status(
         job_id: Annotated[str, Path(description="The unique identifier of the job.")],
     ) -> PublicPromptOptimizationJobStatusResponse:
@@ -738,7 +747,9 @@ def connect_prompt_optimization_job_api(app: FastAPI):
                 detail=f"Failed to get Prompt Optimization job status: {str(e)}",
             )
 
-    @app.get("/api/prompt_optimization_jobs/{job_id}/result")
+    @app.get(
+        "/api/prompt_optimization_jobs/{job_id}/result", tags=["Prompt Optimization"]
+    )
     async def get_prompt_optimization_job_result(
         job_id: Annotated[str, Path(description="The unique identifier of the job.")],
     ) -> PublicPromptOptimizationJobResultResponse:
