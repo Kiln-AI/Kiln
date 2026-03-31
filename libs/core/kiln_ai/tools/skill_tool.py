@@ -7,7 +7,7 @@ from kiln_ai.tools.base_tool import (
     ToolCallResult,
 )
 
-ALLOWED_RESOURCE_PREFIXES = ("references/",)
+ALLOWED_RESOURCE_PREFIXES = ("references/", "assets/")
 
 
 class SkillTool(KilnToolInterface):
@@ -38,7 +38,7 @@ class SkillTool(KilnToolInterface):
             "may help solve the user's task. Calling the tool with a skill name loads that skill's "
             "full instructions. If the skill references additional files "
             "relevant to the task, load them by passing a 'resource' path "
-            "(e.g. 'references/filename.md')."
+            "(e.g. 'references/guide.md', 'references/subdir/notes.txt', or 'assets/template.csv')."
         )
 
     async def toolcall_definition(self) -> ToolCallDefinition:
@@ -56,7 +56,7 @@ class SkillTool(KilnToolInterface):
                         },
                         "resource": {
                             "type": "string",
-                            "description": "Optional. Path to a specific resource file within the skill (e.g. 'references/REFERENCE.md'). If omitted, returns the skill's main instructions.",
+                            "description": "Optional. Path to a specific resource file within the skill (e.g. 'references/guide.md', 'assets/data.csv'). If omitted, returns the skill's main instructions.",
                         },
                     },
                     "required": ["name"],
@@ -92,14 +92,11 @@ class SkillTool(KilnToolInterface):
         return ToolCallResult(output=body)
 
     def _load_resource(self, skill: Skill, resource: str) -> ToolCallResult:
-        """Load a resource file from the references/ directory."""
+        """Load a resource file from an allowed subdirectory (references/ or assets/)."""
         if not any(resource.startswith(p) for p in ALLOWED_RESOURCE_PREFIXES):
             return ToolCallResult(
                 output=f"Error: Resource path must start with one of: {', '.join(ALLOWED_RESOURCE_PREFIXES)}"
             )
-
-        if ".." in resource:
-            return ToolCallResult(output="Error: Invalid resource path.")
 
         parts = resource.split("/", 1)
         if len(parts) != 2 or not parts[1]:
@@ -107,10 +104,17 @@ class SkillTool(KilnToolInterface):
                 output="Error: Resource path must include a filename after the directory prefix."
             )
 
-        _, filename = parts
+        prefix, relative_path = parts
 
         try:
-            content = skill.read_reference(filename)
+            if prefix == "references":
+                content = skill.read_reference(relative_path)
+            elif prefix == "assets":
+                content = skill.read_asset(relative_path)
+            else:
+                return ToolCallResult(
+                    output=f"Error: Unknown resource directory: {prefix}"
+                )
             return ToolCallResult(output=content)
         except FileNotFoundError:
             return ToolCallResult(output=f"Error: Resource not found: {resource}")
