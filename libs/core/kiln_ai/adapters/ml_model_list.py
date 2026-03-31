@@ -42,6 +42,8 @@ class ModelFamily(str, Enum):
     pangu = "pangu"
     bytedance = "bytedance"
     stepfun = "stepfun"
+    mimo = "mimo"
+    nemotron = "nemotron"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -63,6 +65,8 @@ class ModelName(str, Enum):
     llama_4_scout = "llama_4_scout"
     gpt_5_4 = "gpt_5_4"
     gpt_5_4_pro = "gpt_5_4_pro"
+    gpt_5_4_mini = "gpt_5_4_mini"
+    gpt_5_4_nano = "gpt_5_4_nano"
     gpt_5_2 = "gpt_5_2"
     gpt_5_2_pro = "gpt_5_2_pro"
     gpt_5_3_chat = "gpt_5_3_chat"
@@ -98,6 +102,7 @@ class ModelName(str, Enum):
     mistral_large = "mistral_large"
     mistral_3_large_2512 = "mistral_3_large_2512"
     mistral_nemo = "mistral_nemo"
+    mistral_small_4 = "mistral_small_4"
     mistral_small_3 = "mistral_small_3"
     mistral_medium_3_1 = "mistral_medium_3_1"
     mistral_small_creative = (
@@ -143,6 +148,7 @@ class ModelName(str, Enum):
     gemini_3_pro_preview = "gemini_3_pro_preview"
     gemini_3_flash = "gemini_3_flash"
     nemotron_70b = "nemotron_70b"
+    nemotron_3_super = "nemotron_3_super"
     nemotron_3_nano = "nemotron_3_nano"
     mixtral_8x7b = "mixtral_8x7b"
     qwen_2p5_7b = "qwen_2p5_7b"
@@ -231,6 +237,7 @@ class ModelName(str, Enum):
     ernie_4_5_300b_a47b = "ernie_4_5_300b_a47b"
     hunyuan_a13b = "hunyuan_a13b"
     hunyuan_a13b_no_thinking = "hunyuan_a13b_no_thinking"
+    minimax_m2_7 = "minimax_m2_7"
     minimax_m2_5 = "minimax_m2_5"
     minimax_m2_1 = "minimax_m2_1"
     minimax_m2 = "minimax_m2"
@@ -240,6 +247,9 @@ class ModelName(str, Enum):
     bytedance_seed_1_6 = "bytedance_seed_1_6"
     bytedance_seed_1_6_flash = "bytedance_seed_1_6_flash"
     stepfun_step3 = "stepfun_step3"
+    mimo_v2_pro = "mimo_v2_pro"
+    mimo_v2_flash = "mimo_v2_flash"
+    mimo_v2_omni = "mimo_v2_omni"
 
 
 class ModelParserID(str, Enum):
@@ -583,6 +593,90 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # GPT 5.4 Mini
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_5_4_mini,
+        friendly_name="GPT-5.4 Mini",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-5.4-mini",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-5.4-mini",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
+                default_thinking_level="none",
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # GPT 5.4 Nano
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_5_4_nano,
+        friendly_name="GPT-5.4 Nano",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-5.4-nano",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-5.4-nano",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
+                default_thinking_level="none",
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # GPT 5.3 Instant
     KilnModel(
         family=ModelFamily.gpt,
@@ -878,8 +972,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -899,8 +991,6 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_OPENAI_THINKING_LEVELS,
                 default_thinking_level="medium",
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -2615,9 +2705,30 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Nemotron 3 Super
+    KilnModel(
+        family=ModelFamily.nemotron,
+        name=ModelName.nemotron_3_super,
+        friendly_name="Nemotron 3 Super",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="nvidia/nemotron-3-super-120b-a12b",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                require_openrouter_reasoning=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="nemotron-3-super",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+            ),
+        ],
+    ),
     # Nemotron 3 Nano
     KilnModel(
-        family=ModelFamily.llama,
+        family=ModelFamily.nemotron,
         name=ModelName.nemotron_3_nano,
         friendly_name="Nemotron 3 Nano",
         providers=[
@@ -4032,6 +4143,26 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.docker_model_runner,
                 model_id="ai/qwen2.5:7B-Q4_K_M",
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Mistral Small 4
+    KilnModel(
+        family=ModelFamily.mistral,
+        name=ModelName.mistral_small_4,
+        friendly_name="Mistral Small 4",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="mistralai/mistral-small-2603",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),
@@ -6583,6 +6714,24 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Minimax M2.7
+    KilnModel(
+        family=ModelFamily.minimax,
+        name=ModelName.minimax_m2_7,
+        friendly_name="Minimax M2.7",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="minimax/minimax-m2.7",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                r1_openrouter_options=True,
+                require_openrouter_reasoning=True,
+                parser=ModelParserID.r1_thinking,
+            ),
+        ],
+    ),
     # Minimax M2.5
     # OpenRouter accepts json_schema but M2.5 ignores the constraint;
     # json_instruction_and_object works because the simpler response_format:json_object
@@ -6807,6 +6956,54 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 multimodal_requires_pdf_as_image=True,
                 supports_vision=True,
+            ),
+        ],
+    ),
+    # MiMo-V2-Pro
+    KilnModel(
+        family=ModelFamily.mimo,
+        name=ModelName.mimo_v2_pro,
+        friendly_name="MiMo-V2-Pro",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="xiaomi/mimo-v2-pro",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+            ),
+        ],
+    ),
+    # MiMo-V2-Flash
+    KilnModel(
+        family=ModelFamily.mimo,
+        name=ModelName.mimo_v2_flash,
+        friendly_name="MiMo-V2-Flash",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="xiaomi/mimo-v2-flash",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+            ),
+        ],
+    ),
+    # MiMo-V2-Omni
+    KilnModel(
+        family=ModelFamily.mimo,
+        name=ModelName.mimo_v2_omni,
+        friendly_name="MiMo-V2-Omni",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="xiaomi/mimo-v2-omni",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
             ),
         ],
     ),

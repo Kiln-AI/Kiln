@@ -19,7 +19,10 @@ Create `/specs/projects/` if it doesn't exist:
 
 ```bash
 mkdir -p specs/projects
+touch specs/projects/.gitkeep
 ```
+
+The `.gitkeep` file ensures the empty directory is tracked by git.
 
 ### 3. Monorepo Detection
 
@@ -47,7 +50,13 @@ Ask the user:
 
 **If monorepo:**
 
-1. Create `/specs/projects/` in each confirmed sub-project root.
+1. Create `/specs/projects/` in each confirmed sub-project root:
+
+```bash
+mkdir -p specs/projects
+touch specs/projects/.gitkeep
+```
+
 2. Create `/specs/monorepo.md` at repo root with:
    - Sub-project names and their paths
    - Brief description of what each sub-project does
@@ -124,8 +133,8 @@ Summarize what was done:
 ```
 Setup complete:
 - Added .specs_skill_state/ to .gitignore
-- Created /specs/projects/ directory
-- [Created /specs/projects/ in sub-project roots if monorepo]
+- Created /specs/projects/ directory (with .gitkeep)
+- [Created /specs/projects/ in sub-project roots if monorepo (with .gitkeep)]
 - [Created /specs/monorepo.md if monorepo]
 - [Suggestions for external knowledge configuration]
 

@@ -1,55 +1,113 @@
 <div class="flex flex-col items-center justify-center my-10">
-  <div class="flex flex-col max-h-[100px] max-w-[250px] mt-6">
+  <div class="flex flex-col max-h-[500px] max-w-[500px] mt-6">
     <svg
       width="250"
-      height="100"
-      viewBox="0 0 252 67"
+      height="200"
+      viewBox="75 117 350 268"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <style>
-        @keyframes blink {
-          0% {
-            opacity: 1;
-          }
-          48% {
-            opacity: 1;
-          }
-          50% {
-            opacity: 0;
-          }
-          98% {
-            opacity: 0;
-          }
-          100% {
-            opacity: 1;
-          }
-        }
-        .cursor-lines {
-          animation: blink 1s infinite;
-        }
-      </style>
-      <path
-        d="M19.7344 47C19.3438 47 19.0391 46.8906 18.8203 46.6719C18.6172 46.4531 18.5156 46.2188 18.5156 45.9688C18.5156 45.7188 18.6094 45.4922 18.7969 45.2891C19 45.0859 19.2969 44.9844 19.6875 44.9844H25.3594V21.5703H17.2031L16.9219 27.9219C16.9062 28.2812 16.7969 28.5469 16.5938 28.7188C16.4062 28.8906 16.1953 28.9766 15.9609 28.9766C15.6797 28.9766 15.4141 28.8672 15.1641 28.6484C14.9297 28.4297 14.8125 28.1172 14.8125 27.7109V20.8203C14.8125 19.9766 15.1406 19.5547 15.7969 19.5547H37.2656C37.8906 19.5547 38.2031 19.9766 38.2031 20.8203V27.7109C38.2031 28.1172 38.0859 28.4219 37.8516 28.625C37.6328 28.8281 37.3906 28.9297 37.125 28.9297C36.875 28.9297 36.6484 28.8438 36.4453 28.6719C36.2422 28.5 36.125 28.25 36.0938 27.9219L35.8594 21.5703H27.6094V44.9844H33.2812C33.6562 44.9844 33.9375 45.0859 34.125 45.2891C34.3281 45.4922 34.4297 45.7188 34.4297 45.9688C34.4297 46.2188 34.3281 46.4531 34.125 46.6719C33.9219 46.8906 33.625 47 33.2344 47H19.7344Z"
-        fill="#4361EE"
+      <!--
+      # Animation Timeline Documentation
+      
+      ## Design Decisions:
+      - Prompt box is static (never moves)
+      - Only the width property of each line is animated
+      - Animation starts at keyframe 1 layout
+      
+      ## Keyframe Width Values:
+        Line   KF1   KF2   KF3   KF4
+        1      270   242   270   269
+        2      234   257   242   242
+        3      260   270   232   223
+        4      242   257   253   264
+        5      213   143   198   242
+      
+      ## Timeline (6s total, loops indefinitely):
+      - 0s-1s:     Hold keyframe 1 (0% - 16.67%)
+      - 1s-1.5s:   Transition KF1 → KF2 (16.67% - 25%)
+      - 1.5s-2.5s: Hold keyframe 2 (25% - 41.67%)
+      - 2.5s-3s:   Transition KF2 → KF3 (41.67% - 50%)
+      - 3s-4s:     Hold keyframe 3 (50% - 66.67%)
+      - 4s-4.5s:   Transition KF3 → KF4 (66.67% - 75%)
+      - 4.5s-5.5s: Hold keyframe 4 (75% - 91.67%)
+      - 5.5s-6s:   Transition KF4 → KF1 (91.67% - 100%)
+      
+      ## keyTimes: 0;0.16667;0.25;0.41667;0.5;0.66667;0.75;0.91667;1
+      ## Values pattern: KF1;KF1;KF2;KF2;KF3;KF3;KF4;KF4;KF1
+      -->
+
+      <!-- Prompt Box (static) -->
+      <rect
+        x="89"
+        y="129"
+        width="322"
+        height="242"
+        rx="10"
+        fill="white"
+        stroke="#415CF5"
+        stroke-width="3"
       />
-      <g class="cursor-lines">
-        <rect x="49" y="1" width="2" height="65" fill="#6C727F" />
-        <rect x="41" width="18" height="2" rx="1" ry="1" fill="#6C727F" />
-        <rect
-          x="41"
-          y="65"
-          width="18"
-          height="2"
-          rx="1"
-          ry="1"
-          fill="#6C727F"
+
+      <!-- Line 1 Text Placeholder -->
+      <rect x="115" y="158" width="270" height="19" fill="#CCCCCC">
+        <animate
+          attributeName="width"
+          dur="6s"
+          repeatCount="indefinite"
+          keyTimes="0;0.16667;0.25;0.41667;0.5;0.66667;0.75;0.91667;1"
+          values="270;270;242;242;270;270;269;269;270"
+          calcMode="linear"
         />
-      </g>
-      <path
-        d="M45 8H8C4.68629 8 2 10.6863 2 14V53C2 56.3137 4.68629 59 8 59H45V61H8L7.58789 60.9893C3.36114 60.7748 0 57.2801 0 53V14C0 9.58172 3.58172 6 8 6H45V8ZM244 6C248.418 6 252 9.58172 252 14V53C252 57.2801 248.639 60.7748 244.412 60.9893L244 61H55V59H244C247.314 59 250 56.3137 250 53V14C250 10.6863 247.314 8 244 8H55V6H244Z"
-        fill="#4361EE"
-      />
+      </rect>
+
+      <!-- Line 2 Text Placeholder -->
+      <rect x="115" y="193" width="234" height="19" fill="#CCCCCC">
+        <animate
+          attributeName="width"
+          dur="6s"
+          repeatCount="indefinite"
+          keyTimes="0;0.16667;0.25;0.41667;0.5;0.66667;0.75;0.91667;1"
+          values="234;234;257;257;242;242;242;242;234"
+          calcMode="linear"
+        />
+      </rect>
+
+      <!-- Line 3 Text Placeholder -->
+      <rect x="115" y="228" width="260" height="19" fill="#CCCCCC">
+        <animate
+          attributeName="width"
+          dur="6s"
+          repeatCount="indefinite"
+          keyTimes="0;0.16667;0.25;0.41667;0.5;0.66667;0.75;0.91667;1"
+          values="260;260;270;270;232;232;223;223;260"
+          calcMode="linear"
+        />
+      </rect>
+
+      <!-- Line 4 Text Placeholder -->
+      <rect x="115" y="263" width="242" height="19" fill="#CCCCCC">
+        <animate
+          attributeName="width"
+          dur="6s"
+          repeatCount="indefinite"
+          keyTimes="0;0.16667;0.25;0.41667;0.5;0.66667;0.75;0.91667;1"
+          values="242;242;257;257;253;253;264;264;242"
+          calcMode="linear"
+        />
+      </rect>
+
+      <!-- Line 5 Text Placeholder -->
+      <rect x="115" y="298" width="213" height="19" fill="#CCCCCC">
+        <animate
+          attributeName="width"
+          dur="6s"
+          repeatCount="indefinite"
+          keyTimes="0;0.16667;0.25;0.41667;0.5;0.66667;0.75;0.91667;1"
+          values="213;213;143;143;198;198;242;242;213"
+          calcMode="linear"
+        />
+      </rect>
     </svg>
   </div>
   <div class="font-medium text-lg text-center mt-2">Refining Spec</div>

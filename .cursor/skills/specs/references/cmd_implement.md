@@ -1,6 +1,6 @@
 # `/spec implement` — Implement Project
 
-Implement the active project. Routes to single-phase or full implementation.
+Implement the active project. The top-level agent acts as a strict manager/coordinator — it orchestrates sub-agents but never writes code or reviews it.
 
 ## Pre-Checks
 
@@ -22,7 +22,6 @@ Check that all spec artifacts through `implementation_plan.md` have `status: com
 If any are missing or `status: draft`:
 
 > Project spec is incomplete. The following artifacts need attention:
->
 > - [missing/draft artifacts]
 >
 > Use `/spec continue` to finish speccing before implementing.
@@ -34,90 +33,140 @@ If any are missing or `status: draft`:
 - `/spec implement all` or `/spec impl all`: All remaining phases
 - `/spec implement phase N` or `/spec impl phase N`: Specific single phase
 
-## Single Phase Implementation
+## Manager Role
 
-Implement one phase autonomously. The coding agent works without user assistance from start to finish.
+The manager orchestrates the implementation process. It does NOT code, review code, run tests, or make technical decisions.
 
-### Coding Persona
+The manager's responsibilities:
+- Spawn coding sub-agents and CR sub-agents at the right times
+- Route CR feedback back to the coding agent
+- Verify that commits actually landed (via `git status`)
+- Surface phase summaries and roadblocks to the user
+- Send minimal, well-structured prompts that point to reference files — not restate their content
 
-You are a very skilled senior engineer IC. Your code:
+## Single Phase Flow
 
-- Explains itself through great naming and composition
-- Uses comments only for external constraints, not to describe poorly structured code
-- Is test-driven: tests that catch real breakage, don't need constant refactoring, target 95%+ coverage, reuse test helpers
+If the target phase is already complete (checkbox checked in `implementation_plan.md`), tell the user and stop — don't re-implement it.
 
-You're willing to flag when a requirement leads to bad technical outcomes — but you don't re-litigate plan-level decisions that were already confirmed during speccing.
+### Step 1: Spawn Coding Agent
 
-### Implementation Loop
+Spawn a new coding sub-agent using the Initial Coding Prompt template below.
 
-1. **Read the implementation plan** and identify the target phase
-2. **Read spec and architecture docs** for context
-3. **Write phase plan** to `/phase_plans/phase_N.md`:
-   - Overview: what this phase accomplishes and why
-   - Steps: ordered, specific. Files to change, exact changes, code snippets for signatures
-   - Tests: specific automated test cases by name and what they verify
-   - Completion criteria: checklist of what must be true when done
-4. **Build the code** per the phase plan
-5. **Run automated checks** (lint, format, type-check, build). Follow project-specific commands from system prompt. Iterate until clean.
-6. **Write tests** per the phase plan's test section
-7. **Run tests**. Iterate until passing.
-8. **Run automated checks again** (tests/fixes may introduce lint/format issues). Iterate until clean.
-9. **Self code-review via sub-agent**:
-   - → Read [references/spawning_subagents.md](references/spawning_subagents.md) for how to spawn
-   - Pass the prompt from [references/cr_agent_prompt.md](references/cr_agent_prompt.md) to the sub-agent
-   - Include: "A coding agent just implemented phase N of [project]. Review the changes using `git diff`. The spec for this project can be found [here](link_to_spec_folder)."
-   - Iterate per CR Iteration Loop below
-10. **Run automated checks one final time** (CR fixes may introduce issues). Iterate until clean.
-11. **Mark phase complete** in `implementation_plan.md` (toggle checkbox only)
-12. **Stop and present summary** of what was built
+→ Read [references/spawning_subagents.md](references/spawning_subagents.md) for how to spawn sub-agents.
 
-### CR Iteration Loop
+The coding agent returns either:
+- A summary indicating it's ready for code review
+- A roadblock message (see Escalation below)
 
-1. Spawn CR sub-agent with clean context. Pass the CR prompt from `cr_agent_prompt.md`.
-2. CR returns feedback with severity labels (critical/moderate/mild).
-3. If issues exist:
-   - Fix each issue (or rarely, add a code comment explaining the technical rationale)
-   - Spawn a new CR sub-agent, passing the same CR prompt plus `<prior_cr_feedback>` block
-4. The re-review agent:
-   - Verifies prior issues are addressed
-   - Checks for new issues from fixes
-5. Loop until CR returns clean.
+### Step 2: CR Loop
 
-### Non-Interactive Rule
+1. Spawn a fresh CR sub-agent using the CR Agent Prompt template below
+2. CR agent returns structured feedback with severity labels
+3. If the review is clean: proceed to Step 3
+4. If issues exist:
+   - Resume the coding agent with the CR Feedback Prompt template, passing the CR output
+   - Coding agent addresses issues and returns a summary
+   - Spawn a new CR sub-agent, passing prior feedback in a `<prior_cr_feedback>` block
+   - Repeat until CR returns clean
 
-The coding phase is autonomous. Don't stop to ask the user for help.
+→ Read [references/spawning_subagents.md](references/spawning_subagents.md) for how to spawn sub-agents.
 
-**One exception:** You discover a genuinely new technical constraint not known at design time that materially changes the plan (e.g., an API doesn't support an assumed operation, a framework has an undocumented limitation).
+### Step 3: Commit
 
-In this case — and only this case — pause and surface the issue to the user for a decision.
+Resume the coding agent with the Commit Prompt template below. The coding agent commits all changes, marks the phase complete, and returns the commit message.
+
+### Step 4: Verify
+
+Run `git status` to confirm:
+- Working tree is clean (no uncommitted changes)
+- The commit exists
+
+If `git status` shows uncommitted changes, resume the coding agent:
+
+> Commit appears incomplete — `git status` shows uncommitted changes. Please commit all changes.
+
+Verify again after.
+
+### Step 5: Present Summary
+
+Show the phase summary to the user.
 
 ## Implement All
 
-A lightweight coordinator that runs all remaining phases in sequence.
+Run all remaining phases in sequence:
 
-### Coordinator Process
+1. Read `implementation_plan.md`, find all incomplete phases
+2. For each phase: run the Single Phase Flow above
+3. Between phases: show the phase summary, then immediately continue to next phase (don't stop to ask)
+4. After all phases: present a final summary
 
-1. Get next incomplete phase from `implementation_plan.md`
-2. Spawn a sub-agent with clean context to run the single-phase implementation flow above
-   - → Read [references/spawning_subagents.md](references/spawning_subagents.md) for how to spawn
-   - Pass: phase number, project path, instruction to follow single-phase implementation
-3. **Auto-commit**: `"Phase N implementation of [project name]\n\n[description of work in phase]"`
-4. Show the phase summary from the subagent to the user
-5. Continue to next phase (don't stop)
-6. Loop until all phases complete
+If a target phase is already complete (checkbox checked), skip it.
 
-### Coordinator Context
+## Prompt Templates
 
-The coordinator has minimal context — it just manages the loop. Each phase sub-agent gets clean context.
+These are the exact prompts the manager sends to sub-agents. Use them verbatim, filling in the bracketed values.
 
-CR happens inside each phase's implementation loop, not at coordinator level.
+### Initial Coding Prompt
 
-### Passed to Phase Sub-Agents
+```
+You are a coding agent implementing a phase of a spec-driven project.
 
-For implement-all, pass the content of [references/coding_phase_prompt.md](references/coding_phase_prompt.md) to each phase sub-agent. This prompt contains the full single-phase implementation instructions.
+**Phase:** [N]
+**Project specs:** [specs/projects/PROJECT_NAME/]
+
+Read `skill/references/coding_phase_prompt.md` for your full instructions. Follow them precisely.
+
+Return a short summary of what you built when implementation is complete and ready for code review.
+```
+
+### CR Feedback Prompt (resume coding agent)
+
+```
+A code reviewer found issues with your implementation. Address all feedback below, then run automated checks until clean.
+
+Return a short summary of changes made when ready for re-review.
+
+<cr_feedback>
+[CR agent's output]
+</cr_feedback>
+```
+
+### Commit Prompt (resume coding agent)
+
+```
+Your code has passed review. Commit all changes with a descriptive message summarizing the work done in this phase. Mark the phase checkbox complete in implementation_plan.md.
+
+Return the commit message you used.
+```
+
+### CR Agent Prompt
+
+```
+Review code changes for phase [N] of the project at [specs/projects/PROJECT_NAME/].
+
+Read `skill/references/cr_agent_prompt.md` for your full review instructions. Follow them precisely.
+```
+
+For re-reviews, append:
+
+```
+<prior_cr_feedback>
+[Previous CR output]
+</prior_cr_feedback>
+```
+
+## Escalation
+
+The coding agent may surface a technical roadblock instead of a "ready for CR" summary. This happens when the coding agent's "one exception" rule triggers — a genuinely new technical constraint not known at design time.
+
+When the manager receives a roadblock message:
+
+1. Present the roadblock to the user and wait for a decision
+2. Resume the coding agent with the user's decision
+3. Continue the single-phase flow from wherever the coding agent left off
 
 ## References
 
-- [references/spawning_subagents.md](references/spawning_subagents.md) — How to spawn sub-agents
-- [references/coding_phase_prompt.md](references/coding_phase_prompt.md) — Prompt passed to coding sub-agents
-- [references/cr_agent_prompt.md](references/cr_agent_prompt.md) — Prompt passed to CR sub-agents
+- [references/spawning_subagents.md](references/spawning_subagents.md) — How to spawn and resume sub-agents
+- [references/coding_phase_prompt.md](references/coding_phase_prompt.md) — Full instructions for coding sub-agents
+- [references/cr_agent_prompt.md](references/cr_agent_prompt.md) — Full instructions for CR sub-agents

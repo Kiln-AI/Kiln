@@ -608,7 +608,15 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         path = self.id
         name = getattr(self, "name", None)
         if name is not None:
-            path = f"{path} - {name[:32]}"
+            name_part = string_to_valid_name(name[:32], truncate_to_max_length=False)
+            if not name_part:
+                raise ValueError(
+                    "Cannot build child folder dirname: `string_to_valid_name` on the "
+                    f"first 32 characters of `name` produced an empty string (name length "
+                    f"{len(name)}). Use leading characters that are not only whitespace, "
+                    "underscores, or characters removed by filename sanitization."
+                )
+            path = f"{path} - {name_part}"
         return Path(path)
 
     def build_path(self) -> Path | None:

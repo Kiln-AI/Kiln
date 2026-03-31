@@ -1,8 +1,8 @@
 <div class="flex flex-col items-center justify-center">
-  <div class="flex flex-col max-h-[250px] max-w-[250px] mt-6">
+  <div class="flex flex-col max-h-[300px] max-w-[300px] mt-6">
     <svg
-      width="250"
-      height="250"
+      width="300"
+      height="300"
       viewBox="0 0 600 900"
       xmlns="http://www.w3.org/2000/svg"
     >
@@ -10,7 +10,7 @@
         <style>
           .stroke-primary {
             stroke: #4361ee;
-            stroke-width: 2;
+            stroke-width: 6;
             fill: none;
           }
 
