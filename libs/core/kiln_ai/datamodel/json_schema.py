@@ -207,7 +207,11 @@ def close_object_schemas(schema: Dict, strict: bool = False) -> Dict:
         ):
             normalized["additionalProperties"] = False
 
-        if strict and normalized.get("type") == "object" and "properties" in normalized:
+        if (
+            strict
+            and normalized.get("type") == "object"
+            and isinstance(normalized.get("properties"), dict)
+        ):
             normalized["required"] = list(normalized["properties"].keys())
 
         return normalized
