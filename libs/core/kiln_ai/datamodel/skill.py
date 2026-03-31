@@ -97,7 +97,7 @@ class Skill(KilnParentedModel):
             raise ValueError("Path traversal is not allowed") from None
 
         try:
-            return target.read_text(encoding="utf-8")
+            return resolved.read_text(encoding="utf-8")
         except FileNotFoundError:
             raise FileNotFoundError(
                 f"Resource file not found: {relative_path}"
