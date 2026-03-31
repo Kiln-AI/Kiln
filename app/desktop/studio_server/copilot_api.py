@@ -74,6 +74,7 @@ from libs.core.kiln_ai.datamodel.copilot_models.questions import (
     RefineSpecApiOutput,
     SubmitAnswersRequest,
 )
+from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -113,7 +114,7 @@ class CreateSpecWithCopilotRequest(BaseModel):
 
 
 def connect_copilot_api(app: FastAPI):
-    @app.post("/api/copilot/clarify_spec")
+    @app.post("/api/copilot/clarify_spec", openapi_extra=ALLOW_AGENT)
     async def clarify_spec(input: ClarifySpecApiInput) -> ClarifySpecApiOutput:
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
@@ -139,7 +140,7 @@ def connect_copilot_api(app: FastAPI):
             detail="Unknown error.",
         )
 
-    @app.post("/api/copilot/refine_spec")
+    @app.post("/api/copilot/refine_spec", openapi_extra=ALLOW_AGENT)
     async def refine_spec(input: RefineSpecApiInput) -> RefineSpecApiOutput:
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
@@ -165,7 +166,7 @@ def connect_copilot_api(app: FastAPI):
             detail="Unknown error.",
         )
 
-    @app.post("/api/copilot/generate_batch")
+    @app.post("/api/copilot/generate_batch", openapi_extra=ALLOW_AGENT)
     async def generate_batch(input: GenerateBatchApiInput) -> GenerateBatchApiOutput:
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
@@ -191,7 +192,7 @@ def connect_copilot_api(app: FastAPI):
             detail="Unknown error.",
         )
 
-    @app.post("/api/copilot/question_spec")
+    @app.post("/api/copilot/question_spec", openapi_extra=ALLOW_AGENT)
     async def question_spec(
         input: SpecQuestionerApiInput,
     ) -> QuestionSet:
@@ -219,7 +220,9 @@ def connect_copilot_api(app: FastAPI):
             detail="Unknown error.",
         )
 
-    @app.post("/api/copilot/refine_spec_with_question_answers")
+    @app.post(
+        "/api/copilot/refine_spec_with_question_answers", openapi_extra=ALLOW_AGENT
+    )
     async def submit_question_answers(
         request: SubmitAnswersRequest,
     ) -> RefineSpecApiOutput:
@@ -245,7 +248,10 @@ def connect_copilot_api(app: FastAPI):
             detail="Unknown error.",
         )
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def create_spec_with_copilot(
         project_id: str, task_id: str, request: CreateSpecWithCopilotRequest
     ) -> Spec:

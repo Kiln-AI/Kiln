@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/projects/{project_id}/task/{task_id}/gen_prompt/{prompt_id}",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

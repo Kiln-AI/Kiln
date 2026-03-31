@@ -44,7 +44,10 @@ from kiln_ai.utils.config import Config
 from kiln_ai.utils.lock import shared_async_lock_manager
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
-from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    agent_policy_require_approval,
+)
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -337,7 +340,8 @@ async def update_prompt_optimization_job_and_create_artifacts(
 
 def connect_prompt_optimization_job_api(app: FastAPI):
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config"
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config",
+        openapi_extra=ALLOW_AGENT,
     )
     async def check_run_config(
         project_id: str, task_id: str, run_config_id: str
@@ -391,7 +395,8 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             )
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval"
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval",
+        openapi_extra=ALLOW_AGENT,
     )
     async def check_eval(
         project_id: str, task_id: str, eval_id: str
@@ -577,7 +582,10 @@ def connect_prompt_optimization_job_api(app: FastAPI):
                 detail=f"Failed to start Prompt Optimization job: {str(e)}",
             )
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def list_prompt_optimization_jobs(
         project_id: str, task_id: str, update_status: bool = False
     ) -> list[PromptOptimizationJob]:
@@ -623,7 +631,8 @@ def connect_prompt_optimization_job_api(app: FastAPI):
         return prompt_optimization_jobs
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}"
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}",
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_prompt_optimization_job(
         project_id: str, task_id: str, prompt_optimization_job_id: str
@@ -657,7 +666,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
 
         return prompt_optimization_job
 
-    @app.get("/api/prompt_optimization_jobs/{job_id}/status")
+    @app.get("/api/prompt_optimization_jobs/{job_id}/status", openapi_extra=ALLOW_AGENT)
     async def get_prompt_optimization_job_status(
         job_id: str,
     ) -> PublicPromptOptimizationJobStatusResponse:
@@ -696,7 +705,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
                 detail=f"Failed to get Prompt Optimization job status: {str(e)}",
             )
 
-    @app.get("/api/prompt_optimization_jobs/{job_id}/result")
+    @app.get("/api/prompt_optimization_jobs/{job_id}/result", openapi_extra=ALLOW_AGENT)
     async def get_prompt_optimization_job_result(
         job_id: str,
     ) -> PublicPromptOptimizationJobResultResponse:

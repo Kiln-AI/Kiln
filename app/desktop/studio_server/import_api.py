@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import filedialog
 
 from fastapi import FastAPI, HTTPException
+from kiln_server.utils.agent_checks.policy import DENY_AGENT
 from pydantic import BaseModel
 
 
@@ -11,7 +12,7 @@ class KilnFileResponse(BaseModel):
 
 
 def connect_import_api(app: FastAPI, tk_root: tk.Tk | None = None):
-    @app.get("/api/select_kiln_file")
+    @app.get("/api/select_kiln_file", openapi_extra=DENY_AGENT)
     async def select_kiln_file(title: str = "Select Kiln File") -> KilnFileResponse:
         if tk_root is None:
             raise HTTPException(

@@ -1,0 +1,8 @@
+{
+  "method": "delete",
+  "path": "/api/projects/{project_id}/task/{task_id}",
+  "agent_policy": {
+    "permission": "deny",
+    "requires_approval": false
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "method": "post",
+  "path": "/api/open_project_folder/{project_id}",
+  "agent_policy": {
+    "permission": "deny",
+    "requires_approval": false
+  }
+}

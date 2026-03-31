@@ -1,0 +1,8 @@
+{
+  "method": "post",
+  "path": "/api/copilot/refine_spec",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

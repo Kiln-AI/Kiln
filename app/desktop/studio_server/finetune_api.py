@@ -51,6 +51,10 @@ from kiln_ai.datamodel.skill import Skill
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    agent_policy_require_approval,
+)
 from pydantic import BaseModel, Field, model_validator
 
 logger = logging.getLogger(__name__)
@@ -253,12 +257,18 @@ def compute_finetune_tag_info(
 
 
 def connect_fine_tune_api(app: FastAPI):
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/dataset_splits")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/dataset_splits",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def dataset_splits(project_id: str, task_id: str) -> list[DatasetSplit]:
         task = task_from_id(project_id, task_id)
         return task.dataset_splits()
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/finetunes")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/finetunes",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def finetunes(
         project_id: str, task_id: str, update_status: bool = False
     ) -> list[Finetune]:
@@ -280,7 +290,10 @@ def connect_fine_tune_api(app: FastAPI):
 
         return finetunes
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/finetunes/{finetune_id}")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/finetunes/{finetune_id}",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def finetune(
         project_id: str, task_id: str, finetune_id: str
     ) -> FinetuneWithStatus:
@@ -294,7 +307,12 @@ def connect_fine_tune_api(app: FastAPI):
         status = await finetune_adapter(finetune).status()
         return FinetuneWithStatus(finetune=finetune, status=status)
 
-    @app.patch("/api/projects/{project_id}/tasks/{task_id}/finetunes/{finetune_id}")
+    @app.patch(
+        "/api/projects/{project_id}/tasks/{task_id}/finetunes/{finetune_id}",
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit fine-tune? Ensure you backup your project before allowing agentic edits."
+        ),
+    )
     async def update_finetune(
         project_id: str,
         task_id: str,
@@ -307,7 +325,7 @@ def connect_fine_tune_api(app: FastAPI):
         finetune.save_to_file()
         return finetune
 
-    @app.get("/api/finetune_providers")
+    @app.get("/api/finetune_providers", openapi_extra=ALLOW_AGENT)
     async def finetune_providers() -> list[FinetuneProvider]:
         provider_models: dict[ModelProviderName, list[FinetuneProviderModel]] = {}
 
@@ -361,7 +379,7 @@ def connect_fine_tune_api(app: FastAPI):
 
         return providers
 
-    @app.get("/api/finetune/hyperparameters/{provider_id}")
+    @app.get("/api/finetune/hyperparameters/{provider_id}", openapi_extra=ALLOW_AGENT)
     async def finetune_hyperparameters(
         provider_id: str,
     ) -> list[FineTuneParameter]:
@@ -372,7 +390,10 @@ def connect_fine_tune_api(app: FastAPI):
         finetune_adapter_class = finetune_registry[provider_id]  # type: ignore[invalid-argument-type]
         return finetune_adapter_class.available_parameters()
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/finetune_dataset_info")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/finetune_dataset_info",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def finetune_dataset_info(
         project_id: str,
         task_id: str,
@@ -425,7 +446,10 @@ def connect_fine_tune_api(app: FastAPI):
             eligible_finetune_tags=eligible_finetune_tags,
         )
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/dataset_splits")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/dataset_splits",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def create_dataset_split(
         project_id: str, task_id: str, request: CreateDatasetSplitRequest
     ) -> DatasetSplit:
@@ -446,7 +470,12 @@ def connect_fine_tune_api(app: FastAPI):
         dataset_split.save_to_file()
         return dataset_split
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/finetunes")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/finetunes",
+        openapi_extra=agent_policy_require_approval(
+            "Creating a fine-tune incurs cost. Allow agent to proceed?"
+        ),
+    )
     async def create_finetune(
         project_id: str, task_id: str, request: CreateFinetuneRequest
     ) -> Finetune:
@@ -503,7 +532,7 @@ def connect_fine_tune_api(app: FastAPI):
 
         return finetune_model
 
-    @app.get("/api/download_dataset_jsonl")
+    @app.get("/api/download_dataset_jsonl", openapi_extra=ALLOW_AGENT)
     async def download_dataset_jsonl(
         project_id: str,
         task_id: str,

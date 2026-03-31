@@ -6,6 +6,11 @@ from kiln_ai.datamodel import BasePrompt, Prompt, PromptId
 from pydantic import BaseModel
 
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    DENY_AGENT,
+    agent_policy_require_approval,
+)
 
 
 def editable_prompt_from_id(project_id: str, task_id: str, prompt_id: str) -> Prompt:
@@ -72,7 +77,10 @@ class BuildPromptResponse(BaseModel):
 
 
 def connect_prompt_api(app: FastAPI):
-    @app.post("/api/projects/{project_id}/task/{task_id}/prompt")
+    @app.post(
+        "/api/projects/{project_id}/task/{task_id}/prompt",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def create_prompt(
         project_id: str, task_id: str, prompt_data: PromptCreateRequest
     ) -> Prompt:
@@ -88,7 +96,10 @@ def connect_prompt_api(app: FastAPI):
         prompt.save_to_file()
         return prompt
 
-    @app.get("/api/projects/{project_id}/task/{task_id}/prompts")
+    @app.get(
+        "/api/projects/{project_id}/task/{task_id}/prompts",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_prompts(project_id: str, task_id: str) -> PromptResponse:
         parent_task = task_from_id(project_id, task_id)
 
@@ -115,7 +126,12 @@ def connect_prompt_api(app: FastAPI):
             prompts=prompts,
         )
 
-    @app.patch("/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}")
+    @app.patch(
+        "/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}",
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit prompt? Ensure you backup your project before allowing agentic edits."
+        ),
+    )
     async def update_prompt(
         project_id: str, task_id: str, prompt_id: str, prompt_data: PromptUpdateRequest
     ) -> ApiPrompt:
@@ -126,12 +142,18 @@ def connect_prompt_api(app: FastAPI):
         properties = prompt.model_dump(exclude={"id"})
         return ApiPrompt(id=f"id::{prompt.id}", **properties)
 
-    @app.delete("/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}")
+    @app.delete(
+        "/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}",
+        openapi_extra=DENY_AGENT,
+    )
     async def delete_prompt(project_id: str, task_id: str, prompt_id: str) -> None:
         prompt = editable_prompt_from_id(project_id, task_id, prompt_id)
         prompt.delete()
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/build_prompt_with_examples")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/build_prompt_with_examples",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def build_prompt_with_examples(
         project_id: str, task_id: str, request: BuildPromptRequest
     ) -> BuildPromptResponse:

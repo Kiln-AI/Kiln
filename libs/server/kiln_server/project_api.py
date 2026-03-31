@@ -7,6 +7,12 @@ from kiln_ai.datamodel import Project
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.project_utils import project_from_id as project_from_id_core
 
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    DENY_AGENT,
+    agent_policy_require_approval,
+)
+
 
 def default_project_path():
     return os.path.join(Path.home(), "Kiln Projects")
@@ -32,7 +38,7 @@ def add_project_to_config(project_path: str):
 
 
 def connect_project_api(app: FastAPI):
-    @app.post("/api/project")
+    @app.post("/api/project", openapi_extra=ALLOW_AGENT)
     async def create_project(project: Project) -> Project:
         project_path = os.path.join(default_project_path(), project.name)
         if os.path.exists(project_path):
@@ -52,7 +58,12 @@ def connect_project_api(app: FastAPI):
         # Add path, which is usually excluded
         return project
 
-    @app.patch("/api/project/{project_id}")
+    @app.patch(
+        "/api/project/{project_id}",
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit project? Ensure you backup your project before allowing agentic edits."
+        ),
+    )
     async def update_project(
         project_id: str, project_updates: Dict[str, Any]
     ) -> Project:
@@ -63,7 +74,7 @@ def connect_project_api(app: FastAPI):
         updated_project.save_to_file()
         return updated_project
 
-    @app.get("/api/projects")
+    @app.get("/api/projects", openapi_extra=ALLOW_AGENT)
     async def get_projects() -> list[Project]:
         project_paths = Config.shared().projects
         projects = []
@@ -79,12 +90,12 @@ def connect_project_api(app: FastAPI):
 
         return projects
 
-    @app.get("/api/projects/{project_id}")
+    @app.get("/api/projects/{project_id}", openapi_extra=ALLOW_AGENT)
     async def get_project(project_id: str) -> Project:
         return project_from_id(project_id)
 
     # Removes the project, but does not delete the files from disk
-    @app.delete("/api/projects/{project_id}")
+    @app.delete("/api/projects/{project_id}", openapi_extra=DENY_AGENT)
     async def delete_project(project_id: str) -> dict:
         project = project_from_id(project_id)
 
@@ -95,7 +106,7 @@ def connect_project_api(app: FastAPI):
 
         return {"message": f"Project removed. ID: {project_id}"}
 
-    @app.post("/api/import_project")
+    @app.post("/api/import_project", openapi_extra=ALLOW_AGENT)
     async def import_project(project_path: str) -> Project:
         if project_path is None or not os.path.exists(project_path):
             raise HTTPException(

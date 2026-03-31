@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/results",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

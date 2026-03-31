@@ -23,6 +23,7 @@ from kiln_ai.utils.open_ai_types import (
 )
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
 from openai.types.chat import (
     ChatCompletionSystemMessageParam,
     ChatCompletionUserMessageParam,
@@ -122,7 +123,10 @@ class SaveQnaPairInput(BaseModel):
 
 
 def connect_data_gen_api(app: FastAPI):
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/generate_categories")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/generate_categories",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def generate_categories(
         project_id: str, task_id: str, input: DataGenCategoriesApiInput
     ) -> TaskRun:
@@ -155,7 +159,10 @@ def connect_data_gen_api(app: FastAPI):
         categories_run = await adapter.invoke(task_input.model_dump())
         return categories_run
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/generate_inputs")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/generate_inputs",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def generate_samples(
         project_id: str, task_id: str, input: DataGenSampleApiInput
     ) -> TaskRun:
@@ -187,7 +194,10 @@ def connect_data_gen_api(app: FastAPI):
         samples_run = await adapter.invoke(task_input.model_dump())
         return samples_run
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/save_sample")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/save_sample",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def save_sample(
         project_id: str,
         task_id: str,
@@ -202,7 +212,10 @@ def connect_data_gen_api(app: FastAPI):
         task_run.save_to_file()
         return task_run
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/generate_sample")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/generate_sample",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def generate_sample(
         project_id: str,
         task_id: str,
@@ -260,7 +273,10 @@ The topic path for this sample is:
 
         return run
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/generate_qna")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/generate_qna",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def generate_qna_pairs(
         project_id: str,
         task_id: str,
@@ -303,7 +319,10 @@ The topic path for this sample is:
 
         return qna_run
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/save_qna_pair")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/save_qna_pair",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def save_qna_pair(
         project_id: str,
         task_id: str,

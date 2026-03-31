@@ -1,0 +1,8 @@
+{
+  "method": "post",
+  "path": "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/run_repair",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

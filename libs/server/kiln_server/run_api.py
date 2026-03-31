@@ -25,6 +25,11 @@ from kiln_ai.utils.dataset_import import (
 from pydantic import BaseModel, ConfigDict, Field
 
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    DENY_AGENT,
+    agent_policy_require_approval,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -174,21 +179,33 @@ def task_and_run_from_id(
 
 
 def connect_run_api(app: FastAPI):
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_run(project_id: str, task_id: str, run_id: str) -> TaskRun:
         return run_from_id(project_id, task_id, run_id)
 
-    @app.delete("/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}")
+    @app.delete(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
+        openapi_extra=DENY_AGENT,
+    )
     async def delete_run(project_id: str, task_id: str, run_id: str):
         run = run_from_id(project_id, task_id, run_id)
         run.delete()
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/runs")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/runs",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_runs(project_id: str, task_id: str) -> list[TaskRun]:
         task = task_from_id(project_id, task_id)
         return list(task.runs(readonly=True))
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/runs")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/runs",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def create_task_run(
         project_id: str, task_id: str, request: CreateTaskRunRequest
     ) -> TaskRun:
@@ -220,7 +237,10 @@ def connect_run_api(app: FastAPI):
         run.save_to_file()
         return run
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/runs_summaries")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/runs_summaries",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_runs_summary(project_id: str, task_id: str) -> list[RunSummary]:
         task = task_from_id(project_id, task_id)
         # Readonly since we are not mutating the runs. Faster as we don't need to copy them.
@@ -231,7 +251,10 @@ def connect_run_api(app: FastAPI):
             run_summaries.append(summary)
         return run_summaries
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/runs/delete")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/delete",
+        openapi_extra=DENY_AGENT,
+    )
     async def delete_runs(project_id: str, task_id: str, run_ids: list[str]):
         task = task_from_id(project_id, task_id)
         failed_runs: list[str] = []
@@ -257,7 +280,10 @@ def connect_run_api(app: FastAPI):
             )
         return {"success": True}
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/run")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/run",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def run_task(
         project_id: str, task_id: str, request: RunTaskRequest
     ) -> TaskRun:
@@ -284,13 +310,21 @@ def connect_run_api(app: FastAPI):
 
         return await adapter.invoke(input)
 
-    @app.patch("/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}")
+    @app.patch(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit run? Ensure you backup your project before allowing agentic edits."
+        ),
+    )
     async def update_run(
         project_id: str, task_id: str, run_id: str, run_data: Dict[str, Any]
     ) -> TaskRun:
         return await update_run_util(project_id, task_id, run_id, run_data)
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/runs/edit_tags")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/edit_tags",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def edit_tags(
         project_id: str,
         task_id: str,
@@ -338,7 +372,10 @@ def connect_run_api(app: FastAPI):
             )
         return {"success": True}
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/runs/bulk_upload")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/bulk_upload",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def bulk_upload(
         project_id: str,
         task_id: str,
@@ -389,7 +426,10 @@ def connect_run_api(app: FastAPI):
             imported_count=imported_count,
         )
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/tags")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/tags",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_tags(project_id: str, task_id: str) -> dict[str, int]:
         tags_count = {}
         task = task_from_id(project_id, task_id)

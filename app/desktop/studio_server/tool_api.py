@@ -33,6 +33,7 @@ from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
 from mcp.types import Tool as MCPTool
+from kiln_server.utils.agent_checks.policy import ALLOW_AGENT, DENY_AGENT
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -245,7 +246,7 @@ async def validate_tool_server_connectivity(tool_server: ExternalToolServer):
 
 
 def connect_tool_servers_api(app: FastAPI):
-    @app.get("/api/projects/{project_id}/available_tools")
+    @app.get("/api/projects/{project_id}/available_tools", openapi_extra=ALLOW_AGENT)
     async def get_available_tools(
         project_id: str,
     ) -> List[ToolSetApiDescription]:
@@ -376,7 +377,9 @@ def connect_tool_servers_api(app: FastAPI):
 
         return tool_sets
 
-    @app.get("/api/projects/{project_id}/available_tool_servers")
+    @app.get(
+        "/api/projects/{project_id}/available_tool_servers", openapi_extra=ALLOW_AGENT
+    )
     async def get_available_tool_servers(
         project_id: str,
     ) -> List[KilnToolServerDescription]:
@@ -400,7 +403,7 @@ def connect_tool_servers_api(app: FastAPI):
         results.sort(key=lambda x: x.is_archived)
         return results
 
-    @app.get("/api/projects/{project_id}/kiln_task_tools")
+    @app.get("/api/projects/{project_id}/kiln_task_tools", openapi_extra=ALLOW_AGENT)
     async def get_kiln_task_tools(
         project_id: str,
     ) -> List[KilnTaskToolDescription]:
@@ -434,7 +437,10 @@ def connect_tool_servers_api(app: FastAPI):
                     continue
         return results
 
-    @app.get("/api/projects/{project_id}/tool_servers/{tool_server_id}")
+    @app.get(
+        "/api/projects/{project_id}/tool_servers/{tool_server_id}",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_tool_server(
         project_id: str, tool_server_id: str
     ) -> ExternalToolServerApiDescription:
@@ -531,7 +537,10 @@ def connect_tool_servers_api(app: FastAPI):
             missing_secrets=[],
         )
 
-    @app.get("/api/projects/{project_id}/tool_servers/{tool_server_id}/config")
+    @app.get(
+        "/api/projects/{project_id}/tool_servers/{tool_server_id}/config",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_tool_server_config(
         project_id: str, tool_server_id: str
     ) -> ExternalToolServerApiDescription:
@@ -548,7 +557,7 @@ def connect_tool_servers_api(app: FastAPI):
             missing_secrets=[],
         )
 
-    @app.post("/api/projects/{project_id}/connect_remote_mcp")
+    @app.post("/api/projects/{project_id}/connect_remote_mcp", openapi_extra=DENY_AGENT)
     async def connect_remote_mcp(
         project_id: str, tool_data: ExternalToolServerCreationRequest
     ) -> ExternalToolServer:
@@ -570,7 +579,10 @@ def connect_tool_servers_api(app: FastAPI):
 
         return tool_server
 
-    @app.patch("/api/projects/{project_id}/edit_remote_mcp/{tool_server_id}")
+    @app.patch(
+        "/api/projects/{project_id}/edit_remote_mcp/{tool_server_id}",
+        openapi_extra=DENY_AGENT,
+    )
     async def edit_remote_mcp(
         project_id: str,
         tool_server_id: str,
@@ -606,7 +618,7 @@ def connect_tool_servers_api(app: FastAPI):
             "is_archived": tool_data.is_archived,
         }
 
-    @app.post("/api/projects/{project_id}/connect_local_mcp")
+    @app.post("/api/projects/{project_id}/connect_local_mcp", openapi_extra=DENY_AGENT)
     async def connect_local_mcp(
         project_id: str, tool_data: LocalToolServerCreationRequest
     ) -> ExternalToolServer:
@@ -629,7 +641,10 @@ def connect_tool_servers_api(app: FastAPI):
 
         return tool_server
 
-    @app.patch("/api/projects/{project_id}/edit_local_mcp/{tool_server_id}")
+    @app.patch(
+        "/api/projects/{project_id}/edit_local_mcp/{tool_server_id}",
+        openapi_extra=DENY_AGENT,
+    )
     async def edit_local_mcp(
         project_id: str, tool_server_id: str, tool_data: LocalToolServerCreationRequest
     ) -> ExternalToolServer:
@@ -655,7 +670,10 @@ def connect_tool_servers_api(app: FastAPI):
 
         return tool_server
 
-    @app.post("/api/projects/{project_id}/tool_servers/{tool_server_id}/archive")
+    @app.post(
+        "/api/projects/{project_id}/tool_servers/{tool_server_id}/archive",
+        openapi_extra=DENY_AGENT,
+    )
     async def archive_tool_server(
         project_id: str,
         tool_server_id: str,
@@ -698,7 +716,7 @@ def connect_tool_servers_api(app: FastAPI):
                 detail="Run config not found for the specified task.",
             )
 
-    @app.post("/api/projects/{project_id}/kiln_task_tool")
+    @app.post("/api/projects/{project_id}/kiln_task_tool", openapi_extra=DENY_AGENT)
     async def add_kiln_task_tool(
         project_id: str, tool_data: KilnTaskToolServerCreationRequest
     ) -> ExternalToolServer:
@@ -725,7 +743,10 @@ def connect_tool_servers_api(app: FastAPI):
 
         return tool_server
 
-    @app.patch("/api/projects/{project_id}/edit_kiln_task_tool/{tool_server_id}")
+    @app.patch(
+        "/api/projects/{project_id}/edit_kiln_task_tool/{tool_server_id}",
+        openapi_extra=DENY_AGENT,
+    )
     async def edit_kiln_task_tool(
         project_id: str,
         tool_server_id: str,
@@ -755,7 +776,10 @@ def connect_tool_servers_api(app: FastAPI):
 
         return existing_tool_server
 
-    @app.delete("/api/projects/{project_id}/tool_servers/{tool_server_id}")
+    @app.delete(
+        "/api/projects/{project_id}/tool_servers/{tool_server_id}",
+        openapi_extra=DENY_AGENT,
+    )
     async def delete_tool_server(project_id: str, tool_server_id: str):
         tool_server = tool_server_from_id(project_id, tool_server_id)
         # Delete the secrets from the settings
@@ -763,16 +787,16 @@ def connect_tool_servers_api(app: FastAPI):
         # Delete the tool server from the file system
         tool_server.delete()
 
-    @app.get("/api/demo_tools")
+    @app.get("/api/demo_tools", openapi_extra=DENY_AGENT)
     async def get_demo_tools() -> bool:
         return Config.shared().enable_demo_tools
 
-    @app.post("/api/demo_tools")
+    @app.post("/api/demo_tools", openapi_extra=DENY_AGENT)
     async def set_demo_tools(enable_demo_tools: bool) -> bool:
         Config.shared().enable_demo_tools = enable_demo_tools
         return Config.shared().enable_demo_tools
 
-    @app.get("/api/projects/{project_id}/search_tools")
+    @app.get("/api/projects/{project_id}/search_tools", openapi_extra=ALLOW_AGENT)
     async def get_search_tools(project_id: str) -> list[SearchToolApiDescription]:
         project = project_from_id(project_id)
         return [
@@ -786,7 +810,10 @@ def connect_tool_servers_api(app: FastAPI):
             if not rag_config.is_archived
         ]
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/tools/{tool_id}/definition")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/tools/{tool_id}/definition",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_tool_definition(
         project_id: str, task_id: str, tool_id: str
     ) -> ToolDefinitionResponse:
