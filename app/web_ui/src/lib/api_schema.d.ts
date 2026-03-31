@@ -2235,6 +2235,23 @@ export interface paths {
         patch: operations["edit_local_mcp_api_projects__project_id__edit_local_mcp__tool_server_id__patch"];
         trace?: never;
     };
+    "/api/projects/{project_id}/tool_servers/{tool_server_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive Tool Server */
+        post: operations["archive_tool_server_api_projects__project_id__tool_servers__tool_server_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/kiln_task_tool": {
         parameters: {
             query?: never;
@@ -7031,11 +7048,6 @@ export interface components {
          *
          *     Contains the input used, its source, the output produced, and optional
          *     repair information if the output needed correction.
-         *
-         *     Can be nested under another TaskRun; nested runs are stored as child runs
-         *     in a "runs" subfolder (same relationship name as Task's runs).
-         *
-         *     Accepts both Task and TaskRun as parents (polymorphic).
          */
         "TaskRun-Input": {
             /**
@@ -7091,6 +7103,11 @@ export interface components {
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
             trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Input"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            /**
+             * Parent Task Run Id
+             * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
+             */
+            parent_task_run_id?: string | null;
         };
         /**
          * TaskRun
@@ -7098,11 +7115,6 @@ export interface components {
          *
          *     Contains the input used, its source, the output produced, and optional
          *     repair information if the output needed correction.
-         *
-         *     Can be nested under another TaskRun; nested runs are stored as child runs
-         *     in a "runs" subfolder (same relationship name as Task's runs).
-         *
-         *     Accepts both Task and TaskRun as parents (polymorphic).
          */
         "TaskRun-Output": {
             /**
@@ -7157,6 +7169,11 @@ export interface components {
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
             trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Output"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Output"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            /**
+             * Parent Task Run Id
+             * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
+             */
+            parent_task_run_id?: string | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -7279,6 +7296,11 @@ export interface components {
             parameters: {
                 [key: string]: unknown;
             };
+        };
+        /** ToolServerArchiveRequest */
+        ToolServerArchiveRequest: {
+            /** Is Archived */
+            is_archived: boolean;
         };
         /**
          * ToolServerType
@@ -12357,6 +12379,42 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["LocalToolServerCreationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalToolServer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    archive_tool_server_api_projects__project_id__tool_servers__tool_server_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                tool_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ToolServerArchiveRequest"];
             };
         };
         responses: {

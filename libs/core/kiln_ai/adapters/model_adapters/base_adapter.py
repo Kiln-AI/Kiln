@@ -624,8 +624,18 @@ class BaseAdapter(metaclass=ABCMeta):
                 properties={"created_by": Config.shared().user_id},
             )
 
+        parent_task_run_id: str | None = None
+        if parent_task_run is not None:
+            if parent_task_run.id is None:
+                raise ValueError(
+                    "parent_task_run must be persisted before using as parent: save the parent "
+                    "TaskRun (e.g. save_to_file()) so it has a stable id."
+                )
+            parent_task_run_id = parent_task_run.id
+
         return TaskRun(
-            parent=parent_task_run if parent_task_run is not None else self.task,
+            parent=self.task,
+            parent_task_run_id=parent_task_run_id,
             input=input_str,
             input_source=input_source,
             output=new_output,

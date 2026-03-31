@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from kiln_ai.adapters.prompt_builders import SimplePromptBuilder
 from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel.json_schema import close_object_schemas
 
 from .data_gen_prompts import (
     generate_sample_generation_prompt,
@@ -151,12 +152,7 @@ def list_json_schema_for_task(task: Task) -> str:
         JSON string representing the schema for a list of task inputs
     """
     if task.input_json_schema:
-        items_schema = json.loads(task.input_json_schema)
-        if (
-            items_schema.get("type") == "object"
-            and "additionalProperties" not in items_schema
-        ):
-            items_schema["additionalProperties"] = False
+        items_schema = close_object_schemas(json.loads(task.input_json_schema))
     else:
         items_schema = {"type": "string"}
 

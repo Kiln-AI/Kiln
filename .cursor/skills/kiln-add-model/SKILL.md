@@ -181,7 +181,7 @@ If the model supports configurable reasoning effort (not just on/off), add `avai
 
 ## Phase 4 – Run Tests
 
-Tests call real LLMs and cost money. Just execute commands directly — Cursor prompts for approval.
+Tests call real LLMs and cost money. Ideally the user only needs to consent to two script executions: the smoke test, then the full parallel suite.
 
 **Vertex AI authentication:** Vertex tests require active gcloud credentials. If you are changing a model that uses Vertex, you must not run the test until asking the user to run `gcloud auth application-default login` before trying. These failures are auth issues, not model config problems.
 
@@ -189,7 +189,20 @@ Tests call real LLMs and cost money. Just execute commands directly — Cursor p
 - Good: `-k "test_name[glm_5-fireworks_ai]"` or `-k "glm_5"`
 - Bad: `-k "glm_5 and fireworks"` — `and` is a pytest keyword expression that can match wrong tests
 
-### 4a. Smoke test — verify slug works
+### 4a. Enable parallel testing
+
+Before running paid tests, enable parallel testing in `pytest.ini`:
+
+```ini
+# Change this line:
+# addopts = -n auto
+# To:
+addopts = -n 8
+```
+
+**Important:** Revert this change after all tests complete (re-comment the line).
+
+### 4b. Smoke test — verify slug works
 
 Run a single test+provider combo first:
 
@@ -199,7 +212,7 @@ uv run pytest --runpaid --ollama -k "test_data_gen_sample_all_models_providers[M
 
 If it fails, fix the slug/config before proceeding. Use `--collect-only` to find exact parameter IDs if unsure.
 
-### 4b. Full test suite
+### 4c. Full test suite
 
 ```bash
 uv run pytest --runpaid --ollama -k "MODEL_ENUM" -v 2>&1 | grep -E "PASSED|FAILED|ERROR|short test|=====|collected"
@@ -211,7 +224,7 @@ uv run pytest --runpaid --ollama -k "MODEL_ENUM" -v 2>&1 | grep -E "PASSED|FAILE
 3. Re-run that single test to verify
 4. Only re-run the full suite once the single test passes
 
-### 4c. Extraction tests (if `supports_doc_extraction=True`)
+### 4d. Extraction tests (if `supports_doc_extraction=True`)
 
 Tests are in `libs/core/kiln_ai/adapters/extractors/test_litellm_extractor.py`.
 
@@ -225,9 +238,38 @@ uv run pytest --runpaid --ollama libs/core/kiln_ai/adapters/extractors/test_lite
 
 If a provider rejects a data type (400 error), remove that `KilnMimeType` and re-run.
 
+### 4e. Revert parallel testing
+
+After all tests complete, **revert `pytest.ini`** back to the commented-out state:
+
+```ini
+# addopts = -n auto
+```
+
+### 4f. Test output format
+
+After all tests finish, present results to the user as:
+
+1. **Two paragraphs of nuance** – describe any unusual findings, things you tried and reverted, known pre-existing failures vs new failures, API quirks discovered, and any config adjustments made during testing.
+
+2. **Per-model per-test dump** – organized by model name and provider, using this format:
+
+```text
+Model Name (provider):
+✅ test_name[model_enum-provider]
+❌ test_name[model_enum-provider] -- brief failure reason
+⏭️ test_name[model_enum-provider]
+```
+
+Use ✅ for PASSED, ❌ for FAILED (with brief reason), ⏭️ for SKIPPED.
+
 ---
 
 ## Phase 5 – Discord Announcement
+
+**Do NOT draft the Discord announcement automatically.** After presenting test results, ask the user if they want a Discord announcement drafted. Only proceed if they confirm.
+
+When requested, use this format:
 
 ```
 New Model: [Model Name] 🚀
@@ -288,9 +330,12 @@ Rules:
 - [ ] Preserve existing comments from predecessor (e.g. reasoning notes, MIME type groupings)
 - [ ] Zero-sum applied if model is suggested for evals/data gen
 - [ ] RAG config templates updated if the new model replaces one used in `app/web_ui/src/routes/(app)/docs/rag_configs/[project_id]/add_search_tool/rag_config_templates.ts`
+- [ ] Parallel testing enabled in `pytest.ini` (`addopts = -n 8`)
 - [ ] Smoke test passed
 - [ ] Full test suite passed
-- [ ] Discord announcement drafted
+- [ ] Per-model per-test result dump presented with nuance paragraphs
+- [ ] Parallel testing reverted in `pytest.ini` (re-commented)
+- [ ] Discord announcement drafted (only if user requests it)
 
 ---
 
