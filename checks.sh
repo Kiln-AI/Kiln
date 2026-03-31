@@ -171,8 +171,8 @@ fi
 # ── Wait and summarize ────────────────────────────────────────────────
 
 if ! wait_for_checks; then
-    local_failed=$(IFS=','; echo "${failed_names[*]}" | sed 's/,/, /g')
-    echo -e "\n\033[31mSome checks failed: ${local_failed}\033[0m"
+    failed_list=$(IFS=','; echo "${failed_names[*]}" | sed 's/,/, /g')
+    echo -e "\n\033[31mSome checks failed: ${failed_list}\033[0m"
     exit 1
 fi
 
