@@ -6,7 +6,16 @@ from enum import Enum
 from typing import Annotated, Any, Literal, Union
 
 from litellm.types.utils import ModelResponseStream
-from pydantic import BaseModel, ConfigDict, Discriminator
+from pydantic import BaseModel, ConfigDict, Discriminator, Field
+
+KilnMetadataValue = str | int | float | bool
+KilnMetadataDict = dict[str, KilnMetadataValue]
+
+
+class AiSdkStreamEventBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kiln_metadata: KilnMetadataDict = Field(default_factory=dict)
 
 
 class AiSdkEventType(str, Enum):
@@ -55,16 +64,12 @@ class FinishMessageMetadata(BaseModel):
     usage: UsageInfo | None = None
 
 
-class StartEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class StartEvent(AiSdkStreamEventBase):
     type: Literal["start"] = "start"
     messageId: str
 
 
-class FinishEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class FinishEvent(AiSdkStreamEventBase):
     type: Literal["finish"] = "finish"
     messageMetadata: FinishMessageMetadata | None = None
 
@@ -73,98 +78,72 @@ class FinishEvent(BaseModel):
         return super().model_dump(**kwargs)
 
 
-class StartStepEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class StartStepEvent(AiSdkStreamEventBase):
     type: Literal["start-step"] = "start-step"
 
 
-class FinishStepEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class FinishStepEvent(AiSdkStreamEventBase):
     type: Literal["finish-step"] = "finish-step"
 
 
-class TextStartEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class TextStartEvent(AiSdkStreamEventBase):
     type: Literal["text-start"] = "text-start"
     id: str
 
 
-class TextEndEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class TextEndEvent(AiSdkStreamEventBase):
     type: Literal["text-end"] = "text-end"
     id: str
 
 
-class TextDeltaEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class TextDeltaEvent(AiSdkStreamEventBase):
     type: Literal["text-delta"] = "text-delta"
     id: str
     delta: str
 
 
-class ReasoningStartEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ReasoningStartEvent(AiSdkStreamEventBase):
     type: Literal["reasoning-start"] = "reasoning-start"
     id: str
 
 
-class ReasoningEndEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ReasoningEndEvent(AiSdkStreamEventBase):
     type: Literal["reasoning-end"] = "reasoning-end"
     id: str
 
 
-class ReasoningDeltaEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ReasoningDeltaEvent(AiSdkStreamEventBase):
     type: Literal["reasoning-delta"] = "reasoning-delta"
     id: str
     delta: str
 
 
-class ToolInputStartEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ToolInputStartEvent(AiSdkStreamEventBase):
     type: Literal["tool-input-start"] = "tool-input-start"
     toolCallId: str
     toolName: str
 
 
-class ToolInputDeltaEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ToolInputDeltaEvent(AiSdkStreamEventBase):
     type: Literal["tool-input-delta"] = "tool-input-delta"
     toolCallId: str
     inputTextDelta: str
 
 
-class ToolInputAvailableEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ToolInputAvailableEvent(AiSdkStreamEventBase):
     type: Literal["tool-input-available"] = "tool-input-available"
     toolCallId: str
     toolName: str
     input: dict[str, Any]
 
 
-class ToolOutputAvailableEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ToolOutputAvailableEvent(AiSdkStreamEventBase):
     type: Literal["tool-output-available"] = "tool-output-available"
     toolCallId: str
     output: str | None = None
 
 
-class ToolOutputErrorEvent(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class ToolOutputErrorEvent(AiSdkStreamEventBase):
     type: Literal["tool-output-error"] = "tool-output-error"
     toolCallId: str
     errorText: str

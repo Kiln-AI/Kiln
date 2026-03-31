@@ -5,14 +5,19 @@ from litellm.types.utils import (
     ModelResponseStream,
     StreamingChoices,
 )
+from pydantic import TypeAdapter
 
 from kiln_ai.adapters.model_adapters.stream_events import (
     AiSdkEventType,
     AiSdkStreamConverter,
+    AiSdkStreamEvent,
+    FinishEvent,
     StartEvent,
     ToolCallEvent,
     ToolCallEventType,
 )
+
+_ai_sdk_stream_event_adapter = TypeAdapter(AiSdkStreamEvent)
 
 
 def _make_tool_call_delta(
@@ -51,6 +56,45 @@ class TestAiSdkStreamEvent:
         dump = event.model_dump()
         assert dump["type"] == "start"
         assert dump["messageId"] == "msg-123"
+
+    def test_kiln_metadata_round_trip(self):
+        payload = {
+            "type": "start",
+            "messageId": "msg-1",
+            "kiln_metadata": {
+                "trace": "abc",
+                "n": 1,
+                "pi": 3.14,
+                "ok": True,
+            },
+        }
+        parsed = _ai_sdk_stream_event_adapter.validate_python(payload)
+        assert isinstance(parsed, StartEvent)
+        assert parsed.kiln_metadata == {
+            "trace": "abc",
+            "n": 1,
+            "pi": 3.14,
+            "ok": True,
+        }
+        assert (
+            _ai_sdk_stream_event_adapter.validate_python(
+                parsed.model_dump(mode="python")
+            )
+            == parsed
+        )
+
+    def test_model_dump_default_kiln_metadata_is_empty_dict(self):
+        event = FinishEvent()
+        assert event.kiln_metadata == {}
+        dump = event.model_dump(exclude_none=True)
+        assert dump["kiln_metadata"] == {}
+
+    def test_kiln_metadata_defaults_when_omitted_in_payload(self):
+        parsed = _ai_sdk_stream_event_adapter.validate_python(
+            {"type": "start", "messageId": "msg-2"}
+        )
+        assert isinstance(parsed, StartEvent)
+        assert parsed.kiln_metadata == {}
 
 
 class TestAiSdkStreamConverter:

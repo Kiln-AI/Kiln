@@ -207,7 +207,7 @@ class ChatStreamSession:
                 }
 
             if round_state.finish_tool_calls:
-                tool_results = await self._execute_server_tools(round_state)
+                tool_results = await self._execute_client_tools(round_state)
                 for tc_id, output in tool_results.items():
                     yield self._format_tool_output(tc_id, output)
 
@@ -221,7 +221,7 @@ class ChatStreamSession:
 
             return
 
-    async def _execute_server_tools(self, round_state: RoundState) -> dict[str, str]:
+    async def _execute_client_tools(self, round_state: RoundState) -> dict[str, str]:
         tool_results: dict[str, str] = {}
         for event in round_state.tool_input_events:
             tc_id = event.toolCallId
@@ -232,6 +232,20 @@ class ChatStreamSession:
                 tool_name,
                 tc_id,
             )
+
+            print("========================")
+            print(f"tool_name: {tool_name}")
+            print(f"tool_args: {tool_args}")
+
+            # may be a passive visible event from the remote server executing the tool
+            # and we don't have it here, we should not run it
+            tool_id = _FUNCTION_NAME_TO_TOOL_ID.get(tool_name, tool_name)
+            if not tool_id:
+                print("No tool id found -> continuing")
+                continue
+            else:
+                print(f"Tool id found -> executing tool: {tool_id}")
+
             tool_result = await execute_tool(tool_name, tool_args)
             tool_results[tc_id] = tool_result
         return tool_results
