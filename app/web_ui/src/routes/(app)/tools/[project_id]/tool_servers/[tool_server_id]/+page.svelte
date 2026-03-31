@@ -602,9 +602,11 @@
                                 {/if}
                               </div>
                               {#if arg.description}
-                                <div
-                                  class="text-gray-500 text-sm mt-1 whitespace-pre-line break-words"
-                                >{arg.description}</div>
+                                <div class="text-gray-500 text-sm mt-1">
+                                  <span class="whitespace-pre-line break-words"
+                                    >{arg.description}</span
+                                  >
+                                </div>
                               {/if}
                             </div>
                           {/each}
