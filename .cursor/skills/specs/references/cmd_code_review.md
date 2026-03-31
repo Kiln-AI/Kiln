@@ -17,9 +17,9 @@ If something important is only in conversation history, that's a bug in the proc
 
 Always run as a sub-agent — spawned fresh, no prior context from coding.
 
-→ Read [references/spawning_subagents.md](references/spawning_subagents.md) for how to spawn sub-agents.
+→ Read [spawning_subagents.md](.cursor/skills/specs/references/spawning_subagents.md) for how to spawn sub-agents.
 
-Pass the prompt from [references/cr_agent_prompt.md](references/cr_agent_prompt.md), plus scope description.
+Pass the prompt from [cr_agent_prompt.md](.cursor/skills/specs/references/cr_agent_prompt.md), plus scope description.
 
 ### Example invocation
 
@@ -65,5 +65,5 @@ The loop continues until clean.
 
 ## References
 
-- [references/spawning_subagents.md](references/spawning_subagents.md) — How to spawn sub-agents
-- [references/cr_agent_prompt.md](references/cr_agent_prompt.md) — Prompt passed to CR sub-agent
+- [spawning_subagents.md](.cursor/skills/specs/references/spawning_subagents.md) — How to spawn sub-agents
+- [cr_agent_prompt.md](.cursor/skills/specs/references/cr_agent_prompt.md) — Prompt passed to CR sub-agent
