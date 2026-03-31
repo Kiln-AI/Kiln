@@ -16,6 +16,7 @@
 
 <p align="center">
   <a href="https://docs.kiln.tech/docs/evals-and-specs"><strong>Evals & Specs</strong></a> • 
+  <a href="https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer"><strong>Prompt Optimizer</strong></a> • 
   <a href="https://docs.kiln.tech/docs/documents-and-search-rag"><strong>RAG</strong></a> • 
   <a href="https://docs.kiln.tech/docs/agents"><strong>Agents</strong></a> • 
   <a href="https://docs.kiln.tech/docs/fine-tuning-guide"><strong>Fine Tuning</strong></a> •
@@ -37,7 +38,8 @@
 
 - 🚀 [**Intuitive Desktop Apps**](https://kiln.tech/download): One-click apps for Windows, MacOS, and Linux.
 - 📊 [**Evals**](https://docs.kiln.tech/docs/evaluations): Evaluate the quality of your models/tasks using state of the art evaluators.
-- 🎛️ [**Fine Tuning**](https://docs.kiln.tech/docs/fine-tuning-guide): Zero-code fine-tuning for Llama, GPT-4o, and more. Automatic serverless deployment of models.
+- 📈 [**Optimizers**](https://docs.kiln.tech/docs/optimizers): Find the best prompt, model or fine-tune for your task. Improve quality and lower costs.
+- 🎛️ [**Fine Tuning**](https://docs.kiln.tech/docs/fine-tuning-guide): Zero-code fine-tuning for Qwen, GPT, Gemini, and many more. Automatic serverless deployment of models.
 - 🔍 [**Docs & Search (RAG)**](https://docs.kiln.tech/docs/documents-and-search-rag): Add knowledge to your AI systems with Retrieval-Augmented Generation (RAG).
 - 🤖 [**Agents**](https://docs.kiln.tech/docs/agents): Build agentic systems with multiple actors
 - 🛠 [**Tools & MCP**](https://docs.kiln.tech/docs/tools-and-mcp): Connect powerful tools to your Kiln tasks

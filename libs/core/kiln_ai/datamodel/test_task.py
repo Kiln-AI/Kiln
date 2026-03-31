@@ -3,6 +3,7 @@ import json
 import pytest
 from pydantic import ValidationError
 
+from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
@@ -313,6 +314,41 @@ def test_task_name_unicode_name():
     assert task.name == "你好"
 
 
+def test_task_run_config_long_name_folder_has_no_trailing_space(tmp_path):
+    """Folder segment from name must not end with a trailing space (path/git tooling)."""
+    project_path = tmp_path / "project.kiln"
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+
+    task = Task(
+        name="run_agent_brand_mentions_feed_cl",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    long_name = "Deepseek 3p2 + KilnOptimized (3 xyz)"
+    assert len(long_name[:32]) == 32 and long_name[:32].endswith(" ")
+
+    run_config = TaskRunConfig(
+        name=long_name,
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=task,
+    )
+    run_config.save_to_file()
+
+    assert run_config.path is not None
+    assert "run_configs" in run_config.path.parts
+    folder_name = run_config.path.parent.name
+    assert folder_name == folder_name.rstrip()
+    assert not folder_name.endswith(" ")
+
+
 def test_task_default_run_config_id_property(tmp_path):
     """Test that default_run_config_id can be set and retrieved."""
 
@@ -463,9 +499,8 @@ def test_task_prompt_optimization_jobs_readonly(tmp_path):
     )
 
 
-def test_all_children_of_parent_path_polymorphic(tmp_path):
-    """all_children_of_parent_path works correctly for polymorphic parent models."""
-    # Test with TaskRun and Task
+def test_all_children_of_parent_path_task_runs(tmp_path):
+    """all_children_of_parent_path lists TaskRun files under a Task."""
     task = Task(
         name="Test Task",
         instruction="Test instruction",
@@ -475,7 +510,6 @@ def test_all_children_of_parent_path_polymorphic(tmp_path):
 
     output = TaskOutput(output="test output")
 
-    # Create direct children of Task
     run1 = TaskRun(input="input1", output=output, parent=task)
     run2 = TaskRun(input="input2", output=output, parent=task)
     run1.save_to_file()
@@ -487,11 +521,9 @@ def test_all_children_of_parent_path_polymorphic(tmp_path):
     assert inputs == {"input1", "input2"}
 
 
-def test_taskrun_nested_validates_parent_type_on_load(tmp_path):
-    """Loading a TaskRun validates its parent type is Task or TaskRun."""
+def test_taskrun_parent_task_run_id_persists_on_load(tmp_path):
     output = TaskOutput(output="test output")
 
-    # Create a task
     task = Task(
         name="Test Task",
         instruction="Test instruction",
@@ -499,34 +531,31 @@ def test_taskrun_nested_validates_parent_type_on_load(tmp_path):
     )
     task.save_to_file()
 
-    # Create parent TaskRun
     parent_run = TaskRun(input="parent input", output=output, parent=task)
     parent_run.save_to_file()
 
-    # Create nested TaskRun
-    nested_run = TaskRun(input="nested input", output=output, parent=parent_run)
+    nested_run = TaskRun(
+        input="nested input",
+        output=output,
+        parent=task,
+        parent_task_run_id=parent_run.id,
+    )
     nested_run.save_to_file()
 
-    # Reload from disk - parent type should be validated
-    # When loading from disk, the parent attribute points to the ultimate parent (Task)
-    # Use load_parent() to get the direct parent (TaskRun)
     loaded_run = TaskRun.load_from_file(nested_run.path)
     assert loaded_run is not None
     assert loaded_run.input == "nested input"
-    # parent_task() returns the ultimate parent task (different instance but same data)
+    assert loaded_run.parent_task_run_id == parent_run.id
     loaded_parent_task = loaded_run.parent_task()
     assert loaded_parent_task is not None
     assert loaded_parent_task.name == "Test Task"
     assert loaded_parent_task.instruction == "Test instruction"
-    # Use load_parent() to get the direct parent TaskRun
-    direct_parent = loaded_run.load_parent()
-    assert direct_parent is not None
-    assert direct_parent.id == parent_run.id
-    assert direct_parent.input == "parent input"
+    assert loaded_run.load_parent() is not None
+    assert loaded_run.load_parent().id == task.id
 
 
 def test_taskrun_loads_from_task_path(tmp_path):
-    """TaskRun children can be loaded from Task path (valid polymorphic parent)."""
+    """TaskRun children can be loaded from Task path."""
     output = TaskOutput(output="test output")
 
     task = Task(
@@ -545,42 +574,16 @@ def test_taskrun_loads_from_task_path(tmp_path):
     assert children[0] == run.path
 
 
-def test_taskrun_loads_from_taskrun_path(tmp_path):
-    """TaskRun children can be loaded from TaskRun path (valid polymorphic parent)."""
-    output = TaskOutput(output="test output")
-
-    task = Task(
-        name="Test Task",
-        instruction="Test instruction",
-        path=tmp_path / "task.kiln",
-    )
-    task.save_to_file()
-
-    parent_run = TaskRun(input="parent input", output=output, parent=task)
-    parent_run.save_to_file()
-
-    nested_run = TaskRun(input="nested input", output=output, parent=parent_run)
-    nested_run.save_to_file()
-
-    # Load children from TaskRun path - should succeed
-    children = list(TaskRun.iterate_children_paths_of_parent_path(parent_run.path))
-    assert len(children) == 1
-    assert children[0] == nested_run.path
-
-
 def test_taskrun_fails_to_load_from_project_path(tmp_path):
-    """TaskRun children cannot be loaded from Project path (invalid polymorphic parent)."""
     project_path = tmp_path / "project.kiln"
     project = Project(name="Test Project", path=project_path)
     project.save_to_file()
 
-    # Try to load TaskRun children from a Project path - should fail
-    with pytest.raises(ValueError, match="Parent model_type 'project' is not one of"):
+    with pytest.raises(ValidationError, match="validation error for Task"):
         list(TaskRun.iterate_children_paths_of_parent_path(project_path))
 
 
-def test_multiple_nested_levels_validates_each_level(tmp_path):
-    """Multi-level nesting validates parent type at each level."""
+def test_multiple_runs_flat_under_task_with_parent_task_run_chain(tmp_path):
     output = TaskOutput(output="test output")
 
     task = Task(
@@ -593,178 +596,41 @@ def test_multiple_nested_levels_validates_each_level(tmp_path):
     run1 = TaskRun(input="input1", output=output, parent=task)
     run1.save_to_file()
 
-    run2 = TaskRun(input="input2", output=output, parent=run1)
+    run2 = TaskRun(
+        input="input2",
+        output=output,
+        parent=task,
+        parent_task_run_id=run1.id,
+    )
     run2.save_to_file()
 
-    run3 = TaskRun(input="input3", output=output, parent=run2)
+    run3 = TaskRun(
+        input="input3",
+        output=output,
+        parent=task,
+        parent_task_run_id=run2.id,
+    )
     run3.save_to_file()
 
-    # Load children at each level - all should succeed
     task_children = TaskRun.all_children_of_parent_path(task.path)
-    assert len(task_children) == 1
-    assert task_children[0].id == run1.id
-
-    run1_children = TaskRun.all_children_of_parent_path(run1.path)
-    assert len(run1_children) == 1
-    assert run1_children[0].id == run2.id
-
-    run2_children = TaskRun.all_children_of_parent_path(run2.path)
-    assert len(run2_children) == 1
-    assert run2_children[0].id == run3.id
+    assert len(task_children) == 3
+    by_id = {r.id: r for r in task_children}
+    assert by_id[run2.id].parent_task_run_id == run1.id
+    assert by_id[run3.id].parent_task_run_id == run2.id
+    assert by_id[run1.id].parent_task_run_id is None
 
 
-def test_polymorphic_parent_type_validation_fast_fail(tmp_path):
-    """Polymorphic validation fails fast without loading entire parent model."""
-    # Create a file that's syntactically valid JSON but semantically invalid
-    # for the parent type - the polymorphic path should only read model_type
+def test_iterate_children_wrong_parent_model_type(tmp_path):
     invalid_parent_path = tmp_path / "invalid.kiln"
-
-    # Write a file that would fail if we tried to fully load as Task/TaskRun
-    # but should be caught by the model_type check first
     invalid_data = {
-        "model_type": "project",  # Wrong type - not Task or TaskRun
-        "extra_field": "this would cause issues",
+        "model_type": "project",
+        "extra_field": "x",
     }
     with open(invalid_parent_path, "w") as f:
         json.dump(invalid_data, f)
 
-    # Should fail on model_type check, not on full load
-    with pytest.raises(ValueError, match="Parent model_type 'project' is not one of"):
+    with pytest.raises(ValidationError, match="validation errors for Task"):
         list(TaskRun.iterate_children_paths_of_parent_path(invalid_parent_path))
-
-
-def test_load_parent_raises_on_malformed_taskrun(tmp_path):
-    """load_parent raises ValueError with context when parent TaskRun is malformed."""
-    output = TaskOutput(output="test output")
-
-    # Create a task
-    task = Task(
-        name="Test Task",
-        instruction="Test instruction",
-        path=tmp_path / "task.kiln",
-    )
-    task.save_to_file()
-
-    # Create parent TaskRun directory and valid run
-    parent_run_dir = tmp_path / "runs" / "parent_run"
-    parent_run_dir.mkdir(parents=True)
-    parent_run = TaskRun(
-        input="parent input",
-        output=output,
-        path=parent_run_dir / TaskRun.base_filename(),
-    )
-    parent_run.save_to_file()
-
-    # Create nested TaskRun directory and run (before corrupting parent)
-    nested_run_dir = parent_run_dir / "runs" / "nested_run"
-    nested_run_dir.mkdir(parents=True)
-    nested_run = TaskRun(
-        input="nested input",
-        output=output,
-        path=nested_run_dir / TaskRun.base_filename(),
-    )
-    nested_run.save_to_file()
-
-    # Verify it loads correctly with valid parent
-    loaded_nested = TaskRun.load_from_file(nested_run.path)
-    loaded_parent = loaded_nested.load_parent()
-    assert loaded_parent is not None
-    assert loaded_parent.input == "parent input"
-
-    # Now corrupt the parent TaskRun file
-    with open(parent_run.path, "w") as f:
-        json.dump({"model_type": "task_run", "input": 123}, f)  # Invalid input type
-
-    # Reload nested run and try to load parent - should raise with context
-    loaded_nested = TaskRun.load_from_file(nested_run.path)
-    with pytest.raises(ValueError) as exc_info:
-        loaded_nested.load_parent()
-
-    error_msg = str(exc_info.value)
-    assert "Failed to load parent TaskRun" in error_msg
-    assert str(parent_run.path) in error_msg
-    assert "malformed nested task run" in error_msg
-
-
-def test_load_parent_succeeds_for_valid_taskrun_parent(tmp_path):
-    """load_parent successfully loads a valid TaskRun parent."""
-    output = TaskOutput(output="test output")
-
-    # Create a task
-    task = Task(
-        name="Test Task",
-        instruction="Test instruction",
-        path=tmp_path / "task.kiln",
-    )
-    task.save_to_file()
-
-    # Create parent TaskRun
-    parent_run = TaskRun(input="parent input", output=output, parent=task)
-    parent_run.save_to_file()
-
-    # Create nested TaskRun
-    runs_dir = parent_run.path.parent / "runs"
-    runs_dir.mkdir(exist_ok=True)
-    nested_run_dir = runs_dir / "nested_run"
-    nested_run_dir.mkdir(exist_ok=True)
-    nested_run = TaskRun(
-        input="nested input", output=output, path=nested_run_dir / "task_run.kiln"
-    )
-    nested_run.save_to_file()
-
-    # Reload and load parent - should succeed
-    loaded_nested = TaskRun.load_from_file(nested_run.path)
-    loaded_parent = loaded_nested.load_parent()
-
-    assert loaded_parent is not None
-    assert loaded_parent.id == parent_run.id
-    assert loaded_parent.input == "parent input"
-    assert isinstance(loaded_parent, TaskRun)
-
-
-def test_is_root_task_run_true_when_parent_is_task(tmp_path):
-    """is_root_task_run returns True when parent is a Task."""
-    output = TaskOutput(output="test output")
-
-    task = Task(
-        name="Test Task",
-        instruction="Test instruction",
-        path=tmp_path / "task.kiln",
-    )
-    task.save_to_file()
-
-    run = TaskRun(input="test input", output=output, parent=task)
-    run.save_to_file()
-
-    loaded_run = TaskRun.load_from_file(run.path)
-    assert loaded_run.is_root_task_run() is True
-
-
-def test_is_root_task_run_false_when_parent_is_taskrun(tmp_path):
-    """is_root_task_run returns False when parent is another TaskRun."""
-    output = TaskOutput(output="test output")
-
-    task = Task(
-        name="Test Task",
-        instruction="Test instruction",
-        path=tmp_path / "task.kiln",
-    )
-    task.save_to_file()
-
-    parent_run = TaskRun(input="parent input", output=output, parent=task)
-    parent_run.save_to_file()
-
-    runs_dir = parent_run.path.parent / "runs"
-    runs_dir.mkdir(exist_ok=True)
-    nested_run_dir = runs_dir / "nested_run"
-    nested_run_dir.mkdir(exist_ok=True)
-    nested_run = TaskRun(
-        input="nested input", output=output, path=nested_run_dir / "task_run.kiln"
-    )
-    nested_run.save_to_file()
-
-    loaded_nested = TaskRun.load_from_file(nested_run.path)
-    assert loaded_nested.is_root_task_run() is False
 
 
 def test_is_toolcall_pending_false_when_no_trace():
@@ -827,3 +693,62 @@ def test_is_toolcall_pending_false_when_tool_calls_followed_by_tool_response():
         ],
     )
     assert run.is_toolcall_pending is False
+
+
+def test_is_toolcall_pending_false_when_only_task_response_tool_calls():
+    trace = [
+        {"role": "user", "content": "hello"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_tr",
+                    "function": {
+                        "name": "task_response",
+                        "arguments": '{"answer": 42}',
+                    },
+                    "type": "function",
+                }
+            ],
+        },
+    ]
+    run = TaskRun(input="test", output=TaskOutput(output='{"answer": 42}'), trace=trace)
+    assert run.is_toolcall_pending is False
+    assert (
+        RunOutput(
+            output='{"answer": 42}', intermediate_outputs=None, trace=trace
+        ).is_toolcall_pending
+        is False
+    )
+
+
+def test_is_toolcall_pending_true_when_task_response_mixed_with_external_tools():
+    trace = [
+        {"role": "user", "content": "hello"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_tr",
+                    "function": {
+                        "name": "task_response",
+                        "arguments": '{"x": 1}',
+                    },
+                    "type": "function",
+                },
+                {
+                    "id": "call_ext",
+                    "function": {"name": "add", "arguments": "{}"},
+                    "type": "function",
+                },
+            ],
+        },
+    ]
+    run = TaskRun(input="test", output=TaskOutput(output=""), trace=trace)
+    assert run.is_toolcall_pending is True
+    assert (
+        RunOutput(output="", intermediate_outputs=None, trace=trace).is_toolcall_pending
+        is True
+    )

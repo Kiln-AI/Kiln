@@ -35,7 +35,10 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel.datamodel_enums import InputType
-from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
+from kiln_ai.datamodel.json_schema import (
+    close_object_schemas,
+    validate_schema_with_value_error,
+)
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     as_kiln_agent_run_config,
@@ -148,7 +151,10 @@ class LiteLlmAdapter(BaseAdapter):
                     standard_tool_calls = [
                         tc for tc in tool_calls if tc.function.name != "task_response"
                     ]
-                    if standard_tool_calls:
+                    has_task_response = any(
+                        tc.function.name == "task_response" for tc in tool_calls
+                    )
+                    if standard_tool_calls and not has_task_response:
                         return ModelTurnResult(
                             # we don't have any content, we are waiting for toolcall output to come back from client
                             assistant_message="",
@@ -420,6 +426,11 @@ class LiteLlmAdapter(BaseAdapter):
 
     def json_schema_response_format(self) -> dict[str, Any]:
         output_schema = self.task.output_schema()
+        if output_schema is None:
+            raise ValueError(
+                "Invalid output schema for this task. Cannot use JSON schema response format."
+            )
+        output_schema = close_object_schemas(output_schema)
         return {
             "response_format": {
                 "type": "json_schema",
@@ -437,7 +448,7 @@ class LiteLlmAdapter(BaseAdapter):
             raise ValueError(
                 "Invalid output schema for this task. Can not use tool calls."
             )
-        output_schema["additionalProperties"] = False
+        output_schema = close_object_schemas(output_schema)
 
         function_params = {
             "name": "task_response",

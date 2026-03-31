@@ -3312,6 +3312,46 @@ async def test_edit_remote_mcp(
 
 
 @pytest.mark.parametrize(
+    "fixture_name, expected_type",
+    [
+        ("existing_remote_tool_server", ToolServerType.remote_mcp),
+        ("existing_local_tool_server", ToolServerType.local_mcp),
+    ],
+)
+async def test_archive_tool_server_skips_connectivity_validation(
+    client,
+    test_project,
+    request,
+    fixture_name,
+    expected_type,
+):
+    tool_server = request.getfixturevalue(fixture_name)
+
+    with patch(
+        "app.desktop.studio_server.tool_api.project_from_id"
+    ) as mock_project_from_id:
+        mock_project_from_id.return_value = test_project
+
+        with patch(
+            "app.desktop.studio_server.tool_api.validate_tool_server_connectivity",
+            new_callable=AsyncMock,
+        ) as mock_validate:
+            response = client.post(
+                f"/api/projects/{test_project.id}/tool_servers/{tool_server.id}/archive",
+                json={"is_archived": True},
+            )
+
+        assert response.status_code == 200
+        response_json = response.json()
+        assert response_json["type"] == expected_type
+        assert response_json["properties"]["is_archived"] is True
+        mock_validate.assert_not_awaited()
+
+        loaded_tool_server = ExternalToolServer.load_from_file(tool_server.path)
+        assert loaded_tool_server.properties["is_archived"] is True
+
+
+@pytest.mark.parametrize(
     "fixture_name, endpoint, property_key, bad_data",
     [
         # Test 1: Remote MCP with bad url

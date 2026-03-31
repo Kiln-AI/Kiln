@@ -78,7 +78,7 @@ If you're unsure about something, ask. Don't guess.
 
 ## Pushback
 
-→ Load [references/pushback.md](references/pushback.md) if not already loaded.
+→ Load [pushback.md](.cursor/skills/specs/references/pushback.md) if not already loaded.
 
 After drafting the spec, review it and challenge:
 

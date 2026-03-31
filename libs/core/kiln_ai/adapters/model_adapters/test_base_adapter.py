@@ -1,3 +1,4 @@
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -28,6 +29,7 @@ from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunC
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.base_tool import KilnToolInterface
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 
 class MockAdapter(BaseAdapter):
@@ -446,6 +448,13 @@ def test_build_chat_formatter_with_prior_trace_returns_multiturn_formatter(adapt
     assert formatter.initial_messages() == prior_trace
 
 
+def test_build_chat_formatter_empty_prior_trace_matches_none(adapter):
+    fmt_empty = adapter.build_chat_formatter("new input", prior_trace=[])
+    fmt_none = adapter.build_chat_formatter("new input", prior_trace=None)
+    assert type(fmt_empty) is type(fmt_none)
+    assert fmt_empty.__class__.__name__ != "MultiturnFormatter"
+
+
 @pytest.mark.asyncio
 async def test_invoke_with_prior_trace_none_starts_fresh(base_project):
     task = Task(
@@ -493,6 +502,7 @@ async def test_invoke_with_prior_trace_none_starts_fresh(base_project):
         ),
     ):
         run = await adapter.invoke("input", prior_trace=None)
+    assert isinstance(run, TaskRun)
     assert run.output.output == "ok"
     adapter._run.assert_called_once()
     assert adapter._run.call_args[1].get("prior_trace") is None
@@ -547,6 +557,244 @@ async def test_invoke_returning_run_output_passes_prior_trace_to_run(
         await adapter.invoke_returning_run_output("follow-up", prior_trace=trace)
 
     assert captured_prior_trace == trace
+
+
+_INPUT_OBJECT_SCHEMA = json.dumps(
+    {
+        "type": "object",
+        "properties": {"x": {"type": "number"}},
+        "required": ["x"],
+    }
+)
+
+_MULTITURN_STRUCTURED_ERROR = (
+    "Cannot run multiturn execution with a task that has a structured input schema"
+)
+
+
+def test_normalize_prior_trace_empty_and_none():
+    assert BaseAdapter._normalize_prior_trace(None) is None
+    assert BaseAdapter._normalize_prior_trace([]) is None
+    trace: list[ChatCompletionMessageParam] = [{"role": "user", "content": "h"}]
+    assert BaseAdapter._normalize_prior_trace(trace) == trace
+
+
+@pytest.mark.asyncio
+async def test_invoke_rejects_multiturn_with_structured_input(tmp_path):
+    project = Project(name="proj", path=tmp_path / "proj.kiln")
+    project.save_to_file()
+    task = Task(
+        name="t",
+        instruction="i",
+        parent=project,
+    )
+    task.save_to_file()
+    adapter = MockAdapter(
+        task=task,
+        run_config=KilnAgentRunConfigProperties(
+            model_name="gpt_4o",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+    adapter.input_schema = _INPUT_OBJECT_SCHEMA
+    adapter._run = AsyncMock()
+    prior_trace: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": "hi"},
+    ]
+
+    with pytest.raises(ValueError, match=_MULTITURN_STRUCTURED_ERROR):
+        await adapter.invoke({"x": 1}, prior_trace=prior_trace)
+
+    adapter._run.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prior_trace", [None, []])
+async def test_invoke_validates_input_schema_when_single_turn(
+    tmp_path, prior_trace: list[ChatCompletionMessageParam] | None
+):
+    project = Project(name="proj", path=tmp_path / "proj.kiln")
+    project.save_to_file()
+    task = Task(
+        name="t",
+        instruction="i",
+        parent=project,
+    )
+    task.save_to_file()
+    adapter = MockAdapter(
+        task=task,
+        run_config=KilnAgentRunConfigProperties(
+            model_name="gpt_4o",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+    adapter.input_schema = _INPUT_OBJECT_SCHEMA
+    adapter._run = AsyncMock()
+
+    with pytest.raises(ValueError, match="input schema"):
+        await adapter.invoke({}, prior_trace=prior_trace)
+
+    adapter._run.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prior_trace", [None, []])
+async def test_invoke_empty_prior_trace_like_none_allows_structured_input(
+    tmp_path, prior_trace: list[ChatCompletionMessageParam] | None
+):
+    project = Project(name="proj", path=tmp_path / "proj.kiln")
+    project.save_to_file()
+    task = Task(
+        name="t",
+        instruction="i",
+        parent=project,
+    )
+    task.save_to_file()
+    adapter = MockAdapter(
+        task=task,
+        run_config=KilnAgentRunConfigProperties(
+            model_name="gpt_4o",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+    adapter.input_schema = _INPUT_OBJECT_SCHEMA
+    adapter._run = AsyncMock(
+        return_value=(
+            RunOutput(output="ok", intermediate_outputs=None, trace=None),
+            None,
+        )
+    )
+
+    with (
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id",
+            return_value=MagicMock(
+                parse_output=MagicMock(
+                    return_value=RunOutput(
+                        output="ok", intermediate_outputs=None, trace=None
+                    )
+                )
+            ),
+        ),
+        patch(
+            "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id",
+        ),
+        patch.object(
+            adapter,
+            "model_provider",
+            return_value=MagicMock(
+                parser="default",
+                formatter=None,
+                reasoning_capable=False,
+            ),
+        ),
+    ):
+        await adapter.invoke({"x": 1}, prior_trace=prior_trace)
+
+    adapter._run.assert_called_once()
+    assert adapter._run.call_args[1].get("prior_trace") is None
+
+
+def test_prepare_stream_rejects_multiturn_with_structured_input(tmp_path):
+    project = Project(name="proj", path=tmp_path / "proj.kiln")
+    project.save_to_file()
+    task = Task(
+        name="t",
+        instruction="i",
+        parent=project,
+    )
+    task.save_to_file()
+    adapter = MockAdapter(
+        task=task,
+        run_config=KilnAgentRunConfigProperties(
+            model_name="gpt_4o",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+    adapter.input_schema = _INPUT_OBJECT_SCHEMA
+    prior_trace: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": "hi"},
+    ]
+
+    with (
+        patch.object(
+            adapter,
+            "model_provider",
+            return_value=MagicMock(formatter=None),
+        ),
+        pytest.raises(ValueError, match=_MULTITURN_STRUCTURED_ERROR),
+    ):
+        adapter._prepare_stream({"x": 1}, prior_trace=prior_trace)
+
+
+@pytest.mark.parametrize("prior_trace", [None, []])
+def test_prepare_stream_validates_input_schema_when_single_turn(
+    tmp_path, prior_trace: list[ChatCompletionMessageParam] | None
+):
+    project = Project(name="proj", path=tmp_path / "proj.kiln")
+    project.save_to_file()
+    task = Task(
+        name="t",
+        instruction="i",
+        parent=project,
+    )
+    task.save_to_file()
+    adapter = MockAdapter(
+        task=task,
+        run_config=KilnAgentRunConfigProperties(
+            model_name="gpt_4o",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+    adapter.input_schema = _INPUT_OBJECT_SCHEMA
+    invalid_input: dict = {}
+
+    with (
+        patch.object(
+            adapter,
+            "model_provider",
+            return_value=MagicMock(formatter=None),
+        ),
+        pytest.raises(ValueError, match="input schema"),
+    ):
+        adapter._prepare_stream(invalid_input, prior_trace=prior_trace)
+
+
+def test_build_chat_formatter_rejects_multiturn_with_structured_input(tmp_path):
+    project = Project(name="proj", path=tmp_path / "proj.kiln")
+    project.save_to_file()
+    task = Task(
+        name="t",
+        instruction="i",
+        parent=project,
+    )
+    task.save_to_file()
+    adapter = MockAdapter(
+        task=task,
+        run_config=KilnAgentRunConfigProperties(
+            model_name="gpt_4o",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+    )
+    adapter.input_schema = _INPUT_OBJECT_SCHEMA
+    prior_trace: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": "hi"},
+    ]
+
+    with pytest.raises(ValueError, match=_MULTITURN_STRUCTURED_ERROR):
+        adapter.build_chat_formatter("new input", prior_trace=prior_trace)
 
 
 @pytest.mark.parametrize(

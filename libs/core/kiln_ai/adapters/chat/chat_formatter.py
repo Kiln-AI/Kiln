@@ -282,14 +282,12 @@ class MultiturnFormatter(ChatFormatter):
     def _is_tool_result(self) -> bool:
         """Return True if user_input looks like one or more tool call results."""
         input = self.user_input
-        if isinstance(input, dict) and "tool_call_id" in input:
-            return True
-        if (
-            isinstance(input, list)
-            and len(input) > 0
-            and all(isinstance(item, dict) and "tool_call_id" in item for item in input)
-        ):
-            return True
+        if isinstance(input, dict):
+            return "tool_call_id" in input
+        if isinstance(input, list):
+            return bool(input) and all(
+                isinstance(item, dict) and "tool_call_id" in item for item in input
+            )
         return False
 
     def next_turn(self, previous_output: str | None = None) -> Optional[ChatTurn]:

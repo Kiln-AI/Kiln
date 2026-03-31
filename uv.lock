@@ -1686,7 +1686,7 @@ requires-dist = [
     { name = "jq", specifier = ">=1.8.0" },
     { name = "jsonschema", specifier = ">=4.23.0" },
     { name = "lancedb", specifier = ">=0.24.2" },
-    { name = "litellm", specifier = ">=1.81.16" },
+    { name = "litellm", specifier = ">=1.81.16,<1.82.7" },
     { name = "llama-index", specifier = ">=0.13.3" },
     { name = "llama-index-vector-stores-lancedb", specifier = ">=0.4.2" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.10.1" },

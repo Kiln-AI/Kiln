@@ -93,6 +93,10 @@ class KilnTaskToolServerCreationRequest(BaseModel):
     is_archived: bool
 
 
+class ToolServerArchiveRequest(BaseModel):
+    is_archived: bool
+
+
 class ExternalToolApiDescription(BaseModel):
     """
     This class is a wrapper of MCP's Tool / KilnTaskTool objects to be displayed in the UI under tool_server/[tool_server_id].
@@ -663,6 +667,19 @@ def connect_tool_servers_api(app: FastAPI):
         await validate_tool_server_connectivity(tool_server)
 
         # Save the tool to file
+        tool_server.save_to_file()
+
+        return tool_server
+
+    @app.post("/api/projects/{project_id}/tool_servers/{tool_server_id}/archive")
+    async def archive_tool_server(
+        project_id: str,
+        tool_server_id: str,
+        archive_request: ToolServerArchiveRequest,
+    ) -> ExternalToolServer:
+        tool_server = tool_server_from_id(project_id, tool_server_id)
+
+        tool_server.properties["is_archived"] = archive_request.is_archived
         tool_server.save_to_file()
 
         return tool_server

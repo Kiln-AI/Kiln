@@ -8,6 +8,7 @@ from typing import Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter
 from kiln_ai.adapters.run_output import RunOutput
@@ -167,6 +168,40 @@ def test_build_default_child_filename(tmp_path):
     assert child_path.parent.name == child.id + " - Name"
     assert child_path.parent.parent.name == "children"
     assert child_path.parent.parent.parent == tmp_path.parent
+
+
+def test_build_child_dirname_truncation_uses_first_32_chars(tmp_path):
+    parent = BaseParentExample(path=tmp_path)
+    long_name = "a" * 32 + " suffix"
+    child = DefaultParentedModel(parent=parent, name=long_name)
+    dirname = child.build_child_dirname()
+    assert str(dirname).endswith("a" * 32)
+
+
+def test_build_child_dirname_run_config_style_name_no_trailing_space(tmp_path):
+    """Prefix can end with a space in the raw name; sanitization strips trailing space from the path segment."""
+    parent = BaseParentExample(path=tmp_path)
+    name = "Deepseek 3p2 + KilnOptimized (3 tokens)"
+    assert len(name[:32]) == 32 and name[:32].endswith(" ")
+    child = DefaultParentedModel(parent=parent, name=name)
+    dirname = child.build_child_dirname()
+    segment = str(dirname)
+    assert segment == segment.rstrip()
+    child_path = child.build_path()
+    assert child_path is not None
+    assert child_path.parent.name == child_path.parent.name.rstrip()
+
+
+def test_build_child_dirname_raises_when_sanitized_prefix_empty(tmp_path):
+    parent = BaseParentExample(path=tmp_path)
+    name = " " * 32 + "suffix"
+    assert name[:32].strip() == ""
+    child = DefaultParentedModel(parent=parent, name=name)
+    with pytest.raises(
+        ValueError,
+        match="first 32 characters of `name` produced an empty string",
+    ):
+        child.build_child_dirname()
 
 
 def test_serialize_child(tmp_path):
@@ -1169,26 +1204,8 @@ def test_readonly_cache_integration(tmp_model_cache, tmp_path):
 
 
 # ============================================================================
-# Tests for _parent_types() and parent type validation in _load_parent_and_validate_children
+# Tests for parent type validation when iterating children of a parent path
 # ============================================================================
-
-
-def test_default_parent_types_returns_none():
-    """Default _parent_types() returns None for models with single parent type."""
-    assert DefaultParentedModel._parent_types() is None
-    assert NamedParentedModel._parent_types() is None
-
-
-def test_taskrun_parent_types_returns_task_and_taskrun():
-    """TaskRun._parent_types() returns [Task, TaskRun] for polymorphic parent support."""
-
-    parent_types = TaskRun._parent_types()
-    assert parent_types is not None
-    assert len(parent_types) == 2
-
-    parent_type_names = {t.type_name() for t in parent_types}
-    assert "task" in parent_type_names
-    assert "task_run" in parent_type_names
 
 
 def test_invalid_parent_with_single_parent_type(tmp_path):
@@ -1207,16 +1224,13 @@ def test_invalid_parent_with_single_parent_type(tmp_path):
         list(DefaultParentedModel.iterate_children_paths_of_parent_path(project_path))
 
 
-def test_invalid_parent_with_multiple_parent_types(tmp_path):
-    """Loading children fails when parent's model_type is not in accepted polymorphic types."""
-    # Create a project (not an accepted parent type for TaskRun)
+def test_invalid_parent_task_run_expects_task(tmp_path):
+    """TaskRun children load the parent as Task; wrong model type fails like other single-parent models."""
     project_path = tmp_path / "project.kiln"
     project = Project(name="Test Project", path=project_path)
     project.save_to_file()
 
-    # Try to load TaskRun children from a Project path
-    # TaskRun accepts Task and TaskRun, not Project
-    with pytest.raises(ValueError, match="Parent model_type 'project' is not one of"):
+    with pytest.raises(ValidationError, match="validation error for Task"):
         list(TaskRun.iterate_children_paths_of_parent_path(project_path))
 
 
@@ -1236,11 +1250,10 @@ def test_valid_parent_type_single_parent(tmp_path):
     assert children[0] == child.path
 
 
-def test_valid_parent_type_polymorphic_taskrun_as_parent(tmp_path):
-    """TaskRun can be loaded with TaskRun as parent (polymorphic case)."""
+def test_task_run_children_only_under_task_path_with_parent_task_run_id(tmp_path):
+    """TaskRun files live under the task; lineage uses parent_task_run_id, not nested folders."""
     output = TaskOutput(output="test output")
 
-    # Create a task as the ultimate parent
     task = Task(
         name="Test Task",
         instruction="Test instruction",
@@ -1248,22 +1261,24 @@ def test_valid_parent_type_polymorphic_taskrun_as_parent(tmp_path):
     )
     task.save_to_file()
 
-    # Create a parent TaskRun
     parent_run = TaskRun(input="parent input", output=output, parent=task)
     parent_run.save_to_file()
 
-    # Create a nested TaskRun
-    nested_run = TaskRun(input="nested input", output=output, parent=parent_run)
+    nested_run = TaskRun(
+        input="nested input",
+        output=output,
+        parent=task,
+        parent_task_run_id=parent_run.id,
+    )
     nested_run.save_to_file()
 
-    # Load children of parent_run - should succeed
-    children = list(TaskRun.iterate_children_paths_of_parent_path(parent_run.path))
-    assert len(children) == 1
-    assert children[0] == nested_run.path
+    children = list(TaskRun.iterate_children_paths_of_parent_path(task.path))
+    assert len(children) == 2
+    assert {p for p in children} == {parent_run.path, nested_run.path}
 
 
-def test_valid_parent_type_polymorphic_task_as_parent(tmp_path):
-    """TaskRun can be loaded with Task as parent (polymorphic case)."""
+def test_valid_parent_type_task_as_parent_for_task_run(tmp_path):
+    """TaskRun children can be listed from a Task path."""
     output = TaskOutput(output="test output")
 
     # Create a task
@@ -1284,21 +1299,18 @@ def test_valid_parent_type_polymorphic_task_as_parent(tmp_path):
     assert children[0] == task_run.path
 
 
-def test_invalid_parent_type_name_mismatch_polymorphic(tmp_path):
-    """Polymorphic validation fails when parent file has wrong model_type."""
-    # Create a file with wrong model_type
+def test_invalid_parent_type_name_mismatch_task_run(tmp_path):
+    """TaskRun parent path must load as Task."""
     wrong_parent_path = tmp_path / "wrong_parent.kiln"
     wrong_data = {
         "v": 1,
         "name": "Wrong Parent",
-        "model_type": "project",  # Wrong type - not in accepted types
+        "model_type": "project",
     }
     with open(wrong_parent_path, "w") as f:
         json.dump(wrong_data, f)
 
-    # Try to load TaskRun children from wrong parent
-    # TaskRun accepts Task and TaskRun, not Project
-    with pytest.raises(ValueError, match="Parent model_type 'project' is not one of"):
+    with pytest.raises(ValidationError, match="validation error for Task"):
         list(TaskRun.iterate_children_paths_of_parent_path(wrong_parent_path))
 
 
@@ -1319,15 +1331,12 @@ def test_parent_loading_single_parent_type_fails_on_corrupt_file(tmp_path):
         )
 
 
-def test_parent_loading_polymorphic_fails_on_corrupt_file(tmp_path):
-    """Polymorphic parent loading fails when parent file is corrupt/invalid."""
-    # Create a corrupt parent file
+def test_parent_loading_task_run_fails_on_corrupt_file(tmp_path):
     corrupt_parent_path = tmp_path / "corrupt.kiln"
     with open(corrupt_parent_path, "w") as f:
         f.write("not valid json {{{")
 
-    # The polymorphic path first reads model_type, which will fail on corrupt JSON
-    with pytest.raises(json.JSONDecodeError):
+    with pytest.raises(ValueError, match="Expecting value"):
         list(TaskRun.iterate_children_paths_of_parent_path(corrupt_parent_path))
 
 
@@ -1335,17 +1344,16 @@ def test_parent_loading_single_parent_nonexistent_file(tmp_path):
     """Single parent type loading fails when parent file doesn't exist."""
     nonexistent_path = tmp_path / "nonexistent.kiln"
 
-    with pytest.raises(ValueError, match="Parent must be set to load children"):
+    with pytest.raises(FileNotFoundError):
         list(
             DefaultParentedModel.iterate_children_paths_of_parent_path(nonexistent_path)
         )
 
 
-def test_parent_loading_polymorphic_nonexistent_file(tmp_path):
-    """Polymorphic parent loading fails when parent file doesn't exist."""
+def test_parent_loading_task_run_nonexistent_file(tmp_path):
     nonexistent_path = tmp_path / "nonexistent.kiln"
 
-    with pytest.raises(ValueError, match="Parent must be set to load children"):
+    with pytest.raises(FileNotFoundError):
         list(TaskRun.iterate_children_paths_of_parent_path(nonexistent_path))
 
 
