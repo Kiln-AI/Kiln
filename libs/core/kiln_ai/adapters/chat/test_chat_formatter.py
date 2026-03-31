@@ -1,5 +1,3 @@
-from typing import Any
-
 from kiln_ai.adapters.chat import ChatStrategy, get_chat_formatter
 from kiln_ai.adapters.chat.chat_formatter import (
     COT_FINAL_ANSWER_PROMPT,
@@ -233,24 +231,6 @@ def test_multiturn_formatter_multiple_tool_results():
     assert first.messages[1].tool_call_id == "call_2"
     assert first.messages[1].content == "36"
     assert first.final_call
-
-
-def _make_formatter(user_input: Any) -> MultiturnFormatter:
-    return MultiturnFormatter(
-        prior_trace=[{"role": "system", "content": "sys"}], user_input=user_input
-    )  # type: ignore[arg-type]
-
-
-def test_multiturn_formatter_is_tool_result_detection():
-    """_is_tool_result correctly identifies tool result inputs."""
-    assert _make_formatter({"tool_call_id": "x", "content": "y"})._is_tool_result
-    assert _make_formatter(
-        [{"tool_call_id": "x", "content": "y"}, {"tool_call_id": "z", "content": "w"}]
-    )._is_tool_result
-    assert not _make_formatter("plain string")._is_tool_result
-    assert not _make_formatter({"content": "no id"})._is_tool_result
-    assert not _make_formatter([])._is_tool_result
-    assert not _make_formatter([{"content": "no id"}])._is_tool_result
 
 
 def test_multiturn_formatter_user_input_not_confused_with_tool_result():

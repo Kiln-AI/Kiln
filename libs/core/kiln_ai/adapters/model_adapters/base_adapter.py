@@ -158,6 +158,24 @@ class BaseAdapter(metaclass=ABCMeta):
             )
         return self._model_provider
 
+    @staticmethod
+    def _normalize_prior_trace(
+        prior_trace: list[ChatCompletionMessageParam] | None,
+    ) -> list[ChatCompletionMessageParam] | None:
+        if not prior_trace:
+            return None
+        return prior_trace
+
+    def _reject_multiturn_with_structured_input(
+        self,
+        prior_trace: list[ChatCompletionMessageParam] | None,
+    ) -> None:
+        if prior_trace is not None and self.input_schema is not None:
+            raise ValueError(
+                "Cannot run multiturn execution with a task that has a structured input schema. "
+                "Use an unstructured task, or call without prior_trace."
+            )
+
     async def invoke(
         self,
         input: InputType,
@@ -177,18 +195,17 @@ class BaseAdapter(metaclass=ABCMeta):
         prior_trace: list[ChatCompletionMessageParam] | None = None,
         parent_task_run: TaskRun | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
-        # validate input, allowing arrays.
-        # Skip when prior_trace is provided: the input may be a tool result or a
-        # follow-up message that shouldn't be validated against the task input schema.
-        if self.input_schema is not None and prior_trace is None:
+        prior_trace = self._normalize_prior_trace(prior_trace)
+        self._reject_multiturn_with_structured_input(prior_trace)
+
+        # validate input, allowing arrays
+        if self.input_schema is not None:
             validate_schema_with_value_error(
                 input,
                 self.input_schema,
                 "This task requires a specific input schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
                 require_object=False,
             )
-
-        prior_trace = prior_trace if prior_trace else None
 
         # Format model input for model call (we save the original input in the task without formatting)
         formatted_input = input
@@ -339,17 +356,16 @@ class BaseAdapter(metaclass=ABCMeta):
         input: InputType,
         prior_trace: list[ChatCompletionMessageParam] | None,
     ) -> AdapterStream:
-        # Skip input schema validation when prior_trace is provided: the input may be
-        # a tool result or follow-up message not matching the task input schema.
-        if self.input_schema is not None and prior_trace is None:
+        prior_trace = self._normalize_prior_trace(prior_trace)
+        self._reject_multiturn_with_structured_input(prior_trace)
+
+        if self.input_schema is not None:
             validate_schema_with_value_error(
                 input,
                 self.input_schema,
                 "This task requires a specific input schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
                 require_object=False,
             )
-
-        prior_trace = prior_trace if prior_trace else None
 
         formatted_input = input
         formatter_id = self.model_provider().formatter
@@ -533,6 +549,8 @@ class BaseAdapter(metaclass=ABCMeta):
         input: InputType,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> ChatFormatter:
+        prior_trace = self._normalize_prior_trace(prior_trace)
+        self._reject_multiturn_with_structured_input(prior_trace)
         if prior_trace is not None:
             return MultiturnFormatter(prior_trace, input)
         if self.prompt_builder is None:
