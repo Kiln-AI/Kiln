@@ -1,14 +1,10 @@
 import json
-from typing import TYPE_CHECKING, Dict, List, Optional, Type, Union
+from typing import TYPE_CHECKING, Dict, List, Union
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 from typing_extensions import Self
 
-from kiln_ai.datamodel.basemodel import (
-    KilnBaseModel,
-    KilnParentedModel,
-    KilnParentModel,
-)
+from kiln_ai.datamodel.basemodel import KilnParentedModel
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_ai.datamodel.task_output import DataSource, TaskOutput
@@ -77,17 +73,12 @@ class Usage(BaseModel):
         )
 
 
-class TaskRun(KilnParentedModel, KilnParentModel, parent_of={}):
+class TaskRun(KilnParentedModel):
     """
     Represents a single execution of a Task.
 
     Contains the input used, its source, the output produced, and optional
     repair information if the output needed correction.
-
-    Can be nested under another TaskRun; nested runs are stored as child runs
-    in a "runs" subfolder (same relationship name as Task's runs).
-
-    Accepts both Task and TaskRun as parents (polymorphic).
     """
 
     input: str = Field(
@@ -122,6 +113,10 @@ class TaskRun(KilnParentedModel, KilnParentModel, parent_of={}):
         default=None,
         description="The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.",
     )
+    parent_task_run_id: str | None = Field(
+        default=None,
+        description="The ID of the parent task run. This is the ID of the task run that contains this task run.",
+    )
 
     def thinking_training_data(self) -> str | None:
         """
@@ -141,108 +136,9 @@ class TaskRun(KilnParentedModel, KilnParentModel, parent_of={}):
 
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:
-        """The Task that this Run is in. Note the TaskRun may be nested in which case we walk back up the tree all the way to the root."""
-        # lazy import to avoid circular dependency
-        from kiln_ai.datamodel.task import Task
-
-        current: TaskRun = self
-        while True:
-            # should never really happen, except maybe in tests
-            parent = current.parent
-            if parent is None:
-                return None
-
-            # this task run is the root task run
-            # so we just return its parent (a Task)
-            if isinstance(parent, Task):
-                return parent
-
-            if not isinstance(parent, TaskRun):
-                # the parent is not a TaskRun, but also not a Task, so it is not
-                # a real parent
-                return None
-
-            # the parent is a TaskRun, so we just walk up the tree until we find a Task
-            current = parent
-
-    def parent_run(self) -> "TaskRun | None":
-        """The TaskRun that contains this run, if this run is nested; otherwise None."""
-        parent = self.parent
-        if parent is None or not isinstance(parent, TaskRun):
+        if self.parent is None or self.parent.__class__.__name__ != "Task":
             return None
-        return parent
-
-    @classmethod
-    def _parent_types(cls) -> List[Type["KilnBaseModel"]]:
-        # lazy import to avoid circular dependency
-        from kiln_ai.datamodel.task import Task
-
-        return [Task, TaskRun]
-
-    def runs(self, readonly: bool = False) -> list["TaskRun"]:
-        """The list of child task runs."""
-        return super().runs(readonly=readonly)  # type: ignore
-
-    def is_root_task_run(self) -> bool:
-        """Is this the root task run? (not nested under another task run)"""
-        # lazy import to avoid circular dependency
-        from kiln_ai.datamodel.task import Task
-
-        return self.parent is None or isinstance(self.parent, Task)
-
-    def find_task_run_by_id_dfs(
-        self, task_run_id: str, readonly: bool = False
-    ) -> "TaskRun | None":
-        """
-        Find a task run by id in the entire task run tree. This is an expensive DFS
-        traversal of the file system so do not use too willy nilly.
-        """
-        stack: List[TaskRun] = list(self.runs(readonly=readonly))
-        while stack:
-            run = stack.pop()
-            if run.id == task_run_id:
-                return run
-            stack.extend(run.runs(readonly=readonly))
-        return None
-
-    def load_parent(self) -> Optional[KilnBaseModel]:
-        """Load the parent of this task run - this is an override of the default parent loading logic to support nested task runs."""
-        cached = self.cached_parent()
-        if cached is not None:
-            return cached
-        if self.path is None:
-            return None
-        parent_dir = self.path.parent.parent.parent
-        task_run_path = parent_dir / TaskRun.base_filename()
-        if task_run_path.exists() and task_run_path != self.path:
-            try:
-                loaded_parent_run = TaskRun.load_from_file(task_run_path)
-                super().__setattr__("parent", loaded_parent_run)
-                return loaded_parent_run
-            except ValueError as e:
-                raise ValueError(
-                    f"Failed to load parent TaskRun from {task_run_path}. "
-                    f"This indicates a malformed nested task run. Error: {e}"
-                ) from e
-
-        from kiln_ai.datamodel.task import Task
-
-        task_path = parent_dir / Task.base_filename()
-        if task_path.exists():
-            loaded_parent_task = Task.load_from_file(task_path)
-            super().__setattr__("parent", loaded_parent_task)
-            return loaded_parent_task
-
-        return None
-
-    @model_validator(mode="after")
-    def check_parent_type(self) -> Self:
-        """Check that the parent is a Task or TaskRun. This overrides the default parent type check
-        that only supports a single parent type."""
-        # need to import here to avoid circular imports
-        from kiln_ai.datamodel.task import Task
-
-        return self._check_parent_type([Task, TaskRun])
+        return self.parent  # type: ignore
 
     @model_validator(mode="after")
     def validate_input_format(self, info: ValidationInfo) -> Self:
@@ -366,10 +262,3 @@ class TaskRun(KilnParentedModel, KilnParentModel, parent_of={}):
                 raise ValueError("Tags cannot contain spaces. Try underscores.")
 
         return self
-
-
-# cannot do this in the class definition due to circular reference between TaskRun and itself:
-# wire up TaskRun as its own child type so .runs() returns TaskRun instances
-# this makes TaskRun polymorphic - can be parented under Task or another TaskRun
-TaskRun._parent_of["runs"] = TaskRun
-TaskRun._create_child_method("runs", TaskRun)
