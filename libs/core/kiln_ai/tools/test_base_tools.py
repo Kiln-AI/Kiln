@@ -22,7 +22,7 @@ class TestExternalKilnTool:
 
     async def test_toolcall_definition(self):
         tool = ExternalKilnTool(
-            tool_id="mcp::local::kiln_test_ext::my_tool",
+            tool_id="kiln_external::my_tool",
             name="my_fn",
             description="Does something",
             parameters_schema={
@@ -31,7 +31,7 @@ class TestExternalKilnTool:
                 "required": ["q"],
             },
         )
-        assert await tool.id() == "mcp::local::kiln_test_ext::my_tool"
+        assert await tool.id() == "kiln_external::my_tool"
         assert await tool.name() == "my_fn"
         defn = await tool.toolcall_definition()
         assert defn["type"] == "function"
@@ -39,7 +39,7 @@ class TestExternalKilnTool:
 
     async def test_run_raises(self):
         tool = ExternalKilnTool(
-            tool_id="mcp::local::kiln_test_ext::my_tool",
+            tool_id="kiln_external::my_tool",
             name="my_fn",
             description="d",
             parameters_schema={

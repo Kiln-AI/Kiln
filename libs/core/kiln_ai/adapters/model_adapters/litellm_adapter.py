@@ -105,11 +105,6 @@ class LiteLlmAdapter(BaseAdapter):
 
         external_tools = self.base_adapter_config.external_tools
         if external_tools:
-            if not self.base_adapter_config.return_on_tool_call:
-                raise ValueError(
-                    "external_tools requires return_on_tool_call=True. "
-                    "Kiln does not execute external tools; resume with tool results in prior_trace."
-                )
             _validate_external_tools(external_tools)
 
     async def _run_model_turn(
@@ -698,6 +693,12 @@ class LiteLlmAdapter(BaseAdapter):
             self._cached_available_tools = await self.available_tools()
         return self._cached_available_tools
 
+    async def _tools_for_execution(self) -> list[KilnToolInterface]:
+        """Registry-resolved tools plus :attr:`AdapterConfig.external_tools` (same order as ``litellm_tools``)."""
+        registry = await self.cached_available_tools()
+        external = self.base_adapter_config.external_tools or []
+        return registry + external
+
     async def litellm_tools(self) -> list[ToolCallDefinition]:
         available_tools = await self.cached_available_tools()
 
@@ -739,7 +740,7 @@ class LiteLlmAdapter(BaseAdapter):
             # Process normal tool calls (not the "task_response" tool)
             tool_name = tool_call.function.name
             tool = None
-            for tool_option in await self.cached_available_tools():
+            for tool_option in await self._tools_for_execution():
                 if await tool_option.name() == tool_name:
                     tool = tool_option
                     break

@@ -72,8 +72,11 @@ class KilnToolInterface(ABC):
 class ExternalKilnTool(KilnToolInterface):
     """
     Helper for tools passed via ``AdapterConfig.external_tools`` (SDK-injected, not from the
-    Kiln tool registry). The adapter does not call :meth:`run` when ``return_on_tool_call``
-    is True; the application handles tool execution and resumes with results in ``prior_trace``.
+    Kiln tool registry). Use a :class:`~kiln_ai.datamodel.tool_id.ToolId` with prefix
+    ``kiln_external::<id>`` (see :func:`~kiln_ai.datamodel.tool_id.build_kiln_external_tool_id`).
+    Subclass and override :meth:`run` for in-adapter execution when ``return_on_tool_call`` is
+    False; default :meth:`run` raises (use ``return_on_tool_call`` and resume with tool results
+    in ``prior_trace``, or provide a subclass that implements :meth:`run`).
     """
 
     def __init__(

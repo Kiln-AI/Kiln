@@ -20,7 +20,7 @@ from kiln_ai.datamodel import PromptId
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.tool_id import ToolId
-from kiln_ai.tools.base_tool import ToolCallContext, ToolCallResult
+from kiln_ai.tools.base_tool import ExternalKilnTool, ToolCallContext, ToolCallResult
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
     DivideTool,
@@ -970,6 +970,52 @@ async def test_process_tool_calls_normal_tool_success(tmp_path):
         "content": "5",
         "kiln_task_tool_data": None,
     }
+
+
+class _RunnableExternalKilnToolForTest(ExternalKilnTool):
+    async def run(
+        self, context: ToolCallContext | None = None, **kwargs
+    ) -> ToolCallResult:
+        return ToolCallResult(output="from_external")
+
+
+async def test_process_tool_calls_external_tool_success(tmp_path):
+    """process_tool_calls resolves and runs tools from AdapterConfig.external_tools."""
+    task = build_test_task(tmp_path)
+    ext = _RunnableExternalKilnToolForTest(
+        tool_id="kiln_external::proc_test",
+        name="external_do",
+        description="test external",
+        parameters_schema={
+            "type": "object",
+            "properties": {"x": {"type": "number"}},
+            "required": ["x"],
+        },
+    )
+    config = LiteLlmConfig(
+        run_config_properties=KilnAgentRunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        )
+    )
+    litellm_adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=task,
+        base_adapter_config=AdapterConfig(external_tools=[ext]),
+    )
+    tool_calls = [MockToolCall("call_1", "external_do", '{"x": 1}')]
+
+    with patch.object(litellm_adapter, "cached_available_tools", return_value=[]):
+        assistant_output, tool_messages = await litellm_adapter.process_tool_calls(
+            tool_calls  # type: ignore
+        )
+
+    assert assistant_output is None
+    assert len(tool_messages) == 1
+    assert tool_messages[0]["content"] == "from_external"
+    assert tool_messages[0]["tool_call_id"] == "call_1"
 
 
 async def test_process_tool_calls_multiple_normal_tools(tmp_path):

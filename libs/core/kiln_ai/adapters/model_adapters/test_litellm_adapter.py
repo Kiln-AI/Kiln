@@ -1721,7 +1721,7 @@ async def test_structured_output_with_return_on_tool_call_and_resume(
 
 def _lookup_weather_external_tool(name: str = "lookup_weather") -> ExternalKilnTool:
     return ExternalKilnTool(
-        tool_id="mcp::local::kiln_test_ext::lookup_weather",
+        tool_id="kiln_external::lookup_weather",
         name=name,
         description="Look up weather for a location",
         parameters_schema={
@@ -1736,7 +1736,7 @@ def _lookup_weather_external_tool(name: str = "lookup_weather") -> ExternalKilnT
 
 def _sdk_external_multiply_tool() -> ExternalKilnTool:
     return ExternalKilnTool(
-        tool_id="mcp::local::kiln_test_ext::sdk_external_multiply",
+        tool_id="kiln_external::sdk_external_multiply",
         name="sdk_external_multiply",
         description="Multiply two numbers. Use for all arithmetic.",
         parameters_schema={
@@ -1748,18 +1748,6 @@ def _sdk_external_multiply_tool() -> ExternalKilnTool:
             "required": ["a", "b"],
         },
     )
-
-
-def test_external_tools_require_return_on_tool_call(mock_task, config):
-    with pytest.raises(ValueError, match="external_tools requires return_on_tool_call"):
-        LiteLlmAdapter(
-            config=config,
-            kiln_task=mock_task,
-            base_adapter_config=AdapterConfig(
-                return_on_tool_call=False,
-                external_tools=[_lookup_weather_external_tool()],
-            ),
-        )
 
 
 def test_external_tools_invalid_type_raises(mock_task, config):
@@ -1786,7 +1774,7 @@ async def test_litellm_tools_raises_when_duplicate_external_tool_names(
             external_tools=[
                 _lookup_weather_external_tool("dup"),
                 ExternalKilnTool(
-                    tool_id="mcp::local::kiln_test_ext::lookup_weather_2",
+                    tool_id="kiln_external::lookup_weather_2",
                     name="dup",
                     description="other",
                     parameters_schema={

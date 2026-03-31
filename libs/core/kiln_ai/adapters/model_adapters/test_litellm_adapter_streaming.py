@@ -516,7 +516,7 @@ def _execute_tool_call(tool_call: dict) -> str:
 
 def _sdk_external_multiply_tool() -> ExternalKilnTool:
     return ExternalKilnTool(
-        tool_id="mcp::local::kiln_test_ext::sdk_external_multiply",
+        tool_id="kiln_external::sdk_external_multiply",
         name="sdk_external_multiply",
         description="Multiply two numbers. Use this tool for all arithmetic.",
         parameters_schema={

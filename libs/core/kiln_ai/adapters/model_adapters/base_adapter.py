@@ -109,8 +109,9 @@ class AdapterConfig:
 
     """
     Additional :class:`KilnToolInterface` instances merged into completion ``tools`` alongside
-    registry tools. The adapter does not execute these when ``return_on_tool_call`` is True;
-    resume with tool results in ``prior_trace``. Tool names must not duplicate
+    registry tools, and included in internal tool execution when ``return_on_tool_call`` is
+    False. When ``return_on_tool_call`` is True, the adapter returns before running any tool
+    (including external); supply results via ``prior_trace``. Tool names must not duplicate
     registry-resolved tools. Combining with structured_output_mode that injects its own
     ``tools`` (e.g. function_calling) may hit the same limitations as registry-only tools.
     """
