@@ -7,6 +7,7 @@ import requests
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.strict_mode import strict_mode
+from kiln_server.server import tags_metadata
 
 from app.desktop.desktop_server import make_app
 from app.desktop.studio_server.webhost import HTMLStaticFiles
@@ -226,3 +227,45 @@ async def test_setup_route(client):
         client.get("/non_existing_file")
     with pytest.raises(Exception):
         client.get("/nested/non_existing_file")
+
+
+def test_all_routes_have_tags(client):
+    """Every API route must have at least one tag assigned."""
+    app = client.app
+    untagged = []
+    for route in app.routes:
+        if not hasattr(route, "methods"):
+            continue
+        # Skip non-API routes (static files, scalar docs)
+        path = getattr(route, "path", "")
+        if not path.startswith("/api/") and path != "/ping":
+            continue
+        tags = getattr(route, "tags", None)
+        if not tags:
+            untagged.append(f"{','.join(route.methods)} {path}")
+    assert untagged == [], f"Routes missing tags: {untagged}"
+
+
+def test_all_tags_are_documented(client):
+    """Every tag used on a route must be documented in tags_metadata, and vice versa."""
+    documented_tags = {t["name"] for t in tags_metadata}
+
+    app = client.app
+    used_tags: set[str] = set()
+    for route in app.routes:
+        if not hasattr(route, "methods"):
+            continue
+        for tag in getattr(route, "tags", []):
+            used_tags.add(tag)
+
+    undocumented = used_tags - documented_tags
+    assert undocumented == set(), (
+        f"Tags used on routes but not documented in tags_metadata: {undocumented}. "
+        "Either use an existing documented tag, or add a new entry to tags_metadata in server.py."
+    )
+
+    unused = documented_tags - used_tags
+    assert unused == set(), (
+        f"Tags documented in tags_metadata but not used on any route: {unused}. "
+        "Remove unused tag entries from tags_metadata in server.py."
+    )
