@@ -52,6 +52,7 @@ def connect_repair_api(app: FastAPI):
         ],
         input: RepairTaskApiInput,
     ) -> TaskRun:
+        """Invoke an AI model to generate a repaired output for a task run based on evaluator feedback. Returns the repair as a new TaskRun without persisting it."""
         task, run = task_and_run_from_id(project_id, task_id, run_id)
         repair_task = RepairTaskRun(task)
         repair_task_input = RepairTaskRun.build_repair_task_input(
@@ -140,6 +141,7 @@ def connect_repair_api(app: FastAPI):
         ],
         input: RepairRunPost,
     ) -> TaskRun:
+        """Persist a repaired output for a task run. Use after reviewing the result from Generate Repair or creating a manual repair."""
         _, run = task_and_run_from_id(project_id, task_id, run_id)
 
         # manually edited runs are human but the user id is not set

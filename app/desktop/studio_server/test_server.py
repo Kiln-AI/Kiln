@@ -229,6 +229,27 @@ async def test_setup_route(client):
         client.get("/nested/non_existing_file")
 
 
+def test_api_parameter_descriptions(client):
+    """Every API path and query parameter must have a description."""
+    schema = client.app.openapi()
+
+    missing = []
+    for path, methods in schema.get("paths", {}).items():
+        for method, op in methods.items():
+            if not isinstance(op, dict):
+                continue
+            for param in op.get("parameters", []):
+                if not param.get("description"):
+                    missing.append(
+                        f"{method.upper()} {path} param={param.get('name', '?')}"
+                    )
+
+    assert not missing, (
+        f"{len(missing)} parameters missing descriptions (use Path/Query with description=):\n"
+        + "\n".join(f"  {x}" for x in missing)
+    )
+
+
 def test_all_routes_have_tags(client):
     """Every API route must have at least one tag assigned."""
     app = client.app

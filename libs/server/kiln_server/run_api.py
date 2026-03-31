@@ -377,6 +377,7 @@ def connect_run_api(app: FastAPI):
         ],
         request: RunTaskRequest,
     ) -> TaskRun:
+        """Invoke an AI model on a task and return the result. Unlike 'Create Run', this actually executes the model."""
         task = task_from_id(project_id, task_id)
 
         run_config_properties = request.run_config_properties

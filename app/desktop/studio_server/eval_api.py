@@ -767,6 +767,7 @@ def connect_evals_api(app: FastAPI):
             ),
         ] = False,
     ) -> StreamingResponse:
+        """Run a specific eval config against one or more run configs and stream progress via SSE. Executes model runs and scores them."""
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
 
         # Load the list of run configs to use. Two options:
@@ -854,6 +855,7 @@ def connect_evals_api(app: FastAPI):
         ],
         eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
     ) -> StreamingResponse:
+        """Run all eval configs against each other for calibration and stream progress via SSE. Used to check that eval configs produce consistent scores."""
         eval = eval_from_id(project_id, task_id, eval_id)
         eval_configs = eval.configs()
         eval_runner = EvalRunner(

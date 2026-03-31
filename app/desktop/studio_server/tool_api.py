@@ -727,8 +727,12 @@ def connect_tool_servers_api(app: FastAPI):
         tags=["Tools & MCP"],
     )
     async def archive_tool_server(
-        project_id: str,
-        tool_server_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        tool_server_id: Annotated[
+            str, Path(description="The unique identifier of the tool server.")
+        ],
         archive_request: ToolServerArchiveRequest,
     ) -> ExternalToolServer:
         tool_server = tool_server_from_id(project_id, tool_server_id)
