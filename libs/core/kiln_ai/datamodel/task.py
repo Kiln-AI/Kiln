@@ -3,12 +3,12 @@ from typing import TYPE_CHECKING, Dict, List, Union
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 
 from kiln_ai.datamodel.basemodel import (
+    ID_FIELD,
     ID_TYPE,
     FilenameString,
     FilenameStringShort,
     KilnParentedModel,
     KilnParentModel,
-    generate_model_id,
 )
 from kiln_ai.datamodel.datamodel_enums import (
     Priority,
@@ -41,10 +41,7 @@ class TaskRequirement(BaseModel):
     priority level, and rating type (five_star, pass_fail, pass_fail_critical, custom).
     """
 
-    id: ID_TYPE = Field(
-        default_factory=generate_model_id,
-        description="Unique identifier for the requirement.",
-    )
+    id: ID_TYPE = ID_FIELD
     name: FilenameStringShort = Field(description="The name of the task requirement.")
     description: str | None = Field(
         default=None,
