@@ -722,7 +722,7 @@ def connect_tool_servers_api(app: FastAPI):
 
         return tool_server
 
-    @app.post("/api/projects/{project_id}/tool_servers/{tool_server_id}/archive")
+    @app.post("/api/projects/{project_id}/tool_servers/", tags=["Tools & MCP"])
     async def archive_tool_server(
         project_id: str,
         tool_server_id: str,
