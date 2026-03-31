@@ -39,8 +39,8 @@ class CreateMcpRunConfigRequest(BaseModel):
 class TaskToolCompatibility(BaseModel):
     """Whether a task is compatible with a specific tool."""
 
-    task_id: str = Field(description="The task ID.")
-    task_name: str = Field(description="The task name.")
+    task_id: str = Field(description="The unique identifier of the task.")
+    task_name: str = Field(description="The human-readable name of the task.")
     compatible: bool = Field(
         description="Whether the task is compatible with the tool."
     )

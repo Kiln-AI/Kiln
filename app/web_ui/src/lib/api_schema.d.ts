@@ -24,40 +24,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/project": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create Project */
-        post: operations["create_project_api_project_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/project/{project_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update Project */
-        patch: operations["update_project_api_project__project_id__patch"];
-        trace?: never;
-    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -68,7 +34,8 @@ export interface paths {
         /** List Projects */
         get: operations["get_projects_api_projects_get"];
         put?: never;
-        post?: never;
+        /** Create Project */
+        post: operations["create_project_api_projects_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -93,7 +60,8 @@ export interface paths {
         delete: operations["delete_project_api_projects__project_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update Project */
+        patch: operations["update_project_api_projects__project_id__patch"];
         trace?: never;
     };
     "/api/import_project": {
@@ -8637,7 +8605,7 @@ export interface operations {
             };
         };
     };
-    create_project_api_project_post: {
+    create_project_api_projects_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -8670,7 +8638,7 @@ export interface operations {
             };
         };
     };
-    update_project_api_project__project_id__patch: {
+    update_project_api_projects__project_id__patch: {
         parameters: {
             query?: never;
             header?: never;

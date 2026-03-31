@@ -77,7 +77,7 @@ class FinetuneProvider(BaseModel):
     """A provider that offers fine-tuning."""
 
     name: str = Field(description="The display name of the provider.")
-    id: str = Field(description="The provider identifier.")
+    id: str = Field(description="The unique provider identifier used in API calls.")
     enabled: bool = Field(description="Whether this provider is enabled.")
     models: list[FinetuneProviderModel] = Field(
         description="The models available for fine-tuning."
@@ -87,7 +87,7 @@ class FinetuneProvider(BaseModel):
 class FinetuneDatasetTagInfo(BaseModel):
     """Statistics about task runs with a specific tag."""
 
-    tag: str = Field(description="The tag name.")
+    tag: str = Field(description="The tag applied to matching runs.")
     count: int = Field(description="Total number of runs with this tag.")
     reasoning_count: int = Field(description="Number of runs with reasoning data.")
     high_quality_count: int = Field(description="Number of high-quality runs.")
@@ -178,7 +178,7 @@ class CreateFinetuneRequest(BaseModel):
 class FinetuneWithStatus(BaseModel):
     """A finetune with its current status."""
 
-    finetune: Finetune = Field(description="The finetune.")
+    finetune: Finetune = Field(description="The finetune configuration and metadata.")
     status: FineTuneStatus = Field(description="The current status of the finetune.")
 
 

@@ -87,7 +87,7 @@ class ExtractionModel(BaseModel):
 
 
 class ExtractionSource(str, Enum):
-    """The source status of an extraction."""
+    """Whether the document was processed by an extractor or passed through as-is."""
 
     PROCESSED = "processed"
     PASSTHROUGH = "passthrough"
@@ -260,7 +260,7 @@ class Document(
     """A document uploaded to a project for extraction and RAG."""
 
     name: FilenameString = Field(
-        description="A name to identify the document.",
+        description="A name to identify the document. Should not be changed after creation.",
     )
 
     # this field can be changed after creation

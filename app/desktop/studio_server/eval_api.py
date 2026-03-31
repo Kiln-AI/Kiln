@@ -323,8 +323,8 @@ class EvalConfigResult(BaseModel):
 class RunConfigEvalResult(BaseModel):
     """Eval results for a specific run config."""
 
-    eval_id: ID_TYPE = Field(description="The eval ID.")
-    eval_name: str = Field(description="The eval name.")
+    eval_id: ID_TYPE = Field(description="The unique identifier of the eval.")
+    eval_name: str = Field(description="The human-readable name of the eval.")
     dataset_size: int = Field(description="The dataset size for this eval.")
     eval_config_result: EvalConfigResult | None = Field(
         default=None, description="The eval config results, if available."

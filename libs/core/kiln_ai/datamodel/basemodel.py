@@ -40,7 +40,6 @@ def generate_model_id() -> str:
 # Should be unique per item, at least inside the context of a parent/child relationship.
 # Use integers to make it easier to type for a search function.
 # Allow none, even though we generate it, because we clear it in the REST API if the object is ephemeral (not persisted to disk)
-ID_FIELD = Field(default_factory=generate_model_id)
 ID_TYPE = Optional[str]
 T = TypeVar("T", bound="KilnBaseModel")
 PT = TypeVar("PT", bound="KilnParentedModel")
@@ -297,10 +296,10 @@ class KilnBaseModel(BaseModel):
     v: int = Field(default=1, description="Schema version for migration support.")
     id: ID_TYPE = Field(
         default_factory=generate_model_id,
-        description="Unique identifier for the model instance.",
+        description="Unique identifier for this record.",
     )
     path: Optional[Path] = Field(
-        default=None, description="File system path where the model is stored."
+        default=None, description="File system path where the record is stored."
     )
     created_at: datetime = Field(
         default_factory=datetime.now,

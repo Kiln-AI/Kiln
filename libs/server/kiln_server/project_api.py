@@ -32,7 +32,7 @@ def add_project_to_config(project_path: str):
 
 
 def connect_project_api(app: FastAPI):
-    @app.post("/api/project", summary="Create Project", tags=["Projects"])
+    @app.post("/api/projects", summary="Create Project", tags=["Projects"])
     async def create_project(project: Project) -> Project:
         project_path = os.path.join(default_project_path(), project.name)
         if os.path.exists(project_path):
@@ -52,7 +52,7 @@ def connect_project_api(app: FastAPI):
         # Add path, which is usually excluded
         return project
 
-    @app.patch("/api/project/{project_id}", summary="Update Project", tags=["Projects"])
+    @app.patch("/api/projects/{project_id}", summary="Update Project", tags=["Projects"])
     async def update_project(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")

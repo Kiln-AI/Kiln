@@ -223,8 +223,8 @@ class ProviderRerankerModels(BaseModel):
 class AvailableProviderInfo(BaseModel):
     """Information about an available AI provider."""
 
-    id: str = Field(description="The provider identifier.")
-    name: str = Field(description="The display name of the provider.")
+    id: str = Field(description="The unique provider identifier used in API calls.")
+    name: str = Field(description="The human-readable display name of the provider.")
     provider_type: Literal["builtin", "custom"] = Field(
         description="Whether the provider is built-in or user-configured."
     )

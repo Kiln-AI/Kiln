@@ -47,7 +47,8 @@ class TaskRequirement(BaseModel):
     )
     name: FilenameStringShort = Field(description="The name of the task requirement.")
     description: str | None = Field(
-        default=None, description="A description of the requirement."
+        default=None,
+        description="Optional elaboration on the requirement's purpose.",
     )
     instruction: str = Field(
         min_length=1, description="Instructions for meeting the requirement."

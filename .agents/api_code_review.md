@@ -25,6 +25,7 @@ Our OpenAPI spec drives our SDK, Scalar docs, and agent tool use (Kiln Chat call
 - **Always use plural nouns** in path segments: `/tasks/{task_id}`, never `/task/{task_id}`. Same for `/projects`, `/specs`, `/evals`, `/runs`, `/prompts`, `/documents`, `/skills`, `/run_configs`, etc. We had inconsistencies where GET used plural but POST/PATCH/DELETE used singular — this is confusing and must be caught.
 - **Paths should be descriptive and intuitive.** Paths should follow REST conventions and be clear (as possible) without docstrings. Path and descriptions should distinguishing similar sounding endpoints. If a path could reasonably be improved, suggest a rename.
 - **Consistent path structure** for related resources. All operations on the same resource type should share a common path prefix (e.g. all run config operations under `/run_configs`, not split across `/task_run_config`, `/mcp_run_config`, `/run_config`). Important to not use similar but different prefixes, as this commonly trips up agents.
+- **No trailing slashes** on paths. Use `/run_configs` not `/run_configs/`. Trailing slashes cause inconsistency between endpoints and can break client routing.
 
 **Example of a well-documented endpoint:**
 
@@ -50,6 +51,7 @@ async def delete_project(
 - GET endpoints that perform mutations (unless SSE with documented justification)
 - Singular nouns in path segments where plural is standard
 - Ambiguous or duplicate summaries across endpoints
+- Trailing slashes on paths
 - Inconsistent path naming for the same resource type
 - Wordy or filler-padded docstrings ("This endpoint allows you to...")
 - Docstrings containing code artifacts, raw `Args:` blocks, or formatting that doesn't read as clean prose in OpenAPI

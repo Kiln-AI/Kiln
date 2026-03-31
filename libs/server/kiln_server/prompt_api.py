@@ -102,7 +102,7 @@ class BuildPromptRequest(BaseModel):
 
 
 class BuildPromptResponse(BaseModel):
-    """The generated prompt text."""
+    """Response containing a fully constructed prompt with examples."""
 
     prompt: str = Field(description="The generated prompt text.")
 
