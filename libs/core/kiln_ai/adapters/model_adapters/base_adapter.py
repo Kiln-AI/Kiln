@@ -96,6 +96,13 @@ class AdapterConfig:
     """
     skills: SkillsDict | None = None
 
+    """
+    When True, the adapter will stop and return control to the caller when a tool call
+    is invoked, instead of processing tool calls internally. Default is False (process
+    tool calls internally).
+    """
+    return_on_tool_call: bool = False
+
 
 class BaseAdapter(metaclass=ABCMeta):
     """Base class for AI model adapters that handle task execution.
@@ -151,6 +158,24 @@ class BaseAdapter(metaclass=ABCMeta):
             )
         return self._model_provider
 
+    @staticmethod
+    def _normalize_prior_trace(
+        prior_trace: list[ChatCompletionMessageParam] | None,
+    ) -> list[ChatCompletionMessageParam] | None:
+        if not prior_trace:
+            return None
+        return prior_trace
+
+    def _reject_multiturn_with_structured_input(
+        self,
+        prior_trace: list[ChatCompletionMessageParam] | None,
+    ) -> None:
+        if prior_trace is not None and self.input_schema is not None:
+            raise ValueError(
+                "Cannot run multiturn execution with a task that has a structured input schema. "
+                "Use an unstructured task, or call without prior_trace."
+            )
+
     async def invoke(
         self,
         input: InputType,
@@ -158,10 +183,10 @@ class BaseAdapter(metaclass=ABCMeta):
         prior_trace: list[ChatCompletionMessageParam] | None = None,
         parent_task_run: TaskRun | None = None,
     ) -> TaskRun:
-        run_output, _ = await self.invoke_returning_run_output(
+        task_run, _ = await self.invoke_returning_run_output(
             input, input_source, prior_trace, parent_task_run
         )
-        return run_output
+        return task_run
 
     async def _run_returning_run_output(
         self,
@@ -170,6 +195,9 @@ class BaseAdapter(metaclass=ABCMeta):
         prior_trace: list[ChatCompletionMessageParam] | None = None,
         parent_task_run: TaskRun | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
+        prior_trace = self._normalize_prior_trace(prior_trace)
+        self._reject_multiturn_with_structured_input(prior_trace)
+
         # validate input, allowing arrays
         if self.input_schema is not None:
             validate_schema_with_value_error(
@@ -178,8 +206,6 @@ class BaseAdapter(metaclass=ABCMeta):
                 "This task requires a specific input schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
                 require_object=False,
             )
-
-        prior_trace = prior_trace if prior_trace else None
 
         # Format model input for model call (we save the original input in the task without formatting)
         formatted_input = input
@@ -191,55 +217,59 @@ class BaseAdapter(metaclass=ABCMeta):
         # Run
         run_output, usage = await self._run(formatted_input, prior_trace=prior_trace)
 
-        # Parse
-        provider = self.model_provider()
-        parser = model_parser_from_id(provider.parser)
-        parsed_output = parser.parse_output(original_output=run_output)
+        if not run_output.is_toolcall_pending:
+            # Normal completion: parse and validate output
+            provider = self.model_provider()
+            parser = model_parser_from_id(provider.parser)
+            parsed_output = parser.parse_output(original_output=run_output)
 
-        # validate output
-        if self.output_schema is not None:
-            # Parse json to dict if we have structured output
-            if isinstance(parsed_output.output, str):
-                parsed_output.output = parse_json_string(parsed_output.output)
+            # validate output
+            if self.output_schema is not None:
+                # Parse json to dict if we have structured output
+                if isinstance(parsed_output.output, str):
+                    parsed_output.output = parse_json_string(parsed_output.output)
 
-            if not isinstance(parsed_output.output, dict):
-                raise RuntimeError(
-                    f"structured response is not a dict: {parsed_output.output}"
+                if not isinstance(parsed_output.output, dict):
+                    raise RuntimeError(
+                        f"structured response is not a dict: {parsed_output.output}"
+                    )
+                validate_schema_with_value_error(
+                    parsed_output.output,
+                    self.output_schema,
+                    "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
                 )
-            validate_schema_with_value_error(
-                parsed_output.output,
-                self.output_schema,
-                "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+            else:
+                if not isinstance(parsed_output.output, str):
+                    raise RuntimeError(
+                        f"response is not a string for non-structured task: {parsed_output.output}"
+                    )
+
+            trace_has_toolcalls = parsed_output.trace is not None and any(
+                message.get("role", None) == "tool" for message in parsed_output.trace
             )
-        else:
-            if not isinstance(parsed_output.output, str):
+
+            # Validate reasoning content is present and required
+            # We don't require reasoning when using tools as models tend not to return any on the final turn (both Sonnet and Gemini).
+            if (
+                provider.reasoning_capable
+                and (
+                    not parsed_output.intermediate_outputs
+                    or "reasoning" not in parsed_output.intermediate_outputs
+                )
+                and not (
+                    provider.reasoning_optional_for_structured_output
+                    and self.has_structured_output()
+                )
+                and not trace_has_toolcalls
+            ):
                 raise RuntimeError(
-                    f"response is not a string for non-structured task: {parsed_output.output}"
+                    "Reasoning is required for this model, but no reasoning was returned."
                 )
 
-        # Validate reasoning content is present and required
-        # We don't require reasoning when using tools as models tend not to return any on the final turn (both Sonnet and Gemini).
-        trace_has_toolcalls = parsed_output.trace is not None and any(
-            message.get("role", None) == "tool" for message in parsed_output.trace
-        )
-        if (
-            provider.reasoning_capable
-            and (
-                not parsed_output.intermediate_outputs
-                or "reasoning" not in parsed_output.intermediate_outputs
-            )
-            and not (
-                provider.reasoning_optional_for_structured_output
-                and self.has_structured_output()
-            )
-            and not (trace_has_toolcalls)
-        ):
-            raise RuntimeError(
-                "Reasoning is required for this model, but no reasoning was returned."
-            )
+            run_output = parsed_output
 
         run = self.generate_run(
-            input, input_source, parsed_output, usage, run_output.trace, parent_task_run
+            input, input_source, run_output, usage, run_output.trace, parent_task_run
         )
 
         # Save the run if configured to do so, and we have a path to save to
@@ -326,6 +356,9 @@ class BaseAdapter(metaclass=ABCMeta):
         input: InputType,
         prior_trace: list[ChatCompletionMessageParam] | None,
     ) -> AdapterStream:
+        prior_trace = self._normalize_prior_trace(prior_trace)
+        self._reject_multiturn_with_structured_input(prior_trace)
+
         if self.input_schema is not None:
             validate_schema_with_value_error(
                 input,
@@ -333,8 +366,6 @@ class BaseAdapter(metaclass=ABCMeta):
                 "This task requires a specific input schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
                 require_object=False,
             )
-
-        prior_trace = prior_trace if prior_trace else None
 
         formatted_input = input
         formatter_id = self.model_provider().formatter
@@ -360,49 +391,53 @@ class BaseAdapter(metaclass=ABCMeta):
         run_output = result.run_output
         usage = result.usage
 
-        provider = self.model_provider()
-        parser = model_parser_from_id(provider.parser)
-        parsed_output = parser.parse_output(original_output=run_output)
+        if not run_output.is_toolcall_pending:
+            # Normal completion: parse and validate output
+            provider = self.model_provider()
+            parser = model_parser_from_id(provider.parser)
+            parsed_output = parser.parse_output(original_output=run_output)
 
-        if self.output_schema is not None:
-            if isinstance(parsed_output.output, str):
-                parsed_output.output = parse_json_string(parsed_output.output)
-            if not isinstance(parsed_output.output, dict):
-                raise RuntimeError(
-                    f"structured response is not a dict: {parsed_output.output}"
+            if self.output_schema is not None:
+                if isinstance(parsed_output.output, str):
+                    parsed_output.output = parse_json_string(parsed_output.output)
+                if not isinstance(parsed_output.output, dict):
+                    raise RuntimeError(
+                        f"structured response is not a dict: {parsed_output.output}"
+                    )
+                validate_schema_with_value_error(
+                    parsed_output.output,
+                    self.output_schema,
+                    "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
                 )
-            validate_schema_with_value_error(
-                parsed_output.output,
-                self.output_schema,
-                "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+            else:
+                if not isinstance(parsed_output.output, str):
+                    raise RuntimeError(
+                        f"response is not a string for non-structured task: {parsed_output.output}"
+                    )
+
+            trace_has_toolcalls = parsed_output.trace is not None and any(
+                message.get("role", None) == "tool" for message in parsed_output.trace
             )
-        else:
-            if not isinstance(parsed_output.output, str):
+            if (
+                provider.reasoning_capable
+                and (
+                    not parsed_output.intermediate_outputs
+                    or "reasoning" not in parsed_output.intermediate_outputs
+                )
+                and not (
+                    provider.reasoning_optional_for_structured_output
+                    and self.has_structured_output()
+                )
+                and not trace_has_toolcalls
+            ):
                 raise RuntimeError(
-                    f"response is not a string for non-structured task: {parsed_output.output}"
+                    "Reasoning is required for this model, but no reasoning was returned."
                 )
 
-        trace_has_toolcalls = parsed_output.trace is not None and any(
-            message.get("role", None) == "tool" for message in parsed_output.trace
-        )
-        if (
-            provider.reasoning_capable
-            and (
-                not parsed_output.intermediate_outputs
-                or "reasoning" not in parsed_output.intermediate_outputs
-            )
-            and not (
-                provider.reasoning_optional_for_structured_output
-                and self.has_structured_output()
-            )
-            and not trace_has_toolcalls
-        ):
-            raise RuntimeError(
-                "Reasoning is required for this model, but no reasoning was returned."
-            )
+            run_output = parsed_output
 
         run = self.generate_run(
-            input, input_source, parsed_output, usage, run_output.trace, parent_task_run
+            input, input_source, run_output, usage, run_output.trace, parent_task_run
         )
 
         if (
@@ -514,6 +549,8 @@ class BaseAdapter(metaclass=ABCMeta):
         input: InputType,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> ChatFormatter:
+        prior_trace = self._normalize_prior_trace(prior_trace)
+        self._reject_multiturn_with_structured_input(prior_trace)
         if prior_trace is not None:
             return MultiturnFormatter(prior_trace, input)
         if self.prompt_builder is None:
@@ -707,6 +744,9 @@ class OpenAIStreamResult:
 
     Yields ``ModelResponseStream`` chunks.  After iteration the resulting
     ``TaskRun`` is available via the ``.task_run`` property.
+
+    When return_on_tool_call=True and the model requests tool calls, the stream
+    will stop and ``task_run.is_toolcall_pending`` will be True.
     """
 
     def __init__(
@@ -766,6 +806,10 @@ class AiSdkStreamResult:
 
     Yields ``AiSdkStreamEvent`` instances.  After iteration the resulting
     ``TaskRun`` is available via the ``.task_run`` property.
+
+    When return_on_tool_call=True and the model requests tool calls, the FINISH
+    event will have finishReason: "tool-calls" and ``task_run.is_toolcall_pending``
+    will be True.
     """
 
     def __init__(
@@ -831,8 +875,14 @@ class AiSdkStreamResult:
                 adapter_stream, self._input, self._input_source, self._parent_task_run
             )
 
-            for ai_event in converter.finalize():
-                yield ai_event
+            if self._task_run.is_toolcall_pending:
+                yield AiSdkStreamEvent(
+                    AiSdkEventType.FINISH,
+                    {"messageMetadata": {"finishReason": "tool-calls"}},
+                )
+            else:
+                for ai_event in converter.finalize():
+                    yield ai_event
         finally:
             if is_root_agent:
                 try:

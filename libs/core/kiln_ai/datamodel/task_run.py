@@ -8,7 +8,10 @@ from kiln_ai.datamodel.basemodel import KilnParentedModel
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_ai.datamodel.task_output import DataSource, TaskOutput
-from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+from kiln_ai.utils.open_ai_types import (
+    ChatCompletionMessageParam,
+    trace_has_pending_client_tool_calls,
+)
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
@@ -118,6 +121,11 @@ class TaskRun(KilnParentedModel):
         description="The ID of the parent task run. This is the ID of the task run that contains this task run.",
     )
 
+    @property
+    def is_toolcall_pending(self) -> bool:
+        """True if the trace ends with an assistant message awaiting client tool execution."""
+        return trace_has_pending_client_tool_calls(self.trace)
+
     def thinking_training_data(self) -> str | None:
         """
         Get the thinking training data from the task run.
@@ -185,6 +193,12 @@ class TaskRun(KilnParentedModel):
         # Note: we still validate if editing a loaded model's output.
         if self.loading_from_file(info):
             # Consider loading an existing model as validated.
+            self._last_validated_output = self.output.output if self.output else None
+            return self
+
+        # Skip output validation when the run is waiting for tool call results.
+        # The output field is empty/partial in this state.
+        if self.is_toolcall_pending:
             self._last_validated_output = self.output.output if self.output else None
             return self
 

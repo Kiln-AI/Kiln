@@ -13,7 +13,7 @@ from litellm.types.utils import (
 )
 
 from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
-from kiln_ai.adapters.chat.chat_formatter import ChatFormatter
+from kiln_ai.adapters.chat.chat_formatter import ChatFormatter, ToolResponseMessage
 from kiln_ai.adapters.litellm_utils.litellm_streaming import StreamingCompletion
 from kiln_ai.adapters.ml_model_list import KilnModelProvider
 from kiln_ai.adapters.model_adapters.stream_events import (
@@ -101,13 +101,15 @@ class AdapterStream:
             for message in turn.messages:
                 if message.content is None:
                     raise ValueError("Empty message content isn't allowed")
-                self._messages.append(
-                    {"role": message.role, "content": message.content}  # type: ignore[arg-type]
-                )
+                msg_dict: dict = {"role": message.role, "content": message.content}
+                if isinstance(message, ToolResponseMessage):
+                    msg_dict["tool_call_id"] = message.tool_call_id
+                self._messages.append(msg_dict)  # type: ignore[arg-type]
 
             skip_response_format = not turn.final_call
             turn_top_logprobs = self._top_logprobs if turn.final_call else None
 
+            interrupted = False
             async for event in self._stream_model_turn(
                 skip_response_format, turn_top_logprobs
             ):
@@ -115,8 +117,13 @@ class AdapterStream:
                     usage += event.usage
                     prior_output = event.assistant_message
                     final_choice = event.model_choice
+                    if event.interrupted_by_tool_calls:
+                        interrupted = True
                 else:
                     yield event
+
+            if interrupted:
+                break
 
             if not prior_output:
                 raise RuntimeError("No assistant message/output returned from model")
@@ -176,6 +183,39 @@ class AdapterStream:
             self._messages.append(response_choice.message)
 
             if tool_calls and len(tool_calls) > 0:
+                # Check for return_on_tool_call BEFORE processing
+                if self._adapter.base_adapter_config.return_on_tool_call:
+                    real_tool_calls = [
+                        tc for tc in tool_calls if tc.function.name != "task_response"
+                    ]
+                    if real_tool_calls:
+                        # Yield INPUT_AVAILABLE events for each tool call
+                        for tc in real_tool_calls:
+                            try:
+                                parsed_args = json.loads(tc.function.arguments)
+                            except (json.JSONDecodeError, TypeError):
+                                parsed_args = None
+                            yield ToolCallEvent(
+                                event_type=ToolCallEventType.INPUT_AVAILABLE,
+                                tool_call_id=tc.id,
+                                tool_name=tc.function.name or "unknown",
+                                arguments=parsed_args,
+                                error=(
+                                    f"Failed to parse arguments: {tc.function.arguments}"
+                                    if parsed_args is None
+                                    else None
+                                ),
+                            )
+
+                        yield _ModelTurnComplete(
+                            assistant_message="",
+                            model_choice=response_choice,
+                            usage=usage,
+                            interrupted_by_tool_calls=True,
+                        )
+                        return
+
+                # Existing flow: handle tool calls internally
                 async for event in self._handle_tool_calls(tool_calls):
                     yield event
 
@@ -265,6 +305,7 @@ class _ModelTurnComplete:
     assistant_message: str
     model_choice: Choices | None
     usage: Usage
+    interrupted_by_tool_calls: bool = False
 
 
 def _validate_response(
