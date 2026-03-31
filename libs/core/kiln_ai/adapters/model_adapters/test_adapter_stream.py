@@ -119,6 +119,7 @@ def mock_adapter():
     adapter.all_messages_to_trace = MagicMock(return_value=[])
     adapter.base_adapter_config = MagicMock()
     adapter.base_adapter_config.top_logprobs = None
+    adapter.base_adapter_config.return_on_tool_call = False
     return adapter
 
 
@@ -370,6 +371,128 @@ class TestAdapterStreamToolCalls:
         assert len(input_events) == 1
         assert input_events[0].arguments is None
         assert "Failed to parse" in (input_events[0].error or "")
+
+
+class TestAdapterStreamReturnOnToolCall:
+    """Tests for return_on_tool_call=True behaviour in AdapterStream."""
+
+    @pytest.mark.asyncio
+    async def test_stops_at_tool_call_and_sets_trace(self, mock_adapter, mock_provider):
+        tool_call = _make_tool_call(
+            call_id="call_1", name="add", arguments={"a": 1, "b": 2}
+        )
+        tool_response = _make_model_response(content=None, tool_calls=[tool_call])
+        fake_stream = FakeStreamingCompletion(
+            tool_response,
+            [_make_streaming_chunk(finish_reason="tool_calls")],
+        )
+
+        mock_adapter.base_adapter_config.return_on_tool_call = True
+        trace_with_tool_calls = [
+            {"role": "user", "content": "hello"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [{"id": "call_1"}],
+            },
+        ]
+        mock_adapter.all_messages_to_trace = MagicMock(
+            return_value=trace_with_tool_calls
+        )
+
+        with patch(
+            "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+            return_value=fake_stream,
+        ):
+            stream = AdapterStream(
+                adapter=mock_adapter,
+                provider=mock_provider,
+                chat_formatter=FakeChatFormatter(),
+                initial_messages=[],
+                top_logprobs=None,
+            )
+
+            events = []
+            async for event in stream:
+                events.append(event)
+
+        tool_events = [e for e in events if isinstance(e, ToolCallEvent)]
+        assert len(tool_events) == 1
+        assert tool_events[0].event_type == ToolCallEventType.INPUT_AVAILABLE
+        assert tool_events[0].tool_call_id == "call_1"
+
+        mock_adapter.process_tool_calls.assert_not_called()
+
+        result = stream.result
+        assert result.run_output.output == ""
+        assert result.run_output.trace == trace_with_tool_calls
+
+    @pytest.mark.asyncio
+    async def test_task_response_tool_not_interrupted(
+        self, mock_adapter, mock_provider
+    ):
+        """task_response tool calls should NOT trigger an interrupt."""
+        task_response_call = _make_tool_call(
+            call_id="call_tr", name="task_response", arguments={"result": "42"}
+        )
+        response = _make_model_response(content=None, tool_calls=[task_response_call])
+        fake_stream = FakeStreamingCompletion(
+            response,
+            [_make_streaming_chunk(finish_reason="tool_calls")],
+        )
+
+        mock_adapter.base_adapter_config.return_on_tool_call = True
+        mock_adapter.process_tool_calls = AsyncMock(
+            return_value=('{"result": "42"}', [])
+        )
+
+        with patch(
+            "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+            return_value=fake_stream,
+        ):
+            stream = AdapterStream(
+                adapter=mock_adapter,
+                provider=mock_provider,
+                chat_formatter=FakeChatFormatter(),
+                initial_messages=[],
+                top_logprobs=None,
+            )
+
+            events = []
+            async for event in stream:
+                events.append(event)
+
+        tool_events = [e for e in events if isinstance(e, ToolCallEvent)]
+        assert len(tool_events) == 0
+
+        result = stream.result
+        assert result.run_output.output == '{"result": "42"}'
+
+    @pytest.mark.asyncio
+    async def test_normal_content_not_interrupted(self, mock_adapter, mock_provider):
+        """When model returns content (no tool calls), no interrupt occurs."""
+        mock_adapter.base_adapter_config.return_on_tool_call = True
+        response = _make_model_response(content="Hello world")
+        fake_stream = FakeStreamingCompletion(response)
+
+        with patch(
+            "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+            return_value=fake_stream,
+        ):
+            stream = AdapterStream(
+                adapter=mock_adapter,
+                provider=mock_provider,
+                chat_formatter=FakeChatFormatter(),
+                initial_messages=[],
+                top_logprobs=None,
+            )
+
+            events = []
+            async for event in stream:
+                events.append(event)
+
+        result = stream.result
+        assert result.run_output.output == "Hello world"
 
 
 class TestAdapterStreamEdgeCases:

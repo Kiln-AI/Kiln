@@ -103,7 +103,7 @@ If they approve, mark `status: complete`. If they want changes, make them and as
 
 ## Step 2: Functional Spec
 
-→ Read [references/step_functional_spec.md](references/step_functional_spec.md) and follow it.
+→ Read [step_functional_spec.md](.cursor/skills/specs/references/step_functional_spec.md) and follow it.
 
 ## Step 3: UI Design (Conditional)
 
@@ -117,11 +117,11 @@ If they confirm, skip to Step 4.
 
 If UI is needed:
 
-→ Read [references/step_ui_design.md](references/step_ui_design.md) and follow it.
+→ Read [step_ui_design.md](.cursor/skills/specs/references/step_ui_design.md) and follow it.
 
 ## Step 4: Architecture
 
-→ Read [references/step_architecture.md](references/step_architecture.md) and follow it.
+→ Read [step_architecture.md](.cursor/skills/specs/references/step_architecture.md) and follow it.
 
 ## Step 5: Component Designs (Conditional)
 
@@ -132,7 +132,7 @@ During the architecture step, you'll decide whether component designs are needed
 
 If component designs are needed:
 
-→ Read [references/step_component_designs.md](references/step_component_designs.md) and follow it.
+→ Read [step_component_designs.md](.cursor/skills/specs/references/step_component_designs.md) and follow it.
 
 If not needed, proceed directly to Step 6.
 

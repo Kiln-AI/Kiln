@@ -20,6 +20,7 @@ export default [
       "**/pnpm-lock.yaml",
       "**/package-lock.json",
       "**/yarn.lock",
+      "**/vite.config.ts.timestamp*",
     ],
   },
   js.configs.recommended,

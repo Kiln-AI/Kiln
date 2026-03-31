@@ -203,21 +203,3 @@ class Task(
         if self.parent is None or self.parent.__class__.__name__ != "Project":
             return None
         return self.parent  # type: ignore
-
-    def find_task_run_by_id_dfs(
-        self, task_run_id: str, readonly: bool = False
-    ) -> TaskRun | None:
-        """
-        Find a task run by id in the entire task run tree. This is an expensive DFS
-        traversal of the file system so do not use too willy nilly.
-
-        If you already know the root task run, you can use the same method on
-        the root TaskRun instead - that will save a bunch of subtree traversals.
-        """
-        stack: List[TaskRun] = list(self.runs(readonly=readonly))
-        while stack:
-            run = stack.pop()
-            if run.id == task_run_id:
-                return run
-            stack.extend(run.runs(readonly=readonly))
-        return None

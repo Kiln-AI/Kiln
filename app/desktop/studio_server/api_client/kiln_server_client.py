@@ -46,7 +46,7 @@ def get_authenticated_client(api_key: str) -> AuthenticatedClient:
         base_url=_get_base_url(),
         token=api_key,
         headers=_get_common_headers(),
-        timeout=httpx.Timeout(timeout=300.0, connect=30.0),
+        timeout=httpx.Timeout(timeout=900.0, connect=30.0),
     )
 
 
