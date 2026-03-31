@@ -582,7 +582,9 @@
                   )}
                   <tr>
                     <td class="font-medium">{tool.name}</td>
-                    <td class="max-w-[300px]">{tool.description || "None"}</td>
+                    <td class="max-w-[300px] whitespace-pre-line break-words"
+                      >{tool.description || "None"}</td
+                    >
                     <td>
                       {#if formatted_args.length > 0}
                         <div class="divide-y divide-y-[0.5px]">
@@ -601,7 +603,9 @@
                               </div>
                               {#if arg.description}
                                 <div class="text-gray-500 text-sm mt-1">
-                                  {arg.description}
+                                  <span class="whitespace-pre-line break-words"
+                                    >{arg.description}</span
+                                  >
                                 </div>
                               {/if}
                             </div>
