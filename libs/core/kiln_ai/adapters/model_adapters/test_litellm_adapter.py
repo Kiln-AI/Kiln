@@ -23,7 +23,10 @@ from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     McpRunConfigProperties,
     MCPToolReference,
+    ToolsRunConfig,
 )
+from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
+from kiln_ai.tools.base_tool import ExternalKilnTool
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
     DivideTool,
@@ -1714,3 +1717,329 @@ async def test_structured_output_with_return_on_tool_call_and_resume(
         "Final message must not have pending tool_calls"
     )
     assert final_msg.get("content"), "Final message must have non-empty content"
+
+
+def _lookup_weather_external_tool(name: str = "lookup_weather") -> ExternalKilnTool:
+    return ExternalKilnTool(
+        tool_id="mcp::local::kiln_test_ext::lookup_weather",
+        name=name,
+        description="Look up weather for a location",
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "City name"},
+            },
+            "required": ["location"],
+        },
+    )
+
+
+def _sdk_external_multiply_tool() -> ExternalKilnTool:
+    return ExternalKilnTool(
+        tool_id="mcp::local::kiln_test_ext::sdk_external_multiply",
+        name="sdk_external_multiply",
+        description="Multiply two numbers. Use for all arithmetic.",
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "a": {"type": "number"},
+                "b": {"type": "number"},
+            },
+            "required": ["a", "b"],
+        },
+    )
+
+
+def test_external_tools_require_return_on_tool_call(mock_task, config):
+    with pytest.raises(ValueError, match="external_tools requires return_on_tool_call"):
+        LiteLlmAdapter(
+            config=config,
+            kiln_task=mock_task,
+            base_adapter_config=AdapterConfig(
+                return_on_tool_call=False,
+                external_tools=[_lookup_weather_external_tool()],
+            ),
+        )
+
+
+def test_external_tools_invalid_type_raises(mock_task, config):
+    with pytest.raises(TypeError, match="must be a KilnToolInterface instance"):
+        LiteLlmAdapter(
+            config=config,
+            kiln_task=mock_task,
+            base_adapter_config=AdapterConfig(
+                return_on_tool_call=True,
+                external_tools=[object()],  # type: ignore[list-item]
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_litellm_tools_raises_when_duplicate_external_tool_names(
+    mock_task, config
+):
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(
+            return_on_tool_call=True,
+            external_tools=[
+                _lookup_weather_external_tool("dup"),
+                ExternalKilnTool(
+                    tool_id="mcp::local::kiln_test_ext::lookup_weather_2",
+                    name="dup",
+                    description="other",
+                    parameters_schema={
+                        "type": "object",
+                        "properties": {"x": {"type": "string"}},
+                        "required": ["x"],
+                    },
+                ),
+            ],
+        ),
+    )
+    with pytest.raises(ValueError, match="Duplicate tool name"):
+        await adapter.litellm_tools()
+
+
+@pytest.mark.asyncio
+async def test_litellm_tools_merges_external_definitions(mock_task, config):
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(
+            return_on_tool_call=True,
+            external_tools=[_lookup_weather_external_tool()],
+        ),
+    )
+    with patch.object(adapter, "available_tools", return_value=[]):
+        tools = await adapter.litellm_tools()
+    assert len(tools) == 1
+    assert tools[0]["function"]["name"] == "lookup_weather"
+
+
+@pytest.mark.asyncio
+async def test_litellm_tools_raises_when_external_collides_with_registry(
+    mock_task, config
+):
+    config.run_config_properties = KilnAgentRunConfigProperties(
+        model_name="test-model",
+        model_provider_name="openrouter",
+        prompt_id="simple_prompt_builder",
+        structured_output_mode=StructuredOutputMode.json_schema,
+        tools_config=ToolsRunConfig(tools=[KilnBuiltInToolId.ADD_NUMBERS]),
+    )
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(
+            return_on_tool_call=True,
+            external_tools=[_lookup_weather_external_tool("add")],
+        ),
+    )
+    with pytest.raises(ValueError, match="Duplicate tool name"):
+        await adapter.litellm_tools()
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_includes_external_tools(mock_task, config):
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(
+            return_on_tool_call=True,
+            external_tools=[_lookup_weather_external_tool()],
+        ),
+    )
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=[]),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    assert "tools" in kwargs
+    names = [t["function"]["name"] for t in kwargs["tools"]]
+    assert "lookup_weather" in names
+    assert kwargs["tool_choice"] == "auto"
+
+
+@pytest.mark.asyncio
+async def test_litellm_tools_merges_registry_then_external_order(
+    mock_task, config, mock_math_tools
+):
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(
+            return_on_tool_call=True,
+            external_tools=[_lookup_weather_external_tool("extra_client_tool")],
+        ),
+    )
+    with patch.object(adapter, "available_tools", return_value=mock_math_tools):
+        tools = await adapter.litellm_tools()
+    names = [t["function"]["name"] for t in tools]
+    assert names == ["add", "subtract", "multiply", "divide", "extra_client_tool"]
+
+
+@pytest.mark.asyncio
+async def test_litellm_tools_external_toolcall_definitions_are_fresh_each_call(
+    mock_task, config
+):
+    ext = _lookup_weather_external_tool()
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(
+            return_on_tool_call=True,
+            external_tools=[ext],
+        ),
+    )
+    with patch.object(adapter, "available_tools", return_value=[]):
+        first = await adapter.litellm_tools()
+    first[0]["function"]["name"] = "mutated_name"
+    with patch.object(adapter, "available_tools", return_value=[]):
+        second = await adapter.litellm_tools()
+    assert second[0]["function"]["name"] == "lookup_weather"
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_json_schema_allows_external_with_registry_tools(
+    mock_task, config, mock_math_tools
+):
+    config.run_config_properties.structured_output_mode = (
+        StructuredOutputMode.json_schema
+    )
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(
+            return_on_tool_call=True,
+            external_tools=[_lookup_weather_external_tool("client_only_tool")],
+        ),
+    )
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "available_tools", return_value=mock_math_tools),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    names = [t["function"]["name"] for t in kwargs["tools"]]
+    assert set(names) == {
+        "add",
+        "subtract",
+        "multiply",
+        "divide",
+        "client_only_tool",
+    }
+    assert "response_format" in kwargs
+
+
+@pytest.mark.asyncio
+async def test_external_tools_only_return_on_tool_call_and_resume_mocked(
+    mock_task,
+):
+    """External-only KilnTool instances (no registry tools): interrupt then resume, fully mocked."""
+    config = LiteLlmConfig(
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="test-model",
+            model_provider_name="openai_compatible",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+        default_headers={"X-Test": "test"},
+        additional_body_options={"api_key": "test_key"},
+    )
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(
+            return_on_tool_call=True,
+            external_tools=[_sdk_external_multiply_tool()],
+        ),
+    )
+
+    tool_call = ChatCompletionMessageToolCall(
+        id="call_sdk_external_multiply",
+        type="function",
+        function=Function(name="sdk_external_multiply", arguments='{"a": 3, "b": 7}'),
+    )
+
+    call_count = 0
+
+    async def mock_run_model_turn(
+        provider, prior_messages, top_logprobs, skip_response_format
+    ):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            extended = list(prior_messages)
+            extended.append(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_sdk_external_multiply",
+                            "function": {
+                                "arguments": '{"a": 3, "b": 7}',
+                                "name": "sdk_external_multiply",
+                            },
+                            "type": "function",
+                        }
+                    ],
+                }
+            )
+            return ModelTurnResult(
+                assistant_message="",
+                all_messages=extended,
+                model_response=None,
+                model_choice=None,
+                usage=Usage(),
+                interrupted_by_tool_calls=[tool_call],
+            )
+        json_response = '{"test": "structured_response"}'
+        extended = list(prior_messages)
+        extended.append({"role": "assistant", "content": json_response})
+        return ModelTurnResult(
+            assistant_message=json_response,
+            all_messages=extended,
+            model_response=None,
+            model_choice=None,
+            usage=Usage(),
+        )
+
+    adapter._run_model_turn = mock_run_model_turn
+
+    with patch.object(adapter, "available_tools", return_value=[]):
+        task_run = await adapter.invoke(input="3 * 7 = ?")
+
+    assert task_run.is_toolcall_pending
+    assert task_run.trace is not None
+    last = task_run.trace[-1]
+    assert last.get("tool_calls") is not None
+    assert last["tool_calls"][0]["function"]["name"] == "sdk_external_multiply"
+
+    with patch.object(adapter, "available_tools", return_value=[]):
+        task_run2 = await adapter.invoke(
+            input={
+                "tool_call_id": "call_sdk_external_multiply",
+                "content": "21",
+            },
+            prior_trace=task_run.trace,
+        )
+
+    assert not task_run2.is_toolcall_pending
+    assert json.loads(task_run2.output.output) == {"test": "structured_response"}

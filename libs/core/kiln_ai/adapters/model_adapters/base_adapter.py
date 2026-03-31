@@ -107,6 +107,15 @@ class AdapterConfig:
     """
     return_on_tool_call: bool = False
 
+    """
+    Additional :class:`KilnToolInterface` instances merged into completion ``tools`` alongside
+    registry tools. The adapter does not execute these when ``return_on_tool_call`` is True;
+    resume with tool results in ``prior_trace``. Tool names must not duplicate
+    registry-resolved tools. Combining with structured_output_mode that injects its own
+    ``tools`` (e.g. function_calling) may hit the same limitations as registry-only tools.
+    """
+    external_tools: list[KilnToolInterface] | None = None
+
 
 class BaseAdapter(metaclass=ABCMeta):
     """Base class for AI model adapters that handle task execution.

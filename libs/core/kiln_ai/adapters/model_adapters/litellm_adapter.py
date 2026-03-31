@@ -63,6 +63,14 @@ MAX_TOOL_CALLS_PER_TURN = 30
 logger = logging.getLogger(__name__)
 
 
+def _validate_external_tools(tools: list[KilnToolInterface]) -> None:
+    for i, tool in enumerate(tools):
+        if not isinstance(tool, KilnToolInterface):
+            raise TypeError(
+                f"external_tools[{i}] must be a KilnToolInterface instance, got {type(tool).__name__}"
+            )
+
+
 @dataclass
 class ModelTurnResult:
     assistant_message: str
@@ -94,6 +102,15 @@ class LiteLlmAdapter(BaseAdapter):
             run_config=config.run_config_properties,
             config=base_adapter_config,
         )
+
+        external_tools = self.base_adapter_config.external_tools
+        if external_tools:
+            if not self.base_adapter_config.return_on_tool_call:
+                raise ValueError(
+                    "external_tools requires return_on_tool_call=True. "
+                    "Kiln does not execute external tools; resume with tool results in prior_trace."
+                )
+            _validate_external_tools(external_tools)
 
     async def _run_model_turn(
         self,
@@ -684,8 +701,23 @@ class LiteLlmAdapter(BaseAdapter):
     async def litellm_tools(self) -> list[ToolCallDefinition]:
         available_tools = await self.cached_available_tools()
 
-        # LiteLLM takes the standard OpenAI-compatible tool call format
-        return [await tool.toolcall_definition() for tool in available_tools]
+        registry_defs = [await tool.toolcall_definition() for tool in available_tools]
+        external = self.base_adapter_config.external_tools
+        external_defs = (
+            [await t.toolcall_definition() for t in external] if external else []
+        )
+
+        merged = registry_defs + external_defs
+        seen_names: set[str] = set()
+        for d in merged:
+            name = d["function"]["name"]
+            if name in seen_names:
+                raise ValueError(
+                    f"Duplicate tool name {name!r}: external and registry tools must have unique names."
+                )
+            seen_names.add(name)
+
+        return merged
 
     async def process_tool_calls(
         self, tool_calls: list[ChatCompletionMessageToolCall] | None

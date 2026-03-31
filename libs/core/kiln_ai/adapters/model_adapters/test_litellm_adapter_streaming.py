@@ -28,6 +28,7 @@ from kiln_ai.adapters.model_adapters.test_adapter_stream import (
 from kiln_ai.datamodel import Project, PromptGenerators, Task
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
+from kiln_ai.tools.base_tool import ExternalKilnTool
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,28 @@ def task(tmp_path):
     task = Task(
         name="Streaming Test Task",
         instruction="Think about it hard! Solve the math problem provided by the user, in a step by step manner. Use the tools provided to solve the math problem. Then use the result in a short sentence about a cat going to the mall. Remember to use the tools for math even if the operation looks easy.",
+        parent=project,
+    )
+    task.save_to_file()
+    return task
+
+
+@pytest.fixture
+def task_external_sdk_only(tmp_path):
+    """Task that instructs the model to use only the SDK external multiply tool (no registry tools)."""
+    project_path: Path = tmp_path / "test_project_ext_sdk" / "project.kiln"
+    project_path.parent.mkdir()
+
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+
+    task = Task(
+        name="External SDK Tool Task",
+        instruction=(
+            "You must use the sdk_external_multiply tool to compute 3 times 7. "
+            "Do not compute the product yourself. After you receive the tool result, "
+            "write one short sentence about a cat that includes the numeric result."
+        ),
         parent=project,
     )
     task.save_to_file()
@@ -484,9 +507,27 @@ def _execute_tool_call(tool_call: dict) -> str:
         result = a * b
     elif name == "divide":
         result = a / b
+    elif name == "sdk_external_multiply":
+        result = a * b
     else:
         raise ValueError(f"Unknown tool: {name}")
     return str(int(result)) if result == int(result) else str(result)
+
+
+def _sdk_external_multiply_tool() -> ExternalKilnTool:
+    return ExternalKilnTool(
+        tool_id="mcp::local::kiln_test_ext::sdk_external_multiply",
+        name="sdk_external_multiply",
+        description="Multiply two numbers. Use this tool for all arithmetic.",
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "a": {"type": "number"},
+                "b": {"type": "number"},
+            },
+            "required": ["a", "b"],
+        },
+    )
 
 
 def _make_return_on_tool_call_adapter(
@@ -518,6 +559,32 @@ def _make_return_on_tool_call_adapter(
     )
 
 
+def _make_external_only_return_on_tool_call_adapter(
+    task: Task,
+    model_id: str,
+    provider_name: ModelProviderName,
+    thinking_level: str | None,
+) -> LiteLlmAdapter:
+    """Adapter with no Kiln registry tools; only external tool definitions in the request."""
+    return LiteLlmAdapter(
+        kiln_task=task,
+        config=LiteLlmConfig(
+            run_config_properties=KilnAgentRunConfigProperties(
+                model_name=model_id,
+                model_provider_name=provider_name,
+                prompt_id=PromptGenerators.SIMPLE,
+                structured_output_mode=StructuredOutputMode.unknown,
+                tools_config=None,
+                thinking_level=thinking_level,
+            )
+        ),
+        base_adapter_config=AdapterConfig(
+            return_on_tool_call=True,
+            external_tools=[_sdk_external_multiply_tool()],
+        ),
+    )
+
+
 @pytest.mark.paid
 @pytest.mark.parametrize(
     "model_id,provider_name,thinking_level", RETURN_ON_TOOL_CALL_MODELS
@@ -544,6 +611,56 @@ async def test_invoke_with_return_on_tool_call_and_resume(
     assert last_msg.get("role") == "assistant"
     pending_tool_calls = last_msg.get("tool_calls", [])
     assert len(pending_tool_calls) > 0, "Expected at least one pending tool call"
+
+    tool_results = [
+        {"tool_call_id": tc["id"], "content": _execute_tool_call(tc)}
+        for tc in pending_tool_calls
+    ]
+
+    task_run2 = await adapter.invoke(input=tool_results, prior_trace=task_run.trace)
+    _dump_paid_test_output(request, task_run_2=task_run2)
+
+    assert not task_run2.is_toolcall_pending, "Expected task_run2 to be complete"
+    assert "21" in task_run2.output.output, (
+        f"Expected '21' in output: {task_run2.output.output}"
+    )
+
+    assert task_run2.trace is not None
+    expected_ids = [tr["tool_call_id"] for tr in tool_results]
+    _assert_completed_tool_trace(task_run2.trace, expected_ids)
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize(
+    "model_id,provider_name,thinking_level", RETURN_ON_TOOL_CALL_MODELS
+)
+async def test_invoke_external_tools_only_return_on_tool_call_and_resume(
+    request: pytest.FixtureRequest,
+    model_id: str,
+    provider_name: ModelProviderName,
+    thinking_level: str | None,
+    task_external_sdk_only: Task,
+):
+    """invoke() with only external SDK tool definitions (no registry tools): model calls sdk_external_multiply; caller resumes."""
+    adapter = _make_external_only_return_on_tool_call_adapter(
+        task_external_sdk_only, model_id, provider_name, thinking_level
+    )
+
+    task_run = await adapter.invoke(input="Begin.")
+    _dump_paid_test_output(request, task_run_1=task_run)
+
+    assert task_run.is_toolcall_pending, "Expected task_run to have pending tool calls"
+    assert task_run.trace is not None
+
+    last_msg = task_run.trace[-1]
+    assert last_msg.get("role") == "assistant"
+    pending_tool_calls = last_msg.get("tool_calls", [])
+    assert len(pending_tool_calls) > 0, "Expected at least one pending tool call"
+
+    tool_names = [tc["function"]["name"] for tc in pending_tool_calls]
+    assert "sdk_external_multiply" in tool_names, (
+        f"Expected sdk_external_multiply in {tool_names!r}"
+    )
 
     tool_results = [
         {"tool_call_id": tc["id"], "content": _execute_tool_call(tc)}

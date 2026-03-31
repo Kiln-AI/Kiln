@@ -69,6 +69,54 @@ class KilnToolInterface(ABC):
         pass
 
 
+class ExternalKilnTool(KilnToolInterface):
+    """
+    Helper for tools passed via ``AdapterConfig.external_tools`` (SDK-injected, not from the
+    Kiln tool registry). The adapter does not call :meth:`run` when ``return_on_tool_call``
+    is True; the application handles tool execution and resumes with results in ``prior_trace``.
+    """
+
+    def __init__(
+        self,
+        tool_id: ToolId,
+        name: str,
+        description: str,
+        parameters_schema: Dict[str, Any],
+    ):
+        validate_schema_dict(parameters_schema)
+        self._tool_id = tool_id
+        self._name = name
+        self._description = description
+        self._parameters_schema = parameters_schema
+
+    async def id(self) -> ToolId:
+        return self._tool_id
+
+    async def name(self) -> str:
+        return self._name
+
+    async def description(self) -> str:
+        return self._description
+
+    async def toolcall_definition(self) -> ToolCallDefinition:
+        return {
+            "type": "function",
+            "function": {
+                "name": await self.name(),
+                "description": await self.description(),
+                "parameters": self._parameters_schema,
+            },
+        }
+
+    async def run(
+        self, context: ToolCallContext | None = None, **kwargs
+    ) -> ToolCallResult:
+        raise RuntimeError(
+            "This tool is supplied as an external KilnTool for API tool definitions only; "
+            "the Kiln adapter does not execute it when return_on_tool_call is True."
+        )
+
+
 class KilnTool(KilnToolInterface):
     """
     Base helper class that provides common functionality for tool implementations.
