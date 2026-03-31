@@ -27,3 +27,5 @@ test_output/
 .config/wt/user_settings.sh
 .worktrees/
 
+.venv-sandbox
+.venv-sandbox-*

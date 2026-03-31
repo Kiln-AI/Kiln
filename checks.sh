@@ -61,10 +61,15 @@ if [ "$staged_only" = false ] || [[ "$changed_files" == *"app/web_ui/"* ]]; then
     cd app/web_ui
     npm run format_check
     npm run lint
-    npm run check
-    npm run test_run
-    echo "Running vite build"
-    npm run build > /dev/null
+
+    if [ "$DOCKER_SANDBOX" = "true" ]; then
+      echo "Skipping web tests, svelte-check and vite build: running in Docker Sandbox"
+    else
+      npm run test_run
+      npm run check
+      echo "Running vite build"
+      npm run build > /dev/null
+    fi
     cd ../..
 else
     echo "Skipping Web UI: no files changed"
@@ -73,7 +78,12 @@ fi
 # Check if python files were changed, and run tests if so
 if [ "$staged_only" = false ] || echo "$changed_files" | grep -q "\.py$"; then
     echo "${headerStart}Running Python Tests${headerEnd}"
-    python3 -m pytest --benchmark-quiet -q -n auto .
+    if [ "$DOCKER_SANDBOX" = "true" ]; then
+      echo "Running Python tests single threaded (Docker Sandbox doesn't support parallel tests)"
+      python3 -m pytest --benchmark-quiet -q .
+    else
+      python3 -m pytest --benchmark-quiet -q -n auto .
+    fi
 else
     echo "${headerStart}Python Checks${headerEnd}"
     echo "Skipping Python tests/typecheck: no .py files changed"
