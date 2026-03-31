@@ -60,6 +60,10 @@ wait_for_checks() {
     local green="\033[32m" red="\033[31m" dim="\033[2m" reset="\033[0m"
     local total=${#check_pids[@]}
     local spin_chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+    local interactive=false
+    if [ "$agent_mode" = false ] && [ -t 1 ]; then
+        interactive=true
+    fi
 
     # Track per-check status: empty=running, 0=pass, non-zero=fail
     declare -a check_status=()
@@ -75,21 +79,21 @@ wait_for_checks() {
         if [ "$status" -ne 0 ]; then
             any_failed=1
             failed_names+=("$name")
-            if [ "$agent_mode" = false ]; then
+            if [ "$interactive" = true ]; then
                 printf "\r\033[K"
             fi
             echo -e "${red}✗ FAIL: ${name}${reset}"
             cat "$tmp_dir/$name.out"
             echo ""
         else
-            if [ "$agent_mode" = false ]; then
+            if [ "$interactive" = true ]; then
                 printf "\r\033[K"
                 echo -e "${green}✓ PASS: ${name}${reset}"
             fi
         fi
     }
 
-    if [ "$agent_mode" = false ]; then
+    if [ "$agent_mode" = false ] && [ -t 1 ]; then
         # Poll loop: print results as they arrive, spinner on last line
         local spin_idx=0
         local done_count=0
@@ -172,6 +176,6 @@ if ! wait_for_checks; then
     exit 1
 fi
 
-if [ "$agent_mode" = false ]; then
+if [ "$agent_mode" = false ] && [ -t 1 ]; then
     echo -e "\n\033[32mAll checks passed.\033[0m"
 fi
