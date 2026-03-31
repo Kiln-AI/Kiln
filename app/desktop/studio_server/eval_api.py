@@ -808,7 +808,7 @@ def connect_evals_api(app: FastAPI):
         ],
         eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
         eval_config_id: Annotated[
-            str | None,
+            str,
             Path(
                 description="The unique identifier of the eval configuration to set as default, or 'None' to clear the default."
             ),
@@ -841,7 +841,7 @@ def connect_evals_api(app: FastAPI):
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/run_calibration",
-        summary="Run Eval Config Comparison",
+        summary="Run Calibration",
         tags=["Evals"],
     )
     async def run_eval_config_eval(

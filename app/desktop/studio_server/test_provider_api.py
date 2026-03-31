@@ -1657,7 +1657,7 @@ async def test_save_openai_compatible_providers(client):
 
         response = client.post(
             "/api/provider/openai_compatible",
-            params={
+            json={
                 "name": "test_provider",
                 "base_url": "https://api.test.com",
                 "api_key": "test_key",
@@ -1692,7 +1692,7 @@ async def test_save_openai_compatible_providers_duplicate_name(client):
 
         response = client.post(
             "/api/provider/openai_compatible",
-            params={
+            json={
                 "name": "existing_provider",
                 "base_url": "https://api.test.com",
                 "api_key": "test_key",
@@ -1714,7 +1714,7 @@ async def test_save_openai_compatible_providers_new_array(client):
 
         response = client.post(
             "/api/provider/openai_compatible",
-            params={
+            json={
                 "name": "first_provider",
                 "base_url": "https://api.first.com",
                 "api_key": "first_key",
@@ -1749,7 +1749,7 @@ async def test_save_openai_compatible_providers_add_to_existing_array(client):
 
         response = client.post(
             "/api/provider/openai_compatible",
-            params={
+            json={
                 "name": "second_provider",
                 "base_url": "https://api.second.com",
                 "api_key": "second_key",

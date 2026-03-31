@@ -556,9 +556,11 @@
       const { data: req_data, error: req_error } = await client.POST(
         "/api/provider/docker_model_runner/connect",
         {
-          query: {
-            docker_model_runner_custom_url:
-              docker_model_runner_custom_url || undefined,
+          params: {
+            query: {
+              docker_model_runner_custom_url:
+                docker_model_runner_custom_url || undefined,
+            },
           },
         },
       )
@@ -811,12 +813,10 @@
       const { error: save_error } = await client.POST(
         "/api/provider/openai_compatible",
         {
-          params: {
-            query: {
-              name: new_provider_name,
-              base_url: new_provider_base_url,
-              api_key: new_provider_api_key,
-            },
+          body: {
+            name: new_provider_name,
+            base_url: new_provider_base_url,
+            api_key: new_provider_api_key,
           },
         },
       )

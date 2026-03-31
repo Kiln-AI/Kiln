@@ -230,6 +230,14 @@ class AvailableProviderInfo(BaseModel):
     )
 
 
+class OpenAICompatibleProviderConfig(BaseModel):
+    """Configuration for an OpenAI compatible provider."""
+
+    name: str = Field(description="Name for the OpenAI compatible provider.")
+    base_url: str = Field(description="Base URL for the OpenAI compatible API.")
+    api_key: str = Field(description="API key for authentication.")
+
+
 def connect_provider_api(app: FastAPI):
     @app.get(
         "/api/providers/models",
@@ -526,16 +534,12 @@ def connect_provider_api(app: FastAPI):
         tags=["Providers & Models"],
     )
     async def save_openai_compatible_providers(
-        name: Annotated[
-            str, Query(description="Name for the OpenAI compatible provider.")
-        ],
-        base_url: Annotated[
-            str, Query(description="Base URL for the OpenAI compatible API.")
-        ],
-        api_key: Annotated[str, Query(description="API key for authentication.")],
+        config: OpenAICompatibleProviderConfig,
     ):
         providers = Config.shared().openai_compatible_providers or []
-        existing_provider = next((p for p in providers if p["name"] == name), None)
+        existing_provider = next(
+            (p for p in providers if p["name"] == config.name), None
+        )
         if existing_provider:
             raise HTTPException(
                 status_code=400,
@@ -543,9 +547,9 @@ def connect_provider_api(app: FastAPI):
             )
         providers.append(
             {
-                "name": name,
-                "base_url": base_url,
-                "api_key": api_key,
+                "name": config.name,
+                "base_url": config.base_url,
+                "api_key": config.api_key,
             }
         )
         Config.shared().openai_compatible_providers = providers

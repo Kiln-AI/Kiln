@@ -2734,6 +2734,27 @@ export interface components {
             provider_type: "builtin" | "custom";
         };
         /**
+         * OpenAICompatibleProviderConfig
+         * @description Configuration for an OpenAI compatible provider.
+         */
+        OpenAICompatibleProviderConfig: {
+            /**
+             * Name
+             * @description Name for the OpenAI compatible provider.
+             */
+            name: string;
+            /**
+             * Base Url
+             * @description Base URL for the OpenAI compatible API.
+             */
+            base_url: string;
+            /**
+             * Api Key
+             * @description API key for authentication.
+             */
+            api_key: string;
+        };
+        /**
          * BasePrompt
          * @description A prompt for a task. This is the basic data storage format which can be used throughout a project.
          *
@@ -11429,19 +11450,16 @@ export interface operations {
     };
     save_openai_compatible_providers_api_provider_openai_compatible_post: {
         parameters: {
-            query: {
-                /** @description Name for the OpenAI compatible provider. */
-                name: string;
-                /** @description Base URL for the OpenAI compatible API. */
-                base_url: string;
-                /** @description API key for authentication. */
-                api_key: string;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpenAICompatibleProviderConfig"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
