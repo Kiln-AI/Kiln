@@ -52,7 +52,7 @@ If the target phase is already complete (checkbox checked in `implementation_pla
 
 Spawn a new coding sub-agent using the Initial Coding Prompt template below.
 
-→ Read [references/spawning_subagents.md](references/spawning_subagents.md) for how to spawn sub-agents.
+→ Read [spawning_subagents.md](.cursor/skills/specs/references/spawning_subagents.md) for how to spawn sub-agents.
 
 The coding agent returns either:
 - A summary indicating it's ready for code review
@@ -69,7 +69,7 @@ The coding agent returns either:
    - Spawn a new CR sub-agent, passing prior feedback in a `<prior_cr_feedback>` block
    - Repeat until CR returns clean
 
-→ Read [references/spawning_subagents.md](references/spawning_subagents.md) for how to spawn sub-agents.
+→ Read [spawning_subagents.md](.cursor/skills/specs/references/spawning_subagents.md) for how to spawn sub-agents.
 
 ### Step 3: Commit
 
@@ -114,7 +114,7 @@ You are a coding agent implementing a phase of a spec-driven project.
 **Phase:** [N]
 **Project specs:** [specs/projects/PROJECT_NAME/]
 
-Read `skill/references/coding_phase_prompt.md` for your full instructions. Follow them precisely.
+Read `.cursor/skills/specs/references/coding_phase_prompt.md` for your full instructions. Follow them precisely.
 
 Return a short summary of what you built when implementation is complete and ready for code review.
 ```
@@ -144,7 +144,7 @@ Return the commit message you used.
 ```
 Review code changes for phase [N] of the project at [specs/projects/PROJECT_NAME/].
 
-Read `skill/references/cr_agent_prompt.md` for your full review instructions. Follow them precisely.
+Read `.cursor/skills/specs/references/cr_agent_prompt.md` for your full review instructions. Follow them precisely.
 ```
 
 For re-reviews, append:
@@ -167,6 +167,6 @@ When the manager receives a roadblock message:
 
 ## References
 
-- [references/spawning_subagents.md](references/spawning_subagents.md) — How to spawn and resume sub-agents
-- [references/coding_phase_prompt.md](references/coding_phase_prompt.md) — Full instructions for coding sub-agents
-- [references/cr_agent_prompt.md](references/cr_agent_prompt.md) — Full instructions for CR sub-agents
+- [spawning_subagents.md](.cursor/skills/specs/references/spawning_subagents.md) — How to spawn and resume sub-agents
+- [coding_phase_prompt.md](.cursor/skills/specs/references/coding_phase_prompt.md) — Full instructions for coding sub-agents
+- [cr_agent_prompt.md](.cursor/skills/specs/references/cr_agent_prompt.md) — Full instructions for CR sub-agents

@@ -27,7 +27,7 @@ The sub-agent sees only what you pass it (a prompt) plus the repo. No conversati
 Use the `Task()` tool or equivalent sub-agent mechanism:
 
 ```python
-Task("Review this code using the guidelines in skill/references/cr_agent_prompt.md")
+Task("Review this code using the guidelines in .cursor/skills/specs/references/cr_agent_prompt.md")
 ```
 
 ### Cursor

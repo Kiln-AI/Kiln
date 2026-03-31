@@ -13,7 +13,6 @@
 - Editing globals: rarely a good idea. When done it should be thoughtful and clear: singletons clearly designed to be singletons and labeled as such. Never set globals on external libs (structlog) unless this project is an “application” (server always run at top level) and not a library (potentially called from many apps).
 
 ### Python specific guide
-
 - Code should be "Pythonic"
 - We use `asyncio` where ever possible. Avoid threads unless there's a good reason we can't use async.
 - Python json.dumps should always set `ensure_ascii=False`
@@ -33,3 +32,8 @@ If the change impacts API endpoints, read `.agents/api_code_review.md` for instr
 Changes impacting APIs include:
  - adding/removing/modifying a FastAPI endpoint `@app.get`, `@app.delete`, etc
  - adding/removing/modifing a pydantic model which is used in an API endpoint, as a input/return value (including nested models)
+
+### Project specific guide
+
+- **`ModelName` enum and user input:** Do not use the `ModelName` enum for validation or typing of user-provided model identifiers (for example in a Pydantic request body that validates an API payload). Kiln loads additional models over the air; those models can use names that are not members of the locally shipped `ModelName` enum. If request validation is tied to the enum, a model that is valid according to the merged model list will fail validation. Appropriate uses of `ModelName` include aliasing a constant chosen at build time (for example default config that references a known shipped model) and entries inside the `ml_model_list` provider definitions.
+
