@@ -155,8 +155,8 @@
       <table class="table table-fixed">
         <thead>
           <tr>
-            <th style="max-width: 2/5">Input</th>
-            <th style="max-width: 2/5">Output</th>
+            <th>Input</th>
+            <th>Output</th>
             <th class="whitespace-nowrap" style="width: 140px">
               <div class="flex flex-row items-center gap-2">
                 <span>Meets Spec</span>
@@ -168,7 +168,7 @@
                 </span>
               </div>
             </th>
-            <th class="whitespace-nowrap" style="width: 140px">Judge Correct</th
+            <th class="whitespace-nowrap" style="width: 120px">Judge Correct</th
             >
           </tr>
         </thead>
