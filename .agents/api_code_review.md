@@ -10,6 +10,7 @@ Our OpenAPI spec drives our SDK, Scalar docs, and agent tool use (Kiln Chat call
 4. **`Path(description=...)`** on every path parameter, using `Annotated[str, Path(description="...")]` syntax. Recurring ID parameters must use consistent standard descriptions (e.g. `"The unique identifier of the project."`, `"The unique identifier of the task within the project."`).
 5. **`Query(description=...)`** on every query parameter.
 6. **`Field(description=...)`** on Pydantic model properties that aren't completely self-evident from name + type.
+7. **Class docstring** on Pydantic models used as API request/response bodies. These become the schema description in the OpenAPI spec, which agents and SDK users see when inspecting request/response types. Optional but suggested if non-obvious from name.
 
 **Correct HTTP methods:**
 
@@ -51,3 +52,5 @@ async def delete_project(
 - Ambiguous or duplicate summaries across endpoints
 - Inconsistent path naming for the same resource type
 - Wordy or filler-padded docstrings ("This endpoint allows you to...")
+- Docstrings containing code artifacts, raw `Args:` blocks, or formatting that doesn't read as clean prose in OpenAPI
+- Pydantic models used in API request/response types (nested included) missing a class docstring, if the class name alone isn't obvious
