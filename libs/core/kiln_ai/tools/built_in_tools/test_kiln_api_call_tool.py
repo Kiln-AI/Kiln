@@ -16,12 +16,11 @@ def tool():
 class TestKilnApiCallToolInit:
     def test_default_base_url(self):
         tool = KilnApiCallTool()
-        assert tool._api_base_url_override is None
-        assert tool._effective_base_url() == "http://127.0.0.1:8757"
+        assert tool._api_base_url == "http://localhost:8757"
 
     def test_custom_base_url(self):
         tool = KilnApiCallTool(api_base_url="http://custom:9999")
-        assert tool._effective_base_url() == "http://custom:9999"
+        assert tool._api_base_url == "http://custom:9999"
 
     @pytest.mark.asyncio
     async def test_tool_metadata(self, tool):
@@ -86,6 +85,32 @@ class TestHappyPath:
             assert route.calls.last.request.content == body.encode()
 
     @pytest.mark.asyncio
+    async def test_post_request_with_dict_body(self, tool):
+        with respx.mock:
+            route = respx.post("http://test-server:8757/api/projects").mock(
+                return_value=httpx.Response(201, json={"id": "new-project"})
+            )
+            payload = {"name": "test-project"}
+            result = await tool.run(
+                method="POST", url_path="/api/projects", body=payload
+            )
+            parsed = json.loads(result.output)
+            assert parsed["status_code"] == 201
+            expected = json.dumps(payload).encode()
+            assert route.calls.last.request.content == expected
+
+    @pytest.mark.asyncio
+    async def test_post_request_with_list_body(self, tool):
+        with respx.mock:
+            route = respx.post("http://test-server:8757/api/batch").mock(
+                return_value=httpx.Response(200, json={"ok": True})
+            )
+            payload = [{"id": 1}, {"id": 2}]
+            await tool.run(method="POST", url_path="/api/batch", body=payload)
+            expected = json.dumps(payload).encode()
+            assert route.calls.last.request.content == expected
+
+    @pytest.mark.asyncio
     async def test_patch_request(self, tool):
         with respx.mock:
             route = respx.patch("http://test-server:8757/api/projects/123").mock(
@@ -98,6 +123,17 @@ class TestHappyPath:
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 200
             assert route.calls.last.request.content == body.encode()
+
+    @pytest.mark.asyncio
+    async def test_patch_request_with_dict_body(self, tool):
+        with respx.mock:
+            route = respx.patch("http://test-server:8757/api/projects/123").mock(
+                return_value=httpx.Response(200, json={"updated": True})
+            )
+            payload = {"name": "updated"}
+            await tool.run(method="PATCH", url_path="/api/projects/123", body=payload)
+            expected = json.dumps(payload).encode()
+            assert route.calls.last.request.content == expected
 
     @pytest.mark.asyncio
     async def test_delete_request(self, tool):
@@ -121,6 +157,22 @@ class TestJqFilter:
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 200
             assert parsed["body"] == '"test-value"'
+
+    @pytest.mark.asyncio
+    async def test_jq_filter_applies_to_2xx_not_only_200(self, tool):
+        with respx.mock:
+            respx.post("http://test-server:8757/api/items").mock(
+                return_value=httpx.Response(201, json={"id": "new", "name": "created"})
+            )
+            result = await tool.run(
+                method="POST",
+                url_path="/api/items",
+                body="{}",
+                jq_filter=".name",
+            )
+            parsed = json.loads(result.output)
+            assert parsed["status_code"] == 201
+            assert parsed["body"] == '"created"'
 
     @pytest.mark.asyncio
     async def test_jq_filter_extracts_array(self, tool):

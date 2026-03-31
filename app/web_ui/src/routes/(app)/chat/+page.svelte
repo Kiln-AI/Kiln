@@ -80,10 +80,14 @@
     if (updated) reasoningPartStartTimes = next
   }
 
-  function reasoningDurationSeconds(key: string): number | null {
+  function reasoningDurationSeconds(
+    key: string,
+    isStreaming: boolean,
+  ): number | null {
     const start = reasoningPartStartTimes[key]
     const end = reasoningPartEndTimes[key]
     if (start == null) return null
+    if (end == null && !isStreaming) return null
     const endMs = end ?? Date.now()
     return Math.max(0, Math.round((endMs - start) / 1000))
   }
@@ -161,7 +165,11 @@
       partIndex,
       parts,
     )
+    suppressAutoScroll = true
     collapsedPartKeys = { ...collapsedPartKeys, [key]: !current }
+    setTimeout(() => {
+      suppressAutoScroll = false
+    }, 50)
   }
 
   function formatToolName(type: string): string {
@@ -204,12 +212,16 @@
       : "Error"
   }
 
+  let suppressAutoScroll = false
+
   onMount(() => {
     const container = messagesContainer
     const end = messagesEndRef
     if (container && end) {
       scrollObserver = new MutationObserver(() => {
-        end.scrollIntoView({ block: "end", behavior: "auto" })
+        if (!suppressAutoScroll) {
+          end.scrollIntoView({ block: "end", behavior: "auto" })
+        }
       })
       scrollObserver.observe(container, {
         childList: true,
@@ -293,7 +305,10 @@
     messages = [...messages, userMessage, assistantMessage]
     input = ""
     status = "submitted"
-    setTimeout(() => adjustTextareaHeight(), 0)
+    setTimeout(() => {
+      adjustTextareaHeight()
+      messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })
+    }, 0)
     abortController = new AbortController()
 
     streamChat({
@@ -397,7 +412,7 @@
                       partIndex,
                       message.parts ?? [],
                     )}
-                    {@const duration = reasoningDurationSeconds(key)}
+                    {@const duration = reasoningDurationSeconds(key, streaming)}
                     <div
                       class="mt-2 overflow-hidden text-sm text-base-content/60"
                     >
