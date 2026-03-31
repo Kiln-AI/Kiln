@@ -17,6 +17,7 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
 from app.desktop.studio_server.chat_api import (
     EventParser,
     _build_openai_tool_continuation,
+    _tool_input_executor_is_server,
     connect_chat_api,
     execute_tool,
 )
@@ -192,6 +193,14 @@ class TestEventParser:
         assert result.tool_input_events[0].input == {"a": 2, "b": 8}
         assert any(b"tool-input-available" in line for line in result.lines_to_forward)
 
+    def test_detects_tool_input_available_with_kiln_metadata_executor_server(self):
+        raw = b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_tool::multiply_numbers","input":{"a":2,"b":8},"kiln_metadata":{"executor":"server"}}\n\n'
+        result = EventParser().parse(raw)
+        assert len(result.tool_input_events) == 1
+        ev = result.tool_input_events[0]
+        assert ev.kiln_metadata.get("executor") == "server"
+        assert _tool_input_executor_is_server(ev) is True
+
     def test_accumulates_text_delta(self):
         raw = _sse_text_delta("hello ") + _sse_text_delta(
             "world", text_id="text-test-2"
@@ -289,6 +298,26 @@ class TestBuildOpenAIToolContinuation:
         assert messages[3]["tool_call_id"] == "tc2"
         assert messages[3]["content"] == "12"
 
+    def test_omits_tool_rows_not_in_results(self):
+        original = {"messages": [{"role": "user", "content": "hi"}]}
+        events = [
+            self._event("tc1", "server_only", {}),
+            self._event("tc2", "multiply", {"a": 3, "b": 4}),
+        ]
+        result = _build_openai_tool_continuation(
+            original, "partial", events, {"tc2": "12"}
+        )
+        messages = result["messages"]
+        assert len(messages) == 3
+        assistant = messages[1]
+        assert assistant["role"] == "assistant"
+        assert assistant["content"] == "partial"
+        assert len(assistant["tool_calls"]) == 1
+        assert assistant["tool_calls"][0]["id"] == "tc2"
+        assert messages[2]["role"] == "tool"
+        assert messages[2]["tool_call_id"] == "tc2"
+        assert messages[2]["content"] == "12"
+
     def test_preserves_original_body_fields(self):
         original = {"messages": [], "task_id": "t1", "session_id": "s1"}
         result = _build_openai_tool_continuation(
@@ -313,6 +342,40 @@ class TestBuildOpenAIToolContinuation:
                 "content": '{"ok": true}',
             }
         ]
+
+
+class TestToolInputExecutorServer:
+    def test_executor_server_is_true(self):
+        event = ToolInputAvailableEvent(
+            toolCallId="tc1",
+            toolName="some_tool",
+            input={},
+            kiln_metadata={"executor": "server"},
+        )
+        assert _tool_input_executor_is_server(event) is True
+
+    def test_executor_absent_or_other_is_false(self):
+        assert (
+            _tool_input_executor_is_server(
+                ToolInputAvailableEvent(
+                    toolCallId="tc1",
+                    toolName="some_tool",
+                    input={},
+                )
+            )
+            is False
+        )
+        assert (
+            _tool_input_executor_is_server(
+                ToolInputAvailableEvent(
+                    toolCallId="tc1",
+                    toolName="some_tool",
+                    input={},
+                    kiln_metadata={"executor": "client"},
+                )
+            )
+            is False
+        )
 
 
 class TestExecuteTool:
@@ -458,6 +521,34 @@ class TestRemoteToolRoundTrip:
         assert continuation_body["trace_id"] == trace_tid
         assert messages[0]["tool_call_id"] == "tc1"
         assert messages[0]["content"] == "16"
+
+    def test_skips_local_execute_tool_when_kiln_metadata_executor_server(
+        self, client, mock_api_key
+    ):
+        first_chunks = [
+            _sse_text_delta("ok"),
+            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_tool::multiply_numbers","input":{"a":2,"b":8},"kiln_metadata":{"executor":"server"}}\n\n',
+            b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
+        ]
+        mock_client, get_call_count = self._make_mock_client(first_chunks, [])
+        mock_class = MagicMock(return_value=mock_client)
+        execute_tool_mock = AsyncMock()
+
+        with patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class):
+            with patch(
+                "app.desktop.studio_server.chat_api.execute_tool", execute_tool_mock
+            ):
+                response = client.post(
+                    "/api/chat",
+                    json={"messages": [{"role": "user", "content": "hi"}]},
+                )
+
+        assert response.status_code == 200
+        execute_tool_mock.assert_not_called()
+        assert get_call_count() == 1
+        assert mock_client.stream.call_count == 1
+        assert b"ok" in response.content
+        assert b"tool-output-available" not in response.content
 
     def test_emits_tool_output_available_to_ui(self, client, mock_api_key):
         """Proxy should emit tool-output-available SSE so the UI can show the result."""

@@ -34,6 +34,13 @@ KILN_SSE_CHAT_TRACE = "kiln_chat_trace"
 
 _ai_sdk_stream_event_adapter = TypeAdapter(AiSdkStreamEvent)
 
+_KILN_METADATA_EXECUTOR_KEY = "executor"
+_EXECUTOR_SERVER = "server"
+
+
+def _tool_input_executor_is_server(event: ToolInputAvailableEvent) -> bool:
+    return event.kiln_metadata.get(_KILN_METADATA_EXECUTOR_KEY) == _EXECUTOR_SERVER
+
 
 def _try_parse_ai_sdk_event(data: dict[str, Any]) -> AiSdkStreamEvent | None:
     try:
@@ -211,6 +218,9 @@ class ChatStreamSession:
                 for tc_id, output in tool_results.items():
                     yield self._format_tool_output(tc_id, output)
 
+                if not tool_results:
+                    return
+
                 self._body = _build_openai_tool_continuation(
                     self._body,
                     round_state.assistant_text,
@@ -224,6 +234,13 @@ class ChatStreamSession:
     async def _execute_client_tools(self, round_state: RoundState) -> dict[str, str]:
         tool_results: dict[str, str] = {}
         for event in round_state.tool_input_events:
+            if _tool_input_executor_is_server(event):
+                logger.debug(
+                    "Skipping local tool execution (executor=server): %s (call_id=%s)",
+                    event.toolName,
+                    event.toolCallId,
+                )
+                continue
             tc_id = event.toolCallId
             tool_name = event.toolName
             tool_args = event.input
@@ -232,20 +249,6 @@ class ChatStreamSession:
                 tool_name,
                 tc_id,
             )
-
-            print("========================")
-            print(f"tool_name: {tool_name}")
-            print(f"tool_args: {tool_args}")
-
-            # may be a passive visible event from the remote server executing the tool
-            # and we don't have it here, we should not run it
-            tool_id = _FUNCTION_NAME_TO_TOOL_ID.get(tool_name, tool_name)
-            if not tool_id:
-                print("No tool id found -> continuing")
-                continue
-            else:
-                print(f"Tool id found -> executing tool: {tool_id}")
-
             tool_result = await execute_tool(tool_name, tool_args)
             tool_results[tc_id] = tool_result
         return tool_results
@@ -288,16 +291,22 @@ def _build_openai_tool_continuation(
 ) -> dict[str, Any]:
     """Build the request body for continuing after server-side AI SDK tool calls.
 
-    Appends an ``assistant`` message with ``tool_calls`` followed by one
-    ``role: tool`` message per call (each carrying the matching execution
-    result from *tool_results_by_call_id*), matching the OpenAI message schema
-    the backend's ``convert_to_openai_messages`` expects.
-    """
-    tool_messages: list[dict[str, Any]] = []
+    Appends an ``assistant`` message with ``tool_calls`` (when there are local
+    results) followed by one ``role: tool`` message per call that has an entry
+    in *tool_results_by_call_id*, matching the OpenAI message schema the
+    backend's ``convert_to_openai_messages`` expects.
 
-    for event in tool_input_events:
+    Only tool calls with a local result appear; upstream-only calls are omitted
+    entirely rather than sent with empty ``content``.
+    """
+    local_events = [
+        e for e in tool_input_events if e.toolCallId in tool_results_by_call_id
+    ]
+
+    tool_messages: list[dict[str, Any]] = []
+    for event in local_events:
         tc_id = event.toolCallId
-        tool_content = tool_results_by_call_id.get(tc_id, "")
+        tool_content = tool_results_by_call_id[tc_id]
         tool_messages.append(
             {
                 "role": "tool",
@@ -313,7 +322,7 @@ def _build_openai_tool_continuation(
         new_messages = tool_messages
     else:
         tool_calls: list[dict[str, Any]] = []
-        for event in tool_input_events:
+        for event in local_events:
             tc_id = event.toolCallId
             tool_name = event.toolName
             args_str = json.dumps(event.input)
@@ -330,8 +339,9 @@ def _build_openai_tool_continuation(
         assistant_msg: dict[str, Any] = {
             "role": "assistant",
             "content": content,
-            "tool_calls": tool_calls,
         }
+        if tool_calls:
+            assistant_msg["tool_calls"] = tool_calls
         new_messages = prior_messages + [assistant_msg] + tool_messages
 
     return {**original_body, "messages": new_messages}
