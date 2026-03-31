@@ -315,7 +315,9 @@ class TestBuildOpenAIToolContinuation:
 class TestExecuteTool:
     @pytest.mark.asyncio
     async def test_runs_multiply_builtin(self):
-        assert await execute_tool("kiln_tool::multiply_numbers", {"a": 2, "b": 8}) == "16"
+        assert (
+            await execute_tool("kiln_tool::multiply_numbers", {"a": 2, "b": 8}) == "16"
+        )
 
     @pytest.mark.asyncio
     async def test_runs_add_builtin(self):
