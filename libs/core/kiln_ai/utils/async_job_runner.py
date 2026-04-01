@@ -42,10 +42,14 @@ class AsyncJobRunner(Generic[T]):
         run_job_fn: Callable[[T], Awaitable[bool]],
         concurrency: int = 1,
         observers: List[AsyncJobRunnerObserver[T]] | None = None,
+        max_retries: int = 0,
     ):
         if concurrency < 1:
             raise ValueError("concurrency must be ≥ 1")
+        if max_retries < 0:
+            raise ValueError("max_retries must be >= 0")
         self.concurrency = concurrency
+        self.max_retries = max_retries
         self.jobs = jobs
         self.run_job_fn = run_job_fn
         self.observers = observers or []
@@ -132,15 +136,23 @@ class AsyncJobRunner(Generic[T]):
                 # worker can end when the queue is empty
                 break
 
-            try:
-                await self.notify_job_start(job)
-                result = await run_job_fn(job)
-                if result:
-                    await self.notify_success(job)
-            except Exception as e:
-                logger.error("Job failed to complete", exc_info=True)
-                await self.notify_error(job, e)
-                result = False
+            await self.notify_job_start(job)
+            result = False
+            for attempt in range(1 + self.max_retries):
+                is_last_attempt = attempt == self.max_retries
+                try:
+                    result = await run_job_fn(job)
+                    if result:
+                        await self.notify_success(job)
+                        break
+                    if is_last_attempt:
+                        break
+                except Exception as e:
+                    result = False
+                    if is_last_attempt:
+                        logger.error("Job failed to complete", exc_info=True)
+                        await self.notify_error(job, e)
+                        break
 
             try:
                 await status_queue.put(result)

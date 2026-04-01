@@ -188,6 +188,7 @@ class EvalRunner:
             concurrency=concurrency,
             jobs=jobs,
             run_job_fn=self.run_job,
+            max_retries=2,
         )
         async for progress in runner.run():
             yield progress
