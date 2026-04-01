@@ -78,8 +78,7 @@ def dump_annotations(source: str, target_folder: str) -> int:
 
     if unannotated:
         logger.error(
-            f"{len(unannotated)} unannotated endpoint(s): "
-            + ", ".join(unannotated)
+            f"{len(unannotated)} unannotated endpoint(s): " + ", ".join(unannotated)
         )
         return 2
 
