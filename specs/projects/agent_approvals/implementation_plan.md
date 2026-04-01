@@ -11,3 +11,4 @@ status: complete
 - [x] Phase 3: Policy lookup helper (`policy_lookup.py` + tests)
 - [x] Phase 4: Backfill all endpoints with annotations, regenerate annotation JSONs *(propose-then-execute: agent must present full plan for human approval before coding)*
 - [x] Phase 5: CI integration — extend `check_api_bindings.yml` to check for unannotated endpoints
+- [ ] Phase 6: Rebase Phase 4 annotations onto API docs overhaul (`scosman/improve-api-docs`)

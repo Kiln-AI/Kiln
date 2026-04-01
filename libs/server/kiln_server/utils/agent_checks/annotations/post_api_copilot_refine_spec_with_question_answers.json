@@ -1,8 +1,0 @@
-{
-  "method": "post",
-  "path": "/api/copilot/refine_spec_with_question_answers",
-  "agent_policy": {
-    "permission": "allow",
-    "requires_approval": false
-  }
-}

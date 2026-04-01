@@ -45,7 +45,6 @@ from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.wandb_utils import AuthenticationError, get_wandb_default_entity
-from kiln_server.utils.agent_checks.policy import ALLOW_AGENT, DENY_AGENT
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -228,7 +227,7 @@ class AvailableProviderInfo(BaseModel):
 
 
 def connect_provider_api(app: FastAPI):
-    @app.get("/api/providers/models", openapi_extra=ALLOW_AGENT)
+    @app.get("/api/providers/models")
     async def get_providers_models() -> ProviderModels:
         models = {}
         for model in built_in_models:
@@ -236,7 +235,7 @@ def connect_provider_api(app: FastAPI):
         return ProviderModels(models=models)
 
     # returns map, of provider name to list of model names
-    @app.get("/api/available_models", openapi_extra=ALLOW_AGENT)
+    @app.get("/api/available_models")
     async def get_available_models() -> List[AvailableModels]:
         # Providers with just keys can return all their models if keys are set
         key_providers: List[str] = []
@@ -363,7 +362,7 @@ def connect_provider_api(app: FastAPI):
 
         return models
 
-    @app.get("/api/providers/embedding_models", openapi_extra=ALLOW_AGENT)
+    @app.get("/api/providers/embedding_models")
     async def get_providers_embedding_models() -> ProviderEmbeddingModels:
         models = {}
         for model in built_in_embedding_models:
@@ -371,7 +370,7 @@ def connect_provider_api(app: FastAPI):
         return ProviderEmbeddingModels(models=models)
 
     # returns map, of provider name to list of model names
-    @app.get("/api/available_embedding_models", openapi_extra=ALLOW_AGENT)
+    @app.get("/api/available_embedding_models")
     async def get_available_embedding_models() -> List[EmbeddingProvider]:
         # Providers with just keys can return all their models if keys are set
         key_providers: List[str] = []
@@ -419,7 +418,7 @@ def connect_provider_api(app: FastAPI):
 
         return models
 
-    @app.get("/api/providers/reranker_models", openapi_extra=ALLOW_AGENT)
+    @app.get("/api/providers/reranker_models")
     async def get_providers_reranker_models() -> ProviderRerankerModels:
         models = {}
         for model in built_in_rerankers:
@@ -427,7 +426,7 @@ def connect_provider_api(app: FastAPI):
         return ProviderRerankerModels(models=models)
 
     # returns map, of provider name to list of model names
-    @app.get("/api/available_reranker_models", openapi_extra=ALLOW_AGENT)
+    @app.get("/api/available_reranker_models")
     async def get_available_reranker_models() -> List[RerankerProvider]:
         # Providers with just keys can return all their models if keys are set
         key_providers: List[str] = []
@@ -468,20 +467,20 @@ def connect_provider_api(app: FastAPI):
 
         return models
 
-    @app.get("/api/provider/ollama/connect", openapi_extra=DENY_AGENT)
+    @app.get("/api/provider/ollama/connect")
     async def connect_ollama_api(
         custom_ollama_url: str | None = None,
     ) -> OllamaConnection:
         return await connect_ollama(custom_ollama_url)
 
-    @app.get("/api/provider/docker_model_runner/connect", openapi_extra=DENY_AGENT)
+    @app.get("/api/provider/docker_model_runner/connect")
     async def connect_docker_model_runner_api(
         docker_model_runner_custom_url: str | None = None,
     ) -> DockerModelRunnerConnection:
         chosen_url = docker_model_runner_custom_url
         return await connect_docker_model_runner(chosen_url)
 
-    @app.post("/api/provider/openai_compatible", openapi_extra=DENY_AGENT)
+    @app.post("/api/provider/openai_compatible")
     async def save_openai_compatible_providers(name: str, base_url: str, api_key: str):
         providers = Config.shared().openai_compatible_providers or []
         existing_provider = next((p for p in providers if p["name"] == name), None)
@@ -503,7 +502,7 @@ def connect_provider_api(app: FastAPI):
             content={"message": "OpenAI compatible provider saved"},
         )
 
-    @app.delete("/api/provider/openai_compatible", openapi_extra=DENY_AGENT)
+    @app.delete("/api/provider/openai_compatible")
     async def delete_openai_compatible_providers(name: str):
         if not name:
             return JSONResponse(
@@ -518,7 +517,7 @@ def connect_provider_api(app: FastAPI):
             content={"message": "OpenAI compatible provider deleted"},
         )
 
-    @app.get("/api/settings/available_providers", openapi_extra=DENY_AGENT)
+    @app.get("/api/settings/available_providers")
     async def get_available_providers() -> List[AvailableProviderInfo]:
         """Returns all providers that can have custom models added."""
         providers = []
@@ -552,7 +551,7 @@ def connect_provider_api(app: FastAPI):
 
         return providers
 
-    @app.get("/api/settings/user_models", openapi_extra=DENY_AGENT)
+    @app.get("/api/settings/user_models")
     async def get_user_models() -> List[UserModelEntry]:
         """Returns all user-defined models (new registry + legacy combined).
 
@@ -580,7 +579,7 @@ def connect_provider_api(app: FastAPI):
 
         return result
 
-    @app.post("/api/settings/user_models", openapi_extra=DENY_AGENT)
+    @app.post("/api/settings/user_models")
     async def add_user_model(entry: UserModelEntry) -> JSONResponse:
         """Add a user-defined model to the registry."""
 
@@ -627,7 +626,7 @@ def connect_provider_api(app: FastAPI):
 
         return JSONResponse(status_code=200, content={"message": "Model added"})
 
-    @app.delete("/api/settings/user_models", openapi_extra=DENY_AGENT)
+    @app.delete("/api/settings/user_models")
     async def delete_user_model(
         provider_type: str | None = None,
         provider_id: str | None = None,
@@ -707,7 +706,7 @@ def connect_provider_api(app: FastAPI):
             )
         return api_key
 
-    @app.post("/api/provider/connect_api_key", openapi_extra=DENY_AGENT)
+    @app.post("/api/provider/connect_api_key")
     async def connect_api_key(payload: dict):
         provider = payload.get("provider")
         key_data = payload.get("key_data")
@@ -789,7 +788,7 @@ def connect_provider_api(app: FastAPI):
             case _:
                 raise_exhaustive_enum_error(typed_provider)
 
-    @app.post("/api/provider/disconnect_api_key", openapi_extra=DENY_AGENT)
+    @app.post("/api/provider/disconnect_api_key")
     async def disconnect_api_key(provider_id: str) -> JSONResponse:
         if provider_id == "wandb":
             # Wandb is not an AI provider, but it's a provider you can connect, supported by this UI/API

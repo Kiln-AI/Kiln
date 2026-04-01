@@ -1,8 +1,0 @@
-{
-  "method": "post",
-  "path": "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/set_current_eval_config/{eval_config_id}",
-  "agent_policy": {
-    "permission": "allow",
-    "requires_approval": false
-  }
-}

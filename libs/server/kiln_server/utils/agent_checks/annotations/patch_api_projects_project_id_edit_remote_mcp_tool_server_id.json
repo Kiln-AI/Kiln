@@ -1,8 +1,0 @@
-{
-  "method": "patch",
-  "path": "/api/projects/{project_id}/edit_remote_mcp/{tool_server_id}",
-  "agent_policy": {
-    "permission": "deny",
-    "requires_approval": false
-  }
-}

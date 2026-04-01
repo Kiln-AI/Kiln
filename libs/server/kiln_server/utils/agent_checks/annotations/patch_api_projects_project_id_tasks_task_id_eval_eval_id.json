@@ -1,9 +1,0 @@
-{
-  "method": "patch",
-  "path": "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
-  "agent_policy": {
-    "permission": "allow",
-    "requires_approval": true,
-    "approval_description": "Allow agent to edit eval? Ensure you backup your project before allowing agentic edits."
-  }
-}

@@ -1,8 +1,0 @@
-{
-  "method": "post",
-  "path": "/api/projects/{project_id}/connect_local_mcp",
-  "agent_policy": {
-    "permission": "deny",
-    "requires_approval": false
-  }
-}

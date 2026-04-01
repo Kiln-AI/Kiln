@@ -13,10 +13,6 @@ from fastapi import FastAPI, HTTPException
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.filesystem import open_folder
 from kiln_server.project_api import project_from_id
-from kiln_server.utils.agent_checks.policy import (
-    DENY_AGENT,
-    agent_policy_require_approval,
-)
 
 
 def open_logs_folder() -> None:
@@ -24,29 +20,24 @@ def open_logs_folder() -> None:
 
 
 def connect_settings(app: FastAPI):
-    @app.post("/api/settings", openapi_extra=DENY_AGENT)
+    @app.post("/api/settings")
     def update_settings(
         new_settings: dict[str, int | float | str | bool | list | None],
     ):
         Config.shared().update_settings(new_settings)
         return Config.shared().settings(hide_sensitive=True)
 
-    @app.get("/api/settings", openapi_extra=DENY_AGENT)
+    @app.get("/api/settings")
     def read_settings() -> dict[str, Any]:
         settings = Config.shared().settings(hide_sensitive=True)
         return settings
 
-    @app.get("/api/settings/{item_id}", openapi_extra=DENY_AGENT)
+    @app.get("/api/settings/{item_id}")
     def read_setting_item(item_id: str):
         settings = Config.shared().settings(hide_sensitive=True)
         return {item_id: settings.get(item_id, None)}
 
-    @app.post(
-        "/api/open_logs",
-        openapi_extra=agent_policy_require_approval(
-            "This will open an external application to view logs. Allow?"
-        ),
-    )
+    @app.post("/api/open_logs")
     def open_logs():
         try:
             open_logs_folder()
@@ -54,7 +45,7 @@ def connect_settings(app: FastAPI):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    @app.post("/api/open_project_folder/{project_id}", openapi_extra=DENY_AGENT)
+    @app.post("/api/open_project_folder/{project_id}")
     def open_project_folder(project_id: str):
         try:
             project = project_from_id(project_id)
@@ -67,7 +58,7 @@ def connect_settings(app: FastAPI):
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
-    @app.get("/api/check_entitlements", openapi_extra=DENY_AGENT)
+    @app.get("/api/check_entitlements")
     async def check_entitlements(feature_codes: str) -> dict[str, bool]:
         """Check whether the authenticated user has the given entitlements.
 

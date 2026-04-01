@@ -29,11 +29,6 @@ from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
-from kiln_server.utils.agent_checks.policy import (
-    ALLOW_AGENT,
-    DENY_AGENT,
-    agent_policy_require_approval,
-)
 from pydantic import BaseModel
 
 from .correlation_calculator import (
@@ -351,10 +346,7 @@ def count_human_evals(
 
 
 def connect_evals_api(app: FastAPI):
-    @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/create_evaluator",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/create_evaluator")
     async def create_evaluator(
         project_id: str,
         task_id: str,
@@ -375,34 +367,20 @@ def connect_evals_api(app: FastAPI):
         eval.save_to_file()
         return eval
 
-    @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/run_configs/",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/run_configs/")
     async def get_run_configs(project_id: str, task_id: str) -> list[TaskRunConfig]:
         return get_all_run_configs(project_id, task_id)
 
-    @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
     async def get_eval(project_id: str, task_id: str, eval_id: str) -> Eval:
         return eval_from_id(project_id, task_id, eval_id)
 
-    @app.delete(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
-        openapi_extra=DENY_AGENT,
-    )
+    @app.delete("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
     async def delete_eval(project_id: str, task_id: str, eval_id: str) -> None:
         eval = eval_from_id(project_id, task_id, eval_id)
         eval.delete()
 
-    @app.patch(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
-        openapi_extra=agent_policy_require_approval(
-            "Allow agent to edit eval? Ensure you backup your project before allowing agentic edits."
-        ),
-    )
+    @app.patch("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
     async def update_eval(
         project_id: str,
         task_id: str,
@@ -431,18 +409,12 @@ def connect_evals_api(app: FastAPI):
         eval.save_to_file()
         return eval
 
-    @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/evals",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/evals")
     async def get_evals(project_id: str, task_id: str) -> list[Eval]:
         task = task_from_id(project_id, task_id)
         return task.evals()
 
-    @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs")
     async def get_eval_configs(
         project_id: str, task_id: str, eval_id: str
     ) -> list[EvalConfig]:
@@ -450,8 +422,7 @@ def connect_evals_api(app: FastAPI):
         return eval.configs()
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}",
-        openapi_extra=ALLOW_AGENT,
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}"
     )
     async def get_eval_config(
         project_id: str, task_id: str, eval_id: str, eval_config_id: str
@@ -459,10 +430,7 @@ def connect_evals_api(app: FastAPI):
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
         return eval_config
 
-    @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/task_run_config",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/task_run_config")
     async def create_task_run_config(
         project_id: str,
         task_id: str,
@@ -510,12 +478,7 @@ def connect_evals_api(app: FastAPI):
         task_run_config.save_to_file()
         return task_run_config
 
-    @app.patch(
-        "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}",
-        openapi_extra=agent_policy_require_approval(
-            "Allow agent to edit run config? Ensure you backup your project before allowing agentic edits."
-        ),
-    )
+    @app.patch("/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}")
     async def update_run_config(
         project_id: str,
         task_id: str,
@@ -545,8 +508,7 @@ def connect_evals_api(app: FastAPI):
         return run_config
 
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/create_eval_config",
-        openapi_extra=ALLOW_AGENT,
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/create_eval_config"
     )
     async def create_eval_config(
         project_id: str,
@@ -570,8 +532,7 @@ def connect_evals_api(app: FastAPI):
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/run_task_run_eval",
-        openapi_extra=ALLOW_AGENT,
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/run_task_run_eval"
     )
     async def run_eval_config(
         project_id: str,
@@ -608,8 +569,7 @@ def connect_evals_api(app: FastAPI):
         return await run_eval_runner_with_status(eval_runner)
 
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/set_current_eval_config/{eval_config_id}",
-        openapi_extra=ALLOW_AGENT,
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/set_current_eval_config/{eval_config_id}"
     )
     async def set_default_eval_config(
         project_id: str,
@@ -643,8 +603,7 @@ def connect_evals_api(app: FastAPI):
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/run_eval_config_eval",
-        openapi_extra=ALLOW_AGENT,
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/run_eval_config_eval"
     )
     async def run_eval_config_eval(
         project_id: str,
@@ -662,8 +621,7 @@ def connect_evals_api(app: FastAPI):
         return await run_eval_runner_with_status(eval_runner)
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/results",
-        openapi_extra=ALLOW_AGENT,
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/results"
     )
     async def get_eval_run_results(
         project_id: str,
@@ -688,10 +646,7 @@ def connect_evals_api(app: FastAPI):
         )
 
     # Overview of the eval progress
-    @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress")
     async def get_eval_progress(
         project_id: str,
         task_id: str,
@@ -742,8 +697,7 @@ def connect_evals_api(app: FastAPI):
 
     # This compares run_configs to each other on a given eval_config. Compare to below which compares eval_configs to each other.
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/score_summary",
-        openapi_extra=ALLOW_AGENT,
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/score_summary"
     )
     async def get_eval_config_score_summary(
         project_id: str,
@@ -847,8 +801,7 @@ def connect_evals_api(app: FastAPI):
 
     # Compared to above, this is comparing all eval configs to each other, not looking at a single eval config
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs_score_summary",
-        openapi_extra=ALLOW_AGENT,
+        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs_score_summary"
     )
     async def get_eval_configs_score_summary(
         project_id: str,
@@ -987,8 +940,7 @@ def connect_evals_api(app: FastAPI):
         )
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}/eval_scores",
-        openapi_extra=ALLOW_AGENT,
+        "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}/eval_scores"
     )
     async def get_run_config_eval_scores(
         project_id: str,

@@ -1,8 +1,0 @@
-{
-  "method": "get",
-  "path": "/ping",
-  "agent_policy": {
-    "permission": "allow",
-    "requires_approval": false
-  }
-}

@@ -1,8 +1,0 @@
-{
-  "method": "post",
-  "path": "/api/projects/{project_id}/tasks/{task_id}/create_evaluator",
-  "agent_policy": {
-    "permission": "allow",
-    "requires_approval": false
-  }
-}

@@ -14,7 +14,6 @@ from .prompt_api import connect_prompt_api
 from .run_api import connect_run_api
 from .spec_api import connect_spec_api
 from .task_api import connect_task_api
-from .utils.agent_checks.policy import ALLOW_AGENT
 
 
 def _get_version() -> str:
@@ -34,7 +33,7 @@ def make_app(lifespan=None):
         lifespan=lifespan,
     )
 
-    @app.get("/ping", openapi_extra=ALLOW_AGENT)
+    @app.get("/ping")
     def ping():
         """Ping the server 🏓"""
         return "pong"

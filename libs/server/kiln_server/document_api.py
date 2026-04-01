@@ -80,11 +80,6 @@ from kiln_ai.utils.name_generator import generate_memorable_name
 from pydantic import BaseModel, Field, PositiveInt, model_validator
 
 from kiln_server.project_api import project_from_id
-from kiln_server.utils.agent_checks.policy import (
-    ALLOW_AGENT,
-    DENY_AGENT,
-    agent_policy_require_approval,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -901,7 +896,7 @@ def get_documents_filtered(
 
 
 def connect_document_api(app: FastAPI):
-    @app.post("/api/projects/{project_id}/documents/bulk", openapi_extra=ALLOW_AGENT)
+    @app.post("/api/projects/{project_id}/documents/bulk")
     async def create_documents_bulk(
         project_id: str,
         files: Annotated[List[UploadFile] | None, File()] = None,
@@ -994,7 +989,7 @@ def connect_document_api(app: FastAPI):
             failed_files=failed_files,
         )
 
-    @app.get("/api/projects/{project_id}/documents", openapi_extra=ALLOW_AGENT)
+    @app.get("/api/projects/{project_id}/documents")
     async def get_documents(
         project_id: str,
         tags: str | None = None,
@@ -1015,8 +1010,7 @@ def connect_document_api(app: FastAPI):
         return documents
 
     @app.get(
-        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/extractions",
-        openapi_extra=ALLOW_AGENT,
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/extractions"
     )
     async def get_extractions_for_extractor_config(
         project_id: str, extractor_config_id: str
@@ -1050,7 +1044,7 @@ def connect_document_api(app: FastAPI):
 
         return results
 
-    @app.get("/api/projects/{project_id}/documents/tags", openapi_extra=ALLOW_AGENT)
+    @app.get("/api/projects/{project_id}/documents/tags")
     async def get_document_tags(
         project_id: str,
     ) -> list[str]:
@@ -1062,9 +1056,7 @@ def connect_document_api(app: FastAPI):
                 all_tags.update(document.tags)
         return sorted(list(all_tags))
 
-    @app.get(
-        "/api/projects/{project_id}/documents/tag_counts", openapi_extra=ALLOW_AGENT
-    )
+    @app.get("/api/projects/{project_id}/documents/tag_counts")
     async def get_document_tag_counts(project_id: str) -> dict[str, int]:
         tags_count = {}
         project = project_from_id(project_id)
@@ -1076,10 +1068,7 @@ def connect_document_api(app: FastAPI):
                     tags_count[tag] = tags_count.get(tag, 0) + 1
         return tags_count
 
-    @app.get(
-        "/api/projects/{project_id}/documents/{document_id}",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.get("/api/projects/{project_id}/documents/{document_id}")
     async def get_document(
         project_id: str,
         document_id: str,
@@ -1093,12 +1082,7 @@ def connect_document_api(app: FastAPI):
             )
         return document
 
-    @app.patch(
-        "/api/projects/{project_id}/documents/{document_id}",
-        openapi_extra=agent_policy_require_approval(
-            "Allow agent to edit document? Ensure you backup your project before allowing agentic edits."
-        ),
-    )
+    @app.patch("/api/projects/{project_id}/documents/{document_id}")
     async def patch_document(
         project_id: str,
         document_id: str,
@@ -1127,9 +1111,7 @@ def connect_document_api(app: FastAPI):
 
         return document
 
-    @app.post(
-        "/api/projects/{project_id}/documents/edit_tags", openapi_extra=ALLOW_AGENT
-    )
+    @app.post("/api/projects/{project_id}/documents/edit_tags")
     async def edit_tags(
         project_id: str,
         document_ids: list[str],
@@ -1186,10 +1168,7 @@ def connect_document_api(app: FastAPI):
             )
         return {"success": True}
 
-    @app.post(
-        "/api/projects/{project_id}/create_extractor_config",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.post("/api/projects/{project_id}/create_extractor_config")
     async def create_extractor_config(
         project_id: str,
         request: CreateExtractorConfigRequest,
@@ -1214,17 +1193,14 @@ def connect_document_api(app: FastAPI):
 
         return extractor_config
 
-    @app.get("/api/projects/{project_id}/extractor_configs", openapi_extra=ALLOW_AGENT)
+    @app.get("/api/projects/{project_id}/extractor_configs")
     async def get_extractor_configs(
         project_id: str,
     ) -> list[ExtractorConfig]:
         project = project_from_id(project_id)
         return project.extractor_configs(readonly=True)
 
-    @app.get(
-        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.get("/api/projects/{project_id}/extractor_configs/{extractor_config_id}")
     async def get_extractor_config(
         project_id: str,
         extractor_config_id: str,
@@ -1242,8 +1218,7 @@ def connect_document_api(app: FastAPI):
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
     @app.get(
-        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/run_extractor_config",
-        openapi_extra=ALLOW_AGENT,
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/run_extractor_config"
     )
     async def run_extractor_config(
         project_id: str,
@@ -1287,10 +1262,7 @@ def connect_document_api(app: FastAPI):
 
             return await run_extractor_runner_with_status(extractor_runner)
 
-    @app.get(
-        "/api/projects/{project_id}/documents/{document_id}/extractions",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.get("/api/projects/{project_id}/documents/{document_id}/extractions")
     async def get_extractions(
         project_id: str,
         document_id: str,
@@ -1323,8 +1295,7 @@ def connect_document_api(app: FastAPI):
         return summaries
 
     @app.get(
-        "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}",
-        openapi_extra=ALLOW_AGENT,
+        "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}"
     )
     async def get_extraction(
         project_id: str,
@@ -1362,10 +1333,7 @@ def connect_document_api(app: FastAPI):
             extractor_config=extractor_config,
         )
 
-    @app.get(
-        "/api/projects/{project_id}/documents/{document_id}/download",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.get("/api/projects/{project_id}/documents/{document_id}/download")
     async def download_document_file(
         project_id: str,
         document_id: str,
@@ -1390,8 +1358,7 @@ def connect_document_api(app: FastAPI):
         return FileResponse(path=path, filename=document.original_file.filename)
 
     @app.get(
-        "/api/projects/{project_id}/documents/{document_id}/download_extraction/{extraction_id}",
-        openapi_extra=ALLOW_AGENT,
+        "/api/projects/{project_id}/documents/{document_id}/download_extraction/{extraction_id}"
     )
     async def download_extraction(
         project_id: str,
@@ -1428,8 +1395,7 @@ def connect_document_api(app: FastAPI):
         )
 
     @app.post(
-        "/api/projects/{project_id}/documents/{document_id}/open_enclosing_folder",
-        openapi_extra=DENY_AGENT,
+        "/api/projects/{project_id}/documents/{document_id}/open_enclosing_folder"
     )
     async def open_document_enclosing_folder(
         project_id: str,
@@ -1454,7 +1420,7 @@ def connect_document_api(app: FastAPI):
 
         return OpenFileResponse(path=str(document.path.parent))
 
-    @app.post("/api/projects/{project_id}/documents/delete", openapi_extra=DENY_AGENT)
+    @app.post("/api/projects/{project_id}/documents/delete")
     async def delete_documents(project_id: str, document_ids: list[str]) -> dict:
         project = project_from_id(project_id)
         for document_id in document_ids:
@@ -1469,10 +1435,7 @@ def connect_document_api(app: FastAPI):
 
         return {"message": f"Documents removed. IDs: {document_ids}"}
 
-    @app.delete(
-        "/api/projects/{project_id}/documents/{document_id}",
-        openapi_extra=DENY_AGENT,
-    )
+    @app.delete("/api/projects/{project_id}/documents/{document_id}")
     async def delete_document(project_id: str, document_id: str) -> dict:
         project = project_from_id(project_id)
         document = Document.from_id_and_parent_path(document_id, project.path)
@@ -1487,8 +1450,7 @@ def connect_document_api(app: FastAPI):
         return {"message": f"Document removed. ID: {document_id}"}
 
     @app.get(
-        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/progress",
-        openapi_extra=ALLOW_AGENT,
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/progress"
     )
     async def get_extraction_progress(
         project_id: str,
@@ -1521,10 +1483,7 @@ def connect_document_api(app: FastAPI):
             extractor_config=extractor_config,
         )
 
-    @app.post(
-        "/api/projects/{project_id}/documents/{document_id}/extract",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.post("/api/projects/{project_id}/documents/{document_id}/extract")
     async def extract_file(
         project_id: str,
         document_id: str,
@@ -1569,8 +1528,7 @@ def connect_document_api(app: FastAPI):
         return await run_extractor_runner_with_status(extractor_runner)
 
     @app.delete(
-        "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}",
-        openapi_extra=DENY_AGENT,
+        "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}"
     )
     async def delete_extraction(
         project_id: str,
@@ -1638,12 +1596,7 @@ def connect_document_api(app: FastAPI):
 
         return {"message": f"Extraction removed. ID: {extraction_id}"}
 
-    @app.patch(
-        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
-        openapi_extra=agent_policy_require_approval(
-            "Allow agent to edit extractor config? Ensure you backup your project before allowing agentic edits."
-        ),
-    )
+    @app.patch("/api/projects/{project_id}/extractor_configs/{extractor_config_id}")
     async def patch_extractor_config(
         project_id: str,
         extractor_config_id: str,
@@ -1671,10 +1624,7 @@ def connect_document_api(app: FastAPI):
 
         return {"message": f"Extractor config updated. ID: {extractor_config_id}"}
 
-    @app.post(
-        "/api/projects/{project_id}/create_chunker_config",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.post("/api/projects/{project_id}/create_chunker_config")
     async def create_chunker_config(
         project_id: str,
         request: CreateChunkerConfigRequest,
@@ -1704,17 +1654,14 @@ def connect_document_api(app: FastAPI):
 
         return chunker_config
 
-    @app.get("/api/projects/{project_id}/chunker_configs", openapi_extra=ALLOW_AGENT)
+    @app.get("/api/projects/{project_id}/chunker_configs")
     async def get_chunker_configs(
         project_id: str,
     ) -> list[ChunkerConfig]:
         project = project_from_id(project_id)
         return project.chunker_configs(readonly=True)
 
-    @app.post(
-        "/api/projects/{project_id}/create_embedding_config",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.post("/api/projects/{project_id}/create_embedding_config")
     async def create_embedding_config(
         project_id: str,
         request: CreateEmbeddingConfigRequest,
@@ -1738,17 +1685,14 @@ def connect_document_api(app: FastAPI):
 
         return embedding_config
 
-    @app.get("/api/projects/{project_id}/embedding_configs", openapi_extra=ALLOW_AGENT)
+    @app.get("/api/projects/{project_id}/embedding_configs")
     async def get_embedding_configs(
         project_id: str,
     ) -> list[EmbeddingConfig]:
         project = project_from_id(project_id)
         return project.embedding_configs(readonly=True)
 
-    @app.post(
-        "/api/projects/{project_id}/create_reranker_config",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.post("/api/projects/{project_id}/create_reranker_config")
     async def create_reranker_config(
         project_id: str,
         request: CreateRerankerConfigRequest,
@@ -1768,17 +1712,14 @@ def connect_document_api(app: FastAPI):
 
         return reranker_config
 
-    @app.get("/api/projects/{project_id}/reranker_configs", openapi_extra=ALLOW_AGENT)
+    @app.get("/api/projects/{project_id}/reranker_configs")
     async def get_reranker_configs(
         project_id: str,
     ) -> list[RerankerConfig]:
         project = project_from_id(project_id)
         return project.reranker_configs(readonly=True)
 
-    @app.get(
-        "/api/projects/{project_id}/embedding_configs/{embedding_config_id}",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.get("/api/projects/{project_id}/embedding_configs/{embedding_config_id}")
     async def get_embedding_config(
         project_id: str,
         embedding_config_id: str,
@@ -1794,10 +1735,7 @@ def connect_document_api(app: FastAPI):
             )
         return embedding_config
 
-    @app.post(
-        "/api/projects/{project_id}/create_vector_store_config",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.post("/api/projects/{project_id}/create_vector_store_config")
     async def create_vector_store_config(
         project_id: str,
         request: CreateVectorStoreConfigRequest,
@@ -1814,21 +1752,14 @@ def connect_document_api(app: FastAPI):
 
         return vector_store_config
 
-    @app.get(
-        "/api/projects/{project_id}/vector_store_configs", openapi_extra=ALLOW_AGENT
-    )
+    @app.get("/api/projects/{project_id}/vector_store_configs")
     async def get_vector_store_configs(
         project_id: str,
     ) -> list[VectorStoreConfig]:
         project = project_from_id(project_id)
         return project.vector_store_configs(readonly=True)
 
-    @app.patch(
-        "/api/projects/{project_id}/rag_configs/{rag_config_id}",
-        openapi_extra=agent_policy_require_approval(
-            "Allow agent to edit RAG config? Ensure you backup your project before allowing agentic edits."
-        ),
-    )
+    @app.patch("/api/projects/{project_id}/rag_configs/{rag_config_id}")
     async def update_rag_config(
         project_id: str, rag_config_id: str, request: UpdateRagConfigRequest
     ) -> RagConfig:
@@ -1843,10 +1774,7 @@ def connect_document_api(app: FastAPI):
         rag_config.save_to_file()
         return rag_config
 
-    @app.post(
-        "/api/projects/{project_id}/rag_configs/create_rag_config",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.post("/api/projects/{project_id}/rag_configs/create_rag_config")
     async def create_rag_config(
         project_id: str,
         request: CreateRagConfigRequest,
@@ -1917,7 +1845,7 @@ def connect_document_api(app: FastAPI):
 
         return rag_config
 
-    @app.get("/api/projects/{project_id}/rag_configs", openapi_extra=ALLOW_AGENT)
+    @app.get("/api/projects/{project_id}/rag_configs")
     async def get_rag_configs(
         project_id: str,
     ) -> list[RagConfigWithSubConfigs]:
@@ -1994,10 +1922,7 @@ def connect_document_api(app: FastAPI):
 
         return rag_configs
 
-    @app.get(
-        "/api/projects/{project_id}/rag_configs/{rag_config_id}",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.get("/api/projects/{project_id}/rag_configs/{rag_config_id}")
     async def get_rag_config(
         project_id: str,
         rag_config_id: str,
@@ -2070,10 +1995,7 @@ def connect_document_api(app: FastAPI):
         )
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
-    @app.get(
-        "/api/projects/{project_id}/rag_configs/{rag_config_id}/run",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.get("/api/projects/{project_id}/rag_configs/{rag_config_id}/run")
     async def run_rag_config(
         project_id: str,
         rag_config_id: str,
@@ -2093,9 +2015,7 @@ def connect_document_api(app: FastAPI):
         # the workflow runner handles locking
         return await run_rag_workflow_runner_with_status(runner_factory)
 
-    @app.post(
-        "/api/projects/{project_id}/rag_configs/progress", openapi_extra=ALLOW_AGENT
-    )
+    @app.post("/api/projects/{project_id}/rag_configs/progress")
     async def get_rag_config_progress(
         project_id: str,
         request: GetRagConfigProgressRequest,
@@ -2122,10 +2042,7 @@ def connect_document_api(app: FastAPI):
         ] = await compute_current_progress_for_rag_configs(project, rag_configs)
         return progress_map
 
-    @app.post(
-        "/api/projects/{project_id}/rag_configs/{rag_config_id}/search",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.post("/api/projects/{project_id}/rag_configs/{rag_config_id}/search")
     async def search_rag_config(
         project_id: str,
         rag_config_id: str,
@@ -2177,9 +2094,7 @@ def connect_document_api(app: FastAPI):
                 detail=f"Search failed: {e!s}",
             )
 
-    @app.get(
-        "/api/projects/{project_id}/check_library_state", openapi_extra=ALLOW_AGENT
-    )
+    @app.get("/api/projects/{project_id}/check_library_state")
     async def check_library_state(
         project_id: str,
     ) -> DocumentLibraryState:
@@ -2188,8 +2103,7 @@ def connect_document_api(app: FastAPI):
         return DocumentLibraryState(is_empty=len(documents) == 0)
 
     @app.post(
-        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/documents/{document_id}/ephemeral_split",
-        openapi_extra=ALLOW_AGENT,
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/documents/{document_id}/ephemeral_split"
     )
     async def ephemeral_split_document(
         project_id: str,

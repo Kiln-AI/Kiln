@@ -9,11 +9,6 @@ from kiln_ai.datamodel.external_tool_server import (
 from pydantic import BaseModel
 
 from kiln_server.project_api import project_from_id
-from kiln_server.utils.agent_checks.policy import (
-    ALLOW_AGENT,
-    DENY_AGENT,
-    agent_policy_require_approval,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +36,7 @@ class RatingOptionResponse(BaseModel):
 
 
 def connect_task_api(app: FastAPI):
-    @app.post("/api/projects/{project_id}/task", openapi_extra=ALLOW_AGENT)
+    @app.post("/api/projects/{project_id}/task")
     async def create_task(project_id: str, task_data: Dict[str, Any]) -> Task:
         if "id" in task_data:
             raise HTTPException(
@@ -66,12 +61,7 @@ def connect_task_api(app: FastAPI):
 
         return task
 
-    @app.patch(
-        "/api/projects/{project_id}/task/{task_id}",
-        openapi_extra=agent_policy_require_approval(
-            "Allow agent to edit task? Ensure you backup your project before allowing agentic edits."
-        ),
-    )
+    @app.patch("/api/projects/{project_id}/task/{task_id}")
     async def update_task(
         project_id: str, task_id: str, task_updates: Dict[str, Any]
     ) -> Task:
@@ -103,7 +93,7 @@ def connect_task_api(app: FastAPI):
 
         return updated_task
 
-    @app.delete("/api/projects/{project_id}/task/{task_id}", openapi_extra=DENY_AGENT)
+    @app.delete("/api/projects/{project_id}/task/{task_id}")
     async def delete_task(project_id: str, task_id: str) -> None:
         task = task_from_id(project_id, task_id)
         task.delete()
@@ -124,19 +114,16 @@ def connect_task_api(app: FastAPI):
 
                     tool_server.save_to_file()
 
-    @app.get("/api/projects/{project_id}/tasks", openapi_extra=ALLOW_AGENT)
+    @app.get("/api/projects/{project_id}/tasks")
     async def get_tasks(project_id: str) -> List[Task]:
         parent_project = project_from_id(project_id)
         return parent_project.tasks()
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}", openapi_extra=ALLOW_AGENT)
+    @app.get("/api/projects/{project_id}/tasks/{task_id}")
     async def get_task(project_id: str, task_id: str) -> Task:
         return task_from_id(project_id, task_id)
 
-    @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/rating_options",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/rating_options")
     async def get_rating_options(project_id: str, task_id: str) -> RatingOptionResponse:
         """
         Generates an object which determines which rating options should be shown for a given dataset item.

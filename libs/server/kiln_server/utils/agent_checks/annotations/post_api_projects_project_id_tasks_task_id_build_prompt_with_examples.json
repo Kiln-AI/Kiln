@@ -1,8 +1,0 @@
-{
-  "method": "post",
-  "path": "/api/projects/{project_id}/tasks/{task_id}/build_prompt_with_examples",
-  "agent_policy": {
-    "permission": "allow",
-    "requires_approval": false
-  }
-}

@@ -13,7 +13,6 @@ from kiln_ai.tools.tool_registry import is_mcp_tool_id, tool_from_id
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
-from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
 from pydantic import BaseModel, Field
 
 
@@ -177,10 +176,7 @@ def _create_mcp_run_config_properties(
 
 
 def connect_run_config_api(app: FastAPI):
-    @app.get(
-        "/api/projects/{project_id}/tasks_compatible_with_tool",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.get("/api/projects/{project_id}/tasks_compatible_with_tool")
     async def tasks_compatible_with_tool(
         project_id: str, tool_id: str
     ) -> list[TaskToolCompatibility]:
@@ -217,10 +213,7 @@ def connect_run_config_api(app: FastAPI):
             )
         return results
 
-    @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/mcp_run_config",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/mcp_run_config")
     async def create_mcp_run_config(
         project_id: str,
         task_id: str,
@@ -257,9 +250,7 @@ def connect_run_config_api(app: FastAPI):
         task_run_config.save_to_file()
         return task_run_config
 
-    @app.post(
-        "/api/projects/{project_id}/create_task_from_tool", openapi_extra=ALLOW_AGENT
-    )
+    @app.post("/api/projects/{project_id}/create_task_from_tool")
     async def create_task_from_tool(
         project_id: str, request: CreateTaskFromToolRequest
     ) -> Task:

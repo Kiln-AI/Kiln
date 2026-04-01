@@ -10,11 +10,6 @@ from kiln_ai.datamodel.spec_properties import SpecProperties
 from pydantic import BaseModel, Field
 
 from kiln_server.task_api import task_from_id
-from kiln_server.utils.agent_checks.policy import (
-    ALLOW_AGENT,
-    DENY_AGENT,
-    agent_policy_require_approval,
-)
 from kiln_server.utils.spec_utils import (
     generate_spec_eval_filter_ids,
     generate_spec_eval_tags,
@@ -64,10 +59,7 @@ class SpecCreationRequest(BaseModel):
 
 
 def connect_spec_api(app: FastAPI):
-    @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/spec",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.post("/api/projects/{project_id}/tasks/{task_id}/spec")
     async def create_spec(
         project_id: str, task_id: str, spec_data: SpecCreationRequest
     ) -> Spec:
@@ -120,27 +112,16 @@ def connect_spec_api(app: FastAPI):
 
         return spec
 
-    @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/specs",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/specs")
     async def get_specs(project_id: str, task_id: str) -> List[Spec]:
         parent_task = task_from_id(project_id, task_id)
         return parent_task.specs(readonly=True)
 
-    @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
-        openapi_extra=ALLOW_AGENT,
-    )
+    @app.get("/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}")
     async def get_spec(project_id: str, task_id: str, spec_id: str) -> Spec:
         return spec_from_id(project_id, task_id, spec_id)
 
-    @app.patch(
-        "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
-        openapi_extra=agent_policy_require_approval(
-            "Allow agent to edit spec? Ensure you backup your project before allowing agentic edits."
-        ),
-    )
+    @app.patch("/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}")
     async def update_spec(
         project_id: str, task_id: str, spec_id: str, request: UpdateSpecRequest
     ) -> Spec:
@@ -163,10 +144,7 @@ def connect_spec_api(app: FastAPI):
         spec.save_to_file()
         return spec
 
-    @app.delete(
-        "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
-        openapi_extra=DENY_AGENT,
-    )
+    @app.delete("/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}")
     async def delete_spec(project_id: str, task_id: str, spec_id: str) -> None:
         spec = spec_from_id(project_id, task_id, spec_id)
 
