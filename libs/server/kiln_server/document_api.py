@@ -1373,7 +1373,9 @@ def connect_document_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/run_extractor_config",
         tags=["Documents"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=agent_policy_require_approval(
+            "Run document extractor? This processes all documents and may take significant time."
+        ),
     )
     async def run_extractor_config(
         project_id: Annotated[
@@ -1515,7 +1517,7 @@ def connect_document_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/documents/{document_id}/download",
         tags=["Documents"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=DENY_AGENT,
     )
     async def download_document_file(
         project_id: Annotated[
@@ -1547,7 +1549,7 @@ def connect_document_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/documents/{document_id}/download_extraction/{extraction_id}",
         tags=["Documents"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=DENY_AGENT,
     )
     async def download_extraction(
         project_id: Annotated[
@@ -1716,7 +1718,9 @@ def connect_document_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/documents/{document_id}/extract",
         tags=["Documents"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=agent_policy_require_approval(
+            "Run document extraction? This processes the document and may take time."
+        ),
     )
     async def extract_file(
         project_id: Annotated[
@@ -2349,7 +2353,9 @@ def connect_document_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/rag_configs/{rag_config_id}/run",
         tags=["Documents"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=agent_policy_require_approval(
+            "Run RAG config indexing? This re-indexes documents and may take time."
+        ),
     )
     async def run_rag_config(
         project_id: Annotated[
@@ -2377,7 +2383,7 @@ def connect_document_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/rag_configs/progress",
         tags=["Documents"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=DENY_AGENT,
     )
     async def get_rag_config_progress(
         project_id: Annotated[
@@ -2484,7 +2490,9 @@ def connect_document_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/documents/{document_id}/ephemeral_split",
         tags=["Documents"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=agent_policy_require_approval(
+            "Run ephemeral document split? This triggers backend processing."
+        ),
     )
     async def ephemeral_split_document(
         project_id: Annotated[

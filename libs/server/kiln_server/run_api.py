@@ -377,7 +377,7 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/run",
         summary="Execute Run",
         tags=["Runs"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=agent_policy_require_approval("Run task with LLM?"),
     )
     async def run_task(
         project_id: Annotated[

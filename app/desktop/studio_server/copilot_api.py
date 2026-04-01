@@ -75,7 +75,7 @@ from libs.core.kiln_ai.datamodel.copilot_models.questions import (
     RefineSpecApiOutput,
     SubmitAnswersRequest,
 )
-from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
+from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -115,7 +115,11 @@ class CreateSpecWithCopilotRequest(BaseModel):
 
 
 def connect_copilot_api(app: FastAPI):
-    @app.post("/api/copilot/clarify_spec", tags=["Copilot"], openapi_extra=ALLOW_AGENT)
+    @app.post(
+        "/api/copilot/clarify_spec",
+        tags=["Copilot"],
+        openapi_extra=agent_policy_require_approval("Run Copilot spec clarification?"),
+    )
     async def clarify_spec(input: ClarifySpecApiInput) -> ClarifySpecApiOutput:
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
@@ -141,7 +145,11 @@ def connect_copilot_api(app: FastAPI):
             detail="Unknown error.",
         )
 
-    @app.post("/api/copilot/refine_spec", tags=["Copilot"], openapi_extra=ALLOW_AGENT)
+    @app.post(
+        "/api/copilot/refine_spec",
+        tags=["Copilot"],
+        openapi_extra=agent_policy_require_approval("Run Copilot spec refinement?"),
+    )
     async def refine_spec(input: RefineSpecApiInput) -> RefineSpecApiOutput:
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
@@ -168,7 +176,9 @@ def connect_copilot_api(app: FastAPI):
         )
 
     @app.post(
-        "/api/copilot/generate_batch", tags=["Copilot"], openapi_extra=ALLOW_AGENT
+        "/api/copilot/generate_batch",
+        tags=["Copilot"],
+        openapi_extra=agent_policy_require_approval("Run Copilot batch generation?"),
     )
     async def generate_batch(input: GenerateBatchApiInput) -> GenerateBatchApiOutput:
         api_key = get_copilot_api_key()
@@ -195,7 +205,11 @@ def connect_copilot_api(app: FastAPI):
             detail="Unknown error.",
         )
 
-    @app.post("/api/copilot/question_spec", tags=["Copilot"], openapi_extra=ALLOW_AGENT)
+    @app.post(
+        "/api/copilot/question_spec",
+        tags=["Copilot"],
+        openapi_extra=agent_policy_require_approval("Run Copilot spec questioner?"),
+    )
     async def question_spec(
         input: SpecQuestionerApiInput,
     ) -> QuestionSet:
@@ -226,7 +240,9 @@ def connect_copilot_api(app: FastAPI):
     @app.post(
         "/api/copilot/refine_spec_with_question_answers",
         tags=["Copilot"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=agent_policy_require_approval(
+            "Run Copilot spec refinement with question answers?"
+        ),
     )
     async def submit_question_answers(
         request: SubmitAnswersRequest,
@@ -256,7 +272,7 @@ def connect_copilot_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
         tags=["Copilot"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=agent_policy_require_approval("Create spec with Copilot?"),
     )
     async def create_spec_with_copilot(
         project_id: Annotated[

@@ -2,7 +2,7 @@
   "method": "post",
   "path": "/api/projects/{project_id}/rag_configs/progress",
   "agent_policy": {
-    "permission": "allow",
+    "permission": "deny",
     "requires_approval": false
   }
 }
