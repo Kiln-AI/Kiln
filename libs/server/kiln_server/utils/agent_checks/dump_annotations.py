@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 
+import httpx
 from kiln_server.utils.agent_checks.policy import AgentPolicy
 from pydantic import ValidationError
 
@@ -25,13 +26,11 @@ def normalize_endpoint_filename(method: str, path: str) -> str:
 def load_openapi_spec(source: str) -> dict:
     """Load OpenAPI spec from URL or file path."""
     if source.startswith("http://") or source.startswith("https://"):
-        import httpx
-
         response = httpx.get(source)
         response.raise_for_status()
         return response.json()
     else:
-        with open(source) as f:
+        with open(source, encoding="utf-8") as f:
             return json.load(f)
 
 
@@ -64,7 +63,7 @@ def dump_annotations(source: str, target_folder: str) -> int:
 
             filename = normalize_endpoint_filename(method, path)
             filepath = os.path.join(target_folder, filename)
-            with open(filepath, "w") as f:
+            with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(
                     {
                         "method": method,
