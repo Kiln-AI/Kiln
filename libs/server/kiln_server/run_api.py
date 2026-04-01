@@ -25,6 +25,11 @@ from kiln_ai.utils.dataset_import import (
 from pydantic import BaseModel, ConfigDict, Field
 
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    DENY_AGENT,
+    agent_policy_require_approval,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +210,7 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
         summary="Get Run",
         tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_run(
         project_id: Annotated[
@@ -224,6 +230,7 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
         summary="Delete Run",
         tags=["Runs"],
+        openapi_extra=DENY_AGENT,
     )
     async def delete_run(
         project_id: Annotated[
@@ -244,6 +251,7 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/runs",
         summary="List Runs",
         tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_runs(
         project_id: Annotated[
@@ -261,6 +269,7 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/runs",
         summary="Create Run",
         tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def create_task_run(
         project_id: Annotated[
@@ -304,6 +313,7 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/runs_summaries",
         summary="List Run Summaries",
         tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_runs_summary(
         project_id: Annotated[
@@ -327,6 +337,7 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/runs/delete",
         summary="Delete Runs",
         tags=["Runs"],
+        openapi_extra=DENY_AGENT,
     )
     async def delete_runs(
         project_id: Annotated[
@@ -366,6 +377,7 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/run",
         summary="Execute Run",
         tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def run_task(
         project_id: Annotated[
@@ -405,6 +417,9 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
         summary="Update Run",
         tags=["Runs"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit run? Ensure you backup your project before allowing agentic edits."
+        ),
     )
     async def update_run(
         project_id: Annotated[
@@ -427,6 +442,7 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/runs/edit_tags",
         summary="Edit Run Tags",
         tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def edit_tags(
         project_id: Annotated[
@@ -490,6 +506,7 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/runs/bulk_upload",
         summary="Bulk Upload Runs",
         tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def bulk_upload(
         project_id: Annotated[
@@ -556,6 +573,7 @@ def connect_run_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/tags",
         summary="List Run Tags",
         tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_tags(
         project_id: Annotated[

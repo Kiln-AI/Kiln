@@ -10,6 +10,11 @@ from kiln_ai.datamodel.spec_properties import SpecProperties
 from pydantic import BaseModel, Field
 
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    DENY_AGENT,
+    agent_policy_require_approval,
+)
 from kiln_server.utils.spec_utils import (
     generate_spec_eval_filter_ids,
     generate_spec_eval_tags,
@@ -80,6 +85,7 @@ def connect_spec_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/specs",
         summary="Create Spec",
         tags=["Specs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def create_spec(
         project_id: Annotated[
@@ -144,6 +150,7 @@ def connect_spec_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/specs",
         summary="List Specs",
         tags=["Specs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_specs(
         project_id: Annotated[
@@ -161,6 +168,7 @@ def connect_spec_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
         summary="Get Spec",
         tags=["Specs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_spec(
         project_id: Annotated[
@@ -178,6 +186,9 @@ def connect_spec_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
         summary="Update Spec",
         tags=["Specs"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit spec? Ensure you backup your project before allowing agentic edits."
+        ),
     )
     async def update_spec(
         project_id: Annotated[
@@ -213,6 +224,7 @@ def connect_spec_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
         summary="Delete Spec",
         tags=["Specs"],
+        openapi_extra=DENY_AGENT,
     )
     async def delete_spec(
         project_id: Annotated[

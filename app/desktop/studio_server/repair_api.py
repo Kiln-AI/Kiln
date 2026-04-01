@@ -14,6 +14,7 @@ from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType
 from kiln_ai.utils.config import Config
 from kiln_server.run_api import model_provider_from_string, task_and_run_from_id
+from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
@@ -38,6 +39,7 @@ def connect_repair_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/generate_repair",
         summary="Generate Repair",
         tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def run_repair(
         project_id: Annotated[
@@ -127,6 +129,7 @@ def connect_repair_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/save_repair",
         summary="Save Repair",
         tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def post_repair_run(
         project_id: Annotated[

@@ -45,7 +45,10 @@ from kiln_ai.utils.config import Config
 from kiln_ai.utils.lock import shared_async_lock_manager
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
-from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    agent_policy_require_approval,
+)
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -340,6 +343,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config",
         tags=["Prompt Optimization"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def check_run_config(
         project_id: Annotated[
@@ -404,6 +408,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval",
         tags=["Prompt Optimization"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def check_eval(
         project_id: Annotated[
@@ -486,6 +491,9 @@ def connect_prompt_optimization_job_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start",
         tags=["Prompt Optimization"],
+        openapi_extra=agent_policy_require_approval(
+            "Running prompt optimizer uses many credits"
+        ),
     )
     async def start_prompt_optimization_job(
         project_id: Annotated[
@@ -604,6 +612,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs",
         tags=["Prompt Optimization"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def list_prompt_optimization_jobs(
         project_id: Annotated[
@@ -664,6 +673,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}",
         tags=["Prompt Optimization"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_prompt_optimization_job(
         project_id: Annotated[
@@ -708,7 +718,9 @@ def connect_prompt_optimization_job_api(app: FastAPI):
         return prompt_optimization_job
 
     @app.get(
-        "/api/prompt_optimization_jobs/{job_id}/status", tags=["Prompt Optimization"]
+        "/api/prompt_optimization_jobs/{job_id}/status",
+        tags=["Prompt Optimization"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_prompt_optimization_job_status(
         job_id: Annotated[str, Path(description="The unique identifier of the job.")],
@@ -749,7 +761,9 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             )
 
     @app.get(
-        "/api/prompt_optimization_jobs/{job_id}/result", tags=["Prompt Optimization"]
+        "/api/prompt_optimization_jobs/{job_id}/result",
+        tags=["Prompt Optimization"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_prompt_optimization_job_result(
         job_id: Annotated[str, Path(description="The unique identifier of the job.")],

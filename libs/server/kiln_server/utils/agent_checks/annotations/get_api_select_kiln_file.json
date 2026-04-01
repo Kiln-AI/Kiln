@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/select_kiln_file",
+  "agent_policy": {
+    "permission": "deny",
+    "requires_approval": false
+  }
+}

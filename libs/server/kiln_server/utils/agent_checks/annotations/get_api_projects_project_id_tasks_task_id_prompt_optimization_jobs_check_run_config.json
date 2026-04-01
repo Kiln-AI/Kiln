@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}
