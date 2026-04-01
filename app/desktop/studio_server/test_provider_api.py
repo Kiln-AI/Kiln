@@ -597,7 +597,7 @@ async def test_connect_docker_model_runner_api_endpoint(client):
     ) as mock_connect:
         mock_connect.return_value = mock_connection
 
-        response = client.get("/api/provider/docker_model_runner/connect")
+        response = client.post("/api/provider/docker_model_runner/connect")
 
         assert response.status_code == 200
         mock_connect.assert_called_once_with(None)
@@ -618,7 +618,7 @@ async def test_connect_docker_model_runner_api_endpoint_with_custom_url(client):
         mock_connect.return_value = mock_connection
 
         custom_url = "http://custom:8080/engines/llama.cpp"
-        response = client.get(
+        response = client.post(
             "/api/provider/docker_model_runner/connect",
             params={"docker_model_runner_custom_url": custom_url},
         )
@@ -1657,7 +1657,7 @@ async def test_save_openai_compatible_providers(client):
 
         response = client.post(
             "/api/provider/openai_compatible",
-            params={
+            json={
                 "name": "test_provider",
                 "base_url": "https://api.test.com",
                 "api_key": "test_key",
@@ -1692,7 +1692,7 @@ async def test_save_openai_compatible_providers_duplicate_name(client):
 
         response = client.post(
             "/api/provider/openai_compatible",
-            params={
+            json={
                 "name": "existing_provider",
                 "base_url": "https://api.test.com",
                 "api_key": "test_key",
@@ -1714,7 +1714,7 @@ async def test_save_openai_compatible_providers_new_array(client):
 
         response = client.post(
             "/api/provider/openai_compatible",
-            params={
+            json={
                 "name": "first_provider",
                 "base_url": "https://api.first.com",
                 "api_key": "first_key",
@@ -1749,7 +1749,7 @@ async def test_save_openai_compatible_providers_add_to_existing_array(client):
 
         response = client.post(
             "/api/provider/openai_compatible",
-            params={
+            json={
                 "name": "second_provider",
                 "base_url": "https://api.second.com",
                 "api_key": "second_key",

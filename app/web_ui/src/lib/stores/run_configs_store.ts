@@ -64,7 +64,7 @@ export async function load_task_run_configs(
 
     try {
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/run_configs/",
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs",
         {
           params: {
             path: {
@@ -131,7 +131,7 @@ export async function save_new_task_run_config(
   name: string,
 ): Promise<TaskRunConfig> {
   const { error, data } = await client.POST(
-    "/api/projects/{project_id}/tasks/{task_id}/task_run_config",
+    "/api/projects/{project_id}/tasks/{task_id}/run_configs",
     {
       params: {
         path: {
@@ -167,7 +167,7 @@ export async function update_task_default_run_config(
   default_run_config_id: string,
 ) {
   const { error } = await client.PATCH(
-    "/api/projects/{project_id}/task/{task_id}",
+    "/api/projects/{project_id}/tasks/{task_id}",
     {
       params: {
         path: {

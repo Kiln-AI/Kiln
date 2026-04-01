@@ -49,6 +49,8 @@ class EvalTemplateId(str, Enum):
 
 
 class EvalConfigType(str, Enum):
+    """The type of eval configuration, determining how scores are generated."""
+
     g_eval = "g_eval"
     llm_as_judge = "llm_as_judge"
 
@@ -316,12 +318,16 @@ class EvalConfig(KilnParentedModel, KilnParentModel, parent_of={"runs": EvalRun}
 
 
 class EvalDataType(str, Enum):
+    """The type of task output data to evaluate."""
+
     final_answer = "final_answer"
     full_trace = "full_trace"
     reference_answer = "reference_answer"
 
 
 class Eval(KilnParentedModel, KilnParentModel, parent_of={"configs": EvalConfig}):
+    """An evaluator definition that specifies what to evaluate and how scores should be produced."""
+
     name: FilenameString = Field(description="The name of the eval.")
     description: str | None = Field(
         default=None, description="The description of the eval"

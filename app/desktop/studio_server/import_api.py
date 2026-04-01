@@ -1,8 +1,9 @@
 import asyncio
 import tkinter as tk
 from tkinter import filedialog
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 
 
@@ -11,8 +12,12 @@ class KilnFileResponse(BaseModel):
 
 
 def connect_import_api(app: FastAPI, tk_root: tk.Tk | None = None):
-    @app.get("/api/select_kiln_file")
-    async def select_kiln_file(title: str = "Select Kiln File") -> KilnFileResponse:
+    @app.get("/api/select_kiln_file", tags=["Settings & Utilities"])
+    async def select_kiln_file(
+        title: Annotated[
+            str, Query(description="The title for the file dialog window.")
+        ] = "Select Kiln File",
+    ) -> KilnFileResponse:
         if tk_root is None:
             raise HTTPException(
                 status_code=400,

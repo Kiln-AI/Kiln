@@ -88,7 +88,7 @@ Communicate this decision to the user:
 
 ## Pushback
 
-→ Load [references/pushback.md](references/pushback.md) if not already loaded.
+→ Load [pushback.md](.cursor/skills/specs/references/pushback.md) if not already loaded.
 
 Challenge technical decisions:
 

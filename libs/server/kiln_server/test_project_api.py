@@ -36,7 +36,7 @@ def test_create_project_success(client):
         patch("kiln_ai.datamodel.Project.save_to_file"),
     ):
         response = client.post(
-            "/api/project",
+            "/api/projects",
             json={
                 "name": "Test Project",
                 "description": "A test project",
@@ -54,7 +54,7 @@ def test_create_project_success(client):
 
 
 def test_create_project_missing_name(client):
-    response = client.post("/api/project", json={"description": "A test project"})
+    response = client.post("/api/projects", json={"description": "A test project"})
 
     assert response.status_code == 422
     assert '"Field required"' in response.text
@@ -62,7 +62,7 @@ def test_create_project_missing_name(client):
 
 def test_create_project_invalid_description(client):
     response = client.post(
-        "/api/project",
+        "/api/projects",
         json={"name": "Test Project", "description": 123},
     )
 
@@ -73,7 +73,7 @@ def test_create_project_invalid_description(client):
 def test_create_project_existing_name(client):
     with patch("os.path.exists", return_value=True):
         response = client.post(
-            "/api/project",
+            "/api/projects",
             json={
                 "name": "Existing Project",
                 "description": "This project already exists",
@@ -95,7 +95,7 @@ def test_create_and_load_project(client):
         ):
             # Create a new project
             response = client.post(
-                "/api/project",
+                "/api/projects",
                 json={
                     "name": "Test Project",
                     "description": "A test project description",
@@ -419,7 +419,7 @@ def test_update_project_success(client, tmp_path):
         return_value=original_project,
     ) as mock_project_from_id:
         response = client.patch(
-            f"/api/project/{original_project.id}", json=updated_data
+            f"/api/projects/{original_project.id}", json=updated_data
         )
 
     assert response.status_code == 200
@@ -451,7 +451,7 @@ def test_update_project_partial(client, tmp_path):
         return_value=original_project,
     ) as mock_project_from_id:
         response = client.patch(
-            f"/api/project/{original_project.id}", json=updated_data
+            f"/api/projects/{original_project.id}", json=updated_data
         )
 
     assert response.status_code == 200
@@ -469,7 +469,7 @@ def test_update_project_partial(client, tmp_path):
 
 
 def test_update_project_not_found(client):
-    response = client.patch("/api/project/non-existent-id", json={})
+    response = client.patch("/api/projects/non-existent-id", json={})
 
     assert response.status_code == 404
     assert response.json() == {"message": "Project not found. ID: non-existent-id"}
@@ -490,7 +490,7 @@ def test_update_project_invalid_data(client, tmp_path):
         return_value=original_project,
     ) as mock_project_from_id:
         response = client.patch(
-            f"/api/project/{original_project.id}", json={"name": 123}
+            f"/api/projects/{original_project.id}", json={"name": 123}
         )
 
     assert response.status_code == 422

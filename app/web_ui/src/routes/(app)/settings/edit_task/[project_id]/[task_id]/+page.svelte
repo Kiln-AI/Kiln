@@ -12,7 +12,7 @@
 
   let delete_dialog: DeleteDialog | null = null
   let saved: boolean = false
-  $: delete_url = `/api/projects/${project_id}/task/${task_id}`
+  $: delete_url = `/api/projects/${project_id}/tasks/${task_id}`
   function after_delete() {
     // This prevents the page from showing the "are you sure you want to leave, changes will be lost" message.
     // It's already deleted so it's misleading.

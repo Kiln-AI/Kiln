@@ -131,7 +131,7 @@
     try {
       loading_eval = true
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
         {
           params: {
             path: {
@@ -192,7 +192,7 @@
       create_evaluator_loading = true
 
       const { data, error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/create_eval_config",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/create_eval_config",
         {
           params: {
             path: {
