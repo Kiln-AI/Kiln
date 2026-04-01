@@ -16,15 +16,18 @@ from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.prompt import Prompt
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.tool_id import (
     KILN_TASK_TOOL_ID_PREFIX,
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
     RAG_TOOL_ID_PREFIX,
+    SKILL_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     kiln_task_server_id_from_tool_id,
     mcp_server_and_tool_name_from_id,
+    skill_id_from_tool_id,
 )
 
 console = Console()
@@ -232,10 +235,12 @@ def collect_subtask_ids_from_tools(
 
 def classify_tool_id(
     tool_id: str,
-) -> Literal["builtin", "kiln_task", "mcp_remote", "mcp_local", "rag", "unknown"]:
+) -> Literal[
+    "builtin", "kiln_task", "mcp_remote", "mcp_local", "rag", "skill", "unknown"
+]:
     """Classify a tool ID into its type category.
 
-    Returns one of: 'builtin', 'kiln_task', 'mcp_remote', 'mcp_local', 'rag', 'unknown'
+    Returns one of: 'builtin', 'kiln_task', 'mcp_remote', 'mcp_local', 'rag', 'skill', 'unknown'
     """
     if tool_id in [member.value for member in KilnBuiltInToolId]:
         return "builtin"
@@ -247,6 +252,8 @@ def classify_tool_id(
         return "mcp_local"
     elif tool_id.startswith(RAG_TOOL_ID_PREFIX):
         return "rag"
+    elif tool_id.startswith(SKILL_TOOL_ID_PREFIX):
+        return "skill"
     else:
         return "unknown"
 
@@ -292,6 +299,9 @@ def validate_tools(tasks: list[Task], run_configs: dict[str, TaskRunConfig]) -> 
                 if task.name not in mcp_local_task_names:
                     has_mcp_local = True
                     mcp_local_task_names.append(task.name)
+                pass
+            elif tool_type == "skill":
+                # Skills are exported separately
                 pass
             elif tool_type == "rag":
                 console.print(f"[red]Error:[/red] Task '{task.name}' uses a RAG tool.")
@@ -365,6 +375,70 @@ def collect_required_tool_servers(
                 server_ids.add(server_id)
 
     return server_ids
+
+
+def collect_required_skills(
+    tasks: list[Task], run_configs: dict[str, TaskRunConfig]
+) -> set[str]:
+    """Collect the IDs of skills needed by the tasks.
+
+    Args:
+        tasks: List of tasks to check
+        run_configs: Dictionary mapping task IDs to their run configs
+
+    Returns:
+        Set of skill IDs that need to be exported
+    """
+    skill_ids: set[str] = set()
+
+    for task in tasks:
+        run_config = run_configs.get(task.id)  # type: ignore
+        if not run_config:
+            continue
+
+        tools = get_tools_from_run_config(run_config)
+        for tool_id in tools:
+            tool_type = classify_tool_id(tool_id)
+            if tool_type == "skill":
+                skill_id = skill_id_from_tool_id(tool_id)
+                skill_ids.add(skill_id)
+
+    return skill_ids
+
+
+def export_skills(
+    skill_ids: set[str],
+    project: Project,
+    exported_project: Project,
+) -> None:
+    """Export skills needed by the tasks.
+
+    Copies each skill's entire directory (skill.kiln, SKILL.md, references/, assets/)
+    to the exported project.
+
+    Args:
+        skill_ids: Set of skill IDs to export
+        project: The original project
+        exported_project: The exported project to copy skills into
+    """
+    if not skill_ids:
+        return
+
+    if exported_project.path is None:
+        raise ValueError("Exported project path is not set")
+
+    for skill in project.skills():
+        if skill.id not in skill_ids:
+            continue
+        if skill.path is None:
+            raise ValueError(f"Skill '{skill.name}' path is not set")
+
+        folder_name = skill.path.parent.name
+        dest_dir = exported_project.path.parent / "skills" / folder_name
+        shutil.copytree(skill.path.parent, dest_dir)
+
+        exported_skill = Skill.load_from_file(dest_dir / "skill.kiln")
+        exported_skill.parent = exported_project
 
 
 def is_dynamic_prompt(prompt_id: str) -> bool:
@@ -729,8 +803,9 @@ def package_project(
     validate_tools(validated_tasks, run_configs)
     console.print("[green]✓[/green] Validated tools")
 
-    # 6. Collect required tool servers
+    # 6. Collect required tool servers and skills
     required_server_ids = collect_required_tool_servers(validated_tasks, run_configs)
+    required_skill_ids = collect_required_skills(validated_tasks, run_configs)
 
     # 7. Build and validate prompts
     task_prompts = validate_and_build_prompts(validated_tasks, run_configs)
@@ -781,7 +856,14 @@ def package_project(
                 f"[green]✓[/green] Exported {len(required_server_ids)} tool server(s)"
             )
 
-        # 6. Create zip file
+        # 6. Export required skills
+        export_skills(required_skill_ids, project, exported_project)
+        if required_skill_ids:
+            console.print(
+                f"[green]✓[/green] Exported {len(required_skill_ids)} skill(s)"
+            )
+
+        # 7. Create zip file
         create_zip(temp_dir, output)
         console.print(f"[green]✓[/green] Created zip file: {output}")
 
@@ -949,6 +1031,7 @@ def package_project_for_training(
         run_configs[task.id] = run_config  # type: ignore
 
     required_server_ids = collect_required_tool_servers(validated_tasks, run_configs)
+    required_skill_ids = collect_required_skills(validated_tasks, run_configs)
 
     task_prompts = validate_and_build_prompts_noncli(validated_tasks, run_configs)
 
@@ -975,6 +1058,7 @@ def package_project_for_training(
         validate_exported_prompts(task_prompts, exported_tasks, exported_run_configs)
 
         export_tool_servers(required_server_ids, project, exported_project)
+        export_skills(required_skill_ids, project, exported_project)
 
         for task in validated_tasks:
             exported_task = exported_tasks[task.id]  # type: ignore
