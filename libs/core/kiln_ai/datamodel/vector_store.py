@@ -11,6 +11,8 @@ if TYPE_CHECKING:
 
 
 class VectorStoreType(str, Enum):
+    """The type of vector store backend."""
+
     LANCE_DB_FTS = "lancedb_fts"
     LANCE_DB_HYBRID = "lancedb_hybrid"
     LANCE_DB_VECTOR = "lancedb_vector"
@@ -42,6 +44,8 @@ class LanceDBConfigHybridProperties(LanceDBConfigVectorProperties, total=True):
 
 
 class VectorStoreConfig(KilnParentedModel):
+    """Configuration for a vector store used to index and search document embeddings."""
+
     name: FilenameString = Field(
         description="A name for your own reference to identify the vector store config.",
     )

@@ -32,7 +32,7 @@
       submitting = true
       error = null
       const { data, error: api_error } = await client.POST(
-        "/api/projects/{project_id}/task/{task_id}/prompt",
+        "/api/projects/{project_id}/tasks/{task_id}/prompts",
         {
           params: {
             path: {

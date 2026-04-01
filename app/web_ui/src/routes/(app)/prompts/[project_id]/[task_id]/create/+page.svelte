@@ -28,7 +28,7 @@
     if (generator_id) {
       try {
         const { data: prompt_response, error: get_error } = await client.GET(
-          "/api/projects/{project_id}/task/{task_id}/gen_prompt/{prompt_id}",
+          "/api/projects/{project_id}/tasks/{task_id}/gen_prompt/{prompt_id}",
           {
             params: {
               path: {

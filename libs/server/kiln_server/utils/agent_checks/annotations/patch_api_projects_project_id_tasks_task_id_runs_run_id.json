@@ -1,0 +1,9 @@
+{
+  "method": "patch",
+  "path": "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": true,
+    "approval_description": "Allow agent to edit run? Ensure you backup your project before allowing agentic edits."
+  }
+}

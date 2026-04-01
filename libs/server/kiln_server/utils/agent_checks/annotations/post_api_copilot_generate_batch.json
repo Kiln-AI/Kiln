@@ -1,0 +1,8 @@
+{
+  "method": "post",
+  "path": "/api/copilot/generate_batch",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

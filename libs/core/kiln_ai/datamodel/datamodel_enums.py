@@ -51,10 +51,10 @@ class StructuredOutputMode(str, Enum):
 
 class FineTuneStatusType(str, Enum):
     """
-    The status type of a fine-tune (running, completed, failed, etc).
+    The status type of a fine-tune job.
     """
 
-    unknown = "unknown"  # server error
+    unknown = "unknown"
     pending = "pending"
     running = "running"
     completed = "completed"

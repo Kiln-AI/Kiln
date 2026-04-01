@@ -151,7 +151,7 @@ describe("SynthDataGuidanceDataModel", () => {
       )
 
       expect(mockClient.GET).toHaveBeenCalledWith(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
         {
           params: {
             path: {

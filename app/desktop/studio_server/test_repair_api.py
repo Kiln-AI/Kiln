@@ -138,7 +138,7 @@ def test_repair_run_success(
 
     # Act
     response = client.post(
-        "/api/projects/proj-ID/tasks/task-ID/runs/run-ID/run_repair",
+        "/api/projects/proj-ID/tasks/task-ID/runs/run-ID/generate_repair",
         json=input_data.model_dump(),
     )
 
@@ -165,7 +165,7 @@ def test_save_repair_success(
 
     # Act
     response = client.post(
-        "/api/projects/proj-ID/tasks/task-ID/runs/run-ID/repair",
+        "/api/projects/proj-ID/tasks/task-ID/runs/run-ID/save_repair",
         json=json.loads(input_data.model_dump_json()),
     )
 
@@ -197,7 +197,7 @@ def test_repair_run_missing_model_info(
 
     # Act
     response = client.post(
-        "/api/projects/proj-ID/tasks/task-ID/runs/run-ID/run_repair",
+        "/api/projects/proj-ID/tasks/task-ID/runs/run-ID/generate_repair",
         json=input_data.model_dump(),
     )
 
@@ -221,7 +221,7 @@ def test_repair_run_human_source(
 
     # Act
     response = client.post(
-        "/api/projects/proj-ID/tasks/task-ID/runs/run-ID/repair",
+        "/api/projects/proj-ID/tasks/task-ID/runs/run-ID/save_repair",
         json=json.loads(input_data.model_dump_json()),
     )
 

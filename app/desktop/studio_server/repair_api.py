@@ -1,4 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from typing import Annotated
+
+from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.ml_model_list import (
@@ -12,6 +14,7 @@ from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType
 from kiln_ai.utils.config import Config
 from kiln_server.run_api import model_provider_from_string, task_and_run_from_id
+from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
@@ -25,15 +28,33 @@ class RepairTaskApiInput(BaseModel):
 
 
 class RepairRunPost(BaseModel):
-    repair_run: TaskRun
-    evaluator_feedback: str
+    """Request to save a repair for a task run."""
+
+    repair_run: TaskRun = Field(description="The repaired task run.")
+    evaluator_feedback: str = Field(description="The feedback that guided the repair.")
 
 
 def connect_repair_api(app: FastAPI):
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/run_repair")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/generate_repair",
+        summary="Generate Repair",
+        tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def run_repair(
-        project_id: str, task_id: str, run_id: str, input: RepairTaskApiInput
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_id: Annotated[
+            str, Path(description="The unique identifier of the task run.")
+        ],
+        input: RepairTaskApiInput,
     ) -> TaskRun:
+        """Invoke an AI model to generate a repaired output for a task run based on evaluator feedback. Returns the repair as a new TaskRun without persisting it."""
         task, run = task_and_run_from_id(project_id, task_id, run_id)
         repair_task = RepairTaskRun(task)
         repair_task_input = RepairTaskRun.build_repair_task_input(
@@ -104,10 +125,26 @@ def connect_repair_api(app: FastAPI):
         repair_run = await adapter.invoke(repair_task_input.model_dump())
         return repair_run
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/repair")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/save_repair",
+        summary="Save Repair",
+        tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def post_repair_run(
-        project_id: str, task_id: str, run_id: str, input: RepairRunPost
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_id: Annotated[
+            str, Path(description="The unique identifier of the task run.")
+        ],
+        input: RepairRunPost,
     ) -> TaskRun:
+        """Persist a repaired output for a task run. Use after reviewing the result from Generate Repair or creating a manual repair."""
         _, run = task_and_run_from_id(project_id, task_id, run_id)
 
         # manually edited runs are human but the user id is not set

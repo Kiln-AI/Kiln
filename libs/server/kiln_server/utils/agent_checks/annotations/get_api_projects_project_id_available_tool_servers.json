@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/projects/{project_id}/available_tool_servers",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

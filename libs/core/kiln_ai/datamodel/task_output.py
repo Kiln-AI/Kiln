@@ -56,7 +56,10 @@ class TaskOutputRating(KilnBaseModel):
     - pass_fail_critical: tri-state (1.0 = pass, 0.0 = fail, -1.0 = critical fail)
     """
 
-    type: TaskOutputRatingType = Field(default=TaskOutputRatingType.five_star)
+    type: TaskOutputRatingType = Field(
+        default=TaskOutputRatingType.five_star,
+        description="The rating system used for this rating.",
+    )
     value: float | None = Field(
         description="The rating value. Interpretation depends on rating type:\n- five_star: 1-5 stars\n- pass_fail: 1.0 (pass) or 0.0 (fail)\n- pass_fail_critical: 1.0 (pass), 0.0 (fail), or -1.0 (critical fail)",
         default=None,
@@ -197,7 +200,7 @@ class DataSource(BaseModel):
     this includes file information.
     """
 
-    type: DataSourceType
+    type: DataSourceType = Field(description="The type of data source.")
     properties: Dict[str, str | int | float] = Field(
         default={},
         description="Properties describing the data source. For synthetic things like model. For human: the human's name. For file_import: file information.",

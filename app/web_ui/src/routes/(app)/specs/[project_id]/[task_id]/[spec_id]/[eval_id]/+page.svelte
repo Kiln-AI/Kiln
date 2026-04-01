@@ -84,7 +84,7 @@
     try {
       eval_loading = true
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
         {
           params: {
             path: {
@@ -111,7 +111,7 @@
       eval_progress_loading = true
       eval_progress = null
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/progress",
         {
           params: {
             path: {
@@ -744,8 +744,8 @@
   <EditDialog
     bind:this={edit_dialog}
     name="Eval"
-    patch_url={`/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}`}
-    delete_url={`/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}`}
+    patch_url={`/api/projects/${project_id}/tasks/${task_id}/evals/${eval_id}`}
+    delete_url={`/api/projects/${project_id}/tasks/${task_id}/evals/${eval_id}`}
     after_delete={() => {
       goto(`/specs/${project_id}/${task_id}`)
     }}
