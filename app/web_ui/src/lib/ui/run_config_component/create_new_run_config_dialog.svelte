@@ -55,13 +55,12 @@
     submitting = true
     try {
       save_config_error = null
-      const saved_run_config = await run_config_component?.save_new_run_config()
-      if (saved_run_config) {
-        new_run_config_created?.(saved_run_config)
-        close() // Only close on success
-      } else {
-        throw new Error("Resulting saved run config not found.")
+      if (!run_config_component) {
+        throw new Error("Run configuration component is not loaded")
       }
+      const saved_run_config = await run_config_component.save_new_run_config()
+      new_run_config_created?.(saved_run_config)
+      close() // Only close on success
     } catch (e) {
       save_config_error = createKilnError(e)
     } finally {
