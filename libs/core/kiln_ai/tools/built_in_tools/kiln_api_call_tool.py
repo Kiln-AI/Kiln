@@ -24,17 +24,9 @@ class KilnApiCallTool(KilnTool):
 
     @staticmethod
     def _build_description() -> str:
-        return """Call the Kiln REST API. Makes an HTTP request and returns the response.
+        return """Call the Kiln REST API. Makes an HTTP request and returns JSON with status_code and body.
 
-**Parameters:** method (GET/POST/PATCH/DELETE), url_path (full API path — exact paths are in the endpoint docs), body (JSON string or object for POST/PATCH), jq_filter (optional jq expression applied to 2xx responses).
-
-**Before every call:** load the endpoint's doc from `references/knowledge/api_docs/<endpoint>.md` when the active knowledge file's API Docs section lists it — those are mandatory imports, not suggestions. For simple GET list endpoints NOT listed in the knowledge file (list projects, list tasks), `references/knowledge/api_reference.md` provides sufficient context. Do NOT guess request bodies, response schemas, or jq filters — wrong paths and wrong field names waste calls.
-
-**jq_filter:** Always use when listing or scanning to reduce response size. Only applied to successful (2xx) responses; errors are returned in full. If the filter produces no output the body will be an empty string. Endpoint docs list the properties available for filtering.
-
-**Response:** JSON object with `status_code` (integer) and `body` (string) fields.
-
-Load `references/knowledge/api_reference.md` for broad knowledge about the API."""
+Endpoint paths, request schemas, response fields, and jq filters are defined in per-endpoint documentation — not here. Load the endpoint doc before calling."""
 
     @staticmethod
     def _build_parameters_schema() -> dict[str, Any]:
@@ -48,14 +40,14 @@ Load `references/knowledge/api_reference.md` for broad knowledge about the API."
                 },
                 "url_path": {
                     "type": "string",
-                    "description": "API path appended to the base URL. Exact paths are in the endpoint docs — load the relevant doc from references/knowledge/api_docs/ BEFORE calling. Do not guess paths or schemas.",
+                    "description": "API path. Correct paths are in the endpoint documentation.",
                 },
                 "body": {
-                    "description": "Request body for POST/PATCH requests. Can be a JSON string, a JSON object, or a JSON array. Objects and arrays are automatically serialized.",
+                    "description": "Request body for POST/PATCH. JSON string, object, or array — auto-serialized. Schema is in the endpoint doc.",
                 },
                 "jq_filter": {
                     "type": "string",
-                    "description": "jq filter to extract specific fields from 2xx responses. Always use when listing or scanning to reduce output size. Available properties and correct field names are in the endpoint doc.",
+                    "description": "Optional jq expression applied to successful (2xx) responses.",
                 },
             },
             "required": ["method", "url_path"],
