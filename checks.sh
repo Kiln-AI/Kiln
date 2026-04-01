@@ -50,9 +50,7 @@ else
 fi
 
 echo "${headerStart}OpenAPI Schema Check${headerEnd}"
-cd app/web_ui/src/lib/
-./check_schema.sh --allow-skip
-cd ../../../..
+app/web_ui/src/lib/check_schema.sh
 
 echo "${headerStart}Web UI: format, lint, check${headerEnd}"
 changed_files=$(git diff --name-only --staged)
