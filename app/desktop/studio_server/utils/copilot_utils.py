@@ -198,7 +198,7 @@ def create_task_run_from_reviewed(
             source=data_source,
             rating=TaskOutputRating(
                 type=TaskOutputRatingType.five_star,
-                value=5.0,  # Default value, actual rating is in requirement_ratings
+                value=None,  # Actual rating is in requirement_ratings
                 requirement_ratings={
                     rating_key: RequirementRating(
                         type=TaskOutputRatingType.pass_fail,
