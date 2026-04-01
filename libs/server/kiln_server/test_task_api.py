@@ -60,7 +60,7 @@ def test_create_task_success(client, tmp_path):
         )
         mock_save.return_value = None
 
-        response = client.post("/api/projects/project1-id/task", json=task_data)
+        response = client.post("/api/projects/project1-id/tasks", json=task_data)
 
     assert response.status_code == 200
     res = response.json()
@@ -78,7 +78,7 @@ def test_create_task_project_not_found(client, tmp_path):
         "description": "This is a test task",
     }
 
-    response = client.post("/api/projects/FAKEPROJECTID/task", json=task_data)
+    response = client.post("/api/projects/FAKEPROJECTID/tasks", json=task_data)
 
     assert response.status_code == 404
     assert response.json()["message"] == "Project not found. ID: FAKEPROJECTID"
@@ -98,7 +98,7 @@ def test_create_task_project_load_error(client, tmp_path):
             status_code=404, detail="Project not found"
         )
 
-        response = client.post("/api/projects/FAKEPROJECTID/task", json=task_data)
+    response = client.post("/api/projects/FAKEPROJECTID/tasks", json=task_data)
 
     assert response.status_code == 404
     assert "Project not found" in response.json()["message"]
@@ -120,7 +120,7 @@ def test_create_task_real_project(client, tmp_path):
     with patch("kiln_server.task_api.project_from_id") as mock_project_from_id:
         mock_project_from_id.return_value = project
 
-        response = client.post("/api/projects/project1-id/task", json=task_data)
+        response = client.post("/api/projects/project1-id/tasks", json=task_data)
 
         assert response.status_code == 200
         res = response.json()
@@ -142,7 +142,7 @@ def test_create_task_real_project(client, tmp_path):
             "description": "This is an updated task description",
         }
         response = client.patch(
-            f"/api/projects/project1-id/task/{task_from_disk.id}",
+            f"/api/projects/project1-id/tasks/{task_from_disk.id}",
             json=update_data,
         )
         assert response.status_code == 200
@@ -231,7 +231,7 @@ def test_update_task_input_schema_error(client, project_and_task):
     with patch("kiln_server.task_api.project_from_id") as mock_project_from_id:
         mock_project_from_id.return_value = project
         response = client.patch(
-            f"/api/projects/{project.id}/task/{task.id}", json=update_data
+            f"/api/projects/{project.id}/tasks/{task.id}", json=update_data
         )
 
     assert response.status_code == 400
@@ -248,7 +248,7 @@ def test_update_task_output_schema_error(client, project_and_task):
     with patch("kiln_server.task_api.project_from_id") as mock_project_from_id:
         mock_project_from_id.return_value = project
         response = client.patch(
-            f"/api/projects/{project.id}/task/{task.id}", json=update_data
+            f"/api/projects/{project.id}/tasks/{task.id}", json=update_data
         )
 
     assert response.status_code == 400
@@ -265,7 +265,7 @@ def test_update_task_id_mismatch_error(client, project_and_task):
     with patch("kiln_server.task_api.project_from_id") as mock_project_from_id:
         mock_project_from_id.return_value = project
         response = client.patch(
-            f"/api/projects/{project.id}/task/{task.id}", json=update_data
+            f"/api/projects/{project.id}/tasks/{task.id}", json=update_data
         )
 
     assert response.status_code == 400
@@ -288,11 +288,11 @@ def test_update_task_validation_error(client, project_and_task):
         mock_project_from_id.return_value = project
         mock_validate.return_value = None
         response = client.patch(
-            f"/api/projects/{project.id}/task/{task.id}", json=update_data
+            f"/api/projects/{project.id}/tasks/{task.id}", json=update_data
         )
 
     assert response.status_code == 400
-    assert response.json()["message"] == "Failed to create task."
+    assert response.json()["message"] == "Failed to update task."
 
 
 def test_update_task_unexpected_return_type(client, project_and_task):
@@ -309,7 +309,7 @@ def test_update_task_unexpected_return_type(client, project_and_task):
         mock_project_from_id.return_value = project
         mock_validate.return_value = MagicMock()  # Return a non-Task object
         response = client.patch(
-            f"/api/projects/{project.id}/task/{task.id}", json=update_data
+            f"/api/projects/{project.id}/tasks/{task.id}", json=update_data
         )
 
     assert response.status_code == 500
@@ -500,7 +500,7 @@ def test_delete_task_success(client, project_and_task):
         assert response.status_code == 200
 
         # Delete the task
-        response = client.delete(f"/api/projects/{project.id}/task/{task.id}")
+        response = client.delete(f"/api/projects/{project.id}/tasks/{task.id}")
         assert response.status_code == 200
 
         # Verify the task was deleted
@@ -559,7 +559,7 @@ def test_delete_task_archives_kiln_task_tools(client, project_and_task):
         mock_task_from_id.return_value = task
 
         # Delete the task
-        response = client.delete(f"/api/projects/{project.id}/task/{task.id}")
+        response = client.delete(f"/api/projects/{project.id}/tasks/{task.id}")
 
     assert response.status_code == 200
 
@@ -604,7 +604,7 @@ def test_delete_task_no_matching_kiln_task_tools(client, project_and_task):
         mock_task_from_id.return_value = task
 
         # Delete the task
-        response = client.delete(f"/api/projects/{project.id}/task/{task.id}")
+        response = client.delete(f"/api/projects/{project.id}/tasks/{task.id}")
 
     assert response.status_code == 200
 
@@ -630,7 +630,7 @@ def test_delete_task_no_external_tool_servers(client, project_and_task):
         mock_task_from_id.return_value = task
 
         # Delete the task
-        response = client.delete(f"/api/projects/{project.id}/task/{task.id}")
+        response = client.delete(f"/api/projects/{project.id}/tasks/{task.id}")
 
     assert response.status_code == 200
 
@@ -665,7 +665,7 @@ def test_delete_task_archive_error_handling(client, project_and_task):
 
         # Delete the task - should raise TypeError
         with pytest.raises(TypeError, match="Expected archiveable tool task server"):
-            client.delete(f"/api/projects/{project.id}/task/{task.id}")
+            client.delete(f"/api/projects/{project.id}/tasks/{task.id}")
 
 
 def test_delete_task_parent_project_none(client, project_and_task):
@@ -681,6 +681,6 @@ def test_delete_task_parent_project_none(client, project_and_task):
         mock_task_from_id.return_value = task
 
         # Delete the task
-        response = client.delete(f"/api/projects/{project.id}/task/{task.id}")
+        response = client.delete(f"/api/projects/{project.id}/tasks/{task.id}")
 
     assert response.status_code == 200

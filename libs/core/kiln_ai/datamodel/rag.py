@@ -10,6 +10,8 @@ if TYPE_CHECKING:
 
 
 class RagConfig(KilnParentedModel):
+    """Configuration for Retrieval-Augmented Generation (RAG) on a project's documents."""
+
     name: FilenameString = Field(
         description="A name to identify this RAG configuration for your own reference.",
     )

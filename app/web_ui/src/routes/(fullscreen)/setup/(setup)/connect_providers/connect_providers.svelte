@@ -464,7 +464,7 @@
 
     let data: OllamaConnection | null = null
     try {
-      const { data: req_data, error: req_error } = await client.GET(
+      const { data: req_data, error: req_error } = await client.POST(
         "/api/provider/ollama/connect",
         {
           params: {
@@ -553,7 +553,7 @@
 
     let data: DockerModelRunnerConnection | null = null
     try {
-      const { data: req_data, error: req_error } = await client.GET(
+      const { data: req_data, error: req_error } = await client.POST(
         "/api/provider/docker_model_runner/connect",
         {
           params: {
@@ -813,12 +813,10 @@
       const { error: save_error } = await client.POST(
         "/api/provider/openai_compatible",
         {
-          params: {
-            query: {
-              name: new_provider_name,
-              base_url: new_provider_base_url,
-              api_key: new_provider_api_key,
-            },
+          body: {
+            name: new_provider_name,
+            base_url: new_provider_base_url,
+            api_key: new_provider_api_key,
           },
         },
       )

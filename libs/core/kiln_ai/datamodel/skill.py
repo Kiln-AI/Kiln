@@ -28,10 +28,10 @@ class Skill(KilnParentedModel):
     """
 
     name: SkillNameString = Field(
-        description="Skill name. Kebab-case: lowercase alphanumeric with hyphens, 1-64 chars.",
+        description="Skill name. Kebab-case: lowercase alphanumeric with hyphens.",
     )
     description: str = Field(
-        description="Description of what the skill does and when to use it. 1-1024 chars.",
+        description="Description of what the skill does and when to use it.",
         min_length=1,
         max_length=1024,
     )

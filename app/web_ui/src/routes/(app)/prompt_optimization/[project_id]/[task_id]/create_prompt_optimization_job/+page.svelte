@@ -344,7 +344,7 @@
         }
 
         const { data: configs_data, error: configs_error } = await client.GET(
-          "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs",
+          "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs",
           {
             params: {
               path: {
@@ -619,7 +619,7 @@
           const eval_id = item.eval.id
           if (!eval_id) return { eval_id: null as string | null, configs: [] }
           const { data: configs_data } = await client.GET(
-            "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs",
+            "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs",
             {
               params: {
                 path: {

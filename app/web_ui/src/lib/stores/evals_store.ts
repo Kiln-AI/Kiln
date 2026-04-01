@@ -11,7 +11,7 @@ export async function set_current_eval_config(
   const config_id = eval_config_id === null ? "None" : eval_config_id
 
   const { data, error } = await client.POST(
-    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/set_current_eval_config/{eval_config_id}",
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/set_current_eval_config/{eval_config_id}",
     {
       params: {
         path: {

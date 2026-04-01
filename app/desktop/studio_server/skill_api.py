@@ -1,8 +1,8 @@
 import logging
 from datetime import datetime
-from typing import List
+from typing import Annotated, List
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.utils.validation import SkillNameString
 from kiln_server.project_api import project_from_id
@@ -12,27 +12,51 @@ logger = logging.getLogger(__name__)
 
 
 class SkillCreationRequest(BaseModel):
-    name: SkillNameString
-    description: str = Field(min_length=1, max_length=1024)
-    body: str = Field(min_length=1)
+    """Request to create a new skill."""
+
+    name: SkillNameString = Field(description="The name of the skill.")
+    description: str = Field(
+        min_length=1,
+        max_length=1024,
+        description="What the skill does and when to use it.",
+    )
+    body: str = Field(min_length=1, description="The markdown body of the skill.")
 
 
 class SkillUpdateRequest(BaseModel):
-    is_archived: bool | None = None
+    """Request to update a skill."""
+
+    is_archived: bool | None = Field(
+        default=None, description="Whether the skill is archived."
+    )
 
 
 class SkillResponse(BaseModel):
-    id: str | None = None
-    name: str
-    description: str
-    is_archived: bool = False
-    created_by: str | None = None
-    created_at: datetime | None = None
+    """A skill with its metadata."""
+
+    id: str | None = Field(
+        default=None, description="The unique identifier of the skill."
+    )
+    name: str = Field(description="The human-readable name of the skill.")
+    description: str = Field(description="What the skill does.")
+    is_archived: bool = Field(
+        default=False, description="Whether the skill is archived."
+    )
+    created_by: str | None = Field(
+        default=None, description="The user who created the skill."
+    )
+    created_at: datetime | None = Field(
+        default=None, description="When the skill was created."
+    )
 
 
 class SkillContentResponse(BaseModel):
-    skill_md: str
-    body: str
+    """The full content of a skill including its markdown body."""
+
+    skill_md: str = Field(
+        description="The full SKILL.md content including frontmatter."
+    )
+    body: str = Field(description="The markdown body of the skill.")
 
 
 def skill_to_response(skill: Skill) -> SkillResponse:
@@ -48,18 +72,36 @@ def _get_skill(project_id: str, skill_id: str) -> Skill:
 
 
 def connect_skill_api(app: FastAPI):
-    @app.get("/api/projects/{project_id}/skills")
-    async def get_skills(project_id: str) -> List[SkillResponse]:
+    @app.get("/api/projects/{project_id}/skills", tags=["Skills"])
+    async def get_skills(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+    ) -> List[SkillResponse]:
         project = project_from_id(project_id)
         return [skill_to_response(s) for s in project.skills(readonly=True)]
 
-    @app.get("/api/projects/{project_id}/skills/{skill_id}")
-    async def get_skill(project_id: str, skill_id: str) -> SkillResponse:
+    @app.get("/api/projects/{project_id}/skills/{skill_id}", tags=["Skills"])
+    async def get_skill(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        skill_id: Annotated[
+            str, Path(description="The unique identifier of the skill.")
+        ],
+    ) -> SkillResponse:
         skill = _get_skill(project_id, skill_id)
         return skill_to_response(skill)
 
-    @app.get("/api/projects/{project_id}/skills/{skill_id}/content")
-    async def get_skill_content(project_id: str, skill_id: str) -> SkillContentResponse:
+    @app.get("/api/projects/{project_id}/skills/{skill_id}/content", tags=["Skills"])
+    async def get_skill_content(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        skill_id: Annotated[
+            str, Path(description="The unique identifier of the skill.")
+        ],
+    ) -> SkillContentResponse:
         project = project_from_id(project_id)
         skill = Skill.from_id_and_parent_path(skill_id, project.path)
         if skill is None:
@@ -75,9 +117,12 @@ def connect_skill_api(app: FastAPI):
             body = ""
         return SkillContentResponse(skill_md=skill_md, body=body)
 
-    @app.post("/api/projects/{project_id}/skills")
+    @app.post("/api/projects/{project_id}/skills", tags=["Skills"])
     async def create_skill(
-        project_id: str, skill_data: SkillCreationRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        skill_data: SkillCreationRequest,
     ) -> SkillResponse:
         project = project_from_id(project_id)
         skill = Skill(
@@ -89,9 +134,15 @@ def connect_skill_api(app: FastAPI):
         skill.save_skill_md(skill_data.body)
         return skill_to_response(skill)
 
-    @app.patch("/api/projects/{project_id}/skills/{skill_id}")
+    @app.patch("/api/projects/{project_id}/skills/{skill_id}", tags=["Skills"])
     async def update_skill(
-        project_id: str, skill_id: str, updates: SkillUpdateRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        skill_id: Annotated[
+            str, Path(description="The unique identifier of the skill.")
+        ],
+        updates: SkillUpdateRequest,
     ) -> SkillResponse:
         skill = _get_skill(project_id, skill_id)
 
