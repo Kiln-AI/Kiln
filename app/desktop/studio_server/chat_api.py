@@ -20,6 +20,7 @@ from kiln_ai.adapters.model_adapters.stream_events import (
 )
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.tool_registry import tool_from_id
+from kiln_server.utils.agent_checks.policy import DENY_AGENT
 from pydantic import TypeAdapter, ValidationError
 
 logger = logging.getLogger(__name__)
@@ -352,6 +353,7 @@ def connect_chat_api(app: FastAPI) -> None:
         "/api/chat",
         summary="Stream Chat",
         tags=["Copilot"],
+        openapi_extra=DENY_AGENT,
     )
     async def chat(request: Request) -> StreamingResponse:
         """Forward chat to Kiln Copilot and stream AI SDK events as Server-Sent Events."""
