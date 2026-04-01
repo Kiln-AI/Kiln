@@ -2383,7 +2383,7 @@ def connect_document_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/rag_configs/progress",
         tags=["Documents"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_rag_config_progress(
         project_id: Annotated[
