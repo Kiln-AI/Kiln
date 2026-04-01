@@ -47,7 +47,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.prompt import BasePrompt
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-from kiln_ai.datamodel.spec import Spec
+from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import Usage
@@ -2360,6 +2360,132 @@ async def test_get_run_config_eval_scores_includes_spec_id(
 
     # Verify spec_id is None for legacy eval
     assert legacy_eval_result["spec_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_run_config_eval_scores_excludes_archived_specs(
+    client, mock_task, mock_eval, mock_eval_config, mock_run_config
+):
+    """Test that get_run_config_eval_scores excludes evals associated with archived specs"""
+
+    # Create an active spec
+    active_spec = Spec(
+        id="active_spec1",
+        name="Active Spec",
+        definition="Active spec definition",
+        properties=DesiredBehaviourProperties(
+            spec_type=SpecType.desired_behaviour,
+            core_requirement="test instruction",
+            desired_behaviour_description="test desired behaviour",
+        ),
+        eval_id=mock_eval.id,
+        status=SpecStatus.active,
+        parent=mock_task,
+    )
+    active_spec.save_to_file()
+
+    # Create an archived spec with its own eval
+    archived_eval = Eval(
+        id="archived_eval1",
+        name="Archived Eval",
+        description="Eval for archived spec",
+        template=None,
+        eval_set_filter_id="tag::archived_eval_set",
+        eval_configs_filter_id="tag::archived_golden",
+        output_scores=[
+            EvalOutputScore(
+                name="score1",
+                instruction="desc1",
+                type=TaskOutputRatingType.five_star,
+            ),
+        ],
+        parent=mock_task,
+    )
+    archived_eval.save_to_file()
+
+    archived_eval_config = EvalConfig(
+        id="archived_eval_config1",
+        name="Archived Eval Config",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+        parent=archived_eval,
+        model_name="gpt-4",
+        model_provider="openai",
+    )
+    archived_eval_config.save_to_file()
+    archived_eval.current_config_id = archived_eval_config.id
+    archived_eval.save_to_file()
+
+    archived_spec = Spec(
+        id="archived_spec1",
+        name="Archived Spec",
+        definition="Archived spec definition",
+        properties=DesiredBehaviourProperties(
+            spec_type=SpecType.desired_behaviour,
+            core_requirement="test instruction",
+            desired_behaviour_description="test desired behaviour",
+        ),
+        eval_id=archived_eval.id,
+        status=SpecStatus.archived,
+        parent=mock_task,
+    )
+    archived_spec.save_to_file()
+
+    # Build mock eval objects with explicit attributes
+    mock_eval_config_for_api = MagicMock()
+    mock_eval_config_for_api.id = mock_eval_config.id
+    mock_eval_config_for_api.runs.return_value = []
+
+    mock_eval_for_api = MagicMock()
+    mock_eval_for_api.id = mock_eval.id
+    mock_eval_for_api.name = mock_eval.name
+    mock_eval_for_api.eval_set_filter_id = mock_eval.eval_set_filter_id
+    mock_eval_for_api.output_scores = mock_eval.output_scores
+    mock_eval_for_api.current_config_id = mock_eval_config.id
+    mock_eval_for_api.configs.return_value = [mock_eval_config_for_api]
+
+    archived_eval_config_for_api = MagicMock()
+    archived_eval_config_for_api.id = archived_eval_config.id
+    archived_eval_config_for_api.runs.return_value = []
+
+    archived_eval_for_api = MagicMock()
+    archived_eval_for_api.id = archived_eval.id
+    archived_eval_for_api.name = archived_eval.name
+    archived_eval_for_api.eval_set_filter_id = archived_eval.eval_set_filter_id
+    archived_eval_for_api.output_scores = archived_eval.output_scores
+    archived_eval_for_api.current_config_id = archived_eval_config.id
+    archived_eval_for_api.configs.return_value = [archived_eval_config_for_api]
+
+    mock_task_for_api = MagicMock()
+    mock_task_for_api.evals.return_value = [mock_eval_for_api, archived_eval_for_api]
+    mock_task_for_api.specs.return_value = [active_spec, archived_spec]
+
+    with (
+        patch(
+            "app.desktop.studio_server.eval_api.task_from_id"
+        ) as mock_task_from_id_patch,
+        patch(
+            "app.desktop.studio_server.eval_api.task_run_config_from_id"
+        ) as mock_task_run_config_from_id_patch,
+        patch(
+            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
+        ) as mock_dataset_ids_in_filter,
+    ):
+        mock_task_from_id_patch.return_value = mock_task_for_api
+        mock_task_run_config_from_id_patch.return_value = mock_run_config
+        mock_dataset_ids_in_filter.return_value = set()
+
+        response = client.get(
+            f"/api/projects/project1/tasks/task1/run_config/{mock_run_config.id}/eval_scores"
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Only the active spec's eval should be present, not the archived one
+    assert len(data["eval_results"]) == 1
+    assert data["eval_results"][0]["eval_name"] == "Test Eval"
+    assert data["eval_results"][0]["spec_id"] == "active_spec1"
 
 
 @pytest.mark.asyncio
