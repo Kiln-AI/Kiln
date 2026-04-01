@@ -1,5 +1,6 @@
 import zipfile
 from pathlib import Path
+from typing import TypedDict
 from unittest.mock import patch
 
 import pytest
@@ -501,8 +502,16 @@ def temp_project_with_builtin_tool(tmp_path: Path):
     }
 
 
+class SkillToolProjectFixture(TypedDict):
+    project: Project
+    task: Task
+    run_config: TaskRunConfig
+    skill: Skill
+    path: Path
+
+
 @pytest.fixture
-def temp_project_with_skill_tool(tmp_path: Path):
+def temp_project_with_skill_tool(tmp_path: Path) -> SkillToolProjectFixture:
     """Create a project with a task that uses a skill tool."""
     project = Project(name="Skill Project", path=tmp_path / "project.kiln")
     project.save_to_file()
@@ -1335,7 +1344,9 @@ class TestValidateTools:
             validate_tools([task], {task.id: run_config})
         assert exc_info.value.exit_code == 1
 
-    def test_passes_with_skill_tools(self, temp_project_with_skill_tool):
+    def test_passes_with_skill_tools(
+        self, temp_project_with_skill_tool: SkillToolProjectFixture
+    ) -> None:
         """Test that skill tools pass validation."""
         task = Task.load_from_file(temp_project_with_skill_tool["task"].path)
         run_config = TaskRunConfig.load_from_file(
@@ -1430,7 +1441,9 @@ class TestCollectRequiredToolServers:
 
 
 class TestCollectRequiredSkills:
-    def test_collects_skill_id(self, temp_project_with_skill_tool):
+    def test_collects_skill_id(
+        self, temp_project_with_skill_tool: SkillToolProjectFixture
+    ) -> None:
         """Test that skill IDs are collected from run configs."""
         task = Task.load_from_file(temp_project_with_skill_tool["task"].path)
         run_config = TaskRunConfig.load_from_file(
@@ -1457,7 +1470,9 @@ class TestCollectRequiredSkills:
 
 
 class TestExportSkills:
-    def test_exports_skill(self, temp_project_with_skill_tool):
+    def test_exports_skill(
+        self, temp_project_with_skill_tool: SkillToolProjectFixture
+    ) -> None:
         """Test that skills are exported with all files."""
         import shutil
 
@@ -1654,8 +1669,8 @@ class TestPackageProjectWithTools:
         assert servers[0].id == temp_project_with_kiln_task_tool["tool_server"].id
 
     def test_exports_with_skill_tools(
-        self, temp_project_with_skill_tool, tmp_path: Path
-    ):
+        self, temp_project_with_skill_tool: SkillToolProjectFixture, tmp_path: Path
+    ) -> None:
         """Test full export with skill tools includes the skill."""
         output_path = tmp_path / "output.zip"
         extract_path = tmp_path / "extracted"

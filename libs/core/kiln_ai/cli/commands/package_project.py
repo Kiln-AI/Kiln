@@ -427,17 +427,24 @@ def export_skills(
     if exported_project.path is None:
         raise ValueError("Exported project path is not set")
 
-    for skill in project.skills():
-        if skill.id not in skill_ids:
-            continue
+    skills_by_id = {skill.id: skill for skill in project.skills() if skill.id}
+    missing_skill_ids = skill_ids - set(skills_by_id)
+    if missing_skill_ids:
+        raise ValueError(
+            "Skill ID(s) referenced by exported tasks were not found in the project: "
+            + ", ".join(sorted(missing_skill_ids))
+        )
+
+    for skill_id in skill_ids:
+        skill = skills_by_id[skill_id]
         if skill.path is None:
             raise ValueError(f"Skill '{skill.name}' path is not set")
 
         folder_name = skill.path.parent.name
         dest_dir = exported_project.path.parent / "skills" / folder_name
-        shutil.copytree(skill.path.parent, dest_dir)
+        shutil.copytree(skill.path.parent, dest_dir, dirs_exist_ok=True)
 
-        exported_skill = Skill.load_from_file(dest_dir / "skill.kiln")
+        exported_skill = Skill.load_from_file(dest_dir / skill.path.name)
         exported_skill.parent = exported_project
 
 
