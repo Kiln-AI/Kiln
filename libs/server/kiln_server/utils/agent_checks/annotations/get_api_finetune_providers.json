@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/finetune_providers",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

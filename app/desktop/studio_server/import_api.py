@@ -4,6 +4,7 @@ from tkinter import filedialog
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query
+from kiln_server.utils.agent_checks.policy import DENY_AGENT
 from pydantic import BaseModel
 
 
@@ -12,7 +13,9 @@ class KilnFileResponse(BaseModel):
 
 
 def connect_import_api(app: FastAPI, tk_root: tk.Tk | None = None):
-    @app.get("/api/select_kiln_file", tags=["Settings & Utilities"])
+    @app.get(
+        "/api/select_kiln_file", tags=["Settings & Utilities"], openapi_extra=DENY_AGENT
+    )
     async def select_kiln_file(
         title: Annotated[
             str, Query(description="The title for the file dialog window.")

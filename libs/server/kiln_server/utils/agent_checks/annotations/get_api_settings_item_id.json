@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/settings/{item_id}",
+  "agent_policy": {
+    "permission": "deny",
+    "requires_approval": false
+  }
+}

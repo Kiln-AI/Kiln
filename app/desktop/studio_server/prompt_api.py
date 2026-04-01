@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.datamodel import PromptId
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
 from pydantic import BaseModel
 
 
@@ -16,6 +17,7 @@ def connect_prompt_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/gen_prompt/{prompt_id}",
         tags=["Prompts"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def generate_prompt(
         project_id: Annotated[

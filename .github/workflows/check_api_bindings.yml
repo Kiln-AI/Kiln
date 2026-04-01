@@ -60,6 +60,42 @@ jobs:
           # Change to the correct directory and run the schema check
           cd app/web_ui/src/lib
           ./check_schema.sh
+          cd -
+
+          # Check agent policy annotations
+          ANNOTATIONS_DIR="libs/server/kiln_server/utils/agent_checks/annotations"
+          TEMP_DIR=$(mktemp -d)
+
+          echo "Checking for unannotated endpoints..."
+          uv run python -m kiln_server.utils.agent_checks.dump_annotations \
+            http://localhost:8757/openapi.json "$TEMP_DIR"
+
+          echo "Checking annotation files are up to date..."
+          DIFF_FAILED=false
+          for f in "$TEMP_DIR"/*.json; do
+            filename=$(basename "$f")
+            if [ ! -f "$ANNOTATIONS_DIR/$filename" ]; then
+              echo "Missing checked-in annotation: $filename"
+              DIFF_FAILED=true
+            elif ! diff -q "$f" "$ANNOTATIONS_DIR/$filename" > /dev/null 2>&1; then
+              echo "Annotation differs: $filename"
+              diff -u "$ANNOTATIONS_DIR/$filename" "$f" || true
+              DIFF_FAILED=true
+            fi
+          done
+
+          if [ "$DIFF_FAILED" = true ]; then
+            echo ""
+            echo -e "\033[31mAgent policy annotations are not up to date.\033[0m"
+            echo "Run the dump CLI to regenerate:"
+            echo "  uv run python -m kiln_server.utils.agent_checks.dump_annotations http://localhost:8757/openapi.json $ANNOTATIONS_DIR"
+            rm -rf "$TEMP_DIR"
+            kill $DEV_SERVER_PID || true
+            exit 1
+          fi
+
+          echo "Agent policy annotations are up to date."
+          rm -rf "$TEMP_DIR"
 
           # Stop dev server
           kill $DEV_SERVER_PID || true

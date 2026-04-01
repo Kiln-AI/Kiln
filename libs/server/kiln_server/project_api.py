@@ -7,6 +7,12 @@ from kiln_ai.datamodel import Project
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.project_utils import project_from_id as project_from_id_core
 
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    DENY_AGENT,
+    agent_policy_require_approval,
+)
+
 
 def default_project_path():
     return os.path.join(FilePath.home(), "Kiln Projects")
@@ -32,7 +38,12 @@ def add_project_to_config(project_path: str):
 
 
 def connect_project_api(app: FastAPI):
-    @app.post("/api/projects", summary="Create Project", tags=["Projects"])
+    @app.post(
+        "/api/projects",
+        summary="Create Project",
+        tags=["Projects"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def create_project(project: Project) -> Project:
         project_path = os.path.join(default_project_path(), project.name)
         if os.path.exists(project_path):
@@ -53,7 +64,12 @@ def connect_project_api(app: FastAPI):
         return project
 
     @app.patch(
-        "/api/projects/{project_id}", summary="Update Project", tags=["Projects"]
+        "/api/projects/{project_id}",
+        summary="Update Project",
+        tags=["Projects"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit project? Ensure you backup your project before allowing agentic edits."
+        ),
     )
     async def update_project(
         project_id: Annotated[
@@ -70,7 +86,12 @@ def connect_project_api(app: FastAPI):
         updated_project.save_to_file()
         return updated_project
 
-    @app.get("/api/projects", summary="List Projects", tags=["Projects"])
+    @app.get(
+        "/api/projects",
+        summary="List Projects",
+        tags=["Projects"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_projects() -> list[Project]:
         project_paths = Config.shared().projects
         projects = []
@@ -86,7 +107,12 @@ def connect_project_api(app: FastAPI):
 
         return projects
 
-    @app.get("/api/projects/{project_id}", summary="Get Project", tags=["Projects"])
+    @app.get(
+        "/api/projects/{project_id}",
+        summary="Get Project",
+        tags=["Projects"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_project(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -95,7 +121,10 @@ def connect_project_api(app: FastAPI):
         return project_from_id(project_id)
 
     @app.delete(
-        "/api/projects/{project_id}", summary="Delete Project", tags=["Projects"]
+        "/api/projects/{project_id}",
+        summary="Delete Project",
+        tags=["Projects"],
+        openapi_extra=DENY_AGENT,
     )
     async def delete_project(
         project_id: Annotated[
@@ -112,7 +141,12 @@ def connect_project_api(app: FastAPI):
 
         return {"message": f"Project removed. ID: {project_id}"}
 
-    @app.post("/api/import_project", summary="Import Project", tags=["Projects"])
+    @app.post(
+        "/api/import_project",
+        summary="Import Project",
+        tags=["Projects"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def import_project(
         project_path: Annotated[
             str, Query(description="File path to the project.kiln file to import.")

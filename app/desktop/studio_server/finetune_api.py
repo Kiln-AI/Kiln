@@ -51,6 +51,10 @@ from kiln_ai.datamodel.skill import Skill
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    agent_policy_require_approval,
+)
 from pydantic import BaseModel, Field, model_validator
 
 logger = logging.getLogger(__name__)
@@ -277,6 +281,7 @@ def connect_fine_tune_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/dataset_splits",
         summary="List Dataset Splits",
         tags=["Fine-tuning"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def dataset_splits(
         project_id: Annotated[
@@ -294,6 +299,7 @@ def connect_fine_tune_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/finetunes",
         summary="List Finetunes",
         tags=["Fine-tuning"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def finetunes(
         project_id: Annotated[
@@ -329,6 +335,7 @@ def connect_fine_tune_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/finetunes/{finetune_id}",
         summary="Get Finetune",
         tags=["Fine-tuning"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def finetune(
         project_id: Annotated[
@@ -356,6 +363,9 @@ def connect_fine_tune_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/finetunes/{finetune_id}",
         summary="Update Finetune",
         tags=["Fine-tuning"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit fine-tune? Ensure you backup your project before allowing agentic edits."
+        ),
     )
     async def update_finetune(
         project_id: Annotated[
@@ -380,6 +390,7 @@ def connect_fine_tune_api(app: FastAPI):
         "/api/finetune_providers",
         summary="List Finetune Providers",
         tags=["Fine-tuning"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def finetune_providers() -> list[FinetuneProvider]:
         provider_models: dict[ModelProviderName, list[FinetuneProviderModel]] = {}
@@ -438,6 +449,7 @@ def connect_fine_tune_api(app: FastAPI):
         "/api/finetune/hyperparameters/{provider_id}",
         summary="List Finetune Hyperparameters",
         tags=["Fine-tuning"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def finetune_hyperparameters(
         provider_id: Annotated[
@@ -455,6 +467,7 @@ def connect_fine_tune_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/finetune_dataset_info",
         summary="Get Finetune Dataset Info",
         tags=["Fine-tuning"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def finetune_dataset_info(
         project_id: Annotated[
@@ -525,6 +538,7 @@ def connect_fine_tune_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/dataset_splits",
         summary="Create Dataset Split",
         tags=["Fine-tuning"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def create_dataset_split(
         project_id: Annotated[
@@ -557,6 +571,9 @@ def connect_fine_tune_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/finetunes",
         summary="Create Finetune",
         tags=["Fine-tuning"],
+        openapi_extra=agent_policy_require_approval(
+            "Creating a fine-tune incurs cost. Allow agent to proceed?"
+        ),
     )
     async def create_finetune(
         project_id: Annotated[
@@ -625,6 +642,7 @@ def connect_fine_tune_api(app: FastAPI):
         "/api/download_dataset_jsonl",
         summary="Download Dataset JSONL",
         tags=["Fine-tuning"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def download_dataset_jsonl(
         project_id: Annotated[

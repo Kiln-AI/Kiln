@@ -23,6 +23,7 @@ from kiln_ai.utils.open_ai_types import (
 )
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
 from openai.types.chat import (
     ChatCompletionSystemMessageParam,
     ChatCompletionUserMessageParam,
@@ -126,6 +127,7 @@ def connect_data_gen_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/generate_categories",
         summary="Generate Categories",
         tags=["Synthetic Data"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def generate_categories(
         project_id: Annotated[
@@ -170,6 +172,7 @@ def connect_data_gen_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/generate_inputs",
         summary="Generate Inputs",
         tags=["Synthetic Data"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def generate_samples(
         project_id: Annotated[
@@ -213,6 +216,7 @@ def connect_data_gen_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/save_sample",
         summary="Save Sample",
         tags=["Synthetic Data"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def save_sample(
         project_id: Annotated[
@@ -237,6 +241,7 @@ def connect_data_gen_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/generate_sample",
         summary="Generate Sample",
         tags=["Synthetic Data"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def generate_sample(
         project_id: Annotated[
@@ -307,6 +312,7 @@ The topic path for this sample is:
         "/api/projects/{project_id}/tasks/{task_id}/generate_qna",
         summary="Generate Q&A Pairs",
         tags=["Synthetic Data"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def generate_qna_pairs(
         project_id: Annotated[
@@ -362,6 +368,7 @@ The topic path for this sample is:
         "/api/projects/{project_id}/tasks/{task_id}/save_qna_pair",
         summary="Save Q&A Pair",
         tags=["Synthetic Data"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def save_qna_pair(
         project_id: Annotated[
