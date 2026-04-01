@@ -25,6 +25,7 @@ from kiln_ai.datamodel.eval import (
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.spec import SpecStatus
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
@@ -1271,11 +1272,15 @@ def connect_evals_api(app: FastAPI):
         task_run_config_from_id(project_id, task_id, run_config_id)
 
         # Build a mapping from eval_id to spec_id for evals that are associated with specs
+        # Also track which eval_ids belong to archived specs so we can exclude them
         specs = task.specs()
         eval_id_to_spec_id: Dict[str, str] = {}
+        archived_eval_ids: set[str] = set()
         for spec in specs:
             if spec.eval_id and spec.id:
                 eval_id_to_spec_id[spec.eval_id] = spec.id
+                if spec.status == SpecStatus.archived:
+                    archived_eval_ids.add(spec.eval_id)
 
         evals = task.evals()
         eval_results: List[RunConfigEvalResult] = []
@@ -1292,6 +1297,10 @@ def connect_evals_api(app: FastAPI):
         total_eval_runs = 0
 
         for eval in evals:
+            # Skip evals associated with archived specs
+            if eval.id and eval.id in archived_eval_ids:
+                continue
+
             # Get the dataset size for this eval
             expected_dataset_ids = dataset_ids_in_filter(
                 task, eval.eval_set_filter_id, readonly=True
