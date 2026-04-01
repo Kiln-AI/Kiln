@@ -1468,6 +1468,17 @@ class TestCollectRequiredSkills:
 
         assert len(skill_ids) == 0
 
+    def test_skips_task_without_run_config(
+        self, temp_project_with_skill_tool: SkillToolProjectFixture
+    ) -> None:
+        """Test that tasks without a matching run config are skipped."""
+        task = Task.load_from_file(temp_project_with_skill_tool["task"].path)
+
+        assert task.id is not None
+        skill_ids = collect_required_skills([task], {})
+
+        assert len(skill_ids) == 0
+
 
 class TestExportSkills:
     def test_exports_skill(
@@ -1507,6 +1518,57 @@ class TestExportSkills:
         try:
             export_skills(set(), project, exported_project)
             assert len(exported_project.skills()) == 0
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_raises_when_exported_project_path_is_none(
+        self, temp_project_with_skill_tool: SkillToolProjectFixture
+    ) -> None:
+        """Test that export_skills raises when exported project path is None."""
+        project = temp_project_with_skill_tool["project"]
+        skill = temp_project_with_skill_tool["skill"]
+        exported_project = Project(name="No Path Project", path=None)
+
+        assert skill.id is not None
+        with pytest.raises(ValueError, match="Exported project path is not set"):
+            export_skills({skill.id}, project, exported_project)
+
+    def test_raises_when_skill_id_not_found(
+        self, temp_project_with_skill_tool: SkillToolProjectFixture
+    ) -> None:
+        """Test that export_skills raises when a skill ID is not in the project."""
+        import shutil
+
+        project = temp_project_with_skill_tool["project"]
+        temp_dir, exported_project = create_export_directory(project)
+
+        try:
+            with pytest.raises(ValueError, match=r"Skill ID.*not found in the project"):
+                export_skills({"nonexistent_id"}, project, exported_project)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_raises_when_skill_path_is_none(
+        self, temp_project_with_skill_tool: SkillToolProjectFixture
+    ) -> None:
+        """Test that export_skills raises when a skill's path is None."""
+        import shutil
+        from unittest.mock import MagicMock
+
+        project = temp_project_with_skill_tool["project"]
+        skill = temp_project_with_skill_tool["skill"]
+        temp_dir, exported_project = create_export_directory(project)
+
+        try:
+            assert skill.id is not None
+            fake_skill = MagicMock()
+            fake_skill.id = skill.id
+            fake_skill.name = skill.name
+            fake_skill.path = None
+
+            with patch.object(Project, "skills", return_value=[fake_skill]):
+                with pytest.raises(ValueError, match="path is not set"):
+                    export_skills({skill.id}, project, exported_project)
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 

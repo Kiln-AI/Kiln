@@ -864,7 +864,11 @@ def package_project(
             )
 
         # 6. Export required skills
-        export_skills(required_skill_ids, project, exported_project)
+        try:
+            export_skills(required_skill_ids, project, exported_project)
+        except ValueError as e:
+            console.print(f"[red]Error exporting skills: {e}")
+            raise typer.Exit(code=1)
         if required_skill_ids:
             console.print(
                 f"[green]✓[/green] Exported {len(required_skill_ids)} skill(s)"
