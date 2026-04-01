@@ -2476,7 +2476,7 @@ async def test_get_run_config_eval_scores_excludes_archived_specs(
         mock_dataset_ids_in_filter.return_value = set()
 
         response = client.get(
-            f"/api/projects/project1/tasks/task1/run_config/{mock_run_config.id}/eval_scores"
+            f"/api/projects/project1/tasks/task1/run_configs/{mock_run_config.id}/eval_scores"
         )
 
     assert response.status_code == 200
