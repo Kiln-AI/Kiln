@@ -80,6 +80,11 @@ from kiln_ai.utils.name_generator import generate_memorable_name
 from pydantic import BaseModel, Field, PositiveInt, model_validator
 
 from kiln_server.project_api import project_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    DENY_AGENT,
+    agent_policy_require_approval,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -948,6 +953,7 @@ def connect_document_api(app: FastAPI):
         "/api/projects/{project_id}/documents/bulk",
         summary="Bulk Create Documents",
         tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def create_documents_bulk(
         project_id: Annotated[
@@ -1054,6 +1060,7 @@ def connect_document_api(app: FastAPI):
         "/api/projects/{project_id}/documents",
         summary="List Documents",
         tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_documents(
         project_id: Annotated[
@@ -1082,6 +1089,7 @@ def connect_document_api(app: FastAPI):
         "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/extractions",
         summary="List Extractions for Extractor Config",
         tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_extractions_for_extractor_config(
         project_id: Annotated[
@@ -1125,6 +1133,7 @@ def connect_document_api(app: FastAPI):
         "/api/projects/{project_id}/documents/tags",
         summary="List Document Tags",
         tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_document_tags(
         project_id: Annotated[
@@ -1143,6 +1152,7 @@ def connect_document_api(app: FastAPI):
         "/api/projects/{project_id}/documents/tag_counts",
         summary="Get Document Tag Counts",
         tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_document_tag_counts(
         project_id: Annotated[
@@ -1163,6 +1173,7 @@ def connect_document_api(app: FastAPI):
         "/api/projects/{project_id}/documents/{document_id}",
         summary="Get Document",
         tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_document(
         project_id: Annotated[
@@ -1181,7 +1192,13 @@ def connect_document_api(app: FastAPI):
             )
         return document
 
-    @app.patch("/api/projects/{project_id}/documents/{document_id}", tags=["Documents"])
+    @app.patch(
+        "/api/projects/{project_id}/documents/{document_id}",
+        tags=["Documents"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit document? Ensure you backup your project before allowing agentic edits."
+        ),
+    )
     async def patch_document(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1214,7 +1231,11 @@ def connect_document_api(app: FastAPI):
 
         return document
 
-    @app.post("/api/projects/{project_id}/documents/edit_tags", tags=["Documents"])
+    @app.post(
+        "/api/projects/{project_id}/documents/edit_tags",
+        tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def edit_tags(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1279,7 +1300,11 @@ def connect_document_api(app: FastAPI):
             )
         return {"success": True}
 
-    @app.post("/api/projects/{project_id}/create_extractor_config", tags=["Documents"])
+    @app.post(
+        "/api/projects/{project_id}/create_extractor_config",
+        tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def create_extractor_config(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1306,7 +1331,11 @@ def connect_document_api(app: FastAPI):
 
         return extractor_config
 
-    @app.get("/api/projects/{project_id}/extractor_configs", tags=["Documents"])
+    @app.get(
+        "/api/projects/{project_id}/extractor_configs",
+        tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_extractor_configs(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1318,6 +1347,7 @@ def connect_document_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
         tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_extractor_config(
         project_id: Annotated[
@@ -1343,6 +1373,7 @@ def connect_document_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/run_extractor_config",
         tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def run_extractor_config(
         project_id: Annotated[
@@ -1397,6 +1428,7 @@ def connect_document_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/documents/{document_id}/extractions",
         tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_extractions(
         project_id: Annotated[
@@ -1436,6 +1468,7 @@ def connect_document_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}",
         tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_extraction(
         project_id: Annotated[
@@ -1482,6 +1515,7 @@ def connect_document_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/documents/{document_id}/download",
         tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def download_document_file(
         project_id: Annotated[
@@ -1513,6 +1547,7 @@ def connect_document_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/documents/{document_id}/download_extraction/{extraction_id}",
         tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def download_extraction(
         project_id: Annotated[
@@ -1557,6 +1592,7 @@ def connect_document_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/documents/{document_id}/open_enclosing_folder",
         tags=["Documents"],
+        openapi_extra=DENY_AGENT,
     )
     async def open_document_enclosing_folder(
         project_id: Annotated[
@@ -1585,7 +1621,11 @@ def connect_document_api(app: FastAPI):
 
         return OpenFileResponse(path=str(document.path.parent))
 
-    @app.post("/api/projects/{project_id}/documents/delete", tags=["Documents"])
+    @app.post(
+        "/api/projects/{project_id}/documents/delete",
+        tags=["Documents"],
+        openapi_extra=DENY_AGENT,
+    )
     async def delete_documents(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1608,7 +1648,9 @@ def connect_document_api(app: FastAPI):
         return {"message": f"Documents removed. IDs: {document_ids}"}
 
     @app.delete(
-        "/api/projects/{project_id}/documents/{document_id}", tags=["Documents"]
+        "/api/projects/{project_id}/documents/{document_id}",
+        tags=["Documents"],
+        openapi_extra=DENY_AGENT,
     )
     async def delete_document(
         project_id: Annotated[
@@ -1633,6 +1675,7 @@ def connect_document_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/progress",
         tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_extraction_progress(
         project_id: Annotated[
@@ -1671,7 +1714,9 @@ def connect_document_api(app: FastAPI):
         )
 
     @app.post(
-        "/api/projects/{project_id}/documents/{document_id}/extract", tags=["Documents"]
+        "/api/projects/{project_id}/documents/{document_id}/extract",
+        tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def extract_file(
         project_id: Annotated[
@@ -1728,6 +1773,7 @@ def connect_document_api(app: FastAPI):
     @app.delete(
         "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}",
         tags=["Documents"],
+        openapi_extra=DENY_AGENT,
     )
     async def delete_extraction(
         project_id: Annotated[
@@ -1804,6 +1850,9 @@ def connect_document_api(app: FastAPI):
     @app.patch(
         "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
         tags=["Documents"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit extractor config? Ensure you backup your project before allowing agentic edits."
+        ),
     )
     async def patch_extractor_config(
         project_id: Annotated[
@@ -1837,7 +1886,11 @@ def connect_document_api(app: FastAPI):
 
         return {"message": f"Extractor config updated. ID: {extractor_config_id}"}
 
-    @app.post("/api/projects/{project_id}/create_chunker_config", tags=["Documents"])
+    @app.post(
+        "/api/projects/{project_id}/create_chunker_config",
+        tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def create_chunker_config(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1869,7 +1922,11 @@ def connect_document_api(app: FastAPI):
 
         return chunker_config
 
-    @app.get("/api/projects/{project_id}/chunker_configs", tags=["Documents"])
+    @app.get(
+        "/api/projects/{project_id}/chunker_configs",
+        tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_chunker_configs(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1878,7 +1935,11 @@ def connect_document_api(app: FastAPI):
         project = project_from_id(project_id)
         return project.chunker_configs(readonly=True)
 
-    @app.post("/api/projects/{project_id}/create_embedding_config", tags=["Documents"])
+    @app.post(
+        "/api/projects/{project_id}/create_embedding_config",
+        tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def create_embedding_config(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1904,7 +1965,11 @@ def connect_document_api(app: FastAPI):
 
         return embedding_config
 
-    @app.get("/api/projects/{project_id}/embedding_configs", tags=["Documents"])
+    @app.get(
+        "/api/projects/{project_id}/embedding_configs",
+        tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_embedding_configs(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1913,7 +1978,11 @@ def connect_document_api(app: FastAPI):
         project = project_from_id(project_id)
         return project.embedding_configs(readonly=True)
 
-    @app.post("/api/projects/{project_id}/create_reranker_config", tags=["Documents"])
+    @app.post(
+        "/api/projects/{project_id}/create_reranker_config",
+        tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def create_reranker_config(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1935,7 +2004,11 @@ def connect_document_api(app: FastAPI):
 
         return reranker_config
 
-    @app.get("/api/projects/{project_id}/reranker_configs", tags=["Documents"])
+    @app.get(
+        "/api/projects/{project_id}/reranker_configs",
+        tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_reranker_configs(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1947,6 +2020,7 @@ def connect_document_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/embedding_configs/{embedding_config_id}",
         tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_embedding_config(
         project_id: Annotated[
@@ -1969,7 +2043,9 @@ def connect_document_api(app: FastAPI):
         return embedding_config
 
     @app.post(
-        "/api/projects/{project_id}/create_vector_store_config", tags=["Documents"]
+        "/api/projects/{project_id}/create_vector_store_config",
+        tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def create_vector_store_config(
         project_id: Annotated[
@@ -1989,7 +2065,11 @@ def connect_document_api(app: FastAPI):
 
         return vector_store_config
 
-    @app.get("/api/projects/{project_id}/vector_store_configs", tags=["Documents"])
+    @app.get(
+        "/api/projects/{project_id}/vector_store_configs",
+        tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_vector_store_configs(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -1999,7 +2079,11 @@ def connect_document_api(app: FastAPI):
         return project.vector_store_configs(readonly=True)
 
     @app.patch(
-        "/api/projects/{project_id}/rag_configs/{rag_config_id}", tags=["Documents"]
+        "/api/projects/{project_id}/rag_configs/{rag_config_id}",
+        tags=["Documents"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit RAG config? Ensure you backup your project before allowing agentic edits."
+        ),
     )
     async def update_rag_config(
         project_id: Annotated[
@@ -2022,7 +2106,9 @@ def connect_document_api(app: FastAPI):
         return rag_config
 
     @app.post(
-        "/api/projects/{project_id}/rag_configs/create_rag_config", tags=["Documents"]
+        "/api/projects/{project_id}/rag_configs/create_rag_config",
+        tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def create_rag_config(
         project_id: Annotated[
@@ -2096,7 +2182,11 @@ def connect_document_api(app: FastAPI):
 
         return rag_config
 
-    @app.get("/api/projects/{project_id}/rag_configs", tags=["Documents"])
+    @app.get(
+        "/api/projects/{project_id}/rag_configs",
+        tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_rag_configs(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -2176,7 +2266,9 @@ def connect_document_api(app: FastAPI):
         return rag_configs
 
     @app.get(
-        "/api/projects/{project_id}/rag_configs/{rag_config_id}", tags=["Documents"]
+        "/api/projects/{project_id}/rag_configs/{rag_config_id}",
+        tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_rag_config(
         project_id: Annotated[
@@ -2255,7 +2347,9 @@ def connect_document_api(app: FastAPI):
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
     @app.get(
-        "/api/projects/{project_id}/rag_configs/{rag_config_id}/run", tags=["Documents"]
+        "/api/projects/{project_id}/rag_configs/{rag_config_id}/run",
+        tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def run_rag_config(
         project_id: Annotated[
@@ -2280,7 +2374,11 @@ def connect_document_api(app: FastAPI):
         # the workflow runner handles locking
         return await run_rag_workflow_runner_with_status(runner_factory)
 
-    @app.post("/api/projects/{project_id}/rag_configs/progress", tags=["Documents"])
+    @app.post(
+        "/api/projects/{project_id}/rag_configs/progress",
+        tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_rag_config_progress(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -2312,6 +2410,7 @@ def connect_document_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/rag_configs/{rag_config_id}/search",
         tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def search_rag_config(
         project_id: Annotated[
@@ -2368,7 +2467,11 @@ def connect_document_api(app: FastAPI):
                 detail=f"Search failed: {e!s}",
             )
 
-    @app.get("/api/projects/{project_id}/check_library_state", tags=["Documents"])
+    @app.get(
+        "/api/projects/{project_id}/check_library_state",
+        tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def check_library_state(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -2381,6 +2484,7 @@ def connect_document_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/documents/{document_id}/ephemeral_split",
         tags=["Documents"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def ephemeral_split_document(
         project_id: Annotated[

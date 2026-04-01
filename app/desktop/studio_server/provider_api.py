@@ -45,6 +45,7 @@ from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.wandb_utils import AuthenticationError, get_wandb_default_entity
+from kiln_server.utils.agent_checks.policy import ALLOW_AGENT, DENY_AGENT
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -243,6 +244,7 @@ def connect_provider_api(app: FastAPI):
         "/api/providers/models",
         summary="List Provider Models",
         tags=["Providers & Models"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_providers_models() -> ProviderModels:
         models = {}
@@ -255,6 +257,7 @@ def connect_provider_api(app: FastAPI):
         "/api/available_models",
         summary="List Available Models",
         tags=["Providers & Models"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_available_models() -> List[AvailableModels]:
         # Providers with just keys can return all their models if keys are set
@@ -386,6 +389,7 @@ def connect_provider_api(app: FastAPI):
         "/api/providers/embedding_models",
         summary="List Provider Embedding Models",
         tags=["Providers & Models"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_providers_embedding_models() -> ProviderEmbeddingModels:
         models = {}
@@ -398,6 +402,7 @@ def connect_provider_api(app: FastAPI):
         "/api/available_embedding_models",
         summary="List Available Embedding Models",
         tags=["Providers & Models"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_available_embedding_models() -> List[EmbeddingProvider]:
         # Providers with just keys can return all their models if keys are set
@@ -450,6 +455,7 @@ def connect_provider_api(app: FastAPI):
         "/api/providers/reranker_models",
         summary="List Provider Reranker Models",
         tags=["Providers & Models"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_providers_reranker_models() -> ProviderRerankerModels:
         models = {}
@@ -462,6 +468,7 @@ def connect_provider_api(app: FastAPI):
         "/api/available_reranker_models",
         summary="List Available Reranker Models",
         tags=["Providers & Models"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_available_reranker_models() -> List[RerankerProvider]:
         # Providers with just keys can return all their models if keys are set
@@ -507,6 +514,7 @@ def connect_provider_api(app: FastAPI):
         "/api/provider/ollama/connect",
         summary="Connect Ollama",
         tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
     )
     async def connect_ollama_api(
         custom_ollama_url: Annotated[
@@ -519,6 +527,7 @@ def connect_provider_api(app: FastAPI):
         "/api/provider/docker_model_runner/connect",
         summary="Connect Docker Model Runner",
         tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
     )
     async def connect_docker_model_runner_api(
         docker_model_runner_custom_url: Annotated[
@@ -532,6 +541,7 @@ def connect_provider_api(app: FastAPI):
         "/api/provider/openai_compatible",
         summary="Add OpenAI Compatible Provider",
         tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
     )
     async def save_openai_compatible_providers(
         config: OpenAICompatibleProviderConfig,
@@ -562,6 +572,7 @@ def connect_provider_api(app: FastAPI):
         "/api/provider/openai_compatible",
         summary="Delete OpenAI Compatible Provider",
         tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
     )
     async def delete_openai_compatible_providers(
         name: Annotated[
@@ -585,6 +596,7 @@ def connect_provider_api(app: FastAPI):
         "/api/settings/available_providers",
         summary="List Available Providers",
         tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
     )
     async def get_available_providers() -> List[AvailableProviderInfo]:
         """Returns all providers that can have custom models added."""
@@ -623,6 +635,7 @@ def connect_provider_api(app: FastAPI):
         "/api/settings/user_models",
         summary="List User Models",
         tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
     )
     async def get_user_models() -> List[UserModelEntry]:
         """Returns all user-defined models (new registry + legacy combined).
@@ -655,6 +668,7 @@ def connect_provider_api(app: FastAPI):
         "/api/settings/user_models",
         summary="Add User Model",
         tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
     )
     async def add_user_model(entry: UserModelEntry) -> JSONResponse:
         """Add a user-defined model to the registry."""
@@ -706,6 +720,7 @@ def connect_provider_api(app: FastAPI):
         "/api/settings/user_models",
         summary="Delete User Model",
         tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
     )
     async def delete_user_model(
         provider_type: Annotated[
@@ -807,6 +822,7 @@ def connect_provider_api(app: FastAPI):
         "/api/provider/connect_api_key",
         summary="Connect Provider API Key",
         tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
     )
     async def connect_api_key(payload: dict):
         provider = payload.get("provider")
@@ -893,6 +909,7 @@ def connect_provider_api(app: FastAPI):
         "/api/provider/disconnect_api_key",
         summary="Disconnect Provider API Key",
         tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
     )
     async def disconnect_api_key(
         provider_id: Annotated[

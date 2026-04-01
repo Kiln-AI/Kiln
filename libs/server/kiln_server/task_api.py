@@ -9,6 +9,11 @@ from kiln_ai.datamodel.external_tool_server import (
 from pydantic import BaseModel, Field
 
 from kiln_server.project_api import project_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    DENY_AGENT,
+    agent_policy_require_approval,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +49,12 @@ class RatingOptionResponse(BaseModel):
 
 
 def connect_task_api(app: FastAPI):
-    @app.post("/api/projects/{project_id}/tasks", summary="Create Task", tags=["Tasks"])
+    @app.post(
+        "/api/projects/{project_id}/tasks",
+        summary="Create Task",
+        tags=["Tasks"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def create_task(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -80,6 +90,9 @@ def connect_task_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}",
         summary="Update Task",
         tags=["Tasks"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit task? Ensure you backup your project before allowing agentic edits."
+        ),
     )
     async def update_task(
         project_id: Annotated[
@@ -125,6 +138,7 @@ def connect_task_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}",
         summary="Delete Task",
         tags=["Tasks"],
+        openapi_extra=DENY_AGENT,
     )
     async def delete_task(
         project_id: Annotated[
@@ -154,7 +168,12 @@ def connect_task_api(app: FastAPI):
 
                     tool_server.save_to_file()
 
-    @app.get("/api/projects/{project_id}/tasks", summary="List Tasks", tags=["Tasks"])
+    @app.get(
+        "/api/projects/{project_id}/tasks",
+        summary="List Tasks",
+        tags=["Tasks"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_tasks(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -164,7 +183,10 @@ def connect_task_api(app: FastAPI):
         return parent_project.tasks()
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}", summary="Get Task", tags=["Tasks"]
+        "/api/projects/{project_id}/tasks/{task_id}",
+        summary="Get Task",
+        tags=["Tasks"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_task(
         project_id: Annotated[
@@ -181,6 +203,7 @@ def connect_task_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/rating_options",
         summary="Get Rating Options",
         tags=["Tasks"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_rating_options(
         project_id: Annotated[

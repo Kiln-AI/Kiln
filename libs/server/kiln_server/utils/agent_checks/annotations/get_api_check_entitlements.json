@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/check_entitlements",
+  "agent_policy": {
+    "permission": "deny",
+    "requires_approval": false
+  }
+}

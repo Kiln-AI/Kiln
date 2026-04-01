@@ -1,0 +1,8 @@
+{
+  "method": "post",
+  "path": "/api/projects/{project_id}/rag_configs/{rag_config_id}/search",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

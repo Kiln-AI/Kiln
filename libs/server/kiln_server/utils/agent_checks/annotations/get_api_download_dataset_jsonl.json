@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/download_dataset_jsonl",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

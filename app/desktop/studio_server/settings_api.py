@@ -13,6 +13,10 @@ from fastapi import FastAPI, HTTPException, Path, Query
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.filesystem import open_folder
 from kiln_server.project_api import project_from_id
+from kiln_server.utils.agent_checks.policy import (
+    DENY_AGENT,
+    agent_policy_require_approval,
+)
 
 
 def open_logs_folder() -> None:
@@ -20,14 +24,24 @@ def open_logs_folder() -> None:
 
 
 def connect_settings(app: FastAPI):
-    @app.post("/api/settings", summary="Update Settings", tags=["Settings & Utilities"])
+    @app.post(
+        "/api/settings",
+        summary="Update Settings",
+        tags=["Settings & Utilities"],
+        openapi_extra=DENY_AGENT,
+    )
     def update_settings(
         new_settings: dict[str, int | float | str | bool | list | None],
     ):
         Config.shared().update_settings(new_settings)
         return Config.shared().settings(hide_sensitive=True)
 
-    @app.get("/api/settings", summary="Get Settings", tags=["Settings & Utilities"])
+    @app.get(
+        "/api/settings",
+        summary="Get Settings",
+        tags=["Settings & Utilities"],
+        openapi_extra=DENY_AGENT,
+    )
     def read_settings() -> dict[str, Any]:
         settings = Config.shared().settings(hide_sensitive=True)
         return settings
@@ -36,6 +50,7 @@ def connect_settings(app: FastAPI):
         "/api/settings/{item_id}",
         summary="Get Setting Item",
         tags=["Settings & Utilities"],
+        openapi_extra=DENY_AGENT,
     )
     def read_setting_item(
         item_id: Annotated[str, Path(description="The setting item key to retrieve.")],
@@ -44,7 +59,12 @@ def connect_settings(app: FastAPI):
         return {item_id: settings.get(item_id, None)}
 
     @app.post(
-        "/api/open_logs", summary="Open Logs Folder", tags=["Settings & Utilities"]
+        "/api/open_logs",
+        summary="Open Logs Folder",
+        tags=["Settings & Utilities"],
+        openapi_extra=agent_policy_require_approval(
+            "This will open an external application to view logs. Allow?"
+        ),
     )
     def open_logs():
         """Opens the log folder in the system file browser."""
@@ -58,6 +78,7 @@ def connect_settings(app: FastAPI):
         "/api/open_project_folder/{project_id}",
         summary="Open Project Folder",
         tags=["Settings & Utilities"],
+        openapi_extra=DENY_AGENT,
     )
     def open_project_folder(
         project_id: Annotated[
@@ -80,6 +101,7 @@ def connect_settings(app: FastAPI):
         "/api/check_entitlements",
         summary="Check Entitlements",
         tags=["Settings & Utilities"],
+        openapi_extra=DENY_AGENT,
     )
     async def check_entitlements(
         feature_codes: Annotated[
