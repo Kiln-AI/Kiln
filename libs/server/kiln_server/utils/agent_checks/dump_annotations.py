@@ -1,10 +1,13 @@
 import argparse
 import json
+import logging
 import os
 import sys
 
 from kiln_server.utils.agent_checks.policy import AgentPolicy
 from pydantic import ValidationError
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_endpoint_filename(method: str, path: str) -> str:
@@ -53,7 +56,7 @@ def dump_annotations(source: str, target_folder: str) -> int:
                 try:
                     AgentPolicy(**policy_data)
                 except (ValueError, ValidationError) as e:
-                    print(f"WARNING: Invalid policy on {method.upper()} {path}: {e}")
+                    logger.error(f"Invalid policy on {method.upper()} {path}: {e}")
                     policy_data = None
 
             if policy_data is None:
@@ -74,12 +77,13 @@ def dump_annotations(source: str, target_folder: str) -> int:
                 f.write("\n")
 
     if unannotated:
-        print(f"WARNING: {len(unannotated)} unannotated endpoint(s):")
-        for ep in unannotated:
-            print(f"  {ep}")
+        logger.error(
+            f"{len(unannotated)} unannotated endpoint(s): "
+            + ", ".join(unannotated)
+        )
         return 2
 
-    print(f"{count} endpoints processed, all annotated.")
+    logger.info(f"{count} endpoints processed, all annotated.")
     return 0
 
 

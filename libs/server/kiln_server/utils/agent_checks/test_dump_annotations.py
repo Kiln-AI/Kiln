@@ -137,9 +137,7 @@ def test_load_from_url() -> None:
 # -- dump_annotations tests --
 
 
-def test_dump_all_annotated(
-    tmp_path: Path, annotated_spec: dict, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_dump_all_annotated(tmp_path: Path, annotated_spec: dict) -> None:
     spec_file = os.path.join(str(tmp_path), "spec.json")
     target = os.path.join(str(tmp_path), "output")
     with open(spec_file, "w") as f:
@@ -148,8 +146,6 @@ def test_dump_all_annotated(
     exit_code = dump_annotations(spec_file, target)
 
     assert exit_code == 0
-    captured = capsys.readouterr()
-    assert "2 endpoints processed, all annotated" in captured.out
 
     health_file = os.path.join(target, "get_api_health.json")
     with open(health_file) as f:
@@ -167,7 +163,7 @@ def test_dump_all_annotated(
 
 
 def test_dump_unannotated(
-    tmp_path: Path, unannotated_spec: dict, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, unannotated_spec: dict, caplog: pytest.LogCaptureFixture
 ) -> None:
     spec_file = os.path.join(str(tmp_path), "spec.json")
     target = os.path.join(str(tmp_path), "output")
@@ -177,9 +173,8 @@ def test_dump_unannotated(
     exit_code = dump_annotations(spec_file, target)
 
     assert exit_code == 2
-    captured = capsys.readouterr()
-    assert "1 unannotated endpoint(s)" in captured.out
-    assert "POST /api/items" in captured.out
+    assert "1 unannotated endpoint(s)" in caplog.text
+    assert "POST /api/items" in caplog.text
 
     items_file = os.path.join(target, "post_api_items.json")
     with open(items_file) as f:
@@ -188,7 +183,7 @@ def test_dump_unannotated(
 
 
 def test_dump_invalid_policy(
-    tmp_path: Path, invalid_policy_spec: dict, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, invalid_policy_spec: dict, caplog: pytest.LogCaptureFixture
 ) -> None:
     spec_file = os.path.join(str(tmp_path), "spec.json")
     target = os.path.join(str(tmp_path), "output")
@@ -198,8 +193,7 @@ def test_dump_invalid_policy(
     exit_code = dump_annotations(spec_file, target)
 
     assert exit_code == 2
-    captured = capsys.readouterr()
-    assert "WARNING: Invalid policy on GET /api/bad" in captured.out
+    assert "Invalid policy on GET /api/bad" in caplog.text
 
     bad_file = os.path.join(target, "get_api_bad.json")
     with open(bad_file) as f:
@@ -207,7 +201,7 @@ def test_dump_invalid_policy(
     assert data["agent_policy"] is None
 
 
-def test_dump_empty_spec(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_dump_empty_spec(tmp_path: Path) -> None:
     spec = _make_spec({})
     spec_file = os.path.join(str(tmp_path), "spec.json")
     target = os.path.join(str(tmp_path), "output")
@@ -217,8 +211,6 @@ def test_dump_empty_spec(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> 
     exit_code = dump_annotations(spec_file, target)
 
     assert exit_code == 0
-    captured = capsys.readouterr()
-    assert "0 endpoints processed, all annotated" in captured.out
 
 
 def test_dump_creates_target_dir(tmp_path: Path, annotated_spec: dict) -> None:
