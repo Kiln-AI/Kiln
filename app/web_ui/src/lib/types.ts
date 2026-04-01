@@ -36,6 +36,7 @@ export type DockerModelRunnerConnection =
   components["schemas"]["DockerModelRunnerConnection"]
 export type RunSummary = components["schemas"]["RunSummary"]
 export type PromptResponse = components["schemas"]["PromptResponse"]
+export type ApiPrompt = components["schemas"]["ApiPrompt"]
 export type ChatStrategy = components["schemas"]["ChatStrategy"]
 export type EvalOutputScore = components["schemas"]["EvalOutputScore"]
 export type EvalTemplateId = components["schemas"]["EvalTemplateId"]

@@ -11,7 +11,7 @@
     prompts_by_task_composite_id,
   } from "$lib/stores/prompts_store"
   import { onMount } from "svelte"
-  import type { Task } from "$lib/types"
+  import type { Task, ApiPrompt } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { getPromptType } from "./prompt_generators/prompt_generators"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
@@ -86,6 +86,12 @@
   function handleSetBasePrompt(prompt_text: string) {
     sessionStorage.setItem("pending_base_prompt", prompt_text)
     goto(`/prompts/${project_id}/${task_id}/edit_base_prompt`)
+  }
+
+  function handleClonePrompt(prompt: ApiPrompt) {
+    goto(
+      `/prompts/${project_id}/${task_id}/clone/${encodeURIComponent(prompt.id)}`,
+    )
   }
 
   type TableColumn = {
@@ -301,6 +307,13 @@
                                     handleSetBasePrompt(prompt.prompt)}
                                 >
                                   Set as Base Prompt
+                                </button>
+                              </li>
+                              <li>
+                                <button
+                                  on:click={() => handleClonePrompt(prompt)}
+                                >
+                                  Clone
                                 </button>
                               </li>
                             </ul>
