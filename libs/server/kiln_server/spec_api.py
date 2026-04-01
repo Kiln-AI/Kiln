@@ -56,7 +56,7 @@ def spec_from_id(project_id: str, task_id: str, spec_id: str) -> Spec:
 class SpecCreationRequest(BaseModel):
     """Request to create a new spec."""
 
-    name: FilenameString = Field(description="The name of the spec.", min_length=1)
+    name: FilenameString = Field(description="The name of the spec.")
     definition: str = Field(
         description="A detailed definition of the spec.", min_length=1
     )

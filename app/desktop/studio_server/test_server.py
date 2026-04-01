@@ -229,6 +229,44 @@ async def test_setup_route(client):
         client.get("/nested/non_existing_file")
 
 
+def test_custom_string_types_have_openapi_constraints(client):
+    """Custom string types like FilenameString must surface minLength/maxLength in the OpenAPI schema.
+
+    These constraints come from StringConstraints in the Annotated type definition,
+    not from individual Field() calls. If this test fails, a custom string type is
+    missing StringConstraints (see FilenameString in basemodel.py for the pattern).
+    """
+    schema = client.app.openapi()
+    schemas = schema.get("components", {}).get("schemas", {})
+
+    # Task.name uses FilenameString (max=120)
+    task_name = schemas["Task"]["properties"]["name"]
+    assert task_name.get("maxLength") == 120, (
+        "FilenameString should surface maxLength=120 in OpenAPI schema"
+    )
+    assert task_name.get("minLength") == 1, (
+        "FilenameString should surface minLength=1 in OpenAPI schema"
+    )
+
+    # TaskRequirement.name uses FilenameStringShort (max=32)
+    req_name = schemas["TaskRequirement"]["properties"]["name"]
+    assert req_name.get("maxLength") == 32, (
+        "FilenameStringShort should surface maxLength=32 in OpenAPI schema"
+    )
+    assert req_name.get("minLength") == 1, (
+        "FilenameStringShort should surface minLength=1 in OpenAPI schema"
+    )
+
+    # SkillCreationRequest.name uses SkillNameString (max=64)
+    skill_name = schemas["SkillCreationRequest"]["properties"]["name"]
+    assert skill_name.get("maxLength") == 64, (
+        "SkillNameString should surface maxLength=64 in OpenAPI schema"
+    )
+    assert skill_name.get("minLength") == 1, (
+        "SkillNameString should surface minLength=1 in OpenAPI schema"
+    )
+
+
 def test_api_parameter_descriptions(client):
     """Every API path and query parameter must have a description."""
     schema = client.app.openapi()

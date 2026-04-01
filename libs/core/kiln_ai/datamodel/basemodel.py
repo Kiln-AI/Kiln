@@ -17,6 +17,7 @@ from pydantic import (
     ConfigDict,
     Field,
     SerializationInfo,
+    StringConstraints,
     ValidationError,
     ValidationInfo,
     computed_field,
@@ -277,10 +278,14 @@ class KilnAttachmentModel(BaseModel):
 #     name: FilenameString = Field(description="The name of the model.")
 #     name_short: FilenameStringShort = Field(description="The short name of the model.")
 FilenameString = Annotated[
-    str, BeforeValidator(name_validator(min_length=1, max_length=MAX_FILENAME_LENGTH))
+    str,
+    BeforeValidator(name_validator(min_length=1, max_length=MAX_FILENAME_LENGTH)),
+    StringConstraints(min_length=1, max_length=MAX_FILENAME_LENGTH),
 ]
 FilenameStringShort = Annotated[
-    str, BeforeValidator(name_validator(min_length=1, max_length=32))
+    str,
+    BeforeValidator(name_validator(min_length=1, max_length=32)),
+    StringConstraints(min_length=1, max_length=32),
 ]
 
 

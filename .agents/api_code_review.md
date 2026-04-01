@@ -56,3 +56,4 @@ async def delete_project(
 - Wordy or filler-padded docstrings ("This endpoint allows you to...")
 - Docstrings containing code artifacts, raw `Args:` blocks, or formatting that doesn't read as clean prose in OpenAPI
 - Pydantic models used in API request/response types (nested included) missing a class docstring, if the class name alone isn't obvious
+- Custom string types with validator-based constraints that don't surface in the OpenAPI schema. Use `StringConstraints` in the `Annotated` type definition so `minLength`/`maxLength` appear automatically (see `FilenameString`, `SkillNameString` for examples). Don't duplicate constraints in individual `Field()` calls.

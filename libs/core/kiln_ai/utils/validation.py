@@ -1,7 +1,7 @@
 import re
 from typing import Annotated, Any, TypeVar, Union
 
-from pydantic import AfterValidator, BeforeValidator
+from pydantic import AfterValidator, BeforeValidator, StringConstraints
 
 T = TypeVar("T")
 
@@ -87,7 +87,11 @@ def tool_name_validator(name: str) -> str:
     return name
 
 
-ToolNameString = Annotated[str, BeforeValidator(tool_name_validator)]
+ToolNameString = Annotated[
+    str,
+    BeforeValidator(tool_name_validator),
+    StringConstraints(min_length=1, max_length=64),
+]
 
 
 def skill_name_validator(name: str) -> str:
@@ -117,7 +121,11 @@ def skill_name_validator(name: str) -> str:
     return name
 
 
-SkillNameString = Annotated[str, BeforeValidator(skill_name_validator)]
+SkillNameString = Annotated[
+    str,
+    BeforeValidator(skill_name_validator),
+    StringConstraints(min_length=1, max_length=64),
+]
 
 
 def string_not_empty(s: str) -> str:
