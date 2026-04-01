@@ -52,7 +52,7 @@ class SpecStatus(str, Enum):
 class Spec(KilnParentedModel):
     """A spec for a task."""
 
-    name: FilenameString = Field(description="The name of the spec.", min_length=1)
+    name: FilenameString = Field(description="The name of the spec.")
     definition: str = Field(
         description="A detailed definition of the spec.", min_length=1
     )

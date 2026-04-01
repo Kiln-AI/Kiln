@@ -166,16 +166,11 @@
     }
   }
 
-  async function handle_save_new_run_config(): Promise<TaskRunConfig | null> {
-    try {
-      if (!run_config_component) {
-        throw new Error("Run configuration component is not loaded")
-      }
-      return await run_config_component.save_new_run_config()
-    } catch (e) {
-      save_config_error = createKilnError(e)
+  async function handle_save_new_run_config(): Promise<TaskRunConfig> {
+    if (!run_config_component) {
+      throw new Error("Run configuration component is not loaded")
     }
-    return null
+    return await run_config_component.save_new_run_config()
   }
 
   function handle_input_change() {
@@ -228,7 +223,6 @@
             current_task={$current_task}
             requires_structured_output={!!$current_task.output_json_schema}
             bind:selected_run_config_id
-            bind:save_config_error
             bind:set_default_error
             bind:selected_model_specific_run_config_id
             {pending_tool_id}

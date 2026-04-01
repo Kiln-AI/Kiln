@@ -23,6 +23,8 @@ Tool IDs can be one of:
 
 
 class KilnBuiltInToolId(str, Enum):
+    """Built-in tool IDs for Kiln's demo tools."""
+
     ADD_NUMBERS = "kiln_tool::add_numbers"
     SUBTRACT_NUMBERS = "kiln_tool::subtract_numbers"
     MULTIPLY_NUMBERS = "kiln_tool::multiply_numbers"

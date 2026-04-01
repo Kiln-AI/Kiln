@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Annotated, Dict
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.adapter_registry import (
     load_skills_for_task,
@@ -57,48 +57,62 @@ logger = logging.getLogger(__name__)
 
 
 class FinetuneProviderModel(BaseModel):
-    """Finetune provider model: a model a provider supports for fine-tuning"""
+    """A model available for fine-tuning from a provider."""
 
-    name: str
-    id: str
+    name: str = Field(description="The display name of the model.")
+    id: str = Field(description="The provider's model identifier.")
     data_strategies_supported: list[ChatStrategy] = Field(
         default_factory=lambda: [
             ChatStrategy.single_turn,
             ChatStrategy.two_message_cot,
-        ]
+        ],
+        description="The data strategies supported by this model.",
     )
-    supports_function_calling: bool = True
+    supports_function_calling: bool = Field(
+        default=True, description="Whether the model supports function calling."
+    )
 
 
 class FinetuneProvider(BaseModel):
-    """Finetune provider: list of models a provider supports for fine-tuning"""
+    """A provider that offers fine-tuning."""
 
-    name: str
-    id: str
-    enabled: bool
-    models: list[FinetuneProviderModel]
+    name: str = Field(description="The display name of the provider.")
+    id: str = Field(description="The unique provider identifier used in API calls.")
+    enabled: bool = Field(description="Whether this provider is enabled.")
+    models: list[FinetuneProviderModel] = Field(
+        description="The models available for fine-tuning."
+    )
 
 
 class FinetuneDatasetTagInfo(BaseModel):
-    """Finetune dataset tag info"""
+    """Statistics about task runs with a specific tag."""
 
-    tag: str
-    count: int
-    reasoning_count: int
-    high_quality_count: int
-    reasoning_and_high_quality_count: int
+    tag: str = Field(description="The tag applied to matching runs.")
+    count: int = Field(description="Total number of runs with this tag.")
+    reasoning_count: int = Field(description="Number of runs with reasoning data.")
+    high_quality_count: int = Field(description="Number of high-quality runs.")
+    reasoning_and_high_quality_count: int = Field(
+        description="Number of high-quality runs with reasoning data."
+    )
 
 
 class FinetuneDatasetInfo(BaseModel):
-    """Finetune dataset info"""
+    """Information about datasets and finetunes for a task."""
 
-    existing_datasets: list[DatasetSplit]
-    existing_finetunes: list[Finetune]
-    finetune_tags: list[FinetuneDatasetTagInfo]
+    existing_datasets: list[DatasetSplit] = Field(
+        description="Existing dataset splits."
+    )
+    existing_finetunes: list[Finetune] = Field(description="Existing finetunes.")
+    finetune_tags: list[FinetuneDatasetTagInfo] = Field(
+        description="Tag statistics for finetune data."
+    )
 
-    # eligible finetune data based on tool selection
-    eligible_datasets: list[DatasetSplit]
-    eligible_finetune_tags: list[FinetuneDatasetTagInfo]
+    eligible_datasets: list[DatasetSplit] = Field(
+        description="Eligible dataset splits based on tool selection."
+    )
+    eligible_finetune_tags: list[FinetuneDatasetTagInfo] = Field(
+        description="Eligible tag statistics based on tool selection."
+    )
 
 
 class DatasetSplitType(Enum):
@@ -121,12 +135,16 @@ api_split_types = {
 
 
 class CreateDatasetSplitRequest(BaseModel):
-    """Request to create a dataset split"""
+    """Request to create a dataset split."""
 
-    dataset_split_type: DatasetSplitType
-    filter_id: DatasetFilterId
-    name: str | None = None
-    description: str | None = None
+    dataset_split_type: DatasetSplitType = Field(
+        description="The type of split to create."
+    )
+    filter_id: DatasetFilterId = Field(description="The dataset filter to use.")
+    name: str | None = Field(default=None, description="The name of the dataset split.")
+    description: str | None = Field(
+        default=None, description="The description of the dataset split."
+    )
 
 
 class CreateFinetuneRequest(BaseModel):
@@ -158,17 +176,19 @@ class CreateFinetuneRequest(BaseModel):
 
 
 class FinetuneWithStatus(BaseModel):
-    """Finetune with status"""
+    """A finetune with its current status."""
 
-    finetune: Finetune
-    status: FineTuneStatus
+    finetune: Finetune = Field(description="The finetune configuration and metadata.")
+    status: FineTuneStatus = Field(description="The current status of the finetune.")
 
 
 class UpdateFinetuneRequest(BaseModel):
-    """Request to update a finetune"""
+    """Request to update a finetune."""
 
-    name: str
-    description: str | None = None
+    name: str = Field(description="The updated name.")
+    description: str | None = Field(
+        default=None, description="The updated description."
+    )
 
 
 def finetune_from_id(project_id: str, task_id: str, finetune_id: str) -> Finetune:
@@ -253,14 +273,39 @@ def compute_finetune_tag_info(
 
 
 def connect_fine_tune_api(app: FastAPI):
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/dataset_splits")
-    async def dataset_splits(project_id: str, task_id: str) -> list[DatasetSplit]:
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/dataset_splits",
+        summary="List Dataset Splits",
+        tags=["Fine-tuning"],
+    )
+    async def dataset_splits(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> list[DatasetSplit]:
         task = task_from_id(project_id, task_id)
         return task.dataset_splits()
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/finetunes")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/finetunes",
+        summary="List Finetunes",
+        tags=["Fine-tuning"],
+    )
     async def finetunes(
-        project_id: str, task_id: str, update_status: bool = False
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        update_status: Annotated[
+            bool, Query(description="Whether to update the status of each finetune.")
+        ] = False,
     ) -> list[Finetune]:
         task = task_from_id(project_id, task_id)
         finetunes = task.finetunes()
@@ -280,9 +325,22 @@ def connect_fine_tune_api(app: FastAPI):
 
         return finetunes
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/finetunes/{finetune_id}")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/finetunes/{finetune_id}",
+        summary="Get Finetune",
+        tags=["Fine-tuning"],
+    )
     async def finetune(
-        project_id: str, task_id: str, finetune_id: str
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        finetune_id: Annotated[
+            str, Path(description="The unique identifier of the finetune.")
+        ],
     ) -> FinetuneWithStatus:
         finetune = finetune_from_id(project_id, task_id, finetune_id)
         if finetune.provider not in finetune_registry:
@@ -294,11 +352,22 @@ def connect_fine_tune_api(app: FastAPI):
         status = await finetune_adapter(finetune).status()
         return FinetuneWithStatus(finetune=finetune, status=status)
 
-    @app.patch("/api/projects/{project_id}/tasks/{task_id}/finetunes/{finetune_id}")
+    @app.patch(
+        "/api/projects/{project_id}/tasks/{task_id}/finetunes/{finetune_id}",
+        summary="Update Finetune",
+        tags=["Fine-tuning"],
+    )
     async def update_finetune(
-        project_id: str,
-        task_id: str,
-        finetune_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        finetune_id: Annotated[
+            str, Path(description="The unique identifier of the finetune.")
+        ],
         request: UpdateFinetuneRequest,
     ) -> Finetune:
         finetune = finetune_from_id(project_id, task_id, finetune_id)
@@ -307,7 +376,11 @@ def connect_fine_tune_api(app: FastAPI):
         finetune.save_to_file()
         return finetune
 
-    @app.get("/api/finetune_providers")
+    @app.get(
+        "/api/finetune_providers",
+        summary="List Finetune Providers",
+        tags=["Fine-tuning"],
+    )
     async def finetune_providers() -> list[FinetuneProvider]:
         provider_models: dict[ModelProviderName, list[FinetuneProviderModel]] = {}
 
@@ -361,9 +434,15 @@ def connect_fine_tune_api(app: FastAPI):
 
         return providers
 
-    @app.get("/api/finetune/hyperparameters/{provider_id}")
+    @app.get(
+        "/api/finetune/hyperparameters/{provider_id}",
+        summary="List Finetune Hyperparameters",
+        tags=["Fine-tuning"],
+    )
     async def finetune_hyperparameters(
-        provider_id: str,
+        provider_id: Annotated[
+            str, Path(description="The unique identifier of the finetune provider.")
+        ],
     ) -> list[FineTuneParameter]:
         if provider_id not in finetune_registry:
             raise HTTPException(
@@ -372,12 +451,29 @@ def connect_fine_tune_api(app: FastAPI):
         finetune_adapter_class = finetune_registry[provider_id]  # type: ignore[invalid-argument-type]
         return finetune_adapter_class.available_parameters()
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/finetune_dataset_info")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/finetune_dataset_info",
+        summary="Get Finetune Dataset Info",
+        tags=["Fine-tuning"],
+    )
     async def finetune_dataset_info(
-        project_id: str,
-        task_id: str,
-        tool_ids: Annotated[list[str] | None, Query()] = None,
-        empty_tool_filter: bool = False,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        tool_ids: Annotated[
+            list[str] | None,
+            Query(description="Optional list of tool/skill IDs to filter by."),
+        ] = None,
+        empty_tool_filter: Annotated[
+            bool,
+            Query(
+                description="If true and tool_ids is None, treats as empty tool filter."
+            ),
+        ] = False,
     ) -> FinetuneDatasetInfo:
         # In the fine-tune UI, "no tools/skills selected" should mean `tool_ids=[]`,
         # but `openapi-fetch` omits empty arrays, so we recover that state from
@@ -425,9 +521,20 @@ def connect_fine_tune_api(app: FastAPI):
             eligible_finetune_tags=eligible_finetune_tags,
         )
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/dataset_splits")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/dataset_splits",
+        summary="Create Dataset Split",
+        tags=["Fine-tuning"],
+    )
     async def create_dataset_split(
-        project_id: str, task_id: str, request: CreateDatasetSplitRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        request: CreateDatasetSplitRequest,
     ) -> DatasetSplit:
         task = task_from_id(project_id, task_id)
         split_definitions = api_split_types[request.dataset_split_type]
@@ -446,9 +553,20 @@ def connect_fine_tune_api(app: FastAPI):
         dataset_split.save_to_file()
         return dataset_split
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/finetunes")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/finetunes",
+        summary="Create Finetune",
+        tags=["Fine-tuning"],
+    )
     async def create_finetune(
-        project_id: str, task_id: str, request: CreateFinetuneRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        request: CreateFinetuneRequest,
     ) -> Finetune:
         task = task_from_id(project_id, task_id)
         if request.provider not in finetune_registry:
@@ -503,17 +621,45 @@ def connect_fine_tune_api(app: FastAPI):
 
         return finetune_model
 
-    @app.get("/api/download_dataset_jsonl")
+    @app.get(
+        "/api/download_dataset_jsonl",
+        summary="Download Dataset JSONL",
+        tags=["Fine-tuning"],
+    )
     async def download_dataset_jsonl(
-        project_id: str,
-        task_id: str,
-        dataset_id: str,
-        split_name: str,
-        format_type: str,
-        data_strategy: str,
-        system_message_generator: str | None = None,
-        custom_system_message: str | None = None,
-        custom_thinking_instructions: str | None = None,
+        project_id: Annotated[
+            str, Query(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Query(description="The unique identifier of the task within the project."),
+        ],
+        dataset_id: Annotated[
+            str, Query(description="The unique identifier of the dataset split.")
+        ],
+        split_name: Annotated[
+            str,
+            Query(
+                description="The name of the split to download (e.g., 'train', 'test', 'validation')."
+            ),
+        ],
+        format_type: Annotated[
+            str, Query(description="The format type for the JSONL output.")
+        ],
+        data_strategy: Annotated[
+            str, Query(description="The data strategy for formatting the output.")
+        ],
+        system_message_generator: Annotated[
+            str | None, Query(description="The system message generator to use.")
+        ] = None,
+        custom_system_message: Annotated[
+            str | None,
+            Query(description="Custom system message if not using a generator."),
+        ] = None,
+        custom_thinking_instructions: Annotated[
+            str | None,
+            Query(description="Custom thinking instructions for thinking models."),
+        ] = None,
     ) -> StreamingResponse:
         if format_type not in [format.value for format in DatasetFormat]:
             raise HTTPException(

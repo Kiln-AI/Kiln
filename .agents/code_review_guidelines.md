@@ -25,6 +25,15 @@ The SDK in `/libs/core` is a SDK/library we expose to third parties. We code rev
 - All visible classes/vars should have docstrings explaining their purpose. These will be pulled into 3rd party docs automatically. The doc strings should be written for 3rd party devs learning the SDK.
 - Performance: the base_adapter and litellm_adapter are performance critical. They are the core run-loop of our agent system. We should avoid anything that would slow them down (file reads should be done once and passed in, etc). It's critical to avoid blocking IO - a process may be executing hundreds of these in parallel.
 
+### FastAPI / OpenAPI Standards
+
+If the change impacts API endpoints, read `.agents/api_code_review.md` for instructions on how to code review API endpoints.
+
+Changes impacting APIs include:
+ - adding/removing/modifying a FastAPI endpoint `@app.get`, `@app.delete`, etc
+ - adding/removing/modifing a pydantic model which is used in an API endpoint, as a input/return value (including nested models)
+
 ### Project specific guide
 
 - **`ModelName` enum and user input:** Do not use the `ModelName` enum for validation or typing of user-provided model identifiers (for example in a Pydantic request body that validates an API payload). Kiln loads additional models over the air; those models can use names that are not members of the locally shipped `ModelName` enum. If request validation is tied to the enum, a model that is valid according to the merged model list will fail validation. Appropriate uses of `ModelName` include aliasing a constant chosen at build time (for example default config that references a known shipped model) and entries inside the `ml_model_list` provider definitions.
+

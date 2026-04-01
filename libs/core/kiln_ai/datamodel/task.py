@@ -43,10 +43,20 @@ class TaskRequirement(BaseModel):
 
     id: ID_TYPE = ID_FIELD
     name: FilenameStringShort = Field(description="The name of the task requirement.")
-    description: str | None = Field(default=None)
-    instruction: str = Field(min_length=1)
-    priority: Priority = Field(default=Priority.p2)
-    type: TaskOutputRatingType = Field(default=TaskOutputRatingType.five_star)
+    description: str | None = Field(
+        default=None,
+        description="Optional elaboration on the requirement's purpose.",
+    )
+    instruction: str = Field(
+        min_length=1, description="Instructions for meeting the requirement."
+    )
+    priority: Priority = Field(
+        default=Priority.p2, description="The priority level of the requirement."
+    )
+    type: TaskOutputRatingType = Field(
+        default=TaskOutputRatingType.five_star,
+        description="The rating type used to evaluate this requirement.",
+    )
 
 
 class TaskRunConfig(KilnParentedModel):
@@ -146,10 +156,14 @@ class Task(
         default=[],
         description="Deprecated: Use specs and prompts instead.",
     )
-    # Output must be an object schema, as things like tool calls only allow objects
-    output_json_schema: JsonObjectSchema | None = None
-    # Inputs are more flexible, allowing arrays
-    input_json_schema: JsonSchema | None = None
+    output_json_schema: JsonObjectSchema | None = Field(
+        default=None,
+        description="JSON schema for structured task output. Must be an object schema.",
+    )
+    input_json_schema: JsonSchema | None = Field(
+        default=None,
+        description="JSON schema for structured task input. Can be an object or array schema.",
+    )
     thinking_instruction: str | None = Field(
         default=None,
         description="Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting.",

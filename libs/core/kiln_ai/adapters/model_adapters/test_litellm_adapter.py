@@ -203,7 +203,7 @@ async def test_response_format_options_json_schema(config, mock_task):
         patch.object(adapter, "has_structured_output", return_value=True),
     ):
         options = await adapter.response_format_options()
-        expected_schema = close_object_schemas(mock_task.output_schema())
+        expected_schema = close_object_schemas(mock_task.output_schema(), strict=True)
         assert options == {
             "response_format": {
                 "type": "json_schema",
@@ -243,7 +243,7 @@ def test_tool_call_params_strict(config, mock_task):
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
 
     params = adapter.tool_call_params(strict=True)
-    expected_schema = close_object_schemas(mock_task.output_schema())
+    expected_schema = close_object_schemas(mock_task.output_schema(), strict=True)
 
     assert params == {
         "tools": [
@@ -261,6 +261,81 @@ def test_tool_call_params_strict(config, mock_task):
             "function": {"name": "task_response"},
         },
     }
+
+
+def test_tool_call_params_strict_adds_required_to_nested(config, tmp_path):
+    project_path = tmp_path / "test_project_nested" / "project.kiln"
+    project_path.parent.mkdir()
+    project = Project(name="Nested Project", path=str(project_path))
+    project.save_to_file()
+
+    nested_schema = {
+        "type": "object",
+        "properties": {
+            "user": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "age": {"type": "integer"},
+                },
+            },
+            "status": {"type": "string"},
+        },
+    }
+    task = Task(
+        name="Nested Task",
+        instruction="Test instruction",
+        parent=project,
+        output_json_schema=json.dumps(nested_schema),
+    )
+    task.save_to_file()
+
+    adapter = LiteLlmAdapter(config=config, kiln_task=task)
+    params = adapter.tool_call_params(strict=True)
+
+    result_schema = params["tools"][0]["function"]["parameters"]
+    assert result_schema["required"] == ["user", "status"]
+    assert result_schema["properties"]["user"]["required"] == ["name", "age"]
+
+
+@pytest.mark.asyncio
+async def test_json_schema_response_format_adds_required_to_nested(config, tmp_path):
+    project_path = tmp_path / "test_project_nested2" / "project.kiln"
+    project_path.parent.mkdir()
+    project = Project(name="Nested Project 2", path=str(project_path))
+    project.save_to_file()
+
+    nested_schema = {
+        "type": "object",
+        "properties": {
+            "result": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": "number"},
+                    "unit": {"type": "string"},
+                },
+            },
+        },
+    }
+    task = Task(
+        name="Nested Task 2",
+        instruction="Test instruction",
+        parent=project,
+        output_json_schema=json.dumps(nested_schema),
+    )
+    task.save_to_file()
+
+    config.run_config_properties.structured_output_mode = (
+        StructuredOutputMode.json_schema
+    )
+    adapter = LiteLlmAdapter(config=config, kiln_task=task)
+
+    with patch.object(adapter, "has_structured_output", return_value=True):
+        options = await adapter.response_format_options()
+
+    result_schema = options["response_format"]["json_schema"]["schema"]
+    assert result_schema["required"] == ["result"]
+    assert result_schema["properties"]["result"]["required"] == ["value", "unit"]
 
 
 @pytest.mark.parametrize(

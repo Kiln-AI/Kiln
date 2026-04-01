@@ -157,7 +157,7 @@ def single_string_field_name(schema: Dict) -> str | None:
     return None
 
 
-def close_object_schemas(schema: Dict) -> Dict:
+def close_object_schemas(schema: Dict, strict: bool = False) -> Dict:
     """Return a deep-copied schema with object nodes closed by default.
 
     Any schema node with 'type == "object"' gets 'additionalProperties: false'
@@ -165,6 +165,10 @@ def close_object_schemas(schema: Dict) -> Dict:
     schema structures such as 'properties', 'items', '$defs', and composed
     schemas like 'anyOf'/'oneOf'/'allOf'. Existing explicit
     'additionalProperties' values are preserved.
+
+    When strict=True, also sets 'required' to list all property keys on every
+    object node with 'properties'. This is needed for OpenAI's strict
+    structured output mode, which does not support optional properties.
     """
 
     def _normalize(node: Any) -> Any:
@@ -202,6 +206,13 @@ def close_object_schemas(schema: Dict) -> Dict:
             and "additionalProperties" not in normalized
         ):
             normalized["additionalProperties"] = False
+
+        if (
+            strict
+            and normalized.get("type") == "object"
+            and isinstance(normalized.get("properties"), dict)
+        ):
+            normalized["required"] = list(normalized["properties"].keys())
 
         return normalized
 

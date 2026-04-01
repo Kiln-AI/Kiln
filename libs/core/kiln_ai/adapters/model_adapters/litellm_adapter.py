@@ -442,7 +442,7 @@ class LiteLlmAdapter(BaseAdapter):
             raise ValueError(
                 "Invalid output schema for this task. Cannot use JSON schema response format."
             )
-        output_schema = close_object_schemas(output_schema)
+        output_schema = close_object_schemas(output_schema, strict=True)
         return {
             "response_format": {
                 "type": "json_schema",
@@ -460,7 +460,7 @@ class LiteLlmAdapter(BaseAdapter):
             raise ValueError(
                 "Invalid output schema for this task. Can not use tool calls."
             )
-        output_schema = close_object_schemas(output_schema)
+        output_schema = close_object_schemas(output_schema, strict=strict)
 
         function_params = {
             "name": "task_response",

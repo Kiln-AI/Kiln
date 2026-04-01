@@ -17,6 +17,7 @@ from pydantic import (
     ConfigDict,
     Field,
     SerializationInfo,
+    StringConstraints,
     ValidationError,
     ValidationInfo,
     computed_field,
@@ -40,7 +41,10 @@ def generate_model_id() -> str:
 # Should be unique per item, at least inside the context of a parent/child relationship.
 # Use integers to make it easier to type for a search function.
 # Allow none, even though we generate it, because we clear it in the REST API if the object is ephemeral (not persisted to disk)
-ID_FIELD = Field(default_factory=generate_model_id)
+ID_FIELD = Field(
+    default_factory=generate_model_id,
+    description="Unique identifier for this record.",
+)
 ID_TYPE = Optional[str]
 T = TypeVar("T", bound="KilnBaseModel")
 PT = TypeVar("PT", bound="KilnParentedModel")
@@ -274,10 +278,14 @@ class KilnAttachmentModel(BaseModel):
 #     name: FilenameString = Field(description="The name of the model.")
 #     name_short: FilenameStringShort = Field(description="The short name of the model.")
 FilenameString = Annotated[
-    str, BeforeValidator(name_validator(min_length=1, max_length=MAX_FILENAME_LENGTH))
+    str,
+    BeforeValidator(name_validator(min_length=1, max_length=MAX_FILENAME_LENGTH)),
+    StringConstraints(min_length=1, max_length=MAX_FILENAME_LENGTH),
 ]
 FilenameStringShort = Annotated[
-    str, BeforeValidator(name_validator(min_length=1, max_length=32))
+    str,
+    BeforeValidator(name_validator(min_length=1, max_length=32)),
+    StringConstraints(min_length=1, max_length=32),
 ]
 
 
@@ -294,11 +302,19 @@ class KilnBaseModel(BaseModel):
 
     model_config = ConfigDict(validate_assignment=True)
 
-    v: int = Field(default=1)  # schema_version
+    v: int = Field(default=1, description="Schema version for migration support.")
     id: ID_TYPE = ID_FIELD
-    path: Optional[Path] = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.now)
-    created_by: str = Field(default_factory=lambda: Config.shared().user_id)
+    path: Optional[Path] = Field(
+        default=None, description="File system path where the record is stored."
+    )
+    created_at: datetime = Field(
+        default_factory=datetime.now,
+        description="Timestamp when the model was created.",
+    )
+    created_by: str = Field(
+        default_factory=lambda: Config.shared().user_id,
+        description="User ID of the creator.",
+    )
 
     _loaded_from_file: bool = False
     _readonly: bool = False

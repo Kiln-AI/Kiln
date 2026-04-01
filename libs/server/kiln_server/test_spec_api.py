@@ -145,7 +145,7 @@ def test_create_spec_success(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 200
@@ -192,7 +192,7 @@ def test_create_spec_minimal(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 200
@@ -216,7 +216,7 @@ def test_create_spec_task_not_found(client):
     }
 
     response = client.post(
-        "/api/projects/project-id/tasks/fake-task-id/spec", json=spec_data
+        "/api/projects/project-id/tasks/fake-task-id/specs", json=spec_data
     )
     assert response.status_code == 404
 
@@ -524,7 +524,7 @@ def test_create_spec_creates_eval_with_correct_template(client, project_and_task
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 200
@@ -560,7 +560,7 @@ def test_create_spec_with_properties(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 200
@@ -596,7 +596,7 @@ def test_create_spec_with_archived_status(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 200
@@ -651,7 +651,7 @@ def test_create_spec_missing_name(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 422
@@ -674,7 +674,7 @@ def test_create_spec_missing_definition(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 422
@@ -698,7 +698,7 @@ def test_create_spec_missing_properties(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 422
@@ -721,7 +721,7 @@ def test_create_spec_priority_default(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 200
@@ -742,7 +742,7 @@ def test_create_spec_status_default(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 200
@@ -763,7 +763,7 @@ def test_create_spec_tags_default(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 200
@@ -783,7 +783,7 @@ def test_create_spec_invalid_spec_type_in_properties(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 422
@@ -808,7 +808,7 @@ def test_create_spec_invalid_priority_enum(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 422
@@ -833,7 +833,7 @@ def test_create_spec_invalid_status_enum(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 422
@@ -857,7 +857,7 @@ def test_create_spec_invalid_name_type(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 422
@@ -879,7 +879,7 @@ def test_create_spec_invalid_tags_type(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 422
@@ -901,7 +901,7 @@ def test_create_spec_empty_string_in_tags(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 422
@@ -926,7 +926,7 @@ def test_create_spec_tag_with_space(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 422
@@ -993,7 +993,7 @@ def test_create_spec_with_empty_tool_function_name(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 422
@@ -1025,7 +1025,7 @@ def test_create_spec_with_empty_tool_use_guidelines(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 422
@@ -1054,7 +1054,7 @@ def test_create_spec_with_empty_behavior_description(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 422
@@ -1082,7 +1082,7 @@ def test_create_spec_with_empty_core_requirement(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 422
@@ -1235,7 +1235,7 @@ def test_create_spec_with_task_sample(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 200
@@ -1265,7 +1265,7 @@ def test_create_spec_without_task_sample(client, project_and_task):
     with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/tasks/{task.id}/spec", json=spec_data
+            f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
         )
 
     assert response.status_code == 200

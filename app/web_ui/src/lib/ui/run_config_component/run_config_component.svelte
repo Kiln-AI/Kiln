@@ -10,7 +10,6 @@
     run_configs_by_task_composite_id,
     save_new_task_run_config,
   } from "$lib/stores/run_configs_store"
-  import { createKilnError } from "$lib/utils/error_handlers"
   import { KilnError } from "$lib/utils/error_handlers"
   import type {
     RunConfigProperties,
@@ -47,7 +46,6 @@
   export let tools_selector_settings: Partial<ToolsSelectorSettings> = {}
   export let skills_selector_settings: Partial<SkillsSelectorSettings> = {}
   export let selected_run_config_id: string | null = null
-  export let save_config_error: KilnError | null = null
   export let set_default_error: KilnError | null = null
   export let hide_prompt_selector: boolean = false
   export let hide_tools_selector: boolean = false
@@ -393,28 +391,22 @@
     }
   }
 
-  export async function save_new_run_config(): Promise<TaskRunConfig | null> {
+  export async function save_new_run_config(): Promise<TaskRunConfig> {
     if (!current_task?.id) {
-      return null
+      throw new Error("Cannot save run config: no task selected")
     }
-    try {
-      save_config_error = null
-      const saved_config = await save_new_task_run_config(
-        project_id,
-        current_task.id,
-        run_options_as_run_config_properties(),
-        run_config_name,
-      )
-      // Reload prompts to update the dropdown with the new static prompt that is made from saving a new run config
-      await load_task_prompts(project_id, current_task.id, true)
-      if (!saved_config || !saved_config.id) {
-        throw new Error("Saved config id not found")
-      }
-      return saved_config
-    } catch (e) {
-      save_config_error = createKilnError(e)
+    const saved_config = await save_new_task_run_config(
+      project_id,
+      current_task.id,
+      run_options_as_run_config_properties(),
+      run_config_name,
+    )
+    // Reload prompts to update the dropdown with the new static prompt that is made from saving a new run config
+    await load_task_prompts(project_id, current_task.id, true)
+    if (!saved_config || !saved_config.id) {
+      throw new Error("Saved config id not found")
     }
-    return null
+    return saved_config
   }
 
   async function get_selected_run_config(): Promise<
@@ -450,7 +442,6 @@
   }
 
   export function clear_run_options_errors() {
-    save_config_error = null
     set_default_error = null
   }
 

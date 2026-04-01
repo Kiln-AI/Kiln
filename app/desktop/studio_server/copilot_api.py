@@ -1,4 +1,5 @@
 import logging
+from typing import Annotated
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.copilot import (
     clarify_spec_v1_copilot_clarify_spec_post,
@@ -47,7 +48,7 @@ from app.desktop.studio_server.utils.copilot_utils import (
     get_copilot_api_key,
 )
 from app.desktop.studio_server.utils.response_utils import unwrap_response
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.datamodel import TaskRun
 from kiln_ai.datamodel.basemodel import FilenameString
 from kiln_ai.datamodel.datamodel_enums import Priority
@@ -113,7 +114,7 @@ class CreateSpecWithCopilotRequest(BaseModel):
 
 
 def connect_copilot_api(app: FastAPI):
-    @app.post("/api/copilot/clarify_spec")
+    @app.post("/api/copilot/clarify_spec", tags=["Copilot"])
     async def clarify_spec(input: ClarifySpecApiInput) -> ClarifySpecApiOutput:
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
@@ -139,7 +140,7 @@ def connect_copilot_api(app: FastAPI):
             detail="Unknown error.",
         )
 
-    @app.post("/api/copilot/refine_spec")
+    @app.post("/api/copilot/refine_spec", tags=["Copilot"])
     async def refine_spec(input: RefineSpecApiInput) -> RefineSpecApiOutput:
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
@@ -165,7 +166,7 @@ def connect_copilot_api(app: FastAPI):
             detail="Unknown error.",
         )
 
-    @app.post("/api/copilot/generate_batch")
+    @app.post("/api/copilot/generate_batch", tags=["Copilot"])
     async def generate_batch(input: GenerateBatchApiInput) -> GenerateBatchApiOutput:
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
@@ -191,7 +192,7 @@ def connect_copilot_api(app: FastAPI):
             detail="Unknown error.",
         )
 
-    @app.post("/api/copilot/question_spec")
+    @app.post("/api/copilot/question_spec", tags=["Copilot"])
     async def question_spec(
         input: SpecQuestionerApiInput,
     ) -> QuestionSet:
@@ -219,7 +220,7 @@ def connect_copilot_api(app: FastAPI):
             detail="Unknown error.",
         )
 
-    @app.post("/api/copilot/refine_spec_with_question_answers")
+    @app.post("/api/copilot/refine_spec_with_question_answers", tags=["Copilot"])
     async def submit_question_answers(
         request: SubmitAnswersRequest,
     ) -> RefineSpecApiOutput:
@@ -245,9 +246,19 @@ def connect_copilot_api(app: FastAPI):
             detail="Unknown error.",
         )
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
+        tags=["Copilot"],
+    )
     async def create_spec_with_copilot(
-        project_id: str, task_id: str, request: CreateSpecWithCopilotRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        request: CreateSpecWithCopilotRequest,
     ) -> Spec:
         """Create a spec using Kiln Copilot.
 

@@ -127,7 +127,7 @@
 <EditDialog
   bind:this={edit_dialog}
   name="Run Configuration"
-  patch_url={`/api/projects/${project_id}/tasks/${task_id}/run_config/${run_config_id}`}
+  patch_url={`/api/projects/${project_id}/tasks/${task_id}/run_configs/${run_config_id}`}
   fields={[
     {
       label: "Run Configuration Name",
