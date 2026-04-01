@@ -2585,7 +2585,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Chat */
+        /**
+         * Stream Chat
+         * @description Forward chat to Kiln Copilot and stream AI SDK events as Server-Sent Events.
+         */
         post: operations["chat_api_chat_post"];
         delete?: never;
         options?: never;

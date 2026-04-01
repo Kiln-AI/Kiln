@@ -348,8 +348,13 @@ def _build_openai_tool_continuation(
 
 
 def connect_chat_api(app: FastAPI) -> None:
-    @app.post("/api/chat")
+    @app.post(
+        "/api/chat",
+        summary="Stream Chat",
+        tags=["Copilot"],
+    )
     async def chat(request: Request) -> StreamingResponse:
+        """Forward chat to Kiln Copilot and stream AI SDK events as Server-Sent Events."""
         api_key = get_copilot_api_key()
         body_bytes = await request.body()
         body_json = json.loads(body_bytes)
