@@ -65,6 +65,26 @@ In your base Kiln directory, run the following command to setup a pre-commit hoo
 cp utils/pre-commit-hook .git/hooks/pre-commit
 ```
 
+5. Spec Skill
+
+We use the spec from this project for planning: https://github.com/scosman/vibe-crafting
+
+To install (adapt to your tooling):
+
+```bash
+# Outside of the project
+git clone git@github.com:scosman/vibe-crafting.git
+
+# Claude Code
+mkdir -p ~/.claude/skills
+ln -s "$(pwd)/vibe-crafting/skill" ~/.claude/skills/spec
+# Optional: add Read access to your skills path to ~/.claude/settings.yaml
+
+# Cursor
+mkdir -p ~/.cursor/skills
+ln -s "$(pwd)/vibe-crafting/skill" ~/.cursor/skills/spec
+```
+
 ## Optional Setup
 
 ### IDE Extensions
