@@ -1,15 +1,15 @@
 <script lang="ts">
   import AppPage from "../app_page.svelte"
   import Chat from "./chat.svelte"
-  import EmptyChat from "./empty_chat.svelte"
 </script>
 
 <AppPage
   title="Chat"
   subtitle="Streaming chat"
-  limit_max_width={true}
+  full_height={true}
   no_y_padding={true}
 >
-  <EmptyChat />
-  <Chat />
+  <div class="flex flex-col flex-1 min-h-0 mt-8">
+    <Chat />
+  </div>
 </AppPage>

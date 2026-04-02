@@ -9,6 +9,7 @@
   export let no_y_padding: boolean = false
   export let action_buttons: ActionButton[] = []
   export let limit_max_width: boolean = false
+  export let full_height: boolean = false
 
   type Breadcrumb = {
     label: string
@@ -111,7 +112,7 @@
 <div
   class="{no_y_padding ? '' : 'mt-8 mb-12'} {limit_max_width
     ? 'max-w-[1400px]'
-    : ''}"
+    : ''} {full_height ? 'flex-1 min-h-0 flex flex-col' : ''}"
 >
   <slot />
 </div>

@@ -313,9 +313,9 @@
   }
 </script>
 
-<div>
+<div class="flex flex-col h-full">
   <div
-    class="flex flex-col h-[calc(100vh-14rem)] overflow-hidden w-full md:max-w-3xl mx-auto px-4"
+    class="flex flex-col flex-1 min-h-0 overflow-hidden w-full md:max-w-3xl mx-auto px-1"
   >
     <div
       bind:this={messagesContainer}
@@ -592,7 +592,7 @@
     </div>
 
     <form
-      class="flex-none relative w-full pt-2 pb-3"
+      class="flex-none relative w-full pt-2"
       on:submit|preventDefault={handleSubmit}
     >
       <textarea
