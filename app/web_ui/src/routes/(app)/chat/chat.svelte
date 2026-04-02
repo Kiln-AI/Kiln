@@ -258,6 +258,7 @@
     const container = messagesContainer
     const end = messagesEndRef
     if (container && end) {
+      end.scrollIntoView({ block: "end", behavior: "auto" })
       scrollObserver = new MutationObserver(() => {
         if (!suppressAutoScroll) {
           end.scrollIntoView({ block: "end", behavior: "auto" })
@@ -360,7 +361,7 @@
 
 <div>
   <div
-    class="flex flex-col h-full overflow-hidden w-full md:max-w-3xl mx-auto px-4"
+    class="flex flex-col h-[calc(100vh-14rem)] overflow-hidden w-full md:max-w-3xl mx-auto px-4"
   >
     <div
       bind:this={messagesContainer}
