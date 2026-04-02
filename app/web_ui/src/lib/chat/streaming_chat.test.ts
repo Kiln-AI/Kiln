@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import {
   streamChat,
+  chatExecuteToolsUrl,
   traceIdForNextChatRequest,
   type ChatMessage,
 } from "./streaming_chat"
@@ -53,6 +54,82 @@ describe("streamChat", () => {
       messages: [{ role: "user", content: "hi" }],
       trace_id: "tid-1",
     })
+
+    vi.unstubAllGlobals()
+  })
+
+  it("posts execute-tools when tool-calls-pending is received", async () => {
+    const lines = [
+      'data: {"type":"kiln_chat_trace","trace_id":"trace-1"}\n\n',
+      'data: {"type":"tool-calls-pending","items":[{"toolCallId":"tc1","toolName":"t","input":{},"requiresApproval":true}]}\n\n',
+    ]
+    let i = 0
+    const fetchMock = vi
+      .fn()
+      .mockImplementation((url: string, init?: RequestInit) => {
+        if (url.endsWith("/execute-tools")) {
+          expect(init?.method).toBe("POST")
+          const body = JSON.parse(init?.body as string) as {
+            trace_id: string
+            tool_calls: Array<{ toolCallId: string; requiresApproval: boolean }>
+            decisions: Record<string, boolean>
+          }
+          expect(body.trace_id).toBe("trace-1")
+          expect(body.tool_calls).toHaveLength(1)
+          expect(body.tool_calls[0].toolCallId).toBe("tc1")
+          expect(body.decisions).toEqual({ tc1: true })
+          return Promise.resolve({
+            ok: true,
+            body: {
+              getReader: () => ({
+                read: () => Promise.resolve({ done: true, value: undefined }),
+              }),
+            },
+          })
+        }
+        return Promise.resolve({
+          ok: true,
+          body: {
+            getReader: () => ({
+              read: () => {
+                if (i >= lines.length) {
+                  return Promise.resolve({ done: true, value: undefined })
+                }
+                const enc = new TextEncoder()
+                const line = lines[i]
+                i += 1
+                return Promise.resolve({
+                  done: false,
+                  value: enc.encode(line),
+                })
+              },
+            }),
+          },
+        })
+      })
+    vi.stubGlobal("fetch", fetchMock)
+
+    await streamChat({
+      apiUrl: "https://example.test/api/chat",
+      messages: [{ id: "u1", role: "user", content: "hi" }],
+      onAssistantMessage: () => {},
+      onToolCallsPending: async (payload) => {
+        const out: Record<string, boolean> = {}
+        for (const it of payload.items) {
+          if (it.requiresApproval) {
+            out[it.toolCallId] = true
+          }
+        }
+        return out
+      },
+      onFinish: () => {},
+      onError: () => {},
+    })
+
+    expect(fetchMock.mock.calls.length).toBe(2)
+    expect(chatExecuteToolsUrl("https://example.test/api/chat")).toBe(
+      "https://example.test/api/chat/execute-tools",
+    )
 
     vi.unstubAllGlobals()
   })

@@ -25,10 +25,16 @@ from kiln_ai.datamodel.eval import (
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.spec import SpecStatus
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    DENY_AGENT,
+    agent_policy_require_approval,
+)
 from pydantic import BaseModel, Field
 
 from .correlation_calculator import (
@@ -439,6 +445,7 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/create_evaluator",
         summary="Create Evaluator",
         tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def create_evaluator(
         project_id: Annotated[
@@ -469,6 +476,7 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/run_configs",
         summary="List Run Configs",
         tags=["Run Configs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_run_configs(
         project_id: Annotated[
@@ -485,6 +493,7 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
         summary="Get Eval",
         tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_eval(
         project_id: Annotated[
@@ -502,6 +511,7 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
         summary="Delete Eval",
         tags=["Evals"],
+        openapi_extra=DENY_AGENT,
     )
     async def delete_eval(
         project_id: Annotated[
@@ -520,6 +530,9 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
         summary="Update Eval",
         tags=["Evals"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit eval? Ensure you backup your project before allowing agentic edits."
+        ),
     )
     async def update_eval(
         project_id: Annotated[
@@ -558,6 +571,7 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals",
         summary="List Evals",
         tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_evals(
         project_id: Annotated[
@@ -576,6 +590,7 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs",
         summary="List Eval Configs",
         tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_eval_configs(
         project_id: Annotated[
@@ -594,6 +609,7 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}",
         summary="Get Eval Config",
         tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_eval_config(
         project_id: Annotated[
@@ -615,6 +631,7 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/run_configs",
         summary="Create Run Config",
         tags=["Run Configs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def create_task_run_config(
         project_id: Annotated[
@@ -672,6 +689,9 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}",
         summary="Update Run Config",
         tags=["Run Configs"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit run config? Ensure you backup your project before allowing agentic edits."
+        ),
     )
     async def update_run_config(
         project_id: Annotated[
@@ -712,6 +732,7 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/create_eval_config",
         summary="Create Eval Config",
         tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def create_eval_config(
         project_id: Annotated[
@@ -743,6 +764,7 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_comparison",
         summary="Run Run Config Comparison",
         tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def run_eval_config(
         project_id: Annotated[
@@ -798,6 +820,7 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/set_current_eval_config/{eval_config_id}",
         summary="Set Default Eval Config",
         tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def set_default_eval_config(
         project_id: Annotated[
@@ -843,6 +866,7 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/run_calibration",
         summary="Run Calibration",
         tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def run_eval_config_eval(
         project_id: Annotated[
@@ -869,6 +893,7 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/results",
         summary="Get Eval Run Results",
         tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_eval_run_results(
         project_id: Annotated[
@@ -906,6 +931,7 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/progress",
         summary="Get Eval Progress",
         tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_eval_progress(
         project_id: Annotated[
@@ -965,6 +991,7 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/score_summary",
         summary="Get Run Config Score Summary",
         tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_eval_config_score_summary(
         project_id: Annotated[
@@ -1078,6 +1105,7 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs_score_summary",
         summary="Get Eval Config Comparison Summary",
         tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_eval_configs_score_summary(
         project_id: Annotated[
@@ -1224,6 +1252,7 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}/eval_scores",
         summary="Get Run Config Eval Scores",
         tags=["Run Configs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_run_config_eval_scores(
         project_id: Annotated[
@@ -1243,11 +1272,15 @@ def connect_evals_api(app: FastAPI):
         task_run_config_from_id(project_id, task_id, run_config_id)
 
         # Build a mapping from eval_id to spec_id for evals that are associated with specs
+        # Also track which eval_ids belong to archived specs so we can exclude them
         specs = task.specs()
         eval_id_to_spec_id: Dict[str, str] = {}
+        archived_eval_ids: set[str] = set()
         for spec in specs:
             if spec.eval_id and spec.id:
                 eval_id_to_spec_id[spec.eval_id] = spec.id
+                if spec.status == SpecStatus.archived:
+                    archived_eval_ids.add(spec.eval_id)
 
         evals = task.evals()
         eval_results: List[RunConfigEvalResult] = []
@@ -1264,6 +1297,10 @@ def connect_evals_api(app: FastAPI):
         total_eval_runs = 0
 
         for eval in evals:
+            # Skip evals associated with archived specs
+            if eval.id and eval.id in archived_eval_ids:
+                continue
+
             # Get the dataset size for this eval
             expected_dataset_ids = dataset_ids_in_filter(
                 task, eval.eval_set_filter_id, readonly=True

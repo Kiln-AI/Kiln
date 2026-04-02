@@ -2576,6 +2576,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/execute-tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Execute approved client tools and continue chat stream
+         * @description Tool calls that require user approval are streamed to the client for approval, along with the
+         *     other toolcalls part of the same turn. The user must approve / reject all the approval-requiring
+         *     toolcalls in the UI, then send back the decisions through this endpoint, which will execute
+         *     the toolcalls and continue the chat stream.
+         */
+        post: operations["post_execute_tools_api_chat_execute_tools_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat": {
         parameters: {
             query?: never;
@@ -2585,7 +2608,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Chat */
+        /**
+         * Stream Chat
+         * @description Forward chat to Kiln Copilot and stream AI SDK events as Server-Sent Events.
+         */
         post: operations["chat_api_chat_post"];
         delete?: never;
         options?: never;
@@ -4645,6 +4671,17 @@ export interface components {
             fails_specification: boolean;
             /** User Feedback */
             user_feedback?: string | null;
+        };
+        /** ExecuteToolsRequest */
+        ExecuteToolsRequest: {
+            /** Trace Id */
+            trace_id: string;
+            /** Tool Calls */
+            tool_calls: components["schemas"]["ToolCallInfo"][];
+            /** Decisions */
+            decisions: {
+                [key: string]: boolean;
+            };
         };
         /**
          * ExternalToolApiDescription
@@ -8303,6 +8340,19 @@ export interface components {
             name: string;
             /** Description */
             description: string | null;
+        };
+        /** ToolCallInfo */
+        ToolCallInfo: {
+            /** Toolcallid */
+            toolCallId: string;
+            /** Toolname */
+            toolName: string;
+            /** Input */
+            input: {
+                [key: string]: unknown;
+            };
+            /** Requiresapproval */
+            requiresApproval: boolean;
         };
         /**
          * ToolDefinitionResponse
@@ -14626,6 +14676,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Spec"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_execute_tools_api_chat_execute_tools_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecuteToolsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

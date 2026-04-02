@@ -1,7 +1,6 @@
 import os
 import shutil
 import uuid
-from enum import Enum
 from pathlib import Path
 from typing import Callable
 from unittest.mock import patch
@@ -10,6 +9,7 @@ import litellm
 import pytest
 from dotenv import load_dotenv
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
+from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
 from kiln_ai.utils.config import Config
 
 
@@ -129,29 +129,6 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if "ollama" in item.keywords:
                 item.add_marker(skip_ollama)
-
-
-class MockFileFactoryMimeType(str, Enum):
-    # documents
-    PDF = "application/pdf"
-    CSV = "text/csv"
-    TXT = "text/plain"
-    HTML = "text/html"
-    MD = "text/markdown"
-
-    # images
-    PNG = "image/png"
-    JPG = "image/jpeg"
-    JPEG = "image/jpeg"
-
-    # audio
-    MP3 = "audio/mpeg"
-    WAV = "audio/wav"
-    OGG = "audio/ogg"
-
-    # video
-    MP4 = "video/mp4"
-    MOV = "video/quicktime"
 
 
 @pytest.fixture

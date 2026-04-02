@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/providers/embedding_models",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

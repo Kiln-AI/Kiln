@@ -6,6 +6,10 @@ from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.utils.validation import SkillNameString
 from kiln_server.project_api import project_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    agent_policy_require_approval,
+)
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -72,7 +76,9 @@ def _get_skill(project_id: str, skill_id: str) -> Skill:
 
 
 def connect_skill_api(app: FastAPI):
-    @app.get("/api/projects/{project_id}/skills", tags=["Skills"])
+    @app.get(
+        "/api/projects/{project_id}/skills", tags=["Skills"], openapi_extra=ALLOW_AGENT
+    )
     async def get_skills(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -81,7 +87,11 @@ def connect_skill_api(app: FastAPI):
         project = project_from_id(project_id)
         return [skill_to_response(s) for s in project.skills(readonly=True)]
 
-    @app.get("/api/projects/{project_id}/skills/{skill_id}", tags=["Skills"])
+    @app.get(
+        "/api/projects/{project_id}/skills/{skill_id}",
+        tags=["Skills"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_skill(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -93,7 +103,11 @@ def connect_skill_api(app: FastAPI):
         skill = _get_skill(project_id, skill_id)
         return skill_to_response(skill)
 
-    @app.get("/api/projects/{project_id}/skills/{skill_id}/content", tags=["Skills"])
+    @app.get(
+        "/api/projects/{project_id}/skills/{skill_id}/content",
+        tags=["Skills"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_skill_content(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -117,7 +131,9 @@ def connect_skill_api(app: FastAPI):
             body = ""
         return SkillContentResponse(skill_md=skill_md, body=body)
 
-    @app.post("/api/projects/{project_id}/skills", tags=["Skills"])
+    @app.post(
+        "/api/projects/{project_id}/skills", tags=["Skills"], openapi_extra=ALLOW_AGENT
+    )
     async def create_skill(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -134,7 +150,13 @@ def connect_skill_api(app: FastAPI):
         skill.save_skill_md(skill_data.body)
         return skill_to_response(skill)
 
-    @app.patch("/api/projects/{project_id}/skills/{skill_id}", tags=["Skills"])
+    @app.patch(
+        "/api/projects/{project_id}/skills/{skill_id}",
+        tags=["Skills"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit skill? Ensure you backup your project before allowing agentic edits."
+        ),
+    )
     async def update_skill(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")

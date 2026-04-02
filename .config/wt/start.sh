@@ -21,13 +21,20 @@ PORT=$(hash_port "$BRANCH")
 export KILN_PORT="$PORT"
 export KILN_FRONTEND_PORT="$((PORT + 1))"
 export VITE_API_PORT="$PORT"
+export VITE_BRANCH_NAME="$BRANCH"
 
 export KILN_WEB_URL="http://localhost:$KILN_FRONTEND_PORT"
 
 export KILN_CODER_CMD="claude"
+# user_settings.sh is gitignored, so in worktrees we fall back to the main repo copy
+MAIN_REPO_ROOT="$(git -C "$REPO_ROOT" rev-parse --git-common-dir 2>/dev/null || true)"
+MAIN_REPO_ROOT="${MAIN_REPO_ROOT%/.git}"
 if [ -f "$REPO_ROOT/.config/wt/user_settings.sh" ]; then
     # shellcheck source=/dev/null
     source "$REPO_ROOT/.config/wt/user_settings.sh"
+elif [ -n "$MAIN_REPO_ROOT" ] && [ -f "$MAIN_REPO_ROOT/.config/wt/user_settings.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$MAIN_REPO_ROOT/.config/wt/user_settings.sh"
 fi
 
 export PATH="$REPO_ROOT/.config/wt/bin:$PATH"

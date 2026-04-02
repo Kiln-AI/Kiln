@@ -50,16 +50,26 @@
         href: `/prompts/${project_id}/${task_id}`,
       },
     ]}
-    action_buttons={prompt_model?.id.startsWith("id::")
-      ? [
-          {
-            label: "Edit",
-            handler: () => {
-              edit_dialog?.show()
+    action_buttons={[
+      ...(prompt_model
+        ? [
+            {
+              label: "Clone",
+              href: `/prompts/${project_id}/${task_id}/clone/${encodeURIComponent(prompt_model.id)}`,
             },
-          },
-        ]
-      : []}
+          ]
+        : []),
+      ...(prompt_model?.id.startsWith("id::")
+        ? [
+            {
+              label: "Edit",
+              handler: () => {
+                edit_dialog?.show()
+              },
+            },
+          ]
+        : []),
+    ]}
   >
     {#if !$current_task_prompts}
       <div class="w-full min-h-[50vh] flex justify-center items-center">

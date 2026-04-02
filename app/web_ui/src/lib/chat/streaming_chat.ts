@@ -75,6 +75,20 @@ interface StreamEvent {
   trace_id?: string
   message?: string
   messageMetadata?: { finishReason?: string; usage?: unknown }
+  items?: ToolCallsPendingItem[]
+}
+
+export interface ToolCallsPendingItem {
+  toolCallId: string
+  toolName: string
+  input: unknown
+  requiresApproval: boolean
+  permission?: string
+  approvalDescription?: string
+}
+
+export interface ToolCallsPendingPayload {
+  items: ToolCallsPendingItem[]
 }
 
 export interface StreamChatOptions {
@@ -87,9 +101,22 @@ export interface StreamChatOptions {
   onChatTrace?: (traceId: string) => void
   /** Fired when backend sends an inline error event */
   onInlineError?: (message: string, traceId?: string) => void
+  /**
+   * After ``tool-calls-pending`` the stream ends; return whether to run each
+   * tool that requires approval (toolCallId → allowed).
+   */
+  onToolCallsPending?: (
+    payload: ToolCallsPendingPayload,
+  ) => Promise<Record<string, boolean>>
   onFinish: () => void
   onError: (error: Error) => void
   signal?: AbortSignal
+}
+
+/** ``POST /api/chat/execute-tools`` URL for a given ``POST /api/chat`` URL. */
+export function chatExecuteToolsUrl(chatApiUrl: string): string {
+  const trimmed = chatApiUrl.replace(/\/$/, "")
+  return `${trimmed}/execute-tools`
 }
 
 function generateId(): string {
@@ -346,6 +373,22 @@ class StreamEventProcessor {
   }
 }
 
+async function drainReader(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+): Promise<void> {
+  while (true) {
+    const { done } = await reader.read()
+    if (done) break
+  }
+}
+
+function toolInputAsRecord(input: unknown): Record<string, unknown> {
+  if (input !== null && typeof input === "object" && !Array.isArray(input)) {
+    return input as Record<string, unknown>
+  }
+  return {}
+}
+
 // ---------------------------------------------------------------------------
 // streamChat
 // ---------------------------------------------------------------------------
@@ -362,6 +405,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     onAssistantMessage,
     onChatTrace,
     onInlineError,
+    onToolCallsPending,
     onFinish,
     onError,
     signal,
@@ -401,39 +445,129 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     return
   }
 
-  const reader = response.body?.getReader()
-  if (!reader) {
+  const initialReader = response.body?.getReader()
+  if (!initialReader) {
     onError(new Error("No response body"))
     return
   }
 
   const decoder = new TextDecoder()
+  const executeToolsUrl = chatExecuteToolsUrl(apiUrl)
+  let currentTraceId: string | undefined = traceId
+  let reader: ReadableStreamDefaultReader<Uint8Array> = initialReader
   let buffer = ""
 
   const processor = new StreamEventProcessor({
     onAssistantMessage,
-    onChatTrace,
+    onChatTrace: (tid) => {
+      currentTraceId = tid
+      onChatTrace?.(tid)
+    },
     onInlineError,
   })
 
   try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split("\n")
-      buffer = lines.pop() ?? ""
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const payload = line.slice(6).trim()
-          if (payload === "[DONE]" || payload === "") continue
-          let event: StreamEvent
-          try {
-            event = JSON.parse(payload) as StreamEvent
-          } catch {
-            continue
+    outer: while (true) {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break outer
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split("\n")
+        buffer = lines.pop() ?? ""
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const payload = line.slice(6).trim()
+            if (payload === "[DONE]" || payload === "") continue
+            let event: StreamEvent
+            try {
+              event = JSON.parse(payload) as StreamEvent
+            } catch {
+              continue
+            }
+            if (event.type === "tool-calls-pending") {
+              const items = event.items
+              if (!Array.isArray(items) || items.length === 0) {
+                onError(
+                  new Error("Invalid tool-calls-pending event from server"),
+                )
+                return
+              }
+              if (!currentTraceId) {
+                onError(
+                  new Error(
+                    "Missing trace id for tool execution; wait for chat trace before tools.",
+                  ),
+                )
+                return
+              }
+              let decisions: Record<string, boolean>
+              if (onToolCallsPending) {
+                decisions = await onToolCallsPending({ items })
+              } else {
+                decisions = {}
+                for (const it of items) {
+                  if (
+                    it.requiresApproval &&
+                    typeof it.toolCallId === "string"
+                  ) {
+                    decisions[it.toolCallId] = false
+                  }
+                }
+              }
+              const decisionsPayload: Record<string, boolean> = {}
+              for (const it of items) {
+                if (it.requiresApproval && typeof it.toolCallId === "string") {
+                  decisionsPayload[it.toolCallId] =
+                    decisions[it.toolCallId] ?? false
+                }
+              }
+              const toolCallsPayload = items.map((it) => ({
+                toolCallId: it.toolCallId,
+                toolName: it.toolName,
+                input: toolInputAsRecord(it.input),
+                requiresApproval: Boolean(it.requiresApproval),
+              }))
+              let postRes: Response
+              try {
+                postRes = await fetch(executeToolsUrl, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    trace_id: currentTraceId,
+                    tool_calls: toolCallsPayload,
+                    decisions: decisionsPayload,
+                  }),
+                  signal,
+                })
+              } catch (err) {
+                if ((err as Error).name === "AbortError") {
+                  onFinish()
+                  return
+                }
+                onError(err instanceof Error ? err : new Error(String(err)))
+                return
+              }
+              if (!postRes.ok) {
+                const text = await postRes.text()
+                onError(
+                  new Error(
+                    `Tool execute API error ${postRes.status}: ${text || postRes.statusText}`,
+                  ),
+                )
+                return
+              }
+              const nextReader = postRes.body?.getReader()
+              if (!nextReader) {
+                onError(new Error("No response body from execute-tools"))
+                return
+              }
+              await drainReader(reader)
+              reader = nextReader
+              buffer = ""
+              continue outer
+            }
+            processor.handleEvent(event)
           }
-          processor.handleEvent(event)
         }
       }
     }

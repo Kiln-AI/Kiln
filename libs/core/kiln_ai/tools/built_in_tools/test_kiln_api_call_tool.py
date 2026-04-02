@@ -156,7 +156,7 @@ class TestJqFilter:
             result = await tool.run(method="GET", url_path="/test", jq_filter=".name")
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 200
-            assert parsed["body"] == '"test-value"'
+            assert parsed["body"] == "test-value"
 
     @pytest.mark.asyncio
     async def test_jq_filter_applies_to_2xx_not_only_200(self, tool):
@@ -172,7 +172,7 @@ class TestJqFilter:
             )
             parsed = json.loads(result.output)
             assert parsed["status_code"] == 201
-            assert parsed["body"] == '"created"'
+            assert parsed["body"] == "created"
 
     @pytest.mark.asyncio
     async def test_jq_filter_extracts_array(self, tool):
@@ -295,3 +295,49 @@ class TestResponseConstruction:
             parsed = json.loads(result.output)
             assert isinstance(parsed["status_code"], int)
             assert parsed["status_code"] == 201
+
+    @pytest.mark.asyncio
+    async def test_json_response_body_is_object_not_double_encoded_string(self, tool):
+        payload = {"projects": ["p1", "p2"], "nested": {"k": 1}}
+        with respx.mock:
+            respx.get("http://test-server:8757/api/projects").mock(
+                return_value=httpx.Response(200, json=payload)
+            )
+            result = await tool.run(method="GET", url_path="/api/projects")
+            parsed = json.loads(result.output)
+            assert parsed["body"] == payload
+            assert isinstance(parsed["body"], dict)
+
+    @pytest.mark.asyncio
+    async def test_json_array_response_body_is_list(self, tool):
+        payload = [{"id": "a"}, {"id": "b"}]
+        with respx.mock:
+            respx.get("http://test-server:8757/api/items").mock(
+                return_value=httpx.Response(200, json=payload)
+            )
+            result = await tool.run(method="GET", url_path="/api/items")
+            parsed = json.loads(result.output)
+            assert parsed["body"] == payload
+            assert isinstance(parsed["body"], list)
+
+    @pytest.mark.asyncio
+    async def test_non_json_response_body_stays_plain_string(self, tool):
+        with respx.mock:
+            respx.get("http://test-server:8757/test").mock(
+                return_value=httpx.Response(500, text="Internal Server Error")
+            )
+            result = await tool.run(method="GET", url_path="/test")
+            parsed = json.loads(result.output)
+            assert parsed["body"] == "Internal Server Error"
+
+    @pytest.mark.asyncio
+    async def test_error_json_response_body_is_object(self, tool):
+        err = {"error": "not found", "code": 404}
+        with respx.mock:
+            respx.get("http://test-server:8757/missing").mock(
+                return_value=httpx.Response(404, json=err)
+            )
+            result = await tool.run(method="GET", url_path="/missing")
+            parsed = json.loads(result.output)
+            assert parsed["status_code"] == 404
+            assert parsed["body"] == err
