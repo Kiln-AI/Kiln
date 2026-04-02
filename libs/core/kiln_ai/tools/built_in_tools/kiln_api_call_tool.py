@@ -131,5 +131,11 @@ Endpoint paths, request schemas, response fields, and jq filters are defined in 
             # Return raw body for non-2xx or when no filter
             response_body = response_text
 
+        if isinstance(response_body, str):
+            try:
+                response_body = json.loads(response_body)
+            except json.JSONDecodeError:
+                pass
+
         result = {"status_code": status_code, "body": response_body}
         return ToolCallResult(output=json.dumps(result))
