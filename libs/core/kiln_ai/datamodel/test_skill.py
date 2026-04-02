@@ -4,10 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from kiln_ai.datamodel.project import Project
-from kiln_ai.datamodel.skill import (
-    Skill,
-    _parse_skill_md_body,
-)
+from kiln_ai.datamodel.skill import Skill, _parse_skill_md_body
 
 
 @pytest.fixture
@@ -107,6 +104,14 @@ def test_body_raises_without_skill_md(mock_project):
     skill.save_to_file()
     with pytest.raises(FileNotFoundError, match=r"SKILL\.md not found"):
         skill.body()
+
+
+def test_skill_md_path_is_directory(mock_project):
+    skill = make_skill(parent=mock_project)
+    skill.save_to_file()
+    skill.skill_md_path().mkdir()
+    with pytest.raises(ValueError, match=r"SKILL\.md path is a folder"):
+        skill.skill_md_raw()
 
 
 def test_save_skill_md_empty_body_rejected(mock_project):
@@ -409,6 +414,12 @@ class TestReferences:
         with pytest.raises(ValueError, match="not a readable text file"):
             skill.read_reference("image.png")
 
+    def test_read_reference_path_is_directory(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        (skill.references_dir() / "subdir").mkdir()
+        with pytest.raises(ValueError, match="folder, not a file"):
+            skill.read_reference("subdir")
+
     def test_references_dir_requires_saved_skill(self):
         skill = make_skill()
         with pytest.raises(ValueError, match="Skill must be saved"):
@@ -445,6 +456,12 @@ class TestAssets:
         (skill.assets_dir() / "photo.jpg").write_bytes(b"\xff\xd8\xff\xe0\x00\x10JFIF")
         with pytest.raises(ValueError, match="not a readable text file"):
             skill.read_asset("photo.jpg")
+
+    def test_read_asset_path_is_directory(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        (skill.assets_dir() / "data_dir").mkdir()
+        with pytest.raises(ValueError, match="folder, not a file"):
+            skill.read_asset("data_dir")
 
     def test_assets_dir_requires_saved_skill(self):
         skill = make_skill()
