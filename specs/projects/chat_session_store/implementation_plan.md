@@ -25,10 +25,10 @@ Create `app/web_ui/src/lib/chat/chat_session_store.ts` with the store factory an
 
 Refactor `chat.svelte` to be a pure UI component that subscribes to a `ChatSessionStore`.
 
-- [ ] Add `export let store` prop defaulting to `chatSessionStore`
-- [ ] Replace local `messages`, `status`, `abortController`, `collapsedPartKeys` with `$store` subscriptions
-- [ ] Replace `handleSubmit`, `stop`, `retryLastRequest`, `togglePartCollapsed` with store method calls
-- [ ] Remove `streamChat` import, `CHAT_API_URL`, `updateLastAssistant`, `removeErrors` — all moved to store
-- [ ] Keep component-local: DOM refs, scroll, input text, reasoning timing, formatting helpers
-- [ ] Verify all three usage sites work (chat page, sidebar, dialog) and share the same session
-- [ ] Run linting, formatting, type checking
+- [x] Add `export let store` prop defaulting to `chatSessionStore`
+- [x] Replace local `messages`, `status`, `abortController`, `collapsedPartKeys` with `$store` subscriptions
+- [x] Replace `handleSubmit`, `stop`, `retryLastRequest`, `togglePartCollapsed` with store method calls
+- [x] Remove `streamChat` import, `CHAT_API_URL`, `updateLastAssistant`, `removeErrors` — all moved to store
+- [x] Keep component-local: DOM refs, scroll, input text, reasoning timing, formatting helpers
+- [x] Verify all three usage sites work (chat page, sidebar, dialog) and share the same session
+- [x] Run linting, formatting, type checking

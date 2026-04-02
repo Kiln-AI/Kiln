@@ -4,30 +4,26 @@
   import { browser } from "$app/environment"
   import { chat_cost_disclaimer_acknowledged } from "$lib/stores"
   import ChatCostDisclaimer from "./ChatCostDisclaimer.svelte"
-  import {
-    streamChat,
-    chatGenerateId,
-    traceIdForNextChatRequest,
-    type ChatMessage,
-    type ChatMessagePart,
-    type ToolCallsPendingPayload,
+  import type {
+    ChatMessage,
+    ChatMessagePart,
+    ToolCallsPendingPayload,
   } from "$lib/chat/streaming_chat"
   import ChatMarkdown from "$lib/chat/ChatMarkdown.svelte"
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
   import StopIcon from "$lib/ui/icons/stop_icon.svelte"
-  import { base_url } from "$lib/api_client"
+  import {
+    chatSessionStore,
+    type ChatSessionStore,
+  } from "$lib/chat/chat_session_store"
 
-  const CHAT_API_URL = `${base_url}/api/chat`
+  export let store: ChatSessionStore = chatSessionStore
 
-  let messages: ChatMessage[] = []
   let input = ""
-  let status: "ready" | "submitted" | "streaming" = "ready"
-  let abortController: AbortController | null = null
   let messagesContainer: HTMLDivElement | null = null
   let messagesEndRef: HTMLDivElement | null = null
   let scrollObserver: MutationObserver | null = null
   let textareaRef: HTMLTextAreaElement | null = null
-  let collapsedPartKeys: Record<string, boolean> = {}
   let reasoningPartStartTimes: Record<string, number> = {}
   let reasoningPartEndTimes: Record<string, number> = {}
   let lastSeenLastPartKey: string | null = null
@@ -37,6 +33,10 @@
     resolve: (d: Record<string, boolean>) => void
   } | null = null
   let toolApprovalPicks: Record<string, boolean | undefined> = {}
+
+  $: messages = $store.messages
+  $: status = $store.status
+  $: collapsedPartKeys = $store.collapsedPartKeys
 
   $: isLoading = status === "submitted" || status === "streaming"
   $: chatAcknowledged = $chat_cost_disclaimer_acknowledged
@@ -198,7 +198,7 @@
       parts,
     )
     suppressAutoScroll = true
-    collapsedPartKeys = { ...collapsedPartKeys, [key]: !current }
+    store.togglePartCollapsed(key, current)
     setTimeout(() => {
       suppressAutoScroll = false
     }, 50)
@@ -254,6 +254,7 @@
   let suppressAutoScroll = false
 
   onMount(() => {
+    store.setOnToolCallsPending(handleToolCallsPending)
     const container = messagesContainer
     const end = messagesEndRef
     if (container && end) {
@@ -272,6 +273,7 @@
   })
 
   onDestroy(() => {
+    store.setOnToolCallsPending(null)
     scrollObserver?.disconnect()
     scrollObserver = null
   })
@@ -288,32 +290,6 @@
     if (!el) return
     el.style.height = "auto"
     el.style.height = `${Math.min(el.scrollHeight + 2, window.innerHeight * 0.4)}px`
-  }
-
-  function removeErrors() {
-    messages = messages.filter((m) => m.role !== "error")
-  }
-
-  function retryLastRequest() {
-    // Find the last user message and trim everything from it onward
-    let lastUserIdx = -1
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user") {
-        lastUserIdx = i
-        break
-      }
-    }
-    if (lastUserIdx === -1) return
-    const userText = messages[lastUserIdx].content ?? ""
-    messages = messages.slice(0, lastUserIdx)
-    input = userText
-    handleSubmit()
-  }
-
-  function stop() {
-    if (abortController) {
-      abortController.abort()
-    }
   }
 
   function handleToolCallsPending(
@@ -361,88 +337,30 @@
     maybeFinishToolApproval()
   }
 
-  function updateLastAssistant(update: (draft: ChatMessage) => void) {
-    const last = messages[messages.length - 1]
-    if (last?.role === "assistant") {
-      const draft = { ...last, parts: last.parts ? [...last.parts] : [] }
-      update(draft)
-      messages = [...messages.slice(0, -1), draft]
-    }
+  function retryLastRequest() {
+    store.retryLastRequest()
+  }
+
+  function stop() {
+    store.stop()
   }
 
   function handleSubmit(e?: Event) {
     if (e) e.preventDefault()
     const text = input.trim()
     if (!text || isLoading || (browser && !chatAcknowledged)) return
-    removeErrors()
-    const traceId = traceIdForNextChatRequest(messages)
-    const userMessage: ChatMessage = {
-      id: chatGenerateId(),
-      role: "user",
-      content: text,
-    }
-    const assistantMessage: ChatMessage = {
-      id: chatGenerateId(),
-      role: "assistant",
-      parts: [],
-    }
-    messages = [...messages, userMessage, assistantMessage]
+    store.sendMessage(text)
     input = ""
-    status = "submitted"
     setTimeout(() => {
       adjustTextareaHeight()
       messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })
     }, 0)
-    abortController = new AbortController()
-
-    streamChat({
-      apiUrl: CHAT_API_URL,
-      messages: [userMessage],
-      traceId,
-      onAssistantMessage: (update) => {
-        status = "streaming"
-        updateLastAssistant(update)
-      },
-      onChatTrace: (traceId) => {
-        const last = messages[messages.length - 1]
-        if (last?.role === "assistant") {
-          messages = [...messages.slice(0, -1), { ...last, traceId }]
-        }
-      },
-      onInlineError: (message, traceId) => {
-        const errorMsg: ChatMessage = {
-          id: chatGenerateId(),
-          role: "error",
-          content: message,
-          traceId,
-        }
-        messages = [...messages, errorMsg]
-        status = "ready"
-        abortController = null
-      },
-      onToolCallsPending: handleToolCallsPending,
-      onFinish: () => {
-        status = "ready"
-        abortController = null
-      },
-      onError: (err) => {
-        const errorMsg: ChatMessage = {
-          id: chatGenerateId(),
-          role: "error",
-          content: err.message,
-        }
-        messages = [...messages, errorMsg]
-        status = "ready"
-        abortController = null
-      },
-      signal: abortController.signal,
-    })
   }
 </script>
 
 <div>
   <div
-    class="flex flex-col h-[calc(100vh-14rem)] overflow-hidden w-full md:max-w-3xl mx-auto px-4"
+    class="flex flex-col h-full overflow-hidden w-full md:max-w-3xl mx-auto px-4"
   >
     <div
       bind:this={messagesContainer}
