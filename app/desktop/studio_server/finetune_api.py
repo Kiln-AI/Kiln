@@ -53,6 +53,7 @@ from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
+    DENY_AGENT,
     agent_policy_require_approval,
 )
 from pydantic import BaseModel, Field, model_validator
@@ -642,7 +643,7 @@ def connect_fine_tune_api(app: FastAPI):
         "/api/download_dataset_jsonl",
         summary="Download Dataset JSONL",
         tags=["Fine-tuning"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=DENY_AGENT,
     )
     async def download_dataset_jsonl(
         project_id: Annotated[
