@@ -45,11 +45,56 @@
   let error: KilnError | null = null
   let submitting = false
   export let saved: boolean = false
-  // Warn before unload if there's any user input
+
+  // Track initial values to detect actual changes from the loaded state.
+  // This prevents false "unsaved changes" warnings when opening an existing task.
+  let initial_name: string
+  let initial_description: string | null | undefined
+  let initial_instruction: string
+  let initial_thinking_instruction: string | null | undefined
+  let initial_requirements: Array<{
+    name: string | undefined
+    instruction: string | undefined
+    type: string | undefined
+    priority: number | undefined
+  }>
+
+  function reset_initial_values() {
+    initial_name = task.name
+    initial_description = task.description
+    initial_instruction = task.instruction
+    initial_thinking_instruction = task.thinking_instruction
+    initial_requirements = task.requirements.map((r) => ({
+      name: r.name,
+      instruction: r.instruction,
+      type: r.type,
+      priority: r.priority,
+    }))
+  }
+  reset_initial_values()
+
+  function requirements_changed(
+    reqs: Task["requirements"],
+    initial: typeof initial_requirements,
+  ): boolean {
+    if (reqs.length !== initial.length) return true
+    return reqs.some(
+      (r, i) =>
+        (r.name || "") !== (initial[i].name || "") ||
+        (r.instruction || "") !== (initial[i].instruction || "") ||
+        (r.type || "") !== (initial[i].type || "") ||
+        r.priority !== initial[i].priority,
+    )
+  }
+
+  // Warn before unload only if there are actual changes from the initial state
   $: warn_before_unload =
-    !saved &&
-    ([task.name, task.description, task.instruction].some((value) => !!value) ||
-      task.requirements.some((req) => !!req.name || !!req.instruction))
+    task.name !== initial_name ||
+    (task.description || "") !== (initial_description || "") ||
+    task.instruction !== initial_instruction ||
+    (task.thinking_instruction || "") !==
+      (initial_thinking_instruction || "") ||
+    requirements_changed(task.requirements, initial_requirements)
 
   // Allow explicitly setting project ID, or infer current project ID
   export let explicit_project_id: string | undefined = undefined
@@ -145,6 +190,7 @@
         current_task_rating_options: null,
       })
       saved = true
+      reset_initial_values()
 
       // reload the current task to make sure changes propagate throughout the UI
       // e.g. the rating options
