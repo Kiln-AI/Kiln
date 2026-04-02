@@ -50,18 +50,17 @@
 </script>
 
 <div class="welcome-container w-full">
-  <div class="max-w-lg mx-auto px-4 py-12">
+  <div class="max-w-lg mx-auto px-4 py-2">
     <!-- Header -->
-    <div class="text-center mb-10">
+    <div class="text-center mb-4">
       <img
         src="/images/chat_icon.svg"
-        alt="Kiln"
-        class="w-24 h-14 mx-auto mb-4"
+        alt="Chat Icon"
+        class="welcome-icon w-[72px] h-[42px] mx-auto mb-2"
       />
-      <h1 class="text-xl font-medium mb-2">What are you optimizing?</h1>
-      <p class="welcome-subtitle text-sm text-gray-500 font-light">
-        I know your tasks, evals, and data. Tell me what to improve.
-      </p>
+      <h1 class="welcome-title text-lg font-medium mb-4">
+        What are you optimizing?
+      </h1>
     </div>
 
     <!-- Primary suggestions -->
@@ -97,8 +96,9 @@
     </div>
 
     <!-- Footer -->
-    <p class="text-center text-gray-400">
-      Or just ask — I can work with any task in your project.
+    <p class="text-sm text-center text-gray-500 font-light mt-4">
+      <span class="font-medium">Or just ask</span> — I can work with any task in
+      your project.
     </p>
   </div>
 </div>
@@ -123,6 +123,15 @@
   @container (min-width: 380px) {
     .welcome-grid-primary {
       grid-template-columns: 1fr 1fr;
+    }
+
+    .welcome-title {
+      font-size: 1.25rem;
+    }
+
+    .welcome-icon {
+      width: 96px;
+      height: 55px;
     }
 
     .welcome-grid-secondary {
