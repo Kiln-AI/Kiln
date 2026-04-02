@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte"
   import { fly } from "svelte/transition"
-  import AppPage from "../app_page.svelte"
   import {
     streamChat,
     chatGenerateId,
