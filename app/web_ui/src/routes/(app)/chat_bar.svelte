@@ -245,13 +245,21 @@
   }
 
   .chat-anim-outer {
-    overflow: hidden;
     transform-origin: bottom right;
+  }
+
+  .chat-collapse-x,
+  .chat-expand-x {
+    overflow: hidden;
     will-change: transform, opacity;
   }
 
   .chat-anim-inner {
     transform-origin: bottom right;
+  }
+
+  .chat-collapse-y,
+  .chat-expand-y {
     will-change: transform, opacity;
   }
 
