@@ -232,8 +232,11 @@ def connect_spec_api(app: FastAPI):
             spec.save_to_file()
         except Exception:
             if eval is not None and previous_eval_name is not None:
-                eval.name = previous_eval_name
-                eval.save_to_file()
+                try:
+                    eval.name = previous_eval_name
+                    eval.save_to_file()
+                except Exception:
+                    logger.exception("Failed to roll back eval name after spec save failure")
             raise
 
         return spec
