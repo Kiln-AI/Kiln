@@ -223,6 +223,8 @@ class ModelName(str, Enum):
     kimi_k2_thinking = "kimi_k2_thinking"
     kimi_k2_5 = "kimi_k2_5"
     kimi_dev_72b = "kimi_dev_72b"
+    glm_5_turbo = "glm_5_turbo"
+    glm_5v_turbo = "glm_5v_turbo"
     glm_5 = "glm_5"
     glm_4_7 = "glm_4_7"
     glm_4_7_flash = "glm_4_7_flash"
@@ -2739,6 +2741,12 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
             ),
             KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/nemotron-nano-3-30b-a3b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.ollama,
                 model_id="nemotron-3-nano",
                 structured_output_mode=StructuredOutputMode.json_schema,
@@ -2807,6 +2815,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_function_calling=False,
                 supports_doc_extraction=True,
@@ -3107,6 +3116,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="mistralai/Ministral-3-14B-Instruct-2512",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_function_calling=False,
             ),
@@ -3208,6 +3218,11 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="mistralai/mistral-large-2512",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/mistral-large-3-fp8",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
@@ -3669,6 +3684,12 @@ built_in_models: List[KilnModel] = [
                 supports_function_calling=False,
             ),
             KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/gemma-3-4b-it",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_function_calling=False,
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.docker_model_runner,
                 model_id="ai/gemma3:4B-Q4_K_M",
                 supports_function_calling=False,
@@ -3690,6 +3711,12 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.openrouter,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 model_id="google/gemma-3-12b-it",
+                supports_function_calling=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/gemma-3-12b-it",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_function_calling=False,
             ),
         ],
@@ -4792,6 +4819,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="Qwen/Qwen3-Next-80B-A3B-Instruct",
+                deprecated=True,
                 supports_data_gen=True,
                 supports_function_calling=False,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
@@ -4990,6 +5018,20 @@ built_in_models: List[KilnModel] = [
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="Qwen/Qwen3.5-397B-A17B",
+                supports_data_gen=False,
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
         ],
     ),
     # Qwen 3 Max
@@ -5187,6 +5229,14 @@ built_in_models: List[KilnModel] = [
                 supports_function_calling=False,
             ),
             KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/qwen3-8b",
+                supports_data_gen=False,
+                reasoning_capable=True,
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.r1_thinking,
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.docker_model_runner,
                 model_id="ai/qwen3:8B-Q4_K_M",
                 supports_data_gen=False,
@@ -5218,6 +5268,15 @@ built_in_models: List[KilnModel] = [
                 formatter=ModelFormatterID.qwen3_style_no_think,
                 supports_data_gen=False,
                 supports_function_calling=False,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/qwen3-8b",
+                supports_data_gen=False,
+                supports_function_calling=False,
+                formatter=ModelFormatterID.qwen3_style_no_think,
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                parser=ModelParserID.optional_r1_thinking,
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
@@ -6176,6 +6235,47 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # GLM 5V Turbo
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5v_turbo,
+        friendly_name="GLM 5V Turbo (Vision-Language)",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-5v-turbo",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # GLM 5 Turbo
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5_turbo,
+        friendly_name="GLM 5 Turbo",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-5-turbo",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+        ],
+    ),
     # GLM 5
     KilnModel(
         family=ModelFamily.glm,
@@ -6193,6 +6293,12 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/glm-5",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="zai-org/GLM-5",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
             ),
@@ -6423,6 +6529,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="zai-org/GLM-4.5-Air-FP8",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
                 parser=ModelParserID.r1_thinking,
@@ -6475,6 +6582,19 @@ built_in_models: List[KilnModel] = [
                 # reasoning_capable=True,
                 multimodal_mime_types=[
                     KilnMimeType.PDF,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="moonshotai/Kimi-K2.5",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_mime_types=[
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
@@ -6750,6 +6870,22 @@ built_in_models: List[KilnModel] = [
                 r1_openrouter_options=True,
                 require_openrouter_reasoning=True,
                 parser=ModelParserID.r1_thinking,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/minimax-m2p5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                reasoning_optional_for_structured_output=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="MiniMaxAI/MiniMax-M2.5",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                reasoning_optional_for_structured_output=True,
             ),
         ],
     ),
