@@ -31,9 +31,9 @@ from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
 from kiln_ai.datamodel.reranker import RerankerConfig, RerankerType
 from kiln_ai.datamodel.vector_store import VectorStoreConfig, VectorStoreType
+from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
 from kiln_ai.tools.rag_tools import RagTool
 
-from conftest import MockFileFactoryMimeType
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.document_api import (
     CreateExtractorConfigRequest,
