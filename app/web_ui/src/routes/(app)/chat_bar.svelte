@@ -27,6 +27,13 @@
   let customWidth: number | null = browser ? getChatBarWidth() : null
   let dragging = false
 
+  type AnimState = "idle" | "collapsing" | "expanding"
+  let animState: AnimState = "idle"
+
+  function isLargeScreen(): boolean {
+    return browser && window.matchMedia("(min-width: 1024px)").matches
+  }
+
   function getDefaultWidth(): number {
     if (browser && window.innerWidth >= BREAKPOINT_2XL) {
       return DEFAULT_WIDTH_2XL
@@ -37,9 +44,40 @@
   $: sidebarWidth = customWidth ?? getDefaultWidth()
 
   function toggle() {
-    expanded = !expanded
-    setChatBarExpanded(expanded)
+    if (isLargeScreen() && animState === "idle") {
+      if (expanded) {
+        animState = "collapsing"
+        expanded = false
+        setChatBarExpanded(false)
+      } else {
+        animState = "expanding"
+        expanded = true
+        setChatBarExpanded(true)
+      }
+    } else if (!isLargeScreen()) {
+      expanded = !expanded
+      setChatBarExpanded(expanded)
+    }
   }
+
+  let iconBounce = false
+
+  function onAnimationEnd() {
+    if (animState === "collapsing") {
+      iconBounce = true
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          iconBounce = false
+        }, 350)
+      })
+    }
+    animState = "idle"
+  }
+
+  $: sidebarVisible = expanded || animState === "collapsing"
+
+  $: iconHidden =
+    expanded || animState === "collapsing" || animState === "expanding"
 
   function getMaxWidth(): number {
     return Math.floor(window.innerWidth * (MAX_WIDTH_VW / 100))
@@ -92,16 +130,27 @@
 </script>
 
 {#if !isChat}
-  <!-- Large screen sidebar -->
+  <!-- Spacer to reserve width in the flex layout for the fixed sidebar -->
   {#if expanded}
-    <!-- Spacer to reserve width in the flex layout for the fixed sidebar -->
     <div
       class="hidden lg:block flex-shrink-0"
       style:width="{sidebarWidth}px"
     ></div>
+  {/if}
+
+  <!-- Large screen sidebar: always in DOM on lg+, visibility controlled by animation -->
+  <div
+    class="hidden lg:flex flex-row fixed top-6 right-4 bottom-4 chat-anim-outer"
+    class:chat-collapse-x={animState === "collapsing"}
+    class:chat-expand-x={animState === "expanding"}
+    class:chat-hidden={!sidebarVisible && animState === "idle"}
+    style:width="{sidebarWidth}px"
+    on:animationend={onAnimationEnd}
+  >
     <div
-      class="hidden lg:flex flex-row fixed top-6 right-4 bottom-4"
-      style:width="{sidebarWidth}px"
+      class="chat-anim-inner flex flex-row w-full h-full"
+      class:chat-collapse-y={animState === "collapsing"}
+      class:chat-expand-y={animState === "expanding"}
     >
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div
@@ -140,13 +189,13 @@
         <Chat />
       </div>
     </div>
-  {/if}
+  </div>
 
-  <!-- Floating chat button: on small screens always shows (opens dialog), on lg+ only when collapsed (expands sidebar) -->
+  <!-- Floating chat button -->
   <button
-    class="fixed bottom-6 right-6 btn btn-circle btn-primary shadow-lg z-50 {expanded
+    class="fixed bottom-6 right-6 btn btn-circle btn-primary shadow-lg z-50 {iconHidden
       ? 'lg:hidden'
-      : ''}"
+      : ''} {iconBounce ? 'chat-icon-bounce' : ''}"
     on:click={() => {
       if (window.matchMedia("(min-width: 1024px)").matches) {
         toggle()
@@ -188,5 +237,114 @@
     background-color: oklch(var(--bc) / 0.25);
     opacity: 0;
     transition: opacity 150ms ease;
+  }
+
+  .chat-hidden {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .chat-anim-outer {
+    overflow: hidden;
+    transform-origin: bottom right;
+    will-change: transform, opacity;
+  }
+
+  .chat-anim-inner {
+    transform-origin: bottom right;
+    will-change: transform, opacity;
+  }
+
+  .chat-collapse-x {
+    animation: collapse-x 400ms linear forwards;
+  }
+
+  .chat-collapse-y {
+    animation:
+      collapse-y 400ms linear forwards,
+      collapse-opacity 250ms linear forwards;
+  }
+
+  .chat-expand-x {
+    animation: expand-x 250ms linear forwards;
+  }
+
+  .chat-expand-y {
+    animation:
+      expand-y 250ms linear forwards,
+      expand-opacity 250ms linear forwards;
+  }
+
+  @keyframes collapse-x {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(calc(100% - 48px));
+    }
+  }
+
+  @keyframes collapse-y {
+    from {
+      transform: translateY(0) scale(1);
+    }
+    to {
+      transform: translateY(calc(100% - 48px)) scale(0.3);
+    }
+  }
+
+  @keyframes collapse-opacity {
+    0% {
+      opacity: 1;
+    }
+    70% {
+      opacity: 0;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes expand-x {
+    from {
+      transform: translateX(calc(100% - 48px));
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes expand-y {
+    from {
+      transform: translateY(calc(100% - 48px)) scale(0.3);
+    }
+    to {
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .chat-icon-bounce {
+    animation: icon-bounce 350ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  }
+
+  @keyframes icon-bounce {
+    0% {
+      transform: scale(0.3);
+    }
+    60% {
+      transform: scale(1.1);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+
+  @keyframes expand-opacity {
+    from {
+      opacity: 0.5;
+    }
+    to {
+      opacity: 1;
+    }
   }
 </style>
