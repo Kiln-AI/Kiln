@@ -406,6 +406,115 @@ def test_update_spec_with_existing_eval_id(
     assert res["eval_id"] == "original_eval_id"
 
 
+def test_update_spec_name_syncs_eval_name(
+    client: TestClient,
+    project_and_task: tuple[Project, Task],
+    sample_tone_properties: ToneProperties,
+) -> None:
+    """Test that updating a spec's name also updates the associated eval's name."""
+    project, task = project_and_task
+
+    eval = Eval(
+        name="Original Name",
+        description="Test eval",
+        template="rag",
+        eval_set_filter_id="tag::test_eval",
+        output_scores=[
+            EvalOutputScore(
+                name="Quality",
+                type=TaskOutputRatingType.five_star,
+            )
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+
+    spec = Spec(
+        name="Original Name",
+        definition="Original definition",
+        priority=Priority.p2,
+        status=SpecStatus.active,
+        tags=[],
+        eval_id=eval.id,
+        properties=sample_tone_properties,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    update_data = {"name": "Updated Name"}
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.patch(
+            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
+            json=update_data,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Updated Name"
+
+    # Verify the eval name was also updated
+    updated_eval = Eval.from_id_and_parent_path(eval.id, task.path)
+    assert updated_eval is not None
+    assert updated_eval.name == "Updated Name"
+
+
+def test_update_spec_name_rollback_eval_on_spec_save_failure(
+    client: TestClient,
+    project_and_task: tuple[Project, Task],
+    sample_tone_properties: ToneProperties,
+) -> None:
+    """Test that eval name is rolled back if spec.save_to_file() fails."""
+    project, task = project_and_task
+
+    eval = Eval(
+        name="Original Name",
+        description="Test eval",
+        template="rag",
+        eval_set_filter_id="tag::test_eval",
+        output_scores=[
+            EvalOutputScore(
+                name="Quality",
+                type=TaskOutputRatingType.five_star,
+            )
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+
+    spec = Spec(
+        name="Original Name",
+        definition="Original definition",
+        priority=Priority.p2,
+        status=SpecStatus.active,
+        tags=[],
+        eval_id=eval.id,
+        properties=sample_tone_properties,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    update_data = {"name": "Updated Name"}
+
+    def save_that_fails(self: Spec) -> None:
+        raise Exception("disk error")
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        # Patch save_to_file after spec_from_id resolves so the lookup works
+        with patch.object(Spec, "save_to_file", save_that_fails):
+            with pytest.raises(Exception, match="disk error"):
+                client.patch(
+                    f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
+                    json=update_data,
+                )
+
+    # Verify the eval name was rolled back
+    rolled_back_eval = Eval.from_id_and_parent_path(eval.id, task.path)
+    assert rolled_back_eval is not None
+    assert rolled_back_eval.name == "Original Name"
+
+
 def test_update_spec_tags_only(client, project_and_task, sample_tone_properties):
     """Test updating only tags field (save_tags use case)."""
     project, task = project_and_task
