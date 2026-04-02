@@ -1,10 +1,9 @@
-from unittest.mock import patch, MagicMock
+import logging
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-import logging
-
 from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.datamodel_enums import Priority
 from kiln_ai.datamodel.eval import Eval, EvalOutputScore, TaskOutputRatingType
@@ -1431,8 +1430,6 @@ def test_create_spec_rolls_back_eval_on_spec_save_failure(
         "definition": "The system should always respond politely",
         "properties": create_tone_properties_dict(),
     }
-
-    original_save = Spec.save_to_file
 
     def spec_save_fails(self):
         raise Exception("disk full")
