@@ -41,6 +41,10 @@ To run the API server, Studio server, and Studio Web UI with auto-reload for dev
 
 3. Open the app: http://localhost:5173/run
 
+### Makefile
+
+The root `Makefile` provides convenient shortcuts for commonly used scripts (`make dev`, `make ui`, `make package`, ...).
+
 ### Running and Building the Desktop App
 
 See the [desktop README](app/desktop/README.md) instructions for running the desktop app locally.
