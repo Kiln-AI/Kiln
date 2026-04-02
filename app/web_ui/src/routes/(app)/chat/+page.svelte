@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte"
+  import { onMount, onDestroy, tick } from "svelte"
   import { fly } from "svelte/transition"
   import AppPage from "../app_page.svelte"
   import {
@@ -37,6 +37,16 @@
   let toolApprovalPicks: Record<string, boolean | undefined> = {}
 
   $: isLoading = status === "submitted" || status === "streaming"
+
+  let prevIsLoading = false
+  $: {
+    if (prevIsLoading && !isLoading) {
+      tick().then(() => {
+        textareaRef?.focus({ preventScroll: true })
+      })
+    }
+    prevIsLoading = isLoading
+  }
 
   $: lastMessage = messages[messages.length - 1]
   $: lastParts = lastMessage?.parts ?? []
