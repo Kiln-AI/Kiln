@@ -16,16 +16,12 @@ export function localStorageStore<T>(key: string, initialValue: T) {
   const store = writable(storedValue !== null ? storedValue : initialValue)
 
   if (isBrowser) {
-    // Subscribe to changes and update localStorage
     store.subscribe((value) => {
-      const stringified = JSON.stringify(value)
-      // 1MB is a reasonable limit. Most browsers have a 5MB limit total for localStorage.
-      if (stringified.length > 1 * 1024 * 1024) {
-        console.error(
-          "Skipping localStorage save for " + key + " as it's too large (>1MB)",
-        )
-      } else {
-        localStorage.setItem(key, stringified)
+      try {
+        localStorage.setItem(key, JSON.stringify(value))
+      } catch {
+        console.error("Failed to save to localStorage for key: " + key)
+        localStorage.removeItem(key)
       }
     })
   }
@@ -48,15 +44,11 @@ export function sessionStorageStore<T>(key: string, initialValue: T) {
 
   if (isBrowser) {
     store.subscribe((value) => {
-      const stringified = JSON.stringify(value)
-      if (stringified.length > 2 * 1024 * 1024) {
-        console.error(
-          "Skipping sessionStorage save for " +
-            key +
-            " as it's too large (>2MB)",
-        )
-      } else {
-        sessionStorage.setItem(key, stringified)
+      try {
+        sessionStorage.setItem(key, JSON.stringify(value))
+      } catch {
+        console.error("Failed to save to sessionStorage for key: " + key)
+        sessionStorage.removeItem(key)
       }
     })
   }

@@ -65,19 +65,18 @@ describe("localStorageStore", () => {
     expect(get(s)).toBe("fallback")
   })
 
-  it("skips save when value exceeds 1MB", async () => {
+  it("clears stale value and logs error when setItem throws", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {})
     const localStorageStore = await importFresh()
-    const s = localStorageStore("big_key", "")
-    const bigString = "x".repeat(1.1 * 1024 * 1024)
-    s.set(bigString)
+    const s = localStorageStore("big_key", "initial")
+    storage.mock.setItem.mockImplementationOnce(() => {
+      throw new DOMException("quota exceeded")
+    })
+    s.set("too_large_value")
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining("too large"),
+      expect.stringContaining("Failed to save to localStorage"),
     )
-    expect(storage.mock.setItem).not.toHaveBeenCalledWith(
-      "big_key",
-      JSON.stringify(bigString),
-    )
+    expect(storage.mock.removeItem).toHaveBeenCalledWith("big_key")
     consoleSpy.mockRestore()
   })
 
@@ -140,19 +139,18 @@ describe("sessionStorageStore", () => {
     expect(get(s)).toBe("fallback")
   })
 
-  it("skips save when value exceeds 1MB", async () => {
+  it("clears stale value and logs error when setItem throws", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {})
     const sessionStorageStore = await importFresh()
-    const s = sessionStorageStore("big_key", "")
-    const bigString = "x".repeat(1.1 * 1024 * 1024)
-    s.set(bigString)
+    const s = sessionStorageStore("big_key", "initial")
+    storage.mock.setItem.mockImplementationOnce(() => {
+      throw new DOMException("quota exceeded")
+    })
+    s.set("too_large_value")
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining("too large"),
+      expect.stringContaining("Failed to save to sessionStorage"),
     )
-    expect(storage.mock.setItem).not.toHaveBeenCalledWith(
-      "big_key",
-      JSON.stringify(bigString),
-    )
+    expect(storage.mock.removeItem).toHaveBeenCalledWith("big_key")
     consoleSpy.mockRestore()
   })
 
