@@ -112,7 +112,7 @@ def connect_spec_api(app: FastAPI):
             spec_type, spec_data.evaluate_full_trace
         )
 
-        eval_model = Eval(
+        eval = Eval(
             parent=task,
             name=spec_data.name,
             description=None,
@@ -133,15 +133,15 @@ def connect_spec_api(app: FastAPI):
             priority=spec_data.priority,
             status=spec_data.status,
             tags=spec_data.tags,
-            eval_id=eval_model.id,
+            eval_id=eval.id,
             task_sample=spec_data.task_sample,
         )
 
-        eval_model.save_to_file()
+        eval.save_to_file()
         try:
             spec.save_to_file()
         except Exception:
-            eval_model.delete()
+            eval.delete()
             raise
 
         return spec
@@ -217,7 +217,30 @@ def connect_spec_api(app: FastAPI):
         if request.tags is not None:
             spec.tags = request.tags
 
-        spec.save_to_file()
+        # Sync eval name when spec name changes
+        eval: Eval | None = None
+        previous_eval_name: str | None = None
+        if request.name is not None and spec.eval_id:
+            parent_task = task_from_id(project_id, task_id)
+            eval = Eval.from_id_and_parent_path(spec.eval_id, parent_task.path)
+            if eval and eval.name != request.name:
+                previous_eval_name = eval.name
+                eval.name = request.name
+                eval.save_to_file()
+
+        try:
+            spec.save_to_file()
+        except Exception:
+            if eval is not None and previous_eval_name is not None:
+                try:
+                    eval.name = previous_eval_name
+                    eval.save_to_file()
+                except Exception:
+                    logger.exception(
+                        "Failed to roll back eval name after spec save failure"
+                    )
+            raise
+
         return spec
 
     @app.delete(
@@ -241,7 +264,9 @@ def connect_spec_api(app: FastAPI):
         # Delete associated eval if it exists
         if spec.eval_id:
             parent_task = task_from_id(project_id, task_id)
-            eval = Eval.from_id_and_parent_path(spec.eval_id, parent_task.path)
+            eval: Eval | None = Eval.from_id_and_parent_path(
+                spec.eval_id, parent_task.path
+            )
             if eval:
                 eval.delete()
 
