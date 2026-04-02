@@ -218,7 +218,7 @@
     width="wide"
   >
     {#if dialogOpen}
-      <div class="h-[75vh] max-h-[90vh]">
+      <div class="h-[70vh] flex flex-col">
         <Chat />
       </div>
     {/if}

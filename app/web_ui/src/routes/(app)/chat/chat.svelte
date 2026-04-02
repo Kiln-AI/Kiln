@@ -12,6 +12,7 @@
     chatSessionStore,
     type ChatSessionStore,
   } from "$lib/chat/chat_session_store"
+  import ChatWelcome from "./chat_welcome.svelte"
 
   export let store: ChatSessionStore = chatSessionStore
 
@@ -313,7 +314,7 @@
   }
 </script>
 
-<div class="flex flex-col h-full">
+<div class="flex flex-col flex-1 min-h-0">
   <div
     class="flex flex-col flex-1 min-h-0 overflow-hidden w-full md:max-w-3xl mx-auto px-1"
   >
@@ -324,6 +325,9 @@
       aria-live="polite"
     >
       <ChatCostDisclaimer />
+      {#if messages.length === 0 && !isLoading}
+        <ChatWelcome on:select={(e) => store.sendMessage(e.detail)} />
+      {/if}
       {#each messages as message (message.id)}
         <div
           in:fly={{ y: 8, duration: 200 }}
