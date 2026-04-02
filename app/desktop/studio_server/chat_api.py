@@ -1,8 +1,10 @@
+import asyncio
 import json
 import logging
+import threading
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from app.desktop.studio_server.api_client.kiln_server_client import (
@@ -10,8 +12,8 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
     _get_common_headers,
 )
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
-from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from kiln_ai.adapters.model_adapters.stream_events import (
     AiSdkStreamEvent,
     FinishEvent,
@@ -21,12 +23,17 @@ from kiln_ai.adapters.model_adapters.stream_events import (
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_server.utils.agent_checks.policy import DENY_AGENT
-from pydantic import TypeAdapter, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 logger = logging.getLogger(__name__)
 
 _CHAT_TIMEOUT = httpx.Timeout(timeout=300.0, connect=30.0)
 _MAX_TOOL_ROUNDS = 25
+_TOOL_APPROVAL_TIMEOUT_SEC = 15.0
+
+SSE_TYPE_TOOL_APPROVAL_REQUIRED = "tool-approval-required"
+
+_DENIED_TOOL_OUTPUT = json.dumps({"error": "The user did not accept the toolcall"})
 _FUNCTION_NAME_TO_TOOL_ID: dict[str, str] = {
     "call_kiln_api": KilnBuiltInToolId.CALL_KILN_API,
 }
@@ -41,6 +48,123 @@ _EXECUTOR_SERVER = "server"
 
 def _tool_input_executor_is_server(event: ToolInputAvailableEvent) -> bool:
     return event.kiln_metadata.get(_KILN_METADATA_EXECUTOR_KEY) == _EXECUTOR_SERVER
+
+
+def _coerce_bool_flag(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lower = value.lower()
+        if lower in ("true", "1", "yes"):
+            return True
+        if lower in ("false", "0", "no"):
+            return False
+    return None
+
+
+def _tool_requires_user_approval(event: ToolInputAvailableEvent) -> bool:
+    raw = event.kiln_metadata.get("requires_approval")
+    coerced = _coerce_bool_flag(raw)
+    return coerced is True
+
+
+@dataclass
+class _PendingToolApproval:
+    future: asyncio.Future[dict[str, bool]]
+    required_tool_call_ids: frozenset[str]
+
+
+_approval_registry_lock = threading.Lock()
+_pending_tool_approvals: dict[str, _PendingToolApproval] = {}
+
+
+async def _register_tool_approval_wait(
+    batch_id: str, required_tool_call_ids: frozenset[str]
+) -> asyncio.Future[dict[str, bool]]:
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[dict[str, bool]] = loop.create_future()
+    pending = _PendingToolApproval(
+        future=future, required_tool_call_ids=required_tool_call_ids
+    )
+    with _approval_registry_lock:
+        _pending_tool_approvals[batch_id] = pending
+    return future
+
+
+async def _pop_pending_tool_approval(batch_id: str) -> _PendingToolApproval | None:
+    with _approval_registry_lock:
+        return _pending_tool_approvals.pop(batch_id, None)
+
+
+async def submit_tool_approval_decisions(
+    batch_id: str, decisions: dict[str, bool]
+) -> None:
+    with _approval_registry_lock:
+        pending = _pending_tool_approvals.get(batch_id)
+    if pending is None:
+        raise HTTPException(
+            status_code=404, detail="Timed out waiting for tool approval"
+        )
+    if pending.future.done():
+        raise HTTPException(
+            status_code=409, detail="Approval batch was already completed"
+        )
+    required = pending.required_tool_call_ids
+    got = frozenset(decisions.keys())
+    if got != required:
+        raise HTTPException(
+            status_code=400,
+            detail="decisions must include exactly each toolCallId in the approval batch",
+        )
+    with _approval_registry_lock:
+        _pending_tool_approvals.pop(batch_id, None)
+    pending.future.set_result(decisions)
+
+
+def _format_tool_approval_required_sse(
+    batch_id: str, items: list[dict[str, Any]]
+) -> bytes:
+    payload = {
+        "type": SSE_TYPE_TOOL_APPROVAL_REQUIRED,
+        "approvalBatchId": batch_id,
+        "items": items,
+    }
+    return f"data: {json.dumps(payload)}\n\n".encode()
+
+
+def _approval_item_from_event(event: ToolInputAvailableEvent) -> dict[str, Any]:
+    meta = event.kiln_metadata
+    item: dict[str, Any] = {
+        "toolCallId": event.toolCallId,
+        "toolName": event.toolName,
+    }
+    perm = meta.get("permission")
+    if isinstance(perm, str):
+        item["permission"] = perm
+    desc = meta.get("approval_description")
+    if isinstance(desc, str):
+        item["approvalDescription"] = desc
+    return item
+
+
+async def _wait_for_tool_approval(
+    batch_id: str,
+    future: asyncio.Future[dict[str, bool]],
+    _request: Request | None,
+    timeout_sec: float,
+) -> dict[str, bool] | Literal["timeout"]:
+    try:
+        return await asyncio.wait_for(future, timeout=timeout_sec)
+    except asyncio.TimeoutError:
+        await _pop_pending_tool_approval(batch_id)
+        if not future.done():
+            future.cancel()
+        return "timeout"
+    except asyncio.CancelledError:
+        await _pop_pending_tool_approval(batch_id)
+        if not future.done():
+            future.cancel()
+        raise
 
 
 def _try_parse_ai_sdk_event(data: dict[str, Any]) -> AiSdkStreamEvent | None:
@@ -133,10 +257,12 @@ class ChatStreamSession:
         upstream_url: str,
         headers: dict[str, str],
         initial_body: dict[str, Any],
+        request: Request | None = None,
     ) -> None:
         self._upstream_url = upstream_url
         self._headers = headers
         self._body = initial_body
+        self._request = request
 
     async def stream(self):
         """AsyncGenerator yielding SSE bytes to the client."""
@@ -215,7 +341,40 @@ class ChatStreamSession:
                 }
 
             if round_state.finish_tool_calls:
-                tool_results = await self._execute_client_tools(round_state)
+                client_events = [
+                    e
+                    for e in round_state.tool_input_events
+                    if not _tool_input_executor_is_server(e)
+                ]
+                needs_approval = [
+                    e for e in client_events if _tool_requires_user_approval(e)
+                ]
+                approval_decisions: dict[str, bool] | None = None
+                if needs_approval:
+                    required_ids = frozenset(e.toolCallId for e in needs_approval)
+                    batch_id = str(uuid.uuid4())
+                    approval_future = await _register_tool_approval_wait(
+                        batch_id, required_ids
+                    )
+                    items = [_approval_item_from_event(e) for e in needs_approval]
+                    yield _format_tool_approval_required_sse(batch_id, items)
+                    wait_outcome = await _wait_for_tool_approval(
+                        batch_id,
+                        approval_future,
+                        self._request,
+                        _TOOL_APPROVAL_TIMEOUT_SEC,
+                    )
+                    if wait_outcome == "timeout":
+                        err_tid = round_state.trace_id or str(uuid.uuid4())
+                        yield (
+                            f"data: {json.dumps({'type': 'error', 'message': 'Tool approval timed out.', 'trace_id': err_tid})}\n\n".encode()
+                        )
+                        return
+                    approval_decisions = wait_outcome
+
+                tool_results = await self._execute_client_tools(
+                    round_state, approval_decisions
+                )
                 for tc_id, output in tool_results.items():
                     yield self._format_tool_output(tc_id, output)
 
@@ -232,7 +391,11 @@ class ChatStreamSession:
 
             return
 
-    async def _execute_client_tools(self, round_state: RoundState) -> dict[str, str]:
+    async def _execute_client_tools(
+        self,
+        round_state: RoundState,
+        approval_decisions: dict[str, bool] | None,
+    ) -> dict[str, str]:
         tool_results: dict[str, str] = {}
         for event in round_state.tool_input_events:
             if _tool_input_executor_is_server(event):
@@ -243,6 +406,10 @@ class ChatStreamSession:
                 )
                 continue
             tc_id = event.toolCallId
+            if _tool_requires_user_approval(event):
+                if approval_decisions is None or not approval_decisions.get(tc_id):
+                    tool_results[tc_id] = _DENIED_TOOL_OUTPUT
+                    continue
             tool_name = event.toolName
             tool_args = event.input
             logger.info(
@@ -348,7 +515,23 @@ def _build_openai_tool_continuation(
     return {**original_body, "messages": new_messages}
 
 
+class ToolApprovalRequestBody(BaseModel):
+    approval_batch_id: str
+    decisions: dict[str, bool]
+
+
 def connect_chat_api(app: FastAPI) -> None:
+    @app.post(
+        "/api/chat/tool-approval",
+        summary="Submit tool call approval decisions",
+        tags=["Copilot"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def post_tool_approval(body: ToolApprovalRequestBody) -> JSONResponse:
+        """Submit tool call approval decisions."""
+        await submit_tool_approval_decisions(body.approval_batch_id, body.decisions)
+        return JSONResponse({"ok": True})
+
     @app.post(
         "/api/chat",
         summary="Stream Chat",
@@ -365,6 +548,7 @@ def connect_chat_api(app: FastAPI) -> None:
             upstream_url=f"{_get_base_url()}/v1/chat/",
             headers=_build_upstream_headers(api_key),
             initial_body=body_json,
+            request=request,
         )
         return StreamingResponse(
             content=session.stream(),

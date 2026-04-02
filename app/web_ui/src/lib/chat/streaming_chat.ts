@@ -75,6 +75,20 @@ interface StreamEvent {
   trace_id?: string
   message?: string
   messageMetadata?: { finishReason?: string; usage?: unknown }
+  approvalBatchId?: string
+  items?: ToolApprovalItem[]
+}
+
+export interface ToolApprovalItem {
+  toolCallId: string
+  toolName?: string
+  permission?: string
+  approvalDescription?: string
+}
+
+export interface ToolApprovalRequiredPayload {
+  approvalBatchId: string
+  items: ToolApprovalItem[]
 }
 
 export interface StreamChatOptions {
@@ -87,9 +101,22 @@ export interface StreamChatOptions {
   onChatTrace?: (traceId: string) => void
   /** Fired when backend sends an inline error event */
   onInlineError?: (message: string, traceId?: string) => void
+  /**
+   * Desktop proxy may pause the stream until each tool in the batch is allowed or denied.
+   * Return a map of toolCallId → whether to run the tool.
+   */
+  onToolApprovalRequired?: (
+    payload: ToolApprovalRequiredPayload,
+  ) => Promise<Record<string, boolean>>
   onFinish: () => void
   onError: (error: Error) => void
   signal?: AbortSignal
+}
+
+/** ``POST /api/chat/tool-approval`` URL for a given ``POST /api/chat`` URL. */
+export function chatToolApprovalUrl(chatApiUrl: string): string {
+  const trimmed = chatApiUrl.replace(/\/$/, "")
+  return `${trimmed}/tool-approval`
 }
 
 function generateId(): string {
@@ -362,6 +389,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     onAssistantMessage,
     onChatTrace,
     onInlineError,
+    onToolApprovalRequired,
     onFinish,
     onError,
     signal,
@@ -431,6 +459,64 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
           try {
             event = JSON.parse(payload) as StreamEvent
           } catch {
+            continue
+          }
+          if (event.type === "tool-approval-required") {
+            const approvalBatchId = event.approvalBatchId
+            const items = event.items
+            if (
+              typeof approvalBatchId !== "string" ||
+              !Array.isArray(items) ||
+              items.length === 0
+            ) {
+              onError(
+                new Error("Invalid tool-approval-required event from server"),
+              )
+              return
+            }
+            let decisions: Record<string, boolean>
+            if (onToolApprovalRequired) {
+              decisions = await onToolApprovalRequired({
+                approvalBatchId,
+                items,
+              })
+            } else {
+              decisions = {}
+              for (const it of items) {
+                if (it && typeof it.toolCallId === "string") {
+                  decisions[it.toolCallId] = false
+                }
+              }
+            }
+            const approvalUrl = chatToolApprovalUrl(apiUrl)
+            let postRes: Response
+            try {
+              postRes = await fetch(approvalUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  approval_batch_id: approvalBatchId,
+                  decisions,
+                }),
+                signal,
+              })
+            } catch (err) {
+              if ((err as Error).name === "AbortError") {
+                onFinish()
+                return
+              }
+              onError(err instanceof Error ? err : new Error(String(err)))
+              return
+            }
+            if (!postRes.ok) {
+              const text = await postRes.text()
+              onError(
+                new Error(
+                  `Tool approval API error ${postRes.status}: ${text || postRes.statusText}`,
+                ),
+              )
+              return
+            }
             continue
           }
           processor.handleEvent(event)

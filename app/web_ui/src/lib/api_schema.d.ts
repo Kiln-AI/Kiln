@@ -2576,6 +2576,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/tool-approval": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit tool call approval decisions */
+        post: operations["post_tool_approval_api_chat_tool_approval_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat": {
         parameters: {
             query?: never;
@@ -8306,6 +8323,15 @@ export interface components {
             name: string;
             /** Description */
             description: string | null;
+        };
+        /** ToolApprovalRequestBody */
+        ToolApprovalRequestBody: {
+            /** Approval Batch Id */
+            approval_batch_id: string;
+            /** Decisions */
+            decisions: {
+                [key: string]: boolean;
+            };
         };
         /**
          * ToolDefinitionResponse
@@ -14629,6 +14655,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Spec"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_tool_approval_api_chat_tool_approval_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ToolApprovalRequestBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

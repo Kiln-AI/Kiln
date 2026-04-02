@@ -1,0 +1,8 @@
+{
+  "method": "post",
+  "path": "/api/chat/tool-approval",
+  "agent_policy": {
+    "permission": "deny",
+    "requires_approval": false
+  }
+}

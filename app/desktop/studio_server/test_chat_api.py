@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -17,11 +18,14 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
 from app.desktop.studio_server.chat_api import (
     EventParser,
     _build_openai_tool_continuation,
+    _register_tool_approval_wait,
     _tool_input_executor_is_server,
+    _tool_requires_user_approval,
     connect_chat_api,
     execute_tool,
+    submit_tool_approval_decisions,
 )
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
 from kiln_ai.utils.config import Config
@@ -378,6 +382,54 @@ class TestToolInputExecutorServer:
         )
 
 
+class TestToolApprovalHelpers:
+    def test_tool_requires_user_approval_coerces_metadata(self):
+        ev = ToolInputAvailableEvent(
+            type="tool-input-available",
+            toolCallId="x",
+            toolName="t",
+            input={},
+            kiln_metadata={"requires_approval": True},
+        )
+        assert _tool_requires_user_approval(ev) is True
+        ev2 = ToolInputAvailableEvent(
+            type="tool-input-available",
+            toolCallId="x",
+            toolName="t",
+            input={},
+            kiln_metadata={"requires_approval": False},
+        )
+        assert _tool_requires_user_approval(ev2) is False
+
+    def test_submit_tool_approval_resolves_registered_future(self):
+        async def run() -> None:
+            fut = await _register_tool_approval_wait("batch-unit-1", frozenset({"tc1"}))
+            await submit_tool_approval_decisions("batch-unit-1", {"tc1": True})
+            assert await fut == {"tc1": True}
+
+        asyncio.run(run())
+
+    def test_submit_tool_approval_unknown_batch_404(self):
+        async def run() -> None:
+            with pytest.raises(HTTPException) as ei:
+                await submit_tool_approval_decisions(
+                    "00000000-0000-0000-0000-000000000099", {"tc1": True}
+                )
+            assert ei.value.status_code == 404
+
+        asyncio.run(run())
+
+    def test_post_tool_approval_unknown_batch_http(self, client, mock_api_key):
+        r = client.post(
+            "/api/chat/tool-approval",
+            json={
+                "approval_batch_id": "00000000-0000-0000-0000-000000000088",
+                "decisions": {"tc1": True},
+            },
+        )
+        assert r.status_code == 404
+
+
 class TestExecuteTool:
     @pytest.mark.asyncio
     async def test_runs_multiply_builtin(self):
@@ -622,6 +674,106 @@ class TestRemoteToolRoundTrip:
         assert response.status_code == 200
         # Only one stream call
         assert mock_class.return_value.stream.call_count == 1
+
+    def test_requires_approval_emits_sse_and_runs_when_wait_returns_allow(
+        self, client, mock_api_key
+    ):
+        first_chunks = [
+            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_tool::add_numbers","input":{"a":1,"b":2},"kiln_metadata":{"requires_approval":true}}\n\n',
+            b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
+        ]
+        second_chunks = [b'data: {"type":"finish"}\n\n']
+        mock_client, get_call_count = self._make_mock_client(
+            first_chunks, second_chunks
+        )
+        mock_class = MagicMock(return_value=mock_client)
+        execute_tool_mock = AsyncMock(return_value="3")
+
+        with patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class):
+            with patch(
+                "app.desktop.studio_server.chat_api.execute_tool", execute_tool_mock
+            ):
+                with patch(
+                    "app.desktop.studio_server.chat_api._wait_for_tool_approval",
+                    AsyncMock(return_value={"tc1": True}),
+                ):
+                    response = client.post(
+                        "/api/chat",
+                        json={"messages": [{"role": "user", "content": "hi"}]},
+                    )
+
+        assert response.status_code == 200
+        content = response.content
+        assert b"tool-approval-required" in content
+        assert b"tool-output-available" in content
+        assert b'"output": "3"' in content
+        execute_tool_mock.assert_called_once()
+        assert get_call_count() == 2
+
+    def test_requires_approval_denies_when_wait_returns_false(
+        self, client, mock_api_key
+    ):
+        first_chunks = [
+            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_tool::add_numbers","input":{"a":1,"b":2},"kiln_metadata":{"requires_approval":true}}\n\n',
+            b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
+        ]
+        second_chunks = [b'data: {"type":"finish"}\n\n']
+        mock_client, _ = self._make_mock_client(first_chunks, second_chunks)
+        mock_class = MagicMock(return_value=mock_client)
+        execute_tool_mock = AsyncMock(return_value="3")
+
+        with patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class):
+            with patch(
+                "app.desktop.studio_server.chat_api.execute_tool", execute_tool_mock
+            ):
+                with patch(
+                    "app.desktop.studio_server.chat_api._wait_for_tool_approval",
+                    AsyncMock(return_value={"tc1": False}),
+                ):
+                    response = client.post(
+                        "/api/chat",
+                        json={"messages": [{"role": "user", "content": "hi"}]},
+                    )
+
+        assert response.status_code == 200
+        assert b"The user did not accept the toolcall" in response.content
+        execute_tool_mock.assert_not_called()
+
+    def test_mixed_auto_and_approval_client_tools(self, client, mock_api_key):
+        """If any tool needs approval, wait once; then run auto tools and approved tools."""
+        first_chunks = [
+            b'data: {"type":"tool-input-available","toolCallId":"tc_auto","toolName":"kiln_tool::add_numbers","input":{"a":1,"b":2}}\n\n',
+            b'data: {"type":"tool-input-available","toolCallId":"tc_need","toolName":"kiln_tool::multiply_numbers","input":{"a":3,"b":4},"kiln_metadata":{"requires_approval":true}}\n\n',
+            b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
+        ]
+        second_chunks = [b'data: {"type":"finish"}\n\n']
+        mock_client, _ = self._make_mock_client(first_chunks, second_chunks)
+        mock_class = MagicMock(return_value=mock_client)
+
+        async def fake_execute(name: str, args: dict[str, Any]) -> str:
+            if "multiply" in name:
+                return "12"
+            return "3"
+
+        execute_tool_mock = AsyncMock(side_effect=fake_execute)
+
+        with patch("app.desktop.studio_server.chat_api.httpx.AsyncClient", mock_class):
+            with patch(
+                "app.desktop.studio_server.chat_api.execute_tool", execute_tool_mock
+            ):
+                with patch(
+                    "app.desktop.studio_server.chat_api._wait_for_tool_approval",
+                    AsyncMock(return_value={"tc_need": True}),
+                ):
+                    response = client.post(
+                        "/api/chat",
+                        json={"messages": [{"role": "user", "content": "hi"}]},
+                    )
+
+        assert response.status_code == 200
+        assert execute_tool_mock.call_count == 2
+        assert b'"output": "3"' in response.content
+        assert b'"output": "12"' in response.content
 
 
 _MAX_TOOL_ROUNDS_INTEGRATION = 5

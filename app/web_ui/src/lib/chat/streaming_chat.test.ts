@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import {
   streamChat,
+  chatToolApprovalUrl,
   traceIdForNextChatRequest,
   type ChatMessage,
 } from "./streaming_chat"
@@ -53,6 +54,70 @@ describe("streamChat", () => {
       messages: [{ role: "user", content: "hi" }],
       trace_id: "tid-1",
     })
+
+    vi.unstubAllGlobals()
+  })
+
+  it("posts tool approval when tool-approval-required is received", async () => {
+    const lines = [
+      'data: {"type":"tool-approval-required","approvalBatchId":"batch-1","items":[{"toolCallId":"tc1","toolName":"t"}]}\n\n',
+      'data: {"type":"finish"}\n\n',
+    ]
+    let i = 0
+    const fetchMock = vi
+      .fn()
+      .mockImplementation((url: string, init?: RequestInit) => {
+        if (url.endsWith("/tool-approval")) {
+          expect(init?.method).toBe("POST")
+          expect(JSON.parse(init?.body as string)).toEqual({
+            approval_batch_id: "batch-1",
+            decisions: { tc1: true },
+          })
+          return Promise.resolve(
+            new Response(JSON.stringify({ ok: true }), { status: 200 }),
+          )
+        }
+        return Promise.resolve({
+          ok: true,
+          body: {
+            getReader: () => ({
+              read: () => {
+                if (i >= lines.length) {
+                  return Promise.resolve({ done: true, value: undefined })
+                }
+                const enc = new TextEncoder()
+                const line = lines[i]
+                i += 1
+                return Promise.resolve({
+                  done: false,
+                  value: enc.encode(line),
+                })
+              },
+            }),
+          },
+        })
+      })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const decisions: Record<string, boolean> = {}
+    await streamChat({
+      apiUrl: "https://example.test/api/chat",
+      messages: [{ id: "u1", role: "user", content: "hi" }],
+      onAssistantMessage: () => {},
+      onToolApprovalRequired: async (payload) => {
+        for (const it of payload.items) {
+          decisions[it.toolCallId] = true
+        }
+        return decisions
+      },
+      onFinish: () => {},
+      onError: () => {},
+    })
+
+    expect(fetchMock.mock.calls.length).toBe(2)
+    expect(chatToolApprovalUrl("https://example.test/api/chat")).toBe(
+      "https://example.test/api/chat/tool-approval",
+    )
 
     vi.unstubAllGlobals()
   })
