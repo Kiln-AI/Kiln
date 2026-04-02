@@ -433,22 +433,16 @@ describe("createChatSessionStore", () => {
     })
   })
 
-  describe("setOnToolCallsPending", () => {
-    it("passes the handler through to streamChat", async () => {
-      const { createChatSessionStore, streamChatMock } =
-        await importFreshWithMock()
-      const capture: { options: StreamChatOptions | null } = { options: null }
-      streamChatMock.mockImplementation(capturingStreamChat(capture))
+  describe("tool approval", () => {
+    it("has correct initial approval state", async () => {
+      const { createChatSessionStore } = await importFreshWithMock()
       const store = createChatSessionStore()
-
-      const handler = vi.fn().mockResolvedValue({ "tool-1": true })
-      store.setOnToolCallsPending(handler)
-
-      store.sendMessage("hi")
-      expect(capture.options!.onToolCallsPending).toBe(handler)
+      const state = get(store)
+      expect(state.toolApprovalWaiter).toBeNull()
+      expect(state.toolApprovalPicks).toEqual({})
     })
 
-    it("does not pass handler when not set", async () => {
+    it("always registers an internal onToolCallsPending handler", async () => {
       const { createChatSessionStore, streamChatMock } =
         await importFreshWithMock()
       const capture: { options: StreamChatOptions | null } = { options: null }
@@ -456,22 +450,236 @@ describe("createChatSessionStore", () => {
       const store = createChatSessionStore()
 
       store.sendMessage("hi")
-      expect(capture.options!.onToolCallsPending).toBeUndefined()
+      expect(capture.options!.onToolCallsPending).toBeDefined()
+      expect(typeof capture.options!.onToolCallsPending).toBe("function")
     })
 
-    it("can clear the handler by setting null", async () => {
+    it("sets approval state when onToolCallsPending is called with approval items", async () => {
       const { createChatSessionStore, streamChatMock } =
         await importFreshWithMock()
       const capture: { options: StreamChatOptions | null } = { options: null }
       streamChatMock.mockImplementation(capturingStreamChat(capture))
       const store = createChatSessionStore()
 
-      const handler = vi.fn().mockResolvedValue({})
-      store.setOnToolCallsPending(handler)
-      store.setOnToolCallsPending(null)
+      store.sendMessage("hi")
+      const handler = capture.options!.onToolCallsPending!
+      handler({
+        items: [
+          {
+            toolCallId: "tc1",
+            toolName: "read_file",
+            input: {},
+            requiresApproval: true,
+            approvalDescription: "Read a file",
+          },
+        ],
+      })
+
+      const state = get(store)
+      expect(state.toolApprovalWaiter).not.toBeNull()
+      expect(state.toolApprovalWaiter!.payload.items).toHaveLength(1)
+      expect(state.toolApprovalWaiter!.payload.items[0].toolCallId).toBe("tc1")
+      expect(state.toolApprovalPicks).toEqual({ tc1: undefined })
+    })
+
+    it("auto-resolves when no items require approval", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
 
       store.sendMessage("hi")
-      expect(capture.options!.onToolCallsPending).toBeUndefined()
+      const handler = capture.options!.onToolCallsPending!
+      const result = await handler({
+        items: [
+          {
+            toolCallId: "tc1",
+            toolName: "read_file",
+            input: {},
+            requiresApproval: false,
+          },
+        ],
+      })
+
+      expect(result).toEqual({})
+      expect(get(store).toolApprovalWaiter).toBeNull()
+    })
+
+    it("applyToolApprovalRun sets pick to true", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      store.sendMessage("hi")
+      const handler = capture.options!.onToolCallsPending!
+      handler({
+        items: [
+          {
+            toolCallId: "tc1",
+            toolName: "t1",
+            input: {},
+            requiresApproval: true,
+          },
+          {
+            toolCallId: "tc2",
+            toolName: "t2",
+            input: {},
+            requiresApproval: true,
+          },
+        ],
+      })
+
+      store.applyToolApprovalRun("tc1")
+      expect(get(store).toolApprovalPicks["tc1"]).toBe(true)
+      expect(get(store).toolApprovalWaiter).not.toBeNull()
+    })
+
+    it("applyToolApprovalSkip sets pick to false", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      store.sendMessage("hi")
+      const handler = capture.options!.onToolCallsPending!
+      handler({
+        items: [
+          {
+            toolCallId: "tc1",
+            toolName: "t1",
+            input: {},
+            requiresApproval: true,
+          },
+          {
+            toolCallId: "tc2",
+            toolName: "t2",
+            input: {},
+            requiresApproval: true,
+          },
+        ],
+      })
+
+      store.applyToolApprovalSkip("tc1")
+      expect(get(store).toolApprovalPicks["tc1"]).toBe(false)
+      expect(get(store).toolApprovalWaiter).not.toBeNull()
+    })
+
+    it("resolves promise and clears state when all approvals are decided", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      store.sendMessage("hi")
+      const handler = capture.options!.onToolCallsPending!
+      const promise = handler({
+        items: [
+          {
+            toolCallId: "tc1",
+            toolName: "t1",
+            input: {},
+            requiresApproval: true,
+          },
+          {
+            toolCallId: "tc2",
+            toolName: "t2",
+            input: {},
+            requiresApproval: true,
+          },
+        ],
+      })
+
+      store.applyToolApprovalRun("tc1")
+      store.applyToolApprovalSkip("tc2")
+
+      const decisions = await promise
+      expect(decisions).toEqual({ tc1: true, tc2: false })
+      expect(get(store).toolApprovalWaiter).toBeNull()
+      expect(get(store).toolApprovalPicks).toEqual({})
+    })
+
+    it("applyToolApprovalRun is a no-op when no waiter is active", async () => {
+      const { createChatSessionStore } = await importFreshWithMock()
+      const store = createChatSessionStore()
+      expect(() => store.applyToolApprovalRun("tc1")).not.toThrow()
+      expect(get(store).toolApprovalWaiter).toBeNull()
+    })
+
+    it("applyToolApprovalSkip is a no-op when no waiter is active", async () => {
+      const { createChatSessionStore } = await importFreshWithMock()
+      const store = createChatSessionStore()
+      expect(() => store.applyToolApprovalSkip("tc1")).not.toThrow()
+      expect(get(store).toolApprovalWaiter).toBeNull()
+    })
+
+    it("reset clears tool approval state", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      store.sendMessage("hi")
+      const handler = capture.options!.onToolCallsPending!
+      handler({
+        items: [
+          {
+            toolCallId: "tc1",
+            toolName: "t1",
+            input: {},
+            requiresApproval: true,
+          },
+        ],
+      })
+      expect(get(store).toolApprovalWaiter).not.toBeNull()
+
+      store.reset()
+      expect(get(store).toolApprovalWaiter).toBeNull()
+      expect(get(store).toolApprovalPicks).toEqual({})
+    })
+  })
+
+  describe("streaming status guard", () => {
+    it("only transitions to streaming once across multiple onAssistantMessage calls", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      const statusTransitions: string[] = []
+      let prevStatus = ""
+      store.subscribe((s) => {
+        if (s.status !== prevStatus) {
+          statusTransitions.push(s.status)
+          prevStatus = s.status
+        }
+      })
+      statusTransitions.length = 0
+      prevStatus = "ready"
+
+      store.sendMessage("hi")
+      expect(get(store).status).toBe("submitted")
+
+      capture.options!.onAssistantMessage((draft: ChatMessage) => {
+        draft.parts = [{ type: "text", text: "a" }]
+      })
+      capture.options!.onAssistantMessage((draft: ChatMessage) => {
+        draft.parts = [{ type: "text", text: "ab" }]
+      })
+      capture.options!.onAssistantMessage((draft: ChatMessage) => {
+        draft.parts = [{ type: "text", text: "abc" }]
+      })
+
+      const streamingTransitions = statusTransitions.filter(
+        (s) => s === "streaming",
+      )
+      expect(streamingTransitions.length).toBe(1)
     })
   })
 

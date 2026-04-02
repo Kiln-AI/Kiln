@@ -17,9 +17,15 @@ export interface PersistedChatSession {
   collapsedPartKeys: Record<string, boolean>
 }
 
+export interface ToolApprovalWaiter {
+  payload: ToolCallsPendingPayload
+}
+
 export interface ChatSessionState extends PersistedChatSession {
   status: "ready" | "submitted" | "streaming"
   abortController: AbortController | null
+  toolApprovalWaiter: ToolApprovalWaiter | null
+  toolApprovalPicks: Record<string, boolean | undefined>
 }
 
 export interface ChatSessionStore extends Readable<ChatSessionState> {
@@ -28,11 +34,8 @@ export interface ChatSessionStore extends Readable<ChatSessionState> {
   retryLastRequest(): void
   reset(): void
   togglePartCollapsed(key: string, currentlyCollapsed: boolean): void
-  setOnToolCallsPending(
-    handler:
-      | ((payload: ToolCallsPendingPayload) => Promise<Record<string, boolean>>)
-      | null,
-  ): void
+  applyToolApprovalRun(toolCallId: string): void
+  applyToolApprovalSkip(toolCallId: string): void
 }
 
 const EMPTY_PERSISTED: PersistedChatSession = {
@@ -51,14 +54,16 @@ export function createChatSessionStore(
 
   let status: ChatSessionState["status"] = "ready"
   let abortController: AbortController | null = null
-  let onToolCallsPending:
-    | ((payload: ToolCallsPendingPayload) => Promise<Record<string, boolean>>)
+  let toolApprovalResolver:
+    | ((decisions: Record<string, boolean>) => void)
     | null = null
 
   const combined = writable<ChatSessionState>({
     ...get(persisted),
     status,
     abortController,
+    toolApprovalWaiter: null,
+    toolApprovalPicks: {},
   })
 
   persisted.subscribe(($persisted) => {
@@ -132,9 +137,11 @@ export function createChatSessionStore(
       apiUrl: CHAT_API_URL,
       messages: [userMessage],
       traceId,
-      onToolCallsPending: onToolCallsPending ?? undefined,
+      onToolCallsPending: handleToolCallsPending,
       onAssistantMessage: (update) => {
-        setRuntimeState("streaming", controller)
+        if (status !== "streaming") {
+          setRuntimeState("streaming", controller)
+        }
         updateLastAssistant(update)
       },
       onChatTrace: (traceId) => {
@@ -211,16 +218,76 @@ export function createChatSessionStore(
     if (abortController) {
       abortController.abort()
     }
+    clearToolApprovalState()
     persisted.set({ messages: [], collapsedPartKeys: {} })
     setRuntimeState("ready", null)
   }
 
-  function setOnToolCallsPending(
-    handler:
-      | ((payload: ToolCallsPendingPayload) => Promise<Record<string, boolean>>)
-      | null,
-  ): void {
-    onToolCallsPending = handler
+  function handleToolCallsPending(
+    payload: ToolCallsPendingPayload,
+  ): Promise<Record<string, boolean>> {
+    const approvalOnly = payload.items.filter((i) => i.requiresApproval)
+    if (approvalOnly.length === 0) {
+      return Promise.resolve({})
+    }
+    return new Promise((resolve) => {
+      toolApprovalResolver = resolve
+      const picks: Record<string, boolean | undefined> = {}
+      for (const it of approvalOnly) {
+        picks[it.toolCallId] = undefined
+      }
+      combined.update((s) => ({
+        ...s,
+        toolApprovalWaiter: { payload: { items: approvalOnly } },
+        toolApprovalPicks: picks,
+      }))
+    })
+  }
+
+  function clearToolApprovalState(resolveWithEmpty = true): void {
+    if (resolveWithEmpty && toolApprovalResolver) {
+      toolApprovalResolver({})
+    }
+    toolApprovalResolver = null
+    combined.update((s) => ({
+      ...s,
+      toolApprovalWaiter: null,
+      toolApprovalPicks: {},
+    }))
+  }
+
+  function maybeFinishToolApproval(): void {
+    const state = get(combined)
+    if (!state.toolApprovalWaiter || !toolApprovalResolver) return
+    const allDone = state.toolApprovalWaiter.payload.items.every(
+      (it) => state.toolApprovalPicks[it.toolCallId] !== undefined,
+    )
+    if (!allDone) return
+    const decisions: Record<string, boolean> = {}
+    for (const it of state.toolApprovalWaiter.payload.items) {
+      decisions[it.toolCallId] = state.toolApprovalPicks[it.toolCallId] ?? false
+    }
+    const resolver = toolApprovalResolver
+    clearToolApprovalState(false)
+    resolver(decisions)
+  }
+
+  function applyToolApprovalRun(toolCallId: string): void {
+    if (!get(combined).toolApprovalWaiter) return
+    combined.update((s) => ({
+      ...s,
+      toolApprovalPicks: { ...s.toolApprovalPicks, [toolCallId]: true },
+    }))
+    maybeFinishToolApproval()
+  }
+
+  function applyToolApprovalSkip(toolCallId: string): void {
+    if (!get(combined).toolApprovalWaiter) return
+    combined.update((s) => ({
+      ...s,
+      toolApprovalPicks: { ...s.toolApprovalPicks, [toolCallId]: false },
+    }))
+    maybeFinishToolApproval()
   }
 
   function togglePartCollapsed(key: string, currentlyCollapsed: boolean): void {
@@ -237,7 +304,8 @@ export function createChatSessionStore(
     retryLastRequest,
     reset,
     togglePartCollapsed,
-    setOnToolCallsPending,
+    applyToolApprovalRun,
+    applyToolApprovalSkip,
   }
 }
 

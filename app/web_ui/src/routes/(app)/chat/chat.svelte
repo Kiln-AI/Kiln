@@ -4,11 +4,7 @@
   import { browser } from "$app/environment"
   import { chat_cost_disclaimer_acknowledged } from "$lib/stores"
   import ChatCostDisclaimer from "./ChatCostDisclaimer.svelte"
-  import type {
-    ChatMessage,
-    ChatMessagePart,
-    ToolCallsPendingPayload,
-  } from "$lib/chat/streaming_chat"
+  import type { ChatMessage, ChatMessagePart } from "$lib/chat/streaming_chat"
   import ChatMarkdown from "$lib/chat/ChatMarkdown.svelte"
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
   import StopIcon from "$lib/ui/icons/stop_icon.svelte"
@@ -28,11 +24,8 @@
   let reasoningPartEndTimes: Record<string, number> = {}
   let lastSeenLastPartKey: string | null = null
 
-  let toolApprovalWaiter: {
-    payload: ToolCallsPendingPayload
-    resolve: (d: Record<string, boolean>) => void
-  } | null = null
-  let toolApprovalPicks: Record<string, boolean | undefined> = {}
+  $: toolApprovalWaiter = $store.toolApprovalWaiter
+  $: toolApprovalPicks = $store.toolApprovalPicks
 
   $: messages = $store.messages
   $: status = $store.status
@@ -254,7 +247,6 @@
   let suppressAutoScroll = false
 
   onMount(() => {
-    store.setOnToolCallsPending(handleToolCallsPending)
     const container = messagesContainer
     const end = messagesEndRef
     if (container && end) {
@@ -274,7 +266,6 @@
   })
 
   onDestroy(() => {
-    store.setOnToolCallsPending(null)
     scrollObserver?.disconnect()
     scrollObserver = null
   })
@@ -293,49 +284,12 @@
     el.style.height = `${Math.min(el.scrollHeight + 2, window.innerHeight * 0.4)}px`
   }
 
-  function handleToolCallsPending(
-    payload: ToolCallsPendingPayload,
-  ): Promise<Record<string, boolean>> {
-    const approvalOnly = payload.items.filter((i) => i.requiresApproval)
-    if (approvalOnly.length === 0) {
-      return Promise.resolve({})
-    }
-    return new Promise((resolve) => {
-      const next: Record<string, boolean | undefined> = {}
-      for (const it of approvalOnly) {
-        next[it.toolCallId] = undefined
-      }
-      toolApprovalPicks = next
-      toolApprovalWaiter = { payload: { items: approvalOnly }, resolve }
-    })
-  }
-
-  function maybeFinishToolApproval(): void {
-    if (!toolApprovalWaiter) return
-    const { resolve, payload } = toolApprovalWaiter
-    const allDone = payload.items.every(
-      (it) => toolApprovalPicks[it.toolCallId] !== undefined,
-    )
-    if (!allDone) return
-    const decisions: Record<string, boolean> = {}
-    for (const it of payload.items) {
-      decisions[it.toolCallId] = toolApprovalPicks[it.toolCallId] ?? false
-    }
-    toolApprovalWaiter = null
-    toolApprovalPicks = {}
-    resolve(decisions)
-  }
-
   function applyToolApprovalRun(toolCallId: string): void {
-    if (!toolApprovalWaiter) return
-    toolApprovalPicks = { ...toolApprovalPicks, [toolCallId]: true }
-    maybeFinishToolApproval()
+    store.applyToolApprovalRun(toolCallId)
   }
 
   function applyToolApprovalSkip(toolCallId: string): void {
-    if (!toolApprovalWaiter) return
-    toolApprovalPicks = { ...toolApprovalPicks, [toolCallId]: false }
-    maybeFinishToolApproval()
+    store.applyToolApprovalSkip(toolCallId)
   }
 
   function retryLastRequest() {

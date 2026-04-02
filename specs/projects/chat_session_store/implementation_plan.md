@@ -32,3 +32,15 @@ Refactor `chat.svelte` to be a pure UI component that subscribes to a `ChatSessi
 - [x] Keep component-local: DOM refs, scroll, input text, reasoning timing, formatting helpers
 - [x] Verify all three usage sites work (chat page, sidebar, dialog) and share the same session
 - [x] Run linting, formatting, type checking
+
+## Phase 4: Move tool approval state into store and fix streaming re-render
+
+Bug fixes for shared state correctness and performance.
+
+- [x] Move `toolApprovalWaiter` and `toolApprovalPicks` into `ChatSessionState` and store actions
+- [x] Remove `setOnToolCallsPending` from the public API; store manages its own `onToolCallsPending` callback internally
+- [x] Add `applyToolApprovalRun(toolCallId)` and `applyToolApprovalSkip(toolCallId)` as store methods
+- [x] Refactor `chat.svelte` to read tool approval state from `$store` and call store approval methods
+- [x] Fix `onAssistantMessage` to only call `setRuntimeState` when status actually transitions from non-streaming to streaming
+- [x] Update unit tests for new store API
+- [x] Run linting, formatting, type checking
