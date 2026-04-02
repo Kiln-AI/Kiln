@@ -110,7 +110,7 @@ def test_skill_md_path_is_directory(mock_project):
     skill = make_skill(parent=mock_project)
     skill.save_to_file()
     skill.skill_md_path().mkdir()
-    with pytest.raises(ValueError, match=r"SKILL\.md path is a folder"):
+    with pytest.raises(FileNotFoundError, match=r"SKILL\.md path is a folder"):
         skill.skill_md_raw()
 
 

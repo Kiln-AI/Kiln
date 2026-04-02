@@ -57,7 +57,7 @@ class Skill(KilnParentedModel):
         if not md_path.exists():
             raise FileNotFoundError(f"SKILL.md not found at {md_path}")
         if md_path.is_dir():
-            raise ValueError(f"SKILL.md path is a folder, not a file: {md_path}")
+            raise FileNotFoundError(f"SKILL.md path is a folder, not a file: {md_path}")
         return md_path.read_text(encoding="utf-8")
 
     def body(self) -> str:
@@ -98,7 +98,7 @@ class Skill(KilnParentedModel):
         except ValueError:
             raise ValueError("Path traversal is not allowed") from None
 
-        if resolved.exists() and resolved.is_dir():
+        if resolved.is_dir():
             raise ValueError(f"Path is a folder, not a file: {relative_path}")
 
         try:
