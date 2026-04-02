@@ -15,7 +15,7 @@
   export let section: Section = Section.None
 
   const MIN_WIDTH = 280
-  const MAX_WIDTH_VW = 50
+  const MAX_WIDTH_VW = 30
   const DEFAULT_WIDTH_LG = 320
   const DEFAULT_WIDTH_2XL = 380
   const BREAKPOINT_2XL = 1536
@@ -171,7 +171,7 @@
 
 <style>
   .drag-handle {
-    width: 8px;
+    width: 16px;
     cursor: col-resize;
     flex-shrink: 0;
   }

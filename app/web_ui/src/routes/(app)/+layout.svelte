@@ -104,7 +104,7 @@
       </div>
     </div>
 
-    <div class="flex flex-grow flex-row gap-4">
+    <div class="flex flex-grow flex-row">
       <div
         class="flex-1 min-w-0 rounded-3xl bg-base-100 shadow-md px-4 md:px-12 py-8 mb-4 border"
       >
