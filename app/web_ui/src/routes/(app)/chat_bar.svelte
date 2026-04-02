@@ -5,21 +5,83 @@
   import {
     getChatBarExpanded,
     setChatBarExpanded,
+    getChatBarWidth,
+    setChatBarWidth,
   } from "$lib/chat/chat_ui_storage"
+  import { onDestroy } from "svelte"
   import { Section } from "$lib/ui/section"
   import { browser } from "$app/environment"
 
   export let section: Section = Section.None
 
+  const MIN_WIDTH = 280
+  const MAX_WIDTH_VW = 50
+  const DEFAULT_WIDTH_LG = 320
+  const DEFAULT_WIDTH_2XL = 380
+  const BREAKPOINT_2XL = 1536
+  const RIGHT_MARGIN = 16
+
   let expanded = browser ? getChatBarExpanded() : true
   let dialog: Dialog
   let dialogOpen = false
-  let sidebarWidth = 320
+  let customWidth: number | null = browser ? getChatBarWidth() : null
+  let dragging = false
+
+  function getDefaultWidth(): number {
+    if (browser && window.innerWidth >= BREAKPOINT_2XL) {
+      return DEFAULT_WIDTH_2XL
+    }
+    return DEFAULT_WIDTH_LG
+  }
+
+  $: sidebarWidth = customWidth ?? getDefaultWidth()
 
   function toggle() {
     expanded = !expanded
     setChatBarExpanded(expanded)
   }
+
+  function getMaxWidth(): number {
+    return Math.floor(window.innerWidth * (MAX_WIDTH_VW / 100))
+  }
+
+  function clampWidth(width: number): number {
+    return Math.round(Math.max(MIN_WIDTH, Math.min(width, getMaxWidth())))
+  }
+
+  function onDragStart(e: MouseEvent) {
+    e.preventDefault()
+    dragging = true
+    document.body.style.userSelect = "none"
+    document.body.style.cursor = "col-resize"
+    window.addEventListener("mousemove", onDragMove)
+    window.addEventListener("mouseup", onDragEnd)
+  }
+
+  function onDragMove(e: MouseEvent) {
+    if (!dragging) return
+    const rightEdge = window.innerWidth
+    const newWidth = rightEdge - e.clientX - RIGHT_MARGIN
+    customWidth = clampWidth(newWidth)
+  }
+
+  function onDragEnd() {
+    if (!dragging) return
+    dragging = false
+    document.body.style.userSelect = ""
+    document.body.style.cursor = ""
+    window.removeEventListener("mousemove", onDragMove)
+    window.removeEventListener("mouseup", onDragEnd)
+    if (customWidth !== null) {
+      setChatBarWidth(customWidth)
+    }
+  }
+
+  onDestroy(() => {
+    if (dragging) {
+      onDragEnd()
+    }
+  })
 
   function openDialog() {
     dialogOpen = true
@@ -38,11 +100,19 @@
       style:width="{sidebarWidth}px"
     ></div>
     <div
-      class="hidden lg:flex flex-col fixed top-6 right-4 bottom-4"
+      class="hidden lg:flex flex-row fixed top-6 right-4 bottom-4"
       style:width="{sidebarWidth}px"
     >
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div
-        class="rounded-3xl bg-base-100 shadow-md px-4 py-8 border flex-1 min-h-0 overflow-y-auto"
+        class="drag-handle flex-shrink-0 flex items-center justify-center"
+        role="none"
+        on:mousedown={onDragStart}
+      >
+        <div class="drag-indicator"></div>
+      </div>
+      <div
+        class="rounded-3xl bg-base-100 shadow-md px-4 py-8 border flex flex-col flex-1 min-w-0 min-h-0 overflow-y-auto"
       >
         <div class="flex flex-row items-center justify-between mb-4">
           <div class="text-lg font-medium">Chat</div>
@@ -98,3 +168,25 @@
     {/if}
   </Dialog>
 {/if}
+
+<style>
+  .drag-handle {
+    width: 8px;
+    cursor: col-resize;
+    flex-shrink: 0;
+  }
+
+  .drag-handle:hover .drag-indicator,
+  .drag-handle:active .drag-indicator {
+    opacity: 1;
+  }
+
+  .drag-indicator {
+    width: 4px;
+    height: 32px;
+    border-radius: 2px;
+    background-color: oklch(var(--bc) / 0.25);
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+</style>

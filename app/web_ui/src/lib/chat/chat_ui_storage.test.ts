@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { getChatBarExpanded, setChatBarExpanded } from "./chat_ui_storage"
+import {
+  getChatBarExpanded,
+  setChatBarExpanded,
+  getChatBarWidth,
+  setChatBarWidth,
+} from "./chat_ui_storage"
 
 describe("chat_ui_storage", () => {
   let sessionStore: Record<string, string>
@@ -115,6 +120,69 @@ describe("chat_ui_storage", () => {
         "chat_bar_expanded",
         "true",
       )
+    })
+  })
+
+  describe("getChatBarWidth", () => {
+    it("returns null when no storage is set", () => {
+      expect(getChatBarWidth()).toBeNull()
+    })
+
+    it("reads from localStorage", () => {
+      localStore["chat_bar_width"] = "400"
+      expect(getChatBarWidth()).toBe(400)
+    })
+
+    it("returns null for non-numeric values", () => {
+      localStore["chat_bar_width"] = "abc"
+      expect(getChatBarWidth()).toBeNull()
+    })
+
+    it("returns null for zero", () => {
+      localStore["chat_bar_width"] = "0"
+      expect(getChatBarWidth()).toBeNull()
+    })
+
+    it("returns null for negative values", () => {
+      localStore["chat_bar_width"] = "-100"
+      expect(getChatBarWidth()).toBeNull()
+    })
+
+    it("returns null when storage throws", () => {
+      vi.stubGlobal("localStorage", {
+        getItem: () => {
+          throw new Error("denied")
+        },
+        setItem: vi.fn(),
+      })
+      expect(getChatBarWidth()).toBeNull()
+    })
+
+    it("handles float values", () => {
+      localStore["chat_bar_width"] = "350.5"
+      expect(getChatBarWidth()).toBe(350.5)
+    })
+  })
+
+  describe("setChatBarWidth", () => {
+    it("writes to localStorage", () => {
+      setChatBarWidth(400)
+      expect(localStorage.setItem).toHaveBeenCalledWith("chat_bar_width", "400")
+    })
+
+    it("does not write to sessionStorage", () => {
+      setChatBarWidth(400)
+      expect(sessionStorage.setItem).not.toHaveBeenCalled()
+    })
+
+    it("does not throw when storage is unavailable", () => {
+      vi.stubGlobal("localStorage", {
+        getItem: vi.fn(),
+        setItem: () => {
+          throw new Error("denied")
+        },
+      })
+      expect(() => setChatBarWidth(400)).not.toThrow()
     })
   })
 })
