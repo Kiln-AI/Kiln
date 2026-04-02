@@ -279,6 +279,24 @@ describe("createChatSessionStore", () => {
       )
     })
 
+    it("is a no-op when status is not ready (stream in progress)", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      store.sendMessage("hello")
+      // Don't call onFinish — status stays "submitted"
+      const callCountAfterSend = streamChatMock.mock.calls.length
+      const messagesAfterSend = get(store).messages.length
+
+      store.retryLastRequest()
+
+      expect(streamChatMock).toHaveBeenCalledTimes(callCountAfterSend)
+      expect(get(store).messages).toHaveLength(messagesAfterSend)
+    })
+
     it("does nothing when there are no user messages", async () => {
       const { createChatSessionStore } = await importFreshWithMock()
       const store = createChatSessionStore()

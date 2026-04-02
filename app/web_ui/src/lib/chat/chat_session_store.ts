@@ -189,6 +189,7 @@ export function createChatSessionStore(
   }
 
   function retryLastRequest(): void {
+    if (status !== "ready") return
     const msgs = get(persisted).messages
     let lastUserIdx = -1
     for (let i = msgs.length - 1; i >= 0; i--) {
