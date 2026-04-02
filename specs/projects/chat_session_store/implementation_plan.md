@@ -15,11 +15,11 @@ Add `sessionStorageStore<T>()` to `app/web_ui/src/lib/stores/local_storage_store
 
 Create `app/web_ui/src/lib/chat/chat_session_store.ts` with the store factory and global instance.
 
-- [ ] Define `PersistedChatSession`, `ChatSessionState`, `ChatSessionStore` types
-- [ ] Implement `createChatSessionStore()` using `sessionStorageStore` for persisted fields
-- [ ] Implement action methods: `sendMessage`, `stop`, `retryLastRequest`, `reset`, `togglePartCollapsed`
-- [ ] Export `createChatSessionStore` factory and `chatSessionStore` global instance
-- [ ] Add unit tests: state transitions, persistence round-trip, independent instances, reset clears storage
+- [x] Define `PersistedChatSession`, `ChatSessionState`, `ChatSessionStore` types
+- [x] Implement `createChatSessionStore()` using `sessionStorageStore` for persisted fields
+- [x] Implement action methods: `sendMessage`, `stop`, `retryLastRequest`, `reset`, `togglePartCollapsed`
+- [x] Export `createChatSessionStore` factory and `chatSessionStore` global instance
+- [x] Add unit tests: state transitions, persistence round-trip, independent instances, reset clears storage
 
 ## Phase 3: Refactor `chat.svelte` to use the store
 
