@@ -43,13 +43,17 @@ class AsyncJobRunner(Generic[T]):
         concurrency: int = 1,
         observers: List[AsyncJobRunnerObserver[T]] | None = None,
         max_retries: int = 0,
+        retry_delay: float = 1.0,  # in seconds
     ):
         if concurrency < 1:
             raise ValueError("concurrency must be ≥ 1")
         if max_retries < 0:
             raise ValueError("max_retries must be >= 0")
+        if retry_delay < 0:
+            raise ValueError("retry_delay must be >= 0")
         self.concurrency = concurrency
         self.max_retries = max_retries
+        self.retry_delay = retry_delay
         self.jobs = jobs
         self.run_job_fn = run_job_fn
         self.observers = observers or []
@@ -138,21 +142,28 @@ class AsyncJobRunner(Generic[T]):
 
             await self.notify_job_start(job)
             result = False
+            last_error: Exception | None = None
             for attempt in range(1 + self.max_retries):
                 is_last_attempt = attempt == self.max_retries
                 try:
                     result = await run_job_fn(job)
                     if result:
-                        await self.notify_success(job)
                         break
                     if is_last_attempt:
                         break
                 except Exception as e:
                     result = False
+                    last_error = e
                     if is_last_attempt:
-                        logger.error("Job failed to complete", exc_info=True)
-                        await self.notify_error(job, e)
                         break
+                    # sleep before retrying again
+                    await asyncio.sleep(self.retry_delay)
+
+            if result:
+                await self.notify_success(job)
+            elif last_error is not None:
+                logger.error("Job failed to complete", exc_info=True)
+                await self.notify_error(job, last_error)
 
             try:
                 await status_queue.put(result)

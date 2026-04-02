@@ -10,6 +10,17 @@ from kiln_ai.utils.async_job_runner import (
 )
 
 
+@pytest.mark.parametrize("retry_delay", [-1, -0.5, -100])
+def test_invalid_retry_delay_raises(retry_delay):
+    with pytest.raises(ValueError):
+        AsyncJobRunner(
+            concurrency=1,
+            jobs=[],
+            run_job_fn=AsyncMock(return_value=True),
+            retry_delay=retry_delay,
+        )
+
+
 @pytest.fixture
 def mock_async_run_job_fn_success():
     return AsyncMock(return_value=True)
@@ -327,6 +338,67 @@ async def test_async_job_runner_observers(concurrency):
 
 
 @pytest.mark.asyncio
+async def test_async_job_runner_retry_delay():
+    jobs = [{"id": 1}]
+    call_count = 0
+
+    async def run_job_fn(_: dict[str, int]) -> bool:
+        nonlocal call_count
+        call_count += 1
+        if call_count < 3:
+            raise RuntimeError("transient")
+        return True
+
+    runner = AsyncJobRunner(
+        concurrency=1,
+        jobs=jobs,
+        run_job_fn=run_job_fn,
+        max_retries=2,
+        retry_delay=0.5,
+    )
+
+    with patch(
+        "kiln_ai.utils.async_job_runner.asyncio.sleep", new_callable=AsyncMock
+    ) as mock_sleep:
+        updates = [progress async for progress in runner.run()]
+        assert updates[-1].complete == 1
+        assert updates[-1].errors == 0
+        assert call_count == 3
+        assert mock_sleep.await_count == 2
+        mock_sleep.assert_awaited_with(0.5)
+
+
+@pytest.mark.asyncio
+async def test_async_job_runner_notify_success_outside_retry_loop():
+    """Verify that notify_success raising doesn't cause a retry of the job."""
+    jobs = [{"id": 1}]
+    call_count = 0
+
+    async def run_job_fn(_: dict[str, int]) -> bool:
+        nonlocal call_count
+        call_count += 1
+        return True
+
+    class FailingObserver(AsyncJobRunnerObserver[dict[str, int]]):
+        async def on_success(self, job: dict[str, int]):
+            raise RuntimeError("observer exploded")
+
+    runner = AsyncJobRunner(
+        concurrency=1,
+        jobs=jobs,
+        run_job_fn=run_job_fn,
+        max_retries=2,
+        observers=[FailingObserver()],
+    )
+
+    with pytest.raises(RuntimeError, match="observer exploded"):
+        async for _ in runner.run():
+            pass
+
+    assert call_count == 1
+
+
+@pytest.mark.asyncio
 async def test_async_job_runner_retry_succeeds_on_second_attempt():
     jobs = [{"id": 1}]
     call_count = 0
@@ -341,6 +413,7 @@ async def test_async_job_runner_retry_succeeds_on_second_attempt():
         jobs=jobs,
         run_job_fn=run_job_fn,
         max_retries=1,
+        retry_delay=0,
     )
 
     updates = [progress async for progress in runner.run()]
@@ -359,6 +432,7 @@ async def test_async_job_runner_retry_exhausted_with_false():
         jobs=jobs,
         run_job_fn=run_job_fn,
         max_retries=2,
+        retry_delay=0,
     )
 
     updates = [progress async for progress in runner.run()]
@@ -384,6 +458,7 @@ async def test_async_job_runner_retry_exception_then_success():
         jobs=jobs,
         run_job_fn=run_job_fn,
         max_retries=1,
+        retry_delay=0,
     )
 
     updates = [progress async for progress in runner.run()]
@@ -402,6 +477,7 @@ async def test_async_job_runner_retry_exception_exhausted():
         jobs=jobs,
         run_job_fn=run_job_fn,
         max_retries=1,
+        retry_delay=0,
     )
 
     updates = [progress async for progress in runner.run()]
@@ -443,6 +519,7 @@ async def test_async_job_runner_observers_with_retries():
         jobs=jobs,
         run_job_fn=run_job_fn,
         max_retries=1,
+        retry_delay=0,
         observers=[observer],
     )
 
