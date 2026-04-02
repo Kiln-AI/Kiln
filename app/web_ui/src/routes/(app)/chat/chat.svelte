@@ -1,12 +1,16 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte"
+  import { onMount, onDestroy, tick } from "svelte"
   import { fly } from "svelte/transition"
+  import { browser } from "$app/environment"
+  import { chat_cost_disclaimer_acknowledged } from "$lib/stores"
+  import ChatCostDisclaimer from "./ChatCostDisclaimer.svelte"
   import {
     streamChat,
     chatGenerateId,
     traceIdForNextChatRequest,
     type ChatMessage,
     type ChatMessagePart,
+    type ToolCallsPendingPayload,
   } from "$lib/chat/streaming_chat"
   import ChatMarkdown from "$lib/chat/ChatMarkdown.svelte"
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
@@ -28,7 +32,25 @@
   let reasoningPartEndTimes: Record<string, number> = {}
   let lastSeenLastPartKey: string | null = null
 
+  let toolApprovalWaiter: {
+    payload: ToolCallsPendingPayload
+    resolve: (d: Record<string, boolean>) => void
+  } | null = null
+  let toolApprovalPicks: Record<string, boolean | undefined> = {}
+
   $: isLoading = status === "submitted" || status === "streaming"
+  $: chatAcknowledged = $chat_cost_disclaimer_acknowledged
+  $: inputDisabled = isLoading || (browser && !chatAcknowledged)
+
+  let prevIsLoading = false
+  $: {
+    if (prevIsLoading && !isLoading) {
+      tick().then(() => {
+        textareaRef?.focus({ preventScroll: true })
+      })
+    }
+    prevIsLoading = isLoading
+  }
 
   $: lastMessage = messages[messages.length - 1]
   $: lastParts = lastMessage?.parts ?? []
@@ -145,6 +167,17 @@
     partIndex: number,
     parts: ChatMessagePart[],
   ): boolean {
+    if (
+      typeof part.type === "string" &&
+      part.type.startsWith("tool-") &&
+      "toolCallId" in part &&
+      toolApprovalWaiter &&
+      toolApprovalWaiter.payload.items.some(
+        (i) => i.toolCallId === (part as { toolCallId: string }).toolCallId,
+      )
+    ) {
+      return false
+    }
     const key = partKey(message, part, partIndex)
     if (key in state) return state[key]
     return shouldAutoCollapse(message, partIndex, parts)
@@ -174,6 +207,13 @@
   function formatToolName(type: string): string {
     const name = type.startsWith("tool-") ? type.slice(5) : type
     return name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  }
+
+  function getToolCallId(part: ChatMessagePart): string {
+    if ("toolCallId" in part && typeof part.toolCallId === "string") {
+      return part.toolCallId
+    }
+    return ""
   }
 
   function hasToolInput(part: ChatMessagePart): boolean {
@@ -276,6 +316,51 @@
     }
   }
 
+  function handleToolCallsPending(
+    payload: ToolCallsPendingPayload,
+  ): Promise<Record<string, boolean>> {
+    const approvalOnly = payload.items.filter((i) => i.requiresApproval)
+    if (approvalOnly.length === 0) {
+      return Promise.resolve({})
+    }
+    return new Promise((resolve) => {
+      const next: Record<string, boolean | undefined> = {}
+      for (const it of approvalOnly) {
+        next[it.toolCallId] = undefined
+      }
+      toolApprovalPicks = next
+      toolApprovalWaiter = { payload: { items: approvalOnly }, resolve }
+    })
+  }
+
+  function maybeFinishToolApproval(): void {
+    if (!toolApprovalWaiter) return
+    const { resolve, payload } = toolApprovalWaiter
+    const allDone = payload.items.every(
+      (it) => toolApprovalPicks[it.toolCallId] !== undefined,
+    )
+    if (!allDone) return
+    const decisions: Record<string, boolean> = {}
+    for (const it of payload.items) {
+      decisions[it.toolCallId] = toolApprovalPicks[it.toolCallId] ?? false
+    }
+    toolApprovalWaiter = null
+    toolApprovalPicks = {}
+    resolve(decisions)
+  }
+
+  function applyToolApprovalRun(toolCallId: string): void {
+    if (!toolApprovalWaiter) return
+    toolApprovalPicks = { ...toolApprovalPicks, [toolCallId]: true }
+    maybeFinishToolApproval()
+  }
+
+  function applyToolApprovalSkip(toolCallId: string): void {
+    if (!toolApprovalWaiter) return
+    toolApprovalPicks = { ...toolApprovalPicks, [toolCallId]: false }
+    maybeFinishToolApproval()
+  }
+
   function updateLastAssistant(update: (draft: ChatMessage) => void) {
     const last = messages[messages.length - 1]
     if (last?.role === "assistant") {
@@ -288,7 +373,7 @@
   function handleSubmit(e?: Event) {
     if (e) e.preventDefault()
     const text = input.trim()
-    if (!text || isLoading) return
+    if (!text || isLoading || (browser && !chatAcknowledged)) return
     removeErrors()
     const traceId = traceIdForNextChatRequest(messages)
     const userMessage: ChatMessage = {
@@ -335,6 +420,7 @@
         status = "ready"
         abortController = null
       },
+      onToolCallsPending: handleToolCallsPending,
       onFinish: () => {
         status = "ready"
         abortController = null
@@ -356,7 +442,7 @@
 
 <div>
   <div
-    class="flex flex-col h-[calc(100vh-14rem)] overflow-hidden w-full md:max-w-3xl mx-auto"
+    class="flex flex-col h-[calc(100vh-14rem)] overflow-hidden w-full md:max-w-3xl mx-auto px-4"
   >
     <div
       bind:this={messagesContainer}
@@ -364,6 +450,7 @@
       role="log"
       aria-live="polite"
     >
+      <ChatCostDisclaimer />
       {#each messages as message (message.id)}
         <div
           in:fly={{ y: 8, duration: 200 }}
@@ -461,6 +548,15 @@
                       {/if}
                     </div>
                   {:else if typeof part.type === "string" && part.type.startsWith("tool-")}
+                    {@const tcId = getToolCallId(part)}
+                    {@const approvalItem =
+                      toolApprovalWaiter?.payload.items.find(
+                        (i) => i.toolCallId === tcId,
+                      )}
+                    {@const pendingInlineApproval =
+                      toolApprovalWaiter !== null &&
+                      approvalItem !== undefined &&
+                      part.output === undefined}
                     {@const toolCollapsed = isPartCollapsed(
                       collapsedPartKeys,
                       message,
@@ -537,6 +633,52 @@
                                     class="text-xs overflow-x-auto rounded py-1.5 font-mono text-base-content/80">{formatToolOutput(
                                       part.output,
                                     )}</pre>
+                                {:else if pendingInlineApproval}
+                                  <div class="flex flex-col gap-3">
+                                    {#if toolApprovalPicks[tcId] === undefined}
+                                      <p
+                                        class="text-xs text-base-content/80 leading-relaxed"
+                                      >
+                                        {#if approvalItem?.approvalDescription?.trim()}
+                                          {approvalItem.approvalDescription}
+                                        {:else}
+                                          This tool call requires approval.
+                                        {/if}
+                                      </p>
+                                      <div
+                                        class="flex flex-row flex-wrap items-center justify-end gap-2"
+                                      >
+                                        <button
+                                          type="button"
+                                          class="btn btn-ghost btn-sm"
+                                          on:click={() =>
+                                            applyToolApprovalSkip(tcId)}
+                                        >
+                                          Skip
+                                        </button>
+                                        <button
+                                          type="button"
+                                          class="btn btn-primary btn-sm"
+                                          on:click={() =>
+                                            applyToolApprovalRun(tcId)}
+                                        >
+                                          Run
+                                        </button>
+                                      </div>
+                                    {:else if toolApprovalPicks[tcId] === true}
+                                      <p
+                                        class="text-xs text-base-content/60 italic"
+                                      >
+                                        Approved.
+                                      </p>
+                                    {:else}
+                                      <p
+                                        class="text-xs text-base-content/60 italic"
+                                      >
+                                        Skipped.
+                                      </p>
+                                    {/if}
+                                  </div>
                                 {:else}
                                   <div
                                     class="flex items-center gap-2 text-base-content/50 italic text-xs"
@@ -585,7 +727,7 @@
         class="input input-bordered w-full min-h-[80px] max-h-[40vh] resize-none overflow-y-auto py-3 pr-12"
         placeholder="Type a message…"
         bind:value={input}
-        disabled={isLoading}
+        disabled={inputDisabled}
         rows={3}
         on:input={() => adjustTextareaHeight()}
         on:keydown={handleTextareaKeydown}
@@ -603,7 +745,7 @@
         <button
           type="submit"
           class="absolute right-3 bottom-6 flex size-8 items-center justify-center rounded-full bg-primary text-primary-content hover:opacity-90 disabled:bg-base-300 disabled:text-base-content/40 disabled:pointer-events-none transition-colors"
-          disabled={!input.trim()}
+          disabled={!input.trim() || inputDisabled}
           aria-label="Send"
         >
           <span class="size-4 block"><ArrowUpIcon /></span>
