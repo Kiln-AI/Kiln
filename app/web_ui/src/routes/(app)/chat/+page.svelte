@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from "svelte"
   import { fly } from "svelte/transition"
+  import { browser } from "$app/environment"
+  import { chat_cost_disclaimer_acknowledged } from "$lib/stores"
   import AppPage from "../app_page.svelte"
   import {
     streamChat,
@@ -37,6 +39,8 @@
   let toolApprovalPicks: Record<string, boolean | undefined> = {}
 
   $: isLoading = status === "submitted" || status === "streaming"
+  $: chatAcknowledged = $chat_cost_disclaimer_acknowledged
+  $: inputDisabled = isLoading || (browser && !chatAcknowledged)
 
   let prevIsLoading = false
   $: {
@@ -362,10 +366,14 @@
     }
   }
 
+  function acknowledgeChatDisclaimer(): void {
+    chat_cost_disclaimer_acknowledged.set(true)
+  }
+
   function handleSubmit(e?: Event) {
     if (e) e.preventDefault()
     const text = input.trim()
-    if (!text || isLoading) return
+    if (!text || isLoading || (browser && !chatAcknowledged)) return
     removeErrors()
     const traceId = traceIdForNextChatRequest(messages)
     const userMessage: ChatMessage = {
@@ -447,6 +455,49 @@
       role="log"
       aria-live="polite"
     >
+      {#if browser && !chatAcknowledged}
+        <div
+          in:fly={{ y: 6, duration: 220 }}
+          class="shrink-0 rounded-2xl border border-warning/30 bg-warning/5 px-4 py-4 sm:px-5 sm:py-5 shadow-sm"
+          role="region"
+          aria-labelledby="chat-cost-disclaimer-title"
+        >
+          <div class="flex flex-col gap-3">
+            <div class="flex flex-col gap-1.5">
+              <h2
+                id="chat-cost-disclaimer-title"
+                class="text-base font-medium text-base-content tracking-tight"
+              >
+                Chat uses Kiln’s backend
+              </h2>
+              <p class="text-sm text-base-content/80 leading-relaxed">
+                Messages you send are processed on Kiln’s servers. The assistant
+                can run tools that trigger work in your workspace—such as evals,
+                prompt optimization, synthetic data generation, RAG, or other
+                AI-backed workflows.
+              </p>
+              <p class="text-sm text-base-content/80 leading-relaxed">
+                Those actions may call model providers using your configured API
+                keys and <span class="font-medium text-base-content"
+                  >can incur usage charges</span
+                >
+                from those providers (and any usage billed through Kiln, if applicable).
+              </p>
+            </div>
+            <div
+              class="flex flex-col sm:flex-row sm:items-center sm:justify-end gap-2 pt-0.5"
+            >
+              <button
+                type="button"
+                class="btn btn-primary btn-sm sm:min-w-[200px]"
+                on:click={acknowledgeChatDisclaimer}
+              >
+                I understand
+              </button>
+            </div>
+          </div>
+        </div>
+      {/if}
       {#each messages as message (message.id)}
         <div
           in:fly={{ y: 8, duration: 200 }}
@@ -723,7 +774,7 @@
         class="input input-bordered w-full min-h-[80px] max-h-[40vh] resize-none overflow-y-auto py-3 pr-12"
         placeholder="Type a message…"
         bind:value={input}
-        disabled={isLoading}
+        disabled={inputDisabled}
         rows={3}
         on:input={() => adjustTextareaHeight()}
         on:keydown={handleTextareaKeydown}
@@ -741,7 +792,7 @@
         <button
           type="submit"
           class="absolute right-3 bottom-6 flex size-8 items-center justify-center rounded-full bg-primary text-primary-content hover:opacity-90 disabled:bg-base-300 disabled:text-base-content/40 disabled:pointer-events-none transition-colors"
-          disabled={!input.trim()}
+          disabled={!input.trim() || inputDisabled}
           aria-label="Send"
         >
           <span class="size-4 block"><ArrowUpIcon /></span>
