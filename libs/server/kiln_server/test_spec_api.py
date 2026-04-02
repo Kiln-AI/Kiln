@@ -1,8 +1,10 @@
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import logging
+
 from kiln_ai.datamodel import Project, Task
 from kiln_ai.datamodel.datamodel_enums import Priority
 from kiln_ai.datamodel.eval import Eval, EvalOutputScore, TaskOutputRatingType
@@ -1416,3 +1418,97 @@ def test_get_spec_with_task_sample(client, project_and_task, sample_tone_propert
     assert res["task_sample"] is not None
     assert res["task_sample"]["input"] == "Example input for get test"
     assert res["task_sample"]["output"] == "Example output for get test"
+
+
+def test_create_spec_rolls_back_eval_on_spec_save_failure(
+    client, project_and_task, sample_tone_properties
+):
+    """Test that eval is deleted when spec.save_to_file() fails during create."""
+    project, task = project_and_task
+
+    spec_data = {
+        "name": "Test Spec",
+        "definition": "The system should always respond politely",
+        "properties": create_tone_properties_dict(),
+    }
+
+    original_save = Spec.save_to_file
+
+    def spec_save_fails(self):
+        raise Exception("disk full")
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        with patch.object(Spec, "save_to_file", spec_save_fails):
+            with pytest.raises(Exception, match="disk full"):
+                client.post(
+                    f"/api/projects/{project.id}/tasks/{task.id}/specs", json=spec_data
+                )
+
+    # Eval should have been cleaned up
+    assert len(task.evals()) == 0
+    assert len(task.specs()) == 0
+
+
+def test_update_spec_name_rollback_eval_fails_logs_error(
+    client: TestClient,
+    project_and_task: tuple[Project, Task],
+    sample_tone_properties: ToneProperties,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test that when spec save fails AND eval rollback also fails, the error is logged."""
+    project, task = project_and_task
+
+    eval = Eval(
+        name="Original Name",
+        description="Test eval",
+        template="rag",
+        eval_set_filter_id="tag::test_eval",
+        output_scores=[
+            EvalOutputScore(
+                name="Quality",
+                type=TaskOutputRatingType.five_star,
+            )
+        ],
+        parent=task,
+    )
+    eval.save_to_file()
+
+    spec = Spec(
+        name="Original Name",
+        definition="Original definition",
+        priority=Priority.p2,
+        status=SpecStatus.active,
+        tags=[],
+        eval_id=eval.id,
+        properties=sample_tone_properties,
+        parent=task,
+    )
+    spec.save_to_file()
+
+    update_data = {"name": "Updated Name"}
+
+    eval_save_count = 0
+    original_eval_save = Eval.save_to_file
+
+    def eval_save_fails_on_rollback(self):
+        nonlocal eval_save_count
+        eval_save_count += 1
+        if eval_save_count == 1:
+            # First call: name sync save succeeds
+            return original_eval_save(self)
+        # Second call: rollback save fails
+        raise Exception("rollback error")
+
+    with patch("kiln_server.spec_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        with patch.object(Spec, "save_to_file", side_effect=Exception("disk error")):
+            with patch.object(Eval, "save_to_file", eval_save_fails_on_rollback):
+                with caplog.at_level(logging.ERROR):
+                    with pytest.raises(Exception, match="disk error"):
+                        client.patch(
+                            f"/api/projects/{project.id}/tasks/{task.id}/specs/{spec.id}",
+                            json=update_data,
+                        )
+
+    assert "Failed to roll back eval name after spec save failure" in caplog.text
