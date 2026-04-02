@@ -23,13 +23,19 @@ from kiln_ai.adapters.model_adapters.stream_events import (
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_server.utils.agent_checks.policy import DENY_AGENT
-from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+)
 
 logger = logging.getLogger(__name__)
 
 _CHAT_TIMEOUT = httpx.Timeout(timeout=300.0, connect=30.0)
 _MAX_TOOL_ROUNDS = 25
-_TOOL_APPROVAL_TIMEOUT_SEC = 15.0
+_TOOL_APPROVAL_TIMEOUT_SEC = 600.0
 
 SSE_TYPE_TOOL_APPROVAL_REQUIRED = "tool-approval-required"
 
@@ -42,83 +48,133 @@ KILN_SSE_CHAT_TRACE = "kiln_chat_trace"
 
 _ai_sdk_stream_event_adapter = TypeAdapter(AiSdkStreamEvent)
 
-_KILN_METADATA_EXECUTOR_KEY = "executor"
 _EXECUTOR_SERVER = "server"
 
 
+class KilnToolInputMetadata(BaseModel):
+    """Validated subset of ``kiln_metadata`` on tool-input-available events."""
+
+    model_config = ConfigDict(extra="allow")
+
+    executor: str | None = None
+    requires_approval: bool | None = None
+    permission: str | None = None
+    approval_description: str | None = None
+
+    @field_validator("requires_approval", mode="before")
+    @classmethod
+    def _requires_approval_must_be_bool_or_none(cls, v: Any) -> Any:
+        if v is None:
+            return None
+        if isinstance(v, bool):
+            return v
+        raise ValueError("requires_approval must be a boolean or null")
+
+    @field_validator("executor", "permission", "approval_description", mode="before")
+    @classmethod
+    def _optional_str_fields(cls, v: Any) -> Any:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            return v
+        raise ValueError("must be a string or null")
+
+
+def _parse_kiln_tool_metadata(raw: dict[str, Any]) -> KilnToolInputMetadata:
+    try:
+        return KilnToolInputMetadata.model_validate(dict(raw))
+    except ValidationError:
+        logger.debug("kiln_metadata validation failed, using narrowed fields: %s", raw)
+        narrowed: dict[str, Any] = {}
+        for key in ("executor", "permission", "approval_description"):
+            v = raw.get(key)
+            if isinstance(v, str):
+                narrowed[key] = v
+        ra = raw.get("requires_approval")
+        if isinstance(ra, bool):
+            narrowed["requires_approval"] = ra
+        for k, v in raw.items():
+            if k in narrowed or k == "requires_approval":
+                continue
+            narrowed[k] = v
+        return KilnToolInputMetadata.model_validate(narrowed)
+
+
 def _tool_input_executor_is_server(event: ToolInputAvailableEvent) -> bool:
-    return event.kiln_metadata.get(_KILN_METADATA_EXECUTOR_KEY) == _EXECUTOR_SERVER
-
-
-def _coerce_bool_flag(value: Any) -> bool | None:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        lower = value.lower()
-        if lower in ("true", "1", "yes"):
-            return True
-        if lower in ("false", "0", "no"):
-            return False
-    return None
+    return _parse_kiln_tool_metadata(event.kiln_metadata).executor == _EXECUTOR_SERVER
 
 
 def _tool_requires_user_approval(event: ToolInputAvailableEvent) -> bool:
-    raw = event.kiln_metadata.get("requires_approval")
-    coerced = _coerce_bool_flag(raw)
-    return coerced is True
+    return _parse_kiln_tool_metadata(event.kiln_metadata).requires_approval is True
 
 
 @dataclass
-class _PendingToolApproval:
+class PendingToolApproval:
     future: asyncio.Future[dict[str, bool]]
     required_tool_call_ids: frozenset[str]
 
 
-_approval_registry_lock = threading.Lock()
-_pending_tool_approvals: dict[str, _PendingToolApproval] = {}
+class ToolApprovalRegistry:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._pending: dict[str, PendingToolApproval] = {}
+
+    async def register_wait(
+        self, batch_id: str, required_tool_call_ids: frozenset[str]
+    ) -> asyncio.Future[dict[str, bool]]:
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[dict[str, bool]] = loop.create_future()
+        pending = PendingToolApproval(
+            future=future, required_tool_call_ids=required_tool_call_ids
+        )
+        with self._lock:
+            self._pending[batch_id] = pending
+        return future
+
+    def pop_pending(self, batch_id: str) -> PendingToolApproval | None:
+        with self._lock:
+            return self._pending.pop(batch_id, None)
+
+    def submit_decisions(self, batch_id: str, decisions: dict[str, bool]) -> None:
+        with self._lock:
+            pending = self._pending.get(batch_id)
+        if pending is None:
+            raise HTTPException(
+                status_code=404, detail="Timed out waiting for tool approval"
+            )
+        if pending.future.done():
+            raise HTTPException(
+                status_code=409, detail="Approval batch was already completed"
+            )
+        required = pending.required_tool_call_ids
+        got = frozenset(decisions.keys())
+        if got != required:
+            raise HTTPException(
+                status_code=400,
+                detail="decisions must include exactly each toolCallId in the approval batch",
+            )
+        with self._lock:
+            self._pending.pop(batch_id, None)
+        pending.future.set_result(decisions)
+
+
+_tool_approval_registry = ToolApprovalRegistry()
 
 
 async def _register_tool_approval_wait(
     batch_id: str, required_tool_call_ids: frozenset[str]
 ) -> asyncio.Future[dict[str, bool]]:
-    loop = asyncio.get_running_loop()
-    future: asyncio.Future[dict[str, bool]] = loop.create_future()
-    pending = _PendingToolApproval(
-        future=future, required_tool_call_ids=required_tool_call_ids
-    )
-    with _approval_registry_lock:
-        _pending_tool_approvals[batch_id] = pending
-    return future
+    return await _tool_approval_registry.register_wait(batch_id, required_tool_call_ids)
 
 
-async def _pop_pending_tool_approval(batch_id: str) -> _PendingToolApproval | None:
-    with _approval_registry_lock:
-        return _pending_tool_approvals.pop(batch_id, None)
+def _pop_pending_tool_approval(batch_id: str) -> PendingToolApproval | None:
+    return _tool_approval_registry.pop_pending(batch_id)
 
 
 async def submit_tool_approval_decisions(
     batch_id: str, decisions: dict[str, bool]
 ) -> None:
-    with _approval_registry_lock:
-        pending = _pending_tool_approvals.get(batch_id)
-    if pending is None:
-        raise HTTPException(
-            status_code=404, detail="Timed out waiting for tool approval"
-        )
-    if pending.future.done():
-        raise HTTPException(
-            status_code=409, detail="Approval batch was already completed"
-        )
-    required = pending.required_tool_call_ids
-    got = frozenset(decisions.keys())
-    if got != required:
-        raise HTTPException(
-            status_code=400,
-            detail="decisions must include exactly each toolCallId in the approval batch",
-        )
-    with _approval_registry_lock:
-        _pending_tool_approvals.pop(batch_id, None)
-    pending.future.set_result(decisions)
+    _tool_approval_registry.submit_decisions(batch_id, decisions)
 
 
 def _format_tool_approval_required_sse(
@@ -133,17 +189,15 @@ def _format_tool_approval_required_sse(
 
 
 def _approval_item_from_event(event: ToolInputAvailableEvent) -> dict[str, Any]:
-    meta = event.kiln_metadata
+    meta = _parse_kiln_tool_metadata(event.kiln_metadata)
     item: dict[str, Any] = {
         "toolCallId": event.toolCallId,
         "toolName": event.toolName,
     }
-    perm = meta.get("permission")
-    if isinstance(perm, str):
-        item["permission"] = perm
-    desc = meta.get("approval_description")
-    if isinstance(desc, str):
-        item["approvalDescription"] = desc
+    if meta.permission is not None:
+        item["permission"] = meta.permission
+    if meta.approval_description is not None:
+        item["approvalDescription"] = meta.approval_description
     return item
 
 
@@ -156,12 +210,12 @@ async def _wait_for_tool_approval(
     try:
         return await asyncio.wait_for(future, timeout=timeout_sec)
     except asyncio.TimeoutError:
-        await _pop_pending_tool_approval(batch_id)
+        _pop_pending_tool_approval(batch_id)
         if not future.done():
             future.cancel()
         return "timeout"
     except asyncio.CancelledError:
-        await _pop_pending_tool_approval(batch_id)
+        _pop_pending_tool_approval(batch_id)
         if not future.done():
             future.cancel()
         raise

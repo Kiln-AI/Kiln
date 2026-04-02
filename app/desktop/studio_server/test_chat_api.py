@@ -383,7 +383,7 @@ class TestToolInputExecutorServer:
 
 
 class TestToolApprovalHelpers:
-    def test_tool_requires_user_approval_coerces_metadata(self):
+    def test_tool_requires_user_approval_accepts_bool_metadata(self):
         ev = ToolInputAvailableEvent(
             type="tool-input-available",
             toolCallId="x",
@@ -400,6 +400,29 @@ class TestToolApprovalHelpers:
             kiln_metadata={"requires_approval": False},
         )
         assert _tool_requires_user_approval(ev2) is False
+
+    def test_tool_requires_user_approval_rejects_non_bool_requires_approval(self):
+        ev = ToolInputAvailableEvent(
+            type="tool-input-available",
+            toolCallId="x",
+            toolName="t",
+            input={},
+            kiln_metadata={"requires_approval": "true"},
+        )
+        assert _tool_requires_user_approval(ev) is False
+
+    def test_kiln_metadata_extra_keys_do_not_break_parsing(self):
+        ev = ToolInputAvailableEvent(
+            type="tool-input-available",
+            toolCallId="x",
+            toolName="t",
+            input={},
+            kiln_metadata={
+                "requires_approval": True,
+                "future_flag": 1,
+            },
+        )
+        assert _tool_requires_user_approval(ev) is True
 
     def test_submit_tool_approval_resolves_registered_future(self):
         async def run() -> None:

@@ -2585,7 +2585,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Submit tool call approval decisions */
+        /**
+         * Submit tool call approval decisions
+         * @description Submit tool call approval decisions.
+         */
         post: operations["post_tool_approval_api_chat_tool_approval_post"];
         delete?: never;
         options?: never;
