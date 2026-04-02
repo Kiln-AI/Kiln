@@ -16,6 +16,7 @@
   import OptimizeIcon from "$lib/ui/icons/optimize_icon.svelte"
   import SkillsIcon from "$lib/ui/icons/skills_icon.svelte"
   import ToolsIcon from "$lib/ui/icons/tools_icon.svelte"
+  import ChatBar from "./chat_bar.svelte"
 
   onMount(async () => {
     update_update_store()
@@ -118,10 +119,20 @@
       </div>
     </div>
 
-    <div
-      class="flex-grow rounded-3xl bg-base-100 shadow-md px-4 md:px-12 py-8 mb-4 border"
-    >
-      <slot />
+    <div class="flex flex-grow flex-row gap-4">
+      <div
+        class="flex-1 min-w-0 rounded-3xl bg-base-100 shadow-md px-4 md:px-12 py-8 mb-4 border"
+      >
+        <slot />
+      </div>
+      <div
+        class="w-[320px] xl:w-[380px] flex-shrink-0 rounded-3xl bg-base-100 shadow-md px-4 md:px-12 py-8 mb-4 border {section ==
+        Section.Chat
+          ? 'hidden'
+          : ''}"
+      >
+        <ChatBar />
+      </div>
     </div>
   </div>
   <div class="drawer-side" on:mouseleave={close_task_menu} role="navigation">

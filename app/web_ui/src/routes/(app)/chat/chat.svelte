@@ -355,14 +355,9 @@
   }
 </script>
 
-<AppPage
-  title="Chat"
-  subtitle="Streaming chat"
-  limit_max_width={true}
-  no_y_padding={true}
->
+<div>
   <div
-    class="flex flex-col h-[calc(100vh-14rem)] overflow-hidden w-full md:max-w-3xl mx-auto px-4"
+    class="flex flex-col h-[calc(100vh-14rem)] overflow-hidden w-full md:max-w-3xl mx-auto"
   >
     <div
       bind:this={messagesContainer}
@@ -617,7 +612,7 @@
       {/if}
     </form>
   </div>
-</AppPage>
+</div>
 
 <style>
   .chat-messages-scroll::-webkit-scrollbar {
