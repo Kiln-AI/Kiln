@@ -2576,7 +2576,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chat/tool-approval": {
+    "/api/chat/execute-tools": {
         parameters: {
             query?: never;
             header?: never;
@@ -2586,10 +2586,13 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Submit tool call approval decisions
-         * @description Submit tool call approval decisions.
+         * Execute approved client tools and continue chat stream
+         * @description Tool calls that require user approval are streamed to the client for approval, along with the
+         *     other toolcalls part of the same turn. The user must approve / reject all the approval-requiring
+         *     toolcalls in the UI, then send back the decisions through this endpoint, which will execute
+         *     the toolcalls and continue the chat stream.
          */
-        post: operations["post_tool_approval_api_chat_tool_approval_post"];
+        post: operations["post_execute_tools_api_chat_execute_tools_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4668,6 +4671,17 @@ export interface components {
             fails_specification: boolean;
             /** User Feedback */
             user_feedback?: string | null;
+        };
+        /** ExecuteToolsRequest */
+        ExecuteToolsRequest: {
+            /** Trace Id */
+            trace_id: string;
+            /** Tool Calls */
+            tool_calls: components["schemas"]["ToolCallInfo"][];
+            /** Decisions */
+            decisions: {
+                [key: string]: boolean;
+            };
         };
         /**
          * ExternalToolApiDescription
@@ -8327,14 +8341,18 @@ export interface components {
             /** Description */
             description: string | null;
         };
-        /** ToolApprovalRequestBody */
-        ToolApprovalRequestBody: {
-            /** Approval Batch Id */
-            approval_batch_id: string;
-            /** Decisions */
-            decisions: {
-                [key: string]: boolean;
+        /** ToolCallInfo */
+        ToolCallInfo: {
+            /** Toolcallid */
+            toolCallId: string;
+            /** Toolname */
+            toolName: string;
+            /** Input */
+            input: {
+                [key: string]: unknown;
             };
+            /** Requiresapproval */
+            requiresApproval: boolean;
         };
         /**
          * ToolDefinitionResponse
@@ -14671,7 +14689,7 @@ export interface operations {
             };
         };
     };
-    post_tool_approval_api_chat_tool_approval_post: {
+    post_execute_tools_api_chat_execute_tools_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -14680,7 +14698,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ToolApprovalRequestBody"];
+                "application/json": components["schemas"]["ExecuteToolsRequest"];
             };
         };
         responses: {

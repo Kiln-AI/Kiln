@@ -11,7 +11,7 @@
     traceIdForNextChatRequest,
     type ChatMessage,
     type ChatMessagePart,
-    type ToolApprovalRequiredPayload,
+    type ToolCallsPendingPayload,
   } from "$lib/chat/streaming_chat"
   import ChatMarkdown from "$lib/chat/ChatMarkdown.svelte"
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
@@ -34,7 +34,7 @@
   let lastSeenLastPartKey: string | null = null
 
   let toolApprovalWaiter: {
-    payload: ToolApprovalRequiredPayload
+    payload: ToolCallsPendingPayload
     resolve: (d: Record<string, boolean>) => void
   } | null = null
   let toolApprovalPicks: Record<string, boolean | undefined> = {}
@@ -317,16 +317,20 @@
     }
   }
 
-  function handleToolApprovalRequired(
-    payload: ToolApprovalRequiredPayload,
+  function handleToolCallsPending(
+    payload: ToolCallsPendingPayload,
   ): Promise<Record<string, boolean>> {
+    const approvalOnly = payload.items.filter((i) => i.requiresApproval)
+    if (approvalOnly.length === 0) {
+      return Promise.resolve({})
+    }
     return new Promise((resolve) => {
       const next: Record<string, boolean | undefined> = {}
-      for (const it of payload.items) {
+      for (const it of approvalOnly) {
         next[it.toolCallId] = undefined
       }
       toolApprovalPicks = next
-      toolApprovalWaiter = { payload, resolve }
+      toolApprovalWaiter = { payload: { items: approvalOnly }, resolve }
     })
   }
 
@@ -417,7 +421,7 @@
         status = "ready"
         abortController = null
       },
-      onToolApprovalRequired: handleToolApprovalRequired,
+      onToolCallsPending: handleToolCallsPending,
       onFinish: () => {
         status = "ready"
         abortController = null

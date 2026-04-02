@@ -1,11 +1,9 @@
 import json
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.desktop.studio_server.test_chat.helpers import (
     PATCH_ASYNC_CLIENT,
     PATCH_EXECUTE_TOOL,
-    PATCH_WAIT_TOOL_APPROVAL,
     make_httpx_mock,
     sse_text_delta,
 )
@@ -233,96 +231,84 @@ class TestRemoteToolRoundTrip:
         # Only one stream call
         assert mock_class.return_value.stream.call_count == 1
 
-    def test_requires_approval_emits_sse_and_runs_when_wait_returns_allow(
+    def test_requires_approval_emits_tool_calls_pending_and_does_not_execute(
         self, client, mock_api_key
     ):
         first_chunks = [
             b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_tool::add_numbers","input":{"a":1,"b":2},"kiln_metadata":{"requires_approval":true}}\n\n',
             b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
         ]
-        second_chunks = [b'data: {"type":"finish"}\n\n']
-        mock_client, get_call_count = self._make_mock_client(
-            first_chunks, second_chunks
-        )
+        mock_client, get_call_count = self._make_mock_client(first_chunks, [])
         mock_class = MagicMock(return_value=mock_client)
         execute_tool_mock = AsyncMock(return_value="3")
 
         with patch(PATCH_ASYNC_CLIENT, mock_class):
             with patch(PATCH_EXECUTE_TOOL, execute_tool_mock):
-                with patch(
-                    PATCH_WAIT_TOOL_APPROVAL,
-                    AsyncMock(return_value={"tc1": True}),
-                ):
-                    response = client.post(
-                        "/api/chat",
-                        json={"messages": [{"role": "user", "content": "hi"}]},
-                    )
+                response = client.post(
+                    "/api/chat",
+                    json={"messages": [{"role": "user", "content": "hi"}]},
+                )
 
         assert response.status_code == 200
         content = response.content
-        assert b"tool-approval-required" in content
-        assert b"tool-output-available" in content
-        assert b'"output": "3"' in content
-        execute_tool_mock.assert_called_once()
-        assert get_call_count() == 2
+        assert b"tool-calls-pending" in content
+        assert b"tool-output-available" not in content
+        execute_tool_mock.assert_not_called()
+        assert get_call_count() == 1
 
-    def test_requires_approval_denies_when_wait_returns_false(
-        self, client, mock_api_key
-    ):
+    def test_requires_approval_pending_payload_lists_tool(self, client, mock_api_key):
         first_chunks = [
             b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_tool::add_numbers","input":{"a":1,"b":2},"kiln_metadata":{"requires_approval":true}}\n\n',
             b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
         ]
-        second_chunks = [b'data: {"type":"finish"}\n\n']
-        mock_client, _ = self._make_mock_client(first_chunks, second_chunks)
+        mock_client, _ = self._make_mock_client(first_chunks, [])
         mock_class = MagicMock(return_value=mock_client)
-        execute_tool_mock = AsyncMock(return_value="3")
 
         with patch(PATCH_ASYNC_CLIENT, mock_class):
-            with patch(PATCH_EXECUTE_TOOL, execute_tool_mock):
-                with patch(
-                    PATCH_WAIT_TOOL_APPROVAL,
-                    AsyncMock(return_value={"tc1": False}),
-                ):
-                    response = client.post(
-                        "/api/chat",
-                        json={"messages": [{"role": "user", "content": "hi"}]},
-                    )
+            response = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "hi"}]},
+            )
 
         assert response.status_code == 200
-        assert b"The user did not accept the toolcall" in response.content
-        execute_tool_mock.assert_not_called()
+        for line in response.content.decode().split("\n"):
+            if line.startswith("data: ") and "tool-calls-pending" in line:
+                payload = json.loads(line[6:])
+                assert payload["type"] == "tool-calls-pending"
+                assert len(payload["items"]) == 1
+                assert payload["items"][0]["toolCallId"] == "tc1"
+                assert payload["items"][0]["requiresApproval"] is True
+                break
+        else:
+            raise AssertionError("tool-calls-pending event not found")
 
-    def test_mixed_auto_and_approval_client_tools(self, client, mock_api_key):
-        """If any tool needs approval, wait once; then run auto tools and approved tools."""
+    def test_mixed_auto_and_approval_emits_tool_calls_pending_for_batch(
+        self, client, mock_api_key
+    ):
         first_chunks = [
             b'data: {"type":"tool-input-available","toolCallId":"tc_auto","toolName":"kiln_tool::add_numbers","input":{"a":1,"b":2}}\n\n',
             b'data: {"type":"tool-input-available","toolCallId":"tc_need","toolName":"kiln_tool::multiply_numbers","input":{"a":3,"b":4},"kiln_metadata":{"requires_approval":true}}\n\n',
             b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
         ]
-        second_chunks = [b'data: {"type":"finish"}\n\n']
-        mock_client, _ = self._make_mock_client(first_chunks, second_chunks)
+        mock_client, _ = self._make_mock_client(first_chunks, [])
         mock_class = MagicMock(return_value=mock_client)
-
-        async def fake_execute(name: str, args: dict[str, Any]) -> str:
-            if "multiply" in name:
-                return "12"
-            return "3"
-
-        execute_tool_mock = AsyncMock(side_effect=fake_execute)
+        execute_tool_mock = AsyncMock(return_value="3")
 
         with patch(PATCH_ASYNC_CLIENT, mock_class):
             with patch(PATCH_EXECUTE_TOOL, execute_tool_mock):
-                with patch(
-                    PATCH_WAIT_TOOL_APPROVAL,
-                    AsyncMock(return_value={"tc_need": True}),
-                ):
-                    response = client.post(
-                        "/api/chat",
-                        json={"messages": [{"role": "user", "content": "hi"}]},
-                    )
+                response = client.post(
+                    "/api/chat",
+                    json={"messages": [{"role": "user", "content": "hi"}]},
+                )
 
         assert response.status_code == 200
-        assert execute_tool_mock.call_count == 2
-        assert b'"output": "3"' in response.content
-        assert b'"output": "12"' in response.content
+        assert b"tool-calls-pending" in response.content
+        execute_tool_mock.assert_not_called()
+        for line in response.content.decode().split("\n"):
+            if line.startswith("data: ") and "tool-calls-pending" in line:
+                payload = json.loads(line[6:])
+                ids = {i["toolCallId"] for i in payload["items"]}
+                assert ids == {"tc_auto", "tc_need"}
+                break
+        else:
+            raise AssertionError("tool-calls-pending event not found")

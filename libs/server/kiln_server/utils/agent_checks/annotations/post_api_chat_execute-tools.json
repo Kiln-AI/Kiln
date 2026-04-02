@@ -1,6 +1,6 @@
 {
   "method": "post",
-  "path": "/api/chat/tool-approval",
+  "path": "/api/chat/execute-tools",
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false

@@ -3,9 +3,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 PATCH_ASYNC_CLIENT = "app.desktop.studio_server.chat.stream_session.httpx.AsyncClient"
 PATCH_EXECUTE_TOOL = "app.desktop.studio_server.chat.stream_session.execute_tool"
-PATCH_WAIT_TOOL_APPROVAL = (
-    "app.desktop.studio_server.chat.stream_session._wait_for_tool_approval"
-)
 
 
 def sse_text_delta(delta: str, text_id: str = "text-test") -> bytes:

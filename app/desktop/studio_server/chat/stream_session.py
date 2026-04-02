@@ -5,28 +5,22 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
-from fastapi import Request
-from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
-from kiln_ai.tools.tool_registry import tool_from_id
-
 from app.desktop.studio_server.chat.constants import (
-    _CHAT_TIMEOUT,
-    _DENIED_TOOL_OUTPUT,
-    _FUNCTION_NAME_TO_TOOL_ID,
-    _MAX_TOOL_ROUNDS,
-    _TOOL_APPROVAL_TIMEOUT_SEC,
+    CHAT_TIMEOUT,
+    DENIED_TOOL_OUTPUT,
+    FUNCTION_NAME_TO_TOOL_ID,
+    MAX_TOOL_ROUNDS,
+    SSE_TYPE_TOOL_CALLS_PENDING,
 )
 from app.desktop.studio_server.chat.sse_parser import EventParser
-from app.desktop.studio_server.chat.tool_approval import (
-    _approval_item_from_event,
-    _format_tool_approval_required_sse,
-    _register_tool_approval_wait,
-    _wait_for_tool_approval,
-)
 from app.desktop.studio_server.chat.tool_metadata import (
-    _tool_input_executor_is_server,
-    _tool_requires_user_approval,
+    _parse_kiln_tool_metadata,
+    tool_input_executor_is_server,
+    tool_requires_user_approval,
 )
+from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
+from kiln_ai.tools.tool_registry import tool_from_id
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +35,52 @@ class RoundState:
     trace_id: str | None = None
 
 
+class ToolCallInfo(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    tool_call_id: str = Field(alias="toolCallId")
+    tool_name: str = Field(alias="toolName")
+    input: dict[str, Any]
+    requires_approval: bool = Field(alias="requiresApproval")
+
+
+def _pending_item_from_event(event: ToolInputAvailableEvent) -> dict[str, Any]:
+    meta = _parse_kiln_tool_metadata(event.kiln_metadata)
+    item: dict[str, Any] = {
+        "toolCallId": event.toolCallId,
+        "toolName": event.toolName,
+        "input": event.input,
+        "requiresApproval": tool_requires_user_approval(event),
+    }
+    if meta.permission is not None:
+        item["permission"] = meta.permission
+    if meta.approval_description is not None:
+        item["approvalDescription"] = meta.approval_description
+    return item
+
+
+def _format_tool_calls_pending_sse(events: list[ToolInputAvailableEvent]) -> bytes:
+    items = [_pending_item_from_event(e) for e in events]
+    payload = {"type": SSE_TYPE_TOOL_CALLS_PENDING, "items": items}
+    return f"data: {json.dumps(payload)}\n\n".encode()
+
+
+async def execute_tool_batch(
+    tool_calls: list[ToolCallInfo],
+    decisions: dict[str, bool],
+) -> dict[str, str]:
+    results: dict[str, str] = {}
+    for tc in tool_calls:
+        if tc.requires_approval:
+            approved = decisions.get(tc.tool_call_id)
+            if approved is not True:
+                results[tc.tool_call_id] = DENIED_TOOL_OUTPUT
+                continue
+        tool_result = await execute_tool(tc.tool_name, tc.input)
+        results[tc.tool_call_id] = tool_result
+    return results
+
+
 class ChatStreamSession:
     """Owns the multi-round streaming loop for a single chat request."""
 
@@ -49,21 +89,19 @@ class ChatStreamSession:
         upstream_url: str,
         headers: dict[str, str],
         initial_body: dict[str, Any],
-        request: Request | None = None,
     ) -> None:
         self._upstream_url = upstream_url
         self._headers = headers
         self._body = initial_body
-        self._request = request
 
     async def stream(self):
         """AsyncGenerator yielding SSE bytes to the client."""
-        for _ in range(_MAX_TOOL_ROUNDS):
+        for _ in range(MAX_TOOL_ROUNDS):
             round_state = RoundState()
             parser = EventParser()
             trace_id_for_error: str | None = None
 
-            async with httpx.AsyncClient(timeout=_CHAT_TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=CHAT_TIMEOUT) as client:
                 async with client.stream(
                     "POST",
                     self._upstream_url,
@@ -136,37 +174,18 @@ class ChatStreamSession:
                 client_events = [
                     e
                     for e in round_state.tool_input_events
-                    if not _tool_input_executor_is_server(e)
+                    if not tool_input_executor_is_server(e)
                 ]
                 needs_approval = [
-                    e for e in client_events if _tool_requires_user_approval(e)
+                    e for e in client_events if tool_requires_user_approval(e)
                 ]
-                approval_decisions: dict[str, bool] | None = None
                 if needs_approval:
-                    required_ids = frozenset(e.toolCallId for e in needs_approval)
-                    batch_id = str(uuid.uuid4())
-                    approval_future = await _register_tool_approval_wait(
-                        batch_id, required_ids
-                    )
-                    items = [_approval_item_from_event(e) for e in needs_approval]
-                    yield _format_tool_approval_required_sse(batch_id, items)
-                    wait_outcome = await _wait_for_tool_approval(
-                        batch_id,
-                        approval_future,
-                        self._request,
-                        _TOOL_APPROVAL_TIMEOUT_SEC,
-                    )
-                    if wait_outcome == "timeout":
-                        err_tid = round_state.trace_id or str(uuid.uuid4())
-                        yield (
-                            f"data: {json.dumps({'type': 'error', 'message': 'Tool approval timed out.', 'trace_id': err_tid})}\n\n".encode()
-                        )
-                        return
-                    approval_decisions = wait_outcome
+                    # some toolcalls in the batch require approval, so stream them to the client for approval
+                    # and client will send the decisions through /api/chat/execute-tools endpoint to continue
+                    yield _format_tool_calls_pending_sse(client_events)
+                    return
 
-                tool_results = await self._execute_client_tools(
-                    round_state, approval_decisions
-                )
+                tool_results = await self._execute_client_tools(round_state, None)
                 for tc_id, output in tool_results.items():
                     yield self._format_tool_output(tc_id, output)
 
@@ -190,7 +209,7 @@ class ChatStreamSession:
     ) -> dict[str, str]:
         tool_results: dict[str, str] = {}
         for event in round_state.tool_input_events:
-            if _tool_input_executor_is_server(event):
+            if tool_input_executor_is_server(event):
                 logger.debug(
                     "Skipping local tool execution (executor=server): %s (call_id=%s)",
                     event.toolName,
@@ -198,9 +217,9 @@ class ChatStreamSession:
                 )
                 continue
             tc_id = event.toolCallId
-            if _tool_requires_user_approval(event):
+            if tool_requires_user_approval(event):
                 if approval_decisions is None or not approval_decisions.get(tc_id):
-                    tool_results[tc_id] = _DENIED_TOOL_OUTPUT
+                    tool_results[tc_id] = DENIED_TOOL_OUTPUT
                     continue
             tool_name = event.toolName
             tool_args = event.input
@@ -225,7 +244,7 @@ async def execute_tool(tool_name: str, args: dict[str, Any]) -> str:
         tool_name,
         json.dumps(args, default=str),
     )
-    tool_id = _FUNCTION_NAME_TO_TOOL_ID.get(tool_name, tool_name)
+    tool_id = FUNCTION_NAME_TO_TOOL_ID.get(tool_name, tool_name)
     try:
         tool = tool_from_id(tool_id)
         result = await tool.run(**args)

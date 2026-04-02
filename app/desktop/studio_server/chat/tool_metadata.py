@@ -1,10 +1,9 @@
 import logging
 from typing import Any
 
+from app.desktop.studio_server.chat.constants import TOOL_EXECUTOR_SERVER
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
-
-from app.desktop.studio_server.chat.constants import _EXECUTOR_SERVER
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +57,11 @@ def _parse_kiln_tool_metadata(raw: dict[str, Any]) -> KilnToolInputMetadata:
         return KilnToolInputMetadata.model_validate(narrowed)
 
 
-def _tool_input_executor_is_server(event: ToolInputAvailableEvent) -> bool:
-    return _parse_kiln_tool_metadata(event.kiln_metadata).executor == _EXECUTOR_SERVER
+def tool_input_executor_is_server(event: ToolInputAvailableEvent) -> bool:
+    return (
+        _parse_kiln_tool_metadata(event.kiln_metadata).executor == TOOL_EXECUTOR_SERVER
+    )
 
 
-def _tool_requires_user_approval(event: ToolInputAvailableEvent) -> bool:
+def tool_requires_user_approval(event: ToolInputAvailableEvent) -> bool:
     return _parse_kiln_tool_metadata(event.kiln_metadata).requires_approval is True

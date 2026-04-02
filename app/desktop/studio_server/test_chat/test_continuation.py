@@ -3,7 +3,7 @@ from typing import Any
 
 from app.desktop.studio_server.chat import (
     _build_openai_tool_continuation,
-    _tool_input_executor_is_server,
+    tool_input_executor_is_server,
 )
 from kiln_ai.adapters.model_adapters.stream_events import ToolInputAvailableEvent
 
@@ -124,11 +124,11 @@ class TestToolInputExecutorServer:
             input={},
             kiln_metadata={"executor": "server"},
         )
-        assert _tool_input_executor_is_server(event) is True
+        assert tool_input_executor_is_server(event) is True
 
     def test_executor_absent_or_other_is_false(self):
         assert (
-            _tool_input_executor_is_server(
+            tool_input_executor_is_server(
                 ToolInputAvailableEvent(
                     toolCallId="tc1",
                     toolName="some_tool",
@@ -138,7 +138,7 @@ class TestToolInputExecutorServer:
             is False
         )
         assert (
-            _tool_input_executor_is_server(
+            tool_input_executor_is_server(
                 ToolInputAvailableEvent(
                     toolCallId="tc1",
                     toolName="some_tool",

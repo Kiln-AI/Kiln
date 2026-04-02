@@ -1,4 +1,4 @@
-from app.desktop.studio_server.chat import EventParser, _tool_input_executor_is_server
+from app.desktop.studio_server.chat import EventParser, tool_input_executor_is_server
 from app.desktop.studio_server.test_chat.helpers import sse_text_delta
 
 
@@ -49,7 +49,7 @@ class TestEventParser:
         assert len(result.tool_input_events) == 1
         ev = result.tool_input_events[0]
         assert ev.kiln_metadata.get("executor") == "server"
-        assert _tool_input_executor_is_server(ev) is True
+        assert tool_input_executor_is_server(ev) is True
 
     def test_accumulates_text_delta(self):
         raw = sse_text_delta("hello ") + sse_text_delta("world", text_id="text-test-2")
