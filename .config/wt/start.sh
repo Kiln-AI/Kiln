@@ -21,6 +21,7 @@ PORT=$(hash_port "$BRANCH")
 export KILN_PORT="$PORT"
 export KILN_FRONTEND_PORT="$((PORT + 1))"
 export VITE_API_PORT="$PORT"
+export VITE_BRANCH_NAME="$BRANCH"
 
 export KILN_WEB_URL="http://localhost:$KILN_FRONTEND_PORT"
 
