@@ -147,6 +147,7 @@ class AsyncJobRunner(Generic[T]):
                 is_last_attempt = attempt == self.max_retries
                 try:
                     result = await run_job_fn(job)
+                    last_error = None
                     if result:
                         break
                     if is_last_attempt:
@@ -155,6 +156,7 @@ class AsyncJobRunner(Generic[T]):
                     result = False
                     last_error = e
                     if is_last_attempt:
+                        logger.error("Job failed to complete", exc_info=e)
                         break
                     # sleep before retrying again
                     await asyncio.sleep(self.retry_delay)
@@ -162,7 +164,6 @@ class AsyncJobRunner(Generic[T]):
             if result:
                 await self.notify_success(job)
             elif last_error is not None:
-                logger.error("Job failed to complete", exc_info=True)
                 await self.notify_error(job, last_error)
 
             try:
