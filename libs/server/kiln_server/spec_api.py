@@ -236,7 +236,9 @@ def connect_spec_api(app: FastAPI):
                     eval.name = previous_eval_name
                     eval.save_to_file()
                 except Exception:
-                    logger.exception("Failed to roll back eval name after spec save failure")
+                    logger.exception(
+                        "Failed to roll back eval name after spec save failure"
+                    )
             raise
 
         return spec
