@@ -4,7 +4,8 @@
   import { hydrateSessionFromSnapshot } from "$lib/chat/session_messages"
   import type { LoadedChatSessionDetail } from "$lib/chat/chat_history_apply"
   import type { components } from "$lib/api_schema"
-  import { createKilnError } from "$lib/utils/error_handlers"
+  import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
   import { formatDate } from "$lib/utils/formatters"
   import Dialog from "$lib/ui/dialog.svelte"
 
@@ -19,7 +20,7 @@
 
   let historyDialog: Dialog | null = null
   let sessionsLoading = false
-  let sessionsError: string | null = null
+  let sessionsError: KilnError | null = null
   let sessionRows: SessionListItem[] = []
   let sessionDetailLoading: string | null = null
   let deletingSessionId: string | null = null
@@ -37,12 +38,12 @@
     try {
       const { data, error } = await client.GET("/api/chat/sessions")
       if (error) {
-        sessionsError = createKilnError(error).getMessage()
+        sessionsError = createKilnError(error)
         return
       }
       sessionRows = data ?? []
     } catch (e) {
-      sessionsError = createKilnError(e).getMessage()
+      sessionsError = createKilnError(e)
     } finally {
       sessionsLoading = false
     }
@@ -81,7 +82,7 @@
         },
       )
       if (error || !snapshot) {
-        sessionsError = createKilnError(error).getMessage()
+        sessionsError = createKilnError(error)
         return
       }
       const { messages, continuationTraceId } =
@@ -89,7 +90,7 @@
       dispatch("apply", { messages, continuationTraceId })
       close()
     } catch (e) {
-      sessionsError = createKilnError(e).getMessage()
+      sessionsError = createKilnError(e)
     } finally {
       sessionDetailLoading = null
     }
@@ -103,12 +104,12 @@
         params: { path: { session_id: sessionId } },
       })
       if (error) {
-        sessionsError = createKilnError(error).getMessage()
+        sessionsError = createKilnError(error)
         return
       }
       sessionRows = sessionRows.filter((r) => r.id !== sessionId)
     } catch (e) {
-      sessionsError = createKilnError(e).getMessage()
+      sessionsError = createKilnError(e)
     } finally {
       deletingSessionId = null
       openDropdownId = null
@@ -144,7 +145,18 @@
         <div class="loading loading-spinner loading-lg"></div>
       </div>
     {:else if sessionsError}
-      <p class="text-sm text-error px-2 py-4">{sessionsError}</p>
+      <div class="text-sm text-error px-2 py-4">
+        {#if sessionsError.getCode() === CHAT_CLIENT_VERSION_TOO_OLD}
+          <p>A newer version of Kiln is required.</p>
+          <a
+            href="/settings/check_for_update"
+            class="underline font-medium hover:text-error/80 mt-1 inline-block"
+            >Check for updates</a
+          >
+        {:else}
+          <p>{sessionsError.getMessage()}</p>
+        {/if}
+      </div>
     {:else if sessionRows.length === 0}
       <p class="text-sm text-base-content/60 px-2 py-4 text-center">
         No conversations yet.

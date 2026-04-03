@@ -160,12 +160,13 @@ export function createChatSessionStore(
           return p
         })
       },
-      onInlineError: (message, traceId) => {
+      onInlineError: (message, traceId, code) => {
         const errorMsg: ChatMessage = {
           id: chatGenerateId(),
           role: "error",
           content: message,
           traceId,
+          errorCode: code,
         }
         updateMessages((msgs) => [...msgs, errorMsg])
         setRuntimeState("ready", null)

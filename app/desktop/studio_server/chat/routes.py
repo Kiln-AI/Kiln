@@ -41,7 +41,13 @@ def _raise_upstream_error(detailed: KilnResponse) -> NoReturn:
         body = json.loads(detailed.content) if detailed.content else None
     except (json.JSONDecodeError, TypeError):
         body = None
-    detail = body.get("detail", body) if isinstance(body, dict) else body
+    if isinstance(body, dict):
+        detail: Any = body.get("detail") or body.get("message") or body
+        code = body.get("code")
+        if code and isinstance(detail, str):
+            detail = {"message": detail, "code": code}
+    else:
+        detail = body
     raise HTTPException(status_code=detailed.status_code.value, detail=detail)
 
 

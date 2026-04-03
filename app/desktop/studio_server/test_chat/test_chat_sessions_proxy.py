@@ -1,3 +1,4 @@
+import json
 from http import HTTPStatus
 from unittest.mock import AsyncMock, patch
 
@@ -10,6 +11,7 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.chat_sess
 from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
     Response as KilnResponse,
 )
+from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
 
 
 def _make_task_run_dict(**overrides):
@@ -144,3 +146,29 @@ def test_delete_chat_session_passes_through_error(
 
     assert r.status_code == 404
     assert r.json()["message"] == "session not found"
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.list_sessions_v1_chat_sessions_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+def test_list_chat_sessions_passes_through_version_error_code(
+    mock_asyncio_detailed, client, mock_api_key
+):
+    mock_asyncio_detailed.return_value = KilnResponse(
+        status_code=HTTPStatus.BAD_REQUEST,
+        content=json.dumps(
+            {"message": "Update required", "code": CHAT_CLIENT_VERSION_TOO_OLD}
+        ).encode(),
+        headers={"content-type": "application/json"},
+        parsed=None,
+    )
+
+    r = client.get("/api/chat/sessions")
+
+    assert r.status_code == 400
+    body = r.json()
+    assert body["message"] == {
+        "message": "Update required",
+        "code": CHAT_CLIENT_VERSION_TOO_OLD,
+    }

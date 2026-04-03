@@ -6,6 +6,8 @@
  * to use an old version of the protocol on the backend too, which is not a good idea.
  */
 
+import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
+
 export type ChatMessagePart =
   | { type: "text"; text: string }
   | { type: "reasoning"; reasoning: string }
@@ -24,6 +26,8 @@ export interface ChatMessage {
   parts?: ChatMessagePart[]
   /** Server-issued id from ``kiln_chat_trace`` for this assistant turn */
   traceId?: string
+  /** Machine-readable error code from upstream (e.g. ``CHAT_CLIENT_VERSION_TOO_OLD``) */
+  errorCode?: string
 }
 
 /** Body for POST /api/chat: typically one new user message plus optional trace_id for continuation. */
@@ -74,6 +78,7 @@ interface StreamEvent {
   errorText?: string
   trace_id?: string
   message?: string
+  code?: string
   messageMetadata?: { finishReason?: string; usage?: unknown }
   items?: ToolCallsPendingItem[]
 }
@@ -100,7 +105,7 @@ export interface StreamChatOptions {
   /** Fired when upstream sends ``kiln_chat_trace`` (typically end of a turn) */
   onChatTrace?: (traceId: string) => void
   /** Fired when backend sends an inline error event */
-  onInlineError?: (message: string, traceId?: string) => void
+  onInlineError?: (message: string, traceId?: string, code?: string) => void
   /**
    * After ``tool-calls-pending`` the stream ends; return whether to run each
    * tool that requires approval (toolCallId → allowed).
@@ -162,14 +167,18 @@ class StreamEventProcessor {
 
   private onAssistantMessage: (update: (draft: ChatMessage) => void) => void
   private onChatTrace?: (traceId: string) => void
-  private onInlineError?: (message: string, traceId?: string) => void
+  private onInlineError?: (
+    message: string,
+    traceId?: string,
+    code?: string,
+  ) => void
 
   private HANDLERS: Record<string, (event: StreamEvent) => void>
 
   constructor(opts: {
     onAssistantMessage: (update: (draft: ChatMessage) => void) => void
     onChatTrace?: (traceId: string) => void
-    onInlineError?: (message: string, traceId?: string) => void
+    onInlineError?: (message: string, traceId?: string, code?: string) => void
   }) {
     this.onAssistantMessage = opts.onAssistantMessage
     this.onChatTrace = opts.onChatTrace
@@ -369,7 +378,11 @@ class StreamEventProcessor {
   }
 
   private handleError(event: StreamEvent): void {
-    this.onInlineError?.(event.message ?? "An error occurred.", event.trace_id)
+    this.onInlineError?.(
+      event.message ?? "An error occurred.",
+      event.trace_id,
+      event.code,
+    )
   }
 }
 
@@ -437,11 +450,26 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
 
   if (!response.ok) {
     const text = await response.text()
-    onError(
-      new Error(
-        `Chat API error ${response.status}: ${text || response.statusText}`,
-      ),
-    )
+    let code: string | undefined
+    try {
+      const parsed = JSON.parse(text)
+      code = parsed?.code ?? parsed?.message?.code
+    } catch {
+      /* not JSON */
+    }
+    if (code === CHAT_CLIENT_VERSION_TOO_OLD) {
+      onInlineError?.(
+        "Please update the Kiln desktop app to continue using chat.",
+        undefined,
+        code,
+      )
+    } else {
+      onError(
+        new Error(
+          `Chat API error ${response.status}: ${text || response.statusText}`,
+        ),
+      )
+    }
     return
   }
 
