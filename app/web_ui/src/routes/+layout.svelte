@@ -53,8 +53,11 @@
   }
 
   if (browser) {
-    beforeNavigate(() => {
-      agentInfo.set(null)
+    beforeNavigate(({ from, to }) => {
+      if (from?.route?.id !== to?.route?.id) {
+        // Clear agent info, only if the route is changing (not just a query param change)
+        agentInfo.set(null)
+      }
       const { route_id, url } = get_route_info()
       posthog.capture("$pageleave", { $current_url: url, $pathname: route_id })
     })
