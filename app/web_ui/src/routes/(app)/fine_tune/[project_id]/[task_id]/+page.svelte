@@ -11,8 +11,13 @@
   import { provider_name_from_id, load_available_models } from "$lib/stores"
   import { data_strategy_name } from "$lib/utils/formatters"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Fine-Tuning",
+    description: `Fine-tuning list for project ID ${project_id}, task ID ${task_id}. Shows all fine-tune jobs and their status.`,
+  })
   $: is_empty = !finetunes || finetunes.length == 0
 
   let finetunes: Finetune[] | null = null

@@ -1,5 +1,6 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
+  import { agentInfo } from "$lib/agent"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
@@ -13,6 +14,11 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import type { UserModelEntry, AvailableProviderInfo } from "$lib/types"
+
+  agentInfo.set({
+    name: "Custom Models",
+    description: "Add or remove custom models from connected AI providers.",
+  })
 
   let available_providers: AvailableProviderInfo[] = []
   let user_models: UserModelEntry[] = []

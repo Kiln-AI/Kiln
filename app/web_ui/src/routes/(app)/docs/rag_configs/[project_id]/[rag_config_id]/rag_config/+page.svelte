@@ -36,8 +36,13 @@
   import FixedWindowChunkerPropertyList from "./fixed_window_chunker_property_list.svelte"
   import SemanticChunkerPropertyList from "./semantic_chunker_property_list.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: rag_config_id = $page.params.rag_config_id!
+  $: agentInfo.set({
+    name: "RAG Config Detail",
+    description: `RAG search tool configuration detail for config ID ${rag_config_id} in project ID ${project_id}. Shows chunking, embedding, and retrieval settings.`,
+  })
 
   let loading: boolean = false
   let error: KilnError | null = null

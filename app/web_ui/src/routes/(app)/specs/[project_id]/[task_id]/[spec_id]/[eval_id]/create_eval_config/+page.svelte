@@ -21,10 +21,15 @@
   import posthog from "posthog-js"
   import { set_current_eval_config } from "$lib/stores/evals_store"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: eval_id = $page.params.eval_id!
   $: spec_id = $page.params.spec_id!
+  $: agentInfo.set({
+    name: "Create Eval Config",
+    description: `Create a new eval configuration for eval ID ${eval_id}, spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}.`,
+  })
 
   let spec: Spec | null = null
   let spec_loading = true

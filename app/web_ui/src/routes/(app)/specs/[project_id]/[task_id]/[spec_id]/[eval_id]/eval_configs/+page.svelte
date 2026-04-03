@@ -27,10 +27,15 @@
   import type { UiProperty } from "$lib/ui/property_list"
   import Intro from "$lib/ui/intro.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: eval_id = $page.params.eval_id!
   $: spec_id = $page.params.spec_id!
+  $: agentInfo.set({
+    name: "Eval Configs",
+    description: `Eval configurations for eval ID ${eval_id}, spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Lists available evaluation configurations.`,
+  })
 
   let spec: Spec | null = null
   let spec_loading = true

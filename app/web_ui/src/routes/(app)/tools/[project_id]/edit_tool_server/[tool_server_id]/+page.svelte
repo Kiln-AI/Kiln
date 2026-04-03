@@ -9,8 +9,13 @@
   import EditRemoteTool from "../../add_tools/remote_mcp/edit_remote_tool.svelte"
   import { ui_state } from "$lib/stores"
 
+  import { agentInfo } from "$lib/agent"
   $: tool_server_id = $page.params.tool_server_id!
   $: project_id = $page.params.project_id!
+  $: agentInfo.set({
+    name: "Edit Tool Server",
+    description: `Edit tool server ID ${tool_server_id} in project ID ${project_id}. Modify tool server connection settings.`,
+  })
 
   let loading = true
   let error: KilnError | null = null

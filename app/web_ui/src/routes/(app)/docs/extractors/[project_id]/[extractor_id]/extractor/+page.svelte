@@ -11,8 +11,13 @@
   import Output from "$lib/ui/output.svelte"
   import Warning from "$lib/ui/warning.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: extractor_id = $page.params.extractor_id!
+  $: agentInfo.set({
+    name: "Extractor Detail",
+    description: `Detail view for extractor ID ${extractor_id} in project ID ${project_id}. Shows extractor configuration, output format, and properties.`,
+  })
 
   let loading: boolean = false
   let error: KilnError | null = null

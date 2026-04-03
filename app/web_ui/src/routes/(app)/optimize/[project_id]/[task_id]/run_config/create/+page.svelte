@@ -13,6 +13,7 @@
     load_task_prompts,
     prompts_by_task_composite_id,
   } from "$lib/stores/prompts_store"
+  import { agentInfo } from "$lib/agent"
 
   interface PromptInfo {
     id: string
@@ -22,6 +23,10 @@
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Create Run Config",
+    description: `Create a new run configuration for project ID ${project_id}, task ID ${task_id}. Configure model, prompt method, and tools.`,
+  })
 
   let prompt_id: string | undefined = undefined
   let model: string | undefined = undefined // e.g. "openrouter/gpt_5_nano"

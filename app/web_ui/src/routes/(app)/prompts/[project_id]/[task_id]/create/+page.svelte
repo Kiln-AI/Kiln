@@ -9,8 +9,13 @@
   import { generate_memorable_name } from "$lib/utils/name_generator"
   import PromptForm from "../prompt_form.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Create Prompt",
+    description: `Create a new prompt for project ID ${project_id}, task ID ${task_id}. Write or generate a custom prompt.`,
+  })
 
   let generator_name = ""
   let initial_prompt_name = generate_memorable_name()

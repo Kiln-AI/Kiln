@@ -17,9 +17,14 @@
   import { prompt_link } from "$lib/utils/link_builder"
   import { getRunConfigModelDisplayName } from "$lib/utils/run_config_formatters"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: prompt_optimization_job_id = $page.params.job_id!
+  $: agentInfo.set({
+    name: "Prompt Optimization Job Detail",
+    description: `Prompt optimization job detail for job ID ${prompt_optimization_job_id} in project ID ${project_id}, task ID ${task_id}. Shows job progress, iterations, and results.`,
+  })
 
   let prompt_optimization_job: PromptOptimizationJob | null = null
   let prompt_optimization_job_error: KilnError | null = null
