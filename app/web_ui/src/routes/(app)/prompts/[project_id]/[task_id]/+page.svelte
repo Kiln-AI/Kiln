@@ -18,8 +18,13 @@
   import Banner from "$lib/ui/banner.svelte"
   import Float from "$lib/ui/float.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Prompts",
+    description: `Prompts list for project ID ${project_id}, task ID ${task_id}. Shows saved prompts, base prompt, and prompt generation options.`,
+  })
 
   let loading = true
   let error: KilnError | null = null

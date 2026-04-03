@@ -20,6 +20,7 @@
   import TableButton from "../../../../generate/[project_id]/[task_id]/table_button.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import { agentInfo } from "$lib/agent"
 
   let initial_document: KilnDocument | null = null
   let updated_document: KilnDocument | null = null
@@ -30,6 +31,10 @@
 
   $: project_id = $page.params.project_id!
   $: document_id = $page.params.document_id!
+  $: agentInfo.set({
+    name: "Document Detail",
+    description: `Document detail page for document ID ${document_id} in project ID ${project_id}. Shows document properties, extractions, and tagging.`,
+  })
 
   // dialog state
   let output_dialog: Dialog | null = null

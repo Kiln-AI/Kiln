@@ -1,5 +1,11 @@
 <script lang="ts">
   import ConnectProviders from "./connect_providers.svelte"
+  import { agentInfo } from "$lib/agent"
+
+  agentInfo.set({
+    name: "Setup: Connect Providers",
+    description: "Onboarding step to connect AI provider API keys.",
+  })
 
   let has_connected_providers = false
   let intermediate_step = false

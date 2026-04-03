@@ -20,6 +20,7 @@
 
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
   import TagPicker from "$lib/ui/tag_picker.svelte"
+  import { agentInfo } from "$lib/agent"
 
   let upload_file_dialog: UploadFileDialog | null = null
 
@@ -55,6 +56,10 @@
   }
 
   $: project_id = $page.params.project_id!
+  $: agentInfo.set({
+    name: "Document Library",
+    description: `Document library for project ID ${project_id}. Lists uploaded documents with sorting, filtering, tagging, and bulk operations.`,
+  })
 
   const columns = [
     { key: "kind", label: "Type" },

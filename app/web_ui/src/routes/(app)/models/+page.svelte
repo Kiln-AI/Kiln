@@ -17,8 +17,14 @@
   import { goto } from "$app/navigation"
   import { fetchPricingData, getModelPrice } from "./price"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $ui_state.current_project_id
   $: task_id = $ui_state.current_task_id
+  $: agentInfo.set({
+    name: "Models",
+    description:
+      "Browse and compare available AI models. Filter by provider and capabilities, view pricing, and create run configurations.",
+  })
 
   const CAPABILITY_TOOLTIP_MESSAGES = {
     suggested_for_data_gen:

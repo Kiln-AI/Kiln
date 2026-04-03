@@ -40,8 +40,13 @@
   import Float from "$lib/ui/float.svelte"
   import BadgeList from "$lib/ui/badge_list.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Optimize",
+    description: `Optimization home for project ID ${project_id}, task ID ${task_id}. Shows available optimization options like prompts, evals, fine-tuning, skills, and tools.`,
+  })
   $: optimizers = get_optimizers(project_id, task_id)
   $: optimizer_features = optimizers.map((o: Optimizer) => ({
     name: o.title,

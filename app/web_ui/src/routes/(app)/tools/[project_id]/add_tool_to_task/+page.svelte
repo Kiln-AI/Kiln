@@ -21,7 +21,12 @@
   import { generate_memorable_name } from "$lib/utils/name_generator"
   import posthog from "posthog-js"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
+  $: agentInfo.set({
+    name: "Add Tool to Task",
+    description: `Add a tool to a task in project ID ${project_id}. Configure tool integration with a specific task.`,
+  })
   $: tool_id = $page.url.searchParams.get("tool_id")
 
   let selected_task_id: string | null = null

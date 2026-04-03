@@ -38,8 +38,13 @@
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Compare Specs",
+    description: `Compare specs for project ID ${project_id}, task ID ${task_id}. Side-by-side comparison of spec results.`,
+  })
   $: fromOptimize = $page.url.searchParams.get("from") === "optimize"
   $: breadcrumbs = fromOptimize
     ? [{ label: "Optimize", href: `/optimize/${project_id}/${task_id}` }]

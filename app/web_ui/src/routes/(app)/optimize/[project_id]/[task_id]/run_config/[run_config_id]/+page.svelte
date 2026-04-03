@@ -27,9 +27,14 @@
   import PropertyList from "$lib/ui/property_list.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: run_config_id = $page.params.run_config_id!
+  $: agentInfo.set({
+    name: "Run Config Detail",
+    description: `Run configuration detail for config ID ${run_config_id} in project ID ${project_id}, task ID ${task_id}. Shows model, prompt, and tool settings.`,
+  })
 
   let run_config: TaskRunConfig | null = null
   let task: Task | null = null

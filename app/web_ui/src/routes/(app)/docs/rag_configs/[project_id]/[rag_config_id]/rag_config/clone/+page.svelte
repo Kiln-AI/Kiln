@@ -9,8 +9,13 @@
   import { onMount } from "svelte"
   import EditRagConfigForm from "../../../create_rag_config/edit_rag_config_form.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: rag_config_id = $page.params.rag_config_id!
+  $: agentInfo.set({
+    name: "Clone RAG Config",
+    description: `Clone RAG search tool configuration from config ID ${rag_config_id} in project ID ${project_id}.`,
+  })
 
   let loading: boolean = true
   let error: KilnError | null = null

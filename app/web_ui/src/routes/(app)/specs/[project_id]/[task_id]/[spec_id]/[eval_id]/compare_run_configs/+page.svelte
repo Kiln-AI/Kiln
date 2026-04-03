@@ -35,10 +35,15 @@
   import RunConfigComparisonTable from "$lib/components/run_config_comparison_table.svelte"
   import { load_task_prompts } from "$lib/stores/prompts_store"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: spec_id = $page.params.spec_id!
   $: eval_id = $page.params.eval_id!
+  $: agentInfo.set({
+    name: "Compare Run Configs",
+    description: `Compare run configurations for eval ID ${eval_id}, spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Side-by-side comparison of eval results across configurations.`,
+  })
 
   let spec: Spec | null = null
   let spec_loading = true

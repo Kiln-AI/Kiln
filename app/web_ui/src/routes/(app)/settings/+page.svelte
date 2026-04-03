@@ -4,6 +4,13 @@
   import KilnSection from "$lib/ui/kiln_section.svelte"
   import { view_logs } from "$lib/utils/logs"
   import type { KilnSectionItem } from "$lib/ui/kiln_section_types"
+  import { agentInfo } from "$lib/agent"
+
+  agentInfo.set({
+    name: "Settings",
+    description:
+      "Main settings page with options for editing current workspace, managing AI providers and custom models, managing projects, viewing logs, and checking for updates.",
+  })
 
   let sections: Array<{ category: string; items: Array<KilnSectionItem> }> = [
     {

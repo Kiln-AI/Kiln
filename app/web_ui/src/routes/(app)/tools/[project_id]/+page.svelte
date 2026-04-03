@@ -16,7 +16,12 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import type { SearchToolApiDescription } from "$lib/types"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
+  $: agentInfo.set({
+    name: "Tools",
+    description: `Tools list for project ID ${project_id}. Shows connected tools including RAG search tools, Kiln task tools, and MCP servers.`,
+  })
   $: is_empty =
     !demo_tools_enabled &&
     (!tools || tools.length == 0) &&

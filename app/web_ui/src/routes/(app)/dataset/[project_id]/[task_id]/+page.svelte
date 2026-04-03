@@ -13,6 +13,7 @@
   import TagPicker from "$lib/ui/tag_picker.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import FilterTagsDialog from "$lib/ui/filter_tags_dialog.svelte"
+  import { agentInfo } from "$lib/agent"
 
   let runs: RunSummary[] | null = null
   let filtered_runs: RunSummary[] | null = null
@@ -50,6 +51,11 @@
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+
+  $: agentInfo.set({
+    name: "Dataset",
+    description: `Dataset listing page for project ID ${project_id}, task ID ${task_id}. Shows all runs with sorting, filtering by tags, selection, and pagination.`,
+  })
 
   const columns = [
     { key: "rating", label: "Rating" },
