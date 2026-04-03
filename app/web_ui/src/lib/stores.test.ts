@@ -56,6 +56,7 @@ describe("stores", () => {
         error: null,
       })
       ui_state.set({
+        ...get(ui_state),
         current_project_id: null,
       })
       expect(get(current_project)).toBeNull()
@@ -67,6 +68,7 @@ describe("stores", () => {
         error: null,
       })
       ui_state.set({
+        ...get(ui_state),
         current_project_id: "non-existent-project-id",
       })
       expect(get(current_project)).toBeNull()
@@ -78,6 +80,7 @@ describe("stores", () => {
         error: null,
       })
       ui_state.set({
+        ...get(ui_state),
         current_project_id: "test-project-id",
       })
       expect(get(current_project)).toEqual(testProject)
