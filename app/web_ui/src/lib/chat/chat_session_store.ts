@@ -8,6 +8,11 @@ import {
 } from "./streaming_chat"
 import { sessionStorageStore } from "$lib/stores/local_storage_store"
 import { base_url } from "$lib/api_client"
+import {
+  getCurrentAppState,
+  buildContextHeader,
+  type AppState,
+} from "$lib/agent"
 
 const CHAT_API_URL = `${base_url}/api/chat`
 const SESSION_STORAGE_KEY = "kiln_chat_session"
@@ -15,6 +20,7 @@ const SESSION_STORAGE_KEY = "kiln_chat_session"
 export interface PersistedChatSession {
   messages: ChatMessage[]
   collapsedPartKeys: Record<string, boolean>
+  lastSentAppState: AppState | null
 }
 
 export interface ToolApprovalWaiter {
@@ -41,6 +47,7 @@ export interface ChatSessionStore extends Readable<ChatSessionState> {
 const EMPTY_PERSISTED: PersistedChatSession = {
   messages: [],
   collapsedPartKeys: {},
+  lastSentAppState: null,
 }
 
 export function createChatSessionStore(
@@ -71,6 +78,7 @@ export function createChatSessionStore(
       ...s,
       messages: $persisted.messages,
       collapsedPartKeys: $persisted.collapsedPartKeys,
+      lastSentAppState: $persisted.lastSentAppState,
     }))
   })
 
@@ -130,12 +138,26 @@ export function createChatSessionStore(
     }
     updateMessages((msgs) => [...msgs, userMessage, assistantMessage])
 
+    const currentAppState = getCurrentAppState()
+    const header = buildContextHeader(
+      currentAppState,
+      get(persisted).lastSentAppState,
+    )
+    let apiMessage = userMessage
+    if (header) {
+      apiMessage = { ...userMessage, content: header + "\n" + text }
+    }
+    persisted.update((p) => ({
+      ...p,
+      lastSentAppState: currentAppState,
+    }))
+
     const controller = new AbortController()
     setRuntimeState("submitted", controller)
 
     streamChat({
       apiUrl: CHAT_API_URL,
-      messages: [userMessage],
+      messages: [apiMessage],
       traceId,
       onToolCallsPending: handleToolCallsPending,
       onAssistantMessage: (update) => {
@@ -219,7 +241,11 @@ export function createChatSessionStore(
       abortController.abort()
     }
     clearToolApprovalState()
-    persisted.set({ messages: [], collapsedPartKeys: {} })
+    persisted.set({
+      messages: [],
+      collapsedPartKeys: {},
+      lastSentAppState: null,
+    })
     setRuntimeState("ready", null)
   }
 

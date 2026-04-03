@@ -12,6 +12,19 @@ vi.mock("$lib/api_client", () => ({
   base_url: "http://test:8000",
 }))
 
+const mockAppState = {
+  path: "/test",
+  pageName: "Test Page",
+  pageDescription: "A test page",
+  currentProject: null,
+  currentTask: null,
+}
+
+vi.mock("$lib/agent", () => ({
+  getCurrentAppState: vi.fn(() => ({ ...mockAppState })),
+  buildContextHeader: vi.fn(() => null),
+}))
+
 function stubSessionStorage() {
   const store: Record<string, string> = {}
   return {
@@ -693,6 +706,127 @@ describe("createChatSessionStore", () => {
       expect(state.messages).toEqual([])
       expect(state.collapsedPartKeys).toEqual({})
       expect(state.status).toBe("ready")
+    })
+  })
+
+  describe("context header", () => {
+    it("prepends context header on first message when buildContextHeader returns a header", async () => {
+      const agentModule = await import("$lib/agent")
+      const buildMock = vi.mocked(agentModule.buildContextHeader)
+      buildMock.mockReturnValueOnce(
+        "<new_app_ui_context>\nPath: /test\n</new_app_ui_context>",
+      )
+
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      store.sendMessage("hello")
+
+      const apiMessage = capture.options!.messages[0]
+      expect(apiMessage.content).toContain("<new_app_ui_context>")
+      expect(apiMessage.content).toContain("hello")
+    })
+
+    it("stores clean user text without header in messages", async () => {
+      const agentModule = await import("$lib/agent")
+      const buildMock = vi.mocked(agentModule.buildContextHeader)
+      buildMock.mockReturnValueOnce(
+        "<new_app_ui_context>\nPath: /test\n</new_app_ui_context>",
+      )
+
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore()
+
+      store.sendMessage("hello")
+
+      const state = get(store)
+      const userMsg = state.messages.find((m) => m.role === "user")
+      expect(userMsg?.content).toBe("hello")
+      expect(userMsg?.content).not.toContain("<new_app_ui_context>")
+    })
+
+    it("does not prepend header when buildContextHeader returns null", async () => {
+      const agentModule = await import("$lib/agent")
+      const buildMock = vi.mocked(agentModule.buildContextHeader)
+      buildMock.mockReturnValue(null)
+
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      store.sendMessage("hello")
+
+      const apiMessage = capture.options!.messages[0]
+      expect(apiMessage.content).toBe("hello")
+    })
+
+    it("updates lastSentAppState when header is sent", async () => {
+      const agentModule = await import("$lib/agent")
+      const buildMock = vi.mocked(agentModule.buildContextHeader)
+      const getStateMock = vi.mocked(agentModule.getCurrentAppState)
+      const testState = {
+        path: "/test",
+        pageName: "Test",
+        pageDescription: "Desc",
+        currentProject: null,
+        currentTask: null,
+      }
+      getStateMock.mockReturnValue(testState)
+      buildMock.mockReturnValueOnce(
+        "<new_app_ui_context>\nPath: /test\n</new_app_ui_context>",
+      )
+
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore("ctx_test")
+
+      store.sendMessage("hello")
+
+      const stored = JSON.parse(storage.store["ctx_test"])
+      expect(stored.lastSentAppState).toEqual(testState)
+    })
+
+    it("resets lastSentAppState on reset", async () => {
+      const agentModule = await import("$lib/agent")
+      const buildMock = vi.mocked(agentModule.buildContextHeader)
+      buildMock.mockReturnValueOnce(
+        "<new_app_ui_context>\nPath: /test\n</new_app_ui_context>",
+      )
+
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore("reset_ctx_test")
+
+      store.sendMessage("hello")
+      store.reset()
+
+      const stored = JSON.parse(storage.store["reset_ctx_test"])
+      expect(stored.lastSentAppState).toBeNull()
+    })
+
+    it("updates lastSentAppState even when no header is sent", async () => {
+      const agentModule = await import("$lib/agent")
+      const buildMock = vi.mocked(agentModule.buildContextHeader)
+      buildMock.mockReturnValue(null)
+
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore("no_update_test")
+
+      store.sendMessage("hello")
+
+      const stored = JSON.parse(storage.store["no_update_test"])
+      expect(stored.lastSentAppState).not.toBeNull()
     })
   })
 })
