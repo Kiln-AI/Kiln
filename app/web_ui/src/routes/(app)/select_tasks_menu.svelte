@@ -91,8 +91,8 @@
     ui_state.update((state) => {
       return {
         ...state,
-        current_task_id: task.id,
-        current_project_id: selected_project.id,
+        current_task_id: task.id ?? null,
+        current_project_id: selected_project?.id ?? null,
       }
     })
 
