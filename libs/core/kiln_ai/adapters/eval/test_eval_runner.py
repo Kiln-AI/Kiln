@@ -826,7 +826,7 @@ async def test_run_job_with_none_trace(
         "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
         return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
     ):
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             await mock_eval_runner.run_job(job)
 
     # For full_trace evals, None trace should fail and not save a run
