@@ -185,9 +185,8 @@
       // Make this the current task
       ui_state.set({
         ...get(ui_state),
-        current_task_id: data.id,
-        current_project_id: target_project_id,
-        current_task_rating_options: null,
+        current_task_id: data.id ?? null,
+        current_project_id: target_project_id ?? null,
       })
       saved = true
       reset_initial_values()

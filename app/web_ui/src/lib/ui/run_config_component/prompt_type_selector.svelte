@@ -7,7 +7,7 @@
   import { getStaticPromptDisplayName } from "$lib/utils/run_config_formatters"
 
   export let prompt_method: string
-  export let linked_model_selection: string | undefined = undefined
+  export let linked_model_selection: string | null | undefined = undefined
 
   export let exclude_cot = false
   export let custom_prompt_name: string | undefined = undefined
@@ -107,7 +107,9 @@
   $: {
     update_fine_tune_prompt_selection(linked_model_selection)
   }
-  function update_fine_tune_prompt_selection(model_id: string | undefined) {
+  function update_fine_tune_prompt_selection(
+    model_id: string | null | undefined,
+  ) {
     if (model_id && model_id.startsWith("kiln_fine_tune/")) {
       // Select the fine-tune prompt automatically, when selecting a fine-tuned model
       const fine_tune_id = model_id.substring("kiln_fine_tune/".length)
