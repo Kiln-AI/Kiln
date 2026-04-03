@@ -4,49 +4,33 @@
   import { browser } from "$app/environment"
   import { chat_cost_disclaimer_acknowledged } from "$lib/stores"
   import ChatCostDisclaimer from "./ChatCostDisclaimer.svelte"
-  import {
-    streamChat,
-    chatGenerateId,
-    traceIdForNextChatRequest,
-    type ChatMessage,
-    type ChatMessagePart,
-    type ToolCallsPendingPayload,
-  } from "$lib/chat/streaming_chat"
+  import type { ChatMessage, ChatMessagePart } from "$lib/chat/streaming_chat"
   import ChatMarkdown from "$lib/chat/ChatMarkdown.svelte"
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
-  import HistoryIcon from "$lib/ui/icons/history.svelte"
   import StopIcon from "$lib/ui/icons/stop_icon.svelte"
-  import { base_url } from "$lib/api_client"
   import {
-    patchChatFromLoadedSession,
-    type LoadedChatSessionDetail,
-  } from "$lib/chat/chat_history_apply"
-  import ChatHistory from "./chat_history.svelte"
+    chatSessionStore,
+    type ChatSessionStore,
+  } from "$lib/chat/chat_session_store"
+  import ChatWelcome from "./chat_welcome.svelte"
 
-  const CHAT_API_URL = `${base_url}/api/chat`
+  export let store: ChatSessionStore = chatSessionStore
 
-  let chatHistory: { open: () => void }
-
-  let messages: ChatMessage[] = []
   let input = ""
-  let status: "ready" | "submitted" | "streaming" = "ready"
-  let abortController: AbortController | null = null
   let messagesContainer: HTMLDivElement | null = null
   let messagesEndRef: HTMLDivElement | null = null
   let scrollObserver: MutationObserver | null = null
   let textareaRef: HTMLTextAreaElement | null = null
-  let collapsedPartKeys: Record<string, boolean> = {}
   let reasoningPartStartTimes: Record<string, number> = {}
   let reasoningPartEndTimes: Record<string, number> = {}
   let lastSeenLastPartKey: string | null = null
 
-  let toolApprovalWaiter: {
-    payload: ToolCallsPendingPayload
-    resolve: (d: Record<string, boolean>) => void
-  } | null = null
-  let toolApprovalPicks: Record<string, boolean | undefined> = {}
+  $: toolApprovalWaiter = $store.toolApprovalWaiter
+  $: toolApprovalPicks = $store.toolApprovalPicks
 
-  let continuationTraceId: string | undefined = undefined
+  $: messages = $store.messages
+  $: status = $store.status
+  $: collapsedPartKeys = $store.collapsedPartKeys
 
   $: isLoading = status === "submitted" || status === "streaming"
   $: chatAcknowledged = $chat_cost_disclaimer_acknowledged
@@ -208,7 +192,7 @@
       parts,
     )
     suppressAutoScroll = true
-    collapsedPartKeys = { ...collapsedPartKeys, [key]: !current }
+    store.togglePartCollapsed(key, current)
     setTimeout(() => {
       suppressAutoScroll = false
     }, 50)
@@ -267,6 +251,7 @@
     const container = messagesContainer
     const end = messagesEndRef
     if (container && end) {
+      end.scrollIntoView({ block: "end", behavior: "auto" })
       scrollObserver = new MutationObserver(() => {
         if (!suppressAutoScroll) {
           end.scrollIntoView({ block: "end", behavior: "auto" })
@@ -300,195 +285,39 @@
     el.style.height = `${Math.min(el.scrollHeight + 2, window.innerHeight * 0.4)}px`
   }
 
-  function removeErrors() {
-    messages = messages.filter((m) => m.role !== "error")
-  }
-
-  function retryLastRequest() {
-    // Find the last user message and trim everything from it onward
-    let lastUserIdx = -1
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "user") {
-        lastUserIdx = i
-        break
-      }
-    }
-    if (lastUserIdx === -1) return
-    const userText = messages[lastUserIdx].content ?? ""
-    messages = messages.slice(0, lastUserIdx)
-    input = userText
-    handleSubmit()
-  }
-
-  function stop() {
-    if (abortController) {
-      abortController.abort()
-    }
-  }
-
-  function onChatHistoryApply(e: CustomEvent<LoadedChatSessionDetail>) {
-    const p = patchChatFromLoadedSession(e.detail)
-    messages = p.messages
-    continuationTraceId = p.continuationTraceId
-    input = p.input
-    collapsedPartKeys = p.collapsedPartKeys
-    reasoningPartStartTimes = p.reasoningPartStartTimes
-    reasoningPartEndTimes = p.reasoningPartEndTimes
-    lastSeenLastPartKey = p.lastSeenLastPartKey
-    toolApprovalWaiter = p.toolApprovalWaiter
-    toolApprovalPicks = p.toolApprovalPicks
-    status = p.status
-    abortController = p.abortController
-    tick().then(() => {
-      messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })
-      textareaRef?.focus({ preventScroll: true })
-    })
-  }
-
-  function handleToolCallsPending(
-    payload: ToolCallsPendingPayload,
-  ): Promise<Record<string, boolean>> {
-    const approvalOnly = payload.items.filter((i) => i.requiresApproval)
-    if (approvalOnly.length === 0) {
-      return Promise.resolve({})
-    }
-    return new Promise((resolve) => {
-      const next: Record<string, boolean | undefined> = {}
-      for (const it of approvalOnly) {
-        next[it.toolCallId] = undefined
-      }
-      toolApprovalPicks = next
-      toolApprovalWaiter = { payload: { items: approvalOnly }, resolve }
-    })
-  }
-
-  function maybeFinishToolApproval(): void {
-    if (!toolApprovalWaiter) return
-    const { resolve, payload } = toolApprovalWaiter
-    const allDone = payload.items.every(
-      (it) => toolApprovalPicks[it.toolCallId] !== undefined,
-    )
-    if (!allDone) return
-    const decisions: Record<string, boolean> = {}
-    for (const it of payload.items) {
-      decisions[it.toolCallId] = toolApprovalPicks[it.toolCallId] ?? false
-    }
-    toolApprovalWaiter = null
-    toolApprovalPicks = {}
-    resolve(decisions)
-  }
-
   function applyToolApprovalRun(toolCallId: string): void {
-    if (!toolApprovalWaiter) return
-    toolApprovalPicks = { ...toolApprovalPicks, [toolCallId]: true }
-    maybeFinishToolApproval()
+    store.applyToolApprovalRun(toolCallId)
   }
 
   function applyToolApprovalSkip(toolCallId: string): void {
-    if (!toolApprovalWaiter) return
-    toolApprovalPicks = { ...toolApprovalPicks, [toolCallId]: false }
-    maybeFinishToolApproval()
+    store.applyToolApprovalSkip(toolCallId)
   }
 
-  function updateLastAssistant(update: (draft: ChatMessage) => void) {
-    const last = messages[messages.length - 1]
-    if (last?.role === "assistant") {
-      const draft = { ...last, parts: last.parts ? [...last.parts] : [] }
-      update(draft)
-      messages = [...messages.slice(0, -1), draft]
-    }
+  function retryLastRequest() {
+    store.retryLastRequest()
+  }
+
+  function stop() {
+    store.stop()
   }
 
   function handleSubmit(e?: Event) {
     if (e) e.preventDefault()
     const text = input.trim()
     if (!text || isLoading || (browser && !chatAcknowledged)) return
-    removeErrors()
-    const traceId = traceIdForNextChatRequest(messages) ?? continuationTraceId
-    const userMessage: ChatMessage = {
-      id: chatGenerateId(),
-      role: "user",
-      content: text,
-    }
-    const assistantMessage: ChatMessage = {
-      id: chatGenerateId(),
-      role: "assistant",
-      parts: [],
-    }
-    messages = [...messages, userMessage, assistantMessage]
+    store.sendMessage(text)
     input = ""
-    status = "submitted"
     setTimeout(() => {
       adjustTextareaHeight()
       messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })
     }, 0)
-    abortController = new AbortController()
-
-    streamChat({
-      apiUrl: CHAT_API_URL,
-      messages: [userMessage],
-      traceId,
-      onAssistantMessage: (update) => {
-        status = "streaming"
-        updateLastAssistant(update)
-      },
-      onChatTrace: (traceId) => {
-        const last = messages[messages.length - 1]
-        if (last?.role === "assistant") {
-          messages = [...messages.slice(0, -1), { ...last, traceId }]
-        }
-      },
-      onInlineError: (message, traceId) => {
-        const errorMsg: ChatMessage = {
-          id: chatGenerateId(),
-          role: "error",
-          content: message,
-          traceId,
-        }
-        messages = [...messages, errorMsg]
-        status = "ready"
-        abortController = null
-      },
-      onToolCallsPending: handleToolCallsPending,
-      onFinish: () => {
-        status = "ready"
-        abortController = null
-      },
-      onError: (err) => {
-        const errorMsg: ChatMessage = {
-          id: chatGenerateId(),
-          role: "error",
-          content: err.message,
-        }
-        messages = [...messages, errorMsg]
-        status = "ready"
-        abortController = null
-      },
-      signal: abortController.signal,
-    })
   }
 </script>
 
-<div>
+<div class="flex flex-col flex-1 min-h-0">
   <div
-    class="flex flex-col h-[calc(100vh-14rem)] overflow-hidden w-full md:max-w-3xl mx-auto px-4"
+    class="flex flex-col flex-1 min-h-0 overflow-hidden w-full md:max-w-3xl mx-auto px-1"
   >
-    <div class="flex shrink-0 justify-end pb-1">
-      <button
-        type="button"
-        class="btn btn-sm btn-circle btn-ghost"
-        on:click={() => chatHistory.open()}
-        aria-label="Chat history"
-        title="Chat history"
-      >
-        <span class="size-5 block"><HistoryIcon /></span>
-      </button>
-    </div>
-    <ChatHistory
-      bind:this={chatHistory}
-      onBeforeOpen={stop}
-      on:apply={onChatHistoryApply}
-    />
     <div
       bind:this={messagesContainer}
       class="chat-messages-scroll flex-1 min-h-0 flex flex-col gap-4 overflow-y-auto overflow-x-hidden"
@@ -496,12 +325,20 @@
       aria-live="polite"
     >
       <ChatCostDisclaimer />
+      {#if messages.length === 0 && !isLoading}
+        <div
+          class="flex-1 min-h-0 flex flex-col justify-center pb-[var(--welcome-pad)] pt-[calc(var(--welcome-pad)/2)]"
+          style="--welcome-pad: clamp(0px, 10vh, 4rem);"
+        >
+          <ChatWelcome on:select={(e) => store.sendMessage(e.detail)} />
+        </div>
+      {/if}
       {#each messages as message (message.id)}
         <div
           in:fly={{ y: 8, duration: 200 }}
           out:fly={{ y: -4, duration: 150 }}
           class={message.role === "user"
-            ? "rounded-xl bg-base-content/[0.06] px-3 py-2.5 max-w-2xl ml-auto"
+            ? "rounded-xl bg-base-content/[0.06] px-3 py-2.5 max-w-2xl ml-auto text-sm"
             : message.role === "error"
               ? "rounded-lg bg-error/10 border border-error/30 px-3 py-2.5 text-error text-sm"
               : "flex flex-col gap-3"}
@@ -764,7 +601,7 @@
     </div>
 
     <form
-      class="flex-none relative w-full pt-2 pb-3"
+      class="flex-none relative w-full pt-2"
       on:submit|preventDefault={handleSubmit}
     >
       <textarea

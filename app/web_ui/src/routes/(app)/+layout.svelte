@@ -27,6 +27,9 @@
   const lastPageUrlStore = writable<URL | undefined>(undefined)
   setContext("lastPageUrl", lastPageUrlStore)
 
+  const noLayoutBottomPadding = writable(false)
+  setContext("noLayoutBottomPadding", noLayoutBottomPadding)
+
   function path_start(root: string, pathname: string): boolean {
     if (pathname == root) {
       return true
@@ -106,7 +109,9 @@
 
     <div class="flex flex-grow flex-row">
       <div
-        class="flex-1 min-w-0 rounded-3xl bg-base-100 shadow-md px-4 md:px-12 py-8 mb-4 border"
+        class="flex-1 min-w-0 min-h-0 flex flex-col rounded-3xl bg-base-100 shadow-md px-4 md:px-12 mb-4 border pt-8 {$noLayoutBottomPadding
+          ? ''
+          : 'pb-8'}"
       >
         <slot />
       </div>

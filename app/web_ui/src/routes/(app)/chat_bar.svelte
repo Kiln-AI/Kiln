@@ -161,7 +161,7 @@
         <div class="drag-indicator"></div>
       </div>
       <div
-        class="rounded-3xl bg-base-100 shadow-md px-4 py-8 border flex flex-col flex-1 min-w-0 min-h-0 overflow-y-auto"
+        class="rounded-3xl bg-base-100 shadow-md px-4 py-4 border flex flex-col flex-1 min-w-0 min-h-0 overflow-y-auto"
       >
         <div class="flex flex-row items-center justify-between mb-4">
           <div class="text-lg font-medium">Chat</div>
@@ -211,9 +211,16 @@
   </button>
 
   <!-- Small screen dialog -->
-  <Dialog bind:this={dialog} title="Chat" on:close={() => (dialogOpen = false)}>
+  <Dialog
+    bind:this={dialog}
+    title="Chat"
+    on:close={() => (dialogOpen = false)}
+    width="wide"
+  >
     {#if dialogOpen}
-      <Chat />
+      <div class="h-[70vh] flex flex-col">
+        <Chat />
+      </div>
     {/if}
   </Dialog>
 {/if}
