@@ -3,31 +3,60 @@
 from .answer_option import AnswerOption
 from .answer_option_with_selection import AnswerOptionWithSelection
 from .api_key_verification_result import ApiKeyVerificationResult
+from .audio import Audio
 from .body_start_prompt_optimization_job_v1_jobs_prompt_optimization_job_start_post import (
     BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost,
 )
 from .body_start_sample_job_v1_jobs_sample_job_start_post import BodyStartSampleJobV1JobsSampleJobStartPost
+from .chat_completion_assistant_message_param_wrapper import ChatCompletionAssistantMessageParamWrapper
+from .chat_completion_content_part_image_param import ChatCompletionContentPartImageParam
+from .chat_completion_content_part_input_audio_param import ChatCompletionContentPartInputAudioParam
+from .chat_completion_content_part_refusal_param import ChatCompletionContentPartRefusalParam
+from .chat_completion_content_part_text_param import ChatCompletionContentPartTextParam
+from .chat_completion_developer_message_param import ChatCompletionDeveloperMessageParam
+from .chat_completion_function_message_param import ChatCompletionFunctionMessageParam
+from .chat_completion_message_function_tool_call_param import ChatCompletionMessageFunctionToolCallParam
+from .chat_completion_system_message_param import ChatCompletionSystemMessageParam
+from .chat_completion_tool_message_param_wrapper import ChatCompletionToolMessageParamWrapper
+from .chat_completion_user_message_param import ChatCompletionUserMessageParam
 from .chat_request import ChatRequest
+from .chat_snapshot import ChatSnapshot
 from .check_entitlements_v1_check_entitlements_get_response_check_entitlements_v1_check_entitlements_get import (
     CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet,
 )
 from .check_model_supported_response import CheckModelSupportedResponse
 from .clarify_spec_input import ClarifySpecInput
 from .clarify_spec_output import ClarifySpecOutput
-from .client_message import ClientMessage
-from .client_message_part import ClientMessagePart
-from .client_message_tool_calls_type_0_item import ClientMessageToolCallsType0Item
+from .client_chat_message import ClientChatMessage
+from .client_chat_message_role import ClientChatMessageRole
+from .data_source import DataSource
+from .data_source_properties import DataSourceProperties
+from .data_source_type import DataSourceType
 from .examples_for_feedback_item import ExamplesForFeedbackItem
 from .examples_with_feedback_item import ExamplesWithFeedbackItem
+from .file import File
+from .file_file import FileFile
+from .function import Function
+from .function_call import FunctionCall
 from .generate_batch_input import GenerateBatchInput
 from .generate_batch_output import GenerateBatchOutput
 from .generate_batch_output_data_by_topic import GenerateBatchOutputDataByTopic
 from .health_health_get_response_health_health_get import HealthHealthGetResponseHealthHealthGet
 from .http_validation_error import HTTPValidationError
+from .image_url import ImageURL
+from .image_url_detail import ImageURLDetail
+from .input_audio import InputAudio
+from .input_audio_format import InputAudioFormat
 from .job_start_response import JobStartResponse
 from .job_status import JobStatus
 from .job_status_response import JobStatusResponse
 from .job_type import JobType
+from .kiln_agent_run_config_properties import KilnAgentRunConfigProperties
+from .kiln_base_model import KilnBaseModel
+from .mcp_run_config_properties import McpRunConfigProperties
+from .mcp_tool_reference import MCPToolReference
+from .mcp_tool_reference_input_schema_type_0 import MCPToolReferenceInputSchemaType0
+from .mcp_tool_reference_output_schema_type_0 import MCPToolReferenceOutputSchemaType0
 from .model_provider_name import ModelProviderName
 from .new_proposed_spec_edit_api import NewProposedSpecEditApi
 from .output_file_info import OutputFileInfo
@@ -38,6 +67,7 @@ from .question_set import QuestionSet
 from .question_with_answer import QuestionWithAnswer
 from .refine_spec_api_output import RefineSpecApiOutput
 from .refine_spec_input import RefineSpecInput
+from .requirement_rating import RequirementRating
 from .sample import Sample
 from .sample_job_output import SampleJobOutput
 from .sample_job_result_response import SampleJobResultResponse
@@ -48,6 +78,7 @@ from .spec_spec_fields import SpecSpecFields
 from .specification_input import SpecificationInput
 from .specification_input_spec_field_current_values import SpecificationInputSpecFieldCurrentValues
 from .specification_input_spec_fields import SpecificationInputSpecFields
+from .structured_output_mode import StructuredOutputMode
 from .submit_answers_request import SubmitAnswersRequest
 from .synthetic_data_generation_session_config import SyntheticDataGenerationSessionConfig
 from .synthetic_data_generation_session_config_input import SyntheticDataGenerationSessionConfigInput
@@ -55,35 +86,70 @@ from .synthetic_data_generation_step_config import SyntheticDataGenerationStepCo
 from .synthetic_data_generation_step_config_input import SyntheticDataGenerationStepConfigInput
 from .task_info import TaskInfo
 from .task_metadata import TaskMetadata
-from .tool_invocation import ToolInvocation
-from .tool_invocation_state import ToolInvocationState
+from .task_output import TaskOutput
+from .task_output_rating import TaskOutputRating
+from .task_output_rating_requirement_ratings import TaskOutputRatingRequirementRatings
+from .task_output_rating_type import TaskOutputRatingType
+from .task_run import TaskRun
+from .task_run_intermediate_outputs_type_0 import TaskRunIntermediateOutputsType0
+from .tools_run_config import ToolsRunConfig
+from .usage import Usage
 from .validation_error import ValidationError
 
 __all__ = (
     "AnswerOption",
     "AnswerOptionWithSelection",
     "ApiKeyVerificationResult",
+    "Audio",
     "BodyStartPromptOptimizationJobV1JobsPromptOptimizationJobStartPost",
     "BodyStartSampleJobV1JobsSampleJobStartPost",
+    "ChatCompletionAssistantMessageParamWrapper",
+    "ChatCompletionContentPartImageParam",
+    "ChatCompletionContentPartInputAudioParam",
+    "ChatCompletionContentPartRefusalParam",
+    "ChatCompletionContentPartTextParam",
+    "ChatCompletionDeveloperMessageParam",
+    "ChatCompletionFunctionMessageParam",
+    "ChatCompletionMessageFunctionToolCallParam",
+    "ChatCompletionSystemMessageParam",
+    "ChatCompletionToolMessageParamWrapper",
+    "ChatCompletionUserMessageParam",
     "ChatRequest",
+    "ChatSnapshot",
     "CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet",
     "CheckModelSupportedResponse",
     "ClarifySpecInput",
     "ClarifySpecOutput",
-    "ClientMessage",
-    "ClientMessagePart",
-    "ClientMessageToolCallsType0Item",
+    "ClientChatMessage",
+    "ClientChatMessageRole",
+    "DataSource",
+    "DataSourceProperties",
+    "DataSourceType",
     "ExamplesForFeedbackItem",
     "ExamplesWithFeedbackItem",
+    "File",
+    "FileFile",
+    "Function",
+    "FunctionCall",
     "GenerateBatchInput",
     "GenerateBatchOutput",
     "GenerateBatchOutputDataByTopic",
     "HealthHealthGetResponseHealthHealthGet",
     "HTTPValidationError",
+    "ImageURL",
+    "ImageURLDetail",
+    "InputAudio",
+    "InputAudioFormat",
     "JobStartResponse",
     "JobStatus",
     "JobStatusResponse",
     "JobType",
+    "KilnAgentRunConfigProperties",
+    "KilnBaseModel",
+    "McpRunConfigProperties",
+    "MCPToolReference",
+    "MCPToolReferenceInputSchemaType0",
+    "MCPToolReferenceOutputSchemaType0",
     "ModelProviderName",
     "NewProposedSpecEditApi",
     "OutputFileInfo",
@@ -94,6 +160,7 @@ __all__ = (
     "QuestionWithAnswer",
     "RefineSpecApiOutput",
     "RefineSpecInput",
+    "RequirementRating",
     "Sample",
     "SampleJobOutput",
     "SampleJobResultResponse",
@@ -104,6 +171,7 @@ __all__ = (
     "SpecQuestionerApiInput",
     "SpecSpecFieldCurrentValues",
     "SpecSpecFields",
+    "StructuredOutputMode",
     "SubmitAnswersRequest",
     "SyntheticDataGenerationSessionConfig",
     "SyntheticDataGenerationSessionConfigInput",
@@ -111,7 +179,13 @@ __all__ = (
     "SyntheticDataGenerationStepConfigInput",
     "TaskInfo",
     "TaskMetadata",
-    "ToolInvocation",
-    "ToolInvocationState",
+    "TaskOutput",
+    "TaskOutputRating",
+    "TaskOutputRatingRequirementRatings",
+    "TaskOutputRatingType",
+    "TaskRun",
+    "TaskRunIntermediateOutputsType0",
+    "ToolsRunConfig",
+    "Usage",
     "ValidationError",
 )
