@@ -81,7 +81,13 @@
   }
 </script>
 
-<dialog {id} class="modal" tabindex="-1" on:close={() => dispatch("close")}>
+<dialog
+  {id}
+  class="modal"
+  tabindex="-1"
+  on:close={() => dispatch("close")}
+  on:cancel={(e) => dispatch("cancel", e)}
+>
   <div class="modal-box {width === 'wide' ? 'w-11/12 max-w-3xl' : ''}">
     <!-- Hidden div to force the compiler to find these classes -->
     <div class="hidden w-11/12 max-w-3xl"></div>
