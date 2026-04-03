@@ -39,6 +39,7 @@ export interface ChatSessionStore extends Readable<ChatSessionState> {
   stop(): void
   retryLastRequest(): void
   reset(): void
+  loadSession(messages: ChatMessage[], continuationTraceId: string): void
   togglePartCollapsed(key: string, currentlyCollapsed: boolean): void
   applyToolApprovalRun(toolCallId: string): void
   applyToolApprovalSkip(toolCallId: string): void
@@ -61,6 +62,7 @@ export function createChatSessionStore(
 
   let status: ChatSessionState["status"] = "ready"
   let abortController: AbortController | null = null
+  let continuationTraceId: string | undefined = undefined
   let toolApprovalResolver:
     | ((decisions: Record<string, boolean>) => void)
     | null = null
@@ -125,7 +127,8 @@ export function createChatSessionStore(
   function beginStreaming(text: string) {
     removeErrors()
     const currentMessages = get(persisted).messages
-    const traceId = traceIdForNextChatRequest(currentMessages)
+    const traceId =
+      traceIdForNextChatRequest(currentMessages) ?? continuationTraceId
     const userMessage: ChatMessage = {
       id: chatGenerateId(),
       role: "user",
@@ -179,12 +182,13 @@ export function createChatSessionStore(
           return p
         })
       },
-      onInlineError: (message, traceId) => {
+      onInlineError: (message, traceId, code) => {
         const errorMsg: ChatMessage = {
           id: chatGenerateId(),
           role: "error",
           content: message,
           traceId,
+          errorCode: code,
         }
         updateMessages((msgs) => [...msgs, errorMsg])
         setRuntimeState("ready", null)
@@ -241,11 +245,22 @@ export function createChatSessionStore(
       abortController.abort()
     }
     clearToolApprovalState()
+    continuationTraceId = undefined
     persisted.set({
       messages: [],
       collapsedPartKeys: {},
       lastSentAppState: null,
     })
+    setRuntimeState("ready", null)
+  }
+
+  function loadSession(messages: ChatMessage[], traceId: string): void {
+    if (abortController) {
+      abortController.abort()
+    }
+    clearToolApprovalState()
+    continuationTraceId = traceId
+    persisted.set({ messages, collapsedPartKeys: {}, lastSentAppState: null })
     setRuntimeState("ready", null)
   }
 
@@ -329,6 +344,7 @@ export function createChatSessionStore(
     stop,
     retryLastRequest,
     reset,
+    loadSession,
     togglePartCollapsed,
     applyToolApprovalRun,
     applyToolApprovalSkip,

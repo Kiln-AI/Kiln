@@ -2599,6 +2599,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List chat sessions
+         * @description Proxy to Kiln Copilot ``GET /v1/chat/sessions``.
+         */
+        get: operations["list_chat_sessions_api_chat_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get chat session
+         * @description Proxy to Kiln Copilot ``GET /v1/chat/sessions/{session_id}``.
+         */
+        get: operations["get_chat_session_api_chat_sessions__session_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete chat session
+         * @description Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{session_id}``.
+         */
+        delete: operations["delete_chat_session_api_chat_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat": {
         parameters: {
             query?: never;
@@ -3110,6 +3154,21 @@ export interface components {
             role: "user";
             /** Name */
             name?: string;
+        };
+        /** ChatSessionListItem */
+        ChatSessionListItem: {
+            /** Id */
+            id: string;
+            /** Title */
+            title?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** ChatSessionSnapshot */
+        ChatSessionSnapshot: {
+            /** Id */
+            id: string;
+            task_run: components["schemas"]["TaskRunSnapshot"];
         };
         /**
          * ChatStrategy
@@ -8274,6 +8333,13 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
+        /** TaskRunSnapshot */
+        TaskRunSnapshot: {
+            /** Trace */
+            trace?: components["schemas"]["TraceMessage"][] | null;
+        } & {
+            [key: string]: unknown;
+        };
         /**
          * TaskSample
          * @description An example task input/output pair used to demonstrate expected behavior.
@@ -8417,6 +8483,41 @@ export interface components {
             core_requirement: string;
             /** Toxicity Examples */
             toxicity_examples: string;
+        };
+        /** TraceMessage */
+        TraceMessage: {
+            /** Role */
+            role: string;
+            /** Content */
+            content?: string | {
+                [key: string]: unknown;
+            }[] | null;
+            /** Tool Calls */
+            tool_calls?: components["schemas"]["TraceToolCall"][] | null;
+            /** Tool Call Id */
+            tool_call_id?: string | null;
+            /** Reasoning Content */
+            reasoning_content?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** TraceToolCall */
+        TraceToolCall: {
+            /** Id */
+            id: string;
+            /**
+             * Type
+             * @default function
+             */
+            type: string;
+            function: components["schemas"]["TraceToolCallFunction"];
+        };
+        /** TraceToolCallFunction */
+        TraceToolCallFunction: {
+            /** Name */
+            name: string;
+            /** Arguments */
+            arguments: string;
         };
         /**
          * UpdateEvalRequest
@@ -14710,6 +14811,88 @@ export interface operations {
                 content: {
                     "application/json": unknown;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_chat_sessions_api_chat_sessions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSessionListItem"][];
+                };
+            };
+        };
+    };
+    get_chat_session_api_chat_sessions__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Chat session id (same as trace id for continuation). */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSessionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_chat_session_api_chat_sessions__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Chat session id to delete. */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
