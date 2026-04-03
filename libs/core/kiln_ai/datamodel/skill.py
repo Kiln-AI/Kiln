@@ -56,6 +56,8 @@ class Skill(KilnParentedModel):
         md_path = self.skill_md_path()
         if not md_path.exists():
             raise FileNotFoundError(f"SKILL.md not found at {md_path}")
+        if md_path.is_dir():
+            raise FileNotFoundError(f"SKILL.md path is a folder, not a file: {md_path}")
         return md_path.read_text(encoding="utf-8")
 
     def body(self) -> str:
@@ -77,11 +79,11 @@ class Skill(KilnParentedModel):
         return self.path.parent / "assets"
 
     def read_reference(self, relative_path: str) -> str:
-        """Read a reference file. Raises ValueError for path traversal or non-text, FileNotFoundError if missing."""
+        """Read a reference file. Raises ValueError for path traversal, non-text, or if the path is a folder, FileNotFoundError if missing."""
         return self._read_resource(self.references_dir(), relative_path)
 
     def read_asset(self, relative_path: str) -> str:
-        """Read an asset file. Raises ValueError for path traversal or non-text, FileNotFoundError if missing."""
+        """Read an asset file. Raises ValueError for path traversal, non-text, or if the path is a folder, FileNotFoundError if missing."""
         return self._read_resource(self.assets_dir(), relative_path)
 
     def _read_resource(self, base_dir: Path, relative_path: str) -> str:
@@ -95,6 +97,9 @@ class Skill(KilnParentedModel):
             resolved.relative_to(base_dir.resolve())
         except ValueError:
             raise ValueError("Path traversal is not allowed") from None
+
+        if resolved.is_dir():
+            raise ValueError(f"Path is a folder, not a file: {relative_path}")
 
         try:
             return resolved.read_text(encoding="utf-8")
