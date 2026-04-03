@@ -6,49 +6,34 @@ from typing import Any, TypeVar
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-from ..models.tool_invocation_state import ToolInvocationState
+from ..models.input_audio_format import InputAudioFormat
 
-T = TypeVar("T", bound="ToolInvocation")
+T = TypeVar("T", bound="InputAudio")
 
 
 @_attrs_define
-class ToolInvocation:
+class InputAudio:
     """
     Attributes:
-        state (ToolInvocationState):
-        tool_call_id (str):
-        tool_name (str):
-        args (Any):
-        result (Any):
+        data (str):
+        format_ (InputAudioFormat):
     """
 
-    state: ToolInvocationState
-    tool_call_id: str
-    tool_name: str
-    args: Any
-    result: Any
+    data: str
+    format_: InputAudioFormat
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        state = self.state.value
+        data = self.data
 
-        tool_call_id = self.tool_call_id
-
-        tool_name = self.tool_name
-
-        args = self.args
-
-        result = self.result
+        format_ = self.format_.value
 
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update(
             {
-                "state": state,
-                "toolCallId": tool_call_id,
-                "toolName": tool_name,
-                "args": args,
-                "result": result,
+                "data": data,
+                "format": format_,
             }
         )
 
@@ -57,26 +42,17 @@ class ToolInvocation:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
-        state = ToolInvocationState(d.pop("state"))
+        data = d.pop("data")
 
-        tool_call_id = d.pop("toolCallId")
+        format_ = InputAudioFormat(d.pop("format"))
 
-        tool_name = d.pop("toolName")
-
-        args = d.pop("args")
-
-        result = d.pop("result")
-
-        tool_invocation = cls(
-            state=state,
-            tool_call_id=tool_call_id,
-            tool_name=tool_name,
-            args=args,
-            result=result,
+        input_audio = cls(
+            data=data,
+            format_=format_,
         )
 
-        tool_invocation.additional_properties = d
-        return tool_invocation
+        input_audio.additional_properties = d
+        return input_audio
 
     @property
     def additional_keys(self) -> list[str]:
