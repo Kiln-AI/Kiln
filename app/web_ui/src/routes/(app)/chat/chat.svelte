@@ -14,10 +14,18 @@
   } from "$lib/chat/streaming_chat"
   import ChatMarkdown from "$lib/chat/ChatMarkdown.svelte"
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
+  import HistoryIcon from "$lib/ui/icons/history.svelte"
   import StopIcon from "$lib/ui/icons/stop_icon.svelte"
   import { base_url } from "$lib/api_client"
+  import {
+    patchChatFromLoadedSession,
+    type LoadedChatSessionDetail,
+  } from "$lib/chat/chat_history_apply"
+  import ChatHistory from "./chat_history.svelte"
 
   const CHAT_API_URL = `${base_url}/api/chat`
+
+  let chatHistory: { open: () => void }
 
   let messages: ChatMessage[] = []
   let input = ""
@@ -37,6 +45,8 @@
     resolve: (d: Record<string, boolean>) => void
   } | null = null
   let toolApprovalPicks: Record<string, boolean | undefined> = {}
+
+  let continuationTraceId: string | undefined = undefined
 
   $: isLoading = status === "submitted" || status === "streaming"
   $: chatAcknowledged = $chat_cost_disclaimer_acknowledged
@@ -316,6 +326,25 @@
     }
   }
 
+  function onChatHistoryApply(e: CustomEvent<LoadedChatSessionDetail>) {
+    const p = patchChatFromLoadedSession(e.detail)
+    messages = p.messages
+    continuationTraceId = p.continuationTraceId
+    input = p.input
+    collapsedPartKeys = p.collapsedPartKeys
+    reasoningPartStartTimes = p.reasoningPartStartTimes
+    reasoningPartEndTimes = p.reasoningPartEndTimes
+    lastSeenLastPartKey = p.lastSeenLastPartKey
+    toolApprovalWaiter = p.toolApprovalWaiter
+    toolApprovalPicks = p.toolApprovalPicks
+    status = p.status
+    abortController = p.abortController
+    tick().then(() => {
+      messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })
+      textareaRef?.focus({ preventScroll: true })
+    })
+  }
+
   function handleToolCallsPending(
     payload: ToolCallsPendingPayload,
   ): Promise<Record<string, boolean>> {
@@ -375,7 +404,7 @@
     const text = input.trim()
     if (!text || isLoading || (browser && !chatAcknowledged)) return
     removeErrors()
-    const traceId = traceIdForNextChatRequest(messages)
+    const traceId = traceIdForNextChatRequest(messages) ?? continuationTraceId
     const userMessage: ChatMessage = {
       id: chatGenerateId(),
       role: "user",
@@ -444,6 +473,22 @@
   <div
     class="flex flex-col h-[calc(100vh-14rem)] overflow-hidden w-full md:max-w-3xl mx-auto px-4"
   >
+    <div class="flex shrink-0 justify-end pb-1">
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost"
+        on:click={() => chatHistory.open()}
+        aria-label="Chat history"
+        title="Chat history"
+      >
+        <span class="size-5 block"><HistoryIcon /></span>
+      </button>
+    </div>
+    <ChatHistory
+      bind:this={chatHistory}
+      onBeforeOpen={stop}
+      on:apply={onChatHistoryApply}
+    />
     <div
       bind:this={messagesContainer}
       class="chat-messages-scroll flex-1 min-h-0 flex flex-col gap-4 overflow-y-auto overflow-x-hidden"
