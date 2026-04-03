@@ -111,18 +111,20 @@ class ChatStreamSession:
                     if upstream.status_code != 200:
                         error_body = await upstream.aread()
                         detail = "Chat request failed."
+                        code: str | None = None
                         if error_body.startswith(b"{"):
                             try:
-                                detail = (
-                                    json.loads(error_body).get("message", detail)
-                                    or detail
-                                )
+                                parsed = json.loads(error_body)
+                                detail = parsed.get("message", detail) or detail
+                                code = parsed.get("code")
                             except json.JSONDecodeError:
                                 pass
                         error_payload: dict[str, Any] = {
                             "type": "error",
                             "message": detail,
                         }
+                        if code:
+                            error_payload["code"] = code
                         if trace_id_for_error:
                             error_payload["trace_id"] = trace_id_for_error
                         yield f"data: {json.dumps(error_payload)}\n\n".encode()

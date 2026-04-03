@@ -133,4 +133,63 @@ describe("streamChat", () => {
 
     vi.unstubAllGlobals()
   })
+
+  it("calls onInlineError with code when response has chat_client_version_too_old", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      statusText: "Bad Request",
+      text: () =>
+        Promise.resolve(
+          JSON.stringify({
+            message: "Update required",
+            code: "chat_client_version_too_old",
+          }),
+        ),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const inlineErrorSpy = vi.fn()
+
+    await streamChat({
+      apiUrl: "https://example.test/api/chat",
+      messages: [{ id: "u1", role: "user", content: "hi" }],
+      onAssistantMessage: () => {},
+      onInlineError: inlineErrorSpy,
+      onFinish: () => {},
+      onError: () => {},
+    })
+
+    expect(inlineErrorSpy).toHaveBeenCalledOnce()
+    expect(inlineErrorSpy.mock.calls[0][2]).toBe("chat_client_version_too_old")
+
+    vi.unstubAllGlobals()
+  })
+
+  it("calls onError for non-version error responses", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: "Internal Server Error",
+      text: () => Promise.resolve("server error"),
+    })
+    vi.stubGlobal("fetch", fetchMock)
+
+    const errorSpy = vi.fn()
+    const inlineErrorSpy = vi.fn()
+
+    await streamChat({
+      apiUrl: "https://example.test/api/chat",
+      messages: [{ id: "u1", role: "user", content: "hi" }],
+      onAssistantMessage: () => {},
+      onInlineError: inlineErrorSpy,
+      onFinish: () => {},
+      onError: errorSpy,
+    })
+
+    expect(errorSpy).toHaveBeenCalledOnce()
+    expect(inlineErrorSpy).not.toHaveBeenCalled()
+
+    vi.unstubAllGlobals()
+  })
 })

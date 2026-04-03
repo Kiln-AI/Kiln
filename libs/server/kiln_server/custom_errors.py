@@ -1,5 +1,6 @@
 import json
 import logging
+from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, status
@@ -81,10 +82,18 @@ def connect_custom_errors(app: FastAPI):
     # Wrap in a format that the client can understand (message, and error_messages)
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
+        if isinstance(exc.detail, dict):
+            content: dict[str, Any] = {
+                "message": exc.detail.get("message", str(exc.detail)),
+            }
+            if "code" in exc.detail:
+                content["code"] = exc.detail.get("code")
+        else:
+            content = {"message": exc.detail}
         return JSONResponse(
             status_code=exc.status_code,
             headers={"Access-Control-Allow-Origin": "*"},
-            content={"message": exc.detail},
+            content=content,
         )
 
     @app.exception_handler(httpx.TimeoutException)

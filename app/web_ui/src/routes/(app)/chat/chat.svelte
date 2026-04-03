@@ -386,17 +386,30 @@
               : "flex flex-col gap-3"}
         >
           {#if message.role === "error"}
-            <div class="flex items-center justify-between gap-3">
-              <span>{message.content}</span>
-              <button
-                type="button"
-                class="shrink-0 rounded-md bg-error/20 px-2 py-1 text-xs font-medium hover:bg-error/30 transition-colors"
-                on:click={retryLastRequest}
-                disabled={isLoading}
-              >
-                Retry
-              </button>
-            </div>
+            {#if message.errorCode === "chat_client_version_too_old"}
+              <div class="flex items-center gap-3">
+                <span
+                  >A newer version of Kiln is required.
+                  <a
+                    href="/settings/check_for_update"
+                    class="underline font-medium hover:text-error/80"
+                    >Check for updates</a
+                  ></span
+                >
+              </div>
+            {:else}
+              <div class="flex items-center justify-between gap-3">
+                <span>{message.content}</span>
+                <button
+                  type="button"
+                  class="shrink-0 rounded-md bg-error/20 px-2 py-1 text-xs font-medium hover:bg-error/30 transition-colors"
+                  on:click={retryLastRequest}
+                  disabled={isLoading}
+                >
+                  Retry
+                </button>
+              </div>
+            {/if}
           {:else}
             <div class="flex flex-col gap-3">
               {#if message.parts && message.parts.length > 0}

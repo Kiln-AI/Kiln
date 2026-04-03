@@ -1,6 +1,6 @@
 import httpx
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field
 
@@ -30,6 +30,17 @@ def app():
     @app.get("/generic-error")
     async def raise_generic_error():
         raise RuntimeError("Something went wrong")
+
+    @app.get("/http-error-string")
+    async def raise_http_error_string():
+        raise HTTPException(status_code=400, detail="bad request")
+
+    @app.get("/http-error-dict")
+    async def raise_http_error_dict():
+        raise HTTPException(
+            status_code=400,
+            detail={"message": "Update required", "code": "chat_client_version_too_old"},
+        )
 
     return app
 
@@ -126,3 +137,22 @@ class TestTimeoutErrorHandler:
     def test_other_exceptions_still_return_500(self, client_no_raise):
         response = client_no_raise.get("/generic-error")
         assert response.status_code == 500
+
+
+class TestHTTPExceptionHandler:
+    def test_string_detail(self, client_no_raise):
+        response = client_no_raise.get("/http-error-string")
+        assert response.status_code == 400
+        body = response.json()
+        assert body == {"message": "bad request"}
+
+    def test_dict_detail_preserves_code(self, client_no_raise):
+        response = client_no_raise.get("/http-error-dict")
+        assert response.status_code == 400
+        body = response.json()
+        assert body["message"] == "Update required"
+        assert body["code"] == "chat_client_version_too_old"
+
+    def test_dict_detail_has_cors_header(self, client_no_raise):
+        response = client_no_raise.get("/http-error-dict")
+        assert response.headers.get("access-control-allow-origin") == "*"

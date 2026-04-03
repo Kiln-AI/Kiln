@@ -144,3 +144,25 @@ def test_delete_chat_session_passes_through_error(
 
     assert r.status_code == 404
     assert r.json()["message"] == "session not found"
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.list_sessions_v1_chat_sessions_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+def test_list_chat_sessions_passes_through_version_error_code(
+    mock_asyncio_detailed, client, mock_api_key
+):
+    mock_asyncio_detailed.return_value = KilnResponse(
+        status_code=HTTPStatus.BAD_REQUEST,
+        content=b'{"message":"Update required","code":"chat_client_version_too_old"}',
+        headers={"content-type": "application/json"},
+        parsed=None,
+    )
+
+    r = client.get("/api/chat/sessions")
+
+    assert r.status_code == 400
+    body = r.json()
+    assert body["message"] == "Update required"
+    assert body["code"] == "chat_client_version_too_old"
