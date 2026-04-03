@@ -263,21 +263,38 @@ class EvalRunner:
             eval_run.save_to_file()
 
             return True
-        except (
-            litellm.RateLimitError,
-            litellm.APIConnectionError,
-            litellm.InternalServerError,
-            litellm.ServiceUnavailableError,
-            litellm.BadGatewayError,
-        ) as e:
-            logger.error(
-                f"Transient error running eval job for dataset item {job.item.id}: {e}",
-                exc_info=True,
-            )
-            raise RetryableError(str(e)) from e
         except Exception as e:
+            if _is_retryable_error(e):
+                logger.error(
+                    f"Transient error running eval job for dataset item {job.item.id}: {e}",
+                    exc_info=True,
+                )
+                raise RetryableError(str(e)) from e
             logger.error(
                 f"Error running eval job for dataset item {job.item.id}: {e}",
                 exc_info=True,
             )
             raise
+
+
+def _is_retryable_error(e: BaseException) -> bool:
+    if isinstance(
+        e,
+        (
+            litellm.RateLimitError,
+            litellm.APIConnectionError,
+            litellm.InternalServerError,
+            litellm.ServiceUnavailableError,
+            litellm.BadGatewayError,
+            litellm.JSONSchemaValidationError,
+        ),
+    ):
+        return True
+
+    # ValueError thrown by Kiln's adapter when structured output doesn't match schema
+    if isinstance(
+        e, ValueError
+    ) and "This task requires a specific output schema" in str(e):
+        return True
+
+    return False
