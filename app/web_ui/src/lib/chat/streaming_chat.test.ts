@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
+import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
 import {
   streamChat,
   chatExecuteToolsUrl,
@@ -142,8 +143,10 @@ describe("streamChat", () => {
       text: () =>
         Promise.resolve(
           JSON.stringify({
-            message: "Update required",
-            code: "chat_client_version_too_old",
+            message: {
+              message: "Update required",
+              code: CHAT_CLIENT_VERSION_TOO_OLD,
+            },
           }),
         ),
     })
@@ -161,7 +164,7 @@ describe("streamChat", () => {
     })
 
     expect(inlineErrorSpy).toHaveBeenCalledOnce()
-    expect(inlineErrorSpy.mock.calls[0][2]).toBe("chat_client_version_too_old")
+    expect(inlineErrorSpy.mock.calls[0][2]).toBe(CHAT_CLIENT_VERSION_TOO_OLD)
 
     vi.unstubAllGlobals()
   })

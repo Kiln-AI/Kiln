@@ -6,6 +6,8 @@
  * to use an old version of the protocol on the backend too, which is not a good idea.
  */
 
+import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
+
 export type ChatMessagePart =
   | { type: "text"; text: string }
   | { type: "reasoning"; reasoning: string }
@@ -24,7 +26,7 @@ export interface ChatMessage {
   parts?: ChatMessagePart[]
   /** Server-issued id from ``kiln_chat_trace`` for this assistant turn */
   traceId?: string
-  /** Machine-readable error code from upstream (e.g. ``chat_client_version_too_old``) */
+  /** Machine-readable error code from upstream (e.g. ``CHAT_CLIENT_VERSION_TOO_OLD``) */
   errorCode?: string
 }
 
@@ -451,11 +453,11 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     let code: string | undefined
     try {
       const parsed = JSON.parse(text)
-      code = parsed?.code
+      code = parsed?.code ?? parsed?.message?.code
     } catch {
       /* not JSON */
     }
-    if (code === "chat_client_version_too_old") {
+    if (code === CHAT_CLIENT_VERSION_TOO_OLD) {
       onInlineError?.(
         "Please update the Kiln desktop app to continue using chat.",
         undefined,

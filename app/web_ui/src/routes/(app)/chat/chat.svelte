@@ -5,6 +5,7 @@
   import { chat_cost_disclaimer_acknowledged } from "$lib/stores"
   import ChatCostDisclaimer from "./ChatCostDisclaimer.svelte"
   import type { ChatMessage, ChatMessagePart } from "$lib/chat/streaming_chat"
+  import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
   import ChatMarkdown from "$lib/chat/ChatMarkdown.svelte"
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
   import HistoryIcon from "$lib/ui/icons/history.svelte"
@@ -386,7 +387,7 @@
               : "flex flex-col gap-3"}
         >
           {#if message.role === "error"}
-            {#if message.errorCode === "chat_client_version_too_old"}
+            {#if message.errorCode === CHAT_CLIENT_VERSION_TOO_OLD}
               <div class="flex items-center gap-3">
                 <span
                   >A newer version of Kiln is required.

@@ -4,6 +4,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 from app.desktop.studio_server.chat.stream_session import ChatStreamSession
+from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
 
 
 def _make_session():
@@ -46,7 +47,7 @@ class _FakeClient:
 @pytest.mark.asyncio
 async def test_stream_error_includes_code_field():
     error_body = json.dumps(
-        {"message": "Update required", "code": "chat_client_version_too_old"}
+        {"message": "Update required", "code": CHAT_CLIENT_VERSION_TOO_OLD}
     ).encode()
     fake_resp = _FakeResponse(400, error_body)
     fake_client = _FakeClient(fake_resp)
@@ -62,7 +63,7 @@ async def test_stream_error_includes_code_field():
     payload = json.loads(chunks[0].decode().removeprefix("data: ").strip())
     assert payload["type"] == "error"
     assert payload["message"] == "Update required"
-    assert payload["code"] == "chat_client_version_too_old"
+    assert payload["code"] == CHAT_CLIENT_VERSION_TOO_OLD
 
 
 @pytest.mark.asyncio

@@ -4,10 +4,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field
 
-from kiln_server.custom_errors import (
-    connect_custom_errors,
-    format_error_loc,
-)
+from kiln_server.custom_errors import connect_custom_errors, format_error_loc
+from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
 
 
 @pytest.fixture
@@ -39,7 +37,10 @@ def app():
     async def raise_http_error_dict():
         raise HTTPException(
             status_code=400,
-            detail={"message": "Update required", "code": "chat_client_version_too_old"},
+            detail={
+                "message": "Update required",
+                "code": CHAT_CLIENT_VERSION_TOO_OLD,
+            },
         )
 
     return app
@@ -146,12 +147,16 @@ class TestHTTPExceptionHandler:
         body = response.json()
         assert body == {"message": "bad request"}
 
-    def test_dict_detail_preserves_code(self, client_no_raise):
+    def test_dict_detail_preserves_structure(self, client_no_raise):
         response = client_no_raise.get("/http-error-dict")
         assert response.status_code == 400
         body = response.json()
-        assert body["message"] == "Update required"
-        assert body["code"] == "chat_client_version_too_old"
+        assert body == {
+            "message": {
+                "message": "Update required",
+                "code": CHAT_CLIENT_VERSION_TOO_OLD,
+            }
+        }
 
     def test_dict_detail_has_cors_header(self, client_no_raise):
         response = client_no_raise.get("/http-error-dict")

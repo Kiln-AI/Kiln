@@ -5,6 +5,7 @@
   import type { LoadedChatSessionDetail } from "$lib/chat/chat_history_apply"
   import type { components } from "$lib/api_schema"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
   import { formatDate } from "$lib/utils/formatters"
 
   /** Called before the modal opens (e.g. abort in-flight stream). */
@@ -181,7 +182,7 @@
             </p>
           {:else if sessionsError}
             <div class="text-sm text-error px-2 py-4">
-              {#if sessionsError.getCode() === "chat_client_version_too_old"}
+              {#if sessionsError.getCode() === CHAT_CLIENT_VERSION_TOO_OLD}
                 <p>A newer version of Kiln is required.</p>
                 <a
                   href="/settings/check_for_update"
