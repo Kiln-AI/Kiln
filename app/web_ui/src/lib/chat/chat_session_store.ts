@@ -227,10 +227,7 @@ export function createChatSessionStore(
     setRuntimeState("ready", null)
   }
 
-  function loadSession(
-    messages: ChatMessage[],
-    traceId: string,
-  ): void {
+  function loadSession(messages: ChatMessage[], traceId: string): void {
     if (abortController) {
       abortController.abort()
     }
