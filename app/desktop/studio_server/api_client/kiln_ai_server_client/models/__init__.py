@@ -20,6 +20,7 @@ from .chat_completion_system_message_param import ChatCompletionSystemMessagePar
 from .chat_completion_tool_message_param_wrapper import ChatCompletionToolMessageParamWrapper
 from .chat_completion_user_message_param import ChatCompletionUserMessageParam
 from .chat_request import ChatRequest
+from .chat_session_list_item import ChatSessionListItem
 from .chat_snapshot import ChatSnapshot
 from .check_entitlements_v1_check_entitlements_get_response_check_entitlements_v1_check_entitlements_get import (
     CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet,
@@ -115,6 +116,7 @@ __all__ = (
     "ChatCompletionToolMessageParamWrapper",
     "ChatCompletionUserMessageParam",
     "ChatRequest",
+    "ChatSessionListItem",
     "ChatSnapshot",
     "CheckEntitlementsV1CheckEntitlementsGetResponseCheckEntitlementsV1CheckEntitlementsGet",
     "CheckModelSupportedResponse",

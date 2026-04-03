@@ -1,19 +1,24 @@
 from http import HTTPStatus
-from typing import Any
+from typing import Any, cast
+from urllib.parse import quote
 
 import httpx
 
 from ... import errors
 from ...client import AuthenticatedClient, Client
-from ...models.chat_session_list_item import ChatSessionListItem
+from ...models.http_validation_error import HTTPValidationError
 from ...types import Response
 
 
-def _get_kwargs() -> dict[str, Any]:
+def _get_kwargs(
+    session_id: str,
+) -> dict[str, Any]:
 
     _kwargs: dict[str, Any] = {
-        "method": "get",
-        "url": "/v1/chat/sessions",
+        "method": "delete",
+        "url": "/v1/chat/sessions/{session_id}".format(
+            session_id=quote(str(session_id), safe=""),
+        ),
     }
 
     return _kwargs
@@ -21,16 +26,15 @@ def _get_kwargs() -> dict[str, Any]:
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> list[ChatSessionListItem] | None:
-    if response.status_code == 200:
-        response_200 = []
-        _response_200 = response.json()
-        for response_200_item_data in _response_200:
-            response_200_item = ChatSessionListItem.from_dict(response_200_item_data)
+) -> Any | HTTPValidationError | None:
+    if response.status_code == 204:
+        response_204 = cast(Any, None)
+        return response_204
 
-            response_200.append(response_200_item)
+    if response.status_code == 422:
+        response_422 = HTTPValidationError.from_dict(response.json())
 
-        return response_200
+        return response_422
 
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
@@ -40,7 +44,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[list[ChatSessionListItem]]:
+) -> Response[Any | HTTPValidationError]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -50,20 +54,26 @@ def _build_response(
 
 
 def sync_detailed(
+    session_id: str,
     *,
     client: AuthenticatedClient,
-) -> Response[list[ChatSessionListItem]]:
-    """List Sessions
+) -> Response[Any | HTTPValidationError]:
+    """Delete Session
+
+    Args:
+        session_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[list[ChatSessionListItem]]
+        Response[Any | HTTPValidationError]
     """
 
-    kwargs = _get_kwargs()
+    kwargs = _get_kwargs(
+        session_id=session_id,
+    )
 
     response = client.get_httpx_client().request(
         **kwargs,
@@ -73,39 +83,50 @@ def sync_detailed(
 
 
 def sync(
+    session_id: str,
     *,
     client: AuthenticatedClient,
-) -> list[ChatSessionListItem] | None:
-    """List Sessions
+) -> Any | HTTPValidationError | None:
+    """Delete Session
+
+    Args:
+        session_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        list[ChatSessionListItem]
+        Any | HTTPValidationError
     """
 
     return sync_detailed(
+        session_id=session_id,
         client=client,
     ).parsed
 
 
 async def asyncio_detailed(
+    session_id: str,
     *,
     client: AuthenticatedClient,
-) -> Response[list[ChatSessionListItem]]:
-    """List Sessions
+) -> Response[Any | HTTPValidationError]:
+    """Delete Session
+
+    Args:
+        session_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[list[ChatSessionListItem]]
+        Response[Any | HTTPValidationError]
     """
 
-    kwargs = _get_kwargs()
+    kwargs = _get_kwargs(
+        session_id=session_id,
+    )
 
     response = await client.get_async_httpx_client().request(**kwargs)
 
@@ -113,21 +134,26 @@ async def asyncio_detailed(
 
 
 async def asyncio(
+    session_id: str,
     *,
     client: AuthenticatedClient,
-) -> list[ChatSessionListItem] | None:
-    """List Sessions
+) -> Any | HTTPValidationError | None:
+    """Delete Session
+
+    Args:
+        session_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        list[ChatSessionListItem]
+        Any | HTTPValidationError
     """
 
     return (
         await asyncio_detailed(
+            session_id=session_id,
             client=client,
         )
     ).parsed
