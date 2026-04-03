@@ -7,6 +7,7 @@ from kiln_ai.utils.async_job_runner import (
     AsyncJobRunner,
     AsyncJobRunnerObserver,
     Progress,
+    RetryableError,
 )
 
 
@@ -346,7 +347,7 @@ async def test_async_job_runner_retry_delay():
         nonlocal call_count
         call_count += 1
         if call_count < 3:
-            raise RuntimeError("transient")
+            raise RetryableError("transient")
         return True
 
     runner = AsyncJobRunner(
@@ -399,31 +400,28 @@ async def test_async_job_runner_notify_success_outside_retry_loop():
 
 
 @pytest.mark.asyncio
-async def test_async_job_runner_retry_succeeds_on_second_attempt():
+async def test_async_job_runner_non_retryable_exception_not_retried():
+    """Non-RetryableError exceptions should fail immediately without retry."""
     jobs = [{"id": 1}]
-    call_count = 0
-
-    async def run_job_fn(_: dict[str, int]) -> bool:
-        nonlocal call_count
-        call_count += 1
-        return call_count >= 2
+    run_job_fn = AsyncMock(side_effect=RuntimeError("permanent failure"))
 
     runner = AsyncJobRunner(
         concurrency=1,
         jobs=jobs,
         run_job_fn=run_job_fn,
-        max_retries=1,
+        max_retries=2,
         retry_delay=0,
     )
 
     updates = [progress async for progress in runner.run()]
-    assert updates[-1].complete == 1
-    assert updates[-1].errors == 0
-    assert call_count == 2
+    assert updates[-1].complete == 0
+    assert updates[-1].errors == 1
+    assert run_job_fn.await_count == 1
 
 
 @pytest.mark.asyncio
-async def test_async_job_runner_retry_exhausted_with_false():
+async def test_async_job_runner_false_return_not_retried():
+    """False returns should fail immediately without retry."""
     jobs = [{"id": 1}]
     run_job_fn = AsyncMock(return_value=False)
 
@@ -438,19 +436,19 @@ async def test_async_job_runner_retry_exhausted_with_false():
     updates = [progress async for progress in runner.run()]
     assert updates[-1].complete == 0
     assert updates[-1].errors == 1
-    assert run_job_fn.await_count == 3
+    assert run_job_fn.await_count == 1
 
 
 @pytest.mark.asyncio
-async def test_async_job_runner_retry_exception_then_success():
+async def test_async_job_runner_retry_succeeds_on_second_attempt():
     jobs = [{"id": 1}]
     call_count = 0
 
     async def run_job_fn(_: dict[str, int]) -> bool:
         nonlocal call_count
         call_count += 1
-        if call_count == 1:
-            raise RuntimeError("transient failure")
+        if call_count < 2:
+            raise RetryableError("transient")
         return True
 
     runner = AsyncJobRunner(
@@ -468,9 +466,54 @@ async def test_async_job_runner_retry_exception_then_success():
 
 
 @pytest.mark.asyncio
-async def test_async_job_runner_retry_exception_exhausted():
+async def test_async_job_runner_retry_exhausted_with_retryable_error():
     jobs = [{"id": 1}]
-    run_job_fn = AsyncMock(side_effect=RuntimeError("always fails"))
+    run_job_fn = AsyncMock(side_effect=RetryableError("always transient"))
+
+    runner = AsyncJobRunner(
+        concurrency=1,
+        jobs=jobs,
+        run_job_fn=run_job_fn,
+        max_retries=2,
+        retry_delay=0,
+    )
+
+    updates = [progress async for progress in runner.run()]
+    assert updates[-1].complete == 0
+    assert updates[-1].errors == 1
+    assert run_job_fn.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_async_job_runner_retry_retryable_error_then_success():
+    jobs = [{"id": 1}]
+    call_count = 0
+
+    async def run_job_fn(_: dict[str, int]) -> bool:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RetryableError("transient failure")
+        return True
+
+    runner = AsyncJobRunner(
+        concurrency=1,
+        jobs=jobs,
+        run_job_fn=run_job_fn,
+        max_retries=1,
+        retry_delay=0,
+    )
+
+    updates = [progress async for progress in runner.run()]
+    assert updates[-1].complete == 1
+    assert updates[-1].errors == 0
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_async_job_runner_retry_retryable_error_exhausted():
+    jobs = [{"id": 1}]
+    run_job_fn = AsyncMock(side_effect=RetryableError("always transient"))
 
     runner = AsyncJobRunner(
         concurrency=1,
@@ -511,8 +554,10 @@ async def test_async_job_runner_observers_with_retries():
         job_id = job["id"]
         call_counts[job_id] += 1
         if job_id == 1:
-            return call_counts[job_id] >= 2
-        return False
+            if call_counts[job_id] < 2:
+                raise RetryableError("transient")
+            return True
+        raise RetryableError("always fails")
 
     runner = AsyncJobRunner(
         concurrency=1,
@@ -528,5 +573,5 @@ async def test_async_job_runner_observers_with_retries():
     assert updates[-1].errors == 1
     assert len(observer.on_start_calls) == 2
     assert len(observer.on_success_calls) == 1
-    assert len(observer.on_error_calls) == 0
+    assert len(observer.on_error_calls) == 1
     assert observer.on_success_calls[0]["id"] == 1

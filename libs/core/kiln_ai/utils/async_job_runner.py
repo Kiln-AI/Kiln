@@ -15,6 +15,12 @@ class Progress:
     errors: int
 
 
+class RetryableError(Exception):
+    """Raise from run_job_fn to signal a transient failure that should be retried."""
+
+    pass
+
+
 class AsyncJobRunnerObserver(Generic[T]):
     async def on_error(self, job: T, error: Exception):
         """
@@ -148,18 +154,19 @@ class AsyncJobRunner(Generic[T]):
                 try:
                     result = await run_job_fn(job)
                     last_error = None
-                    if result:
-                        break
-                    if is_last_attempt:
-                        break
-                except Exception as e:
+                    break
+                except RetryableError as e:
                     result = False
                     last_error = e
                     if is_last_attempt:
                         logger.error("Job failed to complete", exc_info=e)
                         break
-                    # sleep before retrying again
                     await asyncio.sleep(self.retry_delay)
+                except Exception as e:
+                    result = False
+                    last_error = e
+                    logger.error("Job failed to complete", exc_info=e)
+                    break
 
             if result:
                 await self.notify_success(job)

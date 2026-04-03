@@ -608,9 +608,9 @@ async def test_run_job_invalid_evaluator(
         "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
         return_value=lambda *args, **kwargs: object(),
     ):
-        success = await mock_eval_runner.run_job(job)
+        with pytest.raises(ValueError):
+            await mock_eval_runner.run_job(job)
 
-    assert success is False
     assert len(mock_eval_config.runs()) == 0
 
 
@@ -640,9 +640,9 @@ async def test_run_job_evaluator_error(
         "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
         return_value=lambda *args, **kwargs: ErrorEvaluator(*args, **kwargs),
     ):
-        success = await mock_eval_runner.run_job(job)
+        with pytest.raises(ValueError):
+            await mock_eval_runner.run_job(job)
 
-    assert success is False
     assert len(mock_eval_config.runs()) == 0
 
 
@@ -825,9 +825,9 @@ async def test_run_job_with_none_trace(
         "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
         return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
     ):
-        success = await mock_eval_runner.run_job(job)
+        with pytest.raises(Exception):
+            await mock_eval_runner.run_job(job)
 
     # For full_trace evals, None trace should fail and not save a run
-    assert success is False
     eval_runs = mock_eval_config.runs()
     assert len(eval_runs) == 0
