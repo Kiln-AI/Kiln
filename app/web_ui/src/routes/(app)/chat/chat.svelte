@@ -326,7 +326,10 @@
     >
       <ChatCostDisclaimer />
       {#if messages.length === 0 && !isLoading}
-        <div class="flex-1 min-h-0 flex flex-col justify-center pb-[var(--welcome-pad)] pt-[calc(var(--welcome-pad)/2)]" style="--welcome-pad: clamp(0px, 10vh, 4rem);">
+        <div
+          class="flex-1 min-h-0 flex flex-col justify-center pb-[var(--welcome-pad)] pt-[calc(var(--welcome-pad)/2)]"
+          style="--welcome-pad: clamp(0px, 10vh, 4rem);"
+        >
           <ChatWelcome on:select={(e) => store.sendMessage(e.detail)} />
         </div>
       {/if}

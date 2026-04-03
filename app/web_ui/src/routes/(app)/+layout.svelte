@@ -109,7 +109,9 @@
 
     <div class="flex flex-grow flex-row">
       <div
-        class="flex-1 min-w-0 min-h-0 flex flex-col rounded-3xl bg-base-100 shadow-md px-4 md:px-12 mb-4 border pt-8 {$noLayoutBottomPadding ? '' : 'pb-8'}"
+        class="flex-1 min-w-0 min-h-0 flex flex-col rounded-3xl bg-base-100 shadow-md px-4 md:px-12 mb-4 border pt-8 {$noLayoutBottomPadding
+          ? ''
+          : 'pb-8'}"
       >
         <slot />
       </div>
