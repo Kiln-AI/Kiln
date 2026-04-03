@@ -28,7 +28,7 @@ from kiln_ai.adapters.model_adapters.test_adapter_stream import (
 from kiln_ai.datamodel import Project, PromptGenerators, Task
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
-from kiln_ai.tools.base_tool import ExternalKilnTool
+from kiln_ai.tools.base_tool import UnmanagedKilnTool
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +120,7 @@ def task_external_sdk_only(tmp_path):
     task = Task(
         name="External SDK Tool Task",
         instruction=(
-            "You must use the sdk_external_multiply tool to compute 3 times 7. "
+            "You must use the sdk_unmanaged_multiply tool to compute 3 times 7. "
             "Do not compute the product yourself. After you receive the tool result, "
             "write one short sentence about a cat that includes the numeric result."
         ),
@@ -507,17 +507,17 @@ def _execute_tool_call(tool_call: dict) -> str:
         result = a * b
     elif name == "divide":
         result = a / b
-    elif name == "sdk_external_multiply":
+    elif name == "sdk_unmanaged_multiply":
         result = a * b
     else:
         raise ValueError(f"Unknown tool: {name}")
     return str(int(result)) if result == int(result) else str(result)
 
 
-def _sdk_external_multiply_tool() -> ExternalKilnTool:
-    return ExternalKilnTool(
-        tool_id="kiln_external::sdk_external_multiply",
-        name="sdk_external_multiply",
+def _sdk_unmanaged_multiply_tool() -> UnmanagedKilnTool:
+    return UnmanagedKilnTool(
+        tool_id="kiln_unmanaged::sdk_unmanaged_multiply",
+        name="sdk_unmanaged_multiply",
         description="Multiply two numbers. Use this tool for all arithmetic.",
         parameters_schema={
             "type": "object",
@@ -580,7 +580,7 @@ def _make_external_only_return_on_tool_call_adapter(
         ),
         base_adapter_config=AdapterConfig(
             return_on_tool_call=True,
-            external_tools=[_sdk_external_multiply_tool()],
+            external_tools=[_sdk_unmanaged_multiply_tool()],
         ),
     )
 
@@ -641,7 +641,7 @@ async def test_invoke_external_tools_only_return_on_tool_call_and_resume(
     thinking_level: str | None,
     task_external_sdk_only: Task,
 ):
-    """invoke() with only external SDK tool definitions (no registry tools): model calls sdk_external_multiply; caller resumes."""
+    """invoke() with only external SDK tool definitions (no registry tools): model calls sdk_unmanaged_multiply; caller resumes."""
     adapter = _make_external_only_return_on_tool_call_adapter(
         task_external_sdk_only, model_id, provider_name, thinking_level
     )
@@ -658,8 +658,8 @@ async def test_invoke_external_tools_only_return_on_tool_call_and_resume(
     assert len(pending_tool_calls) > 0, "Expected at least one pending tool call"
 
     tool_names = [tc["function"]["name"] for tc in pending_tool_calls]
-    assert "sdk_external_multiply" in tool_names, (
-        f"Expected sdk_external_multiply in {tool_names!r}"
+    assert "sdk_unmanaged_multiply" in tool_names, (
+        f"Expected sdk_unmanaged_multiply in {tool_names!r}"
     )
 
     tool_results = [

@@ -9,7 +9,7 @@ from attrs import field as _attrs_field
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
-    from ..models.client_message import ClientMessage
+    from ..models.client_chat_message import ClientChatMessage
 
 
 T = TypeVar("T", bound="ChatRequest")
@@ -19,15 +19,11 @@ T = TypeVar("T", bound="ChatRequest")
 class ChatRequest:
     """
     Attributes:
-        messages (list[ClientMessage]):
-        task_id (None | str | Unset):
-        session_id (None | str | Unset):
+        messages (list[ClientChatMessage]):
         trace_id (None | str | Unset):
     """
 
-    messages: list[ClientMessage]
-    task_id: None | str | Unset = UNSET
-    session_id: None | str | Unset = UNSET
+    messages: list[ClientChatMessage]
     trace_id: None | str | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
@@ -36,18 +32,6 @@ class ChatRequest:
         for messages_item_data in self.messages:
             messages_item = messages_item_data.to_dict()
             messages.append(messages_item)
-
-        task_id: None | str | Unset
-        if isinstance(self.task_id, Unset):
-            task_id = UNSET
-        else:
-            task_id = self.task_id
-
-        session_id: None | str | Unset
-        if isinstance(self.session_id, Unset):
-            session_id = UNSET
-        else:
-            session_id = self.session_id
 
         trace_id: None | str | Unset
         if isinstance(self.trace_id, Unset):
@@ -62,10 +46,6 @@ class ChatRequest:
                 "messages": messages,
             }
         )
-        if task_id is not UNSET:
-            field_dict["task_id"] = task_id
-        if session_id is not UNSET:
-            field_dict["session_id"] = session_id
         if trace_id is not UNSET:
             field_dict["trace_id"] = trace_id
 
@@ -73,33 +53,15 @@ class ChatRequest:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.client_message import ClientMessage
+        from ..models.client_chat_message import ClientChatMessage
 
         d = dict(src_dict)
         messages = []
         _messages = d.pop("messages")
         for messages_item_data in _messages:
-            messages_item = ClientMessage.from_dict(messages_item_data)
+            messages_item = ClientChatMessage.from_dict(messages_item_data)
 
             messages.append(messages_item)
-
-        def _parse_task_id(data: object) -> None | str | Unset:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            return cast(None | str | Unset, data)
-
-        task_id = _parse_task_id(d.pop("task_id", UNSET))
-
-        def _parse_session_id(data: object) -> None | str | Unset:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            return cast(None | str | Unset, data)
-
-        session_id = _parse_session_id(d.pop("session_id", UNSET))
 
         def _parse_trace_id(data: object) -> None | str | Unset:
             if data is None:
@@ -112,8 +74,6 @@ class ChatRequest:
 
         chat_request = cls(
             messages=messages,
-            task_id=task_id,
-            session_id=session_id,
             trace_id=trace_id,
         )
 

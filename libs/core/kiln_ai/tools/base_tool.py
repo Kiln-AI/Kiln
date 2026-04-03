@@ -69,11 +69,11 @@ class KilnToolInterface(ABC):
         pass
 
 
-class ExternalKilnTool(KilnToolInterface):
+class UnmanagedKilnTool(KilnToolInterface):
     """
     Helper for tools passed via ``AdapterConfig.external_tools`` (SDK-injected, not from the
     Kiln tool registry). Use a :class:`~kiln_ai.datamodel.tool_id.ToolId` with prefix
-    ``kiln_external::<id>`` (see :func:`~kiln_ai.datamodel.tool_id.build_kiln_external_tool_id`).
+    ``kiln_unmanaged::<id>`` (see :func:`~kiln_ai.datamodel.tool_id.build_kiln_unmanaged_tool_id`).
     Subclass and override :meth:`run` for in-adapter execution when ``return_on_tool_call`` is
     False; default :meth:`run` raises (use ``return_on_tool_call`` and resume with tool results
     in ``prior_trace``, or provide a subclass that implements :meth:`run`).
@@ -115,7 +115,7 @@ class ExternalKilnTool(KilnToolInterface):
         self, context: ToolCallContext | None = None, **kwargs
     ) -> ToolCallResult:
         raise RuntimeError(
-            "This tool is supplied as an external KilnTool for API tool definitions only; "
+            "This tool is supplied as an unmanaged KilnTool for API tool definitions only; "
             "the Kiln adapter does not execute it when return_on_tool_call is True."
         )
 
