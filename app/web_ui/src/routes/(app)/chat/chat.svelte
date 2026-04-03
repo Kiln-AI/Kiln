@@ -12,6 +12,7 @@
     chatSessionStore,
     type ChatSessionStore,
   } from "$lib/chat/chat_session_store"
+  import ChatWelcome from "./chat_welcome.svelte"
 
   export let store: ChatSessionStore = chatSessionStore
 
@@ -313,9 +314,9 @@
   }
 </script>
 
-<div>
+<div class="flex flex-col flex-1 min-h-0">
   <div
-    class="flex flex-col h-[calc(100vh-14rem)] overflow-hidden w-full md:max-w-3xl mx-auto px-4"
+    class="flex flex-col flex-1 min-h-0 overflow-hidden w-full md:max-w-3xl mx-auto px-1"
   >
     <div
       bind:this={messagesContainer}
@@ -324,12 +325,20 @@
       aria-live="polite"
     >
       <ChatCostDisclaimer />
+      {#if messages.length === 0 && !isLoading}
+        <div
+          class="flex-1 min-h-0 flex flex-col justify-center pb-[var(--welcome-pad)] pt-[calc(var(--welcome-pad)/2)]"
+          style="--welcome-pad: clamp(0px, 10vh, 4rem);"
+        >
+          <ChatWelcome on:select={(e) => store.sendMessage(e.detail)} />
+        </div>
+      {/if}
       {#each messages as message (message.id)}
         <div
           in:fly={{ y: 8, duration: 200 }}
           out:fly={{ y: -4, duration: 150 }}
           class={message.role === "user"
-            ? "rounded-xl bg-base-content/[0.06] px-3 py-2.5 max-w-2xl ml-auto"
+            ? "rounded-xl bg-base-content/[0.06] px-3 py-2.5 max-w-2xl ml-auto text-sm"
             : message.role === "error"
               ? "rounded-lg bg-error/10 border border-error/30 px-3 py-2.5 text-error text-sm"
               : "flex flex-col gap-3"}
@@ -592,7 +601,7 @@
     </div>
 
     <form
-      class="flex-none relative w-full pt-2 pb-3"
+      class="flex-none relative w-full pt-2"
       on:submit|preventDefault={handleSubmit}
     >
       <textarea
