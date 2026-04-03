@@ -137,7 +137,13 @@
 >
   <div class="max-h-[min(60vh,520px)] overflow-y-auto -mx-1 px-1">
     {#if sessionsLoading}
-      <p class="text-sm text-base-content/60 px-2 py-4 text-center">Loading…</p>
+      <div
+        class="flex flex-col items-center justify-center min-h-[120px] px-2 py-8"
+        aria-busy="true"
+        aria-label="Loading conversations"
+      >
+        <div class="loading loading-spinner loading-lg"></div>
+      </div>
     {:else if sessionsError}
       <div class="text-sm text-error px-2 py-4">
         {#if sessionsError.getCode() === CHAT_CLIENT_VERSION_TOO_OLD}
