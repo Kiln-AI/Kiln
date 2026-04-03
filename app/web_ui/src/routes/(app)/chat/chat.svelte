@@ -5,17 +5,22 @@
   import { chat_cost_disclaimer_acknowledged } from "$lib/stores"
   import ChatCostDisclaimer from "./ChatCostDisclaimer.svelte"
   import type { ChatMessage, ChatMessagePart } from "$lib/chat/streaming_chat"
+  import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
   import ChatMarkdown from "$lib/chat/ChatMarkdown.svelte"
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
+  import HistoryIcon from "$lib/ui/icons/history.svelte"
+  import NewChatIcon from "$lib/ui/icons/new_chat_icon.svelte"
   import StopIcon from "$lib/ui/icons/stop_icon.svelte"
   import {
     chatSessionStore,
     type ChatSessionStore,
   } from "$lib/chat/chat_session_store"
   import ChatWelcome from "./chat_welcome.svelte"
+  import ChatHistory from "./chat_history.svelte"
 
   export let store: ChatSessionStore = chatSessionStore
 
+  let chatHistory: { open: () => void }
   let input = ""
   let messagesContainer: HTMLDivElement | null = null
   let messagesEndRef: HTMLDivElement | null = null
@@ -301,6 +306,19 @@
     store.stop()
   }
 
+  function onChatHistoryApply(
+    e: CustomEvent<{
+      messages: ChatMessage[]
+      continuationTraceId: string
+    }>,
+  ) {
+    store.loadSession(e.detail.messages, e.detail.continuationTraceId)
+    tick().then(() => {
+      messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })
+      textareaRef?.focus({ preventScroll: true })
+    })
+  }
+
   function handleSubmit(e?: Event) {
     if (e) e.preventDefault()
     const text = input.trim()
@@ -318,6 +336,31 @@
   <div
     class="flex flex-col flex-1 min-h-0 overflow-hidden w-full md:max-w-3xl mx-auto px-1"
   >
+    <div class="flex shrink-0 justify-end gap-1 pb-1">
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost"
+        on:click={() => store.reset()}
+        aria-label="New chat"
+        title="New chat"
+      >
+        <span class="size-5 block"><NewChatIcon /></span>
+      </button>
+      <button
+        type="button"
+        class="btn btn-sm btn-circle btn-ghost"
+        on:click={() => chatHistory.open()}
+        aria-label="Chat history"
+        title="Chat history"
+      >
+        <span class="size-5 block"><HistoryIcon /></span>
+      </button>
+    </div>
+    <ChatHistory
+      bind:this={chatHistory}
+      onBeforeOpen={stop}
+      on:apply={onChatHistoryApply}
+    />
     <div
       bind:this={messagesContainer}
       class="chat-messages-scroll flex-1 min-h-0 flex flex-col gap-4 overflow-y-auto overflow-x-hidden"
@@ -344,17 +387,30 @@
               : "flex flex-col gap-3"}
         >
           {#if message.role === "error"}
-            <div class="flex items-center justify-between gap-3">
-              <span>{message.content}</span>
-              <button
-                type="button"
-                class="shrink-0 rounded-md bg-error/20 px-2 py-1 text-xs font-medium hover:bg-error/30 transition-colors"
-                on:click={retryLastRequest}
-                disabled={isLoading}
-              >
-                Retry
-              </button>
-            </div>
+            {#if message.errorCode === CHAT_CLIENT_VERSION_TOO_OLD}
+              <div class="flex items-center gap-3">
+                <span
+                  >A newer version of Kiln is required.
+                  <a
+                    href="/settings/check_for_update"
+                    class="underline font-medium hover:text-error/80"
+                    >Check for updates</a
+                  ></span
+                >
+              </div>
+            {:else}
+              <div class="flex items-center justify-between gap-3">
+                <span>{message.content}</span>
+                <button
+                  type="button"
+                  class="shrink-0 rounded-md bg-error/20 px-2 py-1 text-xs font-medium hover:bg-error/30 transition-colors"
+                  on:click={retryLastRequest}
+                  disabled={isLoading}
+                >
+                  Retry
+                </button>
+              </div>
+            {/if}
           {:else}
             <div class="flex flex-col gap-3">
               {#if message.parts && message.parts.length > 0}
