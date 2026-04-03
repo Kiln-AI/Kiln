@@ -2633,7 +2633,11 @@ export interface paths {
         get: operations["get_chat_session_api_chat_sessions__session_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete chat session
+         * @description Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{session_id}``.
+         */
+        delete: operations["delete_chat_session_api_chat_sessions__session_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3157,6 +3161,8 @@ export interface components {
             id: string;
             /** Title */
             title?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
         };
         /** ChatSessionSnapshot */
         ChatSessionSnapshot: {
@@ -14857,6 +14863,36 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ChatSessionSnapshot"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_chat_session_api_chat_sessions__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Chat session id to delete. */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

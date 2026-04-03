@@ -1,8 +1,10 @@
 import json
+from datetime import datetime
 from http import HTTPStatus
 from typing import Any, NoReturn
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.chat import (
+    delete_session_v1_chat_sessions_session_id_delete,
     get_session_v1_chat_sessions_session_id_get,
     list_sessions_v1_chat_sessions_get,
 )
@@ -48,6 +50,7 @@ class ChatSessionListItem(BaseModel):
 
     id: str
     title: str | None = None
+    updated_at: datetime | None = None
 
 
 class TraceToolCallFunction(BaseModel):
@@ -177,6 +180,28 @@ def connect_chat_api(app: FastAPI) -> None:
         if detailed.status_code == HTTPStatus.OK and detailed.parsed is not None:
             return ChatSessionSnapshot.model_validate(detailed.parsed.to_dict())
         _raise_upstream_error(detailed)
+
+    @app.delete(
+        "/api/chat/sessions/{session_id}",
+        summary="Delete chat session",
+        tags=["Copilot"],
+        openapi_extra=DENY_AGENT,
+        status_code=204,
+    )
+    async def delete_chat_session(
+        session_id: str = Path(..., description="Chat session id to delete."),
+    ) -> None:
+        """Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{session_id}``."""
+        api_key = get_copilot_api_key()
+        client = get_authenticated_client(api_key)
+        detailed = (
+            await delete_session_v1_chat_sessions_session_id_delete.asyncio_detailed(
+                session_id=session_id,
+                client=client,
+            )
+        )
+        if detailed.status_code != HTTPStatus.NO_CONTENT:
+            _raise_upstream_error(detailed)
 
     @app.post(
         "/api/chat",
