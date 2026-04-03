@@ -41,10 +41,7 @@
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
-  $: agentInfo.set({
-    name: "Compare Specs",
-    description: `Compare specs for project ID ${project_id}, task ID ${task_id}. Side-by-side comparison of spec results.`,
-  })
+  // agentInfo.set is below, after current_task_run_configs and selectedModels are defined
   $: fromOptimize = $page.url.searchParams.get("from") === "optimize"
   $: breadcrumbs = fromOptimize
     ? [{ label: "Optimize", href: `/optimize/${project_id}/${task_id}` }]
@@ -413,6 +410,17 @@
     $run_configs_by_task_composite_id[
       get_task_composite_id(project_id, task_id)
     ] || null
+
+  $: selectedRunConfigNames = selectedModels
+    .filter(
+      (id): id is string => id !== null && id !== "__create_new_run_config__",
+    )
+    .map((id) => current_task_run_configs?.find((c) => c.id === id)?.name)
+    .filter((name): name is string => !!name)
+  $: agentInfo.set({
+    name: "Compare Specs",
+    description: `Compare specs for project ID ${project_id}, task ID ${task_id}. Side-by-side comparison of spec results. ${selectedRunConfigNames.length > 0 ? `The following run configs are selected: ${selectedRunConfigNames.join(", ")}.` : "No run configs are selected."}`,
+  })
 
   let target_new_run_config_col: number | null = null
   let create_new_run_config_dialog: CreateNewRunConfigDialog | null = null

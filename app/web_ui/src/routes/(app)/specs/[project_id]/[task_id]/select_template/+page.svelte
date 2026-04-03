@@ -18,7 +18,7 @@
   $: task_id = $page.params.task_id!
   $: agentInfo.set({
     name: "Select Eval Template",
-    description: `Select an eval template for project ID ${project_id}, task ID ${task_id}. Choose from available eval workflow templates.`,
+    description: `Select an eval template as part of the eval creation process for project ID ${project_id}, task ID ${task_id}. Choose from available eval workflow templates.`,
   })
 
   let current_params = new URLSearchParams()

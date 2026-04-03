@@ -52,10 +52,19 @@
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
 
-  $: agentInfo.set({
-    name: "Dataset",
-    description: `Dataset listing page for project ID ${project_id}, task ID ${task_id}. Shows all runs with sorting, filtering by tags, selection, and pagination.`,
-  })
+  $: {
+    let desc = `Dataset listing page for project ID ${project_id}, task ID ${task_id}.`
+    if (filter_tags.length > 0) {
+      desc += ` Filtered by tags: ${filter_tags.join(", ")}.`
+    }
+    if (sortColumn !== "created_at" || sortDirection !== "desc") {
+      desc += ` Sorted by ${sortColumn} ${sortDirection}.`
+    }
+    agentInfo.set({
+      name: "Dataset",
+      description: desc,
+    })
+  }
 
   const columns = [
     { key: "rating", label: "Rating" },

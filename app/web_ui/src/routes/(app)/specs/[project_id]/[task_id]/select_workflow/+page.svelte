@@ -12,7 +12,7 @@
   $: task_id = $page.params.task_id!
   $: agentInfo.set({
     name: "Select Eval Workflow",
-    description: `Select an eval workflow for project ID ${project_id}, task ID ${task_id}. Choose between guided and advanced eval creation.`,
+    description: `Select an eval workflow as part of the eval creation process for project ID ${project_id}, task ID ${task_id}. Choose between guided and advanced eval creation.`,
   })
 
   let loading = true

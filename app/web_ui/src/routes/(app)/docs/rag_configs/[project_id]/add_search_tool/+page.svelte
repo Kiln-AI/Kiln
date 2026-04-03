@@ -21,7 +21,7 @@
   $: project_id = $page.params.project_id!
   $: agentInfo.set({
     name: "Add Search Tool",
-    description: `Add a new RAG search tool to project ID ${project_id}. Choose from available search tool templates.`,
+    description: `Add a new RAG search tool to project ID ${project_id}. Choose from available search tool templates or select custom.`,
   })
 
   let selected_template_id: string | null = null

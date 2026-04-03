@@ -20,11 +20,22 @@
   import { agentInfo } from "$lib/agent"
   $: project_id = $ui_state.current_project_id
   $: task_id = $ui_state.current_task_id
-  $: agentInfo.set({
-    name: "Models",
-    description:
-      "Browse and compare available AI models. Filter by provider and capabilities, view pricing, and create run configurations.",
-  })
+  $: {
+    let desc = "Browse and compare available AI models."
+    if (searchQuery) {
+      desc += ` Searching for '${searchQuery}'.`
+    }
+    if (selectedProvider) {
+      desc += ` Filtered to provider: ${selectedProvider}.`
+    }
+    if (selectedCapability !== "featured") {
+      desc += ` Filtered to capability: ${selectedCapability}.`
+    }
+    agentInfo.set({
+      name: "Models",
+      description: desc,
+    })
+  }
 
   const CAPABILITY_TOOLTIP_MESSAGES = {
     suggested_for_data_gen:

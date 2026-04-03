@@ -56,10 +56,19 @@
   }
 
   $: project_id = $page.params.project_id!
-  $: agentInfo.set({
-    name: "Document Library",
-    description: `Document library for project ID ${project_id}. Lists uploaded documents with sorting, filtering, tagging, and bulk operations.`,
-  })
+  $: {
+    let desc = `Document library for project ID ${project_id}.`
+    if (filter_tags.length > 0) {
+      desc += ` Filtered by tags: ${filter_tags.join(", ")}.`
+    }
+    if (sortColumn !== "created_at" || sortDirection !== "desc") {
+      desc += ` Sorted by ${sortColumn} ${sortDirection}.`
+    }
+    agentInfo.set({
+      name: "Document Library",
+      description: desc,
+    })
+  }
 
   const columns = [
     { key: "kind", label: "Type" },
