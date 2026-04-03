@@ -26,7 +26,7 @@ from kiln_ai.datamodel.run_config import (
     ToolsRunConfig,
 )
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
-from kiln_ai.tools.base_tool import ExternalKilnTool
+from kiln_ai.tools.base_tool import UnmanagedKilnTool
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
     DivideTool,
@@ -1794,9 +1794,9 @@ async def test_structured_output_with_return_on_tool_call_and_resume(
     assert final_msg.get("content"), "Final message must have non-empty content"
 
 
-def _lookup_weather_external_tool(name: str = "lookup_weather") -> ExternalKilnTool:
-    return ExternalKilnTool(
-        tool_id="kiln_external::lookup_weather",
+def _lookup_weather_unmanaged_tool(name: str = "lookup_weather") -> UnmanagedKilnTool:
+    return UnmanagedKilnTool(
+        tool_id="kiln_unmanaged::lookup_weather",
         name=name,
         description="Look up weather for a location",
         parameters_schema={
@@ -1809,10 +1809,10 @@ def _lookup_weather_external_tool(name: str = "lookup_weather") -> ExternalKilnT
     )
 
 
-def _sdk_external_multiply_tool() -> ExternalKilnTool:
-    return ExternalKilnTool(
-        tool_id="kiln_external::sdk_external_multiply",
-        name="sdk_external_multiply",
+def _sdk_unmanaged_multiply_tool() -> UnmanagedKilnTool:
+    return UnmanagedKilnTool(
+        tool_id="kiln_unmanaged::sdk_unmanaged_multiply",
+        name="sdk_unmanaged_multiply",
         description="Multiply two numbers. Use for all arithmetic.",
         parameters_schema={
             "type": "object",
@@ -1847,9 +1847,9 @@ async def test_litellm_tools_raises_when_duplicate_external_tool_names(
         base_adapter_config=AdapterConfig(
             return_on_tool_call=True,
             external_tools=[
-                _lookup_weather_external_tool("dup"),
-                ExternalKilnTool(
-                    tool_id="kiln_external::lookup_weather_2",
+                _lookup_weather_unmanaged_tool("dup"),
+                UnmanagedKilnTool(
+                    tool_id="kiln_unmanaged::lookup_weather_2",
                     name="dup",
                     description="other",
                     parameters_schema={
@@ -1872,7 +1872,7 @@ async def test_litellm_tools_merges_external_definitions(mock_task, config):
         kiln_task=mock_task,
         base_adapter_config=AdapterConfig(
             return_on_tool_call=True,
-            external_tools=[_lookup_weather_external_tool()],
+            external_tools=[_lookup_weather_unmanaged_tool()],
         ),
     )
     with patch.object(adapter, "available_tools", return_value=[]):
@@ -1897,7 +1897,7 @@ async def test_litellm_tools_raises_when_external_collides_with_registry(
         kiln_task=mock_task,
         base_adapter_config=AdapterConfig(
             return_on_tool_call=True,
-            external_tools=[_lookup_weather_external_tool("add")],
+            external_tools=[_lookup_weather_unmanaged_tool("add")],
         ),
     )
     with pytest.raises(ValueError, match="Duplicate tool name"):
@@ -1911,7 +1911,7 @@ async def test_build_completion_kwargs_includes_external_tools(mock_task, config
         kiln_task=mock_task,
         base_adapter_config=AdapterConfig(
             return_on_tool_call=True,
-            external_tools=[_lookup_weather_external_tool()],
+            external_tools=[_lookup_weather_unmanaged_tool()],
         ),
     )
     mock_provider = Mock()
@@ -1942,7 +1942,7 @@ async def test_litellm_tools_merges_registry_then_external_order(
         kiln_task=mock_task,
         base_adapter_config=AdapterConfig(
             return_on_tool_call=True,
-            external_tools=[_lookup_weather_external_tool("extra_client_tool")],
+            external_tools=[_lookup_weather_unmanaged_tool("extra_client_tool")],
         ),
     )
     with patch.object(adapter, "available_tools", return_value=mock_math_tools):
@@ -1955,7 +1955,7 @@ async def test_litellm_tools_merges_registry_then_external_order(
 async def test_litellm_tools_external_toolcall_definitions_are_fresh_each_call(
     mock_task, config
 ):
-    ext = _lookup_weather_external_tool()
+    ext = _lookup_weather_unmanaged_tool()
     adapter = LiteLlmAdapter(
         config=config,
         kiln_task=mock_task,
@@ -1984,7 +1984,7 @@ async def test_build_completion_kwargs_json_schema_allows_external_with_registry
         kiln_task=mock_task,
         base_adapter_config=AdapterConfig(
             return_on_tool_call=True,
-            external_tools=[_lookup_weather_external_tool("client_only_tool")],
+            external_tools=[_lookup_weather_unmanaged_tool("client_only_tool")],
         ),
     )
     mock_provider = Mock()
@@ -2014,7 +2014,7 @@ async def test_build_completion_kwargs_json_schema_allows_external_with_registry
 async def test_external_tools_only_return_on_tool_call_and_resume_mocked(
     mock_task,
 ):
-    """External-only KilnTool instances (no registry tools): interrupt then resume, fully mocked."""
+    """Unmanaged-only KilnTool instances (no registry tools): interrupt then resume, fully mocked."""
     config = LiteLlmConfig(
         run_config_properties=KilnAgentRunConfigProperties(
             model_name="test-model",
@@ -2030,14 +2030,14 @@ async def test_external_tools_only_return_on_tool_call_and_resume_mocked(
         kiln_task=mock_task,
         base_adapter_config=AdapterConfig(
             return_on_tool_call=True,
-            external_tools=[_sdk_external_multiply_tool()],
+            external_tools=[_sdk_unmanaged_multiply_tool()],
         ),
     )
 
     tool_call = ChatCompletionMessageToolCall(
-        id="call_sdk_external_multiply",
+        id="call_sdk_unmanaged_multiply",
         type="function",
-        function=Function(name="sdk_external_multiply", arguments='{"a": 3, "b": 7}'),
+        function=Function(name="sdk_unmanaged_multiply", arguments='{"a": 3, "b": 7}'),
     )
 
     call_count = 0
@@ -2055,10 +2055,10 @@ async def test_external_tools_only_return_on_tool_call_and_resume_mocked(
                     "content": None,
                     "tool_calls": [
                         {
-                            "id": "call_sdk_external_multiply",
+                            "id": "call_sdk_unmanaged_multiply",
                             "function": {
                                 "arguments": '{"a": 3, "b": 7}',
-                                "name": "sdk_external_multiply",
+                                "name": "sdk_unmanaged_multiply",
                             },
                             "type": "function",
                         }
@@ -2093,12 +2093,12 @@ async def test_external_tools_only_return_on_tool_call_and_resume_mocked(
     assert task_run.trace is not None
     last = task_run.trace[-1]
     assert last.get("tool_calls") is not None
-    assert last["tool_calls"][0]["function"]["name"] == "sdk_external_multiply"
+    assert last["tool_calls"][0]["function"]["name"] == "sdk_unmanaged_multiply"
 
     with patch.object(adapter, "available_tools", return_value=[]):
         task_run2 = await adapter.invoke(
             input={
-                "tool_call_id": "call_sdk_external_multiply",
+                "tool_call_id": "call_sdk_unmanaged_multiply",
                 "content": "21",
             },
             prior_trace=task_run.trace,

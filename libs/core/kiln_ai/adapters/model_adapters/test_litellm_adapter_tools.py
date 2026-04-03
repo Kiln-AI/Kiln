@@ -20,7 +20,7 @@ from kiln_ai.datamodel import PromptId
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.tool_id import ToolId
-from kiln_ai.tools.base_tool import ExternalKilnTool, ToolCallContext, ToolCallResult
+from kiln_ai.tools.base_tool import ToolCallContext, ToolCallResult, UnmanagedKilnTool
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
     DivideTool,
@@ -972,7 +972,7 @@ async def test_process_tool_calls_normal_tool_success(tmp_path):
     }
 
 
-class _RunnableExternalKilnToolForTest(ExternalKilnTool):
+class _RunnableUnmanagedKilnToolForTest(UnmanagedKilnTool):
     async def run(
         self, context: ToolCallContext | None = None, **kwargs
     ) -> ToolCallResult:
@@ -982,8 +982,8 @@ class _RunnableExternalKilnToolForTest(ExternalKilnTool):
 async def test_process_tool_calls_external_tool_success(tmp_path):
     """process_tool_calls resolves and runs tools from AdapterConfig.external_tools."""
     task = build_test_task(tmp_path)
-    ext = _RunnableExternalKilnToolForTest(
-        tool_id="kiln_external::proc_test",
+    ext = _RunnableUnmanagedKilnToolForTest(
+        tool_id="kiln_unmanaged::proc_test",
         name="external_do",
         description="test external",
         parameters_schema={

@@ -1,10 +1,10 @@
 import pytest
 
 from kiln_ai.tools.base_tool import (
-    ExternalKilnTool,
     KilnTool,
     KilnToolInterface,
     ToolCallResult,
+    UnmanagedKilnTool,
 )
 
 
@@ -17,12 +17,12 @@ class TestKilnToolInterface:
             KilnToolInterface()  # type: ignore
 
 
-class TestExternalKilnTool:
-    """Tests for ExternalKilnTool (SDK-injected tools)."""
+class TestUnmanagedKilnTool:
+    """Tests for UnmanagedKilnTool (SDK-injected tools)."""
 
     async def test_toolcall_definition(self):
-        tool = ExternalKilnTool(
-            tool_id="kiln_external::my_tool",
+        tool = UnmanagedKilnTool(
+            tool_id="kiln_unmanaged::my_tool",
             name="my_fn",
             description="Does something",
             parameters_schema={
@@ -31,15 +31,15 @@ class TestExternalKilnTool:
                 "required": ["q"],
             },
         )
-        assert await tool.id() == "kiln_external::my_tool"
+        assert await tool.id() == "kiln_unmanaged::my_tool"
         assert await tool.name() == "my_fn"
         defn = await tool.toolcall_definition()
         assert defn["type"] == "function"
         assert defn["function"]["name"] == "my_fn"
 
     async def test_run_raises(self):
-        tool = ExternalKilnTool(
-            tool_id="kiln_external::my_tool",
+        tool = UnmanagedKilnTool(
+            tool_id="kiln_unmanaged::my_tool",
             name="my_fn",
             description="d",
             parameters_schema={
@@ -48,7 +48,7 @@ class TestExternalKilnTool:
                 "required": ["q"],
             },
         )
-        with pytest.raises(RuntimeError, match="external KilnTool"):
+        with pytest.raises(RuntimeError, match="unmanaged KilnTool"):
             await tool.run()
 
 

@@ -17,7 +17,7 @@ Tool IDs can be one of:
 - A remote MCP tool: mcp::remote::<server_id>::<tool_name>
 - A local MCP tool: mcp::local::<server_id>::<tool_name>
 - A Kiln task tool: kiln_task::<server_id>
-- An SDK / adapter-injected external tool: kiln_external::<id> (single slug, not from the registry)
+- An SDK / adapter-injected unmanaged tool: kiln_unmanaged::<id> (single slug, not from the registry)
 - More coming soon like kiln_project_tool::rag::RAG_CONFIG_ID
 """
 
@@ -37,35 +37,35 @@ RAG_TOOL_ID_PREFIX = "kiln_tool::rag::"
 MCP_LOCAL_TOOL_ID_PREFIX = "mcp::local::"
 KILN_TASK_TOOL_ID_PREFIX = "kiln_task::"
 SKILL_TOOL_ID_PREFIX = "kiln_tool::skill::"
-KILN_EXTERNAL_TOOL_ID_PREFIX = "kiln_external::"
+KILN_UNMANAGED_TOOL_ID_PREFIX = "kiln_unmanaged::"
 
 
-def kiln_external_tool_slug_from_id(id: str) -> str:
+def kiln_unmanaged_tool_slug_from_id(id: str) -> str:
     """
-    Parse ``kiln_external::<slug>`` and return ``slug``.
+    Parse ``kiln_unmanaged::<slug>`` and return ``slug``.
 
     Use a unique slug per tool (e.g. ``model_info``, ``myapp_get_user``). Not used by ``tool_from_id``.
     """
     parts = id.split("::")
-    if len(parts) != 2 or parts[0] != "kiln_external":
+    if len(parts) != 2 or parts[0] != "kiln_unmanaged":
         raise ValueError(
-            f"Invalid kiln_external tool ID: {id}. Expected format: 'kiln_external::<slug>'."
+            f"Invalid kiln_unmanaged tool ID: {id}. Expected format: 'kiln_unmanaged::<slug>'."
         )
     slug = parts[1]
     if not slug.strip():
         raise ValueError(
-            f"Invalid kiln_external tool ID: {id}. Expected format: 'kiln_external::<slug>'."
+            f"Invalid kiln_unmanaged tool ID: {id}. Expected format: 'kiln_unmanaged::<slug>'."
         )
     return slug
 
 
-def build_kiln_external_tool_id(unique_id: str) -> str:
-    """Construct a tool ID for :class:`kiln_ai.tools.base_tool.ExternalKilnTool` and similar."""
+def build_kiln_unmanaged_tool_id(unique_id: str) -> str:
+    """Construct a tool ID for :class:`kiln_ai.tools.base_tool.UnmanagedKilnTool` and similar."""
     if not unique_id.strip():
         raise ValueError("unique_id must be non-empty")
     if "::" in unique_id:
         raise ValueError("unique_id must not contain '::'")
-    return f"{KILN_EXTERNAL_TOOL_ID_PREFIX}{unique_id}"
+    return f"{KILN_UNMANAGED_TOOL_ID_PREFIX}{unique_id}"
 
 
 def _check_tool_id(id: str) -> str:
@@ -125,8 +125,8 @@ def _check_tool_id(id: str) -> str:
         return id
 
     # SDK / AdapterConfig.external_tools — not resolved by tool_from_id
-    if id.startswith(KILN_EXTERNAL_TOOL_ID_PREFIX):
-        kiln_external_tool_slug_from_id(id)
+    if id.startswith(KILN_UNMANAGED_TOOL_ID_PREFIX):
+        kiln_unmanaged_tool_slug_from_id(id)
         return id
 
     raise ValueError(f"Invalid tool ID: {id}")
