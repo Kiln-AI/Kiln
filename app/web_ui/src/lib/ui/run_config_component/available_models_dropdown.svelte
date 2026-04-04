@@ -47,6 +47,7 @@
     ...default_model_dropdown_settings,
     ...settings,
   }
+  $: confirm_model_select(model)
   $: $ui_state.selected_model = model
   $: model_options = format_model_options(
     $available_models || [],
@@ -111,8 +112,6 @@
     }
     previous_model = selected
   }
-
-  $: confirm_model_select(model)
 
   function format_model_options(
     providers: AvailableModels[],
