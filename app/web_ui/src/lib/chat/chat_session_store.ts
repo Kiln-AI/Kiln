@@ -219,7 +219,7 @@ export function createChatSessionStore(
     if (!get(chat_cost_disclaimer_acknowledged)) {
       if (!onConsentNeeded) return false
       const approved = await onConsentNeeded()
-      if (!approved) return false
+      if (!approved || status !== "ready") return false
     }
     beginStreaming(trimmed)
     return true

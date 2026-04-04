@@ -4,26 +4,32 @@
 
   let dialog: Dialog
 
+  let pendingResolve: ((approved: boolean) => void) | null = null
+  let pendingPromise: Promise<boolean> | null = null
+
   export function prompt(): Promise<boolean> {
-    return new Promise<boolean>((resolve) => {
+    if (pendingPromise) return pendingPromise
+    pendingPromise = new Promise<boolean>((resolve) => {
       pendingResolve = resolve
       dialog.show()
     })
+    return pendingPromise
   }
-
-  let pendingResolve: ((approved: boolean) => void) | null = null
 
   function approve(): boolean {
     chat_cost_disclaimer_acknowledged.set(true)
     const resolve = pendingResolve
     pendingResolve = null
+    pendingPromise = null
     resolve?.(true)
     return true // close dialog
   }
 
   function dismiss() {
-    pendingResolve?.(false)
+    const resolve = pendingResolve
     pendingResolve = null
+    pendingPromise = null
+    resolve?.(false)
   }
 
   const items: { icon: string; title: string; description: string }[] = [
