@@ -1,8 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from "svelte"
   import { fly } from "svelte/transition"
-  import { browser } from "$app/environment"
-  import { chat_cost_disclaimer_acknowledged } from "$lib/stores"
   import ChatCostDisclaimer from "./ChatCostDisclaimer.svelte"
   import type { ChatMessage, ChatMessagePart } from "$lib/chat/streaming_chat"
   import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
@@ -20,6 +18,8 @@
 
   export let store: ChatSessionStore = chatSessionStore
 
+  let costDisclaimer: ChatCostDisclaimer
+  $: store.onConsentNeeded = () => costDisclaimer.prompt()
   let chatHistory: { open: () => void }
   let input = ""
   let messagesContainer: HTMLDivElement | null = null
@@ -38,8 +38,7 @@
   $: collapsedPartKeys = $store.collapsedPartKeys
 
   $: isLoading = status === "submitted" || status === "streaming"
-  $: chatAcknowledged = $chat_cost_disclaimer_acknowledged
-  $: inputDisabled = isLoading || (browser && !chatAcknowledged)
+  $: inputDisabled = isLoading
 
   let prevIsLoading = false
   $: {
@@ -319,11 +318,12 @@
     })
   }
 
-  function handleSubmit(e?: Event) {
+  async function handleSubmit(e?: Event) {
     if (e) e.preventDefault()
     const text = input.trim()
-    if (!text || isLoading || (browser && !chatAcknowledged)) return
-    store.sendMessage(text)
+    if (!text || isLoading) return
+    const sent = await store.sendMessage(text)
+    if (!sent) return
     input = ""
     setTimeout(() => {
       adjustTextareaHeight()
@@ -367,13 +367,12 @@
       role="log"
       aria-live="polite"
     >
-      <ChatCostDisclaimer />
       {#if messages.length === 0 && !isLoading}
         <div
           class="flex-1 min-h-0 flex flex-col justify-center pb-[var(--welcome-pad)] pt-[calc(var(--welcome-pad)/2)]"
           style="--welcome-pad: clamp(0px, 10vh, 4rem);"
         >
-          <ChatWelcome on:select={(e) => store.sendMessage(e.detail)} />
+          <ChatWelcome on:select={async (e) => await store.sendMessage(e.detail)} />
         </div>
       {/if}
       {#each messages as message (message.id)}
@@ -692,6 +691,8 @@
     </form>
   </div>
 </div>
+
+<ChatCostDisclaimer bind:this={costDisclaimer} />
 
 <style>
   .chat-messages-scroll::-webkit-scrollbar {
