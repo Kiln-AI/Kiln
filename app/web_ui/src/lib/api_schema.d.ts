@@ -8051,6 +8051,11 @@ export interface components {
              * @description Instructions for fixing the output. Should define what is wrong, and how to fix it. Will be used by models for both generating a fixed output, and evaluating future models.
              */
             repair_instructions?: string | null;
+            /**
+             * User Feedback
+             * @description User feedback from the spec review process explaining why the output passes or fails a requirement.
+             */
+            user_feedback?: string | null;
             /** @description An version of the output with issues fixed. This must be a 'fixed' version of the existing output, and not an entirely new output. If you wish to generate an ideal curatorial output for this task unrelated to this output, generate a new TaskOutput with type 'human' instead of using this field. */
             repaired_output?: components["schemas"]["TaskOutput-Input"] | null;
             /**
@@ -8128,6 +8133,11 @@ export interface components {
              * @description Instructions for fixing the output. Should define what is wrong, and how to fix it. Will be used by models for both generating a fixed output, and evaluating future models.
              */
             repair_instructions?: string | null;
+            /**
+             * User Feedback
+             * @description User feedback from the spec review process explaining why the output passes or fails a requirement.
+             */
+            user_feedback?: string | null;
             /** @description An version of the output with issues fixed. This must be a 'fixed' version of the existing output, and not an entirely new output. If you wish to generate an ideal curatorial output for this task unrelated to this output, generate a new TaskOutput with type 'human' instead of using this field. */
             repaired_output?: components["schemas"]["TaskOutput-Output"] | null;
             /**
