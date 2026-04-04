@@ -53,7 +53,7 @@
   $: spec_id = $page.params.spec_id!
   $: agentInfo.set({
     name: "Spec Detail",
-    description: `Spec detail for spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Shows spec requirements, evals, and test cases.`,
+    description: `Spec detail for spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Spec name: ${spec?.name ?? "[loading]"}. Shows spec requirements, evals, and test cases.`,
   })
 
   let spec: Spec | null = null

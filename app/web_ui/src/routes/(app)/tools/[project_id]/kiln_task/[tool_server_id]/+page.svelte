@@ -39,7 +39,7 @@
   $: tool_server_id = $page.params.tool_server_id!
   $: agentInfo.set({
     name: "Kiln Task Tool Detail",
-    description: `Kiln task tool detail for tool server ID ${tool_server_id} in project ID ${project_id}. Shows task tool configuration and run settings.`,
+    description: `Kiln task tool detail for tool server ID ${tool_server_id} in project ID ${project_id}. Server name: ${tool_server?.name ?? "[loading]"}. Shows task tool configuration and run settings.`,
   })
   $: is_archived = tool_server
     ? (tool_server.properties as KilnTaskServerProperties).is_archived

@@ -19,7 +19,7 @@
   $: finetune_id = $page.params.finetune_id!
   $: agentInfo.set({
     name: "Fine-Tune Detail",
-    description: `Fine-tune job detail for finetune ID ${finetune_id} in project ID ${project_id}, task ID ${task_id}. Shows job status, configuration, and results.`,
+    description: `Fine-tune job detail for finetune ID ${finetune_id} in project ID ${project_id}, task ID ${task_id}. Finetune name: ${finetune?.finetune?.name ?? "[loading]"}. Shows job status, configuration, and results.`,
   })
   $: running =
     finetune?.status.status === "pending" ||
