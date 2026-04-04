@@ -19,6 +19,9 @@ dependencies = [
 [tool.hatch.build.targets.wheel]
 only-include = ["__init__.py"]
 
+[tool.uv]
+exclude-newer = "7 days"
+
 [tool.uv.sources]
 kiln-server = { workspace = true }
 
