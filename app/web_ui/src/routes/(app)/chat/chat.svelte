@@ -8,8 +8,6 @@
   import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
   import ChatMarkdown from "$lib/chat/ChatMarkdown.svelte"
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
-  import HistoryIcon from "$lib/ui/icons/history.svelte"
-  import NewChatIcon from "$lib/ui/icons/new_chat_icon.svelte"
   import StopIcon from "$lib/ui/icons/stop_icon.svelte"
   import {
     chatSessionStore,
@@ -33,7 +31,9 @@
   $: toolApprovalWaiter = $store.toolApprovalWaiter
   $: toolApprovalPicks = $store.toolApprovalPicks
 
+  export let hasMessages = false
   $: messages = $store.messages
+  $: hasMessages = messages.length > 0
   $: status = $store.status
   $: collapsedPartKeys = $store.collapsedPartKeys
 
@@ -256,7 +256,9 @@
     const container = messagesContainer
     const end = messagesEndRef
     if (container && end) {
-      end.scrollIntoView({ block: "end", behavior: "auto" })
+      if (messages.length > 0) {
+        end.scrollIntoView({ block: "end", behavior: "auto" })
+      }
       scrollObserver = new MutationObserver(() => {
         if (!suppressAutoScroll) {
           end.scrollIntoView({ block: "end", behavior: "auto" })
@@ -319,6 +321,14 @@
     })
   }
 
+  export function newChat() {
+    store.reset()
+  }
+
+  export function openHistory() {
+    chatHistory.open()
+  }
+
   function handleSubmit(e?: Event) {
     if (e) e.preventDefault()
     const text = input.trim()
@@ -336,26 +346,6 @@
   <div
     class="flex flex-col flex-1 min-h-0 overflow-hidden w-full md:max-w-3xl mx-auto px-1"
   >
-    <div class="flex shrink-0 justify-end gap-1 pb-1">
-      <button
-        type="button"
-        class="btn btn-sm btn-circle btn-ghost"
-        on:click={() => store.reset()}
-        aria-label="New chat"
-        title="New chat"
-      >
-        <span class="size-5 block"><NewChatIcon /></span>
-      </button>
-      <button
-        type="button"
-        class="btn btn-sm btn-circle btn-ghost"
-        on:click={() => chatHistory.open()}
-        aria-label="Chat history"
-        title="Chat history"
-      >
-        <span class="size-5 block"><HistoryIcon /></span>
-      </button>
-    </div>
     <ChatHistory
       bind:this={chatHistory}
       onBeforeOpen={stop}
@@ -369,12 +359,9 @@
     >
       <ChatCostDisclaimer />
       {#if messages.length === 0 && !isLoading}
-        <div
-          class="flex-1 min-h-0 flex flex-col justify-center pb-[var(--welcome-pad)] pt-[calc(var(--welcome-pad)/2)]"
-          style="--welcome-pad: clamp(0px, 10vh, 4rem);"
-        >
-          <ChatWelcome on:select={(e) => store.sendMessage(e.detail)} />
-        </div>
+        <div class="flex-1 shrink-0"></div>
+        <ChatWelcome on:select={(e) => store.sendMessage(e.detail)} />
+        <div class="flex-[2] shrink-0"></div>
       {/if}
       {#each messages as message (message.id)}
         <div
