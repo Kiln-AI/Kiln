@@ -27,6 +27,7 @@ dependencies = [
     "jsonschema>=4.23.0",
     "lancedb>=0.24.2",
     "openai>=1.53.0",
+    "pandas>=2.0.0",
     "pdoc>=15.0.0",
     "pydantic>=2.9.2",
     "pypdf>=6.0.0",
