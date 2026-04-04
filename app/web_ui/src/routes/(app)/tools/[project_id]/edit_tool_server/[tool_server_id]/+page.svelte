@@ -14,7 +14,7 @@
   $: project_id = $page.params.project_id!
   $: agentInfo.set({
     name: "Edit Tool Server",
-    description: `Edit tool server ID ${tool_server_id} in project ID ${project_id}. Modify tool server connection settings.`,
+    description: `Edit tool server ID ${tool_server_id} in project ID ${project_id}. Server name: ${tool_server?.name ?? "[loading]"}. Modify tool server connection settings.`,
   })
 
   let loading = true

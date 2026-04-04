@@ -25,7 +25,7 @@
   $: project_id = $page.params.project_id!
   $: agentInfo.set({
     name: "Connect Tool for Task Invocation",
-    description: `Create a run config for a task which directly invokes a specific function of an MCP server. Useful to test external task implementations. User is prompted to select a task in project ID ${project_id}. Targeting the tool ID ${tool_id}. ${no_compatible_tasks ? "No compatible tasks found which match the tool's input/output schema of this tool - the user will need to create a new task using this tool's schema." : ""}`,
+    description: `Create a run config for a task which directly invokes a specific function of an MCP server. Useful to test external task implementations. User is prompted to select a task in project ID ${project_id}. Targeting the tool ID ${tool_id}. ${no_compatible_tasks ? "No compatible tasks found which match this tool's input/output schema - the user will need to create a new task using this tool's schema." : ""}`,
   })
   $: tool_id = $page.url.searchParams.get("tool_id")
 

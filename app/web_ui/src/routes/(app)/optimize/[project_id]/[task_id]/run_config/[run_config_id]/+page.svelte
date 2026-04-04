@@ -33,7 +33,7 @@
   $: run_config_id = $page.params.run_config_id!
   $: agentInfo.set({
     name: "Run Config Detail",
-    description: `Run configuration detail for config ID ${run_config_id} in project ID ${project_id}, task ID ${task_id}. Shows model, prompt, and tool settings.`,
+    description: `Run configuration detail for config ID ${run_config_id} in project ID ${project_id}, task ID ${task_id}. Config name: ${run_config?.name ?? "[loading]"}. Shows model, prompt, and tool settings.`,
   })
 
   let run_config: TaskRunConfig | null = null

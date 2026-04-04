@@ -23,7 +23,7 @@
   $: prompt_optimization_job_id = $page.params.job_id!
   $: agentInfo.set({
     name: "Prompt Optimization Job Detail",
-    description: `Prompt optimization job detail for job ID ${prompt_optimization_job_id} in project ID ${project_id}, task ID ${task_id}. Shows job progress, iterations, and results.`,
+    description: `Prompt optimization job detail for job ID ${prompt_optimization_job_id} in project ID ${project_id}, task ID ${task_id}. Job name: ${prompt_optimization_job?.name ?? "[loading]"}. Shows job progress, iterations, and results.`,
   })
 
   let prompt_optimization_job: PromptOptimizationJob | null = null

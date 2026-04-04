@@ -30,7 +30,7 @@
   $: eval_id = $page.params.eval_id!
   $: agentInfo.set({
     name: "Eval Detail",
-    description: `Eval detail for eval ID ${eval_id}, spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Shows eval configurations and run results.`,
+    description: `Eval detail for eval ID ${eval_id}, spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Eval name: ${evaluator?.name ?? "[loading]"}. Shows eval configurations and run results.`,
   })
   $: is_legacy_eval = spec_id === "legacy"
 

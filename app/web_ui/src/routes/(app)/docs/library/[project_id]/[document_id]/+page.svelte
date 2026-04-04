@@ -33,7 +33,7 @@
   $: document_id = $page.params.document_id!
   $: agentInfo.set({
     name: "Document Detail",
-    description: `Document detail page for document ID ${document_id} in project ID ${project_id}. Shows document properties, extractions, and tagging.`,
+    description: `Document detail page for document ID ${document_id} in project ID ${project_id}. Document name: ${document?.friendly_name ?? "[loading]"}. Shows document properties, extractions, and tagging.`,
   })
 
   // dialog state
