@@ -102,17 +102,17 @@
     return null
   }
 
-  function confirm_model_select(event: Event) {
-    const select = event.target as HTMLSelectElement
-    const selected = select.value
+  function confirm_model_select(selected: string) {
+    if (selected === previous_model) return
     const warning = get_model_warning(selected)
     if (warning && !confirm(warning)) {
-      select.value = previous_model
       model = previous_model
       return
     }
     previous_model = selected
   }
+
+  $: confirm_model_select(model)
 
   function format_model_options(
     providers: AvailableModels[],
@@ -355,7 +355,6 @@
     bind:value={model}
     id="model"
     inputType="fancy_select"
-    on_select={confirm_model_select}
     bind:error_message
     fancy_select_options={model_options}
     placeholder="Select a model"
