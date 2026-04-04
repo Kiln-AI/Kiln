@@ -16,7 +16,23 @@ SESSION_NAME="${BRANCH//\//-}"
 hash_port() {
     printf '%s' "$1" | cksum | awk '{print ($1 % 10000) + 10000}'
 }
-PORT=$(hash_port "$BRANCH")
+
+port_free() {
+    ! lsof -iTCP:"$1" -sTCP:LISTEN -t >/dev/null 2>&1
+}
+
+BASE_PORT=$(hash_port "$BRANCH")
+PORT=$BASE_PORT
+while ! port_free "$PORT" || ! port_free "$((PORT + 1))"; do
+    PORT=$((PORT + 1))
+    if [ "$PORT" -ge 20000 ]; then
+        PORT=10000
+    fi
+    if [ "$PORT" -eq "$BASE_PORT" ]; then
+        echo "ERROR: no free port pair found in range 10000-19999" >&2
+        exit 1
+    fi
+done
 
 export KILN_PORT="$PORT"
 export KILN_FRONTEND_PORT="$((PORT + 1))"
