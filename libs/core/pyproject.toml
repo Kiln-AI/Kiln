@@ -67,9 +67,6 @@ build-backend = "hatchling.build"
 [tool.hatch.metadata]
 requires-python = ">=3.10"
 
-[tool.uv]
-exclude-newer = "7 days"
-
 [tool.uv.sources]
 together = { git = "https://github.com/scosman/together-python" }
 
