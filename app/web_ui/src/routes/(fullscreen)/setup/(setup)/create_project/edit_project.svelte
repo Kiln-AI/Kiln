@@ -53,7 +53,7 @@
       let create = !project.id
       if (!project.id /* create, but ts wants this check */) {
         const { data: post_data, error: post_error } = await client.POST(
-          "/api/project",
+          "/api/projects",
           {
             // @ts-expect-error we're missing fields like v1, which have default values
             body,
@@ -66,7 +66,7 @@
         }
       } else {
         const { data: put_data, error: put_error } = await client.PATCH(
-          "/api/project/{project_id}",
+          "/api/projects/{project_id}",
           {
             params: {
               path: {

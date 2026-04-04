@@ -11,6 +11,8 @@ if TYPE_CHECKING:
 
 
 class RerankerType(str, Enum):
+    """The type of reranking model."""
+
     COHERE_COMPATIBLE = "cohere_compatible"
 
 
@@ -19,6 +21,8 @@ class CohereCompatibleProperties(TypedDict, total=True):
 
 
 class RerankerConfig(KilnParentedModel):
+    """Configuration for reranking search results using a reranking model."""
+
     name: FilenameString = Field(
         description="A name for your own reference to identify the reranker config.",
     )

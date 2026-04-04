@@ -52,7 +52,7 @@ def test_generate_prompt_success(
     client, mock_task, mock_prompt_builder_from_id, mock_task_from_id
 ):
     response = client.get(
-        "/api/projects/project123/task/task456/gen_prompt/simple_prompt_builder"
+        "/api/projects/project123/tasks/task456/gen_prompt/simple_prompt_builder"
     )
 
     assert response.status_code == 200
@@ -74,7 +74,7 @@ def test_generate_prompt_exception(
     mock_prompt_builder_from_id.side_effect = ValueError("Invalid prompt generator")
 
     response = client.get(
-        "/api/projects/project123/task/task456/gen_prompt/simple_prompt_builder"
+        "/api/projects/project123/tasks/task456/gen_prompt/simple_prompt_builder"
     )
 
     assert response.status_code == 400
@@ -83,7 +83,7 @@ def test_generate_prompt_exception(
 
 def test_generate_prompt_id_format(client, mock_task, mock_task_from_id):
     response = client.get(
-        "/api/projects/project123/task/task456/gen_prompt/invalid_generator_id"
+        "/api/projects/project123/tasks/task456/gen_prompt/invalid_generator_id"
     )
 
     assert response.status_code == 422

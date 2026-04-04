@@ -41,7 +41,7 @@
       loading_generator = true
       try {
         const { data: prompt_response, error: get_error } = await client.GET(
-          "/api/projects/{project_id}/task/{task_id}/gen_prompt/{prompt_id}",
+          "/api/projects/{project_id}/tasks/{task_id}/gen_prompt/{prompt_id}",
           {
             params: {
               path: {
@@ -84,7 +84,7 @@
       create_loading = true
       create_error = null
       const { data, error } = await client.POST(
-        "/api/projects/{project_id}/task/{task_id}/prompt",
+        "/api/projects/{project_id}/tasks/{task_id}/prompts",
         {
           params: {
             path: {

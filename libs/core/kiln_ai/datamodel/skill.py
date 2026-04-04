@@ -28,10 +28,10 @@ class Skill(KilnParentedModel):
     """
 
     name: SkillNameString = Field(
-        description="Skill name. Kebab-case: lowercase alphanumeric with hyphens, 1-64 chars.",
+        description="Skill name. Kebab-case: lowercase alphanumeric with hyphens.",
     )
     description: str = Field(
-        description="Description of what the skill does and when to use it. 1-1024 chars.",
+        description="Description of what the skill does and when to use it.",
         min_length=1,
         max_length=1024,
     )
@@ -62,7 +62,7 @@ class Skill(KilnParentedModel):
         """Read the markdown body from SKILL.md (content after YAML frontmatter)."""
         return _parse_skill_md_body(self.skill_md_raw())
 
-    # -- References --
+    # -- Resources (references & assets) --
 
     def references_dir(self) -> Path:
         if self.path is None:
@@ -71,19 +71,41 @@ class Skill(KilnParentedModel):
             )
         return self.path.parent / "references"
 
-    def read_reference(self, filename: str) -> str:
-        """Read a reference file's content. Raises ValueError if path traversal, FileNotFoundError if missing."""
-        path = self._validated_reference_path(filename)
-        try:
-            return path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            raise FileNotFoundError(f"Reference file not found: {filename}") from None
+    def assets_dir(self) -> Path:
+        if self.path is None:
+            raise ValueError("Skill must be saved before accessing assets directory")
+        return self.path.parent / "assets"
 
-    def _validated_reference_path(self, filename: str) -> Path:
-        _validate_filename(filename)
-        if not filename.endswith(".md"):
-            raise ValueError("Reference files must have a .md extension")
-        return self.references_dir() / filename
+    def read_reference(self, relative_path: str) -> str:
+        """Read a reference file. Raises ValueError for path traversal or non-text, FileNotFoundError if missing."""
+        return self._read_resource(self.references_dir(), relative_path)
+
+    def read_asset(self, relative_path: str) -> str:
+        """Read an asset file. Raises ValueError for path traversal or non-text, FileNotFoundError if missing."""
+        return self._read_resource(self.assets_dir(), relative_path)
+
+    def _read_resource(self, base_dir: Path, relative_path: str) -> str:
+        """Read a resource file, validating it resolves within base_dir and is readable text."""
+        if not relative_path or not relative_path.strip():
+            raise ValueError("Path cannot be empty")
+
+        target = base_dir / relative_path
+        try:
+            resolved = target.resolve()
+            resolved.relative_to(base_dir.resolve())
+        except ValueError:
+            raise ValueError("Path traversal is not allowed") from None
+
+        try:
+            return resolved.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"Resource file not found: {relative_path}"
+            ) from None
+        except UnicodeDecodeError:
+            raise ValueError(
+                f"File is not a readable text file: {relative_path}"
+            ) from None
 
     def save_skill_md(self, body: str) -> None:
         """Write SKILL.md with YAML frontmatter (name, description) + markdown body.
@@ -101,16 +123,7 @@ class Skill(KilnParentedModel):
         content = f"---\n{frontmatter}\n---\n\n{body}"
         self.skill_md_path().write_text(content, encoding="utf-8")
         self.references_dir().mkdir(exist_ok=True)
-
-
-def _validate_filename(filename: str) -> None:
-    """Reject filenames that are empty, contain path separators, or are traversal components."""
-    if not filename or not filename.strip():
-        raise ValueError("Filename cannot be empty")
-    if "/" in filename or "\\" in filename:
-        raise ValueError("Filename must not contain path separators")
-    if filename == "." or filename == "..":
-        raise ValueError("Filename must not be a path traversal component")
+        self.assets_dir().mkdir(exist_ok=True)
 
 
 def _parse_skill_md_body(raw: str) -> str:

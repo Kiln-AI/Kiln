@@ -4,7 +4,7 @@ import json
 import logging
 from typing import Annotated, Awaitable, Callable, Dict, List, Literal
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, Path, Query, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from kiln_ai.adapters.chunkers.chunker_registry import chunker_adapter_from_type
 from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
@@ -87,8 +87,12 @@ background_tasks: set[asyncio.Task] = set()
 
 
 class BulkCreateDocumentsResponse(BaseModel):
-    created_documents: List[Document]
-    failed_files: List[str]
+    """Response from bulk document creation."""
+
+    created_documents: List[Document] = Field(
+        description="The documents that were created."
+    )
+    failed_files: List[str] = Field(description="Filenames that failed to upload.")
 
 
 class EphemeralSplitRequest(BaseModel):
@@ -104,12 +108,16 @@ class EphemeralSplitRequest(BaseModel):
 
 
 class EphemeralSplitChunk(BaseModel):
-    id: str
-    text: str
+    """A single chunk from an ephemeral split."""
+
+    id: str = Field(description="The chunk index as a string.")
+    text: str = Field(description="The text content of the chunk.")
 
 
 class EphemeralSplitResponse(BaseModel):
-    chunks: list[EphemeralSplitChunk]
+    """Response from ephemeral document splitting."""
+
+    chunks: list[EphemeralSplitChunk] = Field(description="The resulting chunks.")
 
 
 def parse_comma_separated_tags(tags: str | None) -> list[str] | None:
@@ -230,49 +238,83 @@ async def run_rag_workflow_runner_with_status(
 
 
 class OpenFileResponse(BaseModel):
-    path: str
+    """Response containing the filesystem path to a file."""
+
+    path: str = Field(description="The filesystem path to the file.")
 
 
 class ExtractionProgress(BaseModel):
-    document_count_total: int
-    document_count_successful: int
-    extractor_config: ExtractorConfig | None
+    """Progress of a document extraction run."""
+
+    document_count_total: int = Field(
+        description="The total number of documents to extract."
+    )
+    document_count_successful: int = Field(
+        description="The number of documents successfully extracted."
+    )
+    extractor_config: ExtractorConfig | None = Field(
+        default=None, description="The extractor config used."
+    )
 
 
 class ExtractorSummary(BaseModel):
-    id: str
-    name: str
-    description: str | None
-    output_format: OutputFormat
-    passthrough_mimetypes: list[OutputFormat]
-    extractor_type: ExtractorType
+    """A summary of an extractor config."""
+
+    id: str = Field(description="The extractor config ID.")
+    name: str = Field(description="The name of the extractor config.")
+    description: str | None = Field(
+        default=None, description="The description of the extractor config."
+    )
+    output_format: OutputFormat = Field(
+        description="The output format of the extractor."
+    )
+    passthrough_mimetypes: list[OutputFormat] = Field(
+        description="MIME types that bypass extraction and return the file content as-is."
+    )
+    extractor_type: ExtractorType = Field(description="The type of extractor.")
 
 
 class ExtractionSummary(BaseModel):
-    id: str
-    created_at: datetime.datetime
-    created_by: str
-    source: str
-    output_content: str
-    extractor: ExtractorSummary
-    output_content_truncated: bool
+    """A summary of an extraction result."""
+
+    id: str = Field(description="The extraction ID.")
+    created_at: datetime.datetime = Field(
+        description="When the extraction was created."
+    )
+    created_by: str = Field(description="The user who created the extraction.")
+    source: str = Field(description="The source type of the extraction.")
+    output_content: str = Field(description="The extracted text content.")
+    extractor: ExtractorSummary = Field(description="The extractor config used.")
+    output_content_truncated: bool = Field(
+        description="Whether the output content was truncated."
+    )
 
 
 class RagConfigWithSubConfigs(BaseModel):
-    id: ID_TYPE
-    name: str
-    description: str | None
-    tool_name: str
-    tool_description: str
-    created_at: datetime.datetime
-    created_by: str
-    is_archived: bool
-    extractor_config: ExtractorConfig
-    chunker_config: ChunkerConfig
-    embedding_config: EmbeddingConfig
-    vector_store_config: VectorStoreConfig
-    reranker_config: RerankerConfig | None
-    tags: list[str] | None
+    """A RAG config with all its sub-configurations."""
+
+    id: ID_TYPE = Field(description="The RAG config ID.")
+    name: str = Field(description="The name of the RAG config.")
+    description: str | None = Field(
+        default=None, description="The description of the RAG config."
+    )
+    tool_name: str = Field(description="The tool name for the model.")
+    tool_description: str = Field(description="The tool description for the model.")
+    created_at: datetime.datetime = Field(description="When the config was created.")
+    created_by: str = Field(description="The user who created the config.")
+    is_archived: bool = Field(description="Whether the config is archived.")
+    extractor_config: ExtractorConfig = Field(description="The extractor config.")
+    chunker_config: ChunkerConfig = Field(description="The chunker config.")
+    embedding_config: EmbeddingConfig = Field(description="The embedding config.")
+    vector_store_config: VectorStoreConfig = Field(
+        description="The vector store config."
+    )
+    reranker_config: RerankerConfig | None = Field(
+        default=None, description="The reranker config, if any."
+    )
+    tags: list[str] | None = Field(
+        default=None, description="Tags for document filtering."
+    )
 
 
 class CreateRagConfigRequest(BaseModel):
@@ -580,7 +622,7 @@ class CreateExtractorConfigRequest(BaseModel):
         description="The output format of the extractor config",
     )
     passthrough_mimetypes: list[OutputFormat] = Field(
-        description="The mimetypes to pass through to the extractor",
+        description="MIME types that bypass extraction and return the file content as-is.",
         default_factory=list,
     )
     properties: LitellmExtractorConfigProperties = Field(
@@ -684,9 +726,15 @@ class PatchExtractorConfigRequest(BaseModel):
 
 
 class UpdateRagConfigRequest(BaseModel):
-    name: FilenameString | None = None
-    description: str | None = None
-    is_archived: bool | None = None
+    """Request to update a RAG config."""
+
+    name: FilenameString | None = Field(default=None, description="The updated name.")
+    description: str | None = Field(
+        default=None, description="The updated description."
+    )
+    is_archived: bool | None = Field(
+        default=None, description="Whether the config is archived."
+    )
 
 
 def truncate_output_content(
@@ -896,12 +944,25 @@ def get_documents_filtered(
 
 
 def connect_document_api(app: FastAPI):
-    @app.post("/api/projects/{project_id}/documents/bulk")
+    @app.post(
+        "/api/projects/{project_id}/documents/bulk",
+        summary="Bulk Create Documents",
+        tags=["Documents"],
+    )
     async def create_documents_bulk(
-        project_id: str,
-        files: Annotated[List[UploadFile] | None, File()] = None,
-        names: Annotated[List[str] | None, Form()] = None,
-        tags: Annotated[List[str] | None, Form()] = None,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        files: Annotated[
+            List[UploadFile] | None, File(description="The files to upload.")
+        ] = None,
+        names: Annotated[
+            List[str] | None, Form(description="Optional names for the files.")
+        ] = None,
+        tags: Annotated[
+            List[str] | None,
+            Form(description="Tags to apply to all created documents."),
+        ] = None,
     ) -> BulkCreateDocumentsResponse:
         project = project_from_id(project_id)
 
@@ -989,10 +1050,18 @@ def connect_document_api(app: FastAPI):
             failed_files=failed_files,
         )
 
-    @app.get("/api/projects/{project_id}/documents")
+    @app.get(
+        "/api/projects/{project_id}/documents",
+        summary="List Documents",
+        tags=["Documents"],
+    )
     async def get_documents(
-        project_id: str,
-        tags: str | None = None,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        tags: Annotated[
+            str | None, Query(description="Comma-separated list of tags to filter by.")
+        ] = None,
     ) -> list[Document]:
         project = project_from_id(project_id)
         target_tags: list[str] | None = None
@@ -1010,10 +1079,18 @@ def connect_document_api(app: FastAPI):
         return documents
 
     @app.get(
-        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/extractions"
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/extractions",
+        summary="List Extractions for Extractor Config",
+        tags=["Documents"],
     )
     async def get_extractions_for_extractor_config(
-        project_id: str, extractor_config_id: str
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        extractor_config_id: Annotated[
+            str,
+            Path(description="The unique identifier of the extractor configuration."),
+        ],
     ) -> dict[str, list[ExtractionSummary]]:
         """Return mapping of document id to list of extractions for the given extractor config id."""
         project = project_from_id(project_id)
@@ -1044,9 +1121,15 @@ def connect_document_api(app: FastAPI):
 
         return results
 
-    @app.get("/api/projects/{project_id}/documents/tags")
+    @app.get(
+        "/api/projects/{project_id}/documents/tags",
+        summary="List Document Tags",
+        tags=["Documents"],
+    )
     async def get_document_tags(
-        project_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
     ) -> list[str]:
         project = project_from_id(project_id)
         documents = project.documents(readonly=True)
@@ -1056,8 +1139,16 @@ def connect_document_api(app: FastAPI):
                 all_tags.update(document.tags)
         return sorted(list(all_tags))
 
-    @app.get("/api/projects/{project_id}/documents/tag_counts")
-    async def get_document_tag_counts(project_id: str) -> dict[str, int]:
+    @app.get(
+        "/api/projects/{project_id}/documents/tag_counts",
+        summary="Get Document Tag Counts",
+        tags=["Documents"],
+    )
+    async def get_document_tag_counts(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+    ) -> dict[str, int]:
         tags_count = {}
         project = project_from_id(project_id)
         # Not particularly efficient, but projects are memory cached after first load so re-compute is fairly cheap
@@ -1068,10 +1159,18 @@ def connect_document_api(app: FastAPI):
                     tags_count[tag] = tags_count.get(tag, 0) + 1
         return tags_count
 
-    @app.get("/api/projects/{project_id}/documents/{document_id}")
+    @app.get(
+        "/api/projects/{project_id}/documents/{document_id}",
+        summary="Get Document",
+        tags=["Documents"],
+    )
     async def get_document(
-        project_id: str,
-        document_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        document_id: Annotated[
+            str, Path(description="The unique identifier of the document.")
+        ],
     ) -> Document:
         project = project_from_id(project_id)
         document = Document.from_id_and_parent_path(document_id, project.path)
@@ -1082,10 +1181,14 @@ def connect_document_api(app: FastAPI):
             )
         return document
 
-    @app.patch("/api/projects/{project_id}/documents/{document_id}")
+    @app.patch("/api/projects/{project_id}/documents/{document_id}", tags=["Documents"])
     async def patch_document(
-        project_id: str,
-        document_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        document_id: Annotated[
+            str, Path(description="The unique identifier of the document.")
+        ],
         request: PatchDocumentRequest,
     ) -> Document:
         project = project_from_id(project_id)
@@ -1111,12 +1214,20 @@ def connect_document_api(app: FastAPI):
 
         return document
 
-    @app.post("/api/projects/{project_id}/documents/edit_tags")
+    @app.post("/api/projects/{project_id}/documents/edit_tags", tags=["Documents"])
     async def edit_tags(
-        project_id: str,
-        document_ids: list[str],
-        add_tags: list[str] | None = None,
-        remove_tags: list[str] | None = None,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        document_ids: Annotated[
+            list[str], Body(description="List of document IDs to modify tags for.")
+        ],
+        add_tags: Annotated[
+            list[str] | None, Body(description="Tags to add to the documents.")
+        ] = None,
+        remove_tags: Annotated[
+            list[str] | None, Body(description="Tags to remove from the documents.")
+        ] = None,
     ) -> dict[str, bool]:
         project = project_from_id(project_id)
 
@@ -1168,9 +1279,11 @@ def connect_document_api(app: FastAPI):
             )
         return {"success": True}
 
-    @app.post("/api/projects/{project_id}/create_extractor_config")
+    @app.post("/api/projects/{project_id}/create_extractor_config", tags=["Documents"])
     async def create_extractor_config(
-        project_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
         request: CreateExtractorConfigRequest,
     ) -> ExtractorConfig:
         project = project_from_id(project_id)
@@ -1193,17 +1306,27 @@ def connect_document_api(app: FastAPI):
 
         return extractor_config
 
-    @app.get("/api/projects/{project_id}/extractor_configs")
+    @app.get("/api/projects/{project_id}/extractor_configs", tags=["Documents"])
     async def get_extractor_configs(
-        project_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
     ) -> list[ExtractorConfig]:
         project = project_from_id(project_id)
         return project.extractor_configs(readonly=True)
 
-    @app.get("/api/projects/{project_id}/extractor_configs/{extractor_config_id}")
+    @app.get(
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
+        tags=["Documents"],
+    )
     async def get_extractor_config(
-        project_id: str,
-        extractor_config_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        extractor_config_id: Annotated[
+            str,
+            Path(description="The unique identifier of the extractor configuration."),
+        ],
     ) -> ExtractorConfig:
         project = project_from_id(project_id)
         extractor_config = ExtractorConfig.from_id_and_parent_path(
@@ -1218,12 +1341,21 @@ def connect_document_api(app: FastAPI):
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
     @app.get(
-        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/run_extractor_config"
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/run_extractor_config",
+        tags=["Documents"],
     )
     async def run_extractor_config(
-        project_id: str,
-        extractor_config_id: str,
-        tags: str | None = None,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        extractor_config_id: Annotated[
+            str,
+            Path(description="The unique identifier of the extractor configuration."),
+        ],
+        tags: Annotated[
+            str | None,
+            Query(description="Comma-separated list of tags to filter documents by."),
+        ] = None,
     ) -> StreamingResponse:
         target_tags: list[str] | None = None
         if tags:
@@ -1262,10 +1394,17 @@ def connect_document_api(app: FastAPI):
 
             return await run_extractor_runner_with_status(extractor_runner)
 
-    @app.get("/api/projects/{project_id}/documents/{document_id}/extractions")
+    @app.get(
+        "/api/projects/{project_id}/documents/{document_id}/extractions",
+        tags=["Documents"],
+    )
     async def get_extractions(
-        project_id: str,
-        document_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        document_id: Annotated[
+            str, Path(description="The unique identifier of the document.")
+        ],
     ) -> list[ExtractionSummary]:
         project = project_from_id(project_id)
         document = Document.from_id_and_parent_path(document_id, project.path)
@@ -1295,12 +1434,19 @@ def connect_document_api(app: FastAPI):
         return summaries
 
     @app.get(
-        "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}"
+        "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}",
+        tags=["Documents"],
     )
     async def get_extraction(
-        project_id: str,
-        document_id: str,
-        extraction_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        document_id: Annotated[
+            str, Path(description="The unique identifier of the document.")
+        ],
+        extraction_id: Annotated[
+            str, Path(description="The unique identifier of the extraction.")
+        ],
     ) -> ExtractionSummary:
         project = project_from_id(project_id)
 
@@ -1333,10 +1479,17 @@ def connect_document_api(app: FastAPI):
             extractor_config=extractor_config,
         )
 
-    @app.get("/api/projects/{project_id}/documents/{document_id}/download")
+    @app.get(
+        "/api/projects/{project_id}/documents/{document_id}/download",
+        tags=["Documents"],
+    )
     async def download_document_file(
-        project_id: str,
-        document_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        document_id: Annotated[
+            str, Path(description="The unique identifier of the document.")
+        ],
     ) -> FileResponse:
         project = project_from_id(project_id)
         document = Document.from_id_and_parent_path(document_id, project.path)
@@ -1358,12 +1511,19 @@ def connect_document_api(app: FastAPI):
         return FileResponse(path=path, filename=document.original_file.filename)
 
     @app.get(
-        "/api/projects/{project_id}/documents/{document_id}/download_extraction/{extraction_id}"
+        "/api/projects/{project_id}/documents/{document_id}/download_extraction/{extraction_id}",
+        tags=["Documents"],
     )
     async def download_extraction(
-        project_id: str,
-        document_id: str,
-        extraction_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        document_id: Annotated[
+            str, Path(description="The unique identifier of the document.")
+        ],
+        extraction_id: Annotated[
+            str, Path(description="The unique identifier of the extraction.")
+        ],
     ) -> FileResponse:
         project = project_from_id(project_id)
         document = Document.from_id_and_parent_path(document_id, project.path)
@@ -1395,11 +1555,16 @@ def connect_document_api(app: FastAPI):
         )
 
     @app.post(
-        "/api/projects/{project_id}/documents/{document_id}/open_enclosing_folder"
+        "/api/projects/{project_id}/documents/{document_id}/open_enclosing_folder",
+        tags=["Documents"],
     )
     async def open_document_enclosing_folder(
-        project_id: str,
-        document_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        document_id: Annotated[
+            str, Path(description="The unique identifier of the document.")
+        ],
     ) -> OpenFileResponse:
         project = project_from_id(project_id)
         document = Document.from_id_and_parent_path(document_id, project.path)
@@ -1420,8 +1585,15 @@ def connect_document_api(app: FastAPI):
 
         return OpenFileResponse(path=str(document.path.parent))
 
-    @app.post("/api/projects/{project_id}/documents/delete")
-    async def delete_documents(project_id: str, document_ids: list[str]) -> dict:
+    @app.post("/api/projects/{project_id}/documents/delete", tags=["Documents"])
+    async def delete_documents(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        document_ids: Annotated[
+            list[str], Body(description="List of document IDs to delete.")
+        ],
+    ) -> dict:
         project = project_from_id(project_id)
         for document_id in document_ids:
             document = Document.from_id_and_parent_path(document_id, project.path)
@@ -1435,8 +1607,17 @@ def connect_document_api(app: FastAPI):
 
         return {"message": f"Documents removed. IDs: {document_ids}"}
 
-    @app.delete("/api/projects/{project_id}/documents/{document_id}")
-    async def delete_document(project_id: str, document_id: str) -> dict:
+    @app.delete(
+        "/api/projects/{project_id}/documents/{document_id}", tags=["Documents"]
+    )
+    async def delete_document(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        document_id: Annotated[
+            str, Path(description="The unique identifier of the document.")
+        ],
+    ) -> dict:
         project = project_from_id(project_id)
         document = Document.from_id_and_parent_path(document_id, project.path)
         if not document:
@@ -1450,11 +1631,17 @@ def connect_document_api(app: FastAPI):
         return {"message": f"Document removed. ID: {document_id}"}
 
     @app.get(
-        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/progress"
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/progress",
+        tags=["Documents"],
     )
     async def get_extraction_progress(
-        project_id: str,
-        extractor_config_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        extractor_config_id: Annotated[
+            str,
+            Path(description="The unique identifier of the extractor configuration."),
+        ],
     ) -> ExtractionProgress:
         project = project_from_id(project_id)
         extractor_config = ExtractorConfig.from_id_and_parent_path(
@@ -1483,11 +1670,22 @@ def connect_document_api(app: FastAPI):
             extractor_config=extractor_config,
         )
 
-    @app.post("/api/projects/{project_id}/documents/{document_id}/extract")
+    @app.post(
+        "/api/projects/{project_id}/documents/{document_id}/extract", tags=["Documents"]
+    )
     async def extract_file(
-        project_id: str,
-        document_id: str,
-        extractor_config_ids: list[ID_TYPE] | None = None,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        document_id: Annotated[
+            str, Path(description="The unique identifier of the document.")
+        ],
+        extractor_config_ids: Annotated[
+            list[ID_TYPE] | None,
+            Body(
+                description="List of extractor config IDs to run. If None, all non-archived extractor configs are used."
+            ),
+        ] = None,
     ) -> StreamingResponse:
         project = project_from_id(project_id)
         document = Document.from_id_and_parent_path(document_id, project.path)
@@ -1528,12 +1726,19 @@ def connect_document_api(app: FastAPI):
         return await run_extractor_runner_with_status(extractor_runner)
 
     @app.delete(
-        "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}"
+        "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}",
+        tags=["Documents"],
     )
     async def delete_extraction(
-        project_id: str,
-        document_id: str,
-        extraction_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        document_id: Annotated[
+            str, Path(description="The unique identifier of the document.")
+        ],
+        extraction_id: Annotated[
+            str, Path(description="The unique identifier of the extraction.")
+        ],
     ) -> dict:
         project = project_from_id(project_id)
         document = Document.from_id_and_parent_path(document_id, project.path)
@@ -1596,10 +1801,18 @@ def connect_document_api(app: FastAPI):
 
         return {"message": f"Extraction removed. ID: {extraction_id}"}
 
-    @app.patch("/api/projects/{project_id}/extractor_configs/{extractor_config_id}")
+    @app.patch(
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
+        tags=["Documents"],
+    )
     async def patch_extractor_config(
-        project_id: str,
-        extractor_config_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        extractor_config_id: Annotated[
+            str,
+            Path(description="The unique identifier of the extractor configuration."),
+        ],
         request: PatchExtractorConfigRequest,
     ) -> dict:
         project = project_from_id(project_id)
@@ -1624,9 +1837,11 @@ def connect_document_api(app: FastAPI):
 
         return {"message": f"Extractor config updated. ID: {extractor_config_id}"}
 
-    @app.post("/api/projects/{project_id}/create_chunker_config")
+    @app.post("/api/projects/{project_id}/create_chunker_config", tags=["Documents"])
     async def create_chunker_config(
-        project_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
         request: CreateChunkerConfigRequest,
     ) -> ChunkerConfig:
         project = project_from_id(project_id)
@@ -1654,16 +1869,20 @@ def connect_document_api(app: FastAPI):
 
         return chunker_config
 
-    @app.get("/api/projects/{project_id}/chunker_configs")
+    @app.get("/api/projects/{project_id}/chunker_configs", tags=["Documents"])
     async def get_chunker_configs(
-        project_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
     ) -> list[ChunkerConfig]:
         project = project_from_id(project_id)
         return project.chunker_configs(readonly=True)
 
-    @app.post("/api/projects/{project_id}/create_embedding_config")
+    @app.post("/api/projects/{project_id}/create_embedding_config", tags=["Documents"])
     async def create_embedding_config(
-        project_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
         request: CreateEmbeddingConfigRequest,
     ) -> EmbeddingConfig:
         project = project_from_id(project_id)
@@ -1685,16 +1904,20 @@ def connect_document_api(app: FastAPI):
 
         return embedding_config
 
-    @app.get("/api/projects/{project_id}/embedding_configs")
+    @app.get("/api/projects/{project_id}/embedding_configs", tags=["Documents"])
     async def get_embedding_configs(
-        project_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
     ) -> list[EmbeddingConfig]:
         project = project_from_id(project_id)
         return project.embedding_configs(readonly=True)
 
-    @app.post("/api/projects/{project_id}/create_reranker_config")
+    @app.post("/api/projects/{project_id}/create_reranker_config", tags=["Documents"])
     async def create_reranker_config(
-        project_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
         request: CreateRerankerConfigRequest,
     ) -> RerankerConfig:
         project = project_from_id(project_id)
@@ -1712,17 +1935,27 @@ def connect_document_api(app: FastAPI):
 
         return reranker_config
 
-    @app.get("/api/projects/{project_id}/reranker_configs")
+    @app.get("/api/projects/{project_id}/reranker_configs", tags=["Documents"])
     async def get_reranker_configs(
-        project_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
     ) -> list[RerankerConfig]:
         project = project_from_id(project_id)
         return project.reranker_configs(readonly=True)
 
-    @app.get("/api/projects/{project_id}/embedding_configs/{embedding_config_id}")
+    @app.get(
+        "/api/projects/{project_id}/embedding_configs/{embedding_config_id}",
+        tags=["Documents"],
+    )
     async def get_embedding_config(
-        project_id: str,
-        embedding_config_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        embedding_config_id: Annotated[
+            str,
+            Path(description="The unique identifier of the embedding configuration."),
+        ],
     ) -> EmbeddingConfig:
         project = project_from_id(project_id)
         embedding_config = EmbeddingConfig.from_id_and_parent_path(
@@ -1735,9 +1968,13 @@ def connect_document_api(app: FastAPI):
             )
         return embedding_config
 
-    @app.post("/api/projects/{project_id}/create_vector_store_config")
+    @app.post(
+        "/api/projects/{project_id}/create_vector_store_config", tags=["Documents"]
+    )
     async def create_vector_store_config(
-        project_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
         request: CreateVectorStoreConfigRequest,
     ) -> VectorStoreConfig:
         project = project_from_id(project_id)
@@ -1752,16 +1989,26 @@ def connect_document_api(app: FastAPI):
 
         return vector_store_config
 
-    @app.get("/api/projects/{project_id}/vector_store_configs")
+    @app.get("/api/projects/{project_id}/vector_store_configs", tags=["Documents"])
     async def get_vector_store_configs(
-        project_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
     ) -> list[VectorStoreConfig]:
         project = project_from_id(project_id)
         return project.vector_store_configs(readonly=True)
 
-    @app.patch("/api/projects/{project_id}/rag_configs/{rag_config_id}")
+    @app.patch(
+        "/api/projects/{project_id}/rag_configs/{rag_config_id}", tags=["Documents"]
+    )
     async def update_rag_config(
-        project_id: str, rag_config_id: str, request: UpdateRagConfigRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        rag_config_id: Annotated[
+            str, Path(description="The unique identifier of the RAG configuration.")
+        ],
+        request: UpdateRagConfigRequest,
     ) -> RagConfig:
         project = project_from_id(project_id)
         rag_config = get_rag_config_from_id(project, rag_config_id)
@@ -1774,9 +2021,13 @@ def connect_document_api(app: FastAPI):
         rag_config.save_to_file()
         return rag_config
 
-    @app.post("/api/projects/{project_id}/rag_configs/create_rag_config")
+    @app.post(
+        "/api/projects/{project_id}/rag_configs/create_rag_config", tags=["Documents"]
+    )
     async def create_rag_config(
-        project_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
         request: CreateRagConfigRequest,
     ) -> RagConfig:
         project = project_from_id(project_id)
@@ -1845,9 +2096,11 @@ def connect_document_api(app: FastAPI):
 
         return rag_config
 
-    @app.get("/api/projects/{project_id}/rag_configs")
+    @app.get("/api/projects/{project_id}/rag_configs", tags=["Documents"])
     async def get_rag_configs(
-        project_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
     ) -> list[RagConfigWithSubConfigs]:
         project = project_from_id(project_id)
 
@@ -1922,10 +2175,16 @@ def connect_document_api(app: FastAPI):
 
         return rag_configs
 
-    @app.get("/api/projects/{project_id}/rag_configs/{rag_config_id}")
+    @app.get(
+        "/api/projects/{project_id}/rag_configs/{rag_config_id}", tags=["Documents"]
+    )
     async def get_rag_config(
-        project_id: str,
-        rag_config_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        rag_config_id: Annotated[
+            str, Path(description="The unique identifier of the RAG configuration.")
+        ],
     ) -> RagConfigWithSubConfigs:
         project = project_from_id(project_id)
         rag_config = get_rag_config_from_id(project, rag_config_id)
@@ -1995,10 +2254,16 @@ def connect_document_api(app: FastAPI):
         )
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
-    @app.get("/api/projects/{project_id}/rag_configs/{rag_config_id}/run")
+    @app.get(
+        "/api/projects/{project_id}/rag_configs/{rag_config_id}/run", tags=["Documents"]
+    )
     async def run_rag_config(
-        project_id: str,
-        rag_config_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        rag_config_id: Annotated[
+            str, Path(description="The unique identifier of the RAG configuration.")
+        ],
     ) -> StreamingResponse:
         project = project_from_id(project_id)
 
@@ -2015,9 +2280,11 @@ def connect_document_api(app: FastAPI):
         # the workflow runner handles locking
         return await run_rag_workflow_runner_with_status(runner_factory)
 
-    @app.post("/api/projects/{project_id}/rag_configs/progress")
+    @app.post("/api/projects/{project_id}/rag_configs/progress", tags=["Documents"])
     async def get_rag_config_progress(
-        project_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
         request: GetRagConfigProgressRequest,
     ) -> Dict[str, RagProgress]:
         project = project_from_id(project_id)
@@ -2042,10 +2309,17 @@ def connect_document_api(app: FastAPI):
         ] = await compute_current_progress_for_rag_configs(project, rag_configs)
         return progress_map
 
-    @app.post("/api/projects/{project_id}/rag_configs/{rag_config_id}/search")
+    @app.post(
+        "/api/projects/{project_id}/rag_configs/{rag_config_id}/search",
+        tags=["Documents"],
+    )
     async def search_rag_config(
-        project_id: str,
-        rag_config_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        rag_config_id: Annotated[
+            str, Path(description="The unique identifier of the RAG configuration.")
+        ],
         request: RagSearchRequest,
     ) -> RagSearchResponse:
         """Search the vector store associated with a RAG config."""
@@ -2094,21 +2368,31 @@ def connect_document_api(app: FastAPI):
                 detail=f"Search failed: {e!s}",
             )
 
-    @app.get("/api/projects/{project_id}/check_library_state")
+    @app.get("/api/projects/{project_id}/check_library_state", tags=["Documents"])
     async def check_library_state(
-        project_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
     ) -> DocumentLibraryState:
         project = project_from_id(project_id)
         documents = project.documents(readonly=True)
         return DocumentLibraryState(is_empty=len(documents) == 0)
 
     @app.post(
-        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/documents/{document_id}/ephemeral_split"
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/documents/{document_id}/ephemeral_split",
+        tags=["Documents"],
     )
     async def ephemeral_split_document(
-        project_id: str,
-        extractor_config_id: str,
-        document_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        extractor_config_id: Annotated[
+            str,
+            Path(description="The unique identifier of the extractor configuration."),
+        ],
+        document_id: Annotated[
+            str, Path(description="The unique identifier of the document.")
+        ],
         request: EphemeralSplitRequest,
     ) -> EphemeralSplitResponse:
         """Return chunks for a document extraction using FixedWindowChunker without persisting.

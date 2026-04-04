@@ -202,7 +202,7 @@
     try {
       eval_scores_loading[run_config_id] = true
       const { data, error: fetch_error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}/eval_scores",
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}/eval_scores",
         {
           params: {
             path: {
@@ -278,7 +278,7 @@
     try {
       eval_templates_loading[eval_id] = true
       const { data, error: fetch_error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
         {
           params: {
             path: {
