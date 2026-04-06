@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Functional Spec: Doc Skills
@@ -119,7 +119,7 @@ Parts are 1-indexed and zero-padded to 3 digits (part001, part002, ... part999).
 |API Guidelines|3|`references/api-guidelines/part[NNN].txt`|
 ```
 
-One row per document. Sorted alphabetically by document name.
+One row per document. Sorted alphabetically by sanitized document name.
 
 #### 3d. Save the skill
 
@@ -144,18 +144,17 @@ Note: Extraction and chunking outputs (steps 1-2) are shared infrastructure and 
 
 ## 3. Templates
 
-Four templates for the "New Doc Skill" creation flow, similar to RAG templates. Templates configure the extractor and chunker; no embedding/vector store/reranker needed.
+Three templates for the "New Doc Skill" creation flow, similar to RAG templates. Templates configure the extractor and chunker; no embedding/vector store/reranker needed.
 
 | Template | Chunk Type | Chunk Size | Overlap | Extractor |
 |----------|-----------|------------|---------|-----------|
 | Small Context | Fixed Window | 1000 tokens | 0 | Gemini 2.5 Flash |
 | Medium Context | Fixed Window | 2000 tokens | 0 | Gemini 2.5 Flash |
 | Large Context | Fixed Window | 3000 tokens | 0 | Gemini 2.5 Flash |
-| Semantic Parts | Semantic | ~1000 tokens/part | (semantic defaults) | Gemini 2.5 Flash |
-
-The Semantic template targets roughly 1000 tokens per part using the semantic chunker's `buffer_size` and `breakpoint_percentile_threshold` parameters. Architecture spec will determine the exact parameter values to achieve this target.
 
 Template structure mirrors RAG templates but is simpler — only `extractor` and `chunker` sub-configs. Each template also includes provider variants (Gemini direct vs OpenRouter fallback).
+
+Doc Skills uses fixed-window chunking only. Semantic chunking is not supported.
 
 ## 4. API Endpoints
 
@@ -168,7 +167,7 @@ All endpoints under `/api/projects/{project_id}/doc_skills`.
 | `GET` | `/doc_skills/{doc_skill_id}` | Get a specific DocumentSkill |
 | `PATCH` | `/doc_skills/{doc_skill_id}` | Archive/unarchive only (all other fields are immutable). Archiving a DocumentSkill also archives the generated Skill. Unarchiving restores both |
 | `GET` | `/doc_skills/{doc_skill_id}/run` | Run the creation pipeline (SSE) |
-| `POST` | `/doc_skills/{doc_skill_id}/progress` | Get progress for doc skills (by IDs or all) |
+| `POST` | `/doc_skills/progress` | Get progress for doc skills (batch, same pattern as RAG) |
 
 ### Create Request
 
@@ -200,7 +199,7 @@ Steps reported:
 
 ### Progress Endpoint
 
-Computes current extraction/chunking progress from disk, same pattern as RAG's `/progress` endpoint. Used by the list page to show status without an active SSE connection. Follow the same API shape and conventions as RAG's progress endpoint (details in architecture spec).
+Batch endpoint following RAG's `/rag_configs/progress` pattern. Accepts a list of `doc_skill_ids` in the request body (or empty for all in project). Returns a map of doc_skill_id → progress. Computes current extraction/chunking progress from disk.
 
 A DocumentSkill with `skill_id` set is always `"complete"`. The skill creation step (step 3) is fast/local and not tracked by progress — it either succeeds or fails atomically.
 
