@@ -44,7 +44,8 @@ else
     docker build -t kiln_sandbox_base_template -f utils/docker_sandboxes/DockerfileClaude utils/docker_sandboxes
   fi
 
-  echo "Creating base sandbox instance..."
+  echo "Recreating base sandbox instance..."
+  docker sandbox rm kiln_base_sandbox 2>/dev/null || true
   docker sandbox create -t kiln_sandbox_base_template --name kiln_base_sandbox claude .
 
   echo "Installing dependencies into base sandbox..."
