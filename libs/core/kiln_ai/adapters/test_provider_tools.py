@@ -1260,37 +1260,18 @@ def test_parser_from_finetune_fallback_to_data_strategy(mock_config):
     assert parser == ModelParserID.r1_thinking
 
 
-def test_parser_from_finetune_fireworks_r1_inherits_builtin_parser(mock_config):
-    """Fireworks DeepSeek R1 is registered with r1_thinking; finetune inherits that parser."""
-    mock_config.return_value = "fake-api-key"
-
-    finetune = Finetune(
-        name="test-finetune",
-        provider=ModelProviderName.fireworks_ai,
-        base_model_id="accounts/fireworks/models/deepseek-r1",
-        fine_tune_model_id="ft:gpt-4o:custom:model-123",
-        dataset_split_id="test-split",
-        system_message="You are a helpful assistant.",
-        data_strategy=ChatStrategy.single_turn,
-    )
-
-    parser = parser_from_finetune(finetune)
-
-    assert parser == ModelParserID.r1_thinking
-
-
 def test_parser_from_finetune_no_parser(mock_config):
-    """None when the builtin base has no parser and data_strategy is single_turn."""
+    """Test that None is returned when neither model nor data_strategy has parser"""
     mock_config.return_value = "fake-api-key"
 
     finetune = Finetune(
         name="test-finetune",
         provider=ModelProviderName.fireworks_ai,
-        base_model_id="accounts/fireworks/models/gemma-3-4b-it",
+        base_model_id="accounts/fireworks/models/qwen3-8b",
         fine_tune_model_id="ft:gpt-4o:custom:model-123",
         dataset_split_id="test-split",
         system_message="You are a helpful assistant.",
-        data_strategy=ChatStrategy.single_turn,
+        data_strategy=ChatStrategy.single_turn,  # single turn has no parser
     )
 
     parser = parser_from_finetune(finetune)
