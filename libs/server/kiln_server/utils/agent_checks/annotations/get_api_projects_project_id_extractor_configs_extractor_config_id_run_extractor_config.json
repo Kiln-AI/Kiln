@@ -3,6 +3,7 @@
   "path": "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/run_extractor_config",
   "agent_policy": {
     "permission": "allow",
-    "requires_approval": false
+    "requires_approval": true,
+    "approval_description": "Run document extractor? This processes all documents and may take significant time."
   }
 }

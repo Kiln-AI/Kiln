@@ -2,7 +2,7 @@
   "method": "get",
   "path": "/api/download_dataset_jsonl",
   "agent_policy": {
-    "permission": "allow",
+    "permission": "deny",
     "requires_approval": false
   }
 }

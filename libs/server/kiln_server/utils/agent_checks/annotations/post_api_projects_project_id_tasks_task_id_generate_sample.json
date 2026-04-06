@@ -3,6 +3,7 @@
   "path": "/api/projects/{project_id}/tasks/{task_id}/generate_sample",
   "agent_policy": {
     "permission": "allow",
-    "requires_approval": false
+    "requires_approval": true,
+    "approval_description": "Generate a sample using LLM?"
   }
 }

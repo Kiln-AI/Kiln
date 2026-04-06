@@ -512,12 +512,14 @@
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/organizing-datasets"
   no_y_padding
-  action_buttons={[
-    {
-      label: "Add Data",
-      href: `/dataset/${project_id}/${task_id}/add_data`,
-    },
-  ]}
+  action_buttons={runs && runs.length > 0
+    ? [
+        {
+          label: "Add Data",
+          href: `/dataset/${project_id}/${task_id}/add_data`,
+        },
+      ]
+    : []}
 >
   {#if loading}
     <div class="w-full min-h-[50vh] flex justify-center items-center">
