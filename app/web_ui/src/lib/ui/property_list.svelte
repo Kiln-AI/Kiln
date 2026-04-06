@@ -91,6 +91,10 @@
               {property.value_with_link.link_text}
             </a>
           </span>
+        {:else if property.handler}
+          <button class="link cursor-pointer" on:click={property.handler}
+            >{property.value}</button
+          >
         {:else if property.link}
           <a href={property.link} class="link">{property.value}</a>
         {:else}

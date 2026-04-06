@@ -7,6 +7,7 @@ export type UiProperty = {
   error?: boolean
   warn_icon?: boolean
   badge?: boolean
+  handler?: () => void | Promise<void>
   value_with_link?: {
     prefix: string
     link_text: string

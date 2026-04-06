@@ -71,7 +71,7 @@
       <img src="/images/card-search.svg" alt="Search Tool" class="w-12 h-12" />
     </div>
     <div slot="image-2">
-      <img src="/images/file.svg" alt="Doc Skills" class="w-12 h-12" />
+      <img src="/images/doc_skill.svg" alt="Doc Skills" class="w-12 h-12" />
     </div>
   </MultiIntro>
 </AppPage>
