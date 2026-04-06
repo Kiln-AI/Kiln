@@ -11,16 +11,8 @@ cd "$REPO_ROOT"
 SANDBOX_NAME="$(kiln_claude_sandbox_name)"
 
 for arg in "$@"; do
-  if [[ "$arg" == "--rebuild-all" ]]; then
-    echo "Removing sandboxes and template images (--rebuild-all)..."
-    docker sandbox rm kiln_base_sandbox 2>/dev/null || true
-    docker sandbox rm "$SANDBOX_NAME" 2>/dev/null || true
-    docker rmi -f kiln_sandbox_base_template:latest 2>/dev/null || true
-    docker rmi -f kiln_deps_installed_template:latest 2>/dev/null || true
-    break
-  fi
   if [[ "$arg" == "--rebuild" ]]; then
-    echo "Removing only the sandbox ($SANDBOX_NAME) (--rebuild)..."
+    echo "Removing the sandbox ($SANDBOX_NAME) (--rebuild)..."
     docker sandbox rm "$SANDBOX_NAME" 2>/dev/null || true
     break
   fi
@@ -31,35 +23,20 @@ kiln_docker_image_exists() {
   docker image ls --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -Fqx "$1"
 }
 
-if kiln_docker_image_exists kiln_deps_installed_template:latest; then
-  echo "Kiln template already exists. Will not rebuild. Call with --rebuild-all to rebuild templates." 
+if kiln_docker_image_exists kiln_deps_and_logged_in_template:latest; then
+  echo "Kiln template already exists. Continuing..." 
 else 
-  echo "Building sandbox template. Slow but one-time task."
-
-  # Base template: just dockerfile, no deps
-  if kiln_docker_image_exists kiln_sandbox_base_template:latest; then
-    echo "Sandbox base template image already exists. Skipping docker build. Call with --rebuild-all to rebuild templates."
-  else
-    echo "Building sandbox base template image..."
-    docker build -t kiln_sandbox_base_template -f utils/docker_sandboxes/DockerfileClaude utils/docker_sandboxes
-  fi
-
-  echo "Creating base sandbox instance..."
-  docker sandbox create -t kiln_sandbox_base_template --name kiln_base_sandbox claude .
-
-  echo "Installing dependencies into base sandbox..."
-  docker sandbox exec kiln_base_sandbox bash -c "cd $PWD && uv sync"
-  docker sandbox exec kiln_base_sandbox bash -c "cp $PWD/app/web_ui/package*.json /tmp && cd /tmp && npm i"
-
-  echo "Saving template with deps..."
-  docker sandbox save kiln_base_sandbox kiln_deps_installed_template
+  echo "STEP MISSED - CAN NOT CREATE SANDBOX"
+  echo "Run setup agent and login to claude code in UI: docker sandbox run kiln_base_sandbox"
+  echo "then run: docker sandbox save kiln_base_sandbox kiln_deps_and_logged_in_template"
+  exit 1
 fi
 
 if docker sandbox ls --json 2>/dev/null | jq -e --arg name "$SANDBOX_NAME" '(.vms // []) | any(.[]; .name == $name)' >/dev/null 2>&1; then
-  echo "Sandbox $SANDBOX_NAME already exists. Will not recreate it unless you use --rebuild or --rebuild-all."
+  echo "Sandbox $SANDBOX_NAME already exists. Will not recreate it unless you use --rebuild"
 else
   echo "Creating sandbox $SANDBOX_NAME..."
-  docker sandbox create -t kiln_deps_installed_template --name "$SANDBOX_NAME" claude .
+  docker sandbox create -t kiln_deps_and_logged_in_template --name "$SANDBOX_NAME" claude .
 
   # As deps may have changed, we still reinstall. It should be much faster as the cache is already built.
   echo "Installing dependencies into sandbox..."
