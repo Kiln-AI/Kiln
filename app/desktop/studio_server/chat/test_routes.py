@@ -1,5 +1,6 @@
 import json
 from http import HTTPStatus
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
@@ -11,6 +12,7 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.chat_sess
 from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
     Response as KilnResponse,
 )
+from app.desktop.studio_server.chat.constants import DENIED_TOOL_OUTPUT
 from app.desktop.studio_server.chat.helpers import (
     PATCH_ASYNC_CLIENT,
     PATCH_EXECUTE_TOOL,
@@ -580,3 +582,498 @@ def test_post_execute_tools_runs_and_continues(client, mock_api_key):
     assert continuation["messages"][0]["role"] == "tool"
     assert continuation["messages"][0]["tool_call_id"] == "tc1"
     assert continuation["messages"][0]["content"] == "3"
+
+
+def _sse_event(data: dict[str, Any]) -> bytes:
+    return f"data: {json.dumps(data)}\n\n".encode()
+
+
+def _parse_sse_events(content: bytes) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for line in content.decode().split("\n"):
+        if not line.startswith("data: "):
+            continue
+        payload = line[6:].strip()
+        if not payload or payload == "[DONE]":
+            continue
+        try:
+            ev = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(ev, dict):
+            events.append(ev)
+    return events
+
+
+class TestMockedFlows:
+    def _make_stream_mock(self, chunks: list[bytes]):
+        async def mock_aiter_bytes():
+            for chunk in chunks:
+                yield chunk
+
+        mock_upstream = MagicMock()
+        mock_upstream.status_code = 200
+        mock_upstream.aiter_bytes.return_value = mock_aiter_bytes()
+        mock_upstream.__aenter__ = AsyncMock(return_value=mock_upstream)
+        mock_upstream.__aexit__ = AsyncMock(return_value=None)
+        return mock_upstream
+
+    def _make_n_round_mock_client(self, *chunk_rounds: list[bytes]):
+        mocks = [self._make_stream_mock(chunks) for chunks in chunk_rounds]
+        call_count = 0
+
+        def side_effect(*args, **kwargs):
+            nonlocal call_count
+            idx = min(call_count, len(mocks) - 1)
+            call_count += 1
+            return mocks[idx]
+
+        mock_client = MagicMock()
+        mock_client.stream.side_effect = side_effect
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        return mock_client, lambda: call_count
+
+    def test_text_only_chat_no_tools(self, client, mock_api_key):
+        trace_id = "trace-text-only-abc"
+        chunks = [
+            _sse_event({"type": "kiln_chat_trace", "trace_id": trace_id}),
+            sse_text_delta("Paris"),
+            sse_text_delta(" is the capital."),
+            _sse_event({"type": "finish", "messageMetadata": {"finishReason": "stop"}}),
+        ]
+        mock_client, get_call_count = self._make_n_round_mock_client(chunks)
+        mock_class = MagicMock(return_value=mock_client)
+
+        with patch(PATCH_ASYNC_CLIENT, mock_class):
+            response = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "capital of France?"}]},
+            )
+
+        assert response.status_code == 200
+        events = _parse_sse_events(response.content)
+
+        text_deltas = [e for e in events if e.get("type") == "text-delta"]
+        assert len(text_deltas) >= 1
+        assert all(isinstance(e.get("delta"), str) and e["delta"] for e in text_deltas)
+
+        trace_events = [e for e in events if e.get("type") == "kiln_chat_trace"]
+        assert len(trace_events) == 1
+        assert trace_events[0]["trace_id"] == trace_id
+
+        finish_events = [e for e in events if e.get("type") == "finish"]
+        assert any(
+            (e.get("messageMetadata") or {}).get("finishReason") == "stop"
+            for e in finish_events
+        )
+
+        assert not any(e.get("type") == "tool-input-available" for e in events)
+        assert not any(e.get("type") == "tool-output-available" for e in events)
+        assert not any(e.get("type") == "tool-calls-pending" for e in events)
+        assert get_call_count() == 1
+
+    def test_proxy_auto_executes_and_emits_full_flow(self, client, mock_api_key):
+        trace_id = "trace-auto-exec-123"
+        first_chunks = [
+            _sse_event({"type": "kiln_chat_trace", "trace_id": trace_id}),
+            sse_text_delta("Computing..."),
+            _sse_event(
+                {
+                    "type": "tool-input-available",
+                    "toolCallId": "tc1",
+                    "toolName": "kiln_tool::multiply_numbers",
+                    "input": {"a": 2, "b": 8},
+                }
+            ),
+            _sse_event(
+                {"type": "finish", "messageMetadata": {"finishReason": "tool-calls"}}
+            ),
+        ]
+        second_chunks = [
+            sse_text_delta("The result is 16."),
+            _sse_event({"type": "finish", "messageMetadata": {"finishReason": "stop"}}),
+        ]
+        mock_client, get_call_count = self._make_n_round_mock_client(
+            first_chunks, second_chunks
+        )
+        mock_class = MagicMock(return_value=mock_client)
+
+        with patch(PATCH_ASYNC_CLIENT, mock_class):
+            response = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "compute 2*8"}]},
+            )
+
+        assert response.status_code == 200
+        events = _parse_sse_events(response.content)
+
+        tool_outputs = [e for e in events if e.get("type") == "tool-output-available"]
+        assert len(tool_outputs) == 1
+        assert tool_outputs[0]["toolCallId"] == "tc1"
+        assert tool_outputs[0]["output"] == "16"
+
+        joined_text = "".join(
+            e["delta"] for e in events if e.get("type") == "text-delta"
+        )
+        assert "16" in joined_text
+
+        assert get_call_count() == 2
+        continuation_body = json.loads(
+            mock_client.stream.call_args_list[1].kwargs["content"]
+        )
+        assert continuation_body["trace_id"] == trace_id
+        messages = continuation_body["messages"]
+        roles = [m["role"] for m in messages]
+        assert roles == ["tool"]
+        assert messages[0]["tool_call_id"] == "tc1"
+        assert messages[0]["content"] == "16"
+
+    def test_multi_turn_trace_continuation(self, client, mock_api_key):
+        trace_id = "trace-multi-turn-xyz"
+        first_chunks = [
+            _sse_event({"type": "kiln_chat_trace", "trace_id": trace_id}),
+            sse_text_delta("Got it, Bob."),
+            _sse_event({"type": "finish", "messageMetadata": {"finishReason": "stop"}}),
+        ]
+        second_chunks = [
+            sse_text_delta("Your name is Bob."),
+            _sse_event({"type": "finish", "messageMetadata": {"finishReason": "stop"}}),
+        ]
+        mock_client, get_call_count = self._make_n_round_mock_client(
+            first_chunks, second_chunks
+        )
+        mock_class = MagicMock(return_value=mock_client)
+
+        with patch(PATCH_ASYNC_CLIENT, mock_class):
+            r1 = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "my name is Bob"}]},
+            )
+        assert r1.status_code == 200
+        assert get_call_count() == 1
+
+        with patch(PATCH_ASYNC_CLIENT, mock_class):
+            r2 = client.post(
+                "/api/chat",
+                json={
+                    "messages": [{"role": "user", "content": "what's my name?"}],
+                    "trace_id": trace_id,
+                },
+            )
+        assert r2.status_code == 200
+        assert get_call_count() == 2
+
+        second_body = json.loads(mock_client.stream.call_args_list[1].kwargs["content"])
+        assert second_body["trace_id"] == trace_id
+        assert len(second_body["messages"]) == 1
+        assert second_body["messages"][0]["role"] == "user"
+        assert second_body["messages"][0]["content"] == "what's my name?"
+
+        events_r2 = _parse_sse_events(r2.content)
+        text = "".join(e["delta"] for e in events_r2 if e.get("type") == "text-delta")
+        assert "Bob" in text
+
+    def test_execute_tools_denied_tool(self, client, mock_api_key):
+        continuation_chunks = [
+            sse_text_delta("Tool was denied."),
+            _sse_event({"type": "finish", "messageMetadata": {"finishReason": "stop"}}),
+        ]
+        mock_client, get_call_count = self._make_n_round_mock_client(
+            continuation_chunks
+        )
+        mock_class = MagicMock(return_value=mock_client)
+
+        body = {
+            "trace_id": "tr-denied-1",
+            "tool_calls": [
+                {
+                    "toolCallId": "tc_deny",
+                    "toolName": "kiln_tool::add_numbers",
+                    "input": {"a": 10, "b": 20},
+                    "requiresApproval": True,
+                }
+            ],
+            "decisions": {"tc_deny": False},
+        }
+
+        with patch(PATCH_ASYNC_CLIENT, mock_class):
+            with patch(PATCH_EXECUTE_TOOL, AsyncMock(return_value="30")) as exec_mock:
+                response = client.post("/api/chat/execute-tools", json=body)
+
+        assert response.status_code == 200
+        events = _parse_sse_events(response.content)
+
+        tool_outputs = [e for e in events if e.get("type") == "tool-output-available"]
+        assert len(tool_outputs) == 1
+        assert tool_outputs[0]["toolCallId"] == "tc_deny"
+        assert tool_outputs[0]["output"] == DENIED_TOOL_OUTPUT
+
+        exec_mock.assert_not_called()
+
+        continuation_body = json.loads(mock_client.stream.call_args.kwargs["content"])
+        assert continuation_body["trace_id"] == "tr-denied-1"
+        assert len(continuation_body["messages"]) == 1
+        assert continuation_body["messages"][0]["role"] == "tool"
+        assert continuation_body["messages"][0]["content"] == DENIED_TOOL_OUTPUT
+
+    def test_execute_tools_mixed_approved_and_denied(self, client, mock_api_key):
+        continuation_chunks = [
+            sse_text_delta("Done."),
+            _sse_event({"type": "finish", "messageMetadata": {"finishReason": "stop"}}),
+        ]
+        mock_client, _ = self._make_n_round_mock_client(continuation_chunks)
+        mock_class = MagicMock(return_value=mock_client)
+
+        body = {
+            "trace_id": "tr-mixed-1",
+            "tool_calls": [
+                {
+                    "toolCallId": "tc_yes",
+                    "toolName": "kiln_tool::add_numbers",
+                    "input": {"a": 1, "b": 2},
+                    "requiresApproval": True,
+                },
+                {
+                    "toolCallId": "tc_no",
+                    "toolName": "kiln_tool::multiply_numbers",
+                    "input": {"a": 3, "b": 4},
+                    "requiresApproval": True,
+                },
+            ],
+            "decisions": {"tc_yes": True, "tc_no": False},
+        }
+
+        with patch(PATCH_ASYNC_CLIENT, mock_class):
+            with patch(PATCH_EXECUTE_TOOL, AsyncMock(return_value="3")):
+                response = client.post("/api/chat/execute-tools", json=body)
+
+        assert response.status_code == 200
+        events = _parse_sse_events(response.content)
+
+        tool_outputs = {
+            e["toolCallId"]: e["output"]
+            for e in events
+            if e.get("type") == "tool-output-available"
+        }
+        assert tool_outputs["tc_yes"] == "3"
+        assert tool_outputs["tc_no"] == DENIED_TOOL_OUTPUT
+
+        continuation_body = json.loads(mock_client.stream.call_args.kwargs["content"])
+        assert continuation_body["trace_id"] == "tr-mixed-1"
+        tool_msgs = continuation_body["messages"]
+        assert len(tool_msgs) == 2
+        by_id = {m["tool_call_id"]: m["content"] for m in tool_msgs}
+        assert by_id["tc_yes"] == "3"
+        assert by_id["tc_no"] == DENIED_TOOL_OUTPUT
+
+    def test_mixed_server_and_client_tools_auto_execute(self, client, mock_api_key):
+        first_chunks = [
+            _sse_event(
+                {
+                    "type": "tool-input-available",
+                    "toolCallId": "tc_srv",
+                    "toolName": "server_side_tool",
+                    "input": {"x": 1},
+                    "kiln_metadata": {"executor": "server"},
+                }
+            ),
+            _sse_event(
+                {
+                    "type": "tool-input-available",
+                    "toolCallId": "tc_cli1",
+                    "toolName": "kiln_tool::add_numbers",
+                    "input": {"a": 1, "b": 2},
+                }
+            ),
+            _sse_event(
+                {
+                    "type": "tool-input-available",
+                    "toolCallId": "tc_cli2",
+                    "toolName": "kiln_tool::multiply_numbers",
+                    "input": {"a": 3, "b": 4},
+                }
+            ),
+            _sse_event(
+                {"type": "finish", "messageMetadata": {"finishReason": "tool-calls"}}
+            ),
+        ]
+        second_chunks = [
+            _sse_event({"type": "finish", "messageMetadata": {"finishReason": "stop"}}),
+        ]
+        mock_client, get_call_count = self._make_n_round_mock_client(
+            first_chunks, second_chunks
+        )
+        mock_class = MagicMock(return_value=mock_client)
+        execute_calls: list[tuple[str, dict]] = []
+        original_results = {
+            "kiln_tool::add_numbers": "3",
+            "kiln_tool::multiply_numbers": "12",
+        }
+
+        async def mock_execute(tool_name, args):
+            execute_calls.append((tool_name, args))
+            return original_results.get(tool_name, "unknown")
+
+        with patch(PATCH_ASYNC_CLIENT, mock_class):
+            with patch(PATCH_EXECUTE_TOOL, side_effect=mock_execute):
+                response = client.post(
+                    "/api/chat",
+                    json={"messages": [{"role": "user", "content": "compute"}]},
+                )
+
+        assert response.status_code == 200
+        assert get_call_count() == 2
+
+        executed_names = {name for name, _ in execute_calls}
+        assert "kiln_tool::add_numbers" in executed_names
+        assert "kiln_tool::multiply_numbers" in executed_names
+        assert "server_side_tool" not in executed_names
+
+        events = _parse_sse_events(response.content)
+        tool_output_ids = {
+            e["toolCallId"] for e in events if e.get("type") == "tool-output-available"
+        }
+        assert tool_output_ids == {"tc_cli1", "tc_cli2"}
+        assert "tc_srv" not in tool_output_ids
+
+        continuation_body = json.loads(
+            mock_client.stream.call_args_list[1].kwargs["content"]
+        )
+        tool_call_ids_in_continuation = {
+            m["tool_call_id"]
+            for m in continuation_body["messages"]
+            if m["role"] == "tool"
+        }
+        assert tool_call_ids_in_continuation == {"tc_cli1", "tc_cli2"}
+
+    def test_mixed_server_client_approval_emits_pending_for_client_only(
+        self, client, mock_api_key
+    ):
+        first_chunks = [
+            _sse_event(
+                {
+                    "type": "tool-input-available",
+                    "toolCallId": "tc_srv",
+                    "toolName": "server_side_tool",
+                    "input": {"x": 1},
+                    "kiln_metadata": {"executor": "server"},
+                }
+            ),
+            _sse_event(
+                {
+                    "type": "tool-input-available",
+                    "toolCallId": "tc_auto",
+                    "toolName": "kiln_tool::add_numbers",
+                    "input": {"a": 5, "b": 6},
+                }
+            ),
+            _sse_event(
+                {
+                    "type": "tool-input-available",
+                    "toolCallId": "tc_approve",
+                    "toolName": "kiln_tool::multiply_numbers",
+                    "input": {"a": 7, "b": 8},
+                    "kiln_metadata": {"requires_approval": True},
+                }
+            ),
+            _sse_event(
+                {"type": "finish", "messageMetadata": {"finishReason": "tool-calls"}}
+            ),
+        ]
+        mock_client, get_call_count = self._make_n_round_mock_client(first_chunks)
+        mock_class = MagicMock(return_value=mock_client)
+        execute_tool_mock = AsyncMock()
+
+        with patch(PATCH_ASYNC_CLIENT, mock_class):
+            with patch(PATCH_EXECUTE_TOOL, execute_tool_mock):
+                response = client.post(
+                    "/api/chat",
+                    json={"messages": [{"role": "user", "content": "compute"}]},
+                )
+
+        assert response.status_code == 200
+        events = _parse_sse_events(response.content)
+
+        pending = [e for e in events if e.get("type") == "tool-calls-pending"]
+        assert len(pending) == 1
+        pending_ids = {i["toolCallId"] for i in pending[0]["items"]}
+        assert pending_ids == {"tc_auto", "tc_approve"}
+        assert "tc_srv" not in pending_ids
+
+        assert not any(e.get("type") == "tool-output-available" for e in events)
+        execute_tool_mock.assert_not_called()
+        assert get_call_count() == 1
+
+    def test_sse_event_shapes_match_frontend_expectations(self, client, mock_api_key):
+        trace_id = "trace-shapes-test"
+        first_chunks = [
+            _sse_event({"type": "kiln_chat_trace", "trace_id": trace_id}),
+            _sse_event(
+                {
+                    "type": "start",
+                    "messageId": "msg-test-123",
+                    "kiln_metadata": {},
+                }
+            ),
+            sse_text_delta("Calculating..."),
+            _sse_event(
+                {
+                    "type": "tool-input-available",
+                    "toolCallId": "tc_shape",
+                    "toolName": "kiln_tool::add_numbers",
+                    "input": {"a": 5, "b": 10},
+                }
+            ),
+            _sse_event(
+                {"type": "finish", "messageMetadata": {"finishReason": "tool-calls"}}
+            ),
+        ]
+        second_chunks = [
+            sse_text_delta("15"),
+            _sse_event({"type": "finish", "messageMetadata": {"finishReason": "stop"}}),
+        ]
+        mock_client, _ = self._make_n_round_mock_client(first_chunks, second_chunks)
+        mock_class = MagicMock(return_value=mock_client)
+
+        with patch(PATCH_ASYNC_CLIENT, mock_class):
+            response = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "add 5+10"}]},
+            )
+
+        assert response.status_code == 200
+        events = _parse_sse_events(response.content)
+
+        for ev in events:
+            et = ev.get("type")
+            if et == "text-delta":
+                assert isinstance(ev.get("delta"), str)
+                assert ev["delta"]
+            elif et == "tool-input-available":
+                assert isinstance(ev.get("toolCallId"), str)
+                assert isinstance(ev.get("toolName"), str)
+                assert "input" in ev
+            elif et == "tool-output-available":
+                assert isinstance(ev.get("toolCallId"), str)
+                assert "output" in ev
+            elif et == "kiln_chat_trace":
+                assert isinstance(ev.get("trace_id"), str)
+                assert ev["trace_id"]
+            elif et == "finish":
+                meta = ev.get("messageMetadata")
+                assert meta is None or isinstance(meta, dict)
+                if isinstance(meta, dict) and "finishReason" in meta:
+                    assert isinstance(meta["finishReason"], str)
+
+        type_set = {ev.get("type") for ev in events}
+        assert "text-delta" in type_set
+        assert "tool-input-available" in type_set
+        assert "tool-output-available" in type_set
+        assert "kiln_chat_trace" in type_set
+        assert "finish" in type_set
+
+        tool_outputs = [e for e in events if e.get("type") == "tool-output-available"]
+        assert len(tool_outputs) == 1
+        assert tool_outputs[0]["toolCallId"] == "tc_shape"
+        assert tool_outputs[0]["output"] == "15"

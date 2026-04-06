@@ -324,8 +324,9 @@ class TestMCPServerTool:
         )
 
     @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value=None)
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    async def test_get_tool_success(self, mock_session_manager):
+    async def test_get_tool_success(self, mock_session_manager, _mock_get_run_id):
         """Test _get_tool() method finds tool successfully."""
         mock_session = AsyncMock()
         _configure_ephemeral_mcp_client_mock(mock_session_manager, mock_session)
@@ -357,8 +358,9 @@ class TestMCPServerTool:
         mock_session.list_tools.assert_called_once()
 
     @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value=None)
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    async def test_get_tool_not_found(self, mock_session_manager):
+    async def test_get_tool_not_found(self, mock_session_manager, _mock_get_run_id):
         """Test _get_tool() raises error when tool not found."""
         mock_session = AsyncMock()
         _configure_ephemeral_mcp_client_mock(mock_session_manager, mock_session)
@@ -382,8 +384,11 @@ class TestMCPServerTool:
             await tool._get_tool("missing_tool")
 
     @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value=None)
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    async def test_load_tool_properties_success(self, mock_session_manager):
+    async def test_load_tool_properties_success(
+        self, mock_session_manager, _mock_get_run_id
+    ):
         """Test _load_tool_properties() updates tool properties."""
         mock_session = AsyncMock()
         _configure_ephemeral_mcp_client_mock(mock_session_manager, mock_session)
@@ -420,8 +425,11 @@ class TestMCPServerTool:
         assert tool._tool == tool_def
 
     @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value=None)
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    async def test_load_tool_properties_no_description(self, mock_session_manager):
+    async def test_load_tool_properties_no_description(
+        self, mock_session_manager, _mock_get_run_id
+    ):
         """Test _load_tool_properties() handles missing description."""
         mock_session = AsyncMock()
         _configure_ephemeral_mcp_client_mock(mock_session_manager, mock_session)
@@ -446,8 +454,11 @@ class TestMCPServerTool:
         assert await tool.description() == "N/A"
 
     @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value=None)
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    async def test_load_tool_properties_no_input_schema(self, mock_session_manager):
+    async def test_load_tool_properties_no_input_schema(
+        self, mock_session_manager, _mock_get_run_id
+    ):
         """Test _load_tool_properties() handles missing inputSchema."""
         mock_session = AsyncMock()
         _configure_ephemeral_mcp_client_mock(mock_session_manager, mock_session)
@@ -473,8 +484,9 @@ class TestMCPServerTool:
         assert tool._parameters_schema == {"type": "object", "properties": {}}
 
     @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value=None)
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    async def test_output_schema(self, mock_session_manager):
+    async def test_output_schema(self, mock_session_manager, _mock_get_run_id):
         """Test output_schema() returns MCP outputSchema."""
         mock_session = AsyncMock()
         _configure_ephemeral_mcp_client_mock(mock_session_manager, mock_session)

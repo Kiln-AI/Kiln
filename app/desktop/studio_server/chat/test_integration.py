@@ -1,6 +1,8 @@
 import json
 import logging
 import os
+import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -14,12 +16,29 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.api.health impor
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_kiln_server_client,
 )
+from app.desktop.studio_server.chat.constants import (
+    DENIED_TOOL_OUTPUT,
+    KILN_SSE_CHAT_TRACE,
+    SSE_TYPE_TOOL_CALLS_PENDING,
+)
 from fastapi.testclient import TestClient
 from kiln_ai.utils.config import Config
 
 logger = logging.getLogger(__name__)
 
 _MAX_TOOL_ROUNDS_INTEGRATION = 5
+
+
+@dataclass
+class StreamResult:
+    events: list[dict[str, Any]] = field(default_factory=list)
+    text: str = ""
+    trace_id: str | None = None
+    tool_inputs: list[dict[str, Any]] = field(default_factory=list)
+    tool_outputs: list[dict[str, Any]] = field(default_factory=list)
+    pending_items: list[dict[str, Any]] = field(default_factory=list)
+    finish_reason: str | None = None
+    raw_bytes: bytes = b""
 
 
 def _sse_json_from_line(line: str) -> dict[str, Any] | None:
@@ -35,9 +54,159 @@ def _sse_json_from_line(line: str) -> dict[str, Any] | None:
     return out if isinstance(out, dict) else None
 
 
+def _accumulate_stream_result(
+    lines: Any,
+) -> StreamResult:
+    out = StreamResult()
+    buf = bytearray()
+    for line in lines:
+        text = line or ""
+        buf.extend(text.encode("utf-8"))
+        buf.extend(b"\n")
+        ev = _sse_json_from_line(text)
+        if not ev:
+            continue
+        out.events.append(ev)
+        et = ev.get("type")
+        if et == "text-delta":
+            delta = ev.get("delta")
+            if isinstance(delta, str):
+                out.text += delta
+        elif et == "tool-input-available":
+            out.tool_inputs.append(ev)
+        elif et == "tool-output-available":
+            out.tool_outputs.append(ev)
+        elif et == SSE_TYPE_TOOL_CALLS_PENDING:
+            items = ev.get("items")
+            if isinstance(items, list):
+                for it in items:
+                    if isinstance(it, dict):
+                        out.pending_items.append(it)
+        elif et == KILN_SSE_CHAT_TRACE:
+            tid = ev.get("trace_id")
+            if isinstance(tid, str) and tid:
+                out.trace_id = tid
+        elif et == "finish":
+            meta = ev.get("messageMetadata") or {}
+            fr = meta.get("finishReason")
+            if isinstance(fr, str):
+                out.finish_reason = fr
+    out.raw_bytes = bytes(buf)
+    return out
+
+
+def _stream_chat(
+    app: Any,
+    body: dict[str, Any],
+    api_key: str,
+) -> StreamResult:
+    client = TestClient(app)
+    collected = bytearray()
+    with patch.dict(os.environ, {"KILN_COPILOT_API_KEY": api_key}, clear=False):
+        with client.stream(
+            "POST",
+            "/api/chat",
+            json=body,
+            timeout=httpx.Timeout(120.0, connect=30.0),
+        ) as response:
+            assert response.status_code == 200
+            ctype = response.headers.get("content-type", "")
+            assert ctype.startswith("text/event-stream")
+            for line in response.iter_lines():
+                text = line or ""
+                collected.extend(text.encode("utf-8"))
+                collected.extend(b"\n")
+    r = _accumulate_stream_result(collected.decode("utf-8").splitlines())
+    r.raw_bytes = bytes(collected)
+    return r
+
+
+def _stream_execute_tools(
+    app: Any,
+    body: dict[str, Any],
+    api_key: str,
+) -> StreamResult:
+    client = TestClient(app)
+    collected = bytearray()
+    with patch.dict(os.environ, {"KILN_COPILOT_API_KEY": api_key}, clear=False):
+        with client.stream(
+            "POST",
+            "/api/chat/execute-tools",
+            json=body,
+            timeout=httpx.Timeout(120.0, connect=30.0),
+        ) as response:
+            assert response.status_code == 200
+            ctype = response.headers.get("content-type", "")
+            assert ctype.startswith("text/event-stream")
+            for line in response.iter_lines():
+                text = line or ""
+                collected.extend(text.encode("utf-8"))
+                collected.extend(b"\n")
+    r = _accumulate_stream_result(collected.decode("utf-8").splitlines())
+    r.raw_bytes = bytes(collected)
+    return r
+
+
+def _require_copilot_api_key() -> str:
+    api_key = _kiln_copilot_api_key_for_integration()
+    if not api_key:
+        pytest.skip(
+            "No Kiln Copilot API key: set KILN_COPILOT_API_KEY or kiln_copilot_api_key "
+            f"in {Path(Config.settings_dir(create=False)) / 'settings.yaml'}"
+        )
+    return api_key
+
+
 def _finish_reason_is_tool_calls(event: dict[str, Any]) -> bool:
     meta = event.get("messageMetadata") or {}
     return meta.get("finishReason") == "tool-calls"
+
+
+def _tool_output_matches_expected_number(value: Any, expected: float) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)) and float(value) == expected:
+        return True
+    s = str(value).strip()
+    try:
+        return float(s) == expected
+    except ValueError:
+        return False
+
+
+def _assert_sse_events_match_frontend_expected_shapes(
+    events: list[dict[str, Any]],
+) -> None:
+    for ev in events:
+        et = ev.get("type")
+        if not isinstance(et, str):
+            continue
+        if et == "text-delta":
+            assert "delta" in ev
+            assert isinstance(ev.get("delta"), str)
+        elif et == "tool-input-available":
+            assert isinstance(ev.get("toolCallId"), str)
+            assert isinstance(ev.get("toolName"), str)
+            assert "input" in ev
+        elif et == "tool-output-available":
+            assert isinstance(ev.get("toolCallId"), str)
+            assert "output" in ev
+        elif et == SSE_TYPE_TOOL_CALLS_PENDING:
+            items = ev.get("items")
+            assert isinstance(items, list) and len(items) > 0
+            for it in items:
+                assert isinstance(it, dict)
+                assert isinstance(it.get("toolCallId"), str)
+                assert isinstance(it.get("toolName"), str)
+                assert "input" in it
+        elif et == KILN_SSE_CHAT_TRACE:
+            assert isinstance(ev.get("trace_id"), str)
+            assert ev.get("trace_id")
+        elif et == "finish":
+            meta = ev.get("messageMetadata")
+            assert meta is None or isinstance(meta, dict)
+            if isinstance(meta, dict) and "finishReason" in meta:
+                assert isinstance(meta.get("finishReason"), str)
 
 
 def _execute_math_tool_for_integration(
@@ -141,12 +310,7 @@ def test_api_integration():
 
 @pytest.mark.paid
 def test_chat_api_integration(app):
-    api_key = _kiln_copilot_api_key_for_integration()
-    if not api_key:
-        pytest.skip(
-            "No Kiln Copilot API key: set KILN_COPILOT_API_KEY or kiln_copilot_api_key "
-            f"in {Path(Config.settings_dir(create=False)) / 'settings.yaml'}"
-        )
+    api_key = _require_copilot_api_key()
     client = TestClient(app)
     collected = bytearray()
     messages: list[dict[str, Any]] = [
@@ -160,7 +324,7 @@ def test_chat_api_integration(app):
     ]
 
     with patch.dict(os.environ, {"KILN_COPILOT_API_KEY": api_key}, clear=False):
-        for round_i in range(_MAX_TOOL_ROUNDS_INTEGRATION):
+        for _round_i in range(_MAX_TOOL_ROUNDS_INTEGRATION):
             pending_tool_inputs: list[dict[str, Any]] = []
             assistant_chunks: list[str] = []
             stop_with_tool_calls = False
@@ -212,3 +376,244 @@ def test_chat_api_integration(app):
     assert len(content) > 0
     assert b"data:" in content
     assert b"16" in content or b'"16"' in content
+
+
+@pytest.mark.paid
+def test_simple_text_chat_no_tools(app):
+    api_key = _require_copilot_api_key()
+    r = _stream_chat(
+        app,
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "Answer in one short sentence only: what is the capital of France? "
+                        "Do not call any tools."
+                    ),
+                }
+            ]
+        },
+        api_key,
+    )
+    assert len(r.raw_bytes) > 0
+    assert b"data:" in r.raw_bytes
+    assert r.trace_id, "kiln_chat_trace should issue trace_id"
+    assert any(ev.get("type") == "text-delta" and ev.get("delta") for ev in r.events), (
+        "expected non-empty text-delta"
+    )
+    assert not r.tool_inputs, "expected no tool-input-available for text-only prompt"
+    assert not r.pending_items, "expected no tool-calls-pending"
+    assert r.finish_reason != "tool-calls", (
+        f"expected finish without tool-calls, got {r.finish_reason!r}"
+    )
+
+
+@pytest.mark.paid
+def test_proxy_auto_executes_math_tools(app):
+    api_key = _require_copilot_api_key()
+    r = _stream_chat(
+        app,
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "hi - my name is bob. Can you compute 2 * 8 for me? "
+                        "Use the multiply tool if available."
+                    ),
+                }
+            ]
+        },
+        api_key,
+    )
+    assert len(r.raw_bytes) > 0
+    assert "16" in r.text or b"16" in r.raw_bytes
+    if r.tool_outputs:
+        outputs_by_id = {o.get("toolCallId"): o.get("output") for o in r.tool_outputs}
+        assert any(
+            _tool_output_matches_expected_number(v, 16.0)
+            for v in outputs_by_id.values()
+        )
+
+
+@pytest.mark.paid
+def test_multi_turn_trace_continuation(app):
+    api_key = _require_copilot_api_key()
+    first = _stream_chat(
+        app,
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "Remember this for our conversation: my display name is Bob. "
+                        "Reply with one short acknowledgment sentence."
+                    ),
+                }
+            ]
+        },
+        api_key,
+    )
+    tid = first.trace_id
+    assert tid, "first turn should include kiln_chat_trace trace_id"
+
+    second = _stream_chat(
+        app,
+        {
+            "trace_id": tid,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        "What display name did I ask you to remember? "
+                        "Answer with the name only, one word if possible."
+                    ),
+                }
+            ],
+        },
+        api_key,
+    )
+    assert second.trace_id
+    combined = (
+        second.text + second.raw_bytes.decode("utf-8", errors="replace")
+    ).lower()
+    assert "bob" in combined
+
+
+@pytest.mark.paid
+def test_execute_tools_with_approved_tool(app):
+    api_key = _require_copilot_api_key()
+    warm = _stream_chat(
+        app,
+        {"messages": [{"role": "user", "content": "Say hi in one word."}]},
+        api_key,
+    )
+    trace_id = warm.trace_id
+    assert trace_id
+    tc_id = f"integ-approved-{uuid.uuid4().hex[:12]}"
+    exec_r = _stream_execute_tools(
+        app,
+        {
+            "trace_id": trace_id,
+            "tool_calls": [
+                {
+                    "toolCallId": tc_id,
+                    "toolName": "kiln_tool::add_numbers",
+                    "input": {"a": 1, "b": 2},
+                    "requiresApproval": True,
+                }
+            ],
+            "decisions": {tc_id: True},
+        },
+        api_key,
+    )
+    by_call = {o.get("toolCallId"): o.get("output") for o in exec_r.tool_outputs}
+    assert by_call.get(tc_id) == "3"
+    assert any(ev.get("type") == "finish" for ev in exec_r.events), (
+        "execute-tools stream should continue with upstream finish"
+    )
+
+
+@pytest.mark.paid
+def test_execute_tools_with_denied_tool(app):
+    api_key = _require_copilot_api_key()
+    warm = _stream_chat(
+        app,
+        {"messages": [{"role": "user", "content": "Say hello in one word."}]},
+        api_key,
+    )
+    trace_id = warm.trace_id
+    assert trace_id
+    tc_id = f"integ-denied-{uuid.uuid4().hex[:12]}"
+    exec_r = _stream_execute_tools(
+        app,
+        {
+            "trace_id": trace_id,
+            "tool_calls": [
+                {
+                    "toolCallId": tc_id,
+                    "toolName": "kiln_tool::add_numbers",
+                    "input": {"a": 10, "b": 20},
+                    "requiresApproval": True,
+                }
+            ],
+            "decisions": {tc_id: False},
+        },
+        api_key,
+    )
+    by_call = {o.get("toolCallId"): o.get("output") for o in exec_r.tool_outputs}
+    assert by_call.get(tc_id) == DENIED_TOOL_OUTPUT
+
+
+@pytest.mark.paid
+def test_execute_tools_mixed_approved_and_denied(app):
+    api_key = _require_copilot_api_key()
+    warm = _stream_chat(
+        app,
+        {"messages": [{"role": "user", "content": "Acknowledge in one word."}]},
+        api_key,
+    )
+    trace_id = warm.trace_id
+    assert trace_id
+    tc_add = f"integ-mix-add-{uuid.uuid4().hex[:10]}"
+    tc_mul = f"integ-mix-mul-{uuid.uuid4().hex[:10]}"
+    exec_r = _stream_execute_tools(
+        app,
+        {
+            "trace_id": trace_id,
+            "tool_calls": [
+                {
+                    "toolCallId": tc_add,
+                    "toolName": "kiln_tool::add_numbers",
+                    "input": {"a": 1, "b": 2},
+                    "requiresApproval": True,
+                },
+                {
+                    "toolCallId": tc_mul,
+                    "toolName": "kiln_tool::multiply_numbers",
+                    "input": {"a": 3, "b": 4},
+                    "requiresApproval": True,
+                },
+            ],
+            "decisions": {tc_add: True, tc_mul: False},
+        },
+        api_key,
+    )
+    by_call = {o.get("toolCallId"): o.get("output") for o in exec_r.tool_outputs}
+    assert by_call.get(tc_add) == "3"
+    assert by_call.get(tc_mul) == DENIED_TOOL_OUTPUT
+
+
+@pytest.mark.paid
+def test_sse_events_match_frontend_expected_shapes(app):
+    api_key = _require_copilot_api_key()
+    warm = _stream_chat(
+        app,
+        {"messages": [{"role": "user", "content": "Say hi in one word."}]},
+        api_key,
+    )
+    _assert_sse_events_match_frontend_expected_shapes(warm.events)
+    trace_id = warm.trace_id
+    assert trace_id
+    tc_id = f"integ-sse-shapes-{uuid.uuid4().hex[:12]}"
+    exec_r = _stream_execute_tools(
+        app,
+        {
+            "trace_id": trace_id,
+            "tool_calls": [
+                {
+                    "toolCallId": tc_id,
+                    "toolName": "kiln_tool::multiply_numbers",
+                    "input": {"a": 3, "b": 4},
+                    "requiresApproval": True,
+                }
+            ],
+            "decisions": {tc_id: True},
+        },
+        api_key,
+    )
+    _assert_sse_events_match_frontend_expected_shapes(exec_r.events)
+    assert any(ev.get("type") == "tool-output-available" for ev in exec_r.events)
+    by_call = {o.get("toolCallId"): o.get("output") for o in exec_r.tool_outputs}
+    assert _tool_output_matches_expected_number(by_call.get(tc_id), 12.0)
