@@ -61,15 +61,10 @@ if [ "$staged_only" = false ] || [[ "$changed_files" == *"app/web_ui/"* ]]; then
     cd app/web_ui
     npm run format_check
     npm run lint
-
-    if [ "$DOCKER_SANDBOX" = "true" ]; then
-      echo "Skipping web tests, svelte-check and vite build: running in Docker Sandbox"
-    else
-      npm run test_run
-      npm run check
-      echo "Running vite build"
-      npm run build > /dev/null
-    fi
+    npm run test_run
+    npm run check
+    echo "Running vite build"
+    npm run build > /dev/null
     cd ../..
 else
     echo "Skipping Web UI: no files changed"
