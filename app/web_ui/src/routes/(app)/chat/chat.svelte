@@ -412,7 +412,7 @@
               </div>
             {/if}
           {:else}
-            <div class="flex flex-col">
+            <div class="flex flex-col leading-tight">
               {#if message.parts && message.parts.length > 0}
                 {#each message.parts as part, partIndex (partKey(message, part, partIndex))}
                   {#if part.type === "text"}
