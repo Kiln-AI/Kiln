@@ -1,5 +1,5 @@
 [post-create]
-copy_user_settigns = "cp ./../../.config/wt/user_settings.sh ./config/wt && exit 0"
+copy_user_settigns = "cp ./../../.config/wt/user_settings.sh ./.config/wt && exit 0"
 deps = "config/wt/install_deps.sh"
 claude = "utils/setup_claude.sh"
 
