@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { get } from "svelte/store"
+import { get, writable } from "svelte/store"
 import type { ChatMessage, StreamChatOptions } from "./streaming_chat"
 
 vi.mock("./streaming_chat", () => ({
@@ -10,6 +10,24 @@ vi.mock("./streaming_chat", () => ({
 
 vi.mock("$lib/api_client", () => ({
   base_url: "http://test:8000",
+}))
+
+const mockAppState = {
+  path: "/test",
+  pageName: "Test Page",
+  pageDescription: "A test page",
+  currentProject: null,
+  currentTask: null,
+}
+
+vi.mock("$lib/agent", () => ({
+  getCurrentAppState: vi.fn(() => ({ ...mockAppState })),
+  buildContextHeader: vi.fn(() => null),
+}))
+
+const mockConsentStore = writable(true)
+vi.mock("$lib/stores", () => ({
+  chat_cost_disclaimer_acknowledged: mockConsentStore,
 }))
 
 function stubSessionStorage() {
@@ -56,6 +74,7 @@ beforeEach(() => {
     sessionStorage: storage.mock,
   })
   vi.stubGlobal("sessionStorage", storage.mock)
+  mockConsentStore.set(true)
 })
 
 afterEach(() => {
@@ -82,7 +101,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(noopStreamChat)
       const store = createChatSessionStore()
 
-      store.sendMessage("hello")
+      await store.sendMessage("hello")
 
       const state = get(store)
       expect(state.messages).toHaveLength(2)
@@ -100,7 +119,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(noopStreamChat)
       const store = createChatSessionStore()
 
-      store.sendMessage("  hello  ")
+      await store.sendMessage("  hello  ")
       expect(get(store).messages[0].content).toBe("hello")
     })
 
@@ -108,8 +127,8 @@ describe("createChatSessionStore", () => {
       const { createChatSessionStore } = await importFreshWithMock()
       const store = createChatSessionStore()
 
-      store.sendMessage("")
-      store.sendMessage("   ")
+      await store.sendMessage("")
+      await store.sendMessage("   ")
       expect(get(store).messages).toHaveLength(0)
       expect(get(store).status).toBe("ready")
     })
@@ -120,10 +139,10 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(noopStreamChat)
       const store = createChatSessionStore()
 
-      store.sendMessage("first")
+      await store.sendMessage("first")
       expect(get(store).status).toBe("submitted")
 
-      store.sendMessage("second")
+      await store.sendMessage("second")
       expect(get(store).messages).toHaveLength(2)
       expect(streamChatMock).toHaveBeenCalledTimes(1)
     })
@@ -135,7 +154,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(capturingStreamChat(capture))
       const store = createChatSessionStore()
 
-      store.sendMessage("hi")
+      await store.sendMessage("hi")
       expect(get(store).status).toBe("submitted")
 
       capture.options!.onAssistantMessage((draft: ChatMessage) => {
@@ -156,7 +175,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(capturingStreamChat(capture))
       const store = createChatSessionStore()
 
-      store.sendMessage("hi")
+      await store.sendMessage("hi")
       capture.options!.onFinish()
 
       expect(get(store).status).toBe("ready")
@@ -170,7 +189,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(capturingStreamChat(capture))
       const store = createChatSessionStore()
 
-      store.sendMessage("hi")
+      await store.sendMessage("hi")
       capture.options!.onError(new Error("network failure"))
 
       const state = get(store)
@@ -187,11 +206,11 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(capturingStreamChat(capture))
       const store = createChatSessionStore()
 
-      store.sendMessage("hi")
+      await store.sendMessage("hi")
       capture.options!.onError(new Error("fail"))
       expect(get(store).messages.some((m) => m.role === "error")).toBe(true)
 
-      store.sendMessage("retry")
+      await store.sendMessage("retry")
       expect(
         get(store).messages.filter((m) => m.role === "error"),
       ).toHaveLength(0)
@@ -205,7 +224,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(capturingStreamChat(capture))
       const store = createChatSessionStore()
 
-      store.sendMessage("hi")
+      await store.sendMessage("hi")
       capture.options!.onChatTrace!("trace-abc")
 
       const state = get(store)
@@ -220,7 +239,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(capturingStreamChat(capture))
       const store = createChatSessionStore()
 
-      store.sendMessage("hi")
+      await store.sendMessage("hi")
       capture.options!.onInlineError!("server error", "trace-xyz")
 
       const state = get(store)
@@ -229,6 +248,61 @@ describe("createChatSessionStore", () => {
       expect(errorMsg).toBeDefined()
       expect(errorMsg?.content).toBe("server error")
       expect(errorMsg?.traceId).toBe("trace-xyz")
+    })
+
+    it("blocks sending when consent not acknowledged and no callback", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore()
+      mockConsentStore.set(false)
+
+      const sent = await store.sendMessage("hello")
+      expect(sent).toBe(false)
+      expect(get(store).messages).toHaveLength(0)
+      expect(streamChatMock).not.toHaveBeenCalled()
+    })
+
+    it("prompts for consent and sends on approval", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore()
+      mockConsentStore.set(false)
+      store.onConsentNeeded = () => Promise.resolve(true)
+
+      const sent = await store.sendMessage("hello")
+      expect(sent).toBe(true)
+      expect(get(store).messages).toHaveLength(2)
+      expect(streamChatMock).toHaveBeenCalledTimes(1)
+    })
+
+    it("does not send when consent is denied", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore()
+      mockConsentStore.set(false)
+      store.onConsentNeeded = () => Promise.resolve(false)
+
+      const sent = await store.sendMessage("hello")
+      expect(sent).toBe(false)
+      expect(get(store).messages).toHaveLength(0)
+      expect(streamChatMock).not.toHaveBeenCalled()
+    })
+
+    it("skips consent prompt when already acknowledged", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore()
+      mockConsentStore.set(true)
+      const consentFn = vi.fn(() => Promise.resolve(true))
+      store.onConsentNeeded = consentFn
+
+      const sent = await store.sendMessage("hello")
+      expect(sent).toBe(true)
+      expect(consentFn).not.toHaveBeenCalled()
     })
   })
 
@@ -239,7 +313,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(noopStreamChat)
       const store = createChatSessionStore()
 
-      store.sendMessage("hi")
+      await store.sendMessage("hi")
       const controller = get(store).abortController!
       expect(controller.signal.aborted).toBe(false)
 
@@ -262,10 +336,10 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(capturingStreamChat(capture))
       const store = createChatSessionStore()
 
-      store.sendMessage("first question")
+      await store.sendMessage("first question")
       capture.options!.onFinish()
 
-      store.sendMessage("second question")
+      await store.sendMessage("second question")
       capture.options!.onError(new Error("fail"))
 
       const beforeRetry = get(store).messages.length
@@ -286,7 +360,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(capturingStreamChat(capture))
       const store = createChatSessionStore()
 
-      store.sendMessage("hello")
+      await store.sendMessage("hello")
       // Don't call onFinish — status stays "submitted"
       const callCountAfterSend = streamChatMock.mock.calls.length
       const messagesAfterSend = get(store).messages.length
@@ -312,7 +386,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(noopStreamChat)
       const store = createChatSessionStore("test_session")
 
-      store.sendMessage("hi")
+      await store.sendMessage("hi")
       store.togglePartCollapsed("some-key", false)
 
       store.reset()
@@ -329,7 +403,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(noopStreamChat)
       const store = createChatSessionStore("test_session")
 
-      store.sendMessage("hi")
+      await store.sendMessage("hi")
       store.reset()
 
       const stored = JSON.parse(storage.store["test_session"])
@@ -343,7 +417,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(noopStreamChat)
       const store = createChatSessionStore()
 
-      store.sendMessage("hi")
+      await store.sendMessage("hi")
       const controller = get(store).abortController!
 
       store.reset()
@@ -372,7 +446,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(capturingStreamChat(capture))
       const store = createChatSessionStore("persist_test")
 
-      store.sendMessage("hello")
+      await store.sendMessage("hello")
       capture.options!.onFinish()
 
       const stored = JSON.parse(storage.store["persist_test"])
@@ -407,7 +481,7 @@ describe("createChatSessionStore", () => {
       const keysBefore = new Set(Object.keys(storage.store))
       const store = createChatSessionStore()
 
-      store.sendMessage("hello")
+      await store.sendMessage("hello")
       const keysAfter = Object.keys(storage.store).filter(
         (k) => !keysBefore.has(k),
       )
@@ -425,7 +499,7 @@ describe("createChatSessionStore", () => {
       const storeA = createChatSessionStore("store_a")
       const storeB = createChatSessionStore("store_b")
 
-      storeA.sendMessage("msg for A")
+      await storeA.sendMessage("msg for A")
       capture.options!.onFinish()
 
       expect(get(storeA).messages).toHaveLength(2)
@@ -449,7 +523,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(capturingStreamChat(capture))
       const store = createChatSessionStore()
 
-      store.sendMessage("hi")
+      await store.sendMessage("hi")
       expect(capture.options!.onToolCallsPending).toBeDefined()
       expect(typeof capture.options!.onToolCallsPending).toBe("function")
     })
@@ -461,7 +535,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(capturingStreamChat(capture))
       const store = createChatSessionStore()
 
-      store.sendMessage("hi")
+      await store.sendMessage("hi")
       const handler = capture.options!.onToolCallsPending!
       handler({
         items: [
@@ -489,7 +563,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(capturingStreamChat(capture))
       const store = createChatSessionStore()
 
-      store.sendMessage("hi")
+      await store.sendMessage("hi")
       const handler = capture.options!.onToolCallsPending!
       const result = await handler({
         items: [
@@ -513,7 +587,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(capturingStreamChat(capture))
       const store = createChatSessionStore()
 
-      store.sendMessage("hi")
+      await store.sendMessage("hi")
       const handler = capture.options!.onToolCallsPending!
       handler({
         items: [
@@ -544,7 +618,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(capturingStreamChat(capture))
       const store = createChatSessionStore()
 
-      store.sendMessage("hi")
+      await store.sendMessage("hi")
       const handler = capture.options!.onToolCallsPending!
       handler({
         items: [
@@ -575,7 +649,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(capturingStreamChat(capture))
       const store = createChatSessionStore()
 
-      store.sendMessage("hi")
+      await store.sendMessage("hi")
       const handler = capture.options!.onToolCallsPending!
       const promise = handler({
         items: [
@@ -624,7 +698,7 @@ describe("createChatSessionStore", () => {
       streamChatMock.mockImplementation(capturingStreamChat(capture))
       const store = createChatSessionStore()
 
-      store.sendMessage("hi")
+      await store.sendMessage("hi")
       const handler = capture.options!.onToolCallsPending!
       handler({
         items: [
@@ -663,7 +737,7 @@ describe("createChatSessionStore", () => {
       statusTransitions.length = 0
       prevStatus = "ready"
 
-      store.sendMessage("hi")
+      await store.sendMessage("hi")
       expect(get(store).status).toBe("submitted")
 
       capture.options!.onAssistantMessage((draft: ChatMessage) => {
@@ -693,6 +767,127 @@ describe("createChatSessionStore", () => {
       expect(state.messages).toEqual([])
       expect(state.collapsedPartKeys).toEqual({})
       expect(state.status).toBe("ready")
+    })
+  })
+
+  describe("context header", () => {
+    it("prepends context header on first message when buildContextHeader returns a header", async () => {
+      const agentModule = await import("$lib/agent")
+      const buildMock = vi.mocked(agentModule.buildContextHeader)
+      buildMock.mockReturnValueOnce(
+        "<new_app_ui_context>\nPath: /test\n</new_app_ui_context>",
+      )
+
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      await store.sendMessage("hello")
+
+      const apiMessage = capture.options!.messages[0]
+      expect(apiMessage.content).toContain("<new_app_ui_context>")
+      expect(apiMessage.content).toContain("hello")
+    })
+
+    it("stores clean user text without header in messages", async () => {
+      const agentModule = await import("$lib/agent")
+      const buildMock = vi.mocked(agentModule.buildContextHeader)
+      buildMock.mockReturnValueOnce(
+        "<new_app_ui_context>\nPath: /test\n</new_app_ui_context>",
+      )
+
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore()
+
+      await store.sendMessage("hello")
+
+      const state = get(store)
+      const userMsg = state.messages.find((m) => m.role === "user")
+      expect(userMsg?.content).toBe("hello")
+      expect(userMsg?.content).not.toContain("<new_app_ui_context>")
+    })
+
+    it("does not prepend header when buildContextHeader returns null", async () => {
+      const agentModule = await import("$lib/agent")
+      const buildMock = vi.mocked(agentModule.buildContextHeader)
+      buildMock.mockReturnValue(null)
+
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      await store.sendMessage("hello")
+
+      const apiMessage = capture.options!.messages[0]
+      expect(apiMessage.content).toBe("hello")
+    })
+
+    it("updates lastSentAppState when header is sent", async () => {
+      const agentModule = await import("$lib/agent")
+      const buildMock = vi.mocked(agentModule.buildContextHeader)
+      const getStateMock = vi.mocked(agentModule.getCurrentAppState)
+      const testState = {
+        path: "/test",
+        pageName: "Test",
+        pageDescription: "Desc",
+        currentProject: null,
+        currentTask: null,
+      }
+      getStateMock.mockReturnValue(testState)
+      buildMock.mockReturnValueOnce(
+        "<new_app_ui_context>\nPath: /test\n</new_app_ui_context>",
+      )
+
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore("ctx_test")
+
+      await store.sendMessage("hello")
+
+      const stored = JSON.parse(storage.store["ctx_test"])
+      expect(stored.lastSentAppState).toEqual(testState)
+    })
+
+    it("resets lastSentAppState on reset", async () => {
+      const agentModule = await import("$lib/agent")
+      const buildMock = vi.mocked(agentModule.buildContextHeader)
+      buildMock.mockReturnValueOnce(
+        "<new_app_ui_context>\nPath: /test\n</new_app_ui_context>",
+      )
+
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore("reset_ctx_test")
+
+      await store.sendMessage("hello")
+      store.reset()
+
+      const stored = JSON.parse(storage.store["reset_ctx_test"])
+      expect(stored.lastSentAppState).toBeNull()
+    })
+
+    it("updates lastSentAppState even when no header is sent", async () => {
+      const agentModule = await import("$lib/agent")
+      const buildMock = vi.mocked(agentModule.buildContextHeader)
+      buildMock.mockReturnValue(null)
+
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore("no_update_test")
+
+      await store.sendMessage("hello")
+
+      const stored = JSON.parse(storage.store["no_update_test"])
+      expect(stored.lastSentAppState).not.toBeNull()
     })
   })
 })

@@ -21,8 +21,13 @@
   import Float from "$lib/ui/float.svelte"
   import ErrorDetailsBlock from "$lib/ui/error_details_block.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: tool_server_id = $page.params.tool_server_id!
+  $: agentInfo.set({
+    name: "Tool Server Detail",
+    description: `Tool server detail for server ID ${tool_server_id} in project ID ${project_id}. Server name: ${tool_server?.name ?? "[loading]"}. Shows server properties, tools, status, and configuration.`,
+  })
   $: is_archived = tool_server?.properties?.is_archived ?? false
 
   let tool_server: ExternalToolServerApiDescription | null = null

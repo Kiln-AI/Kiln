@@ -8,6 +8,12 @@ import {
 } from "./streaming_chat"
 import { sessionStorageStore } from "$lib/stores/local_storage_store"
 import { base_url } from "$lib/api_client"
+import {
+  getCurrentAppState,
+  buildContextHeader,
+  type AppState,
+} from "$lib/agent"
+import { chat_cost_disclaimer_acknowledged } from "$lib/stores"
 
 const CHAT_API_URL = `${base_url}/api/chat`
 const SESSION_STORAGE_KEY = "kiln_chat_session"
@@ -15,6 +21,7 @@ const SESSION_STORAGE_KEY = "kiln_chat_session"
 export interface PersistedChatSession {
   messages: ChatMessage[]
   collapsedPartKeys: Record<string, boolean>
+  lastSentAppState: AppState | null
 }
 
 export interface ToolApprovalWaiter {
@@ -29,7 +36,7 @@ export interface ChatSessionState extends PersistedChatSession {
 }
 
 export interface ChatSessionStore extends Readable<ChatSessionState> {
-  sendMessage(text: string): void
+  sendMessage(text: string): Promise<boolean>
   stop(): void
   retryLastRequest(): void
   reset(): void
@@ -37,11 +44,13 @@ export interface ChatSessionStore extends Readable<ChatSessionState> {
   togglePartCollapsed(key: string, currentlyCollapsed: boolean): void
   applyToolApprovalRun(toolCallId: string): void
   applyToolApprovalSkip(toolCallId: string): void
+  onConsentNeeded: (() => Promise<boolean>) | null
 }
 
 const EMPTY_PERSISTED: PersistedChatSession = {
   messages: [],
   collapsedPartKeys: {},
+  lastSentAppState: null,
 }
 
 export function createChatSessionStore(
@@ -73,6 +82,7 @@ export function createChatSessionStore(
       ...s,
       messages: $persisted.messages,
       collapsedPartKeys: $persisted.collapsedPartKeys,
+      lastSentAppState: $persisted.lastSentAppState,
     }))
   })
 
@@ -133,12 +143,26 @@ export function createChatSessionStore(
     }
     updateMessages((msgs) => [...msgs, userMessage, assistantMessage])
 
+    const currentAppState = getCurrentAppState()
+    const header = buildContextHeader(
+      currentAppState,
+      get(persisted).lastSentAppState,
+    )
+    let apiMessage = userMessage
+    if (header) {
+      apiMessage = { ...userMessage, content: header + "\n" + text }
+    }
+    persisted.update((p) => ({
+      ...p,
+      lastSentAppState: currentAppState,
+    }))
+
     const controller = new AbortController()
     setRuntimeState("submitted", controller)
 
     streamChat({
       apiUrl: CHAT_API_URL,
-      messages: [userMessage],
+      messages: [apiMessage],
       traceId,
       onToolCallsPending: handleToolCallsPending,
       onAssistantMessage: (update) => {
@@ -187,10 +211,18 @@ export function createChatSessionStore(
     })
   }
 
-  function sendMessage(text: string): void {
+  let onConsentNeeded: (() => Promise<boolean>) | null = null
+
+  async function sendMessage(text: string): Promise<boolean> {
     const trimmed = text.trim()
-    if (!trimmed || status !== "ready") return
+    if (!trimmed || status !== "ready") return false
+    if (!get(chat_cost_disclaimer_acknowledged)) {
+      if (!onConsentNeeded) return false
+      const approved = await onConsentNeeded()
+      if (!approved || status !== "ready") return false
+    }
     beginStreaming(trimmed)
+    return true
   }
 
   function stop(): void {
@@ -224,7 +256,11 @@ export function createChatSessionStore(
     }
     clearToolApprovalState()
     continuationTraceId = undefined
-    persisted.set({ messages: [], collapsedPartKeys: {} })
+    persisted.set({
+      messages: [],
+      collapsedPartKeys: {},
+      lastSentAppState: null,
+    })
     setRuntimeState("ready", null)
   }
 
@@ -234,7 +270,7 @@ export function createChatSessionStore(
     }
     clearToolApprovalState()
     continuationTraceId = traceId
-    persisted.set({ messages, collapsedPartKeys: {} })
+    persisted.set({ messages, collapsedPartKeys: {}, lastSentAppState: null })
     setRuntimeState("ready", null)
   }
 
@@ -322,6 +358,12 @@ export function createChatSessionStore(
     togglePartCollapsed,
     applyToolApprovalRun,
     applyToolApprovalSkip,
+    get onConsentNeeded() {
+      return onConsentNeeded
+    },
+    set onConsentNeeded(fn: (() => Promise<boolean>) | null) {
+      onConsentNeeded = fn
+    },
   }
 }
 

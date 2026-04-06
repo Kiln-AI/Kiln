@@ -764,7 +764,7 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_comparison",
         summary="Run Run Config Comparison",
         tags=["Evals"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=agent_policy_require_approval("Run eval comparison?"),
     )
     async def run_eval_config(
         project_id: Annotated[
@@ -866,7 +866,9 @@ def connect_evals_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/run_calibration",
         summary="Run Calibration",
         tags=["Evals"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=agent_policy_require_approval(
+            "Run eval calibration? This runs LLM calls across all eval configs and uses AI credits."
+        ),
     )
     async def run_eval_config_eval(
         project_id: Annotated[

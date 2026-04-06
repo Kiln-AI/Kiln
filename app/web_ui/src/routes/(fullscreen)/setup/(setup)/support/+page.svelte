@@ -1,6 +1,13 @@
 <script lang="ts">
   import posthog from "posthog-js"
   import CheckmarkIcon from "$lib/ui/icons/checkmark_icon.svelte"
+  import { agentInfo } from "$lib/agent"
+
+  agentInfo.set({
+    name: "Setup: Support",
+    description:
+      "Onboarding step to star the Kiln GitHub repo and join the community.",
+  })
 
   let github_starred = false
   function star_on_github() {

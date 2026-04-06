@@ -14,8 +14,13 @@
   import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
   import EntitlementRequiredCard from "$lib/ui/kiln_copilot/entitlement_required_card.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Prompt Optimization",
+    description: `Prompt optimization jobs list for project ID ${project_id}, task ID ${task_id}. Shows optimization job history and results.`,
+  })
 
   let loading = true
 

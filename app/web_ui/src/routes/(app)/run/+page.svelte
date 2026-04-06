@@ -1,6 +1,12 @@
 <script lang="ts">
   import AppPage from "../app_page.svelte"
   import { current_task, current_project } from "$lib/stores"
+  import { agentInfo } from "$lib/agent"
+
+  $: agentInfo.set({
+    name: "Run",
+    description: `Run a task with a selected model and configuration.${$current_task ? ` Current task: ${$current_task.name}.` : ""}`,
+  })
   import { createKilnError } from "$lib/utils/error_handlers"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { KilnError } from "$lib/utils/error_handlers"

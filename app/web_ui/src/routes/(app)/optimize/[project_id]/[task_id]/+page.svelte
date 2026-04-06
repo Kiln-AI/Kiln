@@ -40,6 +40,7 @@
   import Float from "$lib/ui/float.svelte"
   import BadgeList from "$lib/ui/badge_list.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: optimizers = get_optimizers(project_id, task_id)
@@ -127,6 +128,11 @@
     $run_configs_by_task_composite_id[
       get_task_composite_id(project_id, task_id)
     ] || []
+
+  $: agentInfo.set({
+    name: "Optimize",
+    description: `Optimization home for project ID ${project_id}, task ID ${task_id}. Shows available optimization options like prompts, evals, fine-tuning, skills, and tools. Includes a list of all Run Configurations for this task (total count ${run_configs.length}).`,
+  })
 
   $: default_run_config_id = task?.default_run_config_id
 

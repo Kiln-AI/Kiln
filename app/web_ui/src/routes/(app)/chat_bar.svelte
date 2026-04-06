@@ -2,6 +2,7 @@
   import Chat from "./chat/chat.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
+  import CloseIcon from "$lib/ui/icons/close_icon.svelte"
   import {
     getChatBarExpanded,
     setChatBarExpanded,
@@ -126,6 +127,11 @@
     dialog?.show()
   }
 
+  let sidebarChat: Chat
+  let dialogChat: Chat
+  let sidebarHasMessages = false
+  let dialogHasMessages = false
+
   $: isChat = section === Section.Chat
 </script>
 
@@ -165,28 +171,45 @@
       >
         <div class="flex flex-row items-center justify-between mb-4">
           <div class="text-lg font-medium">Chat</div>
-          <button
-            class="btn btn-sm btn-circle btn-ghost"
-            on:click={toggle}
-            aria-label="Close chat sidebar"
-          >
-            <svg
-              class="h-5 w-5"
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
+          <div class="flex flex-row items-center gap-0.5">
+            {#if sidebarHasMessages}
+              <button
+                class="btn btn-sm btn-circle btn-ghost"
+                on:click={() => sidebarChat?.newChat()}
+                aria-label="New chat"
+                title="New chat"
+              >
+                <img
+                  class="size-5"
+                  src="/images/new_chat.svg"
+                  alt="New chat"
+                  aria-hidden="true"
+                />
+              </button>
+            {/if}
+            <button
+              class="btn btn-sm btn-circle btn-ghost"
+              on:click={() => sidebarChat?.openHistory()}
+              aria-label="Chat history"
+              title="Chat history"
             >
-              <path
-                d="M7 7L17 17M7 17L17 7"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
+              <img
+                class="size-5"
+                src="/images/history.svg"
+                alt="Chat history"
+                aria-hidden="true"
               />
-            </svg>
-          </button>
+            </button>
+            <button
+              class="btn btn-sm btn-circle btn-ghost"
+              on:click={toggle}
+              aria-label="Close chat sidebar"
+            >
+              <span class="size-5 block"><CloseIcon /></span>
+            </button>
+          </div>
         </div>
-        <Chat />
+        <Chat bind:this={sidebarChat} bind:hasMessages={sidebarHasMessages} />
       </div>
     </div>
   </div>
@@ -216,10 +239,26 @@
     title="Chat"
     on:close={() => (dialogOpen = false)}
     width="wide"
+    header_buttons={[
+      ...(dialogHasMessages
+        ? [
+            {
+              image_path: "/images/new_chat.svg",
+              alt_text: "New chat",
+              action: () => dialogChat?.newChat(),
+            },
+          ]
+        : []),
+      {
+        image_path: "/images/history.svg",
+        alt_text: "Chat history",
+        action: () => dialogChat?.openHistory(),
+      },
+    ]}
   >
     {#if dialogOpen}
       <div class="h-[70vh] flex flex-col">
-        <Chat />
+        <Chat bind:this={dialogChat} bind:hasMessages={dialogHasMessages} />
       </div>
     {/if}
   </Dialog>

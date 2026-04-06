@@ -9,7 +9,12 @@
   import FeatureCarousel from "$lib/ui/feature_carousel.svelte"
   import posthog from "posthog-js"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
+  $: agentInfo.set({
+    name: "Add Tools",
+    description: `Add tools to project ID ${project_id}. Choose from local MCP, remote MCP, Kiln task tools, and pre-made tool servers.`,
+  })
 
   type BaseMcpServer = {
     name: string
