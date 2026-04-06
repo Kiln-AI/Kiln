@@ -1,5 +1,5 @@
 from app.desktop.studio_server.chat import EventParser, tool_input_executor_is_server
-from app.desktop.studio_server.test_chat.helpers import sse_text_delta
+from app.desktop.studio_server.chat.helpers import sse_text_delta
 
 
 class TestEventParser:

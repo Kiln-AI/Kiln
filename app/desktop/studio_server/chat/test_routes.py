@@ -1,12 +1,242 @@
 import json
+from http import HTTPStatus
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.desktop.studio_server.test_chat.helpers import (
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
+    ChatSnapshot,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.chat_session_list_item import (
+    ChatSessionListItem as SdkChatSessionListItem,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
+    Response as KilnResponse,
+)
+from app.desktop.studio_server.chat.helpers import (
     PATCH_ASYNC_CLIENT,
     PATCH_EXECUTE_TOOL,
     make_httpx_mock,
     sse_text_delta,
 )
+from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
+
+
+class TestChatStreaming:
+    def test_streams_chunks(self, client, mock_api_key):
+        chunks = [
+            sse_text_delta("hello"),
+            b'data: {"type":"finish"}\n\n',
+        ]
+        mock_class, _, _ = make_httpx_mock(chunks=chunks)
+
+        with patch(PATCH_ASYNC_CLIENT, mock_class):
+            response = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "hi"}]},
+            )
+
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        assert b"text-delta" in response.content
+
+    def test_forwards_auth_header(self, client, mock_api_key):
+        mock_class, mock_client, _ = make_httpx_mock()
+
+        with patch(PATCH_ASYNC_CLIENT, mock_class):
+            response = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "hi"}]},
+            )
+            _ = response.content
+
+        call_kwargs = mock_client.stream.call_args
+        headers = call_kwargs.kwargs.get("headers", {})
+        assert headers.get("Authorization") == "Bearer test_api_key"
+
+    def test_returns_401_when_no_api_key(self, client):
+        with patch(
+            "app.desktop.studio_server.utils.copilot_utils.Config.shared"
+        ) as mock_config_shared:
+            mock_config = mock_config_shared.return_value
+            mock_config.kiln_copilot_api_key = None
+
+            response = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "hi"}]},
+            )
+
+        assert response.status_code == 401
+
+    def test_handles_upstream_error(self, client, mock_api_key):
+        mock_class, _, _ = make_httpx_mock(status_code=500)
+
+        with patch(PATCH_ASYNC_CLIENT, mock_class):
+            response = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "hi"}]},
+            )
+
+        assert response.status_code == 200
+        assert b"error" in response.content
+
+
+def _make_task_run_dict(**overrides):
+    base = {
+        "input": "",
+        "output": {"output": "", "model_type": "test_model"},
+        "model_type": "test_model",
+    }
+    base.update(overrides)
+    return base
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.list_sessions_v1_chat_sessions_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+def test_list_chat_sessions_forwards_to_kiln(
+    mock_asyncio_detailed, client, mock_api_key
+):
+    list_item_dict = {
+        "id": "trace-1",
+        "title": "Hi",
+        "updated_at": "2025-06-15T12:30:00+00:00",
+        "task_run": _make_task_run_dict(),
+    }
+    parsed_item = SdkChatSessionListItem.from_dict(list_item_dict)
+    mock_asyncio_detailed.return_value = KilnResponse(
+        status_code=HTTPStatus.OK,
+        content=b"[]",
+        headers={"content-type": "application/json"},
+        parsed=[parsed_item],
+    )
+
+    r = client.get("/api/chat/sessions")
+
+    assert r.status_code == 200
+    assert r.json() == [
+        {"id": "trace-1", "title": "Hi", "updated_at": "2025-06-15T12:30:00Z"}
+    ]
+    mock_asyncio_detailed.assert_called_once()
+    call_kwargs = mock_asyncio_detailed.call_args[1]
+    assert "client" in call_kwargs
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.get_session_v1_chat_sessions_session_id_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+def test_get_chat_session_forwards_to_kiln(mock_asyncio_detailed, client, mock_api_key):
+    snapshot_dict = {
+        "id": "trace-abc",
+        "task_run": _make_task_run_dict(
+            trace=[{"role": "user", "content": "yo"}],
+        ),
+    }
+    parsed = ChatSnapshot.from_dict(snapshot_dict)
+    mock_asyncio_detailed.return_value = KilnResponse(
+        status_code=HTTPStatus.OK,
+        content=b"{}",
+        headers={"content-type": "application/json"},
+        parsed=parsed,
+    )
+
+    r = client.get("/api/chat/sessions/trace-abc")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["id"] == "trace-abc"
+    assert body["task_run"]["trace"] == [{"role": "user", "content": "yo"}]
+    mock_asyncio_detailed.assert_called_once()
+    call_kwargs = mock_asyncio_detailed.call_args[1]
+    assert call_kwargs["session_id"] == "trace-abc"
+    assert "client" in call_kwargs
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.get_session_v1_chat_sessions_session_id_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+def test_get_chat_session_passes_through_error_status(
+    mock_asyncio_detailed, client, mock_api_key
+):
+    mock_asyncio_detailed.return_value = KilnResponse(
+        status_code=HTTPStatus.NOT_FOUND,
+        content=b'{"detail":"not found"}',
+        headers={"content-type": "application/json"},
+        parsed=None,
+    )
+
+    r = client.get("/api/chat/sessions/missing")
+
+    assert r.status_code == 404
+    assert r.json()["message"] == "not found"
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.delete_session_v1_chat_sessions_session_id_delete.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+def test_delete_chat_session_returns_204(mock_asyncio_detailed, client, mock_api_key):
+    mock_asyncio_detailed.return_value = KilnResponse(
+        status_code=HTTPStatus.NO_CONTENT,
+        content=b"",
+        headers={},
+        parsed=None,
+    )
+
+    r = client.delete("/api/chat/sessions/trace-xyz")
+
+    assert r.status_code == 204
+    mock_asyncio_detailed.assert_called_once()
+    call_kwargs = mock_asyncio_detailed.call_args[1]
+    assert call_kwargs["session_id"] == "trace-xyz"
+    assert "client" in call_kwargs
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.delete_session_v1_chat_sessions_session_id_delete.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+def test_delete_chat_session_passes_through_error(
+    mock_asyncio_detailed, client, mock_api_key
+):
+    mock_asyncio_detailed.return_value = KilnResponse(
+        status_code=HTTPStatus.NOT_FOUND,
+        content=b'{"detail":"session not found"}',
+        headers={"content-type": "application/json"},
+        parsed=None,
+    )
+
+    r = client.delete("/api/chat/sessions/missing")
+
+    assert r.status_code == 404
+    assert r.json()["message"] == "session not found"
+
+
+@patch(
+    "app.desktop.studio_server.chat.routes.list_sessions_v1_chat_sessions_get.asyncio_detailed",
+    new_callable=AsyncMock,
+)
+def test_list_chat_sessions_passes_through_version_error_code(
+    mock_asyncio_detailed, client, mock_api_key
+):
+    mock_asyncio_detailed.return_value = KilnResponse(
+        status_code=HTTPStatus.BAD_REQUEST,
+        content=json.dumps(
+            {"message": "Update required", "code": CHAT_CLIENT_VERSION_TOO_OLD}
+        ).encode(),
+        headers={"content-type": "application/json"},
+        parsed=None,
+    )
+
+    r = client.get("/api/chat/sessions")
+
+    assert r.status_code == 400
+    body = r.json()
+    assert body["message"] == {
+        "message": "Update required",
+        "code": CHAT_CLIENT_VERSION_TOO_OLD,
+    }
 
 
 class TestRemoteToolRoundTrip:
@@ -312,3 +542,41 @@ class TestRemoteToolRoundTrip:
                 break
         else:
             raise AssertionError("tool-calls-pending event not found")
+
+
+def test_post_execute_tools_runs_and_continues(client, mock_api_key):
+    second_chunks = [
+        sse_text_delta("ok"),
+        b'data: {"type":"finish"}\n\n',
+    ]
+    mock_class, mock_client, _ = make_httpx_mock(chunks=second_chunks)
+
+    body = {
+        "trace_id": "tr-exec-1",
+        "tool_calls": [
+            {
+                "toolCallId": "tc1",
+                "toolName": "kiln_tool::add_numbers",
+                "input": {"a": 1, "b": 2},
+                "requiresApproval": True,
+            }
+        ],
+        "decisions": {"tc1": True},
+    }
+
+    with patch(PATCH_ASYNC_CLIENT, mock_class):
+        with patch(PATCH_EXECUTE_TOOL, AsyncMock(return_value="3")):
+            response = client.post("/api/chat/execute-tools", json=body)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    content = response.content
+    assert b"tool-output-available" in content
+    assert b'"output": "3"' in content
+    assert b"ok" in content
+    continuation = json.loads(mock_client.stream.call_args.kwargs["content"])
+    assert continuation["trace_id"] == "tr-exec-1"
+    assert len(continuation["messages"]) == 1
+    assert continuation["messages"][0]["role"] == "tool"
+    assert continuation["messages"][0]["tool_call_id"] == "tc1"
+    assert continuation["messages"][0]["content"] == "3"

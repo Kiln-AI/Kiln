@@ -176,7 +176,7 @@ def test_chat_api_integration(app):
                 assert ctype.startswith("text/event-stream")
                 for line in response.iter_lines():
                     text = line or ""
-                    logger.info(text, flush=True)
+                    logger.info(text)
                     collected.extend(text.encode("utf-8"))
                     collected.extend(b"\n")
 
