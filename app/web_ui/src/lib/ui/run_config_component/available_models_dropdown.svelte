@@ -48,10 +48,9 @@
     ...settings,
   }
   let pending_model: string = model
+  let tracked_model: string = model
   $: on_pending_model_change(pending_model)
-  $: if (model !== pending_model) {
-    pending_model = model
-  }
+  $: sync_parent_model(model)
   $: $ui_state.selected_model = model
   $: model_options = format_model_options(
     $available_models || [],
@@ -106,6 +105,13 @@
     return null
   }
 
+  function sync_parent_model(m: string) {
+    if (m !== tracked_model) {
+      tracked_model = m
+      pending_model = m
+    }
+  }
+
   function on_pending_model_change(selected: string) {
     if (selected === model) return
     const warning = get_model_warning(selected)
@@ -114,6 +120,7 @@
       return
     }
     model = selected
+    tracked_model = selected
   }
 
   function format_model_options(
