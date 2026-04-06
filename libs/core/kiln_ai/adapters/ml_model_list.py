@@ -5072,42 +5072,6 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Qwen 3.6 Plus
-    KilnModel(
-        family=ModelFamily.qwen,
-        name=ModelName.qwen_3p6_plus,
-        friendly_name="Qwen 3.6 Plus",
-        providers=[
-            KilnModelProvider(
-                name=ModelProviderName.openrouter,
-                model_id="qwen/qwen3.6-plu:free",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                require_openrouter_reasoning=True,
-                openrouter_reasoning_object=True,
-                reasoning_capable=True,
-                supports_data_gen=True,
-                supports_function_calling=True,
-                supports_doc_extraction=True,
-                supports_vision=True,
-                multimodal_capable=True,
-                multimodal_mime_types=[
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
-                    KilnMimeType.PDF,
-                    KilnMimeType.TXT,
-                    KilnMimeType.MD,
-                ],
-                multimodal_requires_pdf_as_image=True,
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.fireworks_ai,
-                model_id="accounts/fireworks/models/qwen3p6-plus",
-                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
-                supports_data_gen=True,
-                supports_function_calling=False,
-            ),
-        ],
-    ),
     # Qwen 3.5 Plus
     KilnModel(
         family=ModelFamily.qwen,
