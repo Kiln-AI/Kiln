@@ -2,6 +2,7 @@ from pydantic import Field
 
 from kiln_ai.datamodel.basemodel import FilenameString, KilnParentModel
 from kiln_ai.datamodel.chunk import ChunkerConfig
+from kiln_ai.datamodel.document_skill import DocumentSkill
 from kiln_ai.datamodel.embedding import EmbeddingConfig
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.extraction import Document, ExtractorConfig
@@ -25,6 +26,7 @@ class Project(
         "external_tool_servers": ExternalToolServer,
         "reranker_configs": RerankerConfig,
         "skills": Skill,
+        "document_skills": DocumentSkill,
     },
 ):
     """
@@ -70,3 +72,6 @@ class Project(
 
     def skills(self, readonly: bool = False) -> list[Skill]:
         return super().skills(readonly=readonly)  # type: ignore
+
+    def document_skills(self, readonly: bool = False) -> list[DocumentSkill]:
+        return super().document_skills(readonly=readonly)  # type: ignore

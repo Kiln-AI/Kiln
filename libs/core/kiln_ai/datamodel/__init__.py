@@ -14,6 +14,7 @@ from __future__ import annotations
 from kiln_ai.datamodel import (
     chunk,
     dataset_split,
+    document_skill,
     embedding,
     eval,
     extraction,
@@ -29,6 +30,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     TaskOutputRatingType,
 )
 from kiln_ai.datamodel.dataset_split import DatasetSplit, DatasetSplitDefinition
+from kiln_ai.datamodel.document_skill import DocumentSkill
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
 from kiln_ai.datamodel.finetune import Finetune
 from kiln_ai.datamodel.project import Project
@@ -58,6 +60,7 @@ __all__ = [
     "DataSourceType",
     "DatasetSplit",
     "DatasetSplitDefinition",
+    "DocumentSkill",
     "ExternalToolServer",
     "FineTuneStatusType",
     "Finetune",
@@ -79,6 +82,7 @@ __all__ = [
     "Usage",
     "chunk",
     "dataset_split",
+    "document_skill",
     "embedding",
     "eval",
     "extraction",

@@ -232,6 +232,7 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
         concurrency: int = 10,
         rag_config: RagConfig | None = None,
         filesystem_cache: FilesystemCache | None = None,
+        tags: list[str] | None = None,
     ):
         self.project = project
         self.extractor_config = extractor_config
@@ -239,6 +240,7 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
         self.concurrency = concurrency
         self.rag_config = rag_config
         self.filesystem_cache = filesystem_cache
+        self.tags = tags
 
     def stage(self) -> RagWorkflowStepNames:
         return RagWorkflowStepNames.EXTRACTING
@@ -256,8 +258,13 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
         target_extractor_config_id = self.extractor_config.id
 
         documents = self.project.documents(readonly=True)
-        if self.rag_config and self.rag_config.tags:
-            documents = filter_documents_by_tags(documents, self.rag_config.tags)
+        tags = (
+            self.tags
+            if self.tags is not None
+            else (self.rag_config.tags if self.rag_config else None)
+        )
+        if tags:
+            documents = filter_documents_by_tags(documents, tags)
 
         for document in documents:
             if (
@@ -325,6 +332,7 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
         chunker_config: ChunkerConfig,
         concurrency: int = 10,
         rag_config: RagConfig | None = None,
+        tags: list[str] | None = None,
     ):
         self.project = project
         self.extractor_config = extractor_config
@@ -332,6 +340,7 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
         self.lock_key = f"docs:chunk:{self.chunker_config.id}"
         self.concurrency = concurrency
         self.rag_config = rag_config
+        self.tags = tags
 
     def stage(self) -> RagWorkflowStepNames:
         return RagWorkflowStepNames.CHUNKING
@@ -350,8 +359,13 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
 
         jobs: list[ChunkerJob] = []
         documents = self.project.documents(readonly=True)
-        if self.rag_config and self.rag_config.tags:
-            documents = filter_documents_by_tags(documents, self.rag_config.tags)
+        tags = (
+            self.tags
+            if self.tags is not None
+            else (self.rag_config.tags if self.rag_config else None)
+        )
+        if tags:
+            documents = filter_documents_by_tags(documents, tags)
 
         for document in documents:
             if (

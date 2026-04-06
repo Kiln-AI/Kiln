@@ -6,7 +6,7 @@ status: complete
 
 ## Phases
 
-- [ ] Phase 1: Data model + Project registration
+- [x] Phase 1: Data model + Project registration
 - [ ] Phase 2: Pipeline runner + Skill builder
 - [ ] Phase 3: API layer
 - [ ] Phase 4: Frontend — templates, creation form, progress dialog
