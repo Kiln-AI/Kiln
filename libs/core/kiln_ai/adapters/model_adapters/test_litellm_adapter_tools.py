@@ -969,6 +969,8 @@ async def test_process_tool_calls_normal_tool_success(tmp_path):
         "tool_call_id": "call_1",
         "content": "5",
         "kiln_task_tool_data": None,
+        "is_error": None,
+        "error_message": None,
     }
 
 
