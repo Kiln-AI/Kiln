@@ -90,8 +90,8 @@
       props.push({
         name: "Source",
         value_with_link: {
-          prefix: "Documents: ",
-          link_text: doc_skill_source.doc_skill_name || "View Doc Skill",
+          prefix: "",
+          link_text: `Document Skill: ${doc_skill_source.doc_skill_name || "View Doc Skill"}`,
           link: `/docs/doc_skills/${project_id}/${doc_skill_source.doc_skill_id}/doc_skill`,
         },
         value: "",
