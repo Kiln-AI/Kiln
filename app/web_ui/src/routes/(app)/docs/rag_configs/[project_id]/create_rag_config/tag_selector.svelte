@@ -6,6 +6,10 @@
 
   export let project_id: string
   export let selected_tags: string[] = []
+  export let description: string =
+    "Define which documents will be searched by this tool."
+  export let info_description: string =
+    "If a tag filter is applied, only documents with those tags will be searched by this tool. You can add tags to your documents in the document library."
 
   let available_tags: string[] = []
   let loading_tags = false
@@ -67,8 +71,8 @@
     <FormElement
       id="tags_selector"
       label="Document Selection"
-      description="Define which documents will be searched by this tool."
-      info_description="If a tag filter is applied, only documents with those tags will be searched by this tool. You can add tags to your documents in the document library."
+      {description}
+      {info_description}
       inputType="multi_select"
       empty_label="All Documents in Library"
       fancy_select_options={get_fancy_select_options(available_tags)}

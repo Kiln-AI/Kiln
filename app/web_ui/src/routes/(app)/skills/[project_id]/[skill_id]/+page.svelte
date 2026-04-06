@@ -75,11 +75,28 @@
     }
   }
 
-  function get_properties(skill: Skill): UiProperty[] {
+  function get_properties(
+    skill: Skill,
+    doc_skill_source: {
+      doc_skill_id: string | null
+      doc_skill_name: string | null
+    } | null,
+  ): UiProperty[] {
     const props: UiProperty[] = [
       { name: "ID", value: skill.id ?? "" },
       { name: "Name", value: skill.name },
     ]
+    if (doc_skill_source?.doc_skill_id) {
+      props.push({
+        name: "Source",
+        value_with_link: {
+          prefix: "Documents: ",
+          link_text: doc_skill_source.doc_skill_name || "View Doc Skill",
+          link: `/docs/doc_skills/${project_id}/${doc_skill_source.doc_skill_id}/doc_skill`,
+        },
+        value: "",
+      })
+    }
     if (skill.created_at) {
       props.push({
         name: "Created At",
@@ -182,20 +199,6 @@
         </button>
       </div>
     {:else if skill}
-      {#if doc_skill_source?.doc_skill_id}
-        <div
-          class="flex items-center gap-2 text-sm text-gray-500 border rounded-lg px-4 py-3 mb-6"
-        >
-          <span>Created from Documents</span>
-          <span class="text-gray-300">|</span>
-          <a
-            href={`/docs/doc_skills/${project_id}/${doc_skill_source.doc_skill_id}/doc_skill`}
-            class="link link-primary"
-          >
-            {doc_skill_source.doc_skill_name || "View Doc Skill"}
-          </a>
-        </div>
-      {/if}
       <div class="grid grid-cols-1 lg:grid-cols-[1fr,auto] gap-12">
         <div class="grow">
           <SkillPropertiesDisplay
@@ -204,7 +207,10 @@
           />
         </div>
         <div class="flex flex-col gap-4 max-w-[400px]">
-          <PropertyList properties={get_properties(skill)} title="Properties" />
+          <PropertyList
+            properties={get_properties(skill, doc_skill_source)}
+            title="Properties"
+          />
         </div>
       </div>
     {:else}

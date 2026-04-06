@@ -33,6 +33,27 @@
   let error: KilnError | null = null
   let skill_name: string = ""
   let name: string = ""
+  let description: string = ""
+  let last_auto_description: string = ""
+  let user_has_edited_description: boolean = false
+
+  function build_default_description(tags: string[]): string {
+    return tags.length > 0
+      ? `A skill providing access to a set of documents tagged ${tags.map((t) => `'${t}'`).join(", ")}`
+      : ""
+  }
+
+  function update_default_description(tags: string[]) {
+    const new_default = build_default_description(tags)
+    if (!user_has_edited_description && description === last_auto_description) {
+      description = new_default
+    } else if (last_auto_description !== "") {
+      user_has_edited_description = true
+    }
+    last_auto_description = new_default
+  }
+
+  $: update_default_description(selected_tags)
   let skill_content_header: string = DEFAULT_CONTENT_HEADER
   let selected_tags: string[] = []
   let strip_file_extensions: boolean = true
@@ -123,6 +144,7 @@
       const doc_skill = await response.json()
       skill_name = doc_skill.skill_name || ""
       name = doc_skill.name || ""
+      description = doc_skill.description || ""
       skill_content_header =
         doc_skill.skill_content_header || DEFAULT_CONTENT_HEADER
       selected_tags = doc_skill.document_tags || []
@@ -192,7 +214,7 @@
       }
 
       if (!skill_content_header || !skill_content_header.trim()) {
-        throw new Error("Please provide a skill description.")
+        throw new Error("Please provide a skill body.")
       }
 
       if (
@@ -234,7 +256,7 @@
       }
 
       if (!skill_content_header || !skill_content_header.trim()) {
-        throw new Error("Please provide a skill description.")
+        throw new Error("Please provide a skill body.")
       }
 
       const { extractor_config_id, chunker_config_id } =
@@ -268,7 +290,7 @@
           name: name || template?.doc_skill_name || skill_name,
           skill_name: skill_name,
           skill_content_header: skill_content_header,
-          description: null,
+          description: description || null,
           extractor_config_id: extractor_config_id,
           chunker_config_id: chunker_config_id,
           document_tags: selected_tags.length > 0 ? selected_tags : null,
@@ -355,31 +377,35 @@
       validator={skill_name_validator}
       placeholder="e.g. company-docs, api-reference"
     />
-    <FormElement
-      label="Config Name"
-      description="A display name for this configuration."
-      inputType="input"
-      id="config_name"
-      bind:value={name}
-      placeholder="e.g. Company Docs - Medium Context"
-      optional={true}
-    />
-    <FormElement
-      label="Skill Description"
-      description="Describes the documents in this skill. Placed at the top of the skill file that agents read."
-      inputType="textarea"
-      id="skill_content_header"
-      max_length={16384}
-      bind:value={skill_content_header}
-    />
 
     <div class="flex flex-col gap-2">
       <TagSelector
         {project_id}
         bind:selected_tags
         on:change={(e) => (selected_tags = e.detail.selected_tags)}
+        description="Select which documents to include in this skill."
+        info_description="Only documents with the selected tags will be included. If no tags are selected, all documents in the project will be used."
       />
     </div>
+
+    <FormElement
+      label="Description"
+      description="A description of when an agent should use this skill."
+      info_description="This is shown to the agent to help it decide when to load the skill. Keep it concise but informative.\nExample: This skill provides access to reference documents about [topic]. Load it when [reason]."
+      inputType="textarea"
+      id="description"
+      bind:value={description}
+    />
+
+    <FormElement
+      label="Skill Body"
+      description="This text will be inserted into the SKILL.md file."
+      info_description="This text explains to the agent how to use these documents. A 'Document Index' table will also be injected below this text."
+      inputType="textarea"
+      id="skill_content_header"
+      max_length={16384}
+      bind:value={skill_content_header}
+    />
 
     <div>
       <div class="text-xl font-bold mt-4">Processing Configuration</div>
@@ -459,16 +485,28 @@
     {/if}
 
     <Collapse title="Advanced Options">
-      <div class="flex items-center gap-3">
-        <input
-          type="checkbox"
-          class="toggle toggle-primary"
-          bind:checked={strip_file_extensions}
-          id="strip_extensions"
+      <div class="flex flex-col gap-4">
+        <FormElement
+          label="Custom Document Skill Name"
+          description="A display name for this document skill"
+          info_description="Reference name for you and your team, not used by the agent."
+          inputType="input"
+          id="config_name"
+          bind:value={name}
+          placeholder="e.g. Company Docs - Medium Context"
+          optional={true}
         />
-        <label for="strip_extensions" class="text-sm">
-          Remove file extensions from document names
-        </label>
+        <div class="flex items-center gap-3">
+          <input
+            type="checkbox"
+            class="toggle toggle-primary"
+            bind:checked={strip_file_extensions}
+            id="strip_extensions"
+          />
+          <label for="strip_extensions" class="text-sm">
+            Remove file extensions from document names
+          </label>
+        </div>
       </div>
     </Collapse>
   </FormContainer>

@@ -46,7 +46,7 @@ export type DocSkillTemplate = {
 }
 
 export const DEFAULT_CONTENT_HEADER =
-  "This skill provides access to reference documents, listed below. Use the document index below to find relevant documents, then load individual parts as needed."
+  "This skill provides access to reference documents. Use the document index to find relevant documents, then load individual document parts as needed."
 
 const gemini_2_5_flash_extractor: ExtractorSubConfig = {
   config_name: "Gemini 2p5 Flash w Default Prompts",

@@ -14,7 +14,7 @@ Add a third card to the existing `MultiIntro` grid alongside "Document Library" 
 
 - **Title:** "Doc Skills"
 - **Description:** "Convert your documents into agent skills. Agents can browse and read your documents on demand."
-- **Action:** "View Doc Skills" button → `/docs/doc_skills/[project_id]`
+- **Action:** "Manage Doc Skills" button → `/docs/doc_skills/[project_id]`
 - **Icon:** Appropriate icon (document + skill/star combo)
 
 Same visual weight and card style as the existing two cards.
@@ -71,12 +71,13 @@ Receives template key (or `clone` ID) via URL params. Single-column form.
 **Form fields (top to bottom):**
 
 1. **Skill Name** — text input with kebab-case validation. Label: "Skill Name". Helper text: "Kebab-case name used by agents to load this skill (e.g., company-docs)."
-2. **Config Name** — text input. Label: "Name". Helper text: "A display name for this configuration."
-3. **Skill Content Header** — textarea (4-6 rows). Label: "Skill Description". Helper text: "Describes the documents in this skill. Placed at the top of the skill file that agents read." Pre-filled with default content header.
-4. **Document Tags** — tag selector (reuse from RAG). Label: "Document Tags". Helper text: "Filter documents by tag. Leave empty to include all documents."
+2. **Skill Description** — textarea, optional. Label: "A description of when an agent should use this skill." Tooltip: "This is shown to the agent to help it decide when to load the skill. Keep it concise but informative."
+3. **Document Tags** — tag selector (reuse from RAG). Label: "Document Tags". Helper text: "Filter documents by tag. Leave empty to include all documents."
+4. **Skill Body Intro** — textarea (4-6 rows). Label: "Skill Body Intro". Helper text: "A longer description of this skill which will be inserted into the SKILL.md file". Pre-filled with default content header.
 5. **Extractor** — dropdown/property display showing extractor config. Pre-filled from template.
 6. **Chunker** — dropdown/property display showing chunk size. Pre-filled from template.
 7. **Advanced Options** — collapsible section:
+   - "Custom Document Skill Name" — text input, optional. Helper text: "A display name for this document skill". Tooltip: "Reference name for you and your team, not used by the agent."
    - "Remove file extensions from document names" — toggle, default on
 
 **Submit button:** "Create Doc Skill"

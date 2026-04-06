@@ -56,7 +56,7 @@
           "Convert your documents into agent skills. Agents can browse and read your documents on demand.",
         action_buttons: [
           {
-            label: "View Doc Skills",
+            label: "Manage Doc Skills",
             href: `/docs/doc_skills/${project_id}`,
             primary: true,
           },
