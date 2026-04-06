@@ -1,43 +1,39 @@
 # Using Docker Sandboxes
 
+## Enable docker sandboxes in `wk`
+
+make a copy of `cp .config/wk/user_settings.sh.example .config/wk/user_settings.sh` and uncomment the docker block.
+
 ## Create Your Sandbox
 
-Build custom docker image
-
+Manual run (good to run to check it works, but will be run for you if using `wk`):
 ```bash
-docker build -t kiln_opencode_template -f utils/docker_sandboxes/DockerfileOpencode utils/docker_sandboxes
+./utils/docker_sandboxes/create_sandbox.sh
 ```
 
-Back at project root, create and setup sandbox:
+Note: log into claude code on your first run
+
+
+## Deps
+
+All worktrees share a sandbox, but that also means they share deps. 
+
+Separate sandboxes work, but require you to login every single worktree which is painful.
+
+## Fresh build
+
+Run on occasion to make your sandbox template more up to date. Forking a worktree will be faster.
 
 ```bash
-# OLD docker sandbox run -t kiln_opencode_template opencode .
+./utils/docker_sandboxes/create_sandbox.sh --rebuild-all
 ```
-
-```bash
-# Create Sandbox
-docker sandbox create -t kiln_opencode_template opencode .
-# npm i, but in /tmp where it won't overwrite
-docker sandbox exec opencode-kiln_new bash -c "cp $PWD/app/web_ui/package*.json /tmp && cd /tmp && ls && npm i"
-docker sandbox exec opencode-kiln_new bash -c "cd $PWD && uv sync"
-```
-
-Note: log into claude code or opencode in UI
 
 To use bash:
 ```bash
-docker sandbox exec -it opencode-kiln_new bash
-```
-
-Note: the project path in the container is the same as your local dev path
-
-If you need it, delete your sandbox and start fresh:
-
-```bash
-docker sandbox rm opencode-kiln_new
+docker sandbox exec -it claude-kiln bash
 ```
 
 ## Pending / Improvements
 
 - Docker can't handle parallel tests. Might need more memory? Detects and runs single threaded now
-- `Seccomp` limits mean some things in checks.sh won't work. Detect and bypass for now. Hopefully docker fixes this, esbuild doesn't work, and that seems like their issue. https://github.com/docker/desktop-feedback/issues/116
+- Independent sandbox per worktree with .venv and node_modules in worktrees. Easy to get (just edit sandbox_name.sh) but haven't solved how to auto-log in.
