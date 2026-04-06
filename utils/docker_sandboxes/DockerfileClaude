@@ -15,8 +15,15 @@ RUN mkdir -p /usr/local/bin
 ENV GOBIN="/usr/local/bin"
 RUN go install github.com/golangci/misspell/cmd/misspell@latest
 
+# Install esbuild, must be installed during build, not runtime
+RUN npm install esbuild
+
 USER agent
 
-ENV UV_PROJECT_ENVIRONMENT=".venv-sandbox-opencode"
 ENV DOCKER_SANDBOX="true"
 
+# Setup uv and node_modules in a temporary directory in sandbox, isolated from host
+# When install runs for either it will install to /tmp/.venv and /tmp/node_modules
+ENV UV_PROJECT_ENVIRONMENT="/tmp/.venv"
+ENV NODE_PATH="/tmp/node_modules"
+ENV PATH="/tmp/node_modules/.bin:$PATH"
