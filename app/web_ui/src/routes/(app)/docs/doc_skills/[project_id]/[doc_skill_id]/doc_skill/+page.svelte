@@ -5,6 +5,7 @@
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import AppPage from "../../../../../app_page.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
+  import { goto } from "$app/navigation"
   import { onMount } from "svelte"
   import { extractor_output_format, formatDate } from "$lib/utils/formatters"
   import {
@@ -161,16 +162,25 @@
         href: `/docs/doc_skills/${project_id}`,
       },
     ]}
-    action_buttons={[
-      {
-        label: doc_skill?.is_archived ? "Unarchive" : "Archive",
-        primary: doc_skill?.is_archived,
-        handler: () => {
-          if (!doc_skill) return
-          update_archived_state(!doc_skill.is_archived)
-        },
-      },
-    ]}
+    action_buttons={doc_skill && !loading && !error
+      ? [
+          {
+            label: "Clone",
+            handler: () =>
+              goto(
+                `/docs/doc_skills/${project_id}/create_doc_skill?clone=${doc_skill_id}`,
+              ),
+          },
+          {
+            label: doc_skill.is_archived ? "Unarchive" : "Archive",
+            primary: doc_skill.is_archived,
+            handler: () => {
+              if (!doc_skill) return
+              update_archived_state(!doc_skill.is_archived)
+            },
+          },
+        ]
+      : []}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">

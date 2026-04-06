@@ -2,7 +2,7 @@
   import AppPage from "../../../app_page.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import Warning from "$lib/ui/warning.svelte"
-  import { client } from "$lib/api_client"
+  import { client, base_url } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
@@ -28,9 +28,28 @@
   let loading_error: KilnError | null = null
   let archive_error: KilnError | null = null
 
+  let doc_skill_source: {
+    doc_skill_id: string | null
+    doc_skill_name: string | null
+  } | null = null
+
   onMount(async () => {
-    await fetch_skill()
+    await Promise.all([fetch_skill(), fetch_doc_skill_source()])
   })
+
+  // Raw fetch used because this doc_skill_source endpoint isn't in the generated OpenAPI types
+  async function fetch_doc_skill_source() {
+    try {
+      const response = await fetch(
+        `${base_url}/api/projects/${project_id}/skills/${skill_id}/doc_skill_source`,
+      )
+      if (response.ok) {
+        doc_skill_source = await response.json()
+      }
+    } catch {
+      // Non-critical — silently ignore
+    }
+  }
 
   async function fetch_skill() {
     try {
@@ -163,6 +182,20 @@
         </button>
       </div>
     {:else if skill}
+      {#if doc_skill_source?.doc_skill_id}
+        <div
+          class="flex items-center gap-2 text-sm text-gray-500 border rounded-lg px-4 py-3 mb-6"
+        >
+          <span>Created from Documents</span>
+          <span class="text-gray-300">|</span>
+          <a
+            href={`/docs/doc_skills/${project_id}/${doc_skill_source.doc_skill_id}/doc_skill`}
+            class="link link-primary"
+          >
+            {doc_skill_source.doc_skill_name || "View Doc Skill"}
+          </a>
+        </div>
+      {/if}
       <div class="grid grid-cols-1 lg:grid-cols-[1fr,auto] gap-12">
         <div class="grow">
           <SkillPropertiesDisplay

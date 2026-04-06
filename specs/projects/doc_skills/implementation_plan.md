@@ -11,7 +11,7 @@ status: complete
 - [x] Phase 3: API layer
 - [x] Phase 4: Frontend — templates, creation form, progress dialog
 - [x] Phase 5: Frontend — list page, detail page, entry point
-- [ ] Phase 6: Cross-linking + Clone
+- [x] Phase 6: Cross-linking + Clone
 - [ ] Phase 7: P2 — Document descriptions
 - [ ] Phase 8: P2 — Semantic doc descriptions / chunk summaries
 
