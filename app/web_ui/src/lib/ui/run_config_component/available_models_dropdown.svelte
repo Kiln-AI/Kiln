@@ -47,7 +47,11 @@
     ...default_model_dropdown_settings,
     ...settings,
   }
-  $: confirm_model_select(model)
+  let pending_model: string = model
+  $: on_pending_model_change(pending_model)
+  $: if (model !== pending_model) {
+    pending_model = model
+  }
   $: $ui_state.selected_model = model
   $: model_options = format_model_options(
     $available_models || [],
@@ -89,7 +93,6 @@
   let unsupported_models: Option[] = []
   let untested_models: Option[] = []
   let deprecated_models: Option[] = []
-  let previous_model: string = model
 
   function get_model_warning(selected: string): string | null {
     if (
@@ -103,14 +106,14 @@
     return null
   }
 
-  function confirm_model_select(selected: string) {
-    if (selected === previous_model) return
+  function on_pending_model_change(selected: string) {
+    if (selected === model) return
     const warning = get_model_warning(selected)
     if (warning && !confirm(warning)) {
-      model = previous_model
+      pending_model = model
       return
     }
-    previous_model = selected
+    model = selected
   }
 
   function format_model_options(
@@ -351,7 +354,7 @@
     {label}
     {description}
     {info_description}
-    bind:value={model}
+    bind:value={pending_model}
     id="model"
     inputType="fancy_select"
     bind:error_message
