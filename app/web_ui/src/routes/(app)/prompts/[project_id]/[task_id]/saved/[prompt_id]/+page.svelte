@@ -13,7 +13,7 @@
   $: prompt_id = $page.params.prompt_id!
   $: agentInfo.set({
     name: "Saved Prompt Detail",
-    description: `Saved prompt detail for prompt ID ${prompt_id} in project ID ${project_id}, task ID ${task_id}. Shows prompt content, version history, and options to clone or edit.`,
+    description: `Saved prompt detail for prompt ID ${prompt_id} in project ID ${project_id}, task ID ${task_id}. Prompt name: ${prompt_model?.name ?? "[loading]"}. Shows prompt content, version history, and options to clone or edit.`,
   })
 
   $: prompt_model = $current_task_prompts?.prompts.find(

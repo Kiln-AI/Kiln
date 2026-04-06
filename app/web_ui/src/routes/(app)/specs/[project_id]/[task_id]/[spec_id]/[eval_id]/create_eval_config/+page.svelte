@@ -28,7 +28,7 @@
   $: spec_id = $page.params.spec_id!
   $: agentInfo.set({
     name: "Create Eval Config",
-    description: `Create a new eval configuration for eval ID ${eval_id}, spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}.`,
+    description: `Create a new eval configuration for eval ID ${eval_id}, spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Eval name: ${evaluator?.name ?? "[loading]"}.`,
   })
 
   let spec: Spec | null = null

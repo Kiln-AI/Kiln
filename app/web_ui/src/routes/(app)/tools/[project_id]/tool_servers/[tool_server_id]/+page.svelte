@@ -26,7 +26,7 @@
   $: tool_server_id = $page.params.tool_server_id!
   $: agentInfo.set({
     name: "Tool Server Detail",
-    description: `Tool server detail for server ID ${tool_server_id} in project ID ${project_id}. Shows server properties, tools, status, and configuration.`,
+    description: `Tool server detail for server ID ${tool_server_id} in project ID ${project_id}. Server name: ${tool_server?.name ?? "[loading]"}. Shows server properties, tools, status, and configuration.`,
   })
   $: is_archived = tool_server?.properties?.is_archived ?? false
 

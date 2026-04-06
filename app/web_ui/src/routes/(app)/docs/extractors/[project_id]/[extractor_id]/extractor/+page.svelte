@@ -16,7 +16,7 @@
   $: extractor_id = $page.params.extractor_id!
   $: agentInfo.set({
     name: "Extractor Detail",
-    description: `Detail view for extractor ID ${extractor_id} in project ID ${project_id}. Shows extractor configuration, output format, and properties.`,
+    description: `Detail view for extractor ID ${extractor_id} in project ID ${project_id}. Extractor name: ${extractor_config?.name ?? "[loading]"}. Shows extractor configuration, output format, and properties.`,
   })
 
   let loading: boolean = false

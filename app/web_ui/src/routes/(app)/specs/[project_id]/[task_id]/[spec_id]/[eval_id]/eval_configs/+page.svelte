@@ -34,7 +34,7 @@
   $: spec_id = $page.params.spec_id!
   $: agentInfo.set({
     name: "Eval Configs",
-    description: `Eval configurations for eval ID ${eval_id}, spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Lists available evaluation configurations.`,
+    description: `Eval configurations for eval ID ${eval_id}, spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Eval name: ${evaluator?.name ?? "[loading]"}. Lists available evaluation configurations.`,
   })
 
   let spec: Spec | null = null

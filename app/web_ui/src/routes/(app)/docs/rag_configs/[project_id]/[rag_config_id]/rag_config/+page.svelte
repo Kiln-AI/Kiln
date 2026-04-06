@@ -41,7 +41,7 @@
   $: rag_config_id = $page.params.rag_config_id!
   $: agentInfo.set({
     name: "RAG Config Detail",
-    description: `RAG search tool configuration detail for config ID ${rag_config_id} in project ID ${project_id}. Shows chunking, embedding, and retrieval settings.`,
+    description: `RAG search tool configuration detail for config ID ${rag_config_id} in project ID ${project_id}. Config name: ${rag_config?.name ?? "[loading]"}. Shows chunking, embedding, and retrieval settings.`,
   })
 
   let loading: boolean = false

@@ -84,7 +84,7 @@
 
   $: agentInfo.set({
     name: "Compare Run Configs",
-    description: `Compare run configurations a specific eval: eval ID ${eval_id}, spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Table of eval results across configurations.`,
+    description: `Compare run configurations for a specific eval: eval ID ${eval_id}, spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Eval name: ${evaluator?.name ?? "[loading]"}. Table of eval results across configurations.`,
   })
 
   onMount(async () => {
