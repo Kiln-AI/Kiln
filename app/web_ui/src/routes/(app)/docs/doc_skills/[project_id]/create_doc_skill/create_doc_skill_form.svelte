@@ -4,7 +4,7 @@
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
-  import { onMount } from "svelte"
+  import { onMount, tick } from "svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import TagSelector from "../../../rag_configs/[project_id]/create_rag_config/tag_selector.svelte"
   import type { ExtractorConfig, ChunkerConfig } from "$lib/types"
@@ -237,7 +237,6 @@
       )
     } catch (err) {
       error = createKilnError(err)
-    } finally {
       loading = false
     }
   }
@@ -270,7 +269,6 @@
       await create_and_run_doc_skill(extractor_config_id, chunker_config_id)
     } catch (err) {
       error = createKilnError(err)
-    } finally {
       loading = false
     }
   }
@@ -319,6 +317,9 @@
       strip_file_extensions: strip_file_extensions,
     })
 
+    // Wait for Svelte to render the RunDocSkillDialog component
+    // (it's conditionally rendered based on created_doc_skill_id)
+    await tick()
     run_dialog?.show()
   }
 
