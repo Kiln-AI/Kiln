@@ -749,7 +749,9 @@ class LiteLlmAdapter(BaseAdapter):
                     if isinstance(result, KilnTaskToolResult)
                     else None,
                     is_error=result.is_error if result.is_error else None,
-                    error_message=result.error_message if result.error_message else None,
+                    error_message=result.error_message
+                    if result.error_message
+                    else None,
                 )
 
             tool_run_coroutines.append(run_tool_and_format())
