@@ -5083,7 +5083,7 @@ built_in_models: List[KilnModel] = [
                 model_id="accounts/fireworks/models/qwen3p6-plus",
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_data_gen=True,
-                supports_function_calling=False,
+                supports_function_calling=True,
             ),
         ],
     ),
