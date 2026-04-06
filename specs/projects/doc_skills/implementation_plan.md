@@ -1,5 +1,5 @@
 ---
-status: draft
+status: complete
 ---
 
 # Implementation Plan: Doc Skills
