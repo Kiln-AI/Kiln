@@ -8,7 +8,7 @@ status: complete
 
 - [x] Phase 1: Data model + Project registration
 - [x] Phase 2: Pipeline runner + Skill builder
-- [ ] Phase 3: API layer
+- [x] Phase 3: API layer
 - [ ] Phase 4: Frontend — templates, creation form, progress dialog
 - [ ] Phase 5: Frontend — list page, detail page, entry point
 - [ ] Phase 6: Cross-linking + Clone
