@@ -266,7 +266,7 @@ def connect_doc_skill_api(app: FastAPI):
     async def list_doc_skills(project_id: ProjectId) -> list[DocSkillResponse]:
         project = project_from_id(project_id)
         doc_skills = project.document_skills(readonly=True)
-        return [_to_response(ds) for ds in doc_skills if not ds.is_archived]
+        return [_to_response(ds) for ds in doc_skills]
 
     @app.get(
         "/api/projects/{project_id}/doc_skills/{doc_skill_id}", tags=["Doc Skills"]

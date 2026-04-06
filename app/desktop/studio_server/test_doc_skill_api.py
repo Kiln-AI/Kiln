@@ -234,7 +234,7 @@ class TestListDocSkills:
         assert result[0]["name"] == "Saved Doc Skill"
         assert result[0]["skill_name"] == "saved-doc-skill"
 
-    def test_list_excludes_archived(
+    def test_list_includes_archived(
         self, client, test_project, mock_project_from_id, saved_doc_skill
     ):
         saved_doc_skill.is_archived = True
@@ -242,7 +242,9 @@ class TestListDocSkills:
 
         response = client.get(f"/api/projects/{test_project.id}/doc_skills")
         assert response.status_code == 200
-        assert response.json() == []
+        result = response.json()
+        assert len(result) == 1
+        assert result[0]["is_archived"] is True
 
 
 class TestGetDocSkill:
