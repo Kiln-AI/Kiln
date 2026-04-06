@@ -3,11 +3,12 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=sandbox_name.sh
+source "$SCRIPT_DIR/sandbox_name.sh"
 REPO_ROOT="$(dirname "$SCRIPT_DIR/../../..")"
 cd "$REPO_ROOT"
 
-CURRENT_DIR_NAME="$(basename "$PWD")"
-SANDBOX_NAME="claude-$CURRENT_DIR_NAME"
+SANDBOX_NAME="$(kiln_claude_sandbox_name)"
 
 for arg in "$@"; do
   if [[ "$arg" == "--rebuild-all" ]]; then
