@@ -48,13 +48,14 @@
     dismissed.size > 0 && dismissed.size === question_set.questions.length
 
   function validate(): string | null {
-    for (const { original_index } of visible_questions) {
+    for (let i = 0; i < visible_questions.length; i++) {
+      const { original_index } = visible_questions[i]
       const selection = selections[original_index]
       if (selection === null) {
-        return `Please answer all remaining questions`
+        return `Please answer question ${i + 1}`
       }
       if (selection === "other" && !other_texts[original_index].trim()) {
-        return `Please provide feedback for all custom answers`
+        return `Please provide feedback for question ${i + 1}`
       }
     }
     return null
