@@ -146,7 +146,7 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Doc Skill"
+    title="Documents Skill"
     subtitle={doc_skill?.name ? `Name: ${doc_skill.name}` : undefined}
     breadcrumbs={[
       {
@@ -215,73 +215,80 @@
         />
       {/if}
       <div class="flex flex-col lg:flex-row gap-8 xl:gap-12">
-        <!-- Main Content - Skill Link -->
-        <div class="flex-1">
-          {#if doc_skill.skill_id}
-            <div class="rounded-lg border p-6 flex flex-col gap-3 items-start">
-              <div class="text-xl font-bold">Generated Skill</div>
-              <div class="text-sm text-gray-500">
-                This doc skill has been built. The generated skill is available
-                for agents to use.
-              </div>
-              <a
-                href={`/skills/${project_id}/${doc_skill.skill_id}`}
-                class="btn btn-primary btn-sm mt-2"
-              >
-                View Generated Skill
-              </a>
-            </div>
-          {:else if !doc_skill.is_archived}
-            <div class="rounded-lg border p-6 flex flex-col gap-3 items-start">
-              <div class="text-xl font-bold">Pending</div>
-              <div class="text-sm text-gray-500">
+        <!-- Left Column - Configuration & Actions -->
+        <div class="flex-1 flex flex-col gap-6">
+          {#if !doc_skill.skill_id && !doc_skill.is_archived}
+            <div
+              class="rounded-lg border border-warning bg-warning/10 p-4 flex flex-col gap-2"
+            >
+              <div class="font-bold">Incomplete</div>
+              <div class="text-sm">
                 This doc skill has not been built yet. Run the pipeline to
                 extract, chunk, and create the skill.
               </div>
               <button
-                class="btn btn-primary btn-sm mt-2"
+                class="btn btn-warning btn-sm mt-1 self-start"
                 on:click={() => run_dialog?.show()}
               >
                 Run Pipeline
               </button>
             </div>
-          {:else}
-            <div class="rounded-lg border p-6 flex flex-col gap-3 items-start">
-              <div class="text-xl font-bold">Pending</div>
-              <div class="text-sm text-gray-500">
+          {:else if !doc_skill.skill_id && doc_skill.is_archived}
+            <div
+              class="rounded-lg border border-warning bg-warning/10 p-4 flex flex-col gap-2"
+            >
+              <div class="font-bold">Incomplete</div>
+              <div class="text-sm">
                 This doc skill was archived before the pipeline completed.
                 Unarchive to run the pipeline.
               </div>
             </div>
           {/if}
+
+          <PropertyList
+            title="Configuration"
+            properties={[
+              { name: "Name", value: doc_skill.name },
+              {
+                name: "Skill Name",
+                value: doc_skill.skill_name,
+                ...(doc_skill.skill_id
+                  ? {
+                      link: `/skills/${project_id}/${doc_skill.skill_id}`,
+                    }
+                  : {}),
+              },
+              ...(doc_skill.description
+                ? [
+                    {
+                      name: "Description",
+                      value: doc_skill.description,
+                    },
+                  ]
+                : []),
+              {
+                name: "Created At",
+                value: formatDate(doc_skill.created_at ?? undefined),
+              },
+              ...(doc_skill.created_by
+                ? [{ name: "Created By", value: doc_skill.created_by }]
+                : []),
+            ]}
+          />
+
+          {#if doc_skill.skill_id}
+            <a
+              href={`/skills/${project_id}/${doc_skill.skill_id}`}
+              class="btn btn-primary btn-sm btn-wide self-start"
+            >
+              View Skill
+            </a>
+          {/if}
         </div>
 
-        <!-- Right Sidebar - Configuration Details -->
+        <!-- Right Sidebar - Pipeline Details -->
         <div class="w-full lg:w-80 xl:w-96 flex-shrink-0">
           <div class="flex flex-col gap-6">
-            <PropertyList
-              title="Configuration"
-              properties={[
-                { name: "Name", value: doc_skill.name },
-                { name: "Skill Name", value: doc_skill.skill_name },
-                ...(doc_skill.description
-                  ? [
-                      {
-                        name: "Description",
-                        value: doc_skill.description,
-                      },
-                    ]
-                  : []),
-                {
-                  name: "Created At",
-                  value: formatDate(doc_skill.created_at ?? undefined),
-                },
-                ...(doc_skill.created_by
-                  ? [{ name: "Created By", value: doc_skill.created_by }]
-                  : []),
-              ]}
-            />
-
             <PropertyList
               title="Extractor"
               properties={extractor_config
@@ -374,11 +381,6 @@
                 {:else}
                   All documents in library.
                 {/if}
-              </div>
-              <div class="text-sm text-gray-500 mt-2">
-                Strip extensions: {doc_skill.strip_file_extensions
-                  ? "Yes"
-                  : "No"}
               </div>
             </div>
           </div>
