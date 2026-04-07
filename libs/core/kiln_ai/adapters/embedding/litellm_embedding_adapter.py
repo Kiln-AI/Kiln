@@ -206,6 +206,13 @@ class LitellmEmbeddingAdapter(BaseEmbeddingAdapter):
             exclude_none=True, exclude={"instructions"}
         )
 
+        response = await litellm.aembedding(
+            model=self.litellm_model_id,
+            input=processed_texts,
+            **embedding_options,
+            **completion_kwargs,
+        )
+
         aembedding_kwargs: Dict[str, Any] = {
             "model": self.litellm_model_id,
             "input": processed_texts,
