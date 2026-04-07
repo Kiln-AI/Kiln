@@ -152,7 +152,7 @@ else
 fi
 
 # OpenAPI schema check
-start_check "openapi schema" bash -c 'cd app/web_ui/src/lib/ && ./check_schema.sh --allow-skip'
+start_check "openapi schema" bash -c 'app/web_ui/src/lib/check_schema.sh'
 
 # Web UI checks
 if [ "$staged_only" = false ] || [[ "$changed_files" == *"app/web_ui/"* ]]; then
