@@ -9,6 +9,7 @@
 
   export let new_project_url = "/settings/create_project"
   export let new_task_url = "/settings/create_task"
+  export let compact = false
 
   $: project_list = $projects?.projects || []
   // Undefined should fallback. Null is manually selected none
@@ -113,15 +114,19 @@
   }
 </script>
 
-<ul class="menu menu-md bg-base-200 rounded-box" {id}>
+<ul
+  class="menu bg-base-200 rounded-box {compact ? 'menu-xs ml-2' : 'menu-md'}"
+  class:select-tasks-menu--compact={compact}
+  {id}
+>
   {#each project_list as project}
     <li>
       <button
         on:click={() => select_project(project)}
         class="flex flex-row pr-1"
       >
-        <div class="grow">
-          <span class="badge badge-secondary badge-outline">Project</span>
+        <div class="grow flex flex-row items-center gap-1.5">
+          <img src="/images/sm_folder.svg" alt="" class="w-4 h-4 opacity-60" />
           {project.name}
         </div>
         <div>
@@ -227,3 +232,9 @@
     >
   </li>
 </ul>
+
+<style>
+  .select-tasks-menu--compact :global(li > ul) {
+    margin-inline-start: 0.5em;
+  }
+</style>

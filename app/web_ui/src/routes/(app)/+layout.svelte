@@ -126,7 +126,7 @@
     ></label>
 
     <ul
-      class="menu bg-base-200 text-base-content w-72 md:w-64 2xl:w-72 p-4 pt-1 lg:pt-4 min-h-full"
+      class="sidebar-menu menu bg-base-200 text-base-content w-72 md:w-52 2xl:w-56 p-3 pt-1 lg:pt-3 min-h-full text-xs"
     >
       <li class="hover:bg-transparent flex flex-row justify-end">
         <label
@@ -136,32 +136,30 @@
           &#x2715;
         </label>
       </li>
-      <div class="mb-4 ml-4 mt-2">
+      <div class="mb-2 ml-3 mt-1">
         <div class="flex flex-row items-center mx-[-5px] p-0">
-          <img src="/images/animated_logo.svg" alt="logo" class="w-8 h-8" />
-          <div class="text-lg font-bold ml-1">Kiln AI</div>
+          <img src="/images/animated_logo.svg" alt="logo" class="w-7 h-7" />
+          <div class="text-base font-bold ml-1">Kiln AI</div>
         </div>
       </div>
-      <li class="mb-4">
+      <li class="mb-2">
         <details id="task-menu">
-          <summary>
-            <div
-              class="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs 2xl:text-sm"
-            >
+          <summary class="pl-2 pr-3">
+            <div class="grid grid-cols-[auto,1fr] gap-x-1.5 gap-y-0.5 text-xs">
               <span class="font-bold whitespace-nowrap">Project:</span>
               <span class="truncate">{$current_project?.name}</span>
               <span class="font-bold whitespace-nowrap">Task:</span>
               <span class="truncate">{$current_task?.name}</span>
             </div>
           </summary>
-          <SelectTasksMenu />
+          <SelectTasksMenu compact />
         </details>
       </li>
-      <li class="menu-md">
+      <li class="menu-sm">
         <a href="/" class={section == Section.Run ? "active" : ""}>
           <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools. Attribution: https://www.svgrepo.com/svg/524827/play-circle -->
           <svg
-            class="w-6 h-6 mr-2"
+            class="sidebar-icon"
             viewBox="0 0 24 24"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
@@ -182,14 +180,14 @@
           Run</a
         >
       </li>
-      <li class="menu-md">
+      <li class="menu-sm">
         <a
           href={`/dataset/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
           class={section == Section.Dataset ? "active" : ""}
         >
           <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools. Attribution: https://www.svgrepo.com/svg/524492/database -->
           <svg
-            class="w-6 h-6 mr-2"
+            class="sidebar-icon"
             viewBox="0 0 24 24"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
@@ -226,12 +224,12 @@
         >
       </li>
 
-      <li class="menu-md">
+      <li class="menu-sm">
         <a
           href={`/specs/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
           class={section == Section.Specs ? "active" : ""}
         >
-          <div class="h-6 w-6 mr-2">
+          <div class="sidebar-icon">
             <EvalIcon />
           </div>
 
@@ -239,24 +237,24 @@
         >
       </li>
 
-      <li class="menu-md">
+      <li class="menu-sm">
         <a
           href={`/optimize/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
           class={section == Section.Optimize ? "active" : ""}
         >
-          <div class="h-6 w-6 mr-2">
+          <div class="sidebar-icon">
             <OptimizeIcon />
           </div>
           Optimize
         </a>
-        <ul>
-          <li class="menu-md menu-nested">
+        <ul class="pl-1">
+          <li class="menu-sm menu-nested">
             <a
               href={`/prompts/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
               class={section == Section.Prompts ? "active" : ""}
             >
               <svg
-                class="w-6 h-6 mr-2"
+                class="sidebar-icon"
                 viewBox="0 0 24 24"
                 fill="none"
                 xmlns="http://www.w3.org/2000/svg"
@@ -274,10 +272,10 @@
               Prompts
             </a>
           </li>
-          <li class="menu-md menu-nested">
+          <li class="menu-sm menu-nested">
             <a href="/models" class={section == Section.Models ? "active" : ""}>
               <svg
-                class="w-6 h-6 mr-2"
+                class="sidebar-icon"
                 viewBox="0 0 24 24"
                 fill="none"
                 xmlns="http://www.w3.org/2000/svg"
@@ -307,45 +305,45 @@
               Models
             </a>
           </li>
-          <li class="menu-md menu-nested">
+          <li class="menu-sm menu-nested">
             <a
               href={`/tools/${$ui_state.current_project_id}`}
               class={section == Section.Tools ? "active" : ""}
             >
-              <div class="h-6 w-6 mr-2">
+              <div class="sidebar-icon">
                 <ToolsIcon />
               </div>
               Tools
             </a>
           </li>
-          <li class="menu-md menu-nested">
+          <li class="menu-sm menu-nested">
             <a
               href={`/skills/${$ui_state.current_project_id}`}
               class={section == Section.Skills ? "active" : ""}
             >
-              <div class="h-6 w-6 mr-2">
+              <div class="sidebar-icon">
                 <SkillsIcon />
               </div>
               Skills
             </a>
           </li>
-          <li class="menu-md menu-nested">
+          <li class="menu-sm menu-nested">
             <a
               href={`/docs/${$ui_state.current_project_id}`}
               class={section == Section.Documents ? "active" : ""}
             >
-              <div class="h-6 w-6 mr-2">
+              <div class="sidebar-icon">
                 <FileIcon kind="document" />
               </div>
               Docs &amp; Search
             </a>
           </li>
-          <li class="menu-md menu-nested">
+          <li class="menu-sm menu-nested">
             <a
               href={`/fine_tune/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
               class={section == Section.FineTune ? "active" : ""}
             >
-              <div class="h-6 w-6 mr-2">
+              <div class="sidebar-icon">
                 <FinetuneIcon />
               </div>
               Fine Tune
@@ -354,14 +352,14 @@
         </ul>
       </li>
 
-      <li class="menu-md">
+      <li class="menu-sm">
         <a
           href={`/generate/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
           class={section == Section.Generate ? "active" : ""}
         >
           <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
           <svg
-            class="w-6 h-6 mr-2"
+            class="sidebar-icon"
             viewBox="0 0 24 24"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
@@ -382,11 +380,11 @@
         >
       </li>
 
-      <li class="menu-md">
+      <li class="menu-sm">
         <a href="/settings" class={section == Section.Settings ? "active" : ""}>
           <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools. Attribution: https://www.svgrepo.com/svg/524954/settings -->
           <svg
-            class="w-6 h-6 mr-2"
+            class="sidebar-icon"
             viewBox="0 0 24 24"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
@@ -409,8 +407,8 @@
         >
       </li>
       {#if $update_info.update_result && $update_info.update_result.has_update}
-        <li class="menu-md mt-4">
-          <a href="/settings/check_for_update" class="px-6 text-xs font-medium">
+        <li class="menu-sm mt-2">
+          <a href="/settings/check_for_update" class="px-4 text-xs font-medium">
             <span class="bg-primary rounded-full w-2 h-2 mr-1"></span>App Update
             Available</a
           >
@@ -429,5 +427,25 @@
   }
   :global(.menu li > ul) {
     margin-inline-start: 1.9em;
+  }
+
+  .sidebar-menu :global(li > ul) {
+    margin-inline-start: 20.5px;
+  }
+
+  .menu-sm :where(li:not(.menu-title) > *:not(ul, details, .menu-title)),
+  .menu-sm :where(li:not(.menu-title) > details > summary:not(.menu-title)) {
+    font-size: 0.75rem;
+  }
+
+  .sidebar-menu > :global(li) {
+    margin-bottom: 4px;
+  }
+
+  :global(.sidebar-icon) {
+    width: 1.25rem;
+    height: 1.25rem;
+    margin-right: 0.25rem;
+    flex-shrink: 0;
   }
 </style>
