@@ -32,8 +32,8 @@
   // Track the "Other" text for each question (bound to parent to survive remounts)
   export let other_texts: string[] = question_set.questions.map(() => "")
 
-  // Track dismissed questions by index
-  let dismissed: Set<number> = new Set()
+  // Track dismissed questions by index (bound to parent to survive remounts)
+  export let dismissed: Set<number> = new Set()
 
   function dismiss_question(index: number) {
     dismissed.add(index)

@@ -128,6 +128,7 @@
   let question_set: QuestionSet | null = null
   let question_selections: (number | "other" | null)[] = []
   let question_other_texts: string[] = []
+  let question_dismissed: Set<number> = new Set()
 
   // Review state
   let review_rows: ReviewRow[] = []
@@ -700,6 +701,7 @@
       question_set = data
       question_selections = data.questions.map(() => null)
       question_other_texts = data.questions.map(() => "")
+      question_dismissed = new Set()
       current_state = "questions"
     }
   }
@@ -966,6 +968,7 @@
         {question_set}
         bind:selections={question_selections}
         bind:other_texts={question_other_texts}
+        bind:dismissed={question_dismissed}
         on_submit={handle_submit_question_answers}
         on_skip={handle_skip_questions}
         bind:error
