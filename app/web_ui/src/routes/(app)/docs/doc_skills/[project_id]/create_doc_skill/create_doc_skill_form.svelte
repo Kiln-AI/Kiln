@@ -16,6 +16,7 @@
   } from "../add_doc_skill/doc_skill_templates"
   import { skill_name_validator } from "$lib/utils/input_validators"
   import posthog from "posthog-js"
+  import { uncache_available_tools } from "$lib/stores"
   import CreateChunkerDialog from "../../../rag_configs/[project_id]/create_rag_config/create_chunker_dialog.svelte"
   import CreateExtractorDialog from "../../../rag_configs/[project_id]/create_rag_config/create_extractor_dialog.svelte"
   import {
@@ -310,6 +311,7 @@
     }
 
     created_doc_skill_id = doc_skill.id
+    uncache_available_tools(project_id)
 
     posthog.capture("create_doc_skill", {
       template_name: template?.name || "custom",
