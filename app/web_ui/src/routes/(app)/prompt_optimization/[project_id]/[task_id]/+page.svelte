@@ -11,7 +11,7 @@
   import OptimizeIcon from "$lib/ui/icons/optimize_icon.svelte"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
   import { checkPromptOptimizationAccess } from "$lib/utils/entitlement_utils"
-  import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
+  import PromptOptimizationCopilotRequired from "./prompt_optimization_copilot_required.svelte"
   import EntitlementRequiredCard from "$lib/ui/kiln_copilot/entitlement_required_card.svelte"
 
   import { agentInfo } from "$lib/agent"
@@ -165,7 +165,7 @@
     </div>
   {:else if is_empty}
     {#if kiln_copilot_connected === false}
-      <CopilotRequiredCard />
+      <PromptOptimizationCopilotRequired />
     {:else if has_prompt_optimization_entitlement === false}
       <EntitlementRequiredCard feature_name="Prompt Optimization" />
     {:else}

@@ -4,6 +4,7 @@
   import { base_url } from "$lib/api_client"
   import posthog from "posthog-js"
   import { env } from "$env/dynamic/public"
+  import { setCopilotConnected } from "$lib/stores/copilot_connection_store"
 
   export let onSuccess: () => void
   export let showCheckmark = false
@@ -125,6 +126,7 @@
         provider_id: "kiln_copilot",
       })
 
+      setCopilotConnected(true)
       onSuccess()
       return true
     } catch (e) {

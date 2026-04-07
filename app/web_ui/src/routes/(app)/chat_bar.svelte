@@ -9,9 +9,14 @@
     getChatBarWidth,
     setChatBarWidth,
   } from "$lib/chat/chat_ui_storage"
-  import { onDestroy } from "svelte"
+  import { onDestroy, onMount } from "svelte"
   import { Section } from "$lib/ui/section"
   import { browser } from "$app/environment"
+  import ChatCopilotRequired from "$lib/ui/kiln_copilot/chat_copilot_required.svelte"
+  import {
+    kilnCopilotConnected,
+    initCopilotConnectionStore,
+  } from "$lib/stores/copilot_connection_store"
 
   export let section: Section = Section.None
 
@@ -132,6 +137,31 @@
   let sidebarHasMessages = false
   let dialogHasMessages = false
 
+  onMount(() => {
+    initCopilotConnectionStore()
+  })
+
+  $: copilot_chat_ready = $kilnCopilotConnected === true
+
+  $: dialog_header_buttons = copilot_chat_ready
+    ? [
+        ...(dialogHasMessages
+          ? [
+              {
+                image_path: "/images/new_chat.svg",
+                alt_text: "New chat",
+                action: () => dialogChat?.newChat(),
+              },
+            ]
+          : []),
+        {
+          image_path: "/images/history.svg",
+          alt_text: "Chat history",
+          action: () => dialogChat?.openHistory(),
+        },
+      ]
+    : []
+
   $: isChat = section === Section.Chat
 </script>
 
@@ -167,12 +197,12 @@
         <div class="drag-indicator"></div>
       </div>
       <div
-        class="rounded-3xl bg-base-100 shadow-md px-4 py-4 border flex flex-col flex-1 min-w-0 min-h-0 overflow-y-auto"
+        class="rounded-3xl bg-base-100 shadow-md px-4 py-4 border flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden"
       >
-        <div class="flex flex-row items-center justify-between mb-4">
+        <div class="flex flex-row items-center justify-between mb-4 shrink-0">
           <div class="text-lg font-medium">Chat</div>
           <div class="flex flex-row items-center gap-0.5">
-            {#if sidebarHasMessages}
+            {#if copilot_chat_ready && sidebarHasMessages}
               <button
                 class="btn btn-sm btn-circle btn-ghost"
                 on:click={() => sidebarChat?.newChat()}
@@ -187,19 +217,21 @@
                 />
               </button>
             {/if}
-            <button
-              class="btn btn-sm btn-circle btn-ghost"
-              on:click={() => sidebarChat?.openHistory()}
-              aria-label="Chat history"
-              title="Chat history"
-            >
-              <img
-                class="size-5"
-                src="/images/history.svg"
-                alt="Chat history"
-                aria-hidden="true"
-              />
-            </button>
+            {#if copilot_chat_ready}
+              <button
+                class="btn btn-sm btn-circle btn-ghost"
+                on:click={() => sidebarChat?.openHistory()}
+                aria-label="Chat history"
+                title="Chat history"
+              >
+                <img
+                  class="size-5"
+                  src="/images/history.svg"
+                  alt="Chat history"
+                  aria-hidden="true"
+                />
+              </button>
+            {/if}
             <button
               class="btn btn-sm btn-circle btn-ghost"
               on:click={toggle}
@@ -209,7 +241,20 @@
             </button>
           </div>
         </div>
-        <Chat bind:this={sidebarChat} bind:hasMessages={sidebarHasMessages} />
+        <div class="flex flex-col flex-1 min-h-0 min-w-0">
+          {#if $kilnCopilotConnected === null}
+            <div class="flex-1 flex items-center justify-center min-h-[120px]">
+              <span class="loading loading-spinner loading-md"></span>
+            </div>
+          {:else if $kilnCopilotConnected === false}
+            <ChatCopilotRequired compact />
+          {:else}
+            <Chat
+              bind:this={sidebarChat}
+              bind:hasMessages={sidebarHasMessages}
+            />
+          {/if}
+        </div>
       </div>
     </div>
   </div>
@@ -239,26 +284,19 @@
     title="Chat"
     on:close={() => (dialogOpen = false)}
     width="wide"
-    header_buttons={[
-      ...(dialogHasMessages
-        ? [
-            {
-              image_path: "/images/new_chat.svg",
-              alt_text: "New chat",
-              action: () => dialogChat?.newChat(),
-            },
-          ]
-        : []),
-      {
-        image_path: "/images/history.svg",
-        alt_text: "Chat history",
-        action: () => dialogChat?.openHistory(),
-      },
-    ]}
+    header_buttons={dialog_header_buttons}
   >
     {#if dialogOpen}
-      <div class="h-[70vh] flex flex-col">
-        <Chat bind:this={dialogChat} bind:hasMessages={dialogHasMessages} />
+      <div class="h-[70vh] flex flex-col min-h-0">
+        {#if $kilnCopilotConnected === null}
+          <div class="flex-1 flex items-center justify-center">
+            <span class="loading loading-spinner loading-lg"></span>
+          </div>
+        {:else if $kilnCopilotConnected === false}
+          <ChatCopilotRequired compact />
+        {:else}
+          <Chat bind:this={dialogChat} bind:hasMessages={dialogHasMessages} />
+        {/if}
       </div>
     {/if}
   </Dialog>

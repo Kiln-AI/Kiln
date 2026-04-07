@@ -37,7 +37,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
   import { checkPromptOptimizationAccess } from "$lib/utils/entitlement_utils"
-  import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
+  import PromptOptimizationCopilotRequired from "../prompt_optimization_copilot_required.svelte"
   import EntitlementRequiredCard from "$lib/ui/kiln_copilot/entitlement_required_card.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import TableButton from "../../../../generate/[project_id]/[task_id]/table_button.svelte"
@@ -773,7 +773,7 @@
         </div>
       </div>
     {:else if kiln_copilot_connected === false}
-      <CopilotRequiredCard />
+      <PromptOptimizationCopilotRequired />
     {:else if has_prompt_optimization_entitlement === false}
       <EntitlementRequiredCard feature_name="Prompt Optimization" />
     {:else if created_job}
