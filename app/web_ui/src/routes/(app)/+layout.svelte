@@ -437,8 +437,8 @@
   </div>
 </div>
 
-<Dialog bind:this={taskDialog} title="Select Project & Task">
-  <SelectTasksMenu on:task_selected={() => taskDialog?.close()} />
+<Dialog bind:this={taskDialog} title="Select Task" width="wide">
+  <SelectTasksMenu on:dismiss={() => taskDialog?.close()} />
 </Dialog>
 
 <style>
