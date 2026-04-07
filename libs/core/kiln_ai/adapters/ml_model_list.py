@@ -44,6 +44,7 @@ class ModelFamily(str, Enum):
     stepfun = "stepfun"
     mimo = "mimo"
     nemotron = "nemotron"
+    arcee = "arcee"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -253,6 +254,7 @@ class ModelName(str, Enum):
     bytedance_seed_oss_36b = "bytedance_seed_oss_36b"
     bytedance_seed_1_6 = "bytedance_seed_1_6"
     bytedance_seed_1_6_flash = "bytedance_seed_1_6_flash"
+    arcee_trinity_large_thinking = "arcee_trinity_large_thinking"
     stepfun_step3 = "stepfun_step3"
     mimo_v2_pro = "mimo_v2_pro"
     mimo_v2_flash = "mimo_v2_flash"
@@ -7160,6 +7162,23 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 supports_data_gen=True,
+            ),
+        ],
+    ),
+    # Arcee AI Trinity Large Thinking
+    KilnModel(
+        family=ModelFamily.arcee,
+        name=ModelName.arcee_trinity_large_thinking,
+        friendly_name="Arcee Trinity Large (Thinking)",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="arcee-ai/trinity-large-thinking",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                reasoning_capable=True,
+                require_openrouter_reasoning=True,
             ),
         ],
     ),
