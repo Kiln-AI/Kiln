@@ -20,14 +20,7 @@ from app.desktop.studio_server.doc_skill_api import (
     compute_doc_skill_progress,
     connect_doc_skill_api,
 )
-
-LITELLM_PROPERTIES = {
-    "extractor_type": ExtractorType.LITELLM,
-    "prompt_document": "Transcribe.",
-    "prompt_audio": "Transcribe.",
-    "prompt_video": "Transcribe.",
-    "prompt_image": "Describe.",
-}
+from app.desktop.studio_server.test_doc_skill_fixtures import LITELLM_PROPERTIES
 
 
 @pytest.fixture

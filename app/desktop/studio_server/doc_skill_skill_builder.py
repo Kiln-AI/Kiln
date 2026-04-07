@@ -98,12 +98,12 @@ class SkillBuilder:
         sanitized = sanitized.strip("-")
         return sanitized or "unnamed"
 
-    def _strip_all_extensions(self, name: str) -> str:
-        if name.startswith("."):
-            dot_idx = name.find(".", 1)
-        else:
-            dot_idx = name.find(".")
-        if dot_idx > 0:
+    def _strip_file_extension(self, name: str) -> str:
+        dot_idx = name.rfind(".")
+        if dot_idx <= 0:
+            return name
+        ext = name[dot_idx + 1 :]
+        if 2 <= len(ext) <= 4 and ext.isalnum():
             return name[:dot_idx]
         return name
 
@@ -114,7 +114,7 @@ class SkillBuilder:
         for doc_id, (doc, _chunks) in doc_chunks.items():
             name = doc.name_override or doc.name
             if self.doc_skill.strip_file_extensions:
-                name = self._strip_all_extensions(name)
+                name = self._strip_file_extension(name)
             raw_names[doc_id] = self._sanitize_name(name)
 
         seen: dict[str, int] = {}
@@ -178,7 +178,7 @@ class SkillBuilder:
             doc, chunks = doc_chunks[doc_id]
             display_name = doc.name_override or doc.name
             if self.doc_skill.strip_file_extensions:
-                display_name = self._strip_all_extensions(display_name)
+                display_name = self._strip_file_extension(display_name)
             part_count = len(chunks)
             lines.append(
                 f"|{display_name}|{part_count}|"

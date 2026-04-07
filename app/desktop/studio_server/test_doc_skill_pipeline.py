@@ -5,7 +5,6 @@ import pytest
 from kiln_ai.datamodel.chunk import ChunkerConfig
 from kiln_ai.datamodel.document_skill import DocumentSkill
 from kiln_ai.datamodel.extraction import (
-    Document,
     ExtractorConfig,
     ExtractorType,
     OutputFormat,
@@ -17,14 +16,10 @@ from app.desktop.studio_server.doc_skill_pipeline import (
     DocSkillWorkflowRunner,
     DocSkillWorkflowRunnerConfig,
 )
-
-LITELLM_PROPERTIES = {
-    "extractor_type": ExtractorType.LITELLM,
-    "prompt_document": "Transcribe.",
-    "prompt_audio": "Transcribe.",
-    "prompt_video": "Transcribe.",
-    "prompt_image": "Describe.",
-}
+from app.desktop.studio_server.test_doc_skill_fixtures import (
+    LITELLM_PROPERTIES,
+    make_mock_document,
+)
 
 
 @pytest.fixture
@@ -89,15 +84,6 @@ def config(doc_skill, mock_project, extractor_config, chunker_config):
         extractor_config=extractor_config,
         chunker_config=chunker_config,
     )
-
-
-def make_mock_document(name, doc_id="doc1", tags=None):
-    doc = MagicMock(spec=Document)
-    doc.name = name
-    doc.name_override = None
-    doc.id = doc_id
-    doc.tags = tags or []
-    return doc
 
 
 class TestDocSkillProgress:

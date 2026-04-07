@@ -71,11 +71,12 @@
 
   async function fetch_doc_skill_source() {
     try {
-      const response = await fetch(
-        `${base_url}/api/projects/${project_id}/skills/${skill_id}/doc_skill_source`,
+      const { data } = await client.GET(
+        "/api/projects/{project_id}/skills/{skill_id}/doc_skill_source",
+        { params: { path: { project_id, skill_id } } },
       )
-      if (response.ok) {
-        doc_skill_source = await response.json()
+      if (data) {
+        doc_skill_source = data
       }
     } catch {
       // Non-critical — silently ignore

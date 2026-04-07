@@ -2,9 +2,9 @@
   import { goto } from "$app/navigation"
   import type { components } from "$lib/api_schema"
 
-  type DocSkillResponse = components["schemas"]["DocSkillResponse"]
+  type DocumentSkill = components["schemas"]["DocumentSkill"]
 
-  export let doc_skill: DocSkillResponse
+  export let doc_skill: DocumentSkill
   export let project_id: string
 
   function open() {

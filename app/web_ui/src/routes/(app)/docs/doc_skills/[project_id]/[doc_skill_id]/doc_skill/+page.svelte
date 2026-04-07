@@ -22,7 +22,7 @@
   import { fixedWindowChunkerProperties } from "$lib/utils/properties_cast"
   import type { components } from "$lib/api_schema"
 
-  type DocSkillResponse = components["schemas"]["DocSkillResponse"]
+  type DocumentSkill = components["schemas"]["DocumentSkill"]
 
   $: project_id = $page.params.project_id!
   $: doc_skill_id = $page.params.doc_skill_id!
@@ -34,7 +34,7 @@
   let loading = true
   let error: KilnError | null = null
   let update_error: KilnError | null = null
-  let doc_skill: DocSkillResponse | null = null
+  let doc_skill: DocumentSkill | null = null
   let extractor_config: ExtractorConfig | null = null
   let chunker_config: ChunkerConfig | null = null
 
@@ -71,7 +71,7 @@
   }
 
   async function load_sub_configs() {
-    if (!doc_skill) return
+    if (!doc_skill || !doc_skill.extractor_config_id) return
 
     const [extractor_result, chunker_result] = await Promise.all([
       client.GET(
@@ -388,7 +388,7 @@
   </AppPage>
 </div>
 
-{#if doc_skill && !doc_skill.skill_id}
+{#if doc_skill?.id && !doc_skill.skill_id}
   <RunDocSkillDialog
     bind:dialog={run_dialog}
     {project_id}

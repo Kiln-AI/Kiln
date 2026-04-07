@@ -5,7 +5,6 @@ import pytest
 from kiln_ai.datamodel.chunk import ChunkedDocument, ChunkerConfig
 from kiln_ai.datamodel.document_skill import DocumentSkill
 from kiln_ai.datamodel.extraction import (
-    Document,
     Extraction,
     ExtractorConfig,
     ExtractorType,
@@ -16,14 +15,10 @@ from kiln_ai.datamodel.skill import Skill
 
 from app.desktop.studio_server.doc_skill_pipeline import DocSkillWorkflowRunnerConfig
 from app.desktop.studio_server.doc_skill_skill_builder import SkillBuilder
-
-LITELLM_PROPERTIES = {
-    "extractor_type": ExtractorType.LITELLM,
-    "prompt_document": "Transcribe.",
-    "prompt_audio": "Transcribe.",
-    "prompt_video": "Transcribe.",
-    "prompt_image": "Describe.",
-}
+from app.desktop.studio_server.test_doc_skill_fixtures import (
+    LITELLM_PROPERTIES,
+    make_mock_document,
+)
 
 
 @pytest.fixture
@@ -90,15 +85,6 @@ def config(doc_skill, mock_project, extractor_config, chunker_config):
     )
 
 
-def make_mock_document(name, doc_id="doc1", name_override=None, tags=None):
-    doc = MagicMock(spec=Document)
-    doc.name = name
-    doc.name_override = name_override
-    doc.id = doc_id
-    doc.tags = tags or []
-    return doc
-
-
 class TestSanitizeName:
     def setup_method(self):
         self.builder = SkillBuilder.__new__(SkillBuilder)
@@ -128,7 +114,7 @@ class TestSanitizeName:
         assert result == "caf-r-sum"
 
 
-class TestStripAllExtensions:
+class TestStripFileExtension:
     def setup_method(self):
         self.builder = SkillBuilder.__new__(SkillBuilder)
 
@@ -136,15 +122,21 @@ class TestStripAllExtensions:
         "input_name,expected",
         [
             ("file.txt", "file"),
-            ("archive.tar.gz", "archive"),
+            ("archive.tar.gz", "archive.tar"),
             ("no_extension", "no_extension"),
             (".gitignore", ".gitignore"),
             (".hidden.txt", ".hidden"),
-            ("a.b.c.d", "a"),
+            ("a.b.c.d", "a.b.c.d"),
+            ("report.pdf", "report"),
+            ("data.json", "data"),
+            ("image.jpeg", "image"),
+            ("doc.md", "doc"),
+            ("file.a", "file.a"),
+            ("file.abcde", "file.abcde"),
         ],
     )
-    def test_strip_all_extensions(self, input_name, expected):
-        assert self.builder._strip_all_extensions(input_name) == expected
+    def test_strip_file_extension(self, input_name, expected):
+        assert self.builder._strip_file_extension(input_name) == expected
 
 
 class TestResolveDocumentNames:

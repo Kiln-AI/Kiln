@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-from datetime import datetime
 from typing import Annotated, Awaitable, Callable
 
 from fastapi import FastAPI, HTTPException, Path
@@ -46,24 +45,6 @@ class UpdateDocSkillRequest(BaseModel):
     is_archived: bool
 
 
-class DocSkillResponse(BaseModel):
-    """A document skill configuration with its metadata."""
-
-    id: str
-    name: str
-    skill_name: str
-    skill_content_header: str
-    description: str | None
-    extractor_config_id: str
-    chunker_config_id: str
-    document_tags: list[str] | None
-    skill_id: str | None
-    strip_file_extensions: bool
-    is_archived: bool
-    created_at: datetime | None
-    created_by: str | None
-
-
 class DocSkillProgressRequest(BaseModel):
     """Request for batch doc skill progress. If doc_skill_ids is None, returns all."""
 
@@ -82,33 +63,6 @@ def _get_doc_skill(project: Project, doc_skill_id: str) -> DocumentSkill:
     if doc_skill is None:
         raise HTTPException(status_code=404, detail="Doc skill not found.")
     return doc_skill
-
-
-def _to_response(doc_skill: DocumentSkill) -> DocSkillResponse:
-    if (
-        doc_skill.id is None
-        or doc_skill.extractor_config_id is None
-        or doc_skill.chunker_config_id is None
-    ):
-        raise HTTPException(
-            status_code=500,
-            detail="Doc skill is missing required fields.",
-        )
-    return DocSkillResponse(
-        id=doc_skill.id,
-        name=doc_skill.name,
-        skill_name=doc_skill.skill_name,
-        skill_content_header=doc_skill.skill_content_header,
-        description=doc_skill.description,
-        extractor_config_id=doc_skill.extractor_config_id,
-        chunker_config_id=doc_skill.chunker_config_id,
-        document_tags=doc_skill.document_tags,
-        skill_id=doc_skill.skill_id,
-        strip_file_extensions=doc_skill.strip_file_extensions,
-        is_archived=doc_skill.is_archived,
-        created_at=doc_skill.created_at,
-        created_by=doc_skill.created_by,
-    )
 
 
 def _get_filtered_documents(project: Project, tags: list[str] | None) -> list[Document]:
@@ -262,7 +216,7 @@ def connect_doc_skill_api(app: FastAPI):
     )
     async def create_doc_skill(
         project_id: ProjectId, request: CreateDocSkillRequest
-    ) -> DocSkillResponse:
+    ) -> DocumentSkill:
         project = project_from_id(project_id)
 
         doc_skill = DocumentSkill(
@@ -277,7 +231,7 @@ def connect_doc_skill_api(app: FastAPI):
         )
         doc_skill.parent = project
         doc_skill.save_to_file()
-        return _to_response(doc_skill)
+        return doc_skill
 
     @app.get(
         "/api/projects/{project_id}/doc_skills",
@@ -285,10 +239,10 @@ def connect_doc_skill_api(app: FastAPI):
         summary="List Doc Skills",
         openapi_extra=ALLOW_AGENT,
     )
-    async def list_doc_skills(project_id: ProjectId) -> list[DocSkillResponse]:
+    async def list_doc_skills(project_id: ProjectId) -> list[DocumentSkill]:
         project = project_from_id(project_id)
         doc_skills = project.document_skills(readonly=True)
-        return [_to_response(ds) for ds in doc_skills]
+        return doc_skills
 
     @app.get(
         "/api/projects/{project_id}/doc_skills/{doc_skill_id}",
@@ -298,10 +252,10 @@ def connect_doc_skill_api(app: FastAPI):
     )
     async def get_doc_skill(
         project_id: ProjectId, doc_skill_id: DocSkillId
-    ) -> DocSkillResponse:
+    ) -> DocumentSkill:
         project = project_from_id(project_id)
         doc_skill = _get_doc_skill(project, doc_skill_id)
-        return _to_response(doc_skill)
+        return doc_skill
 
     @app.patch(
         "/api/projects/{project_id}/doc_skills/{doc_skill_id}",
@@ -311,7 +265,7 @@ def connect_doc_skill_api(app: FastAPI):
     )
     async def update_doc_skill(
         project_id: ProjectId, doc_skill_id: DocSkillId, request: UpdateDocSkillRequest
-    ) -> DocSkillResponse:
+    ) -> DocumentSkill:
         project = project_from_id(project_id)
         doc_skill = _get_doc_skill(project, doc_skill_id)
 
@@ -324,7 +278,7 @@ def connect_doc_skill_api(app: FastAPI):
                 skill.is_archived = request.is_archived
                 skill.save_to_file()
 
-        return _to_response(doc_skill)
+        return doc_skill
 
     @app.get(
         "/api/projects/{project_id}/doc_skills/{doc_skill_id}/run",

@@ -4269,38 +4269,6 @@ export interface components {
             doc_skill_ids?: string[] | null;
         };
         /**
-         * DocSkillResponse
-         * @description A document skill configuration with its metadata.
-         */
-        DocSkillResponse: {
-            /** Id */
-            id: string;
-            /** Name */
-            name: string;
-            /** Skill Name */
-            skill_name: string;
-            /** Skill Content Header */
-            skill_content_header: string;
-            /** Description */
-            description: string | null;
-            /** Extractor Config Id */
-            extractor_config_id: string;
-            /** Chunker Config Id */
-            chunker_config_id: string;
-            /** Document Tags */
-            document_tags: string[] | null;
-            /** Skill Id */
-            skill_id: string | null;
-            /** Strip File Extensions */
-            strip_file_extensions: boolean;
-            /** Is Archived */
-            is_archived: boolean;
-            /** Created At */
-            created_at: string | null;
-            /** Created By */
-            created_by: string | null;
-        };
-        /**
          * DocSkillSourceResponse
          * @description Links a generated skill back to its source document skill.
          */
@@ -4389,6 +4357,100 @@ export interface components {
              * @description Whether the library is empty
              */
             is_empty: boolean;
+        };
+        /**
+         * DocumentSkill
+         * @description Configuration for generating a Skill from project documents.
+         *
+         *     A DocumentSkill bridges the document infrastructure (upload, extract, chunk)
+         *     with the skill system (SKILL.md + references). It stores the configuration
+         *     used to generate a Skill, and after pipeline completion, references the
+         *     generated Skill via skill_id.
+         *
+         *     DocumentSkills are immutable after successful pipeline completion (skill_id is set).
+         */
+        DocumentSkill: {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /**
+             * Name
+             * @description Display name for this doc skill configuration.
+             */
+            name: string;
+            /**
+             * Is Archived
+             * @description Whether this doc skill is archived. Archived doc skills are hidden from the UI.
+             * @default false
+             */
+            is_archived: boolean;
+            /**
+             * Description
+             * @description User-facing description of this configuration. Not used in prompts.
+             */
+            description?: string | null;
+            /**
+             * Skill Name
+             * @description Name of the generated skill (kebab-case).
+             */
+            skill_name: string;
+            /**
+             * Skill Content Header
+             * @description User-authored text placed at the top of the SKILL.md body, describing what the documents contain and when to use them.
+             */
+            skill_content_header: string;
+            /**
+             * Extractor Config Id
+             * @description ID of the extractor config used for document extraction.
+             */
+            extractor_config_id: string | null;
+            /**
+             * Chunker Config Id
+             * @description ID of the chunker config used for chunking.
+             */
+            chunker_config_id: string | null;
+            /**
+             * Document Tags
+             * @description Document tag filter. None means all project documents are included.
+             */
+            document_tags?: string[] | null;
+            /**
+             * Skill Id
+             * @description ID of the generated Skill. None before pipeline completes.
+             */
+            skill_id?: string | null;
+            /**
+             * Strip File Extensions
+             * @description Whether to strip file extensions from document names in skill output.
+             * @default true
+             */
+            strip_file_extensions: boolean;
+            /** Model Type */
+            readonly model_type: string;
         };
         /**
          * EmbeddingConfig
@@ -14696,7 +14758,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DocSkillResponse"][];
+                    "application/json": components["schemas"]["DocumentSkill"][];
                 };
             };
             /** @description Validation Error */
@@ -14732,7 +14794,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DocSkillResponse"];
+                    "application/json": components["schemas"]["DocumentSkill"];
                 };
             };
             /** @description Validation Error */
@@ -14766,7 +14828,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DocSkillResponse"];
+                    "application/json": components["schemas"]["DocumentSkill"];
                 };
             };
             /** @description Validation Error */
@@ -14804,7 +14866,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DocSkillResponse"];
+                    "application/json": components["schemas"]["DocumentSkill"];
                 };
             };
             /** @description Validation Error */

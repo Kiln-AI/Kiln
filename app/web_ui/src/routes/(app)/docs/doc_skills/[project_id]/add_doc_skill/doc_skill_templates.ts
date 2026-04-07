@@ -58,7 +58,7 @@ const gemini_2_5_flash_extractor: ExtractorSubConfig = {
 export const doc_skill_templates: Record<string, DocSkillTemplate> = {
   small_context: {
     name: "Small Context",
-    preview_subtitle: "~1000 tokens per part",
+    preview_subtitle: "Good for small context models.",
     preview_description:
       "Small parts for focused retrieval. Good for structured documents.",
     required_provider: "GeminiOrOpenRouter",
@@ -73,7 +73,7 @@ export const doc_skill_templates: Record<string, DocSkillTemplate> = {
   },
   medium_context: {
     name: "Medium Context",
-    preview_subtitle: "~2000 tokens per part",
+    preview_subtitle: "Balanced: fewer loads but uses more context.",
     preview_description: "Balanced parts for general use.",
     required_provider: "GeminiOrOpenRouter",
     extractor: gemini_2_5_flash_extractor,
@@ -87,7 +87,7 @@ export const doc_skill_templates: Record<string, DocSkillTemplate> = {
   },
   large_context: {
     name: "Large Context",
-    preview_subtitle: "~3000 tokens per part",
+    preview_subtitle: "Maximum context retrieval. For large context models.",
     preview_description: "Large parts for maximum context per retrieval.",
     required_provider: "GeminiOrOpenRouter",
     extractor: gemini_2_5_flash_extractor,

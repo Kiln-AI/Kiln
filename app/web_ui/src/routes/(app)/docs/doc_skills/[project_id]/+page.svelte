@@ -10,7 +10,7 @@
   import { agentInfo } from "$lib/agent"
   import type { components } from "$lib/api_schema"
 
-  type DocSkillResponse = components["schemas"]["DocSkillResponse"]
+  type DocumentSkill = components["schemas"]["DocumentSkill"]
 
   $: project_id = $page.params.project_id!
   $: agentInfo.set({
@@ -20,7 +20,7 @@
 
   let error: KilnError | null = null
   let loading = true
-  let all_doc_skills: DocSkillResponse[] = []
+  let all_doc_skills: DocumentSkill[] = []
 
   $: active_doc_skills = all_doc_skills
     .filter((ds) => !ds.is_archived)
