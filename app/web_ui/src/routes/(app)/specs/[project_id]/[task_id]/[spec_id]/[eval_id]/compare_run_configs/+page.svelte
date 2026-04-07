@@ -151,7 +151,7 @@
     try {
       eval_loading = true
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
         {
           params: {
             path: {
@@ -182,7 +182,7 @@
     try {
       eval_configs_loading = true
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs",
         {
           params: {
             path: {
@@ -232,7 +232,7 @@
     try {
       score_summary_error = null
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/score_summary",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/score_summary",
         {
           params: {
             path: {

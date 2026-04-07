@@ -74,6 +74,22 @@ export function get_tool_names_from_ids(
   return tool_ids.map((id) => tool_map.get(id) || id) // Fall back to ID if name not found
 }
 
+const SKILL_TOOL_ID_PREFIX = "kiln_tool::skill::"
+
+export function is_skill_tool_id(id: string): boolean {
+  return id.startsWith(SKILL_TOOL_ID_PREFIX)
+}
+
+export function split_tool_and_skill_ids(ids: string[]): {
+  tool_ids: string[]
+  skill_ids: string[]
+} {
+  return {
+    tool_ids: ids.filter((id) => !is_skill_tool_id(id)),
+    skill_ids: ids.filter((id) => is_skill_tool_id(id)),
+  }
+}
+
 // Fetches OpenAI-compatible tool definition's function name for a given tool ID
 export async function tool_id_to_function_name(
   tool_id: string,

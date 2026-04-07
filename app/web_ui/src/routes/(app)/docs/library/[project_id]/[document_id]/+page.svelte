@@ -15,6 +15,7 @@
   import { capitalize } from "$lib/utils/formatters"
   import TagPicker from "$lib/ui/tag_picker.svelte"
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
+  import { ui_state } from "$lib/stores"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import TableButton from "../../../../generate/[project_id]/[task_id]/table_button.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
@@ -196,6 +197,10 @@
   sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag#building-a-search-tool"
   limit_max_width
   breadcrumbs={[
+    {
+      label: "Optimize",
+      href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+    },
     {
       label: "Docs & Search",
       href: `/docs/${project_id}`,

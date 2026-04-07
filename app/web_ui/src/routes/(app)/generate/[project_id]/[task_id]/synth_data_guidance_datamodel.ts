@@ -90,7 +90,7 @@ export class SynthDataGuidanceDataModel {
       this.loading.set(true)
       const [project_id, task_id, eval_id] = full_eval_id.split("::")
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
         {
           params: {
             path: {

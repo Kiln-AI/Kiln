@@ -1,4 +1,5 @@
 import json
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, Mock, patch
 
@@ -74,6 +75,33 @@ def app():
 @pytest.fixture
 def client(app):
     return TestClient(app)
+
+
+@contextmanager
+def patched_non_builtin_available_model_sources():
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.available_docker_model_runner_models",
+            return_value=None,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.all_fine_tuned_models",
+            return_value=None,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.openai_compatible_providers",
+            return_value=[],
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.legacy_custom_models_as_available",
+            return_value={},
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.user_models_as_available",
+            return_value={},
+        ),
+    ):
+        yield
 
 
 @pytest.mark.parametrize(
@@ -569,7 +597,7 @@ async def test_connect_docker_model_runner_api_endpoint(client):
     ) as mock_connect:
         mock_connect.return_value = mock_connection
 
-        response = client.get("/api/provider/docker_model_runner/connect")
+        response = client.post("/api/provider/docker_model_runner/connect")
 
         assert response.status_code == 200
         mock_connect.assert_called_once_with(None)
@@ -590,7 +618,7 @@ async def test_connect_docker_model_runner_api_endpoint_with_custom_url(client):
         mock_connect.return_value = mock_connection
 
         custom_url = "http://custom:8080/engines/llama.cpp"
-        response = client.get(
+        response = client.post(
             "/api/provider/docker_model_runner/connect",
             params={"docker_model_runner_custom_url": custom_url},
         )
@@ -927,6 +955,7 @@ async def test_get_available_models(app, client):
             "app.desktop.studio_server.provider_api.Config.shared",
             return_value=mock_config,
         ),
+        patched_non_builtin_available_model_sources(),
         patch(
             "app.desktop.studio_server.provider_api.provider_warnings",
             mock_provider_warnings,
@@ -968,6 +997,9 @@ async def test_get_available_models(app, client):
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                     "model_specific_run_config": None,
+                    "available_thinking_levels": None,
+                    "default_thinking_level": None,
+                    "deprecated": False,
                 }
             ],
         },
@@ -995,6 +1027,9 @@ async def test_get_available_models(app, client):
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                     "model_specific_run_config": None,
+                    "available_thinking_levels": None,
+                    "default_thinking_level": None,
+                    "deprecated": False,
                 },
             ],
         },
@@ -1022,6 +1057,9 @@ async def test_get_available_models(app, client):
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                     "model_specific_run_config": None,
+                    "available_thinking_levels": None,
+                    "default_thinking_level": None,
+                    "deprecated": False,
                 }
             ],
         },
@@ -1057,6 +1095,7 @@ async def test_get_available_models_ollama_exception(app, client):
             "app.desktop.studio_server.provider_api.Config.shared",
             return_value=mock_config,
         ),
+        patched_non_builtin_available_model_sources(),
         patch(
             "app.desktop.studio_server.provider_api.provider_warnings",
             mock_provider_warnings,
@@ -1099,10 +1138,67 @@ async def test_get_available_models_ollama_exception(app, client):
                     "multimodal_capable": False,
                     "multimodal_mime_types": None,
                     "model_specific_run_config": None,
+                    "available_thinking_levels": None,
+                    "default_thinking_level": None,
+                    "deprecated": False,
                 }
             ],
         },
     ]
+
+
+@pytest.mark.asyncio
+async def test_get_available_models_includes_deprecated_flag(app, client):
+    mock_config = MagicMock()
+    mock_config.get_value.return_value = "mock_key"
+
+    mock_provider_warnings = {
+        ModelProviderName.gemini_api: MagicMock(required_config_keys=["key1"]),
+    }
+
+    mock_built_in_models = [
+        KilnModel(
+            name="gemini_3_pro_preview",
+            family="",
+            friendly_name="Gemini 3 Pro Preview",
+            providers=[
+                KilnModelProvider(
+                    name=ModelProviderName.gemini_api,
+                    model_id="gemini-3-pro-preview",
+                    deprecated=True,
+                    structured_output_mode="json_schema",
+                )
+            ],
+        ),
+    ]
+
+    with (
+        patch(
+            "app.desktop.studio_server.provider_api.Config.shared",
+            return_value=mock_config,
+        ),
+        patched_non_builtin_available_model_sources(),
+        patch(
+            "app.desktop.studio_server.provider_api.provider_warnings",
+            mock_provider_warnings,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.built_in_models",
+            mock_built_in_models,
+        ),
+        patch(
+            "app.desktop.studio_server.provider_api.connect_ollama",
+            side_effect=HTTPException(status_code=500),
+        ),
+    ):
+        response = client.get("/api/available_models")
+
+    assert response.status_code == 200
+    models = response.json()
+    assert len(models) == 1
+    assert models[0]["provider_id"] == "gemini_api"
+    assert models[0]["models"][0]["id"] == "gemini_3_pro_preview"
+    assert models[0]["models"][0]["deprecated"] is True
 
 
 def test_get_providers_models(client):
@@ -1561,7 +1657,7 @@ async def test_save_openai_compatible_providers(client):
 
         response = client.post(
             "/api/provider/openai_compatible",
-            params={
+            json={
                 "name": "test_provider",
                 "base_url": "https://api.test.com",
                 "api_key": "test_key",
@@ -1596,7 +1692,7 @@ async def test_save_openai_compatible_providers_duplicate_name(client):
 
         response = client.post(
             "/api/provider/openai_compatible",
-            params={
+            json={
                 "name": "existing_provider",
                 "base_url": "https://api.test.com",
                 "api_key": "test_key",
@@ -1618,7 +1714,7 @@ async def test_save_openai_compatible_providers_new_array(client):
 
         response = client.post(
             "/api/provider/openai_compatible",
-            params={
+            json={
                 "name": "first_provider",
                 "base_url": "https://api.first.com",
                 "api_key": "first_key",
@@ -1653,7 +1749,7 @@ async def test_save_openai_compatible_providers_add_to_existing_array(client):
 
         response = client.post(
             "/api/provider/openai_compatible",
-            params={
+            json={
                 "name": "second_provider",
                 "base_url": "https://api.second.com",
                 "api_key": "second_key",

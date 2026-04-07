@@ -8,13 +8,18 @@ from kiln_ai.datamodel.basemodel import KilnParentedModel
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_ai.datamodel.task_output import DataSource, TaskOutput
-from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+from kiln_ai.utils.open_ai_types import (
+    ChatCompletionMessageParam,
+    trace_has_pending_client_tool_calls,
+)
 
 if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
 
 
 class Usage(BaseModel):
+    """Token usage and cost information for a task run."""
+
     input_tokens: int | None = Field(
         default=None,
         description="The number of input tokens used in the task run.",
@@ -93,6 +98,10 @@ class TaskRun(KilnParentedModel):
         default=None,
         description="Instructions for fixing the output. Should define what is wrong, and how to fix it. Will be used by models for both generating a fixed output, and evaluating future models.",
     )
+    user_feedback: str | None = Field(
+        default=None,
+        description="User feedback from the spec review process explaining why the output passes or fails a requirement.",
+    )
     repaired_output: TaskOutput | None = Field(
         default=None,
         description="An version of the output with issues fixed. This must be a 'fixed' version of the existing output, and not an entirely new output. If you wish to generate an ideal curatorial output for this task unrelated to this output, generate a new TaskOutput with type 'human' instead of using this field.",
@@ -113,6 +122,15 @@ class TaskRun(KilnParentedModel):
         default=None,
         description="The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.",
     )
+    parent_task_run_id: str | None = Field(
+        default=None,
+        description="The ID of the parent task run. This is the ID of the task run that contains this task run.",
+    )
+
+    @property
+    def is_toolcall_pending(self) -> bool:
+        """True if the trace ends with an assistant message awaiting client tool execution."""
+        return trace_has_pending_client_tool_calls(self.trace)
 
     def thinking_training_data(self) -> str | None:
         """
@@ -181,6 +199,12 @@ class TaskRun(KilnParentedModel):
         # Note: we still validate if editing a loaded model's output.
         if self.loading_from_file(info):
             # Consider loading an existing model as validated.
+            self._last_validated_output = self.output.output if self.output else None
+            return self
+
+        # Skip output validation when the run is waiting for tool call results.
+        # The output field is empty/partial in this state.
+        if self.is_toolcall_pending:
             self._last_validated_output = self.output.output if self.output else None
             return self
 

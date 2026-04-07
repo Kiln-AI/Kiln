@@ -6,7 +6,10 @@ from typing import AsyncGenerator, Generic, Set, Tuple, TypeVar
 
 from kiln_ai.adapters.chunkers.base_chunker import BaseChunker
 from kiln_ai.adapters.chunkers.chunker_registry import chunker_adapter_from_type
-from kiln_ai.adapters.embedding.base_embedding_adapter import BaseEmbeddingAdapter
+from kiln_ai.adapters.embedding.base_embedding_adapter import (
+    BaseEmbeddingAdapter,
+    EmbeddingContext,
+)
 from kiln_ai.adapters.embedding.embedding_registry import embedding_adapter_from_type
 from kiln_ai.adapters.extractors.base_extractor import BaseExtractor, ExtractionInput
 from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
@@ -188,7 +191,8 @@ async def execute_embedding_job(
         return True
 
     chunk_embedding_result = await embedding_adapter.generate_embeddings(
-        input_texts=chunks_text
+        input_texts=chunks_text,
+        context=EmbeddingContext.DOCUMENT_INDEXING,
     )
     if chunk_embedding_result is None:
         raise ValueError(

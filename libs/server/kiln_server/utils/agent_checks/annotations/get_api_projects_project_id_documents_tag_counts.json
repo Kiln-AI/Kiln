@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/projects/{project_id}/documents/tag_counts",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

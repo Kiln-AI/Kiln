@@ -1,5 +1,6 @@
 import json
 import re
+from copy import deepcopy
 from typing import Annotated, Any, Dict
 
 import jsonschema
@@ -154,3 +155,65 @@ def single_string_field_name(schema: Dict) -> str | None:
     if isinstance(field_schema, dict) and field_schema.get("type") == "string":
         return field_name
     return None
+
+
+def close_object_schemas(schema: Dict, strict: bool = False) -> Dict:
+    """Return a deep-copied schema with object nodes closed by default.
+
+    Any schema node with 'type == "object"' gets 'additionalProperties: false'
+    if it is not already set. This normalization is recursive and walks nested
+    schema structures such as 'properties', 'items', '$defs', and composed
+    schemas like 'anyOf'/'oneOf'/'allOf'. Existing explicit
+    'additionalProperties' values are preserved.
+
+    When strict=True, also sets 'required' to list all property keys on every
+    object node with 'properties'. This is needed for OpenAI's strict
+    structured output mode, which does not support optional properties.
+    """
+
+    def _normalize(node: Any) -> Any:
+        if isinstance(node, list):
+            return [_normalize(item) for item in node]
+
+        if not isinstance(node, dict):
+            return node
+
+        normalized = deepcopy(node)
+
+        for key in (
+            "properties",
+            "$defs",
+            "definitions",
+            "patternProperties",
+            "dependentSchemas",
+        ):
+            if key in normalized and isinstance(normalized[key], dict):
+                normalized[key] = {
+                    child_key: _normalize(child_value)
+                    for child_key, child_value in normalized[key].items()
+                }
+
+        for key in ("items", "additionalProperties", "not", "if", "then", "else"):
+            if key in normalized:
+                normalized[key] = _normalize(normalized[key])
+
+        for key in ("prefixItems", "allOf", "anyOf", "oneOf"):
+            if key in normalized and isinstance(normalized[key], list):
+                normalized[key] = [_normalize(item) for item in normalized[key]]
+
+        if (
+            normalized.get("type") == "object"
+            and "additionalProperties" not in normalized
+        ):
+            normalized["additionalProperties"] = False
+
+        if (
+            strict
+            and normalized.get("type") == "object"
+            and isinstance(normalized.get("properties"), dict)
+        ):
+            normalized["required"] = list(normalized["properties"].keys())
+
+        return normalized
+
+    return _normalize(schema)

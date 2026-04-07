@@ -53,7 +53,7 @@ def test_create_prompt_success(client, project_and_task):
     with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
         response = client.post(
-            f"/api/projects/{project.id}/task/{task.id}/prompt", json=prompt_data
+            f"/api/projects/{project.id}/tasks/{task.id}/prompts", json=prompt_data
         )
 
     assert response.status_code == 200
@@ -80,7 +80,7 @@ def test_create_prompt_task_not_found(client):
     }
 
     response = client.post(
-        "/api/projects/project-id/task/fake-task-id/prompt", json=prompt_data
+        "/api/projects/project-id/tasks/fake-task-id/prompts", json=prompt_data
     )
     assert response.status_code == 404
 
@@ -95,7 +95,7 @@ def test_get_prompts_success(client, project_and_task):
 
     with patch("kiln_server.prompt_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.return_value = task
-        response = client.get(f"/api/projects/{project.id}/task/{task.id}/prompts")
+        response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/prompts")
 
     assert response.status_code == 200
     res = response.json()
@@ -108,7 +108,7 @@ def test_get_prompts_success(client, project_and_task):
 
 
 def test_get_prompts_task_not_found(client):
-    response = client.get("/api/projects/project-id/task/fake-task-id/prompts")
+    response = client.get("/api/projects/project-id/tasks/fake-task-id/prompts")
     assert response.status_code == 404
 
 

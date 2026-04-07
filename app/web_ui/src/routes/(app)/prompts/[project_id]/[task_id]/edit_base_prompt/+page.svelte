@@ -57,7 +57,7 @@
     save_error = null
     try {
       const { error: err } = await client.PATCH(
-        "/api/projects/{project_id}/task/{task_id}",
+        "/api/projects/{project_id}/tasks/{task_id}",
         {
           params: {
             path: { project_id, task_id },

@@ -33,6 +33,8 @@ if TYPE_CHECKING:
 
 
 class ChunkerType(str, Enum):
+    """The type of chunking algorithm to use."""
+
     FIXED_WINDOW = "fixed_window"
     SEMANTIC = "semantic"
 
@@ -90,6 +92,8 @@ FixedWindowChunkerPropertiesValidator = Annotated[
 
 
 class ChunkerConfig(KilnParentedModel):
+    """Configuration for chunking extracted documents into smaller pieces."""
+
     name: FilenameString = Field(
         description="A name to identify the chunker config.",
     )
@@ -169,6 +173,8 @@ class ChunkerConfig(KilnParentedModel):
 
 
 class Chunk(BaseModel):
+    """A single chunk of a document, stored as a file attachment."""
+
     content: KilnAttachmentModel = Field(
         description="The content of the chunk, stored as an attachment."
     )
@@ -185,6 +191,8 @@ class Chunk(BaseModel):
 class ChunkedDocument(
     KilnParentedModel, KilnParentModel, parent_of={"chunk_embeddings": ChunkEmbeddings}
 ):
+    """A document that has been chunked, storing the resulting chunks."""
+
     chunker_config_id: ID_TYPE = Field(
         description="The ID of the chunker config used to chunk the document.",
     )

@@ -7,8 +7,8 @@ from asyncio import Lock
 from datetime import datetime
 from typing import Annotated, Any, Dict
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from kiln_ai.adapters.adapter_registry import adapter_for_task
+from fastapi import Body, FastAPI, File, Form, HTTPException, Path, UploadFile
+from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import Task, TaskOutputRating, TaskOutputRatingType, TaskRun
@@ -25,6 +25,11 @@ from kiln_ai.utils.dataset_import import (
 from pydantic import BaseModel, ConfigDict, Field
 
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    DENY_AGENT,
+    agent_policy_require_approval,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -50,27 +55,52 @@ def deep_update(
 
 
 class RunTaskRequest(BaseModel):
-    """Request model for running a task."""
+    """Request to invoke an AI model on a task."""
 
-    run_config_properties: RunConfigProperties
-    plaintext_input: str | None = None
-    structured_input: StructuredInputType | None = None
-    tags: list[str] | None = None
+    run_config_properties: RunConfigProperties = Field(
+        description="The run configuration specifying model, prompt, and generation parameters."
+    )
+    plaintext_input: str | None = Field(
+        default=None,
+        description="The task input as plaintext. Use for unstructured tasks.",
+    )
+    structured_input: StructuredInputType | None = Field(
+        default=None,
+        description="The task input as structured JSON. Use for tasks with an input schema.",
+    )
+    tags: list[str] | None = Field(
+        default=None, description="Tags to apply to the resulting task run."
+    )
 
     # Allows use of the model_name field (usually pydantic will reserve model_*)
     model_config = ConfigDict(protected_namespaces=())
 
 
 class RunSummary(BaseModel):
-    id: ID_TYPE
-    rating: TaskOutputRating | None = None
-    created_at: datetime
-    input_preview: str | None = None
-    output_preview: str | None = None
-    repair_state: str | None = None
-    model_name: str | None = None
-    input_source: str | None = None
-    tags: list[str] | None = None
+    """A summary of a task run for list views."""
+
+    id: ID_TYPE = Field(description="The unique identifier of the task run.")
+    rating: TaskOutputRating | None = Field(
+        default=None, description="The rating of the task run output."
+    )
+    created_at: datetime = Field(description="When the run was created.")
+    input_preview: str | None = Field(
+        default=None, description="A truncated preview of the task input."
+    )
+    output_preview: str | None = Field(
+        default=None, description="A truncated preview of the task output."
+    )
+    repair_state: str | None = Field(
+        default=None,
+        description="The repair state of the run (e.g., 'Repaired', 'No repair needed').",
+    )
+    model_name: str | None = Field(
+        default=None, description="The model used for this run."
+    )
+    input_source: str | None = Field(
+        default=None, description="The source of the input (human, synthetic, etc.)."
+    )
+    tags: list[str] | None = Field(default=None, description="Tags applied to the run.")
 
     @classmethod
     def format_preview(cls, text: str | None, max_length: int = 100) -> str | None:
@@ -129,9 +159,11 @@ class RunSummary(BaseModel):
 
 
 class BulkUploadResponse(BaseModel):
-    success: bool
-    filename: str
-    imported_count: int
+    """Response from a bulk import of task runs."""
+
+    success: bool = Field(description="Whether the import succeeded.")
+    filename: str = Field(description="The filename that was imported.")
+    imported_count: int = Field(description="The number of task runs imported.")
 
 
 class CreateTaskRunRequest(BaseModel):
@@ -174,23 +206,80 @@ def task_and_run_from_id(
 
 
 def connect_run_api(app: FastAPI):
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}")
-    async def get_run(project_id: str, task_id: str, run_id: str) -> TaskRun:
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
+        summary="Get Run",
+        tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_run(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_id: Annotated[
+            str, Path(description="The unique identifier of the task run.")
+        ],
+    ) -> TaskRun:
         return run_from_id(project_id, task_id, run_id)
 
-    @app.delete("/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}")
-    async def delete_run(project_id: str, task_id: str, run_id: str):
+    @app.delete(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
+        summary="Delete Run",
+        tags=["Runs"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def delete_run(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_id: Annotated[
+            str, Path(description="The unique identifier of the task run.")
+        ],
+    ):
         run = run_from_id(project_id, task_id, run_id)
         run.delete()
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/runs")
-    async def get_runs(project_id: str, task_id: str) -> list[TaskRun]:
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/runs",
+        summary="List Runs",
+        tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_runs(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> list[TaskRun]:
         task = task_from_id(project_id, task_id)
         return list(task.runs(readonly=True))
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/runs")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/runs",
+        summary="Create Run",
+        tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def create_task_run(
-        project_id: str, task_id: str, request: CreateTaskRunRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        request: CreateTaskRunRequest,
     ) -> TaskRun:
         """Create a TaskRun directly without running a model."""
         task = task_from_id(project_id, task_id)
@@ -220,8 +309,21 @@ def connect_run_api(app: FastAPI):
         run.save_to_file()
         return run
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/runs_summaries")
-    async def get_runs_summary(project_id: str, task_id: str) -> list[RunSummary]:
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/runs_summaries",
+        summary="List Run Summaries",
+        tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_runs_summary(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> list[RunSummary]:
         task = task_from_id(project_id, task_id)
         # Readonly since we are not mutating the runs. Faster as we don't need to copy them.
         runs = task.runs(readonly=True)
@@ -231,8 +333,22 @@ def connect_run_api(app: FastAPI):
             run_summaries.append(summary)
         return run_summaries
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/runs/delete")
-    async def delete_runs(project_id: str, task_id: str, run_ids: list[str]):
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/delete",
+        summary="Delete Runs",
+        tags=["Runs"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def delete_runs(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_ids: Annotated[list[str], Body(description="List of run IDs to delete.")],
+    ):
         task = task_from_id(project_id, task_id)
         failed_runs: list[str] = []
         last_error: Exception | None = None
@@ -257,18 +373,32 @@ def connect_run_api(app: FastAPI):
             )
         return {"success": True}
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/run")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/run",
+        summary="Execute Run",
+        tags=["Runs"],
+        openapi_extra=agent_policy_require_approval("Run task with LLM?"),
+    )
     async def run_task(
-        project_id: str, task_id: str, request: RunTaskRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        request: RunTaskRequest,
     ) -> TaskRun:
+        """Invoke an AI model on a task and return the result. Unlike 'Create Run', this actually executes the model."""
         task = task_from_id(project_id, task_id)
 
         run_config_properties = request.run_config_properties
+        skills = load_skills_for_task(task, run_config_properties)
 
         adapter = adapter_for_task(
             task,
             run_config_properties=run_config_properties,
-            base_adapter_config=AdapterConfig(default_tags=request.tags),
+            base_adapter_config=AdapterConfig(default_tags=request.tags, skills=skills),
         )
 
         input = request.plaintext_input
@@ -283,19 +413,54 @@ def connect_run_api(app: FastAPI):
 
         return await adapter.invoke(input)
 
-    @app.patch("/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}")
+    @app.patch(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
+        summary="Update Run",
+        tags=["Runs"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit run? Ensure you backup your project before allowing agentic edits."
+        ),
+    )
     async def update_run(
-        project_id: str, task_id: str, run_id: str, run_data: Dict[str, Any]
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_id: Annotated[
+            str, Path(description="The unique identifier of the task run.")
+        ],
+        run_data: Annotated[
+            Dict[str, Any], Body(description="Fields to update on the run.")
+        ],
     ) -> TaskRun:
         return await update_run_util(project_id, task_id, run_id, run_data)
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/runs/edit_tags")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/edit_tags",
+        summary="Edit Run Tags",
+        tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def edit_tags(
-        project_id: str,
-        task_id: str,
-        run_ids: list[str],
-        add_tags: list[str] | None = None,
-        remove_tags: list[str] | None = None,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_ids: Annotated[
+            list[str], Body(description="The list of task run IDs to edit.")
+        ],
+        add_tags: Annotated[
+            list[str] | None, Body(description="Tags to add to the task runs.")
+        ] = None,
+        remove_tags: Annotated[
+            list[str] | None, Body(description="Tags to remove from the task runs.")
+        ] = None,
     ):
         task = task_from_id(project_id, task_id)
 
@@ -337,13 +502,29 @@ def connect_run_api(app: FastAPI):
             )
         return {"success": True}
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/runs/bulk_upload")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/bulk_upload",
+        summary="Bulk Upload Runs",
+        tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def bulk_upload(
-        project_id: str,
-        task_id: str,
-        file: Annotated[UploadFile, File(...)],
-        # JSON string since multipart/form-data doesn't support dictionary types
-        splits: Annotated[str | None, Form()] = None,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        file: Annotated[
+            UploadFile, File(description="The CSV file containing run data to import.")
+        ],
+        splits: Annotated[
+            str | None,
+            Form(
+                description="JSON string mapping split names to numeric proportions (0-1)."
+            ),
+        ] = None,
     ) -> BulkUploadResponse:
         task = task_from_id(project_id, task_id)
 
@@ -388,8 +569,21 @@ def connect_run_api(app: FastAPI):
             imported_count=imported_count,
         )
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/tags")
-    async def get_tags(project_id: str, task_id: str) -> dict[str, int]:
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/tags",
+        summary="List Run Tags",
+        tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_tags(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> dict[str, int]:
         tags_count = {}
         task = task_from_id(project_id, task_id)
         # Not particularly efficient, but tasks are memory cached after first load so re-compute is fairly cheap

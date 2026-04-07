@@ -1,10 +1,11 @@
 from typing import Dict
 from unittest.mock import AsyncMock, patch
 
+import litellm
 import pytest
 
 from kiln_ai.adapters.eval.base_eval import BaseEval
-from kiln_ai.adapters.eval.eval_runner import EvalJob, EvalRunner
+from kiln_ai.adapters.eval.eval_runner import EvalJob, EvalRunner, _is_retryable_error
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.datamodel import (
     DataSource,
@@ -510,7 +511,7 @@ async def test_run_job_success_task_run_eval(
 
     with patch(
         "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
-        return_value=lambda *args: MockEvaluator(*args),
+        return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
     ):
         success = await mock_eval_runner.run_job(job)
 
@@ -566,7 +567,7 @@ async def test_run_job_success_eval_config_eval(
 
     with patch(
         "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
-        return_value=lambda *args: MockEvaluator(*args),
+        return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
     ):
         success = await mock_eval_runner.run_job(job)
 
@@ -606,11 +607,11 @@ async def test_run_job_invalid_evaluator(
     # Return an invalid evaluator type
     with patch(
         "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
-        return_value=lambda *args: object(),
+        return_value=lambda *args, **kwargs: object(),
     ):
-        success = await mock_eval_runner.run_job(job)
+        with pytest.raises(ValueError):
+            await mock_eval_runner.run_job(job)
 
-    assert success is False
     assert len(mock_eval_config.runs()) == 0
 
 
@@ -638,11 +639,11 @@ async def test_run_job_evaluator_error(
 
     with patch(
         "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
-        return_value=lambda *args: ErrorEvaluator(*args),
+        return_value=lambda *args, **kwargs: ErrorEvaluator(*args, **kwargs),
     ):
-        success = await mock_eval_runner.run_job(job)
+        with pytest.raises(ValueError):
+            await mock_eval_runner.run_job(job)
 
-    assert success is False
     assert len(mock_eval_config.runs()) == 0
 
 
@@ -697,7 +698,7 @@ async def test_run_job_with_full_trace_evaluation_data_type(
 
     with patch(
         "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
-        return_value=lambda *args: MockEvaluator(*args),
+        return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
     ):
         success = await mock_eval_runner.run_job(job)
 
@@ -765,7 +766,7 @@ async def test_run_job_with_final_answer_evaluation_data_type(
 
     with patch(
         "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
-        return_value=lambda *args: MockEvaluator(*args),
+        return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
     ):
         success = await mock_eval_runner.run_job(job)
 
@@ -823,11 +824,42 @@ async def test_run_job_with_none_trace(
 
     with patch(
         "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
-        return_value=lambda *args: MockEvaluator(*args),
+        return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
     ):
-        success = await mock_eval_runner.run_job(job)
+        with pytest.raises(ValueError):
+            await mock_eval_runner.run_job(job)
 
     # For full_trace evals, None trace should fail and not save a run
-    assert success is False
     eval_runs = mock_eval_config.runs()
     assert len(eval_runs) == 0
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        litellm.RateLimitError("rate limited", "provider", "model", None),
+        litellm.APIConnectionError("connection failed", "provider", "model", None),
+        litellm.InternalServerError("server error", "provider", "model", None),
+        litellm.ServiceUnavailableError("unavailable", "provider", "model", None),
+        litellm.BadGatewayError("bad gateway", "provider", "model", None),
+        litellm.JSONSchemaValidationError("schema error", "provider", "model", None),
+        ValueError(
+            "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema."
+        ),
+    ],
+)
+def test_is_retryable_error_returns_true(error):
+    assert _is_retryable_error(error) is True
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ValueError("some other value error"),
+        RuntimeError("runtime error"),
+        KeyError("missing key"),
+        TypeError("type error"),
+    ],
+)
+def test_is_retryable_error_returns_false(error):
+    assert _is_retryable_error(error) is False

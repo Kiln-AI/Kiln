@@ -1,13 +1,29 @@
+from __future__ import annotations
+
 import json
+import uuid
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Tuple
+from typing import TYPE_CHECKING, AsyncIterator, Dict, Tuple
 
-from kiln_ai.adapters.chat.chat_formatter import ChatFormatter, get_chat_formatter
+from litellm.types.utils import ModelResponseStream
+
+from kiln_ai.adapters.chat.chat_formatter import (
+    ChatFormatter,
+    MultiturnFormatter,
+    get_chat_formatter,
+)
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     StructuredOutputMode,
     default_structured_output_mode_for_model_provider,
+)
+from kiln_ai.adapters.model_adapters.adapter_stream import AdapterStreamResult
+from kiln_ai.adapters.model_adapters.stream_events import (
+    AiSdkEventType,
+    AiSdkStreamConverter,
+    AiSdkStreamEvent,
+    ToolCallEvent,
 )
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.parsers.parser_registry import model_parser_from_id
@@ -29,7 +45,9 @@ from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     as_kiln_agent_run_config,
 )
+from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX, skill_id_from_tool_id
 
 # Import agent run context for run lifecycle management
 from kiln_ai.run_context import (
@@ -40,10 +58,16 @@ from kiln_ai.run_context import (
 )
 from kiln_ai.tools import KilnToolInterface
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
+from kiln_ai.tools.skill_tool import SkillTool
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+
+if TYPE_CHECKING:
+    from kiln_ai.adapters.model_adapters.adapter_stream import AdapterStream
+
+SkillsDict = Dict[str, Skill]
 
 
 @dataclass
@@ -64,6 +88,20 @@ class AdapterConfig:
     may load additional files from disk.
     """
     prompt_builder: BasePromptBuilder | None = None
+
+    """
+    Pre-loaded skills keyed by skill ID. When the run config references skills,
+    they are looked up from this dict instead of reading from the filesystem.
+    Use load_skills_for_task() to build this dict.
+    """
+    skills: SkillsDict | None = None
+
+    """
+    When True, the adapter will stop and return control to the caller when a tool call
+    is invoked, instead of processing tool calls internally. Default is False (process
+    tool calls internally).
+    """
+    return_on_tool_call: bool = False
 
 
 class BaseAdapter(metaclass=ABCMeta):
@@ -97,6 +135,7 @@ class BaseAdapter(metaclass=ABCMeta):
         else:
             self.prompt_builder = None
         self._model_provider: KilnModelProvider | None = None
+        self._resolved_skills: list[Skill] | None = None
 
         self.output_schema = task.output_json_schema
         self.input_schema = task.input_json_schema
@@ -119,19 +158,46 @@ class BaseAdapter(metaclass=ABCMeta):
             )
         return self._model_provider
 
+    @staticmethod
+    def _normalize_prior_trace(
+        prior_trace: list[ChatCompletionMessageParam] | None,
+    ) -> list[ChatCompletionMessageParam] | None:
+        if not prior_trace:
+            return None
+        return prior_trace
+
+    def _reject_multiturn_with_structured_input(
+        self,
+        prior_trace: list[ChatCompletionMessageParam] | None,
+    ) -> None:
+        if prior_trace is not None and self.input_schema is not None:
+            raise ValueError(
+                "Cannot run multiturn execution with a task that has a structured input schema. "
+                "Use an unstructured task, or call without prior_trace."
+            )
+
     async def invoke(
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
+        parent_task_run: TaskRun | None = None,
     ) -> TaskRun:
-        run_output, _ = await self.invoke_returning_run_output(input, input_source)
-        return run_output
+        task_run, _ = await self.invoke_returning_run_output(
+            input, input_source, prior_trace, parent_task_run
+        )
+        return task_run
 
     async def _run_returning_run_output(
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
+        parent_task_run: TaskRun | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
+        prior_trace = self._normalize_prior_trace(prior_trace)
+        self._reject_multiturn_with_structured_input(prior_trace)
+
         # validate input, allowing arrays
         if self.input_schema is not None:
             validate_schema_with_value_error(
@@ -149,58 +215,61 @@ class BaseAdapter(metaclass=ABCMeta):
             formatted_input = formatter.format_input(input)
 
         # Run
-        run_output, usage = await self._run(formatted_input)
+        run_output, usage = await self._run(formatted_input, prior_trace=prior_trace)
 
-        # Parse
-        provider = self.model_provider()
-        parser = model_parser_from_id(provider.parser)
-        parsed_output = parser.parse_output(original_output=run_output)
+        if not run_output.is_toolcall_pending:
+            # Normal completion: parse and validate output
+            provider = self.model_provider()
+            parser = model_parser_from_id(provider.parser)
+            parsed_output = parser.parse_output(original_output=run_output)
 
-        # validate output
-        if self.output_schema is not None:
-            # Parse json to dict if we have structured output
-            if isinstance(parsed_output.output, str):
-                parsed_output.output = parse_json_string(parsed_output.output)
+            # validate output
+            if self.output_schema is not None:
+                # Parse json to dict if we have structured output
+                if isinstance(parsed_output.output, str):
+                    parsed_output.output = parse_json_string(parsed_output.output)
 
-            if not isinstance(parsed_output.output, dict):
-                raise RuntimeError(
-                    f"structured response is not a dict: {parsed_output.output}"
+                if not isinstance(parsed_output.output, dict):
+                    raise RuntimeError(
+                        f"structured response is not a dict: {parsed_output.output}"
+                    )
+                validate_schema_with_value_error(
+                    parsed_output.output,
+                    self.output_schema,
+                    "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
                 )
-            validate_schema_with_value_error(
-                parsed_output.output,
-                self.output_schema,
-                "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+            else:
+                if not isinstance(parsed_output.output, str):
+                    raise RuntimeError(
+                        f"response is not a string for non-structured task: {parsed_output.output}"
+                    )
+
+            trace_has_toolcalls = parsed_output.trace is not None and any(
+                message.get("role", None) == "tool" for message in parsed_output.trace
             )
-        else:
-            if not isinstance(parsed_output.output, str):
+
+            # Validate reasoning content is present and required
+            # We don't require reasoning when using tools as models tend not to return any on the final turn (both Sonnet and Gemini).
+            if (
+                provider.reasoning_capable
+                and (
+                    not parsed_output.intermediate_outputs
+                    or "reasoning" not in parsed_output.intermediate_outputs
+                )
+                and not (
+                    provider.reasoning_optional_for_structured_output
+                    and self.has_structured_output()
+                )
+                and not trace_has_toolcalls
+            ):
                 raise RuntimeError(
-                    f"response is not a string for non-structured task: {parsed_output.output}"
+                    "Reasoning is required for this model, but no reasoning was returned."
                 )
 
-        # Validate reasoning content is present and required
-        # We don't require reasoning when using tools as models tend not to return any on the final turn (both Sonnet and Gemini).
-        trace_has_toolcalls = parsed_output.trace is not None and any(
-            message.get("role", None) == "tool" for message in parsed_output.trace
-        )
-        if (
-            provider.reasoning_capable
-            and (
-                not parsed_output.intermediate_outputs
-                or "reasoning" not in parsed_output.intermediate_outputs
-            )
-            and not (
-                provider.reasoning_optional_for_structured_output
-                and self.has_structured_output()
-            )
-            and not (trace_has_toolcalls)
-        ):
-            raise RuntimeError(
-                "Reasoning is required for this model, but no reasoning was returned."
-            )
+            run_output = parsed_output
 
-        # Generate the run and output
         run = self.generate_run(
-            input, input_source, parsed_output, usage, run_output.trace
+            input, input_source, run_output, usage, run_output.trace, parent_task_run
         )
 
         # Save the run if configured to do so, and we have a path to save to
@@ -220,6 +289,8 @@ class BaseAdapter(metaclass=ABCMeta):
         self,
         input: InputType,
         input_source: DataSource | None = None,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
+        parent_task_run: TaskRun | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # Determine if this is the root agent (no existing run context)
         is_root_agent = get_agent_run_id() is None
@@ -229,7 +300,9 @@ class BaseAdapter(metaclass=ABCMeta):
             set_agent_run_id(run_id)
 
         try:
-            return await self._run_returning_run_output(input, input_source)
+            return await self._run_returning_run_output(
+                input, input_source, prior_trace, parent_task_run
+            )
         finally:
             if is_root_agent:
                 try:
@@ -239,6 +312,145 @@ class BaseAdapter(metaclass=ABCMeta):
                 finally:
                     clear_agent_run_id()
 
+    def invoke_openai_stream(
+        self,
+        input: InputType,
+        input_source: DataSource | None = None,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
+        parent_task_run: TaskRun | None = None,
+    ) -> OpenAIStreamResult:
+        """Stream raw OpenAI-protocol chunks for the task execution.
+
+        Returns an async-iterable that yields ``ModelResponseStream`` chunks
+        as they arrive from the model.  After the iterator is exhausted the
+        run has been validated and saved (when configured).  The resulting
+        ``TaskRun`` is available via the ``.task_run`` property.
+
+        Tool-call rounds happen internally and are not surfaced; use
+        ``invoke_ai_sdk_stream`` if you need tool-call events.
+        """
+        return OpenAIStreamResult(
+            self, input, input_source, prior_trace, parent_task_run
+        )
+
+    def invoke_ai_sdk_stream(
+        self,
+        input: InputType,
+        input_source: DataSource | None = None,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
+        parent_task_run: TaskRun | None = None,
+    ) -> AiSdkStreamResult:
+        """Stream AI SDK protocol events for the task execution.
+
+        Returns an async-iterable that yields ``AiSdkStreamEvent`` instances
+        covering text, reasoning, tool-call lifecycle, step boundaries, and
+        control events.  After the iterator is exhausted the resulting
+        ``TaskRun`` is available via the ``.task_run`` property.
+        """
+        return AiSdkStreamResult(
+            self, input, input_source, prior_trace, parent_task_run
+        )
+
+    def _prepare_stream(
+        self,
+        input: InputType,
+        prior_trace: list[ChatCompletionMessageParam] | None,
+    ) -> AdapterStream:
+        prior_trace = self._normalize_prior_trace(prior_trace)
+        self._reject_multiturn_with_structured_input(prior_trace)
+
+        if self.input_schema is not None:
+            validate_schema_with_value_error(
+                input,
+                self.input_schema,
+                "This task requires a specific input schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+                require_object=False,
+            )
+
+        formatted_input = input
+        formatter_id = self.model_provider().formatter
+        if formatter_id is not None:
+            formatter = request_formatter_from_id(formatter_id)
+            formatted_input = formatter.format_input(input)
+
+        return self._create_run_stream(formatted_input, prior_trace)
+
+    def _finalize_stream(
+        self,
+        adapter_stream: AdapterStream,
+        input: InputType,
+        input_source: DataSource | None,
+        parent_task_run: TaskRun | None = None,
+    ) -> TaskRun:
+        """Streaming invocations are only concerned with passing through events as they come in.
+        At the end of the stream, we still need to validate the output, create a run and everything
+        else that a non-streaming invocation would do.
+        """
+
+        result: AdapterStreamResult = adapter_stream.result
+        run_output = result.run_output
+        usage = result.usage
+
+        if not run_output.is_toolcall_pending:
+            # Normal completion: parse and validate output
+            provider = self.model_provider()
+            parser = model_parser_from_id(provider.parser)
+            parsed_output = parser.parse_output(original_output=run_output)
+
+            if self.output_schema is not None:
+                if isinstance(parsed_output.output, str):
+                    parsed_output.output = parse_json_string(parsed_output.output)
+                if not isinstance(parsed_output.output, dict):
+                    raise RuntimeError(
+                        f"structured response is not a dict: {parsed_output.output}"
+                    )
+                validate_schema_with_value_error(
+                    parsed_output.output,
+                    self.output_schema,
+                    "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+                )
+            else:
+                if not isinstance(parsed_output.output, str):
+                    raise RuntimeError(
+                        f"response is not a string for non-structured task: {parsed_output.output}"
+                    )
+
+            trace_has_toolcalls = parsed_output.trace is not None and any(
+                message.get("role", None) == "tool" for message in parsed_output.trace
+            )
+            if (
+                provider.reasoning_capable
+                and (
+                    not parsed_output.intermediate_outputs
+                    or "reasoning" not in parsed_output.intermediate_outputs
+                )
+                and not (
+                    provider.reasoning_optional_for_structured_output
+                    and self.has_structured_output()
+                )
+                and not trace_has_toolcalls
+            ):
+                raise RuntimeError(
+                    "Reasoning is required for this model, but no reasoning was returned."
+                )
+
+            run_output = parsed_output
+
+        run = self.generate_run(
+            input, input_source, run_output, usage, run_output.trace, parent_task_run
+        )
+
+        if (
+            self.base_adapter_config.allow_saving
+            and Config.shared().autosave_runs
+            and self.task.path is not None
+        ):
+            run.save_to_file()
+        else:
+            run.id = None
+
+        return run
+
     def has_structured_output(self) -> bool:
         return self.output_schema is not None
 
@@ -247,8 +459,20 @@ class BaseAdapter(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    async def _run(self, input: InputType) -> Tuple[RunOutput, Usage | None]:
+    async def _run(
+        self,
+        input: InputType,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
+    ) -> Tuple[RunOutput, Usage | None]:
         pass
+
+    def _create_run_stream(
+        self,
+        input: InputType,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
+    ) -> AdapterStream:
+        """Create a stream for the adapter. Implementations must override this method to support streaming."""
+        raise NotImplementedError("Streaming is not supported for this adapter type")
 
     def build_prompt(self) -> str:
         if self.prompt_builder is None:
@@ -264,10 +488,71 @@ class BaseAdapter(metaclass=ABCMeta):
         )
 
         return self.prompt_builder.build_prompt(
-            include_json_instructions=add_json_instructions
+            include_json_instructions=add_json_instructions,
+            skills=self._resolve_skills(),
         )
 
-    def build_chat_formatter(self, input: InputType) -> ChatFormatter:
+    def _resolve_skills(self) -> list[Skill]:
+        """Resolve skills from the injected skills dict.
+
+        Uses the pre-loaded skills dict from AdapterConfig. Caches the result
+        so that build_prompt and available_tools don't repeat
+        the lookup. Raises ValueError if the run config references a skill
+        that is not in the injected dict.
+        """
+        if self._resolved_skills is not None:
+            return self._resolved_skills
+
+        if self.run_config.type != "kiln_agent":
+            self._resolved_skills = []
+            return self._resolved_skills
+
+        tool_config = as_kiln_agent_run_config(self.run_config).tools_config
+        if tool_config is None or tool_config.tools is None:
+            self._resolved_skills = []
+            return self._resolved_skills
+
+        skill_tool_ids = [
+            tid for tid in tool_config.tools if tid.startswith(SKILL_TOOL_ID_PREFIX)
+        ]
+        if not skill_tool_ids:
+            self._resolved_skills = []
+            return self._resolved_skills
+
+        injected = self.base_adapter_config.skills
+        if injected is None:
+            raise ValueError(
+                "Run config references skills but no skills dict was provided via "
+                "AdapterConfig(skills=...). Use load_skills_for_task() to pre-load "
+                "skills and pass them to the adapter."
+            )
+
+        skills: list[Skill] = []
+        seen: set[str] = set()
+        for tool_id in skill_tool_ids:
+            sid = skill_id_from_tool_id(tool_id)
+            if sid not in injected:
+                raise ValueError(
+                    f"Skill {sid} referenced in run config but not found in the "
+                    "injected skills dict."
+                )
+            if sid in seen:
+                continue
+            seen.add(sid)
+            skills.append(injected[sid])
+
+        self._resolved_skills = skills
+        return self._resolved_skills
+
+    def build_chat_formatter(
+        self,
+        input: InputType,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
+    ) -> ChatFormatter:
+        prior_trace = self._normalize_prior_trace(prior_trace)
+        self._reject_multiturn_with_structured_input(prior_trace)
+        if prior_trace is not None:
+            return MultiturnFormatter(prior_trace, input)
         if self.prompt_builder is None:
             raise ValueError("Prompt builder is not available for MCP run config")
         # Determine the chat strategy to use based on the prompt the user selected, the model's capabilities, and if the model was finetuned with a specific chat strategy.
@@ -323,51 +608,60 @@ class BaseAdapter(metaclass=ABCMeta):
         run_output: RunOutput,
         usage: Usage | None = None,
         trace: list[ChatCompletionMessageParam] | None = None,
+        parent_task_run: TaskRun | None = None,
     ) -> TaskRun:
-        # Convert input and output to JSON strings if they aren't strings
-        input_str = (
-            input if isinstance(input, str) else json.dumps(input, ensure_ascii=False)
-        )
         output_str = (
             json.dumps(run_output.output, ensure_ascii=False)
             if isinstance(run_output.output, dict)
             else run_output.output
         )
 
-        # If no input source is provided, use the human data source
-        if input_source is None:
-            input_source = DataSource(
-                type=DataSourceType.human,
-                properties={"created_by": Config.shared().user_id},
-            )
-
-        # Synthetic since an adapter, not a human, is creating this
-        # Special case for MCP run configs which calls a mcp tool
         output_source_type = (
             DataSourceType.tool_call
             if self.run_config.type == "mcp"
             else DataSourceType.synthetic
         )
 
-        new_task_run = TaskRun(
+        new_output = TaskOutput(
+            output=output_str,
+            source=DataSource(
+                type=output_source_type,
+                properties=self._properties_for_task_output(),
+                run_config=self.run_config,
+            ),
+        )
+
+        # Convert input and output to JSON strings if they aren't strings
+        input_str = (
+            input if isinstance(input, str) else json.dumps(input, ensure_ascii=False)
+        )
+
+        if input_source is None:
+            input_source = DataSource(
+                type=DataSourceType.human,
+                properties={"created_by": Config.shared().user_id},
+            )
+
+        parent_task_run_id: str | None = None
+        if parent_task_run is not None:
+            if parent_task_run.id is None:
+                raise ValueError(
+                    "parent_task_run must be persisted before using as parent: save the parent "
+                    "TaskRun (e.g. save_to_file()) so it has a stable id."
+                )
+            parent_task_run_id = parent_task_run.id
+
+        return TaskRun(
             parent=self.task,
+            parent_task_run_id=parent_task_run_id,
             input=input_str,
             input_source=input_source,
-            output=TaskOutput(
-                output=output_str,
-                source=DataSource(
-                    type=output_source_type,
-                    properties=self._properties_for_task_output(),
-                    run_config=self.run_config,
-                ),
-            ),
+            output=new_output,
             intermediate_outputs=run_output.intermediate_outputs,
             tags=self.base_adapter_config.default_tags or [],
             usage=usage,
             trace=trace,
         )
-
-        return new_task_run
 
     def _properties_for_task_output(self) -> Dict[str, str | int | float]:
         match self.run_config.type:
@@ -417,17 +711,25 @@ class BaseAdapter(metaclass=ABCMeta):
         if tool_config is None or tool_config.tools is None:
             return []
 
-        project = self.task.parent_project()
-        if project is None:
-            raise ValueError("Task must have a parent project to resolve tools")
+        non_skill_tool_ids = [
+            tid for tid in tool_config.tools if not tid.startswith(SKILL_TOOL_ID_PREFIX)
+        ]
 
-        project_id = project.id
-        if project_id is None:
-            raise ValueError("Project must have an ID to resolve tools")
+        tools: list[KilnToolInterface] = [
+            tool_from_id(tool_id, self.task) for tool_id in non_skill_tool_ids
+        ]
 
-        tools = [tool_from_id(tool_id, self.task) for tool_id in tool_config.tools]
+        skills = self._resolve_skills()
+        if skills:
+            seen_names: set[str] = set()
+            for skill in skills:
+                if skill.name in seen_names:
+                    raise ValueError(
+                        f"Duplicate skill name '{skill.name}'. Each skill must have a unique name."
+                    )
+                seen_names.add(skill.name)
+            tools.append(SkillTool(f"{SKILL_TOOL_ID_PREFIX}_combined", skills))
 
-        # Check each tool has a unique name
         tool_names = [await tool.name() for tool in tools]
         if len(tool_names) != len(set(tool_names)):
             raise ValueError(
@@ -435,3 +737,157 @@ class BaseAdapter(metaclass=ABCMeta):
             )
 
         return tools
+
+
+class OpenAIStreamResult:
+    """Async-iterable wrapper around the OpenAI streaming flow.
+
+    Yields ``ModelResponseStream`` chunks.  After iteration the resulting
+    ``TaskRun`` is available via the ``.task_run`` property.
+
+    When return_on_tool_call=True and the model requests tool calls, the stream
+    will stop and ``task_run.is_toolcall_pending`` will be True.
+    """
+
+    def __init__(
+        self,
+        adapter: BaseAdapter,
+        input: InputType,
+        input_source: DataSource | None,
+        prior_trace: list[ChatCompletionMessageParam] | None,
+        parent_task_run: TaskRun | None = None,
+    ) -> None:
+        self._adapter = adapter
+        self._input = input
+        self._input_source = input_source
+        self._prior_trace = prior_trace
+        self._parent_task_run = parent_task_run
+        self._task_run: TaskRun | None = None
+
+    @property
+    def task_run(self) -> TaskRun:
+        if self._task_run is None:
+            raise RuntimeError(
+                "Stream has not been fully consumed yet. "
+                "Iterate over the stream before accessing .task_run"
+            )
+        return self._task_run
+
+    async def __aiter__(self) -> AsyncIterator[ModelResponseStream]:
+        self._task_run = None
+        is_root_agent = get_agent_run_id() is None
+        if is_root_agent:
+            set_agent_run_id(generate_agent_run_id())
+
+        try:
+            adapter_stream = self._adapter._prepare_stream(
+                self._input, self._prior_trace
+            )
+
+            async for event in adapter_stream:
+                if isinstance(event, ModelResponseStream):
+                    yield event
+
+            self._task_run = self._adapter._finalize_stream(
+                adapter_stream, self._input, self._input_source, self._parent_task_run
+            )
+        finally:
+            if is_root_agent:
+                try:
+                    run_id = get_agent_run_id()
+                    if run_id:
+                        await MCPSessionManager.shared().cleanup_session(run_id)
+                finally:
+                    clear_agent_run_id()
+
+
+class AiSdkStreamResult:
+    """Async-iterable wrapper around the AI SDK streaming flow.
+
+    Yields ``AiSdkStreamEvent`` instances.  After iteration the resulting
+    ``TaskRun`` is available via the ``.task_run`` property.
+
+    When return_on_tool_call=True and the model requests tool calls, the FINISH
+    event will have finishReason: "tool-calls" and ``task_run.is_toolcall_pending``
+    will be True.
+    """
+
+    def __init__(
+        self,
+        adapter: BaseAdapter,
+        input: InputType,
+        input_source: DataSource | None,
+        prior_trace: list[ChatCompletionMessageParam] | None,
+        parent_task_run: TaskRun | None = None,
+    ) -> None:
+        self._adapter = adapter
+        self._input = input
+        self._input_source = input_source
+        self._prior_trace = prior_trace
+        self._parent_task_run = parent_task_run
+        self._task_run: TaskRun | None = None
+
+    @property
+    def task_run(self) -> TaskRun:
+        if self._task_run is None:
+            raise RuntimeError(
+                "Stream has not been fully consumed yet. "
+                "Iterate over the stream before accessing .task_run"
+            )
+        return self._task_run
+
+    async def __aiter__(self) -> AsyncIterator[AiSdkStreamEvent]:
+        self._task_run = None
+        is_root_agent = get_agent_run_id() is None
+        if is_root_agent:
+            set_agent_run_id(generate_agent_run_id())
+
+        try:
+            adapter_stream = self._adapter._prepare_stream(
+                self._input, self._prior_trace
+            )
+
+            message_id = f"msg-{uuid.uuid4().hex}"
+            converter = AiSdkStreamConverter()
+
+            yield AiSdkStreamEvent(AiSdkEventType.START, {"messageId": message_id})
+            yield AiSdkStreamEvent(AiSdkEventType.START_STEP)
+
+            last_event_was_tool_call = False
+            async for event in adapter_stream:
+                if isinstance(event, ModelResponseStream):
+                    if last_event_was_tool_call:
+                        converter.reset_for_next_step()
+                        last_event_was_tool_call = False
+                    for ai_event in converter.convert_chunk(event):
+                        yield ai_event
+                elif isinstance(event, ToolCallEvent):
+                    last_event_was_tool_call = True
+                    for ai_event in converter.convert_tool_event(event):
+                        yield ai_event
+
+            for ai_event in converter.close_open_blocks():
+                yield ai_event
+
+            yield AiSdkStreamEvent(AiSdkEventType.FINISH_STEP)
+
+            self._task_run = self._adapter._finalize_stream(
+                adapter_stream, self._input, self._input_source, self._parent_task_run
+            )
+
+            if self._task_run.is_toolcall_pending:
+                yield AiSdkStreamEvent(
+                    AiSdkEventType.FINISH,
+                    {"messageMetadata": {"finishReason": "tool-calls"}},
+                )
+            else:
+                for ai_event in converter.finalize():
+                    yield ai_event
+        finally:
+            if is_root_agent:
+                try:
+                    run_id = get_agent_run_id()
+                    if run_id:
+                        await MCPSessionManager.shared().cleanup_session(run_id)
+                finally:
+                    clear_agent_run_id()

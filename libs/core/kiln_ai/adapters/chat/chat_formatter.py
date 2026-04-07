@@ -3,13 +3,23 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, List, Literal, Optional, Sequence, Union
+from typing import Dict, List, Literal, Optional, Sequence, TypeAlias, Union
+
+from litellm.types.utils import Message as LiteLLMMessage
 
 from kiln_ai.datamodel.datamodel_enums import ChatStrategy, InputType
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
-from kiln_ai.utils.open_ai_types import ChatCompletionMessageToolCallParam
+from kiln_ai.utils.open_ai_types import (
+    ChatCompletionMessageParam,
+    ChatCompletionMessageToolCallParam,
+)
 
 COT_FINAL_ANSWER_PROMPT = "Considering the above, return a final result."
+
+
+ChatCompletionMessageIncludingLiteLLM: TypeAlias = Union[
+    ChatCompletionMessageParam, LiteLLMMessage
+]
 
 
 @dataclass
@@ -89,6 +99,10 @@ class ChatFormatter(ABC):
     def intermediate_outputs(self) -> Dict[str, str]:
         """Get the intermediate outputs from the chat formatter."""
         return self._intermediate_outputs
+
+    def initial_messages(self) -> list[ChatCompletionMessageIncludingLiteLLM]:
+        """Messages to seed the conversation. Empty for fresh runs; prior trace for continuation."""
+        return []
 
     @abstractmethod
     def next_turn(self, previous_output: str | None = None) -> Optional[ChatTurn]:
@@ -225,6 +239,83 @@ class SingleTurnR1ThinkingFormatter(ChatFormatter):
             self._state = "awaiting_final"
             self._messages.extend(msgs)
             return ChatTurn(messages=msgs, final_call=True)
+
+        if self._state == "awaiting_final":
+            if previous_output is None:
+                raise ValueError("previous_output required for final step")
+            self._messages.append(BasicChatMessage("assistant", previous_output))
+            self._state = "done"
+            return None
+
+        return None
+
+
+class MultiturnFormatter(ChatFormatter):
+    """
+    Formatter for continuing a multi-turn conversation with prior trace.
+    Takes prior_trace (existing conversation) and appends the new user message.
+    Produces a single turn: the new user message. Tool calls and multi-turn
+    model responses are handled by _run_model_turn's internal loop.
+
+    When user_input is a dict or list with tool_call_id keys, the input is
+    treated as tool call results (role "tool") rather than a user message.
+    This supports resuming after a return_on_tool_call interrupt.
+    """
+
+    def __init__(
+        self,
+        prior_trace: list[ChatCompletionMessageParam],
+        user_input: InputType,
+    ) -> None:
+        super().__init__(
+            system_message="",
+            user_input=user_input,
+            thinking_instructions=None,
+        )
+        self._prior_trace = prior_trace
+
+    def initial_messages(self) -> list[ChatCompletionMessageIncludingLiteLLM]:
+        """Messages to seed the conversation (prior trace)."""
+        return list(self._prior_trace)
+
+    @property
+    def _is_tool_result(self) -> bool:
+        """Return True if user_input looks like one or more tool call results."""
+        input = self.user_input
+        if isinstance(input, dict):
+            return "tool_call_id" in input
+        if isinstance(input, list):
+            return bool(input) and all(
+                isinstance(item, dict) and "tool_call_id" in item for item in input
+            )
+        return False
+
+    def next_turn(self, previous_output: str | None = None) -> Optional[ChatTurn]:
+        if self._state == "start":
+            self._state = "awaiting_final"
+            if self._is_tool_result:
+                if isinstance(self.user_input, dict):
+                    raw_items: list[dict] = [self.user_input]
+                else:
+                    raw_items = list(self.user_input)  # type: ignore[arg-type]
+                msgs: list[ChatMessage] = [
+                    ToolResponseMessage(
+                        role="tool",
+                        content=str(item.get("content", "")),
+                        tool_call_id=item["tool_call_id"],
+                    )
+                    for item in raw_items
+                ]
+                self._messages.extend(msgs)
+                return ChatTurn(messages=msgs, final_call=True)
+            else:
+                # prior trace is already in the messages list and contains system and so on, we only need
+                # to append the latest new user message
+                user_msg = BasicChatMessage(
+                    "user", format_user_message(self.user_input)
+                )
+                self._messages.append(user_msg)
+                return ChatTurn(messages=[user_msg], final_call=True)
 
         if self._state == "awaiting_final":
             if previous_output is None:

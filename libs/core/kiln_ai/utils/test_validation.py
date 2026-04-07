@@ -4,6 +4,7 @@ from typing_extensions import TypedDict
 
 from kiln_ai.utils.validation import (
     NonEmptyString,
+    skill_name_validator,
     string_not_empty,
     tool_name_validator,
     validate_return_dict_prop,
@@ -526,6 +527,48 @@ class TestToolNameValidator:
         for char in invalid_chars:
             with pytest.raises(ValueError):
                 tool_name_validator(char)
+
+
+class TestSkillNameValidator:
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "tool",
+            "my-tool",
+            "data-processor",
+            "test123",
+            "a",
+            "tool-v2",
+            "get-weather",
+            "a1b2c3",
+        ],
+    )
+    def test_valid_names(self, name):
+        assert skill_name_validator(name) == name
+
+    @pytest.mark.parametrize(
+        "invalid_name,expected_error",
+        [
+            (None, "Skill name cannot be empty"),
+            ("", "Skill name cannot be empty"),
+            ("   ", "Skill name cannot be empty"),
+            (123, "Skill name must be a string"),
+            ("Tool", "only contain lowercase"),
+            ("my_tool", "only contain lowercase"),
+            ("tool name", "only contain lowercase"),
+            ("-tool", "must not start or end with a hyphen"),
+            ("tool-", "must not start or end with a hyphen"),
+            ("tool--name", "must not contain consecutive hyphens"),
+            ("1tool", "must start with a lowercase letter"),
+            ("a" * 65, "64 characters or fewer"),
+        ],
+    )
+    def test_invalid_names(self, invalid_name, expected_error):
+        with pytest.raises(ValueError, match=expected_error):
+            skill_name_validator(invalid_name)
+
+    def test_exactly_64_characters_succeeds(self):
+        assert skill_name_validator("a" * 64) == "a" * 64
 
 
 class SampleTypedDict(TypedDict, total=True):

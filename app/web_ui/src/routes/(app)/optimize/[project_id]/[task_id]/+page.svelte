@@ -28,13 +28,17 @@
   } from "$lib/utils/run_config_formatters"
   import { tool_link } from "$lib/utils/link_builder"
   import { formatDate } from "$lib/utils/formatters"
-  import { get_tools_property_info } from "$lib/stores/tools_store"
+  import {
+    get_tools_property_info,
+    split_tool_and_skill_ids,
+  } from "$lib/stores/tools_store"
   import { goto } from "$app/navigation"
   import TableButton from "../../../generate/[project_id]/[task_id]/table_button.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import { client } from "$lib/api_client"
   import StarIcon from "$lib/ui/icons/star_icon.svelte"
   import Float from "$lib/ui/float.svelte"
+  import BadgeList from "$lib/ui/badge_list.svelte"
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
@@ -138,12 +142,14 @@
     links: undefined as undefined,
   }
 
-  $: tools_display_by_config_id = ((): Record<
+  type DisplayInfo = {
+    value: string | string[] | "Loading..."
+    links: (string | null)[] | undefined
+  }
+
+  $: tools_and_skills_by_config_id = ((): Record<
     string,
-    {
-      value: string | string[] | "Loading..."
-      links: (string | null)[] | undefined
-    }
+    { tools: DisplayInfo; skills: DisplayInfo }
   > => {
     const tools = $available_tools
 
@@ -152,17 +158,28 @@
         const ref = config.run_config_properties.tool_reference
         const name = ref.tool_name ?? "MCP Tool"
         const link = tool_link(project_id, ref.tool_id ?? "")
-        return [config.id, { value: [name], links: [link] }] as const
+        return [
+          config.id,
+          {
+            tools: { value: [name], links: [link] },
+            skills: { value: "None", links: undefined },
+          },
+        ] as const
       }
-      const tool_ids =
+      const all_ids =
         (isKilnAgentRunConfig(config.run_config_properties) &&
           config.run_config_properties.tools_config?.tools) ||
         []
-      const info =
+      const { tool_ids, skill_ids } = split_tool_and_skill_ids(all_ids)
+      const tools_info =
         tools && tools[project_id]
           ? get_tools_property_info(tool_ids, project_id, tools)
           : { ...tool_loading_placeholder }
-      return [config.id, info] as const
+      const skills_info =
+        tools && tools[project_id]
+          ? get_tools_property_info(skill_ids, project_id, tools)
+          : { ...tool_loading_placeholder }
+      return [config.id, { tools: tools_info, skills: skills_info }] as const
     })
 
     return Object.fromEntries(entries)
@@ -261,7 +278,7 @@
     if (!config.id) return
     const new_starred = !config.starred
     const { error: err } = await client.PATCH(
-      "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}",
+      "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}",
       {
         params: {
           path: { project_id, task_id, run_config_id: config.id },
@@ -304,6 +321,7 @@
     { key: "prompt", label: "Prompt", sortable: true, sortKey: "prompt" },
     { key: "model", label: "Model", sortable: true, sortKey: "model" },
     { key: "tools", label: "Tools", sortable: false },
+    { key: "skills", label: "Skills", sortable: false },
     { key: "type", label: "Type", sortable: true, sortKey: "type" },
     {
       key: "created_at",
@@ -412,9 +430,15 @@
             </thead>
             <tbody>
               {#each sorted_run_configs as config}
+                {@const config_display = config.id
+                  ? tools_and_skills_by_config_id[config.id]
+                  : undefined}
                 {@const tools_info =
-                  (config.id && tools_display_by_config_id[config.id]) ||
-                  tool_loading_placeholder}
+                  config_display?.tools || tool_loading_placeholder}
+                {@const skills_info = config_display?.skills || {
+                  value: "None",
+                  links: undefined,
+                }}
                 {@const is_default = config.id === task?.default_run_config_id}
                 {@const is_selected =
                   config.id && selected_run_configs.has(config.id)}
@@ -471,26 +495,16 @@
                     {getRunConfigModelDisplayName(config, $model_info) ?? "N/A"}
                   </td>
                   <td class="text-gray-500">
-                    {#if Array.isArray(tools_info.value)}
-                      <div class="flex flex-wrap gap-1">
-                        {#each tools_info.value as tool_name, i}
-                          {@const link = tools_info.links?.[i]}
-                          {#if link}
-                            <a
-                              href={link}
-                              class="badge badge-outline hover:bg-base-200"
-                              on:click|stopPropagation
-                            >
-                              {tool_name}
-                            </a>
-                          {:else}
-                            <span class="badge badge-outline">{tool_name}</span>
-                          {/if}
-                        {/each}
-                      </div>
-                    {:else}
-                      {tools_info.value}
-                    {/if}
+                    <BadgeList
+                      items={tools_info.value}
+                      links={tools_info.links}
+                    />
+                  </td>
+                  <td class="text-gray-500">
+                    <BadgeList
+                      items={skills_info.value}
+                      links={skills_info.links}
+                    />
                   </td>
                   <td>
                     {#if isKilnAgentRunConfig(config.run_config_properties)}

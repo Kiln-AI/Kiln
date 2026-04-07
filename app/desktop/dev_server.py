@@ -20,10 +20,12 @@ os.environ["DEBUG_EVENT_LOOP"] = "true"
 if __name__ == "__main__":
     setup_resource_limits()
 
+    port = int(os.environ.get("KILN_PORT", "8757"))
+
     uvicorn.run(
         "app.desktop.dev_server:dev_app",
         host="127.0.0.1",
-        port=8757,
+        port=port,
         reload=True,
         # Debounce when changing many files (changing branch)
         reload_delay=0.1,

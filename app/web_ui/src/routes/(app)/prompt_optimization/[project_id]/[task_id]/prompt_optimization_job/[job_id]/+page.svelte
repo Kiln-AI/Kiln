@@ -111,9 +111,6 @@
       get_task_composite_id(project_id, task_id)
     ] || []
 
-  $: target_run_config_page_link = `/optimize/${project_id}/${task_id}/run_config/${prompt_optimization_job?.target_run_config_id}`
-  $: created_run_config_page_link = `/optimize/${project_id}/${task_id}/run_config/${prompt_optimization_job?.created_run_config_id}`
-
   $: is_terminal =
     prompt_optimization_job?.latest_status === "succeeded" ||
     prompt_optimization_job?.latest_status === "failed" ||
@@ -181,6 +178,12 @@
       properties = []
       return
     }
+
+    const target_run_config_page_link = `/optimize/${project_id}/${task_id}/run_config/${prompt_optimization_job.target_run_config_id}`
+    const created_run_config_page_link =
+      prompt_optimization_job.created_run_config_id
+        ? `/optimize/${project_id}/${task_id}/run_config/${prompt_optimization_job.created_run_config_id}`
+        : undefined
 
     const target_run_config_info = get_run_config_info(
       prompt_optimization_job.target_run_config_id,

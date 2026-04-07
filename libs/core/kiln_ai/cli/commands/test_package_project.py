@@ -1,5 +1,6 @@
 import zipfile
 from pathlib import Path
+from typing import TypedDict
 from unittest.mock import patch
 
 import pytest
@@ -22,6 +23,7 @@ from kiln_ai.datamodel.external_tool_server import ExternalToolServer, ToolServe
 from kiln_ai.datamodel.prompt import Prompt
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
+from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_output import TaskOutput
 from kiln_ai.datamodel.task_run import TaskRun
@@ -30,6 +32,7 @@ from kiln_ai.datamodel.tool_id import (
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
     RAG_TOOL_ID_PREFIX,
+    SKILL_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
 )
 
@@ -37,12 +40,14 @@ from .package_project import (
     PackageForTrainingConfig,
     build_prompt_from_builder,
     classify_tool_id,
+    collect_required_skills,
     collect_required_tool_servers,
     collect_subtask_ids_from_tools,
     create_export_directory,
     create_zip,
     export_documents,
     export_evals,
+    export_skills,
     export_task,
     export_task_runs,
     export_tool_servers,
@@ -493,6 +498,60 @@ def temp_project_with_builtin_tool(tmp_path: Path):
         "project": project,
         "task": task,
         "run_config": run_config,
+        "path": tmp_path,
+    }
+
+
+class SkillToolProjectFixture(TypedDict):
+    project: Project
+    task: Task
+    run_config: TaskRunConfig
+    skill: Skill
+    path: Path
+
+
+@pytest.fixture
+def temp_project_with_skill_tool(tmp_path: Path) -> SkillToolProjectFixture:
+    """Create a project with a task that uses a skill tool."""
+    project = Project(name="Skill Project", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    skill = Skill(
+        name="test-skill",
+        description="A test skill for export testing",
+        parent=project,
+    )
+    skill.save_to_file()
+    skill.save_skill_md("This is the skill body with instructions.")
+
+    task = Task(
+        name="Task With Skill",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    run_config = TaskRunConfig(
+        name="Config With Skill",
+        parent=task,
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4o",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE.value,
+            structured_output_mode=StructuredOutputMode.default,
+            tools_config=ToolsRunConfig(tools=[f"{SKILL_TOOL_ID_PREFIX}{skill.id}"]),
+        ),
+    )
+    run_config.save_to_file()
+
+    task.default_run_config_id = run_config.id
+    task.save_to_file()
+
+    return {
+        "project": project,
+        "task": task,
+        "run_config": run_config,
+        "skill": skill,
         "path": tmp_path,
     }
 
@@ -1162,6 +1221,7 @@ class TestClassifyToolId:
             (f"{MCP_REMOTE_TOOL_ID_PREFIX}server_id::tool_name", "mcp_remote"),
             (f"{MCP_LOCAL_TOOL_ID_PREFIX}server_id::tool_name", "mcp_local"),
             (f"{RAG_TOOL_ID_PREFIX}some_rag_config", "rag"),
+            (f"{SKILL_TOOL_ID_PREFIX}some_skill_id", "skill"),
             ("unknown_prefix::something", "unknown"),
         ],
     )
@@ -1284,6 +1344,18 @@ class TestValidateTools:
             validate_tools([task], {task.id: run_config})
         assert exc_info.value.exit_code == 1
 
+    def test_passes_with_skill_tools(
+        self, temp_project_with_skill_tool: SkillToolProjectFixture
+    ) -> None:
+        """Test that skill tools pass validation."""
+        task = Task.load_from_file(temp_project_with_skill_tool["task"].path)
+        run_config = TaskRunConfig.load_from_file(
+            temp_project_with_skill_tool["run_config"].path
+        )
+
+        assert task.id is not None
+        validate_tools([task], {task.id: run_config})
+
     def test_errors_on_unknown_tool_type(self, temp_project):
         """Test that unknown tool types cause an error.
 
@@ -1366,6 +1438,139 @@ class TestCollectRequiredToolServers:
         server_ids = collect_required_tool_servers([task], {task.id: run_config})
 
         assert len(server_ids) == 0
+
+
+class TestCollectRequiredSkills:
+    def test_collects_skill_id(
+        self, temp_project_with_skill_tool: SkillToolProjectFixture
+    ) -> None:
+        """Test that skill IDs are collected from run configs."""
+        task = Task.load_from_file(temp_project_with_skill_tool["task"].path)
+        run_config = TaskRunConfig.load_from_file(
+            temp_project_with_skill_tool["run_config"].path
+        )
+        skill = temp_project_with_skill_tool["skill"]
+
+        assert task.id is not None
+        skill_ids = collect_required_skills([task], {task.id: run_config})
+
+        assert skill.id in skill_ids
+
+    def test_no_skills_for_builtin_tools(self, temp_project_with_builtin_tool):
+        """Test that built-in tools don't add skill IDs."""
+        task = Task.load_from_file(temp_project_with_builtin_tool["task"].path)
+        run_config = TaskRunConfig.load_from_file(
+            temp_project_with_builtin_tool["run_config"].path
+        )
+
+        assert task.id is not None
+        skill_ids = collect_required_skills([task], {task.id: run_config})
+
+        assert len(skill_ids) == 0
+
+    def test_skips_task_without_run_config(
+        self, temp_project_with_skill_tool: SkillToolProjectFixture
+    ) -> None:
+        """Test that tasks without a matching run config are skipped."""
+        task = Task.load_from_file(temp_project_with_skill_tool["task"].path)
+
+        assert task.id is not None
+        skill_ids = collect_required_skills([task], {})
+
+        assert len(skill_ids) == 0
+
+
+class TestExportSkills:
+    def test_exports_skill(
+        self, temp_project_with_skill_tool: SkillToolProjectFixture
+    ) -> None:
+        """Test that skills are exported with all files."""
+        import shutil
+
+        project = temp_project_with_skill_tool["project"]
+        skill = temp_project_with_skill_tool["skill"]
+
+        temp_dir, exported_project = create_export_directory(project)
+
+        try:
+            assert skill.id is not None
+            export_skills({skill.id}, project, exported_project)
+
+            exported_skills = exported_project.skills()
+            assert len(exported_skills) == 1
+            assert exported_skills[0].id == skill.id
+            assert exported_skills[0].name == skill.name
+            assert (
+                exported_skills[0].body() == "This is the skill body with instructions."
+            )
+            assert exported_skills[0].references_dir().exists()
+            assert exported_skills[0].assets_dir().exists()
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_exports_no_skills_when_empty(self, temp_project):
+        """Test that no skills are exported when set is empty."""
+        import shutil
+
+        project = temp_project["project"]
+        temp_dir, exported_project = create_export_directory(project)
+
+        try:
+            export_skills(set(), project, exported_project)
+            assert len(exported_project.skills()) == 0
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_raises_when_exported_project_path_is_none(
+        self, temp_project_with_skill_tool: SkillToolProjectFixture
+    ) -> None:
+        """Test that export_skills raises when exported project path is None."""
+        project = temp_project_with_skill_tool["project"]
+        skill = temp_project_with_skill_tool["skill"]
+        exported_project = Project(name="No Path Project", path=None)
+
+        assert skill.id is not None
+        with pytest.raises(ValueError, match="Exported project path is not set"):
+            export_skills({skill.id}, project, exported_project)
+
+    def test_raises_when_skill_id_not_found(
+        self, temp_project_with_skill_tool: SkillToolProjectFixture
+    ) -> None:
+        """Test that export_skills raises when a skill ID is not in the project."""
+        import shutil
+
+        project = temp_project_with_skill_tool["project"]
+        temp_dir, exported_project = create_export_directory(project)
+
+        try:
+            with pytest.raises(ValueError, match=r"Skill ID.*not found in the project"):
+                export_skills({"nonexistent_id"}, project, exported_project)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_raises_when_skill_path_is_none(
+        self, temp_project_with_skill_tool: SkillToolProjectFixture
+    ) -> None:
+        """Test that export_skills raises when a skill's path is None."""
+        import shutil
+        from unittest.mock import MagicMock
+
+        project = temp_project_with_skill_tool["project"]
+        skill = temp_project_with_skill_tool["skill"]
+        temp_dir, exported_project = create_export_directory(project)
+
+        try:
+            assert skill.id is not None
+            fake_skill = MagicMock()
+            fake_skill.id = skill.id
+            fake_skill.name = skill.name
+            fake_skill.path = None
+
+            with patch.object(Project, "skills", return_value=[fake_skill]):
+                with pytest.raises(ValueError, match="path is not set"):
+                    export_skills({skill.id}, project, exported_project)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 class TestExportToolServers:
@@ -1524,6 +1729,31 @@ class TestPackageProjectWithTools:
         servers = loaded_project.external_tool_servers()
         assert len(servers) == 1
         assert servers[0].id == temp_project_with_kiln_task_tool["tool_server"].id
+
+    def test_exports_with_skill_tools(
+        self, temp_project_with_skill_tool: SkillToolProjectFixture, tmp_path: Path
+    ) -> None:
+        """Test full export with skill tools includes the skill."""
+        output_path = tmp_path / "output.zip"
+        extract_path = tmp_path / "extracted"
+
+        package_project(
+            project_path=temp_project_with_skill_tool["path"],
+            tasks=temp_project_with_skill_tool["task"].id,
+            all_tasks=False,
+            output=output_path,
+        )
+
+        assert output_path.exists()
+
+        with zipfile.ZipFile(output_path, "r") as zipf:
+            zipf.extractall(extract_path)
+
+        loaded_project = Project.load_from_file(extract_path / "project.kiln")
+        skills = loaded_project.skills()
+        assert len(skills) == 1
+        assert skills[0].id == temp_project_with_skill_tool["skill"].id
+        assert skills[0].body() == "This is the skill body with instructions."
 
     def test_rejects_rag_tools(self, temp_project_with_rag_tool, tmp_path: Path):
         """Test that RAG tools cause export to fail."""

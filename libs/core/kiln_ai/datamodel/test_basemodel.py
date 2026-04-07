@@ -8,10 +8,11 @@ from typing import Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter
 from kiln_ai.adapters.run_output import RunOutput
-from kiln_ai.datamodel import Task, TaskRun
+from kiln_ai.datamodel import Project, Task, TaskOutput, TaskRun
 from kiln_ai.datamodel.basemodel import (
     MAX_FILENAME_LENGTH,
     KilnBaseModel,
@@ -167,6 +168,40 @@ def test_build_default_child_filename(tmp_path):
     assert child_path.parent.name == child.id + " - Name"
     assert child_path.parent.parent.name == "children"
     assert child_path.parent.parent.parent == tmp_path.parent
+
+
+def test_build_child_dirname_truncation_uses_first_32_chars(tmp_path):
+    parent = BaseParentExample(path=tmp_path)
+    long_name = "a" * 32 + " suffix"
+    child = DefaultParentedModel(parent=parent, name=long_name)
+    dirname = child.build_child_dirname()
+    assert str(dirname).endswith("a" * 32)
+
+
+def test_build_child_dirname_run_config_style_name_no_trailing_space(tmp_path):
+    """Prefix can end with a space in the raw name; sanitization strips trailing space from the path segment."""
+    parent = BaseParentExample(path=tmp_path)
+    name = "Deepseek 3p2 + KilnOptimized (3 tokens)"
+    assert len(name[:32]) == 32 and name[:32].endswith(" ")
+    child = DefaultParentedModel(parent=parent, name=name)
+    dirname = child.build_child_dirname()
+    segment = str(dirname)
+    assert segment == segment.rstrip()
+    child_path = child.build_path()
+    assert child_path is not None
+    assert child_path.parent.name == child_path.parent.name.rstrip()
+
+
+def test_build_child_dirname_raises_when_sanitized_prefix_empty(tmp_path):
+    parent = BaseParentExample(path=tmp_path)
+    name = " " * 32 + "suffix"
+    assert name[:32].strip() == ""
+    child = DefaultParentedModel(parent=parent, name=name)
+    with pytest.raises(
+        ValueError,
+        match="first 32 characters of `name` produced an empty string",
+    ):
+        child.build_child_dirname()
 
 
 def test_serialize_child(tmp_path):
@@ -862,7 +897,7 @@ def test_from_ids_and_parent_path_benchmark(
 class MockAdapter(BaseAdapter):
     """Implementation of BaseAdapter for testing"""
 
-    async def _run(self, input):
+    async def _run(self, input, **kwargs):
         return RunOutput(output="test output", intermediate_outputs=None), None
 
     def adapter_name(self) -> str:
@@ -1166,3 +1201,173 @@ def test_readonly_cache_integration(tmp_model_cache, tmp_path):
     cached_readonly = ReadonlyTestModel.load_from_file(test_file, readonly=True)
     assert cached_readonly._readonly is True
     assert cached_readonly.name == "cached_model"
+
+
+# ============================================================================
+# Tests for parent type validation when iterating children of a parent path
+# ============================================================================
+
+
+def test_invalid_parent_with_single_parent_type(tmp_path):
+    """Loading children fails when parent path points to wrong model type (single parent case)."""
+    # Create a project (wrong parent type)
+    project_path = tmp_path / "project.kiln"
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+
+    # Try to load DefaultParentedModel children from a Project path
+    # DefaultParentedModel expects BaseParentExample as parent, not Project
+    # The error occurs when trying to load the parent as the wrong type
+    with pytest.raises(
+        ValueError, match="Cannot load from file because the model type is incorrect"
+    ):
+        list(DefaultParentedModel.iterate_children_paths_of_parent_path(project_path))
+
+
+def test_invalid_parent_task_run_expects_task(tmp_path):
+    """TaskRun children load the parent as Task; wrong model type fails like other single-parent models."""
+    project_path = tmp_path / "project.kiln"
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+
+    with pytest.raises(ValidationError, match="validation error for Task"):
+        list(TaskRun.iterate_children_paths_of_parent_path(project_path))
+
+
+def test_valid_parent_type_single_parent(tmp_path):
+    """Successfully loads children when parent type matches single expected type."""
+    parent = BaseParentExample(path=tmp_path / BaseParentExample.base_filename())
+    parent.save_to_file()
+
+    child = DefaultParentedModel(parent=parent, name="Test Child")
+    child.save_to_file()
+
+    # Load children - should succeed since parent is correct type
+    children = list(
+        DefaultParentedModel.iterate_children_paths_of_parent_path(parent.path)
+    )
+    assert len(children) == 1
+    assert children[0] == child.path
+
+
+def test_task_run_children_only_under_task_path_with_parent_task_run_id(tmp_path):
+    """TaskRun files live under the task; lineage uses parent_task_run_id, not nested folders."""
+    output = TaskOutput(output="test output")
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        path=tmp_path / "task.kiln",
+    )
+    task.save_to_file()
+
+    parent_run = TaskRun(input="parent input", output=output, parent=task)
+    parent_run.save_to_file()
+
+    nested_run = TaskRun(
+        input="nested input",
+        output=output,
+        parent=task,
+        parent_task_run_id=parent_run.id,
+    )
+    nested_run.save_to_file()
+
+    children = list(TaskRun.iterate_children_paths_of_parent_path(task.path))
+    assert len(children) == 2
+    assert {p for p in children} == {parent_run.path, nested_run.path}
+
+
+def test_valid_parent_type_task_as_parent_for_task_run(tmp_path):
+    """TaskRun children can be listed from a Task path."""
+    output = TaskOutput(output="test output")
+
+    # Create a task
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        path=tmp_path / "task.kiln",
+    )
+    task.save_to_file()
+
+    # Create a TaskRun under the task
+    task_run = TaskRun(input="test input", output=output, parent=task)
+    task_run.save_to_file()
+
+    # Load children of task - should succeed
+    children = list(TaskRun.iterate_children_paths_of_parent_path(task.path))
+    assert len(children) == 1
+    assert children[0] == task_run.path
+
+
+def test_invalid_parent_type_name_mismatch_task_run(tmp_path):
+    """TaskRun parent path must load as Task."""
+    wrong_parent_path = tmp_path / "wrong_parent.kiln"
+    wrong_data = {
+        "v": 1,
+        "name": "Wrong Parent",
+        "model_type": "project",
+    }
+    with open(wrong_parent_path, "w") as f:
+        json.dump(wrong_data, f)
+
+    with pytest.raises(ValidationError, match="validation error for Task"):
+        list(TaskRun.iterate_children_paths_of_parent_path(wrong_parent_path))
+
+
+def test_parent_loading_single_parent_type_fails_on_corrupt_file(tmp_path):
+    """Single parent type loading fails when parent file is corrupt/invalid."""
+    # Create a corrupt parent file
+    corrupt_parent_path = tmp_path / "corrupt.kiln"
+    with open(corrupt_parent_path, "w") as f:
+        f.write("not valid json {{{")
+
+    # The load_from_file call within iterate_children_paths_of_parent_path
+    # will fail when trying to parse the corrupt JSON
+    with pytest.raises(ValueError, match="Expecting value"):
+        list(
+            DefaultParentedModel.iterate_children_paths_of_parent_path(
+                corrupt_parent_path
+            )
+        )
+
+
+def test_parent_loading_task_run_fails_on_corrupt_file(tmp_path):
+    corrupt_parent_path = tmp_path / "corrupt.kiln"
+    with open(corrupt_parent_path, "w") as f:
+        f.write("not valid json {{{")
+
+    with pytest.raises(ValueError, match="Expecting value"):
+        list(TaskRun.iterate_children_paths_of_parent_path(corrupt_parent_path))
+
+
+def test_parent_loading_single_parent_nonexistent_file(tmp_path):
+    """Single parent type loading fails when parent file doesn't exist."""
+    nonexistent_path = tmp_path / "nonexistent.kiln"
+
+    with pytest.raises(FileNotFoundError):
+        list(
+            DefaultParentedModel.iterate_children_paths_of_parent_path(nonexistent_path)
+        )
+
+
+def test_parent_loading_task_run_nonexistent_file(tmp_path):
+    nonexistent_path = tmp_path / "nonexistent.kiln"
+
+    with pytest.raises(FileNotFoundError):
+        list(TaskRun.iterate_children_paths_of_parent_path(nonexistent_path))
+
+
+def test_all_children_of_parent_path_single_parent_type(tmp_path):
+    """all_children_of_parent_path works correctly for single parent type models."""
+    parent = BaseParentExample(path=tmp_path / "parent.kiln")
+    parent.save_to_file()
+
+    child1 = DefaultParentedModel(parent=parent, name="Child1")
+    child2 = DefaultParentedModel(parent=parent, name="Child2")
+    child1.save_to_file()
+    child2.save_to_file()
+
+    children = DefaultParentedModel.all_children_of_parent_path(parent.path)
+    assert len(children) == 2
+    names = {child.name for child in children}
+    assert names == {"Child1", "Child2"}

@@ -7,7 +7,19 @@ from kiln_ai.utils.async_job_runner import (
     AsyncJobRunner,
     AsyncJobRunnerObserver,
     Progress,
+    RetryableError,
 )
+
+
+@pytest.mark.parametrize("retry_delay", [-1, -0.5, -100])
+def test_invalid_retry_delay_raises(retry_delay):
+    with pytest.raises(ValueError):
+        AsyncJobRunner(
+            concurrency=1,
+            jobs=[],
+            run_job_fn=AsyncMock(return_value=True),
+            retry_delay=retry_delay,
+        )
 
 
 @pytest.fixture
@@ -27,6 +39,17 @@ def test_invalid_concurrency_raises(concurrency, mock_async_run_job_fn_success):
             concurrency=concurrency,
             jobs=[],
             run_job_fn=mock_async_run_job_fn_success,
+        )
+
+
+@pytest.mark.parametrize("max_retries", [-1, -2, -25])
+def test_invalid_max_retries_raises(max_retries, mock_async_run_job_fn_success):
+    with pytest.raises(ValueError):
+        AsyncJobRunner(
+            concurrency=1,
+            jobs=[],
+            run_job_fn=mock_async_run_job_fn_success,
+            max_retries=max_retries,
         )
 
 
@@ -313,3 +336,242 @@ async def test_async_job_runner_observers(concurrency):
             assert any(
                 call == jobs[job_idx] for call in mock_observer_b.on_success_calls
             )
+
+
+@pytest.mark.asyncio
+async def test_async_job_runner_retry_delay():
+    jobs = [{"id": 1}]
+    call_count = 0
+
+    async def run_job_fn(_: dict[str, int]) -> bool:
+        nonlocal call_count
+        call_count += 1
+        if call_count < 3:
+            raise RetryableError("transient")
+        return True
+
+    runner = AsyncJobRunner(
+        concurrency=1,
+        jobs=jobs,
+        run_job_fn=run_job_fn,
+        max_retries=2,
+        retry_delay=0.5,
+    )
+
+    with patch(
+        "kiln_ai.utils.async_job_runner.asyncio.sleep", new_callable=AsyncMock
+    ) as mock_sleep:
+        updates = [progress async for progress in runner.run()]
+        assert updates[-1].complete == 1
+        assert updates[-1].errors == 0
+        assert call_count == 3
+        assert mock_sleep.await_count == 2
+        mock_sleep.assert_awaited_with(0.5)
+
+
+@pytest.mark.asyncio
+async def test_async_job_runner_notify_success_outside_retry_loop():
+    """Verify that notify_success raising doesn't cause a retry of the job."""
+    jobs = [{"id": 1}]
+    call_count = 0
+
+    async def run_job_fn(_: dict[str, int]) -> bool:
+        nonlocal call_count
+        call_count += 1
+        return True
+
+    class FailingObserver(AsyncJobRunnerObserver[dict[str, int]]):
+        async def on_success(self, job: dict[str, int]):
+            raise RuntimeError("observer exploded")
+
+    runner = AsyncJobRunner(
+        concurrency=1,
+        jobs=jobs,
+        run_job_fn=run_job_fn,
+        max_retries=2,
+        observers=[FailingObserver()],
+    )
+
+    with pytest.raises(RuntimeError, match="observer exploded"):
+        async for _ in runner.run():
+            pass
+
+    assert call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_async_job_runner_non_retryable_exception_not_retried():
+    """Non-RetryableError exceptions should fail immediately without retry."""
+    jobs = [{"id": 1}]
+    run_job_fn = AsyncMock(side_effect=RuntimeError("permanent failure"))
+
+    runner = AsyncJobRunner(
+        concurrency=1,
+        jobs=jobs,
+        run_job_fn=run_job_fn,
+        max_retries=2,
+        retry_delay=0,
+    )
+
+    updates = [progress async for progress in runner.run()]
+    assert updates[-1].complete == 0
+    assert updates[-1].errors == 1
+    assert run_job_fn.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_async_job_runner_false_return_not_retried():
+    """False returns should fail immediately without retry."""
+    jobs = [{"id": 1}]
+    run_job_fn = AsyncMock(return_value=False)
+
+    runner = AsyncJobRunner(
+        concurrency=1,
+        jobs=jobs,
+        run_job_fn=run_job_fn,
+        max_retries=2,
+        retry_delay=0,
+    )
+
+    updates = [progress async for progress in runner.run()]
+    assert updates[-1].complete == 0
+    assert updates[-1].errors == 1
+    assert run_job_fn.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_async_job_runner_retry_succeeds_on_second_attempt():
+    jobs = [{"id": 1}]
+    call_count = 0
+
+    async def run_job_fn(_: dict[str, int]) -> bool:
+        nonlocal call_count
+        call_count += 1
+        if call_count < 2:
+            raise RetryableError("transient")
+        return True
+
+    runner = AsyncJobRunner(
+        concurrency=1,
+        jobs=jobs,
+        run_job_fn=run_job_fn,
+        max_retries=1,
+        retry_delay=0,
+    )
+
+    updates = [progress async for progress in runner.run()]
+    assert updates[-1].complete == 1
+    assert updates[-1].errors == 0
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_async_job_runner_retry_exhausted_with_retryable_error():
+    jobs = [{"id": 1}]
+    run_job_fn = AsyncMock(side_effect=RetryableError("always transient"))
+
+    runner = AsyncJobRunner(
+        concurrency=1,
+        jobs=jobs,
+        run_job_fn=run_job_fn,
+        max_retries=2,
+        retry_delay=0,
+    )
+
+    updates = [progress async for progress in runner.run()]
+    assert updates[-1].complete == 0
+    assert updates[-1].errors == 1
+    assert run_job_fn.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_async_job_runner_retry_retryable_error_then_success():
+    jobs = [{"id": 1}]
+    call_count = 0
+
+    async def run_job_fn(_: dict[str, int]) -> bool:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RetryableError("transient failure")
+        return True
+
+    runner = AsyncJobRunner(
+        concurrency=1,
+        jobs=jobs,
+        run_job_fn=run_job_fn,
+        max_retries=1,
+        retry_delay=0,
+    )
+
+    updates = [progress async for progress in runner.run()]
+    assert updates[-1].complete == 1
+    assert updates[-1].errors == 0
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_async_job_runner_retry_retryable_error_exhausted():
+    jobs = [{"id": 1}]
+    run_job_fn = AsyncMock(side_effect=RetryableError("always transient"))
+
+    runner = AsyncJobRunner(
+        concurrency=1,
+        jobs=jobs,
+        run_job_fn=run_job_fn,
+        max_retries=1,
+        retry_delay=0,
+    )
+
+    updates = [progress async for progress in runner.run()]
+    assert updates[-1].complete == 0
+    assert updates[-1].errors == 1
+    assert run_job_fn.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_async_job_runner_observers_with_retries():
+    class MockAsyncJobRunnerObserver(AsyncJobRunnerObserver[dict[str, int]]):
+        def __init__(self):
+            self.on_error_calls = []
+            self.on_success_calls = []
+            self.on_start_calls = []
+
+        async def on_error(self, job: dict[str, int], error: Exception):
+            self.on_error_calls.append((job, error))
+
+        async def on_success(self, job: dict[str, int]):
+            self.on_success_calls.append(job)
+
+        async def on_job_start(self, job: dict[str, int]):
+            self.on_start_calls.append(job)
+
+    observer = MockAsyncJobRunnerObserver()
+    jobs = [{"id": 1}, {"id": 2}]
+    call_counts = {1: 0, 2: 0}
+
+    async def run_job_fn(job: dict[str, int]) -> bool:
+        job_id = job["id"]
+        call_counts[job_id] += 1
+        if job_id == 1:
+            if call_counts[job_id] < 2:
+                raise RetryableError("transient")
+            return True
+        raise RetryableError("always fails")
+
+    runner = AsyncJobRunner(
+        concurrency=1,
+        jobs=jobs,
+        run_job_fn=run_job_fn,
+        max_retries=1,
+        retry_delay=0,
+        observers=[observer],
+    )
+
+    updates = [progress async for progress in runner.run()]
+    assert updates[-1].complete == 1
+    assert updates[-1].errors == 1
+    assert len(observer.on_start_calls) == 2
+    assert len(observer.on_success_calls) == 1
+    assert len(observer.on_error_calls) == 1
+    assert observer.on_success_calls[0]["id"] == 1

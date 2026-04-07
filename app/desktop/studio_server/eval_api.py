@@ -1,7 +1,7 @@
 import json
 from typing import Annotated, Any, Dict, List, Set, Tuple
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.eval.eval_runner import EvalRunner
 from kiln_ai.adapters.fine_tune.finetune_run_config_id import (
@@ -25,11 +25,17 @@ from kiln_ai.datamodel.eval import (
 from kiln_ai.datamodel.json_schema import string_to_json_key
 from kiln_ai.datamodel.prompt_id import is_frozen_prompt
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
+from kiln_ai.datamodel.spec import SpecStatus
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
-from pydantic import BaseModel
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    DENY_AGENT,
+    agent_policy_require_approval,
+)
+from pydantic import BaseModel, Field
 
 from .correlation_calculator import (
     CorrelationCalculator,
@@ -137,126 +143,215 @@ async def run_eval_runner_with_status(eval_runner: EvalRunner) -> StreamingRespo
 
 
 class CreateEvaluatorRequest(BaseModel):
-    name: str
-    description: str | None = None
-    template: EvalTemplateId | None
-    output_scores: list[EvalOutputScore]
-    eval_set_filter_id: DatasetFilterId
-    eval_configs_filter_id: DatasetFilterId | None
-    template_properties: dict[str, str | float | int | bool] | None
-    evaluation_data_type: EvalDataType
+    """Request to create a new evaluator."""
+
+    name: str = Field(description="The name of the evaluator.")
+    description: str | None = Field(
+        default=None, description="The description of the evaluator."
+    )
+    template: EvalTemplateId | None = Field(
+        default=None, description="The eval template to use."
+    )
+    output_scores: list[EvalOutputScore] = Field(
+        description="The scores this evaluator should produce."
+    )
+    eval_set_filter_id: DatasetFilterId = Field(
+        description="The dataset filter for the eval set."
+    )
+    eval_configs_filter_id: DatasetFilterId | None = Field(
+        default=None, description="The dataset filter for comparing eval configs."
+    )
+    template_properties: dict[str, str | float | int | bool] | None = Field(
+        default=None, description="Template-specific properties."
+    )
+    evaluation_data_type: EvalDataType = Field(
+        description="The type of task output to evaluate."
+    )
 
 
 class CreateEvalConfigRequest(BaseModel):
-    name: str | None = None
-    type: EvalConfigType
-    properties: dict[str, Any]
-    model_name: str
-    provider: ModelProviderName
+    """Request to create a new eval configuration."""
+
+    name: str | None = Field(default=None, description="The name of the eval config.")
+    type: EvalConfigType = Field(description="The type of eval config.")
+    properties: dict[str, Any] = Field(
+        description="Properties for the eval config, specific to the type."
+    )
+    model_name: str = Field(description="The model to use for evaluation.")
+    provider: ModelProviderName = Field(
+        description="The provider of the evaluation model."
+    )
 
 
 class CreateTaskRunConfigRequest(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    run_config_properties: RunConfigProperties
+    """Request to create a new run config for eval."""
+
+    name: str | None = Field(default=None, description="The name of the run config.")
+    description: str | None = Field(
+        default=None, description="The description of the run config."
+    )
+    run_config_properties: RunConfigProperties = Field(
+        description="The run configuration properties."
+    )
 
 
 class UpdateRunConfigRequest(BaseModel):
-    name: str | None = None
-    starred: bool | None = None
-    prompt_name: str | None = None
+    """Request to update a run config."""
+
+    name: str | None = Field(default=None, description="The updated name.")
+    starred: bool | None = Field(
+        default=None, description="The updated starred status."
+    )
+    prompt_name: str | None = Field(
+        default=None, description="The updated prompt name."
+    )
 
 
 class RunEvalConfigRequest(BaseModel):
-    run_config_ids: list[str]
+    """Request to run an eval with specific run configs."""
+
+    run_config_ids: list[str] = Field(description="The run config IDs to evaluate.")
 
 
 class ScoreSummary(BaseModel):
-    mean_score: float
+    """Summary of scores for an eval run."""
+
+    mean_score: float = Field(description="The mean score across all runs.")
 
 
 class MeanUsage(BaseModel):
-    mean_input_tokens: float | None = None
-    mean_output_tokens: float | None = None
-    mean_total_tokens: float | None = None
-    mean_cost: float | None = None
+    """Average token usage across eval runs."""
+
+    mean_input_tokens: float | None = Field(
+        default=None, description="Average input tokens per run."
+    )
+    mean_output_tokens: float | None = Field(
+        default=None, description="Average output tokens per run."
+    )
+    mean_total_tokens: float | None = Field(
+        default=None, description="Average total tokens per run."
+    )
+    mean_cost: float | None = Field(
+        default=None, description="Average cost per run in USD."
+    )
 
 
 class EvalRunResult(BaseModel):
-    results: List[EvalRun]
-    eval: Eval
-    eval_config: EvalConfig
-    run_config: TaskRunConfig
+    """Results of an eval run including the eval and run config."""
+
+    results: List[EvalRun] = Field(description="The individual eval run results.")
+    eval: Eval = Field(description="The parent eval.")
+    eval_config: EvalConfig = Field(description="The eval config used.")
+    run_config: TaskRunConfig = Field(description="The run config used.")
 
 
 class UpdateFavouriteRequest(BaseModel):
-    favourite: bool
+    """Request to update the favourite status of an eval."""
+
+    favourite: bool = Field(description="Whether the eval is a favourite.")
 
 
 class UpdateEvalRequest(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    train_set_filter_id: str | None = None
+    """Request to update an eval."""
+
+    name: str | None = Field(default=None, description="The updated name.")
+    description: str | None = Field(
+        default=None, description="The updated description."
+    )
+    train_set_filter_id: str | None = Field(
+        default=None, description="The updated train set filter ID."
+    )
 
 
 class EvalProgress(BaseModel):
-    # The total size of the dataset used for the eval
-    dataset_size: int
-    # The total size of the golden dataset used for the eval
-    golden_dataset_size: int
-    # The number of golden dataset items, by rating progress
-    golden_dataset_not_rated_count: int
-    golden_dataset_partially_rated_count: int
-    golden_dataset_fully_rated_count: int
-    # The total size of the train dataset used for the eval
-    train_dataset_size: int
-    # The current selected eval method
-    current_eval_method: EvalConfig | None
+    """Progress information for an eval."""
+
+    dataset_size: int = Field(description="The total size of the eval dataset.")
+    golden_dataset_size: int = Field(
+        description="The total size of the golden dataset."
+    )
+    golden_dataset_not_rated_count: int = Field(
+        description="Number of unrated golden dataset items."
+    )
+    golden_dataset_partially_rated_count: int = Field(
+        description="Number of partially rated golden dataset items."
+    )
+    golden_dataset_fully_rated_count: int = Field(
+        description="Number of fully rated golden dataset items."
+    )
+    train_dataset_size: int = Field(description="The total size of the train dataset.")
+    current_eval_method: EvalConfig | None = Field(
+        default=None, description="The currently selected eval config."
+    )
 
 
 class EvalResultSummary(BaseModel):
-    # run_config_id -> output_score_id -> ScoreSummary
-    results: Dict[ID_TYPE, Dict[str, ScoreSummary]]
-    # run_config_id -> percent of the dataset that has been processed
-    run_config_percent_complete: Dict[ID_TYPE, float]
-    # The total size of the dataset used for the eval
-    dataset_size: int
+    """Summary of eval results across run configs."""
+
+    results: Dict[ID_TYPE, Dict[str, ScoreSummary]] = Field(
+        description="Scores keyed by run_config_id then output_score_id."
+    )
+    run_config_percent_complete: Dict[ID_TYPE, float] = Field(
+        description="Percent of dataset processed per run config."
+    )
+    dataset_size: int = Field(description="Total size of the eval dataset.")
 
 
 class EvalConfigCompareSummary(BaseModel):
-    # Summary of results. eval_config_id -> output_score_id -> CorrelationResult
-    results: Dict[ID_TYPE, Dict[str, CorrelationResult]]
-    # eval_config_id -> percent of the dataset that has been processed (run with eval scores)
-    eval_config_percent_complete: Dict[ID_TYPE, float]
-    # The total size of the dataset used for the eval config comparisons (eval.eval_configs_filter_id set size)
-    dataset_size: int
-    # The number of dataset items which are fully rated, partially rated, or not rated at all.
-    fully_rated_count: int
-    partially_rated_count: int
-    not_rated_count: int
+    """Summary comparing eval configs against human ratings."""
+
+    results: Dict[ID_TYPE, Dict[str, CorrelationResult]] = Field(
+        description="Correlation results keyed by eval_config_id then output_score_id."
+    )
+    eval_config_percent_complete: Dict[ID_TYPE, float] = Field(
+        description="Percent of dataset processed per eval config."
+    )
+    dataset_size: int = Field(
+        description="Total size of the eval config comparison dataset."
+    )
+    fully_rated_count: int = Field(description="Number of fully rated dataset items.")
+    partially_rated_count: int = Field(
+        description="Number of partially rated dataset items."
+    )
+    not_rated_count: int = Field(description="Number of unrated dataset items.")
 
 
 class EvalConfigResult(BaseModel):
-    eval_config_id: ID_TYPE
-    # output_score_id -> ScoreSummary | None (None when no data available)
-    results: Dict[str, ScoreSummary | None]
-    # percent of the dataset that has been processed
-    percent_complete: float
+    """Results for a single eval config."""
+
+    eval_config_id: ID_TYPE = Field(description="The eval config ID.")
+    results: Dict[str, ScoreSummary | None] = Field(
+        description="Scores keyed by output_score_id. None when no data."
+    )
+    percent_complete: float = Field(description="Percent of the dataset processed.")
 
 
 class RunConfigEvalResult(BaseModel):
-    eval_id: ID_TYPE
-    eval_name: str
-    dataset_size: int
-    eval_config_result: EvalConfigResult | None
-    missing_default_eval_config: bool
-    spec_id: ID_TYPE | None
+    """Eval results for a specific run config."""
+
+    eval_id: ID_TYPE = Field(description="The unique identifier of the eval.")
+    eval_name: str = Field(description="The human-readable name of the eval.")
+    dataset_size: int = Field(description="The dataset size for this eval.")
+    eval_config_result: EvalConfigResult | None = Field(
+        default=None, description="The eval config results, if available."
+    )
+    missing_default_eval_config: bool = Field(
+        description="Whether the default eval config is missing."
+    )
+    spec_id: ID_TYPE | None = Field(
+        default=None, description="The associated spec ID, if any."
+    )
 
 
 class RunConfigEvalScoresSummary(BaseModel):
-    eval_results: List[RunConfigEvalResult]
-    # mean usage statistics across all eval runs for this run config
-    mean_usage: MeanUsage | None = None
+    """Summary of all eval scores for a run config."""
+
+    eval_results: List[RunConfigEvalResult] = Field(
+        description="Eval results for each eval."
+    )
+    mean_usage: MeanUsage | None = Field(
+        default=None, description="Average usage statistics across eval runs."
+    )
 
 
 def dataset_ids_in_filter(
@@ -346,10 +441,20 @@ def count_human_evals(
 
 
 def connect_evals_api(app: FastAPI):
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/create_evaluator")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/create_evaluator",
+        summary="Create Evaluator",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def create_evaluator(
-        project_id: str,
-        task_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
         request: CreateEvaluatorRequest,
     ) -> Eval:
         task = task_from_id(project_id, task_id)
@@ -367,24 +472,77 @@ def connect_evals_api(app: FastAPI):
         eval.save_to_file()
         return eval
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/run_configs/")
-    async def get_run_configs(project_id: str, task_id: str) -> list[TaskRunConfig]:
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs",
+        summary="List Run Configs",
+        tags=["Run Configs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_run_configs(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> list[TaskRunConfig]:
         return get_all_run_configs(project_id, task_id)
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
-    async def get_eval(project_id: str, task_id: str, eval_id: str) -> Eval:
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
+        summary="Get Eval",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_eval(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+    ) -> Eval:
         return eval_from_id(project_id, task_id, eval_id)
 
-    @app.delete("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
-    async def delete_eval(project_id: str, task_id: str, eval_id: str) -> None:
+    @app.delete(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
+        summary="Delete Eval",
+        tags=["Evals"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def delete_eval(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+    ) -> None:
         eval = eval_from_id(project_id, task_id, eval_id)
         eval.delete()
 
-    @app.patch("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}")
+    @app.patch(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
+        summary="Update Eval",
+        tags=["Evals"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit eval? Ensure you backup your project before allowing agentic edits."
+        ),
+    )
     async def update_eval(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
         request: UpdateEvalRequest,
     ) -> Eval:
         eval = eval_from_id(project_id, task_id, eval_id)
@@ -409,31 +567,80 @@ def connect_evals_api(app: FastAPI):
         eval.save_to_file()
         return eval
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/evals")
-    async def get_evals(project_id: str, task_id: str) -> list[Eval]:
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/evals",
+        summary="List Evals",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_evals(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> list[Eval]:
+        """List all evals for a task."""
         task = task_from_id(project_id, task_id)
         return task.evals()
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs",
+        summary="List Eval Configs",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_eval_configs(
-        project_id: str, task_id: str, eval_id: str
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
     ) -> list[EvalConfig]:
         eval = eval_from_id(project_id, task_id, eval_id)
         return eval.configs()
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}"
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}",
+        summary="Get Eval Config",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_eval_config(
-        project_id: str, task_id: str, eval_id: str, eval_config_id: str
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+        eval_config_id: Annotated[
+            str, Path(description="The unique identifier of the eval configuration.")
+        ],
     ) -> EvalConfig:
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
         return eval_config
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/task_run_config")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs",
+        summary="Create Run Config",
+        tags=["Run Configs"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def create_task_run_config(
-        project_id: str,
-        task_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
         request: CreateTaskRunConfigRequest,
     ) -> TaskRunConfig:
         task = task_from_id(project_id, task_id)
@@ -478,11 +685,25 @@ def connect_evals_api(app: FastAPI):
         task_run_config.save_to_file()
         return task_run_config
 
-    @app.patch("/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}")
+    @app.patch(
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}",
+        summary="Update Run Config",
+        tags=["Run Configs"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit run config? Ensure you backup your project before allowing agentic edits."
+        ),
+    )
     async def update_run_config(
-        project_id: str,
-        task_id: str,
-        run_config_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_config_id: Annotated[
+            str, Path(description="The unique identifier of the run configuration.")
+        ],
         request: UpdateRunConfigRequest,
     ) -> TaskRunConfig:
         run_config = task_run_config_from_id(project_id, task_id, run_config_id)
@@ -508,12 +729,20 @@ def connect_evals_api(app: FastAPI):
         return run_config
 
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/create_eval_config"
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/create_eval_config",
+        summary="Create Eval Config",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def create_eval_config(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
         request: CreateEvalConfigRequest,
     ) -> EvalConfig:
         eval = eval_from_id(project_id, task_id, eval_id)
@@ -532,16 +761,35 @@ def connect_evals_api(app: FastAPI):
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/run_task_run_eval"
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_comparison",
+        summary="Run Run Config Comparison",
+        tags=["Evals"],
+        openapi_extra=agent_policy_require_approval("Run eval comparison?"),
     )
     async def run_eval_config(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
-        eval_config_id: str,
-        run_config_ids: Annotated[list[str], Query()] = [],
-        all_run_configs: Annotated[bool, Query()] = False,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+        eval_config_id: Annotated[
+            str, Path(description="The unique identifier of the eval configuration.")
+        ],
+        run_config_ids: Annotated[
+            list[str],
+            Query(description="The list of run configuration IDs to evaluate."),
+        ] = [],
+        all_run_configs: Annotated[
+            bool,
+            Query(
+                description="Whether to evaluate all run configurations for the task."
+            ),
+        ] = False,
     ) -> StreamingResponse:
+        """Run a specific eval config against one or more run configs and stream progress via SSE. Executes model runs and scores them."""
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
 
         # Load the list of run configs to use. Two options:
@@ -569,18 +817,31 @@ def connect_evals_api(app: FastAPI):
         return await run_eval_runner_with_status(eval_runner)
 
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/set_current_eval_config/{eval_config_id}"
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/set_current_eval_config/{eval_config_id}",
+        summary="Set Default Eval Config",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def set_default_eval_config(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
-        eval_config_id: str | None,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+        eval_config_id: Annotated[
+            str,
+            Path(
+                description="The unique identifier of the eval configuration to set as default, or 'None' to clear the default."
+            ),
+        ],
     ) -> Eval:
         eval = eval_from_id(project_id, task_id, eval_id)
 
         if eval_config_id == "None":
-            eval_config_id = None
+            eval.current_config_id = None
         else:
             eval_config = next(
                 (
@@ -595,21 +856,31 @@ def connect_evals_api(app: FastAPI):
                     status_code=400,
                     detail="Eval config not found.",
                 )
-
-        eval.current_config_id = eval_config_id
+            eval.current_config_id = eval_config_id
         eval.save_to_file()
 
         return eval
 
     # JS SSE client (EventSource) doesn't work with POST requests, so we use GET, even though post would be better
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/run_eval_config_eval"
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/run_calibration",
+        summary="Run Calibration",
+        tags=["Evals"],
+        openapi_extra=agent_policy_require_approval(
+            "Run eval calibration? This runs LLM calls across all eval configs and uses AI credits."
+        ),
     )
     async def run_eval_config_eval(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
     ) -> StreamingResponse:
+        """Run all eval configs against each other for calibration and stream progress via SSE. Used to check that eval configs produce consistent scores."""
         eval = eval_from_id(project_id, task_id, eval_id)
         eval_configs = eval.configs()
         eval_runner = EvalRunner(
@@ -621,14 +892,26 @@ def connect_evals_api(app: FastAPI):
         return await run_eval_runner_with_status(eval_runner)
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/results"
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/results",
+        summary="Get Eval Run Results",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_eval_run_results(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
-        eval_config_id: str,
-        run_config_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+        eval_config_id: Annotated[
+            str, Path(description="The unique identifier of the eval configuration.")
+        ],
+        run_config_id: Annotated[
+            str, Path(description="The unique identifier of the run configuration.")
+        ],
     ) -> EvalRunResult:
         eval = eval_from_id(project_id, task_id, eval_id)
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
@@ -646,11 +929,21 @@ def connect_evals_api(app: FastAPI):
         )
 
     # Overview of the eval progress
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/progress",
+        summary="Get Eval Progress",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_eval_progress(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
     ) -> EvalProgress:
         task = task_from_id(project_id, task_id)
         eval = eval_from_id(project_id, task_id, eval_id)
@@ -697,13 +990,23 @@ def connect_evals_api(app: FastAPI):
 
     # This compares run_configs to each other on a given eval_config. Compare to below which compares eval_configs to each other.
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/score_summary"
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/score_summary",
+        summary="Get Run Config Score Summary",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_eval_config_score_summary(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
-        eval_config_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
+        eval_config_id: Annotated[
+            str, Path(description="The unique identifier of the eval configuration.")
+        ],
     ) -> EvalResultSummary:
         task = task_from_id(project_id, task_id)
         eval = eval_from_id(project_id, task_id, eval_id)
@@ -801,12 +1104,20 @@ def connect_evals_api(app: FastAPI):
 
     # Compared to above, this is comparing all eval configs to each other, not looking at a single eval config
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs_score_summary"
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs_score_summary",
+        summary="Get Eval Config Comparison Summary",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_eval_configs_score_summary(
-        project_id: str,
-        task_id: str,
-        eval_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[str, Path(description="The unique identifier of the eval.")],
     ) -> EvalConfigCompareSummary:
         task = task_from_id(project_id, task_id)
         eval = eval_from_id(project_id, task_id, eval_id)
@@ -940,12 +1251,22 @@ def connect_evals_api(app: FastAPI):
         )
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}/eval_scores"
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}/eval_scores",
+        summary="Get Run Config Eval Scores",
+        tags=["Run Configs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_run_config_eval_scores(
-        project_id: str,
-        task_id: str,
-        run_config_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_config_id: Annotated[
+            str, Path(description="The unique identifier of the run configuration.")
+        ],
     ) -> RunConfigEvalScoresSummary:
         task = task_from_id(project_id, task_id)
 
@@ -953,11 +1274,15 @@ def connect_evals_api(app: FastAPI):
         task_run_config_from_id(project_id, task_id, run_config_id)
 
         # Build a mapping from eval_id to spec_id for evals that are associated with specs
+        # Also track which eval_ids belong to archived specs so we can exclude them
         specs = task.specs()
         eval_id_to_spec_id: Dict[str, str] = {}
+        archived_eval_ids: set[str] = set()
         for spec in specs:
             if spec.eval_id and spec.id:
                 eval_id_to_spec_id[spec.eval_id] = spec.id
+                if spec.status == SpecStatus.archived:
+                    archived_eval_ids.add(spec.eval_id)
 
         evals = task.evals()
         eval_results: List[RunConfigEvalResult] = []
@@ -974,6 +1299,10 @@ def connect_evals_api(app: FastAPI):
         total_eval_runs = 0
 
         for eval in evals:
+            # Skip evals associated with archived specs
+            if eval.id and eval.id in archived_eval_ids:
+                continue
+
             # Get the dataset size for this eval
             expected_dataset_ids = dataset_ids_in_filter(
                 task, eval.eval_set_filter_id, readonly=True

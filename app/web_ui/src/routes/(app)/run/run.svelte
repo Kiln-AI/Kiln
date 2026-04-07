@@ -332,7 +332,7 @@
         data: repair_data, // only present if 2XX response
         error: fetch_error, // only present if 4XX or 5XX response
       } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/run_repair",
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/generate_repair",
         {
           params: {
             path: {
@@ -397,7 +397,7 @@
         data, // only present if 2XX response
         error: fetch_error, // only present if 4XX or 5XX response
       } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/repair",
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/save_repair",
         {
           params: {
             path: {
@@ -774,12 +774,6 @@
             >
           </div>
         {/if}
-        <p class="text-xs text-gray-500 mt-1 font-light">
-          Ratings are defined in the <a
-            href={`/settings/edit_task/${project_id}/${task.id}`}
-            class="link">task settings</a
-          >.
-        </p>
       </div>
 
       <div class="grid grid-cols-[auto,1fr] gap-4 text-sm 2xl:text-base">

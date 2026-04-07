@@ -344,7 +344,7 @@
         }
 
         const { data: configs_data, error: configs_error } = await client.GET(
-          "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs",
+          "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs",
           {
             params: {
               path: {
@@ -619,7 +619,7 @@
           const eval_id = item.eval.id
           if (!eval_id) return { eval_id: null as string | null, configs: [] }
           const { data: configs_data } = await client.GET(
-            "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs",
+            "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs",
             {
               params: {
                 path: {
@@ -832,7 +832,7 @@
                     warning_message={run_config_blocking_reason === "has_tools"
                       ? `**${run_config_validation_message}**\nPlease select a different run configuration or create a new one without tools configured.`
                       : run_config_blocking_reason === "unsupported_model"
-                        ? `**${run_config_validation_message}**\nSupported providers are OpenRouter, OpenAI, Gemini, and Anthropic. Please select a different run configuration or create a new one with a supported provider.`
+                        ? `**${run_config_validation_message}**\nPrompt Optimization only supports OpenRouter, OpenAI, Gemini, and Anthropic. See the [models page](/models) for supported models. Choose another run configuration or create one that uses a supported model and provider.`
                         : run_config_validation_message}
                     markdown={true}
                     trusted={true}

@@ -138,6 +138,50 @@ export const filename_string_validator_default: (
 }
 
 // Important: if updating this, also update the corresponding validator in the backend utils/validation.py
+export const skill_name_validator: (value: unknown) => string | null = (
+  value: unknown,
+) => {
+  if (is_empty(value)) {
+    return "Cannot be empty"
+  }
+
+  if (typeof value !== "string") {
+    return "Must be a string"
+  }
+
+  const name = value
+
+  if (name.length > 64) {
+    return "Must be 64 characters or fewer"
+  }
+
+  if (!/^[a-z0-9-]+$/.test(name)) {
+    return "May only contain lowercase letters (a-z), numbers (0-9), and hyphens (-)"
+  }
+
+  if (name.startsWith("-") || name.endsWith("-")) {
+    return "Must not start or end with a hyphen"
+  }
+
+  if (name.includes("--")) {
+    return "Must not contain consecutive hyphens"
+  }
+
+  if (!/^[a-z]/.test(name)) {
+    return "Must start with a lowercase letter"
+  }
+
+  return null
+}
+
+export function normalize_skill_name(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+}
+
+// Important: if updating this, also update the corresponding validator in the backend utils/validation.py
 export const tool_name_validator: (value: unknown) => string | null = (
   value: unknown,
 ) => {

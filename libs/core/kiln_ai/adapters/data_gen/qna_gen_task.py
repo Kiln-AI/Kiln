@@ -3,6 +3,7 @@ import json
 from pydantic import BaseModel
 
 from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel.json_schema import close_object_schemas
 
 from .data_gen_prompts import generate_qna_generation_prompt
 
@@ -16,12 +17,12 @@ class DataGenQnaTaskInput(BaseModel):
 def list_json_schema_for_task(task: Task) -> str:
     # Parse input schema for query field
     if task.input_json_schema:
-        query_schema = json.loads(task.input_json_schema)
+        query_schema = close_object_schemas(json.loads(task.input_json_schema))
     else:
         query_schema = {"type": "string"}
 
     if task.output_json_schema:
-        answer_schema = json.loads(task.output_json_schema)
+        answer_schema = close_object_schemas(json.loads(task.output_json_schema))
     else:
         answer_schema = {"type": "string"}
 

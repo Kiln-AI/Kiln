@@ -3,13 +3,22 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import litellm
 import pytest
-from litellm.types.utils import ChoiceLogprobs, ModelResponse
+from litellm.types.utils import (
+    ChatCompletionMessageToolCall,
+    ChoiceLogprobs,
+    Function,
+    ModelResponse,
+)
 
 from kiln_ai.adapters.ml_model_list import ModelProviderName, StructuredOutputMode
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
-from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
+from kiln_ai.adapters.model_adapters.litellm_adapter import (
+    LiteLlmAdapter,
+    ModelTurnResult,
+)
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel import Project, Task, Usage
+from kiln_ai.datamodel.json_schema import close_object_schemas
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     McpRunConfigProperties,
@@ -191,12 +200,13 @@ async def test_response_format_options_json_schema(config, mock_task):
         patch.object(adapter, "has_structured_output", return_value=True),
     ):
         options = await adapter.response_format_options()
+        expected_schema = close_object_schemas(mock_task.output_schema(), strict=True)
         assert options == {
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
                     "name": "task_response",
-                    "schema": mock_task.output_schema(),
+                    "schema": expected_schema,
                 },
             }
         }
@@ -206,8 +216,7 @@ def test_tool_call_params_weak(config, mock_task):
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
 
     params = adapter.tool_call_params(strict=False)
-    expected_schema = mock_task.output_schema()
-    expected_schema["additionalProperties"] = False
+    expected_schema = close_object_schemas(mock_task.output_schema())
 
     assert params == {
         "tools": [
@@ -231,8 +240,7 @@ def test_tool_call_params_strict(config, mock_task):
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
 
     params = adapter.tool_call_params(strict=True)
-    expected_schema = mock_task.output_schema()
-    expected_schema["additionalProperties"] = False
+    expected_schema = close_object_schemas(mock_task.output_schema(), strict=True)
 
     assert params == {
         "tools": [
@@ -250,6 +258,81 @@ def test_tool_call_params_strict(config, mock_task):
             "function": {"name": "task_response"},
         },
     }
+
+
+def test_tool_call_params_strict_adds_required_to_nested(config, tmp_path):
+    project_path = tmp_path / "test_project_nested" / "project.kiln"
+    project_path.parent.mkdir()
+    project = Project(name="Nested Project", path=str(project_path))
+    project.save_to_file()
+
+    nested_schema = {
+        "type": "object",
+        "properties": {
+            "user": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "age": {"type": "integer"},
+                },
+            },
+            "status": {"type": "string"},
+        },
+    }
+    task = Task(
+        name="Nested Task",
+        instruction="Test instruction",
+        parent=project,
+        output_json_schema=json.dumps(nested_schema),
+    )
+    task.save_to_file()
+
+    adapter = LiteLlmAdapter(config=config, kiln_task=task)
+    params = adapter.tool_call_params(strict=True)
+
+    result_schema = params["tools"][0]["function"]["parameters"]
+    assert result_schema["required"] == ["user", "status"]
+    assert result_schema["properties"]["user"]["required"] == ["name", "age"]
+
+
+@pytest.mark.asyncio
+async def test_json_schema_response_format_adds_required_to_nested(config, tmp_path):
+    project_path = tmp_path / "test_project_nested2" / "project.kiln"
+    project_path.parent.mkdir()
+    project = Project(name="Nested Project 2", path=str(project_path))
+    project.save_to_file()
+
+    nested_schema = {
+        "type": "object",
+        "properties": {
+            "result": {
+                "type": "object",
+                "properties": {
+                    "value": {"type": "number"},
+                    "unit": {"type": "string"},
+                },
+            },
+        },
+    }
+    task = Task(
+        name="Nested Task 2",
+        instruction="Test instruction",
+        parent=project,
+        output_json_schema=json.dumps(nested_schema),
+    )
+    task.save_to_file()
+
+    config.run_config_properties.structured_output_mode = (
+        StructuredOutputMode.json_schema
+    )
+    adapter = LiteLlmAdapter(config=config, kiln_task=task)
+
+    with patch.object(adapter, "has_structured_output", return_value=True):
+        options = await adapter.response_format_options()
+
+    result_schema = options["response_format"]["json_schema"]["schema"]
+    assert result_schema["required"] == ["result"]
+    assert result_schema["properties"]["result"]["required"] == ["value", "unit"]
 
 
 @pytest.mark.parametrize(
@@ -397,7 +480,7 @@ def test_build_extra_body_openrouter_usage(
     # Create a mock provider with the specified name and minimal required attributes
     mock_provider = Mock()
     mock_provider.name = provider_name
-    mock_provider.thinking_level = None
+    mock_provider.default_thinking_level = None
     mock_provider.require_openrouter_reasoning = False
     mock_provider.anthropic_extended_thinking = False
     mock_provider.r1_openrouter_options = False
@@ -416,6 +499,107 @@ def test_build_extra_body_openrouter_usage(
         assert "usage" not in extra_body
 
 
+def test_build_extra_body_thinking_level_fallback_to_default(config, mock_task):
+    """Test that the thinking level falls back to the provider's default if not set in the run config"""
+    assert "thinking_level" not in config.run_config_properties.model_fields_set
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.openai
+    mock_provider.default_thinking_level = "medium"
+    mock_provider.openrouter_reasoning_object = False
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert extra_body.get("reasoning_effort") == "medium"
+
+
+def test_build_extra_body_thinking_level_openrouter_anthropic(config, mock_task):
+    """Test that OpenRouter Anthropic models use reasoning.effort"""
+    config.run_config_properties.thinking_level = "high"
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.openrouter
+    mock_provider.model_id = "anthropic/claude-4.5-sonnet"
+    mock_provider.openrouter_reasoning_object = True
+    mock_provider.default_thinking_level = None
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert extra_body.get("reasoning") == {"effort": "high"}
+    assert "reasoning_effort" not in extra_body
+
+
+def test_build_extra_body_thinking_level_run_config_override(config, mock_task):
+    """Test that the thinking level in the run config overrides the provider's default"""
+    config.run_config_properties.thinking_level = "low"
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.openai
+    mock_provider.default_thinking_level = "high"
+    mock_provider.openrouter_reasoning_object = False
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert extra_body.get("reasoning_effort") == "low"
+
+
+def test_build_extra_body_thinking_level_explicit_none(config, mock_task):
+    """Test that the thinking level is not set if it's explicitly set to None"""
+    config = LiteLlmConfig(
+        base_url="https://api.test.com",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="test-model",
+            model_provider_name="openrouter",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+            thinking_level=None,  # Explicitly set to None to test that it's not set
+        ),
+        default_headers={"X-Test": "test"},
+        additional_body_options={"api_key": "test_key"},
+    )
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    mock_provider = Mock()
+    mock_provider.name = ModelProviderName.openai
+    mock_provider.default_thinking_level = "high"
+    mock_provider.openrouter_reasoning_object = False
+    mock_provider.require_openrouter_reasoning = False
+    mock_provider.gemini_reasoning_enabled = False
+    mock_provider.anthropic_extended_thinking = False
+    mock_provider.r1_openrouter_options = False
+    mock_provider.logprobs_openrouter_options = False
+    mock_provider.openrouter_skip_required_parameters = False
+    mock_provider.siliconflow_enable_thinking = None
+
+    extra_body = adapter.build_extra_body(mock_provider)
+
+    assert "reasoning_effort" not in extra_body
+
+
 def test_build_extra_body_openrouter_default_provider_order(config, mock_task):
     """Test build_extra_body sets default provider order for OpenRouter"""
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
@@ -423,7 +607,7 @@ def test_build_extra_body_openrouter_default_provider_order(config, mock_task):
     # Create a mock OpenRouter provider with minimal attributes
     mock_provider = Mock()
     mock_provider.name = ModelProviderName.openrouter
-    mock_provider.thinking_level = None
+    mock_provider.default_thinking_level = None
     mock_provider.require_openrouter_reasoning = False
     mock_provider.gemini_reasoning_enabled = False
     mock_provider.anthropic_extended_thinking = False
@@ -458,7 +642,7 @@ def test_build_extra_body_r1_overrides_default_order(config, mock_task):
     # Create a mock OpenRouter provider with R1 options enabled
     mock_provider = Mock()
     mock_provider.name = ModelProviderName.openrouter
-    mock_provider.thinking_level = None
+    mock_provider.default_thinking_level = None
     mock_provider.require_openrouter_reasoning = False
     mock_provider.gemini_reasoning_enabled = False
     mock_provider.anthropic_extended_thinking = False
@@ -491,7 +675,7 @@ def test_build_extra_body_non_openrouter_no_provider_order(config, mock_task):
     ]:
         mock_provider = Mock()
         mock_provider.name = provider_name
-        mock_provider.thinking_level = None
+        mock_provider.default_thinking_level = None
         mock_provider.require_openrouter_reasoning = False
         mock_provider.gemini_reasoning_enabled = False
         mock_provider.anthropic_extended_thinking = False
@@ -1083,6 +1267,14 @@ class TestExtractReasoningToIntermediateOutputs:
 def test_build_extra_body_enable_thinking(config, mock_task, enable_thinking):
     provider = Mock()
     provider.name = ModelProviderName.siliconflow_cn
+    provider.default_thinking_level = None
+    provider.openrouter_reasoning_object = False
+    provider.require_openrouter_reasoning = False
+    provider.gemini_reasoning_enabled = False
+    provider.anthropic_extended_thinking = False
+    provider.r1_openrouter_options = False
+    provider.logprobs_openrouter_options = False
+    provider.openrouter_skip_required_parameters = False
     provider.siliconflow_enable_thinking = enable_thinking
 
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
@@ -1209,7 +1401,11 @@ async def test_array_input_converted_to_json(tmp_path, config):
     mock_config_obj.user_id = "test_user"
 
     with (
-        patch("litellm.acompletion", new=AsyncMock(return_value=mock_response)),
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=AsyncMock(return_value=(mock_response, mock_response.choices[0])),
+        ),
         patch("kiln_ai.utils.config.Config.shared", return_value=mock_config_obj),
     ):
         array_input = [1, 2, 3, 4, 5]
@@ -1279,7 +1475,11 @@ async def test_dict_input_converted_to_json(tmp_path, config):
     mock_config_obj.user_id = "test_user"
 
     with (
-        patch("litellm.acompletion", new=AsyncMock(return_value=mock_response)),
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=AsyncMock(return_value=(mock_response, mock_response.choices[0])),
+        ),
         patch("kiln_ai.utils.config.Config.shared", return_value=mock_config_obj),
     ):
         dict_input = {"x": 10, "y": 20}
@@ -1301,3 +1501,291 @@ async def test_dict_input_converted_to_json(tmp_path, config):
         assert isinstance(content, str)
         parsed_content = json.loads(content)
         assert parsed_content == {"x": 10, "y": 20}
+
+
+@pytest.mark.asyncio
+async def test_run_with_prior_trace_uses_multiturn_formatter(mock_task):
+    config = LiteLlmConfig(
+        base_url="https://api.test.com",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="test-model",
+            model_provider_name="openai_compatible",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+        default_headers={"X-Test": "test"},
+        additional_body_options={"api_key": "test_key"},
+    )
+    prior_trace = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+    ]
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    build_chat_formatter_calls = []
+
+    original_build = adapter.build_chat_formatter
+
+    def capturing_build(input, prior_trace_arg=None):
+        build_chat_formatter_calls.append((input, prior_trace_arg))
+        return original_build(input, prior_trace_arg)
+
+    adapter.build_chat_formatter = capturing_build
+
+    async def mock_run_model_turn(
+        provider, prior_messages, top_logprobs, skip_response_format
+    ):
+        extended = list(prior_messages)
+        extended.append({"role": "assistant", "content": "How can I help?"})
+        return ModelTurnResult(
+            assistant_message="How can I help?",
+            all_messages=extended,
+            model_response=None,
+            model_choice=None,
+            usage=Usage(),
+        )
+
+    adapter._run_model_turn = mock_run_model_turn
+
+    run_output, _ = await adapter._run("follow-up", prior_trace=prior_trace)
+
+    assert len(build_chat_formatter_calls) == 1
+    assert build_chat_formatter_calls[0][0] == "follow-up"
+    assert build_chat_formatter_calls[0][1] == prior_trace
+
+    assert run_output.trace is not None
+    assert len(run_output.trace) == 4
+    assert run_output.trace[0]["content"] == "hi"
+    assert run_output.trace[1]["content"] == "hello"
+    assert run_output.trace[2]["content"] == "follow-up"
+    assert run_output.trace[3]["content"] == "How can I help?"
+
+
+@pytest.mark.asyncio
+async def test_run_with_prior_trace_preserves_tool_calls(mock_task):
+    """Prior trace containing tool calls should be passed through to the model and preserved in the output trace."""
+    config = LiteLlmConfig(
+        base_url="https://api.test.com",
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="test-model",
+            model_provider_name="openai_compatible",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+        default_headers={"X-Test": "test"},
+        additional_body_options={"api_key": "test_key"},
+    )
+
+    prior_trace = [
+        {"role": "system", "content": "Use the math tools."},
+        {"role": "user", "content": "4"},
+        {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "Let me multiply 4 by 7.\n",
+            "tool_calls": [
+                {
+                    "id": "call_abc123",
+                    "function": {"arguments": '{"a": 4, "b": 7}', "name": "multiply"},
+                    "type": "function",
+                }
+            ],
+        },
+        {
+            "content": "28",
+            "role": "tool",
+            "tool_call_id": "call_abc123",
+            "kiln_task_tool_data": None,
+        },
+        {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "Now add 144.\n",
+            "tool_calls": [
+                {
+                    "id": "call_def456",
+                    "function": {"arguments": '{"a": 28, "b": 144}', "name": "add"},
+                    "type": "function",
+                }
+            ],
+        },
+        {
+            "content": "172",
+            "role": "tool",
+            "tool_call_id": "call_def456",
+            "kiln_task_tool_data": None,
+        },
+        {
+            "role": "assistant",
+            "content": "There were 172 distinct species of giant tortoises.",
+            "reasoning_content": "Now I have 172.\n",
+        },
+    ]
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    captured_messages = []
+
+    async def mock_run_model_turn(
+        provider, prior_messages, top_logprobs, skip_response_format
+    ):
+        captured_messages.extend(prior_messages)
+        extended = list(prior_messages)
+        extended.append({"role": "assistant", "content": '{"test": "response"}'})
+        return ModelTurnResult(
+            assistant_message='{"test": "response"}',
+            all_messages=extended,
+            model_response=None,
+            model_choice=None,
+            usage=Usage(),
+        )
+
+    adapter._run_model_turn = mock_run_model_turn
+
+    run_output, _ = await adapter._run("what else?", prior_trace=prior_trace)
+
+    assert run_output.trace is not None
+    # 7 prior trace messages + 1 new user + 1 new assistant = 9
+    assert len(run_output.trace) == 9
+
+    # Verify tool call messages are preserved in the trace
+    assistant_with_tools = run_output.trace[2]
+    assert assistant_with_tools["role"] == "assistant"
+    assert assistant_with_tools["tool_calls"][0]["id"] == "call_abc123"
+    assert assistant_with_tools["tool_calls"][0]["function"]["name"] == "multiply"
+    assert assistant_with_tools["reasoning_content"] == "Let me multiply 4 by 7.\n"
+
+    tool_response = run_output.trace[3]
+    assert tool_response["role"] == "tool"
+    assert tool_response["tool_call_id"] == "call_abc123"
+    assert tool_response["content"] == "28"
+
+    second_tool_call = run_output.trace[4]
+    assert second_tool_call["tool_calls"][0]["id"] == "call_def456"
+    assert second_tool_call["tool_calls"][0]["function"]["name"] == "add"
+
+    second_tool_response = run_output.trace[5]
+    assert second_tool_response["role"] == "tool"
+    assert second_tool_response["tool_call_id"] == "call_def456"
+    assert second_tool_response["content"] == "172"
+
+    # Verify the tool call messages were passed to _run_model_turn (i.e., sent to the model)
+    assert any(
+        m.get("tool_calls") is not None
+        for m in captured_messages
+        if isinstance(m, dict)
+    )
+    assert any(
+        m.get("role") == "tool" for m in captured_messages if isinstance(m, dict)
+    )
+
+
+@pytest.mark.asyncio
+async def test_structured_output_with_return_on_tool_call_and_resume(
+    mock_task, mock_math_tools
+):
+    """Two-turn round-trip: first invoke stops at a tool call, second invoke resumes with the
+    result and returns a validated structured output dict."""
+    config = LiteLlmConfig(
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="test-model",
+            model_provider_name="openai_compatible",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+        default_headers={"X-Test": "test"},
+        additional_body_options={"api_key": "test_key"},
+    )
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(return_on_tool_call=True),
+    )
+
+    tool_call = ChatCompletionMessageToolCall(
+        id="call_test_multiply",
+        type="function",
+        function=Function(name="multiply", arguments='{"a": 3, "b": 7}'),
+    )
+
+    call_count = 0
+
+    async def mock_run_model_turn(
+        provider, prior_messages, top_logprobs, skip_response_format
+    ):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            extended = list(prior_messages)
+            extended.append(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_test_multiply",
+                            "function": {
+                                "arguments": '{"a": 3, "b": 7}',
+                                "name": "multiply",
+                            },
+                            "type": "function",
+                        }
+                    ],
+                }
+            )
+            return ModelTurnResult(
+                assistant_message="",
+                all_messages=extended,
+                model_response=None,
+                model_choice=None,
+                usage=Usage(),
+                interrupted_by_tool_calls=[tool_call],
+            )
+        else:
+            json_response = '{"test": "structured_response"}'
+            extended = list(prior_messages)
+            extended.append({"role": "assistant", "content": json_response})
+            return ModelTurnResult(
+                assistant_message=json_response,
+                all_messages=extended,
+                model_response=None,
+                model_choice=None,
+                usage=Usage(),
+            )
+
+    adapter._run_model_turn = mock_run_model_turn
+
+    with patch.object(adapter, "available_tools", return_value=mock_math_tools):
+        task_run = await adapter.invoke(input="3 * 7 = ?")
+
+    assert task_run.is_toolcall_pending, "First invoke should have pending tool calls"
+    assert task_run.trace is not None
+    last_msg = task_run.trace[-1]
+    assert last_msg.get("role") == "assistant"
+    assert last_msg.get("tool_calls") is not None
+    assert last_msg["tool_calls"][0]["id"] == "call_test_multiply"
+
+    with patch.object(adapter, "available_tools", return_value=mock_math_tools):
+        task_run2 = await adapter.invoke(
+            input={"tool_call_id": "call_test_multiply", "content": "21"},
+            prior_trace=task_run.trace,
+        )
+
+    assert not task_run2.is_toolcall_pending, "Second invoke should be complete"
+    assert json.loads(task_run2.output.output) == {"test": "structured_response"}, (
+        f"Expected structured dict output, got: {task_run2.output.output}"
+    )
+
+    # Verify trace structure: assistant+tool_calls → tool response → final assistant
+    assert task_run2.trace is not None
+    roles = [m.get("role") for m in task_run2.trace]
+    assert "tool" in roles, "Trace must have a tool response message"
+    tool_msgs = [m for m in task_run2.trace if m.get("role") == "tool"]
+    assert any(m.get("tool_call_id") == "call_test_multiply" for m in tool_msgs), (
+        "Tool response must carry the correct tool_call_id"
+    )
+    final_msg = task_run2.trace[-1]
+    assert final_msg.get("role") == "assistant"
+    assert not final_msg.get("tool_calls"), (
+        "Final message must not have pending tool_calls"
+    )
+    assert final_msg.get("content"), "Final message must have non-empty content"

@@ -1,0 +1,9 @@
+{
+  "method": "get",
+  "path": "/api/projects/{project_id}/rag_configs/{rag_config_id}/run",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": true,
+    "approval_description": "Run RAG config indexing? This re-indexes documents and may take time."
+  }
+}

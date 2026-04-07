@@ -433,7 +433,7 @@
           : { input: few_shot_example.input, output: few_shot_example.output }
 
       const { data, error: api_error } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/spec",
+        "/api/projects/{project_id}/tasks/{task_id}/specs",
         {
           params: { path: { project_id, task_id } },
           body: {

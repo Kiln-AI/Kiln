@@ -5,6 +5,7 @@ from kiln_ai.datamodel.tool_id import (
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
     RAG_TOOL_ID_PREFIX,
+    SKILL_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     kiln_task_server_id_from_tool_id,
     mcp_server_and_tool_name_from_id,
@@ -111,6 +112,11 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
         from kiln_ai.tools.rag_tools import RagTool
 
         return RagTool(tool_id, rag_config)
+
+    elif tool_id.startswith(SKILL_TOOL_ID_PREFIX):
+        raise ValueError(
+            f"Skill tool IDs are resolved by the adapter, not tool_from_id: {tool_id}"
+        )
 
     raise ValueError(f"Tool ID {tool_id} not found in tool registry")
 

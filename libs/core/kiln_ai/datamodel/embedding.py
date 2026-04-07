@@ -23,6 +23,8 @@ class EmbeddingProperties(TypedDict, total=False):
 
 
 class EmbeddingConfig(KilnParentedModel):
+    """Configuration for generating embeddings from document chunks."""
+
     name: FilenameString = Field(
         description="A name to identify the embedding config.",
     )
@@ -48,10 +50,14 @@ class EmbeddingConfig(KilnParentedModel):
 
 
 class Embedding(BaseModel):
+    """A single embedding vector."""
+
     vector: List[float] = Field(description="The vector of the embedding.")
 
 
 class ChunkEmbeddings(KilnParentedModel):
+    """Embeddings for the chunks of a chunked document."""
+
     embedding_config_id: ID_TYPE = Field(
         description="The ID of the embedding config used to generate the embeddings.",
     )

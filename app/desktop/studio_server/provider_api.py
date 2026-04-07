@@ -2,13 +2,13 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Literal
+from typing import Annotated, Any, Dict, List, Literal
 
 import httpx
 import litellm
 import openai
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 from kiln_ai.adapters.docker_model_runner_tools import (
     DockerModelRunnerConnection,
@@ -45,6 +45,7 @@ from kiln_ai.datamodel.registry import all_projects
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.wandb_utils import AuthenticationError, get_wandb_default_entity
+from kiln_server.utils.agent_checks.policy import ALLOW_AGENT, DENY_AGENT
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -161,11 +162,14 @@ class ModelDetails(BaseModel):
     multimodal_mime_types: List[str] | None = Field(default=None)
     # the suggested structured output mode for this model.
     structured_output_mode: StructuredOutputMode
+    available_thinking_levels: dict[str, str] | None = Field(default=None)
+    default_thinking_level: str | None = Field(default=None)
     # True if this is a untested model (typically user added). We don't know if these support structured output, data gen, etc. They should appear in their own section in the UI.
     untested_model: bool = Field(default=False)
     task_filter: List[str] | None = Field(default=None)
     # if the model has a model-specific run config which should be used when running the model (like a fine-tune model's baked in run config)
     model_specific_run_config: str | None = Field(default=None)
+    deprecated: bool = Field(default=False)
 
 
 class AvailableModels(BaseModel):
@@ -181,7 +185,7 @@ class EmbeddingModelDetails(BaseModel):
     max_input_tokens: int | None
     supports_custom_dimensions: bool
     suggested_for_chunk_embedding: bool
-    supports_instructions: bool
+    supports_instructions: bool = False
 
 
 class EmbeddingProvider(BaseModel):
@@ -219,13 +223,30 @@ class ProviderRerankerModels(BaseModel):
 
 
 class AvailableProviderInfo(BaseModel):
-    id: str  # Provider identifier
-    name: str  # Display name
-    provider_type: Literal["builtin", "custom"]
+    """Information about an available AI provider."""
+
+    id: str = Field(description="The unique provider identifier used in API calls.")
+    name: str = Field(description="The human-readable display name of the provider.")
+    provider_type: Literal["builtin", "custom"] = Field(
+        description="Whether the provider is built-in or user-configured."
+    )
+
+
+class OpenAICompatibleProviderConfig(BaseModel):
+    """Configuration for an OpenAI compatible provider."""
+
+    name: str = Field(description="Name for the OpenAI compatible provider.")
+    base_url: str = Field(description="Base URL for the OpenAI compatible API.")
+    api_key: str = Field(description="API key for authentication.")
 
 
 def connect_provider_api(app: FastAPI):
-    @app.get("/api/providers/models")
+    @app.get(
+        "/api/providers/models",
+        summary="List Provider Models",
+        tags=["Providers & Models"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_providers_models() -> ProviderModels:
         models = {}
         for model in built_in_models:
@@ -233,7 +254,12 @@ def connect_provider_api(app: FastAPI):
         return ProviderModels(models=models)
 
     # returns map, of provider name to list of model names
-    @app.get("/api/available_models")
+    @app.get(
+        "/api/available_models",
+        summary="List Available Models",
+        tags=["Providers & Models"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_available_models() -> List[AvailableModels]:
         # Providers with just keys can return all their models if keys are set
         key_providers: List[str] = []
@@ -292,6 +318,9 @@ def connect_provider_api(app: FastAPI):
                                 suggested_for_doc_extraction=provider.suggested_for_doc_extraction,
                                 multimodal_capable=provider.multimodal_capable,
                                 multimodal_mime_types=mime_types_as_str,
+                                available_thinking_levels=provider.available_thinking_levels,
+                                default_thinking_level=provider.default_thinking_level,
+                                deprecated=provider.deprecated,
                             )
                         )
 
@@ -357,7 +386,12 @@ def connect_provider_api(app: FastAPI):
 
         return models
 
-    @app.get("/api/providers/embedding_models")
+    @app.get(
+        "/api/providers/embedding_models",
+        summary="List Provider Embedding Models",
+        tags=["Providers & Models"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_providers_embedding_models() -> ProviderEmbeddingModels:
         models = {}
         for model in built_in_embedding_models:
@@ -365,7 +399,12 @@ def connect_provider_api(app: FastAPI):
         return ProviderEmbeddingModels(models=models)
 
     # returns map, of provider name to list of model names
-    @app.get("/api/available_embedding_models")
+    @app.get(
+        "/api/available_embedding_models",
+        summary="List Available Embedding Models",
+        tags=["Providers & Models"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_available_embedding_models() -> List[EmbeddingProvider]:
         # Providers with just keys can return all their models if keys are set
         key_providers: List[str] = []
@@ -414,7 +453,12 @@ def connect_provider_api(app: FastAPI):
 
         return models
 
-    @app.get("/api/providers/reranker_models")
+    @app.get(
+        "/api/providers/reranker_models",
+        summary="List Provider Reranker Models",
+        tags=["Providers & Models"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_providers_reranker_models() -> ProviderRerankerModels:
         models = {}
         for model in built_in_rerankers:
@@ -422,7 +466,12 @@ def connect_provider_api(app: FastAPI):
         return ProviderRerankerModels(models=models)
 
     # returns map, of provider name to list of model names
-    @app.get("/api/available_reranker_models")
+    @app.get(
+        "/api/available_reranker_models",
+        summary="List Available Reranker Models",
+        tags=["Providers & Models"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_available_reranker_models() -> List[RerankerProvider]:
         # Providers with just keys can return all their models if keys are set
         key_providers: List[str] = []
@@ -463,23 +512,46 @@ def connect_provider_api(app: FastAPI):
 
         return models
 
-    @app.get("/api/provider/ollama/connect")
+    @app.post(
+        "/api/provider/ollama/connect",
+        summary="Connect Ollama",
+        tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
+    )
     async def connect_ollama_api(
-        custom_ollama_url: str | None = None,
+        custom_ollama_url: Annotated[
+            str | None, Query(description="Custom URL for the Ollama server.")
+        ] = None,
     ) -> OllamaConnection:
         return await connect_ollama(custom_ollama_url)
 
-    @app.get("/api/provider/docker_model_runner/connect")
+    @app.post(
+        "/api/provider/docker_model_runner/connect",
+        summary="Connect Docker Model Runner",
+        tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
+    )
     async def connect_docker_model_runner_api(
-        docker_model_runner_custom_url: str | None = None,
+        docker_model_runner_custom_url: Annotated[
+            str | None, Query(description="Custom URL for the Docker Model Runner.")
+        ] = None,
     ) -> DockerModelRunnerConnection:
         chosen_url = docker_model_runner_custom_url
         return await connect_docker_model_runner(chosen_url)
 
-    @app.post("/api/provider/openai_compatible")
-    async def save_openai_compatible_providers(name: str, base_url: str, api_key: str):
+    @app.post(
+        "/api/provider/openai_compatible",
+        summary="Add OpenAI Compatible Provider",
+        tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def save_openai_compatible_providers(
+        config: OpenAICompatibleProviderConfig,
+    ):
         providers = Config.shared().openai_compatible_providers or []
-        existing_provider = next((p for p in providers if p["name"] == name), None)
+        existing_provider = next(
+            (p for p in providers if p["name"] == config.name), None
+        )
         if existing_provider:
             raise HTTPException(
                 status_code=400,
@@ -487,9 +559,9 @@ def connect_provider_api(app: FastAPI):
             )
         providers.append(
             {
-                "name": name,
-                "base_url": base_url,
-                "api_key": api_key,
+                "name": config.name,
+                "base_url": config.base_url,
+                "api_key": config.api_key,
             }
         )
         Config.shared().openai_compatible_providers = providers
@@ -498,8 +570,17 @@ def connect_provider_api(app: FastAPI):
             content={"message": "OpenAI compatible provider saved"},
         )
 
-    @app.delete("/api/provider/openai_compatible")
-    async def delete_openai_compatible_providers(name: str):
+    @app.delete(
+        "/api/provider/openai_compatible",
+        summary="Delete OpenAI Compatible Provider",
+        tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def delete_openai_compatible_providers(
+        name: Annotated[
+            str, Query(description="Name of the OpenAI compatible provider to delete.")
+        ],
+    ):
         if not name:
             return JSONResponse(
                 status_code=400,
@@ -513,7 +594,12 @@ def connect_provider_api(app: FastAPI):
             content={"message": "OpenAI compatible provider deleted"},
         )
 
-    @app.get("/api/settings/available_providers")
+    @app.get(
+        "/api/settings/available_providers",
+        summary="List Available Providers",
+        tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
+    )
     async def get_available_providers() -> List[AvailableProviderInfo]:
         """Returns all providers that can have custom models added."""
         providers = []
@@ -547,7 +633,12 @@ def connect_provider_api(app: FastAPI):
 
         return providers
 
-    @app.get("/api/settings/user_models")
+    @app.get(
+        "/api/settings/user_models",
+        summary="List User Models",
+        tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
+    )
     async def get_user_models() -> List[UserModelEntry]:
         """Returns all user-defined models (new registry + legacy combined).
 
@@ -575,7 +666,12 @@ def connect_provider_api(app: FastAPI):
 
         return result
 
-    @app.post("/api/settings/user_models")
+    @app.post(
+        "/api/settings/user_models",
+        summary="Add User Model",
+        tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
+    )
     async def add_user_model(entry: UserModelEntry) -> JSONResponse:
         """Add a user-defined model to the registry."""
 
@@ -622,12 +718,34 @@ def connect_provider_api(app: FastAPI):
 
         return JSONResponse(status_code=200, content={"message": "Model added"})
 
-    @app.delete("/api/settings/user_models")
+    @app.delete(
+        "/api/settings/user_models",
+        summary="Delete User Model",
+        tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
+    )
     async def delete_user_model(
-        provider_type: str | None = None,
-        provider_id: str | None = None,
-        model_id: str | None = None,
-        id: str | None = None,
+        provider_type: Annotated[
+            str | None,
+            Query(
+                description="Provider type: 'builtin' for built-in providers, 'custom' for OpenAI-compatible."
+            ),
+        ] = None,
+        provider_id: Annotated[
+            str | None,
+            Query(
+                description="The provider identifier (e.g., 'openai', 'anthropic', or custom provider name)."
+            ),
+        ] = None,
+        model_id: Annotated[
+            str | None, Query(description="The model identifier to delete.")
+        ] = None,
+        id: Annotated[
+            str | None,
+            Query(
+                description="Unique ID of the model entry in user_model_registry (preferred deletion method)."
+            ),
+        ] = None,
     ) -> JSONResponse:
         """Delete a user-defined model from the registry.
 
@@ -702,7 +820,12 @@ def connect_provider_api(app: FastAPI):
             )
         return api_key
 
-    @app.post("/api/provider/connect_api_key")
+    @app.post(
+        "/api/provider/connect_api_key",
+        summary="Connect Provider API Key",
+        tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
+    )
     async def connect_api_key(payload: dict):
         provider = payload.get("provider")
         key_data = payload.get("key_data")
@@ -784,8 +907,17 @@ def connect_provider_api(app: FastAPI):
             case _:
                 raise_exhaustive_enum_error(typed_provider)
 
-    @app.post("/api/provider/disconnect_api_key")
-    async def disconnect_api_key(provider_id: str) -> JSONResponse:
+    @app.post(
+        "/api/provider/disconnect_api_key",
+        summary="Disconnect Provider API Key",
+        tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def disconnect_api_key(
+        provider_id: Annotated[
+            str, Query(description="The provider identifier to disconnect.")
+        ],
+    ) -> JSONResponse:
         if provider_id == "wandb":
             # Wandb is not an AI provider, but it's a provider you can connect, supported by this UI/API
             Config.shared().wandb_api_key = None
@@ -1440,6 +1572,7 @@ async def available_ollama_models() -> AvailableModels | None:
                             ]
                             if ollama_provider.multimodal_mime_types
                             else None,
+                            deprecated=ollama_provider.deprecated,
                         )
                     )
         for ollama_model in ollama_connection.untested_models:
@@ -1463,6 +1596,7 @@ async def available_ollama_models() -> AvailableModels | None:
                     suggested_for_doc_extraction=False,
                     multimodal_capable=False,
                     multimodal_mime_types=None,
+                    deprecated=False,
                 )
             )
 
@@ -1545,6 +1679,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                             # Docker Model Runner uses OpenAI-compatible API with JSON schema support
                             structured_output_mode=StructuredOutputMode.json_schema,
                             supports_function_calling=docker_provider.supports_function_calling,
+                            deprecated=docker_provider.deprecated,
                         )
                     )
         for docker_model in docker_connection.untested_models:
@@ -1566,6 +1701,7 @@ async def available_docker_model_runner_models() -> AvailableModels | None:
                     # Docker Model Runner uses OpenAI-compatible API with JSON schema support
                     structured_output_mode=StructuredOutputMode.json_schema,
                     supports_function_calling=False,
+                    deprecated=False,
                 )
             )
 
@@ -1685,6 +1821,7 @@ def legacy_custom_models_as_available() -> Dict[str, List[ModelDetails]]:
                 suggested_for_doc_extraction=False,
                 multimodal_capable=False,
                 multimodal_mime_types=None,
+                deprecated=False,
             )
         )
     return {"kiln_custom_registry": models}
@@ -1763,6 +1900,7 @@ def user_models_as_available() -> Dict[str, List[ModelDetails]]:
                 suggested_for_doc_extraction=False,
                 multimodal_capable=overrides.get("multimodal_capable", False),
                 multimodal_mime_types=overrides.get("multimodal_mime_types"),
+                deprecated=overrides.get("deprecated", False),
             )
         )
 
@@ -1823,6 +1961,7 @@ def all_fine_tuned_models() -> AvailableModels | None:
                             suggested_for_doc_extraction=False,
                             multimodal_capable=False,
                             multimodal_mime_types=None,
+                            deprecated=False,
                         )
                     )
 
@@ -1937,6 +2076,7 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
                         suggested_for_doc_extraction=False,
                         multimodal_capable=False,
                         multimodal_mime_types=None,
+                        deprecated=False,
                     )
                 )
 

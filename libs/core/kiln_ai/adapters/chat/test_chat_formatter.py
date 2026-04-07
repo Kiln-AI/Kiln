@@ -1,6 +1,7 @@
 from kiln_ai.adapters.chat import ChatStrategy, get_chat_formatter
 from kiln_ai.adapters.chat.chat_formatter import (
     COT_FINAL_ANSWER_PROMPT,
+    MultiturnFormatter,
     format_user_message,
 )
 
@@ -117,6 +118,132 @@ def test_chat_formatter_r1_style():
     assert formatter.next_turn(thinking_output) is None
     assert formatter.message_dicts() == expected
     assert formatter.intermediate_outputs() == {}
+
+
+def test_multiturn_formatter_initial_messages():
+    prior_trace = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+    ]
+    formatter = MultiturnFormatter(prior_trace=prior_trace, user_input="new input")
+    assert formatter.initial_messages() == prior_trace
+
+
+def test_multiturn_formatter_next_turn():
+    prior_trace = [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+    ]
+    formatter = MultiturnFormatter(prior_trace=prior_trace, user_input="follow-up")
+
+    first = formatter.next_turn()
+    assert first is not None
+    assert len(first.messages) == 1
+    assert first.messages[0].role == "user"
+    assert first.messages[0].content == "follow-up"
+    assert first.final_call
+
+    assert formatter.next_turn("assistant response") is None
+
+
+def test_multiturn_formatter_preserves_tool_call_messages():
+    prior_trace = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "4"},
+        {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "Let me multiply 4 by 7.\n",
+            "tool_calls": [
+                {
+                    "id": "call_abc123",
+                    "function": {"arguments": '{"a": 4, "b": 7}', "name": "multiply"},
+                    "type": "function",
+                }
+            ],
+        },
+        {
+            "content": "28",
+            "role": "tool",
+            "tool_call_id": "call_abc123",
+            "kiln_task_tool_data": None,
+        },
+        {
+            "role": "assistant",
+            "content": "4 multiplied by 7 is 28.",
+            "reasoning_content": "Done.\n",
+        },
+    ]
+    formatter = MultiturnFormatter(prior_trace=prior_trace, user_input="now double it")
+    initial = formatter.initial_messages()
+    assert initial == prior_trace
+    assert initial[2]["tool_calls"][0]["id"] == "call_abc123"
+    assert initial[2]["tool_calls"][0]["function"]["name"] == "multiply"
+    assert initial[3]["role"] == "tool"
+    assert initial[3]["tool_call_id"] == "call_abc123"
+
+    first = formatter.next_turn()
+    assert first is not None
+    assert len(first.messages) == 1
+    assert first.messages[0].role == "user"
+    assert first.messages[0].content == "now double it"
+    assert first.final_call
+
+
+def test_multiturn_formatter_single_tool_result():
+    """Tool result dict with tool_call_id should produce a ToolResponseMessage."""
+    prior_trace = [
+        {"role": "assistant", "content": None, "tool_calls": [{"id": "call_1"}]},
+    ]
+    formatter = MultiturnFormatter(
+        prior_trace=prior_trace,
+        user_input={"tool_call_id": "call_1", "content": "42"},
+    )
+
+    first = formatter.next_turn()
+    assert first is not None
+    assert len(first.messages) == 1
+    msg = first.messages[0]
+    assert msg.role == "tool"
+    assert msg.content == "42"
+    assert msg.tool_call_id == "call_1"
+    assert first.final_call
+
+
+def test_multiturn_formatter_multiple_tool_results():
+    """List of tool result dicts should produce multiple ToolResponseMessages."""
+    prior_trace = [
+        {"role": "assistant", "content": None, "tool_calls": []},
+    ]
+    tool_results = [
+        {"tool_call_id": "call_1", "content": "15"},
+        {"tool_call_id": "call_2", "content": "36"},
+    ]
+    formatter = MultiturnFormatter(prior_trace=prior_trace, user_input=tool_results)
+
+    first = formatter.next_turn()
+    assert first is not None
+    assert len(first.messages) == 2
+    assert first.messages[0].role == "tool"
+    assert first.messages[0].tool_call_id == "call_1"
+    assert first.messages[0].content == "15"
+    assert first.messages[1].role == "tool"
+    assert first.messages[1].tool_call_id == "call_2"
+    assert first.messages[1].content == "36"
+    assert first.final_call
+
+
+def test_multiturn_formatter_user_input_not_confused_with_tool_result():
+    """A regular dict input (no tool_call_id) is treated as a user message."""
+    prior_trace = [{"role": "system", "content": "sys"}]
+    formatter = MultiturnFormatter(
+        prior_trace=prior_trace,
+        user_input={"question": "what is 2+2?"},
+    )
+    first = formatter.next_turn()
+    assert first is not None
+    assert len(first.messages) == 1
+    assert first.messages[0].role == "user"
 
 
 def test_format_user_message():

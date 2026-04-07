@@ -27,6 +27,8 @@ This repo is a monorepo containing all of the source code, in the following stru
 
 Agents have access to a range of tools for running tests, linting, formatting and typechecking. Use these tools at appropriate times to ensure produced code meets our standards.
 
+To run all checks in a CLI, run `uv run ./checks.sh --agent-mode` (agent mode will reduce tokens unless there is an error).
+
 ### Agent Prompts
 
 Agents have access to a number of helpful prompts, which will give you additional context for how you should write code and docs for this repo. Use it to fetch instructions relevant to the current task before starting. For example, read `python_test_guide.md` before writing tests and `frontend_design_guide.md` before writing front end code.
@@ -37,6 +39,10 @@ These prompts can be accessed from the `get_prompt` tool, and you may request se
 
 - Don't include comments in code explaining changes, explain changes in chat instead.
 - Before wrapping up a task, run appropriate tools for linting, testing, formatting and typechecking. Fix any issues you introduced.
+
+### Code Review Guidelines
+
+If asked to perform a code review, read our [code review guidelines](.agents/code_review_guidelines.md).
 
 ### Final
 

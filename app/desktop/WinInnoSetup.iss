@@ -3,7 +3,7 @@
 
 #define MyAppPath "build\dist\Kiln"
 #define MyAppName "Kiln"
-#define MyAppVersion "0.25.0"
+#define MyAppVersion "0.26.0"
 #define MyAppPublisher "Chesterfield Laboratories Inc"
 #define MyAppURL "https://kiln.tech"
 #define MyAppExeName "Kiln.exe"
@@ -20,7 +20,6 @@ AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
-DisableDirPage=yes
 ; "ArchitecturesAllowed=x64compatible" specifies that Setup cannot run
 ; on anything but x64 and Windows 11 on Arm.
 ArchitecturesAllowed=x64compatible

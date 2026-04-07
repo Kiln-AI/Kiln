@@ -782,6 +782,33 @@ class TestLitellmEmbeddingAdapterEdgeCases:
         assert "numeric_property" not in call_args[1]
         assert "boolean_property" not in call_args[1]
 
+    async def test_openrouter_receives_encoding_format_float(
+        self, mock_litellm_core_config
+    ):
+        """OpenRouter rejects encoding_format=None; we must send encoding_format='float'."""
+        openrouter_config = EmbeddingConfig(
+            name="openrouter-embedding",
+            model_provider_name=ModelProviderName.openrouter,
+            model_name="gemini_embedding_001",
+            properties={},
+        )
+        adapter = LitellmEmbeddingAdapter(
+            openrouter_config, litellm_core_config=mock_litellm_core_config
+        )
+        mock_response = AsyncMock(spec=EmbeddingResponse)
+        mock_response.data = [
+            {"object": "embedding", "index": 0, "embedding": [0.1, 0.2, 0.3]}
+        ]
+        mock_response.usage = Usage(prompt_tokens=5, total_tokens=5)
+
+        with patch(
+            "litellm.aembedding", new_callable=AsyncMock, return_value=mock_response
+        ) as mock_aembedding:
+            await adapter._generate_embeddings(["test text"])
+
+        call_args = mock_aembedding.call_args
+        assert call_args[1]["encoding_format"] == "float"
+
 
 @pytest.mark.paid
 @pytest.mark.parametrize(
@@ -1111,6 +1138,66 @@ async def test_paid_generate_embeddings_with_custom_dimensions_supported(
     assert isinstance(result.embeddings[0].vector, list)
     assert len(result.embeddings[0].vector) == custom_dimensions
     assert all(isinstance(x, float) for x in result.embeddings[0].vector)
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize(
+    "provider,model_name",
+    get_all_embedding_models_and_providers(),
+)
+@pytest.mark.asyncio
+async def test_paid_generate_embeddings_with_embedding_context(
+    provider, model_name, mock_litellm_core_config
+):
+    """
+    Test that EmbeddingContext parameter works correctly.
+    Instructions should only be applied when context=QUERY_SEARCH.
+    """
+
+    from kiln_ai.adapters.embedding.base_embedding_adapter import EmbeddingContext
+
+    model_provider = built_in_embedding_models_from_provider(provider, model_name)
+    assert model_provider is not None
+    if not model_provider.supports_instructions:
+        pytest.skip("Model does not support custom instructions")
+
+    adapter = embedding_adapter_from_type(
+        EmbeddingConfig(
+            name="paid-embedding",
+            model_provider_name=provider,
+            model_name=model_name,
+            properties={"instructions": "Focus on the main topic"},
+        )
+    )
+
+    text = ["Kiln is an open-source evaluation platform for LLMs."]
+
+    # Test with DOCUMENT_INDEXING context (instructions NOT applied)
+    result_without_instructions = await adapter.generate_embeddings(
+        text, context=EmbeddingContext.DOCUMENT_INDEXING
+    )
+    assert len(result_without_instructions.embeddings) == 1
+    assert isinstance(result_without_instructions.embeddings[0].vector, list)
+    assert (
+        len(result_without_instructions.embeddings[0].vector)
+        == model_provider.n_dimensions
+    )
+
+    # Test with QUERY_SEARCH context (instructions applied)
+    result_with_instructions = await adapter.generate_embeddings(
+        text, context=EmbeddingContext.QUERY_SEARCH
+    )
+    assert len(result_with_instructions.embeddings) == 1
+    assert isinstance(result_with_instructions.embeddings[0].vector, list)
+    assert (
+        len(result_with_instructions.embeddings[0].vector)
+        == model_provider.n_dimensions
+    )
+
+    # The embeddings should be different when instructions are applied vs not applied
+    assert all(
+        isinstance(x, float) for x in result_with_instructions.embeddings[0].vector
+    )
 
 
 def test_validate_map_to_embeddings():

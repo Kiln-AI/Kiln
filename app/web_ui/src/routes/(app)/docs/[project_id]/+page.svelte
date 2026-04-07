@@ -5,7 +5,6 @@
   import MultiIntro from "$lib/ui/multi_intro.svelte"
 
   $: project_id = $page.params.project_id!
-  $: task_id = $ui_state.current_task_id
 </script>
 
 <AppPage
@@ -14,14 +13,12 @@
   limit_max_width
   sub_subtitle="Read the Docs"
   sub_subtitle_link="https://docs.kiln.tech/docs/documents-and-search-rag"
-  breadcrumbs={task_id
-    ? [
-        {
-          label: "Optimize",
-          href: `/optimize/${project_id}/${task_id}`,
-        },
-      ]
-    : []}
+  breadcrumbs={[
+    {
+      label: "Optimize",
+      href: `/optimize/${project_id}/${$ui_state.current_task_id}`,
+    },
+  ]}
 >
   <MultiIntro
     intros={[

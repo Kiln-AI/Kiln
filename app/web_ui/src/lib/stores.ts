@@ -641,7 +641,7 @@ export async function load_available_prompts(force: boolean = false) {
     }
     is_loading_prompts = true
     const { data, error } = await client.GET(
-      "/api/projects/{project_id}/task/{task_id}/prompts",
+      "/api/projects/{project_id}/tasks/{task_id}/prompts",
       {
         params: {
           path: {

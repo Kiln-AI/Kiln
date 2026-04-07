@@ -59,7 +59,7 @@ export async function load_task_prompts(
 
     try {
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/task/{task_id}/prompts",
+        "/api/projects/{project_id}/tasks/{task_id}/prompts",
         {
           params: {
             path: {

@@ -36,6 +36,7 @@ export type DockerModelRunnerConnection =
   components["schemas"]["DockerModelRunnerConnection"]
 export type RunSummary = components["schemas"]["RunSummary"]
 export type PromptResponse = components["schemas"]["PromptResponse"]
+export type ApiPrompt = components["schemas"]["ApiPrompt"]
 export type ChatStrategy = components["schemas"]["ChatStrategy"]
 export type EvalOutputScore = components["schemas"]["EvalOutputScore"]
 export type EvalTemplateId = components["schemas"]["EvalTemplateId"]
@@ -132,6 +133,7 @@ export type ToolCallMessageParam =
   components["schemas"]["ChatCompletionMessageFunctionToolCallParam"]
 export type SearchToolApiDescription =
   components["schemas"]["SearchToolApiDescription"]
+export type Skill = components["schemas"]["SkillResponse"]
 export type DocumentLibraryState = components["schemas"]["DocumentLibraryState"]
 export type Spec = components["schemas"]["Spec"]
 export type SpecStatus = components["schemas"]["SpecStatus"]

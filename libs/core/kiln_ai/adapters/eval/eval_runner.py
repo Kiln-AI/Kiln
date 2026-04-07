@@ -3,14 +3,18 @@ import logging
 from dataclasses import dataclass
 from typing import AsyncGenerator, Dict, List, Literal, Set
 
+import litellm
+
+from kiln_ai.adapters.adapter_registry import load_skills_for_task
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.eval.registry import eval_adapter_from_type
+from kiln_ai.adapters.model_adapters.base_adapter import SkillsDict
 from kiln_ai.datamodel.basemodel import ID_TYPE
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_from_id
 from kiln_ai.datamodel.eval import EvalConfig, EvalDataType, EvalRun, EvalScores
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
-from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress
+from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +80,7 @@ class EvalRunner:
         self.run_configs = run_configs
         self.task = target_task
         self.eval = target_eval
+        self._skills: SkillsDict = self._preload_skills()
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":
@@ -165,6 +170,16 @@ class EvalRunner:
             if task_run.id not in already_run[eval_config.id][run_config.id]
         ]
 
+    def _preload_skills(self) -> SkillsDict:
+        """Collect all skill IDs from run configs and bulk-load them once."""
+        if self.run_configs is None:
+            return {}
+        merged: SkillsDict = {}
+        for rc in self.run_configs:
+            skills = load_skills_for_task(self.task, rc.run_config_properties)
+            merged.update(skills)
+        return merged
+
     async def run(self, concurrency: int = 25) -> AsyncGenerator[Progress, None]:
         """
         Runs the configured eval run with parallel workers and yields progress updates.
@@ -175,6 +190,7 @@ class EvalRunner:
             concurrency=concurrency,
             jobs=jobs,
             run_job_fn=self.run_job,
+            max_retries=2,
         )
         async for progress in runner.run():
             yield progress
@@ -187,6 +203,7 @@ class EvalRunner:
                 job.task_run_config.run_config_properties
                 if job.task_run_config
                 else None,
+                skills=self._skills,
             )
             if not isinstance(evaluator, BaseEval):
                 raise ValueError("Not able to create evaluator from eval config")
@@ -247,8 +264,37 @@ class EvalRunner:
 
             return True
         except Exception as e:
+            if _is_retryable_error(e):
+                logger.error(
+                    f"Transient error running eval job for dataset item {job.item.id}: {e}",
+                    exc_info=True,
+                )
+                raise RetryableError(str(e)) from e
             logger.error(
                 f"Error running eval job for dataset item {job.item.id}: {e}",
                 exc_info=True,
             )
-            return False
+            raise
+
+
+def _is_retryable_error(e: BaseException) -> bool:
+    if isinstance(
+        e,
+        (
+            litellm.RateLimitError,
+            litellm.APIConnectionError,
+            litellm.InternalServerError,
+            litellm.ServiceUnavailableError,
+            litellm.BadGatewayError,
+            litellm.JSONSchemaValidationError,
+        ),
+    ):
+        return True
+
+    # ValueError thrown by Kiln's adapter when structured output doesn't match schema
+    if isinstance(
+        e, ValueError
+    ) and "This task requires a specific output schema" in str(e):
+        return True
+
+    return False
