@@ -2314,6 +2314,127 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/skills/{skill_id}/file_counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Skill File Counts */
+        get: operations["get_skill_file_counts_api_projects__project_id__skills__skill_id__file_counts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/skills/{skill_id}/open_folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open Skill Folder */
+        post: operations["open_skill_folder_api_projects__project_id__skills__skill_id__open_folder_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/doc_skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Doc Skills */
+        get: operations["list_doc_skills_api_projects__project_id__doc_skills_get"];
+        put?: never;
+        /** Create Doc Skill */
+        post: operations["create_doc_skill_api_projects__project_id__doc_skills_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/doc_skills/{doc_skill_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Doc Skill */
+        get: operations["get_doc_skill_api_projects__project_id__doc_skills__doc_skill_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Doc Skill */
+        patch: operations["update_doc_skill_api_projects__project_id__doc_skills__doc_skill_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/doc_skills/{doc_skill_id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Run Doc Skill */
+        get: operations["run_doc_skill_api_projects__project_id__doc_skills__doc_skill_id__run_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/doc_skills/progress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Get Doc Skill Progress */
+        post: operations["get_doc_skill_progress_api_projects__project_id__doc_skills_progress_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/skills/{skill_id}/doc_skill_source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Doc Skill Source */
+        get: operations["get_doc_skill_source_api_projects__project_id__skills__skill_id__doc_skill_source_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config": {
         parameters: {
             query?: never;
@@ -3363,6 +3484,28 @@ export interface components {
              */
             description?: string | null;
         };
+        /** CreateDocSkillRequest */
+        CreateDocSkillRequest: {
+            /** Name */
+            name: string;
+            /** Skill Name */
+            skill_name: string;
+            /** Skill Content Header */
+            skill_content_header: string;
+            /** Description */
+            description?: string | null;
+            /** Extractor Config Id */
+            extractor_config_id: string;
+            /** Chunker Config Id */
+            chunker_config_id: string;
+            /** Document Tags */
+            document_tags?: string[] | null;
+            /**
+             * Strip File Extensions
+             * @default true
+             */
+            strip_file_extensions: boolean;
+        };
         /** CreateEmbeddingConfigRequest */
         CreateEmbeddingConfigRequest: {
             /**
@@ -4072,6 +4215,88 @@ export interface components {
             correct_behaviour_examples?: string;
             /** Incorrect Behaviour Examples */
             incorrect_behaviour_examples?: string;
+        };
+        /** DocSkillProgress */
+        DocSkillProgress: {
+            /**
+             * Total Document Count
+             * @default 0
+             */
+            total_document_count: number;
+            /**
+             * Total Document Extracted Count
+             * @default 0
+             */
+            total_document_extracted_count: number;
+            /**
+             * Total Document Extracted Error Count
+             * @default 0
+             */
+            total_document_extracted_error_count: number;
+            /**
+             * Total Document Chunked Count
+             * @default 0
+             */
+            total_document_chunked_count: number;
+            /**
+             * Total Document Chunked Error Count
+             * @default 0
+             */
+            total_document_chunked_error_count: number;
+            /**
+             * Skill Created
+             * @default false
+             */
+            skill_created: boolean;
+            /** Logs */
+            logs?: components["schemas"]["LogMessage"][] | null;
+        };
+        /** DocSkillProgressRequest */
+        DocSkillProgressRequest: {
+            /** Doc Skill Ids */
+            doc_skill_ids?: string[] | null;
+        };
+        /** DocSkillResponse */
+        DocSkillResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Skill Name */
+            skill_name: string;
+            /** Skill Content Header */
+            skill_content_header: string;
+            /** Description */
+            description?: string | null;
+            /** Extractor Config Id */
+            extractor_config_id: string;
+            /** Chunker Config Id */
+            chunker_config_id: string;
+            /** Document Tags */
+            document_tags?: string[] | null;
+            /** Skill Id */
+            skill_id?: string | null;
+            /**
+             * Strip File Extensions
+             * @default true
+             */
+            strip_file_extensions: boolean;
+            /**
+             * Is Archived
+             * @default false
+             */
+            is_archived: boolean;
+            /** Created At */
+            created_at?: string | null;
+            /** Created By */
+            created_by?: string | null;
+        };
+        /** DocSkillSourceResponse */
+        DocSkillSourceResponse: {
+            /** Doc Skill Id */
+            doc_skill_id: string | null;
+            /** Doc Skill Name */
+            doc_skill_name: string | null;
         };
         /** DockerModelRunnerConnection */
         DockerModelRunnerConnection: {
@@ -6151,6 +6376,17 @@ export interface components {
             path: string;
         };
         /**
+         * OpenFolderResponse
+         * @description Response after opening a folder.
+         */
+        OpenFolderResponse: {
+            /**
+             * Path
+             * @description The path that was opened.
+             */
+            path: string;
+        };
+        /**
          * OutputFormat
          * @description The output format for extraction results.
          * @enum {string}
@@ -7389,6 +7625,22 @@ export interface components {
             body: string;
         };
         /**
+         * SkillFileCountsResponse
+         * @description Counts of files in the skill's references and assets directories.
+         */
+        SkillFileCountsResponse: {
+            /**
+             * Reference Count
+             * @description Number of files in the references directory.
+             */
+            reference_count: number;
+            /**
+             * Asset Count
+             * @description Number of files in the assets directory.
+             */
+            asset_count: number;
+        };
+        /**
          * SkillResponse
          * @description A skill with its metadata.
          */
@@ -8518,6 +8770,11 @@ export interface components {
             name: string;
             /** Arguments */
             arguments: string;
+        };
+        /** UpdateDocSkillRequest */
+        UpdateDocSkillRequest: {
+            /** Is Archived */
+            is_archived: boolean;
         };
         /**
          * UpdateEvalRequest
@@ -14325,6 +14582,320 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillContentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_skill_file_counts_api_projects__project_id__skills__skill_id__file_counts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the skill. */
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillFileCountsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_skill_folder_api_projects__project_id__skills__skill_id__open_folder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the skill. */
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenFolderResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_doc_skills_api_projects__project_id__doc_skills_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocSkillResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_doc_skill_api_projects__project_id__doc_skills_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDocSkillRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocSkillResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_doc_skill_api_projects__project_id__doc_skills__doc_skill_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the doc skill. */
+                doc_skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocSkillResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_doc_skill_api_projects__project_id__doc_skills__doc_skill_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the doc skill. */
+                doc_skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDocSkillRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocSkillResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    run_doc_skill_api_projects__project_id__doc_skills__doc_skill_id__run_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the doc skill. */
+                doc_skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_doc_skill_progress_api_projects__project_id__doc_skills_progress_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocSkillProgressRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["DocSkillProgress"];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_doc_skill_source_api_projects__project_id__skills__skill_id__doc_skill_source_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the skill. */
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocSkillSourceResponse"];
                 };
             };
             /** @description Validation Error */
