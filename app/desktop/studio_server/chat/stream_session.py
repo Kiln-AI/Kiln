@@ -155,7 +155,7 @@ class ChatStreamSession:
                             trace_id = trace_id_for_error or str(uuid.uuid4())
                             error_payload = {
                                 "type": "error",
-                                "message": "Connection to upstream server was lost.",
+                                "message": "Something went wrong.",
                                 "trace_id": trace_id,
                             }
                             yield f"data: {json.dumps(error_payload)}\n\n".encode()

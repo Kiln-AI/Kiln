@@ -72,6 +72,46 @@ class _FakeClient:
         pass
 
 
+class _FakeOkStreamThenDisconnect:
+    """200 response whose byte stream raises RemoteProtocolError (e.g. server dropped connection)."""
+
+    def __init__(self) -> None:
+        self.status_code = 200
+
+    async def aread(self) -> bytes:
+        return b""
+
+    async def aiter_bytes(self):
+        raise httpx.RemoteProtocolError("Server disconnected")
+        yield b""  # pragma: no cover — makes this an async generator; raise runs first
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_stream_remote_protocol_error_yields_generic_message():
+    fake_resp = _FakeOkStreamThenDisconnect()
+    fake_client = _FakeClient(fake_resp)
+    session = _make_session()
+
+    with patch.object(httpx, "AsyncClient", return_value=fake_client):
+        chunks = []
+        async for chunk in session.stream():
+            chunks.append(chunk)
+
+    assert len(chunks) == 1
+    payload = json.loads(chunks[0].decode().removeprefix("data: ").strip())
+    assert payload["type"] == "error"
+    assert payload["message"] == "Something went wrong."
+    assert "trace_id" in payload
+    assert isinstance(payload["trace_id"], str)
+    assert len(payload["trace_id"]) > 0
+
+
 @pytest.mark.asyncio
 async def test_stream_error_includes_code_field():
     error_body = json.dumps(
