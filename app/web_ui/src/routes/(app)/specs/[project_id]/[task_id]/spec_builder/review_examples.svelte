@@ -30,6 +30,7 @@
     create_spec: void
     continue_to_refine: void
     create_spec_secondary: void
+    rerun_examples: void
   }>()
 
   function formatExpandedContent(data: string): {
@@ -137,18 +138,30 @@
   {warn_before_unload}
   compact_button={true}
 >
-  <div class="flex flex-col">
-    <div class="font-medium">Review Data Examples</div>
-    <div class="font-light text-gray-500 text-sm">
-      Review these examples to ensure Kiln understands the goal of your spec: <button
-        class="link text-sm text-left text-gray-500 hover:text-gray-700"
-        on:click={open_details_dialog}
-      >
-        {name}</button
-      >. For each row, select "Pass" if the example conforms to your spec and
-      "Fail" if it does not. This will ensure Kiln's synthetic data generation,
-      evals and judge will work effectively.
+  <div class="flex flex-row gap-6">
+    <div class="flex flex-col">
+      <div class="flex items-center justify-between">
+        <div class="font-medium">Review Data Examples</div>
+      </div>
+      <div class="font-light text-gray-500 text-sm">
+        Review these examples to ensure Kiln understands the goal of your spec: <button
+          class="link text-sm text-left text-gray-500 hover:text-gray-700"
+          on:click={open_details_dialog}
+        >
+          {name}</button
+        >. For each row, select "Pass" if the example conforms to your spec and
+        "Fail" if it does not. This will ensure Kiln's synthetic data
+        generation, evals and judge will work effectively.
+      </div>
     </div>
+    <button
+      type="button"
+      class="btn btn-sm"
+      disabled={submitting}
+      on:click={() => dispatch("rerun_examples")}
+    >
+      ↻ Re-run
+    </button>
   </div>
   <div class="flex flex-col gap-6">
     <div class="rounded-lg border">

@@ -6,13 +6,15 @@
   import type { KilnError } from "$lib/utils/error_handlers"
   import type { FieldConfig } from "../select_template/spec_templates"
   import { filename_string_short_validator } from "$lib/utils/input_validators"
-  import FewShotSelector from "$lib/utils/few_shot_selector.svelte"
-  import type { FewShotExample } from "$lib/utils/few_shot_example"
+  import TaskSampleSelector from "$lib/utils/task_sample_selector.svelte"
+  import type { TaskSampleExample } from "$lib/utils/task_sample_example"
+  import type { Priority } from "$lib/types"
 
   export let name: string
   export let property_values: Record<string, string | null>
   export let initial_property_values: Record<string, string | null>
   export let evaluate_full_trace: boolean
+  export let priority: Priority = 1
   export let field_configs: FieldConfig[]
   export let copilot_enabled: boolean
   export let hide_full_trace_option: boolean
@@ -23,7 +25,7 @@
   export let warn_before_unload: boolean
   export let project_id: string
   export let task_id: string
-  export let few_shot_example: FewShotExample | null = null
+  export let task_sample_example: TaskSampleExample | null = null
   export let has_unsaved_manual_entry: boolean = false
 
   let form_container: FormContainer
@@ -48,12 +50,16 @@
     return false
   }
 
+  // copilot_enabled = copilot is available for this task
+  // copilot_allowed = copilot is available AND not blocked by current form state
+  $: copilot_allowed = copilot_enabled && !evaluate_full_trace
+
   $: computed_warn_before_unload =
     warn_before_unload &&
     has_form_changes(property_values, initial_property_values)
 
   function handle_submit() {
-    if (copilot_enabled) {
+    if (copilot_allowed) {
       dispatch("analyze_with_copilot")
     } else {
       dispatch("create_without_copilot")
@@ -69,7 +75,7 @@
 
 <FormContainer
   bind:this={form_container}
-  submit_label={copilot_enabled ? "Analyze with Copilot" : "Create Spec"}
+  submit_label={copilot_allowed ? "Analyze with Copilot" : "Create Spec"}
   on:submit={handle_submit}
   bind:error
   bind:submitting
@@ -105,18 +111,31 @@
     />
   {/each}
 
-  {#if copilot_enabled}
-    <FewShotSelector
+  {#if copilot_allowed}
+    <TaskSampleSelector
       {project_id}
       {task_id}
-      bind:selected_example={few_shot_example}
+      bind:selected_example={task_sample_example}
       bind:has_unsaved_manual_entry
       {is_prompt_building}
     />
   {/if}
 
-  {#if !hide_full_trace_option}
-    <Collapse title="Advanced Options">
+  <Collapse title="Advanced Options">
+    <FormElement
+      label="Priority"
+      id="priority"
+      inputType="select"
+      bind:value={priority}
+      description="The priority level for this spec."
+      select_options={[
+        [0, "P0 - Critical"],
+        [1, "P1 - High"],
+        [2, "P2 - Medium"],
+        [3, "P3 - Low"],
+      ]}
+    />
+    {#if !hide_full_trace_option}
       <FormElement
         label="Evaluate Complete Agent History"
         id="evaluate_full_trace"
@@ -126,13 +145,14 @@
         description="When enabled, this will be evaluated on the full agent history including intermediate steps and tool calls. When disabled, only the final answer is evaluated."
         info_description={full_trace_disabled
           ? "Tool use specs always evaluate the full conversation history to analyze tool calls."
-          : "Enable this for specs that need to evaluate reasoning steps, tool usage, or intermediate outputs."}
+          : "Enable this for specs that need to evaluate reasoning steps, tool usage, or intermediate outputs." +
+            (copilot_enabled ? " Not supported by Copilot." : "")}
       />
-    </Collapse>
-  {/if}
+    {/if}
+  </Collapse>
 </FormContainer>
 
-{#if copilot_enabled}
+{#if copilot_allowed}
   <div class="flex flex-row gap-1 mt-4 justify-end">
     <span class="text-sm text-gray-500">or</span>
     <button
