@@ -139,7 +139,7 @@
         </div>
       </div>
       <li class="mb-2">
-        <button class="pl-2 pr-3" on:click={() => taskDialog.show()}>
+        <button class="pl-2 pr-3" on:click={() => taskDialog?.show()}>
           <div
             class="grid grid-cols-[auto,1fr] gap-x-1.5 gap-y-0.5 text-xs text-left"
           >
@@ -417,7 +417,7 @@
 </div>
 
 <Dialog bind:this={taskDialog} title="Select Project & Task">
-  <SelectTasksMenu on:task_selected={() => taskDialog.close()} />
+  <SelectTasksMenu on:task_selected={() => taskDialog?.close()} />
 </Dialog>
 
 <style>
@@ -441,7 +441,7 @@
     margin-bottom: 4px;
   }
 
-  :global(.sidebar-icon) {
+  .sidebar-menu :global(.sidebar-icon) {
     width: 1.25rem;
     height: 1.25rem;
     margin-right: 0.25rem;

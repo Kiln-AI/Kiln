@@ -115,7 +115,11 @@
         class="flex flex-row pr-1"
       >
         <div class="grow flex flex-row items-center gap-1.5">
-          <img src="/images/sm_folder.svg" alt="" class="w-4 h-4 opacity-60" />
+          <img
+            src="/images/sm_folder.svg"
+            alt="Project"
+            class="w-4 h-4 opacity-60"
+          />
           {project.name}
         </div>
         <div>
