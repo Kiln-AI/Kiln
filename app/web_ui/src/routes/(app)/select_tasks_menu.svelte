@@ -4,12 +4,13 @@
   import { ui_state } from "$lib/stores"
   import { goto } from "$app/navigation"
   import { client } from "$lib/api_client"
+  import { createEventDispatcher } from "svelte"
 
+  const dispatch = createEventDispatcher()
   let id = "select-tasks-menu-" + Math.random().toString(36)
 
   export let new_project_url = "/settings/create_project"
   export let new_task_url = "/settings/create_task"
-  export let compact = false
 
   $: project_list = $projects?.projects || []
   // Undefined should fallback. Null is manually selected none
@@ -102,23 +103,11 @@
   }
 
   function close_menu() {
-    // Close the menu
-    const menu = document.getElementById(id)
-    if (
-      menu &&
-      menu.parentElement &&
-      menu.parentElement instanceof HTMLDetailsElement
-    ) {
-      menu.parentElement.open = false
-    }
+    dispatch("task_selected")
   }
 </script>
 
-<ul
-  class="menu bg-base-200 rounded-box {compact ? 'menu-xs ml-2' : 'menu-md'}"
-  class:select-tasks-menu--compact={compact}
-  {id}
->
+<ul class="menu menu-md bg-base-200 rounded-box" {id}>
   {#each project_list as project}
     <li>
       <button
@@ -232,9 +221,3 @@
     >
   </li>
 </ul>
-
-<style>
-  .select-tasks-menu--compact :global(li > ul) {
-    margin-inline-start: 0.5em;
-  }
-</style>

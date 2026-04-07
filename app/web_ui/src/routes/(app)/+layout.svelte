@@ -16,6 +16,7 @@
   import OptimizeIcon from "$lib/ui/icons/optimize_icon.svelte"
   import SkillsIcon from "$lib/ui/icons/skills_icon.svelte"
   import ToolsIcon from "$lib/ui/icons/tools_icon.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
 
   onMount(async () => {
     update_update_store()
@@ -80,12 +81,7 @@
     }
   }
 
-  function close_task_menu() {
-    const menu = document.getElementById("task-menu")
-    if (menu instanceof HTMLDetailsElement) {
-      menu.open = false
-    }
-  }
+  let taskDialog: Dialog
 
   beforeNavigate((nav) => {
     lastPageUrlStore.set(nav.from?.url)
@@ -121,7 +117,7 @@
       <slot />
     </div>
   </div>
-  <div class="drawer-side" on:mouseleave={close_task_menu} role="navigation">
+  <div class="drawer-side" role="navigation">
     <label for="main-drawer" aria-label="close sidebar" class="drawer-overlay"
     ></label>
 
@@ -143,17 +139,16 @@
         </div>
       </div>
       <li class="mb-2">
-        <details id="task-menu">
-          <summary class="pl-2 pr-3">
-            <div class="grid grid-cols-[auto,1fr] gap-x-1.5 gap-y-0.5 text-xs">
-              <span class="font-bold whitespace-nowrap">Project:</span>
-              <span class="truncate">{$current_project?.name}</span>
-              <span class="font-bold whitespace-nowrap">Task:</span>
-              <span class="truncate">{$current_task?.name}</span>
-            </div>
-          </summary>
-          <SelectTasksMenu compact />
-        </details>
+        <button class="pl-2 pr-3" on:click={() => taskDialog.show()}>
+          <div
+            class="grid grid-cols-[auto,1fr] gap-x-1.5 gap-y-0.5 text-xs text-left"
+          >
+            <span class="font-bold whitespace-nowrap">Project:</span>
+            <span class="truncate">{$current_project?.name}</span>
+            <span class="font-bold whitespace-nowrap">Task:</span>
+            <span class="truncate">{$current_task?.name}</span>
+          </div>
+        </button>
       </li>
       <li class="menu-sm">
         <a href="/" class={section == Section.Run ? "active" : ""}>
@@ -420,6 +415,10 @@
     </ul>
   </div>
 </div>
+
+<Dialog bind:this={taskDialog} title="Select Project & Task">
+  <SelectTasksMenu on:task_selected={() => taskDialog.close()} />
+</Dialog>
 
 <style>
   :global(ul > li.menu-nested) {
