@@ -108,7 +108,7 @@
     })
 
     goto(`/`, { replaceState: true })
-    dispatch("task_selected")
+    dispatch("dismiss")
   }
 </script>
 
@@ -145,7 +145,11 @@
           <div class="text-sm font-semibold">Projects</div>
           <div class="text-xs text-base-content/60">Pick a project first</div>
         </div>
-        <a href={new_project_url} class="btn btn-sm btn-ghost">+ New Project</a>
+        <a
+          href={new_project_url}
+          class="btn btn-sm btn-ghost"
+          on:click={() => dispatch("dismiss")}>+ New Project</a
+        >
       </div>
       <div
         class="overflow-y-auto px-1.5 py-1.5 flex flex-col gap-0.5 min-h-[200px] max-h-[400px]"
@@ -217,7 +221,8 @@
           </div>
           <a
             href={new_task_url + "/" + (selected_project?.id || "")}
-            class="btn btn-sm btn-ghost">+ New Task</a
+            class="btn btn-sm btn-ghost"
+            on:click={() => dispatch("dismiss")}>+ New Task</a
           >
         </div>
         <div
