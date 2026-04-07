@@ -140,7 +140,10 @@
       <div class="bg-base-200 px-3.5 py-2.5 flex items-center gap-2">
         <div class="grow">
           <div class="text-sm font-semibold">Projects</div>
-          <div class="text-xs text-base-content/60">Pick a project first</div>
+          <div class="text-xs text-base-content/60">
+            {project_list.length}
+            {project_list.length === 1 ? "project" : "projects"}
+          </div>
         </div>
         <a
           href={new_project_url}
@@ -202,9 +205,7 @@
       {:else}
         <div class="bg-base-200 px-3.5 py-2.5 flex items-center gap-2">
           <div class="grow">
-            <div class="text-sm font-semibold">
-              Tasks in <span class="font-bold">{selected_project.name}</span>
-            </div>
+            <div class="text-sm font-semibold">Tasks</div>
             <div class="text-xs text-base-content/60">
               {#if tasks_loading}
                 Loading...
@@ -212,7 +213,7 @@
                 Error loading tasks
               {:else}
                 {selected_project_tasks.length}
-                {selected_project_tasks.length === 1 ? "task" : "tasks"}
+                {selected_project_tasks.length === 1 ? "task" : "tasks"} in {selected_project.name}
               {/if}
             </div>
           </div>
@@ -262,11 +263,6 @@
                 <div class="min-w-0 grow">
                   <div class="text-sm font-medium truncate">{task.name}</div>
                 </div>
-                {#if task.id === $current_task?.id && selected_project?.id === $current_project?.id}
-                  <span class="text-xs text-base-content/50 shrink-0"
-                    >Currently selected</span
-                  >
-                {/if}
               </button>
             {/each}
           {/if}
@@ -274,13 +270,4 @@
       {/if}
     </section>
   </div>
-
-  {#if $current_project && $current_task}
-    <div class="text-xs text-base-content/50 text-center">
-      Currently selected: <span class="font-semibold"
-        >{$current_project.name}</span
-      >
-      / <span class="font-semibold">{$current_task.name}</span>
-    </div>
-  {/if}
 </div>

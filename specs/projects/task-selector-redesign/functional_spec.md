@@ -10,14 +10,6 @@ Replace the existing single-column expandable menu (`<ul class="menu">`) in `sel
 
 ## Layout Structure
 
-### Currently Selected Banner
-
-At the top of the component, show the currently selected project and task:
-
-- Format: "Currently selected: **Project Name** / **Task Name**"
-- If no task is selected: "No task selected"
-- Styled subtly (muted text, small font) so it doesn't dominate
-
 ### Two-Column Content Area (Desktop)
 
 Side-by-side panes below the banner:
@@ -41,7 +33,7 @@ On small screens, only one pane is visible at a time:
 ### Header
 
 - Title: "Projects"
-- Subtitle: "Pick a project first"
+- Subtitle: "[N] projects" (count of projects)
 - Button: "+ New Project" (ghost/outline style, not primary)
   - Links to `new_project_url` prop
 
@@ -70,8 +62,8 @@ Centered message: "Select a project to view its tasks" with a document icon.
 
 ### Header (project selected)
 
-- Title: "Tasks in **[Project Name]**"
-- Subtitle: "[N] tasks" (count from loaded task list)
+- Title: "Tasks"
+- Subtitle: "[N] tasks in [Project Name]" (count from loaded task list)
 - Button: "+ New Task" (ghost/outline style, not primary)
   - Links to `new_task_url` prop + `"/" + project.id`
 
@@ -86,7 +78,7 @@ Each task row shows:
 
 - Hover: subtle background highlight
 - Click: immediately selects the task AND the project, updates the store, navigates to `/`, dispatches `dismiss` event. No confirmation step.
-- Currently selected task (if viewing its project): highlighted with "Currently selected" label
+- Currently selected task (if viewing its project): highlighted with accent background/border
 
 ### Loading State
 
