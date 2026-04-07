@@ -20,6 +20,13 @@ function extractTextContent(content: TraceMessage["content"]): string {
     .join("")
 }
 
+const APP_UI_CONTEXT_RE =
+  /<new_app_ui_context>[\s\S]*?<\/new_app_ui_context>\s*/g
+
+export function stripAppUiContext(text: string): string {
+  return text.replace(APP_UI_CONTEXT_RE, "")
+}
+
 function traceToolCallToPart(tc: TraceToolCall): ChatMessagePart {
   let input: unknown
   try {
@@ -70,7 +77,7 @@ export function hydrateSessionFromSnapshot(snapshot: ChatSessionSnapshot): {
         messages.push({
           id: chatGenerateId(),
           role: "user",
-          content: extractTextContent(msg.content),
+          content: stripAppUiContext(extractTextContent(msg.content)),
         })
         break
       }

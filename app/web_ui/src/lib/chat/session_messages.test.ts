@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { traceIdForNextChatRequest } from "./streaming_chat"
 import {
   hydrateSessionFromSnapshot,
+  stripAppUiContext,
   type ChatSessionSnapshot,
 } from "./session_messages"
 
@@ -132,5 +133,65 @@ describe("hydrateSessionFromSnapshot", () => {
     )
     const part = messages[0].parts![0]
     expect("input" in part && part.input).toBe("not-json")
+  })
+
+  it("strips <new_app_ui_context> from the first user message", () => {
+    const header =
+      "<new_app_ui_context>\nPath: /chat\nPage Name: Chat\n</new_app_ui_context>"
+    const { messages } = hydrateSessionFromSnapshot(
+      snap("ctx", [
+        { role: "user", content: `${header}\nHello agent` },
+        { role: "assistant", content: "Hi" },
+      ]),
+    )
+    expect(messages[0].content).toBe("Hello agent")
+  })
+
+  it("strips <new_app_ui_context> from subsequent user messages too", () => {
+    const header =
+      "<new_app_ui_context>\nCurrent Task: summarize\n</new_app_ui_context>"
+    const { messages } = hydrateSessionFromSnapshot(
+      snap("ctx2", [
+        { role: "user", content: "First message" },
+        { role: "assistant", content: "ok" },
+        { role: "user", content: `${header}\nSecond message` },
+      ]),
+    )
+    expect(messages[0].content).toBe("First message")
+    expect(messages[2].content).toBe("Second message")
+  })
+
+  it("leaves user messages without context tags unchanged", () => {
+    const { messages } = hydrateSessionFromSnapshot(
+      snap("no-ctx", [{ role: "user", content: "plain question" }]),
+    )
+    expect(messages[0].content).toBe("plain question")
+  })
+})
+
+describe("stripAppUiContext", () => {
+  it("removes a single context block with trailing newline", () => {
+    const input =
+      "<new_app_ui_context>\nPath: /chat\n</new_app_ui_context>\nHello"
+    expect(stripAppUiContext(input)).toBe("Hello")
+  })
+
+  it("removes multiple context blocks", () => {
+    const input =
+      "<new_app_ui_context>\nA\n</new_app_ui_context>\n<new_app_ui_context>\nB\n</new_app_ui_context>\nHi"
+    expect(stripAppUiContext(input)).toBe("Hi")
+  })
+
+  it("returns the string unchanged when no context block is present", () => {
+    expect(stripAppUiContext("just text")).toBe("just text")
+  })
+
+  it("returns empty string when the entire content is a context block", () => {
+    const input = "<new_app_ui_context>\nPath: /\n</new_app_ui_context>"
+    expect(stripAppUiContext(input)).toBe("")
+  })
+
+  it("handles empty string", () => {
+    expect(stripAppUiContext("")).toBe("")
   })
 })
