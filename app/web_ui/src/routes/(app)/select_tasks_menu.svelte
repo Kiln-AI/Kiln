@@ -4,7 +4,9 @@
   import { ui_state } from "$lib/stores"
   import { goto } from "$app/navigation"
   import { client } from "$lib/api_client"
+  import { createEventDispatcher } from "svelte"
 
+  const dispatch = createEventDispatcher()
   let id = "select-tasks-menu-" + Math.random().toString(36)
 
   export let new_project_url = "/settings/create_project"
@@ -101,15 +103,7 @@
   }
 
   function close_menu() {
-    // Close the menu
-    const menu = document.getElementById(id)
-    if (
-      menu &&
-      menu.parentElement &&
-      menu.parentElement instanceof HTMLDetailsElement
-    ) {
-      menu.parentElement.open = false
-    }
+    dispatch("task_selected")
   }
 </script>
 
@@ -120,8 +114,12 @@
         on:click={() => select_project(project)}
         class="flex flex-row pr-1"
       >
-        <div class="grow">
-          <span class="badge badge-secondary badge-outline">Project</span>
+        <div class="grow flex flex-row items-center gap-1.5">
+          <img
+            src="/images/sm_folder.svg"
+            alt="Project"
+            class="w-4 h-4 opacity-60"
+          />
           {project.name}
         </div>
         <div>

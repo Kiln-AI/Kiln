@@ -16,6 +16,7 @@
   import OptimizeIcon from "$lib/ui/icons/optimize_icon.svelte"
   import SkillsIcon from "$lib/ui/icons/skills_icon.svelte"
   import ToolsIcon from "$lib/ui/icons/tools_icon.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
 
   onMount(async () => {
     update_update_store()
@@ -80,12 +81,7 @@
     }
   }
 
-  function close_task_menu() {
-    const menu = document.getElementById("task-menu")
-    if (menu instanceof HTMLDetailsElement) {
-      menu.open = false
-    }
-  }
+  let taskDialog: Dialog
 
   beforeNavigate((nav) => {
     lastPageUrlStore.set(nav.from?.url)
@@ -121,12 +117,12 @@
       <slot />
     </div>
   </div>
-  <div class="drawer-side" on:mouseleave={close_task_menu} role="navigation">
+  <div class="drawer-side" role="navigation">
     <label for="main-drawer" aria-label="close sidebar" class="drawer-overlay"
     ></label>
 
     <ul
-      class="menu bg-base-200 text-base-content w-72 md:w-64 2xl:w-72 p-4 pt-1 lg:pt-4 min-h-full"
+      class="sidebar-menu menu bg-base-200 text-base-content w-72 md:w-52 2xl:w-56 p-3 pt-1 lg:pt-3 min-h-full text-xs"
     >
       <li class="hover:bg-transparent flex flex-row justify-end">
         <label
@@ -136,32 +132,50 @@
           &#x2715;
         </label>
       </li>
-      <div class="mb-4 ml-4 mt-2">
+      <div class="mb-2 ml-3 mt-1">
         <div class="flex flex-row items-center mx-[-5px] p-0">
-          <img src="/images/animated_logo.svg" alt="logo" class="w-8 h-8" />
-          <div class="text-lg font-bold ml-1">Kiln AI</div>
+          <img src="/images/animated_logo.svg" alt="logo" class="w-7 h-7" />
+          <div class="text-base font-bold ml-1">Kiln AI</div>
         </div>
       </div>
-      <li class="mb-4">
-        <details id="task-menu">
-          <summary>
-            <div
-              class="grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-xs 2xl:text-sm"
-            >
-              <span class="font-bold whitespace-nowrap">Project:</span>
-              <span class="truncate">{$current_project?.name}</span>
-              <span class="font-bold whitespace-nowrap">Task:</span>
-              <span class="truncate">{$current_task?.name}</span>
-            </div>
-          </summary>
-          <SelectTasksMenu />
-        </details>
-      </li>
-      <li class="menu-md">
+      <button
+        class="text-xs text-left w-full px-3 py-2 hover:bg-stone-200 rounded-md mt-2 mb-4 flex flex-row items-center justify-between"
+        on:click={() => taskDialog?.show()}
+      >
+        <div class="min-w-0 flex-1">
+          <div class="truncate font-medium">
+            {$current_task?.name || "No task selected"}
+          </div>
+          <div
+            class="truncate text-gray-500 {$current_project?.name
+              ? ''
+              : 'hidden'}"
+          >
+            {$current_project?.name}
+          </div>
+        </div>
+        <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+        <svg
+          class="h-4 w-4 text-gray-500 shrink-0"
+          viewBox="0 0 24 24"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M5.70711 16.1359C5.31659 16.5264 5.31659 17.1596 5.70711 17.5501L10.5993 22.4375C11.3805 23.2179 12.6463 23.2176 13.4271 22.4369L18.3174 17.5465C18.708 17.156 18.708 16.5228 18.3174 16.1323C17.9269 15.7418 17.2937 15.7418 16.9032 16.1323L12.7176 20.3179C12.3271 20.7085 11.6939 20.7085 11.3034 20.3179L7.12132 16.1359C6.7308 15.7454 6.09763 15.7454 5.70711 16.1359Z"
+            fill="currentColor"
+          />
+          <path
+            d="M18.3174 7.88675C18.708 7.49623 18.708 6.86307 18.3174 6.47254L13.4252 1.58509C12.644 0.804698 11.3783 0.805008 10.5975 1.58579L5.70711 6.47615C5.31658 6.86667 5.31658 7.49984 5.70711 7.89036C6.09763 8.28089 6.7308 8.28089 7.12132 7.89036L11.307 3.70472C11.6975 3.31419 12.3307 3.31419 12.7212 3.70472L16.9032 7.88675C17.2937 8.27728 17.9269 8.27728 18.3174 7.88675Z"
+            fill="currentColor"
+          />
+        </svg>
+      </button>
+      <li class="menu-sm">
         <a href="/" class={section == Section.Run ? "active" : ""}>
           <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools. Attribution: https://www.svgrepo.com/svg/524827/play-circle -->
           <svg
-            class="w-6 h-6 mr-2"
+            class="sidebar-icon"
             viewBox="0 0 24 24"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
@@ -182,14 +196,14 @@
           Run</a
         >
       </li>
-      <li class="menu-md">
+      <li class="menu-sm">
         <a
           href={`/dataset/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
           class={section == Section.Dataset ? "active" : ""}
         >
           <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools. Attribution: https://www.svgrepo.com/svg/524492/database -->
           <svg
-            class="w-6 h-6 mr-2"
+            class="sidebar-icon"
             viewBox="0 0 24 24"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
@@ -226,12 +240,12 @@
         >
       </li>
 
-      <li class="menu-md">
+      <li class="menu-sm">
         <a
           href={`/specs/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
           class={section == Section.Specs ? "active" : ""}
         >
-          <div class="h-6 w-6 mr-2">
+          <div class="sidebar-icon">
             <EvalIcon />
           </div>
 
@@ -239,24 +253,24 @@
         >
       </li>
 
-      <li class="menu-md">
+      <li class="menu-sm">
         <a
           href={`/optimize/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
           class={section == Section.Optimize ? "active" : ""}
         >
-          <div class="h-6 w-6 mr-2">
+          <div class="sidebar-icon">
             <OptimizeIcon />
           </div>
           Optimize
         </a>
-        <ul>
-          <li class="menu-md menu-nested">
+        <ul class="pl-1">
+          <li class="menu-sm menu-nested">
             <a
               href={`/prompts/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
               class={section == Section.Prompts ? "active" : ""}
             >
               <svg
-                class="w-6 h-6 mr-2"
+                class="sidebar-icon"
                 viewBox="0 0 24 24"
                 fill="none"
                 xmlns="http://www.w3.org/2000/svg"
@@ -274,10 +288,10 @@
               Prompts
             </a>
           </li>
-          <li class="menu-md menu-nested">
+          <li class="menu-sm menu-nested">
             <a href="/models" class={section == Section.Models ? "active" : ""}>
               <svg
-                class="w-6 h-6 mr-2"
+                class="sidebar-icon"
                 viewBox="0 0 24 24"
                 fill="none"
                 xmlns="http://www.w3.org/2000/svg"
@@ -307,45 +321,45 @@
               Models
             </a>
           </li>
-          <li class="menu-md menu-nested">
+          <li class="menu-sm menu-nested">
             <a
               href={`/tools/${$ui_state.current_project_id}`}
               class={section == Section.Tools ? "active" : ""}
             >
-              <div class="h-6 w-6 mr-2">
+              <div class="sidebar-icon">
                 <ToolsIcon />
               </div>
               Tools
             </a>
           </li>
-          <li class="menu-md menu-nested">
+          <li class="menu-sm menu-nested">
             <a
               href={`/skills/${$ui_state.current_project_id}`}
               class={section == Section.Skills ? "active" : ""}
             >
-              <div class="h-6 w-6 mr-2">
+              <div class="sidebar-icon">
                 <SkillsIcon />
               </div>
               Skills
             </a>
           </li>
-          <li class="menu-md menu-nested">
+          <li class="menu-sm menu-nested">
             <a
               href={`/docs/${$ui_state.current_project_id}`}
               class={section == Section.Documents ? "active" : ""}
             >
-              <div class="h-6 w-6 mr-2">
+              <div class="sidebar-icon">
                 <FileIcon kind="document" />
               </div>
               Docs &amp; Search
             </a>
           </li>
-          <li class="menu-md menu-nested">
+          <li class="menu-sm menu-nested">
             <a
               href={`/fine_tune/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
               class={section == Section.FineTune ? "active" : ""}
             >
-              <div class="h-6 w-6 mr-2">
+              <div class="sidebar-icon">
                 <FinetuneIcon />
               </div>
               Fine Tune
@@ -354,14 +368,14 @@
         </ul>
       </li>
 
-      <li class="menu-md">
+      <li class="menu-sm">
         <a
           href={`/generate/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
           class={section == Section.Generate ? "active" : ""}
         >
           <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
           <svg
-            class="w-6 h-6 mr-2"
+            class="sidebar-icon"
             viewBox="0 0 24 24"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
@@ -382,11 +396,22 @@
         >
       </li>
 
-      <li class="menu-md">
+      <li class="mt-auto pt-2 bg-transparent">
+        <ProgressWidget />
+      </li>
+      {#if $update_info.update_result && $update_info.update_result.has_update}
+        <li class="menu-sm mt-2">
+          <a href="/settings/check_for_update" class="px-4 text-xs font-medium">
+            <span class="bg-primary rounded-full w-2 h-2 mr-1"></span>App Update
+            Available</a
+          >
+        </li>
+      {/if}
+      <li class="menu-sm">
         <a href="/settings" class={section == Section.Settings ? "active" : ""}>
           <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools. Attribution: https://www.svgrepo.com/svg/524954/settings -->
           <svg
-            class="w-6 h-6 mr-2"
+            class="sidebar-icon"
             viewBox="0 0 24 24"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
@@ -408,20 +433,13 @@
           Settings</a
         >
       </li>
-      {#if $update_info.update_result && $update_info.update_result.has_update}
-        <li class="menu-md mt-4">
-          <a href="/settings/check_for_update" class="px-6 text-xs font-medium">
-            <span class="bg-primary rounded-full w-2 h-2 mr-1"></span>App Update
-            Available</a
-          >
-        </li>
-      {/if}
-      <li class="mt-auto pt-2 bg-transparent">
-        <ProgressWidget />
-      </li>
     </ul>
   </div>
 </div>
+
+<Dialog bind:this={taskDialog} title="Select Project & Task">
+  <SelectTasksMenu on:task_selected={() => taskDialog?.close()} />
+</Dialog>
 
 <style>
   :global(ul > li.menu-nested) {
@@ -429,5 +447,25 @@
   }
   :global(.menu li > ul) {
     margin-inline-start: 1.9em;
+  }
+
+  .sidebar-menu :global(li > ul) {
+    margin-inline-start: 20.5px;
+  }
+
+  .menu-sm :where(li:not(.menu-title) > *:not(ul, details, .menu-title)),
+  .menu-sm :where(li:not(.menu-title) > details > summary:not(.menu-title)) {
+    font-size: 0.75rem;
+  }
+
+  .sidebar-menu > :global(li) {
+    margin-bottom: 4px;
+  }
+
+  .sidebar-menu :global(.sidebar-icon) {
+    width: 1.25rem;
+    height: 1.25rem;
+    margin-right: 0.25rem;
+    flex-shrink: 0;
   }
 </style>
