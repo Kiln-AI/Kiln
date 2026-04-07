@@ -138,18 +138,39 @@
           <div class="text-base font-bold ml-1">Kiln AI</div>
         </div>
       </div>
-      <li class="mb-2">
-        <button class="pl-2 pr-3" on:click={() => taskDialog?.show()}>
-          <div
-            class="grid grid-cols-[auto,1fr] gap-x-1.5 gap-y-0.5 text-xs text-left"
-          >
-            <span class="font-bold whitespace-nowrap">Project:</span>
-            <span class="truncate">{$current_project?.name}</span>
-            <span class="font-bold whitespace-nowrap">Task:</span>
-            <span class="truncate">{$current_task?.name}</span>
+      <button
+        class="text-xs text-left w-full px-3 py-2 hover:bg-stone-200 rounded-md mt-2 mb-4 flex flex-row items-center justify-between"
+        on:click={() => taskDialog?.show()}
+      >
+        <div class="min-w-0 flex-1">
+          <div class="truncate font-medium">
+            {$current_task?.name || "No task selected"}
           </div>
-        </button>
-      </li>
+          <div
+            class="truncate text-gray-500 {$current_project?.name
+              ? ''
+              : 'hidden'}"
+          >
+            {$current_project?.name}
+          </div>
+        </div>
+        <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
+        <svg
+          class="h-4 w-4 text-gray-500 shrink-0"
+          viewBox="0 0 24 24"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M5.70711 16.1359C5.31659 16.5264 5.31659 17.1596 5.70711 17.5501L10.5993 22.4375C11.3805 23.2179 12.6463 23.2176 13.4271 22.4369L18.3174 17.5465C18.708 17.156 18.708 16.5228 18.3174 16.1323C17.9269 15.7418 17.2937 15.7418 16.9032 16.1323L12.7176 20.3179C12.3271 20.7085 11.6939 20.7085 11.3034 20.3179L7.12132 16.1359C6.7308 15.7454 6.09763 15.7454 5.70711 16.1359Z"
+            fill="currentColor"
+          />
+          <path
+            d="M18.3174 7.88675C18.708 7.49623 18.708 6.86307 18.3174 6.47254L13.4252 1.58509C12.644 0.804698 11.3783 0.805008 10.5975 1.58579L5.70711 6.47615C5.31658 6.86667 5.31658 7.49984 5.70711 7.89036C6.09763 8.28089 6.7308 8.28089 7.12132 7.89036L11.307 3.70472C11.6975 3.31419 12.3307 3.31419 12.7212 3.70472L16.9032 7.88675C17.2937 8.27728 17.9269 8.27728 18.3174 7.88675Z"
+            fill="currentColor"
+          />
+        </svg>
+      </button>
       <li class="menu-sm">
         <a href="/" class={section == Section.Run ? "active" : ""}>
           <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools. Attribution: https://www.svgrepo.com/svg/524827/play-circle -->
