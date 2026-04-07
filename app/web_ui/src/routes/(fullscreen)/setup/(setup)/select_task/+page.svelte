@@ -9,13 +9,9 @@
 <h1 class="text-2xl lg:text-4xl flex-none font-bold text-center">
   Select a Project and Task
 </h1>
-<h3 class="text-base font-medium text-center mt-3 max-w-[600px] mx-auto">
-  Select a project and task to get started. You can also create a new projects
-  and tasks.
-</h3>
 
 <div
-  class="flex-none min-h-[50vh] py-8 px-4 h-full flex flex-col py-18 mx-auto w-full max-w-[500px]"
+  class="flex-none min-h-[50vh] py-8 px-4 h-full flex flex-col py-18 mx-auto w-full max-w-[800px]"
 >
   <SelectTasksMenu
     new_project_url="/setup/create_project"

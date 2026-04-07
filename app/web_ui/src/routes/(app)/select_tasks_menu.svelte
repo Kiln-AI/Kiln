@@ -7,18 +7,19 @@
   import { createEventDispatcher } from "svelte"
 
   const dispatch = createEventDispatcher()
-  let id = "select-tasks-menu-" + Math.random().toString(36)
 
   export let new_project_url = "/settings/create_project"
   export let new_task_url = "/settings/create_task"
 
   $: project_list = $projects?.projects || []
-  // Undefined should fallback. Null is manually selected none
   let manually_selected_project: Project | null | undefined = undefined
   let tasks_loading = false
   let tasks_loading_error: string | null = null
   let selected_project_tasks: Task[] = []
   let last_loaded_project_id: string | null = null
+  let show_project_pane = false
+  let load_request_counter = 0
+  let previous_task_id: string | null | undefined = undefined
 
   $: selected_project =
     manually_selected_project === null
@@ -26,23 +27,22 @@
       : manually_selected_project || $current_project
 
   function select_project(project: Project) {
-    if (project?.id == selected_project?.id) {
-      // Actually deselect it
-      manually_selected_project = null
+    if (project?.id === selected_project?.id) {
+      show_project_pane = false
       return
     }
     manually_selected_project = project
+    show_project_pane = false
     load_tasks(project)
   }
 
   $: load_tasks(selected_project)
 
-  // Reload when the current task changes. Sometimes the task is deleted or a new one is created.
   current_task.subscribe((task) => {
-    // this fires multiple times during initial load, only reload if the task actually changed
-    if (task?.id && task.id === $current_task?.id) {
+    if (task?.id && task.id === previous_task_id) {
       return
     }
+    previous_task_id = task?.id
     load_tasks(selected_project, { force: true })
   })
 
@@ -56,33 +56,42 @@
       last_loaded_project_id = null
       return
     }
-    if ((!force && project.id === last_loaded_project_id) || tasks_loading) {
+    if (!force && project.id === last_loaded_project_id) {
       return
     }
+    const request_id = ++load_request_counter
     try {
       tasks_loading = true
       tasks_loading_error = null
-      const {
-        data: tasks_data, // only present if 2XX response
-        error: fetch_error, // only present if 4XX or 5XX response
-      } = await client.GET("/api/projects/{project_id}/tasks", {
-        params: {
-          path: {
-            project_id: project.id,
+      const { data: tasks_data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/tasks",
+        {
+          params: {
+            path: {
+              project_id: project.id,
+            },
           },
         },
-      })
+      )
+      if (request_id !== load_request_counter) {
+        return
+      }
       if (fetch_error) {
         throw fetch_error
       }
       selected_project_tasks = tasks_data
       last_loaded_project_id = project.id
     } catch (error) {
+      if (request_id !== load_request_counter) {
+        return
+      }
       tasks_loading_error = "Tasks failed to load: " + error
       selected_project_tasks = []
       last_loaded_project_id = null
     } finally {
-      tasks_loading = false
+      if (request_id === load_request_counter) {
+        tasks_loading = false
+      }
     }
   }
 
@@ -99,129 +108,177 @@
     })
 
     goto(`/`, { replaceState: true })
-    close_menu()
-  }
-
-  function close_menu() {
     dispatch("task_selected")
   }
 </script>
 
-<ul class="menu menu-md bg-base-200 rounded-box" {id}>
-  {#each project_list as project}
-    <li>
-      <button
-        on:click={() => select_project(project)}
-        class="flex flex-row pr-1"
+<div class="flex flex-col gap-3">
+  <button
+    class="md:hidden flex items-center gap-2 px-3 py-2 rounded-xl border border-base-300 bg-base-100 text-sm font-medium w-full text-left"
+    on:click={() => (show_project_pane = !show_project_pane)}
+  >
+    <img src="/images/sm_folder.svg" alt="Project" class="w-4 h-4 opacity-60" />
+    <span class="grow truncate">
+      {selected_project?.name || "Select a project"}
+    </span>
+    <svg
+      class="w-3 h-3 shrink-0 transition-transform {show_project_pane
+        ? 'rotate-180'
+        : ''}"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+    >
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  </button>
+
+  <div class="grid md:grid-cols-[320px_1fr] gap-4">
+    <section
+      class="border border-base-300 rounded-2xl overflow-hidden flex flex-col {show_project_pane
+        ? ''
+        : 'hidden md:flex'}"
+    >
+      <div class="bg-base-200 px-3.5 py-2.5 flex items-center gap-2">
+        <div class="grow">
+          <div class="text-sm font-semibold">Projects</div>
+          <div class="text-xs text-base-content/60">Pick a project first</div>
+        </div>
+        <a href={new_project_url} class="btn btn-sm btn-ghost">+ New Project</a>
+      </div>
+      <div
+        class="overflow-y-auto px-1.5 py-1.5 flex flex-col gap-0.5 min-h-[200px] max-h-[400px]"
       >
-        <div class="grow flex flex-row items-center gap-1.5">
-          <img
-            src="/images/sm_folder.svg"
-            alt="Project"
-            class="w-4 h-4 opacity-60"
-          />
-          {project.name}
+        {#each project_list as project}
+          <button
+            class="flex items-start gap-2.5 px-3.5 py-3 rounded-xl w-full text-left transition-colors
+              {project.id === selected_project?.id
+              ? 'bg-primary/10 border border-primary/20'
+              : 'hover:bg-base-200 border border-transparent'}"
+            on:click={() => select_project(project)}
+          >
+            <img
+              src="/images/sm_folder.svg"
+              alt="Project"
+              class="w-4 h-4 opacity-60 mt-0.5 shrink-0"
+            />
+            <div class="min-w-0">
+              <div class="text-sm font-medium truncate">{project.name}</div>
+              {#if project.description}
+                <div class="text-xs text-base-content/60 truncate">
+                  {project.description}
+                </div>
+              {/if}
+            </div>
+          </button>
+        {/each}
+      </div>
+    </section>
+
+    <section
+      class="border border-base-300 rounded-2xl overflow-hidden flex flex-col {show_project_pane
+        ? 'hidden md:flex'
+        : ''}"
+    >
+      {#if !selected_project}
+        <div
+          class="flex flex-col items-center justify-center min-h-[300px] text-base-content/40 gap-3"
+        >
+          <svg
+            class="w-10 h-10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+          >
+            <path
+              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+            />
+          </svg>
+          <span class="text-sm">Select a project to view its tasks</span>
         </div>
-        <div>
-          {#if project.id == selected_project?.id}
-            <svg
-              fill="#000000"
-              class="w-3 h-3"
-              version="1.1"
-              id="Layer_1"
-              xmlns="http://www.w3.org/2000/svg"
-              xmlns:xlink="http://www.w3.org/1999/xlink"
-              viewBox="0 0 407.437 407.437"
-              xml:space="preserve"
-            >
-              <polygon
-                points="386.258,91.567 203.718,273.512 21.179,91.567 0,112.815 203.718,315.87 407.437,112.815 "
-              />
-            </svg>
-          {:else}
-            <svg
-              fill="#000000"
-              class="w-3 h-3"
-              version="1.1"
-              id="Layer_1"
-              xmlns="http://www.w3.org/2000/svg"
-              xmlns:xlink="http://www.w3.org/1999/xlink"
-              viewBox="0 0 407.436 407.436"
-              xml:space="preserve"
-            >
-              <polygon
-                points="203.718,91.567 0,294.621 21.179,315.869 203.718,133.924 386.258,315.869 407.436,294.621 "
-              />
-            </svg>
-          {/if}
+      {:else}
+        <div class="bg-base-200 px-3.5 py-2.5 flex items-center gap-2">
+          <div class="grow">
+            <div class="text-sm font-semibold">
+              Tasks in <span class="font-bold">{selected_project.name}</span>
+            </div>
+            <div class="text-xs text-base-content/60">
+              {#if tasks_loading}
+                Loading...
+              {:else if tasks_loading_error}
+                Error loading tasks
+              {:else}
+                {selected_project_tasks.length}
+                {selected_project_tasks.length === 1 ? "task" : "tasks"}
+              {/if}
+            </div>
+          </div>
+          <a
+            href={new_task_url + "/" + (selected_project?.id || "")}
+            class="btn btn-sm btn-ghost">+ New Task</a
+          >
         </div>
-      </button>
-      {#if project.id == selected_project?.id}
-        <ul>
+        <div
+          class="overflow-y-auto px-1.5 py-1.5 flex flex-col gap-0.5 min-h-[200px] max-h-[400px]"
+        >
           {#if tasks_loading}
-            <li
-              class="flex justify-center place-items-center place-content-center h-32"
-            >
+            <div class="flex items-center justify-center h-32">
               <span class="loading loading-spinner loading-md"></span>
-            </li>
+            </div>
           {:else if tasks_loading_error}
-            <li
-              class="flex justify-center place-items-center place-content-center h-32"
-            >
-              <span class="flex flex-col">
-                <span class="font-bold">Error</span>
-                <span class="">{tasks_loading_error}</span>
-              </span>
-            </li>
+            <div class="flex items-center justify-center h-32">
+              <div class="text-center">
+                <div class="font-bold text-sm">Error</div>
+                <div class="text-sm text-base-content/60">
+                  {tasks_loading_error}
+                </div>
+              </div>
+            </div>
           {:else}
             {#each selected_project_tasks as task}
-              <li>
-                <button on:click={() => select_task(task)}>
-                  {task.name}
-                </button>
-              </li>
+              <button
+                class="flex items-center gap-2.5 px-3.5 py-3 rounded-xl w-full text-left transition-colors
+                  {task.id === $current_task?.id &&
+                selected_project?.id === $current_project?.id
+                  ? 'bg-primary/10 border border-primary/20'
+                  : 'hover:bg-base-200 border border-transparent'}"
+                on:click={() => select_task(task)}
+              >
+                <svg
+                  class="w-4 h-4 opacity-60 shrink-0"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                >
+                  <path
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
+                </svg>
+                <div class="min-w-0 grow">
+                  <div class="text-sm font-medium truncate">{task.name}</div>
+                </div>
+                {#if task.id === $current_task?.id && selected_project?.id === $current_project?.id}
+                  <span class="text-xs text-base-content/50 shrink-0"
+                    >Currently selected</span
+                  >
+                {/if}
+              </button>
             {/each}
           {/if}
-          <li class="">
-            <a href={new_task_url + "/" + (project?.id || "")}>
-              <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools. https://www.svgrepo.com/svg/491465/plus-circle -->
-              <svg
-                class="w-4 h-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  fill-rule="evenodd"
-                  clip-rule="evenodd"
-                  d="M1 12C1 5.92487 5.92487 1 12 1C18.0751 1 23 5.92487 23 12C23 18.0751 18.0751 23 12 23C5.92487 23 1 18.0751 1 12ZM12.5 5.5C13.0523 5.5 13.5 5.94772 13.5 6.5V10.5H17.5C18.0523 10.5 18.5 10.9477 18.5 11.5V12.5C18.5 13.0523 18.0523 13.5 17.5 13.5H13.5V17.5C13.5 18.0523 13.0523 18.5 12.5 18.5H11.5C10.9477 18.5 10.5 18.0523 10.5 17.5V13.5H6.5C5.94772 13.5 5.5 13.0523 5.5 12.5V11.5C5.5 10.9477 5.94772 10.5 6.5 10.5H10.5V6.5C10.5 5.94772 10.9477 5.5 11.5 5.5H12.5Z"
-                  fill="#000000"
-                />
-              </svg>
-              New Task
-            </a>
-          </li>
-        </ul>
+        </div>
       {/if}
-    </li>
-  {/each}
-  <li class="pt-4">
-    <a href={new_project_url}>
-      <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools. https://www.svgrepo.com/svg/491465/plus-circle -->
-      <svg
-        class="w-4 h-4"
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
+    </section>
+  </div>
+
+  {#if $current_project && $current_task}
+    <div class="text-xs text-base-content/50 text-center">
+      Currently selected: <span class="font-semibold"
+        >{$current_project.name}</span
       >
-        <path
-          fill-rule="evenodd"
-          clip-rule="evenodd"
-          d="M1 12C1 5.92487 5.92487 1 12 1C18.0751 1 23 5.92487 23 12C23 18.0751 18.0751 23 12 23C5.92487 23 1 18.0751 1 12ZM12.5 5.5C13.0523 5.5 13.5 5.94772 13.5 6.5V10.5H17.5C18.0523 10.5 18.5 10.9477 18.5 11.5V12.5C18.5 13.0523 18.0523 13.5 17.5 13.5H13.5V17.5C13.5 18.0523 13.0523 18.5 12.5 18.5H11.5C10.9477 18.5 10.5 18.0523 10.5 17.5V13.5H6.5C5.94772 13.5 5.5 13.0523 5.5 12.5V11.5C5.5 10.9477 5.94772 10.5 6.5 10.5H10.5V6.5C10.5 5.94772 10.9477 5.5 11.5 5.5H12.5Z"
-          fill="#000000"
-        />
-      </svg>
-      New Project</a
-    >
-  </li>
-</ul>
+      / <span class="font-semibold">{$current_task.name}</span>
+    </div>
+  {/if}
+</div>
