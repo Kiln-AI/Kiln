@@ -22,7 +22,7 @@
       Skill to make them accessible to your agents.
     </div>
     <div slot="icon">
-      <img src="/images/file.svg" alt="Doc Skill" class="w-10 h-10" />
+      <img src="/images/doc_skill.svg" alt="Doc Skill" class="w-10 h-10" />
     </div>
   </Intro>
 </div>

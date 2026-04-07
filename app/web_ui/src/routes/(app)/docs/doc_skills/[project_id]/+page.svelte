@@ -3,12 +3,14 @@
   import { page } from "$app/stores"
   import { ui_state } from "$lib/stores"
   import { onMount } from "svelte"
-  import { base_url } from "$lib/api_client"
+  import { client } from "$lib/api_client"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import EmptyDocSkillsIntro from "./empty_doc_skills_intro.svelte"
   import TableDocSkillRow from "./table_doc_skill_row.svelte"
   import { agentInfo } from "$lib/agent"
-  import type { DocSkillResponse } from "../doc_skill_types"
+  import type { components } from "$lib/api_schema"
+
+  type DocSkillResponse = components["schemas"]["DocSkillResponse"]
 
   $: project_id = $page.params.project_id!
   $: agentInfo.set({
@@ -45,18 +47,18 @@
       loading = true
       error = null
 
-      const response = await fetch(
-        `${base_url}/api/projects/${project_id}/doc_skills`,
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/doc_skills",
+        {
+          params: { path: { project_id } },
+        },
       )
 
-      if (!response.ok) {
-        const body = await response.json().catch(() => null)
-        throw new Error(
-          body?.detail || `Failed to load doc skills (${response.status})`,
-        )
+      if (fetch_error) {
+        throw fetch_error
       }
 
-      all_doc_skills = await response.json()
+      all_doc_skills = data || []
     } catch (e) {
       error = createKilnError(e)
     } finally {

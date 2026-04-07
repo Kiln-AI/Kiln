@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from "$app/stores"
   import { ui_state } from "$lib/stores"
-  import { client, base_url } from "$lib/api_client"
+  import { client } from "$lib/api_client"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import AppPage from "../../../../../app_page.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
@@ -20,7 +20,9 @@
   import RunDocSkillDialog from "../../run_doc_skill_dialog.svelte"
   import { agentInfo } from "$lib/agent"
   import { fixedWindowChunkerProperties } from "$lib/utils/properties_cast"
-  import type { DocSkillResponse } from "../../../doc_skill_types"
+  import type { components } from "$lib/api_schema"
+
+  type DocSkillResponse = components["schemas"]["DocSkillResponse"]
 
   $: project_id = $page.params.project_id!
   $: doc_skill_id = $page.params.doc_skill_id!
@@ -47,18 +49,18 @@
       loading = true
       error = null
 
-      const response = await fetch(
-        `${base_url}/api/projects/${project_id}/doc_skills/${doc_skill_id}`,
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/doc_skills/{doc_skill_id}",
+        {
+          params: { path: { project_id, doc_skill_id } },
+        },
       )
 
-      if (!response.ok) {
-        const body = await response.json().catch(() => null)
-        throw new Error(
-          body?.detail || `Failed to load doc skill (${response.status})`,
-        )
+      if (fetch_error) {
+        throw fetch_error
       }
 
-      doc_skill = await response.json()
+      doc_skill = data || null
 
       await load_sub_configs()
     } catch (e) {
@@ -107,20 +109,16 @@
     try {
       update_error = null
 
-      const response = await fetch(
-        `${base_url}/api/projects/${project_id}/doc_skills/${doc_skill_id}`,
+      const { error: fetch_error } = await client.PATCH(
+        "/api/projects/{project_id}/doc_skills/{doc_skill_id}",
         {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ is_archived }),
+          params: { path: { project_id, doc_skill_id } },
+          body: { is_archived },
         },
       )
 
-      if (!response.ok) {
-        const body = await response.json().catch(() => null)
-        throw new Error(
-          body?.detail || `Failed to update doc skill (${response.status})`,
-        )
+      if (fetch_error) {
+        throw fetch_error
       }
 
       await load_doc_skill()

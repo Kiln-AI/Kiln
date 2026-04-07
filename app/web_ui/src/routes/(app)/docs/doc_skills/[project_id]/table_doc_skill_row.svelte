@@ -1,6 +1,8 @@
 <script lang="ts">
   import { goto } from "$app/navigation"
-  import type { DocSkillResponse } from "../doc_skill_types"
+  import type { components } from "$lib/api_schema"
+
+  type DocSkillResponse = components["schemas"]["DocSkillResponse"]
 
   export let doc_skill: DocSkillResponse
   export let project_id: string

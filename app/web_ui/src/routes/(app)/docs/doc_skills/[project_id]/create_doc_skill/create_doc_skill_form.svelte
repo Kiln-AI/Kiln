@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/stores"
-  import { client, base_url } from "$lib/api_client"
+  import { client } from "$lib/api_client"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
@@ -136,22 +136,26 @@
 
   async function load_clone_source(id: string) {
     try {
-      const response = await fetch(
-        `${base_url}/api/projects/${project_id}/doc_skills/${id}`,
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/doc_skills/{doc_skill_id}",
+        {
+          params: { path: { project_id, doc_skill_id: id } },
+        },
       )
-      if (!response.ok) {
+      if (fetch_error) {
+        throw fetch_error
+      }
+      if (!data) {
         throw new Error("Failed to load doc skill for cloning")
       }
-      const doc_skill = await response.json()
-      skill_name = doc_skill.skill_name || ""
-      name = doc_skill.name || ""
-      description = doc_skill.description || ""
-      skill_content_header =
-        doc_skill.skill_content_header || DEFAULT_CONTENT_HEADER
-      selected_tags = doc_skill.document_tags || []
-      strip_file_extensions = doc_skill.strip_file_extensions ?? true
-      selected_extractor_config_id = doc_skill.extractor_config_id || null
-      selected_chunker_config_id = doc_skill.chunker_config_id || null
+      skill_name = data.skill_name || ""
+      name = data.name || ""
+      description = data.description || ""
+      skill_content_header = data.skill_content_header || DEFAULT_CONTENT_HEADER
+      selected_tags = data.document_tags || []
+      strip_file_extensions = data.strip_file_extensions ?? true
+      selected_extractor_config_id = data.extractor_config_id || null
+      selected_chunker_config_id = data.chunker_config_id || null
     } catch (e) {
       error = createKilnError(e)
     }
@@ -278,14 +282,11 @@
     extractor_config_id: string,
     chunker_config_id: string,
   ) {
-    const response = await fetch(
-      `${base_url}/api/projects/${project_id}/doc_skills`,
+    const { data, error: fetch_error } = await client.POST(
+      "/api/projects/{project_id}/doc_skills",
       {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+        params: { path: { project_id } },
+        body: {
           name: name || template?.doc_skill_name || skill_name,
           skill_name: skill_name,
           skill_content_header: skill_content_header,
@@ -294,23 +295,19 @@
           chunker_config_id: chunker_config_id,
           document_tags: selected_tags.length > 0 ? selected_tags : null,
           strip_file_extensions: strip_file_extensions,
-        }),
+        },
       },
     )
 
-    if (!response.ok) {
-      const body = await response.json().catch(() => null)
-      throw new Error(
-        body?.detail || `Failed to create doc skill (${response.status})`,
-      )
+    if (fetch_error) {
+      throw fetch_error
     }
 
-    const doc_skill = await response.json()
-    if (!doc_skill.id) {
+    if (!data?.id) {
       throw new Error("Failed to create doc skill: missing ID")
     }
 
-    created_doc_skill_id = doc_skill.id
+    created_doc_skill_id = data.id
     uncache_available_tools(project_id)
 
     posthog.capture("create_doc_skill", {

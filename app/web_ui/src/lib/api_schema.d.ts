@@ -2391,7 +2391,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Run Doc Skill */
+        /**
+         * Run Doc Skill Pipeline
+         * @description Triggers the extraction → chunking → skill creation pipeline via SSE. Uses GET for EventSource compatibility.
+         */
         get: operations["run_doc_skill_api_projects__project_id__doc_skills__doc_skill_id__run_get"];
         put?: never;
         post?: never;
@@ -2410,7 +2413,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Get Doc Skill Progress */
+        /**
+         * Get Doc Skill Progress
+         * @description Batch endpoint: returns progress for specified doc skill IDs, or all in project.
+         */
         post: operations["get_doc_skill_progress_api_projects__project_id__doc_skills_progress_post"];
         delete?: never;
         options?: never;
@@ -2425,7 +2431,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Doc Skill Source */
+        /** Get Doc Skill Source for Skill */
         get: operations["get_doc_skill_source_api_projects__project_id__skills__skill_id__doc_skill_source_get"];
         put?: never;
         post?: never;
@@ -3484,7 +3490,10 @@ export interface components {
              */
             description?: string | null;
         };
-        /** CreateDocSkillRequest */
+        /**
+         * CreateDocSkillRequest
+         * @description Request to create a new document skill configuration.
+         */
         CreateDocSkillRequest: {
             /** Name */
             name: string;
@@ -4251,12 +4260,18 @@ export interface components {
             /** Logs */
             logs?: components["schemas"]["LogMessage"][] | null;
         };
-        /** DocSkillProgressRequest */
+        /**
+         * DocSkillProgressRequest
+         * @description Request for batch doc skill progress. If doc_skill_ids is None, returns all.
+         */
         DocSkillProgressRequest: {
             /** Doc Skill Ids */
             doc_skill_ids?: string[] | null;
         };
-        /** DocSkillResponse */
+        /**
+         * DocSkillResponse
+         * @description A document skill configuration with its metadata.
+         */
         DocSkillResponse: {
             /** Id */
             id: string;
@@ -4267,31 +4282,28 @@ export interface components {
             /** Skill Content Header */
             skill_content_header: string;
             /** Description */
-            description?: string | null;
+            description: string | null;
             /** Extractor Config Id */
             extractor_config_id: string;
             /** Chunker Config Id */
             chunker_config_id: string;
             /** Document Tags */
-            document_tags?: string[] | null;
+            document_tags: string[] | null;
             /** Skill Id */
-            skill_id?: string | null;
-            /**
-             * Strip File Extensions
-             * @default true
-             */
+            skill_id: string | null;
+            /** Strip File Extensions */
             strip_file_extensions: boolean;
-            /**
-             * Is Archived
-             * @default false
-             */
+            /** Is Archived */
             is_archived: boolean;
             /** Created At */
-            created_at?: string | null;
+            created_at: string | null;
             /** Created By */
-            created_by?: string | null;
+            created_by: string | null;
         };
-        /** DocSkillSourceResponse */
+        /**
+         * DocSkillSourceResponse
+         * @description Links a generated skill back to its source document skill.
+         */
         DocSkillSourceResponse: {
             /** Doc Skill Id */
             doc_skill_id: string | null;
@@ -8771,7 +8783,10 @@ export interface components {
             /** Arguments */
             arguments: string;
         };
-        /** UpdateDocSkillRequest */
+        /**
+         * UpdateDocSkillRequest
+         * @description Request to archive or unarchive a document skill.
+         */
         UpdateDocSkillRequest: {
             /** Is Archived */
             is_archived: boolean;

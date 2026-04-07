@@ -14,7 +14,9 @@ from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.skill import Skill
 from pydantic import BaseModel
 
+from kiln_ai.adapters.rag.deduplication import filter_documents_by_tags
 from kiln_server.project_api import project_from_id
+from kiln_server.utils.agent_checks.policy import ALLOW_AGENT, DENY_AGENT
 
 from .doc_skill_pipeline import (
     DocSkillProgress,
@@ -26,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 
 class CreateDocSkillRequest(BaseModel):
+    """Request to create a new document skill configuration."""
+
     name: str
     skill_name: str
     skill_content_header: str
@@ -37,30 +41,38 @@ class CreateDocSkillRequest(BaseModel):
 
 
 class UpdateDocSkillRequest(BaseModel):
+    """Request to archive or unarchive a document skill."""
+
     is_archived: bool
 
 
 class DocSkillResponse(BaseModel):
+    """A document skill configuration with its metadata."""
+
     id: str
     name: str
     skill_name: str
     skill_content_header: str
-    description: str | None = None
+    description: str | None
     extractor_config_id: str
     chunker_config_id: str
-    document_tags: list[str] | None = None
-    skill_id: str | None = None
-    strip_file_extensions: bool = True
-    is_archived: bool = False
-    created_at: datetime | None = None
-    created_by: str | None = None
+    document_tags: list[str] | None
+    skill_id: str | None
+    strip_file_extensions: bool
+    is_archived: bool
+    created_at: datetime | None
+    created_by: str | None
 
 
 class DocSkillProgressRequest(BaseModel):
+    """Request for batch doc skill progress. If doc_skill_ids is None, returns all."""
+
     doc_skill_ids: list[str] | None = None
 
 
 class DocSkillSourceResponse(BaseModel):
+    """Links a generated skill back to its source document skill."""
+
     doc_skill_id: str | None
     doc_skill_name: str | None
 
@@ -103,7 +115,7 @@ def _get_filtered_documents(project: Project, tags: list[str] | None) -> list[Do
     all_docs = project.documents(readonly=True)
     if tags is None:
         return all_docs
-    return [d for d in all_docs if d.tags and any(t in tags for t in d.tags)]
+    return filter_documents_by_tags(all_docs, tags)
 
 
 def compute_doc_skill_progress(
@@ -203,7 +215,7 @@ async def run_doc_skill_workflow_with_status(
             async for progress in runner.run():
                 latest_progress = progress.model_copy()
                 data = _serialize_progress(progress)
-                yield f"data: {json.dumps(data)}\n\n"
+                yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
         except asyncio.TimeoutError:
             logger.info("Doc skill workflow runner timed out waiting for lock")
             latest_progress.logs = [
@@ -213,7 +225,7 @@ async def run_doc_skill_workflow_with_status(
                 )
             ]
             data = _serialize_progress(latest_progress)
-            yield f"data: {json.dumps(data)}\n\n"
+            yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
         except Exception as e:
             logger.error(
                 f"Unexpected server error running doc skill workflow: {e}",
@@ -226,7 +238,7 @@ async def run_doc_skill_workflow_with_status(
                 )
             ]
             data = _serialize_progress(latest_progress)
-            yield f"data: {json.dumps(data)}\n\n"
+            yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
         yield "data: complete\n\n"
 
@@ -242,7 +254,12 @@ SkillId = Annotated[str, Path(description="The unique identifier of the skill.")
 
 
 def connect_doc_skill_api(app: FastAPI):
-    @app.post("/api/projects/{project_id}/doc_skills", tags=["Doc Skills"])
+    @app.post(
+        "/api/projects/{project_id}/doc_skills",
+        tags=["Doc Skills"],
+        summary="Create Doc Skill",
+        openapi_extra=DENY_AGENT,
+    )
     async def create_doc_skill(
         project_id: ProjectId, request: CreateDocSkillRequest
     ) -> DocSkillResponse:
@@ -262,14 +279,22 @@ def connect_doc_skill_api(app: FastAPI):
         doc_skill.save_to_file()
         return _to_response(doc_skill)
 
-    @app.get("/api/projects/{project_id}/doc_skills", tags=["Doc Skills"])
+    @app.get(
+        "/api/projects/{project_id}/doc_skills",
+        tags=["Doc Skills"],
+        summary="List Doc Skills",
+        openapi_extra=ALLOW_AGENT,
+    )
     async def list_doc_skills(project_id: ProjectId) -> list[DocSkillResponse]:
         project = project_from_id(project_id)
         doc_skills = project.document_skills(readonly=True)
         return [_to_response(ds) for ds in doc_skills]
 
     @app.get(
-        "/api/projects/{project_id}/doc_skills/{doc_skill_id}", tags=["Doc Skills"]
+        "/api/projects/{project_id}/doc_skills/{doc_skill_id}",
+        tags=["Doc Skills"],
+        summary="Get Doc Skill",
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_doc_skill(
         project_id: ProjectId, doc_skill_id: DocSkillId
@@ -279,7 +304,10 @@ def connect_doc_skill_api(app: FastAPI):
         return _to_response(doc_skill)
 
     @app.patch(
-        "/api/projects/{project_id}/doc_skills/{doc_skill_id}", tags=["Doc Skills"]
+        "/api/projects/{project_id}/doc_skills/{doc_skill_id}",
+        tags=["Doc Skills"],
+        summary="Update Doc Skill",
+        openapi_extra=DENY_AGENT,
     )
     async def update_doc_skill(
         project_id: ProjectId, doc_skill_id: DocSkillId, request: UpdateDocSkillRequest
@@ -301,10 +329,13 @@ def connect_doc_skill_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/doc_skills/{doc_skill_id}/run",
         tags=["Doc Skills"],
+        summary="Run Doc Skill Pipeline",
+        openapi_extra=DENY_AGENT,
     )
     async def run_doc_skill(
         project_id: ProjectId, doc_skill_id: DocSkillId
     ) -> StreamingResponse:
+        """Triggers the extraction → chunking → skill creation pipeline via SSE. Uses GET for EventSource compatibility."""
         project = project_from_id(project_id)
         doc_skill = _get_doc_skill(project, doc_skill_id)
 
@@ -325,11 +356,14 @@ def connect_doc_skill_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/doc_skills/progress",
         tags=["Doc Skills"],
+        summary="Get Doc Skill Progress",
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_doc_skill_progress(
         project_id: ProjectId,
         request: DocSkillProgressRequest,
     ) -> dict[str, DocSkillProgress]:
+        """Batch endpoint: returns progress for specified doc skill IDs, or all in project."""
         project = project_from_id(project_id)
         doc_skills: list[DocumentSkill] = []
 
@@ -355,6 +389,8 @@ def connect_doc_skill_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/skills/{skill_id}/doc_skill_source",
         tags=["Doc Skills"],
+        summary="Get Doc Skill Source for Skill",
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_doc_skill_source(
         project_id: ProjectId, skill_id: SkillId

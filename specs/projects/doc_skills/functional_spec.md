@@ -163,7 +163,7 @@ All endpoints under `/api/projects/{project_id}/doc_skills`.
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/doc_skills` | Create a DocumentSkill config |
-| `GET` | `/doc_skills` | List DocumentSkills (excludes archived) |
+| `GET` | `/doc_skills` | List DocumentSkills (includes archived) |
 | `GET` | `/doc_skills/{doc_skill_id}` | Get a specific DocumentSkill |
 | `PATCH` | `/doc_skills/{doc_skill_id}` | Archive/unarchive only (all other fields are immutable). Archiving a DocumentSkill also archives the generated Skill. Unarchiving restores both |
 | `GET` | `/doc_skills/{doc_skill_id}/run` | Run the creation pipeline (SSE) |

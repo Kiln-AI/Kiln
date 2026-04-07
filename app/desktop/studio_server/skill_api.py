@@ -204,6 +204,7 @@ def connect_skill_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/skills/{skill_id}/file_counts",
         tags=["Skills"],
+        summary="Get Skill File Counts",
         openapi_extra=ALLOW_AGENT,
     )
     async def get_skill_file_counts(
@@ -231,6 +232,7 @@ def connect_skill_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/skills/{skill_id}/open_folder",
         tags=["Skills"],
+        summary="Open Skill Folder",
         openapi_extra=DENY_AGENT,
     )
     async def open_skill_folder(
