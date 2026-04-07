@@ -84,7 +84,7 @@ Small-screen flow:
 - `$current_project` / `$current_task` stores provide current selection
 - Task loading via `client.GET("/api/projects/{project_id}/tasks")`
 - Selection updates `ui_state` store and calls `goto("/")`
-- `dispatch("task_selected")` signals the parent to close
+- `dispatch("dismiss")` signals the parent to close
 
 ### Dialog Integration
 
@@ -98,7 +98,7 @@ The fullscreen setup page renders the component directly (no Dialog). The two-co
 
 ## Testing
 
-This is a visual/interaction redesign of an existing component. No new unit tests needed — the component's public interface (props, events, store interactions) is unchanged. Visual verification during implementation.
+This is a visual/interaction redesign of an existing component. No new unit tests needed — the component's public interface (props, store interactions) is unchanged. The event was renamed from `task_selected` to `dismiss` to better reflect its purpose. Visual verification during implementation.
 
 ## Files Changed
 

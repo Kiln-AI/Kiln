@@ -33,18 +33,15 @@
     }
     manually_selected_project = project
     show_project_pane = false
-    load_tasks(project)
   }
 
-  $: load_tasks(selected_project)
-
-  current_task.subscribe((task) => {
-    if (task?.id && task.id === previous_task_id) {
-      return
+  $: {
+    const force = $current_task?.id !== previous_task_id
+    if (force) {
+      previous_task_id = $current_task?.id
     }
-    previous_task_id = task?.id
-    load_tasks(selected_project, { force: true })
-  })
+    load_tasks(selected_project, { force })
+  }
 
   async function load_tasks(
     project: Project | null,

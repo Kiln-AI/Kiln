@@ -30,4 +30,4 @@ Rewrite `select_tasks_menu.svelte` from a single-column expandable menu to a two
 
 ## Tests
 
-- No new unit tests needed per architecture spec. This is a visual/interaction redesign with unchanged public interface (props, events, store interactions). Visual verification during implementation.
+- No new unit tests needed per architecture spec. This is a visual/interaction redesign. The event was renamed from `task_selected` to `dismiss` but the overall interaction pattern is the same. Visual verification during implementation.

@@ -85,7 +85,7 @@ Each task row shows:
 **Interactions:**
 
 - Hover: subtle background highlight
-- Click: immediately selects the task AND the project, updates the store, navigates to `/`, dispatches `task_selected` event. No confirmation step.
+- Click: immediately selects the task AND the project, updates the store, navigates to `/`, dispatches `dismiss` event. No confirmation step.
 - Currently selected task (if viewing its project): highlighted with "Currently selected" label
 
 ### Loading State
@@ -101,9 +101,9 @@ If task loading fails, show an error message in the task list area.
 - `new_project_url: string` (default: `/settings/create_project`)
 - `new_task_url: string` (default: `/settings/create_task`)
 
-## Events (unchanged)
+## Events
 
-- `task_selected`: Dispatched when a task is clicked. Used by the Dialog wrapper to close.
+- `dismiss`: Dispatched when a task is clicked, or when "New Project"/"New Task" links are clicked. Used by the Dialog wrapper to close.
 
 ## Behavior Details
 
@@ -120,7 +120,7 @@ If task loading fails, show an error message in the task list area.
 
 ### Task Re-selection
 
-- Clicking the already-selected task should still fire `task_selected` (to close the dialog)
+- Clicking the already-selected task should still fire `dismiss` (to close the dialog)
 
 ## Out of Scope
 

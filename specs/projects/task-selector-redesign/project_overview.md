@@ -27,7 +27,7 @@ The redesigned component should work in both contexts, ideally as a single file 
 - **Title is external**: "Select Project & Task" comes from the Dialog wrapper or the setup page, not this component.
 - **Currently selected at top**: Show the currently selected project/task at the top of the component.
 - **Single "New" buttons**: Only in pane headers ("+ New Project" in project pane header, "+ New Task" in task pane header). Both are standard/ghost buttons (not primary/blue). Remove duplicate inline create rows at bottom of each list.
-- **Click-to-select tasks**: Clicking a task immediately selects it and closes (dispatches `task_selected`). No "Open Task" or "Cancel" footer buttons.
+- **Click-to-select tasks**: Clicking a task immediately selects it and closes (dispatches `dismiss`). No "Open Task" or "Cancel" footer buttons.
 - **Dismiss via X**: Users dismiss without selecting via the dialog's X button (already provided by Dialog) or clicking outside. No cancel button in component.
 - **Project selection shows tasks**: Clicking a project in the left pane loads its tasks in the right pane. Selected project is visually highlighted.
 - **Project descriptions**: Show project description below the name if available (data exists on the Project type).
