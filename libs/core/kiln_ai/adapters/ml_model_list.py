@@ -229,6 +229,7 @@ class ModelName(str, Enum):
     kimi_k2_thinking = "kimi_k2_thinking"
     kimi_k2_5 = "kimi_k2_5"
     kimi_dev_72b = "kimi_dev_72b"
+    glm_5_1 = "glm_5_1"
     glm_5_turbo = "glm_5_turbo"
     glm_5v_turbo = "glm_5v_turbo"
     glm_5 = "glm_5"
@@ -6345,6 +6346,22 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # GLM 5.1
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5_1,
+        friendly_name="GLM 5.1",
+        featured_rank=4,
+        editorial_notes="Z.ai's newest flagship for long-horizon agentic tasks. Coding performance on par with Claude Opus 4.6, and can autonomously execute complex engineering work for up to 8 hours.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-5.1",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+        ],
+    ),
     # GLM 5V Turbo
     KilnModel(
         family=ModelFamily.glm,
@@ -6391,8 +6408,6 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.glm,
         name=ModelName.glm_5,
         friendly_name="GLM 5",
-        featured_rank=4,
-        editorial_notes="Open, state-of-the-art model from Z.ai. Quality close to the big names, at a fraction of the cost.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
