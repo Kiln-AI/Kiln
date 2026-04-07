@@ -1,13 +1,16 @@
 import logging
+import pathlib
 from datetime import datetime
 from typing import Annotated, List
 
 from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.datamodel.skill import Skill
+from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.validation import SkillNameString
 from kiln_server.project_api import project_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
+    DENY_AGENT,
     agent_policy_require_approval,
 )
 from pydantic import BaseModel, Field
@@ -61,6 +64,27 @@ class SkillContentResponse(BaseModel):
         description="The full SKILL.md content including frontmatter."
     )
     body: str = Field(description="The markdown body of the skill.")
+
+
+class SkillFileCountsResponse(BaseModel):
+    """Counts of files in the skill's references and assets directories."""
+
+    reference_count: int = Field(
+        description="Number of files in the references directory."
+    )
+    asset_count: int = Field(description="Number of files in the assets directory.")
+
+
+class OpenFolderResponse(BaseModel):
+    """Response after opening a folder."""
+
+    path: str = Field(description="The path that was opened.")
+
+
+def _count_files_recursive(directory: "pathlib.Path") -> int:
+    if not directory.exists():
+        return 0
+    return sum(1 for f in directory.rglob("*") if f.is_file())
 
 
 def skill_to_response(skill: Skill) -> SkillResponse:
@@ -176,3 +200,53 @@ def connect_skill_api(app: FastAPI):
         updated.save_to_file()
 
         return skill_to_response(updated)
+
+    @app.get(
+        "/api/projects/{project_id}/skills/{skill_id}/file_counts",
+        tags=["Skills"],
+        summary="Get Skill File Counts",
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_skill_file_counts(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        skill_id: Annotated[
+            str, Path(description="The unique identifier of the skill.")
+        ],
+    ) -> SkillFileCountsResponse:
+        skill = _get_skill(project_id, skill_id)
+        try:
+            reference_count = _count_files_recursive(skill.references_dir())
+        except ValueError:
+            reference_count = 0
+        try:
+            asset_count = _count_files_recursive(skill.assets_dir())
+        except ValueError:
+            asset_count = 0
+        return SkillFileCountsResponse(
+            reference_count=reference_count,
+            asset_count=asset_count,
+        )
+
+    @app.post(
+        "/api/projects/{project_id}/skills/{skill_id}/open_folder",
+        tags=["Skills"],
+        summary="Open Skill Folder",
+        openapi_extra=DENY_AGENT,
+    )
+    async def open_skill_folder(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        skill_id: Annotated[
+            str, Path(description="The unique identifier of the skill.")
+        ],
+    ) -> OpenFolderResponse:
+        skill = _get_skill(project_id, skill_id)
+        if not skill.path:
+            raise HTTPException(status_code=500, detail="Skill path not found")
+        skill_dir = skill.path.parent
+        # open_folder expects a file path (it calls os.path.dirname internally)
+        open_folder(str(skill_dir / "SKILL.md"))
+        return OpenFolderResponse(path=str(skill_dir))

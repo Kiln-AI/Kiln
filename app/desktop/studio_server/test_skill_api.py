@@ -311,3 +311,64 @@ class TestAvailableToolsSkillIntegration:
         assert skill_set is not None
         assert len(skill_set["tools"]) == 1
         assert skill_set["tools"][0]["name"] == "active-skill"
+
+
+class TestGetSkillFileCounts:
+    def test_file_counts_happy_path(
+        self, client, test_project, mock_project_from_id, saved_skill
+    ):
+        refs_dir = saved_skill.references_dir()
+        refs_dir.mkdir(parents=True, exist_ok=True)
+        (refs_dir / "ref1.txt").write_text("reference 1")
+        (refs_dir / "ref2.txt").write_text("reference 2")
+
+        assets_dir = saved_skill.assets_dir()
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        (assets_dir / "asset1.png").write_bytes(b"\x89PNG")
+
+        response = client.get(
+            f"/api/projects/{test_project.id}/skills/{saved_skill.id}/file_counts"
+        )
+        assert response.status_code == 200
+        result = response.json()
+        assert result["reference_count"] == 2
+        assert result["asset_count"] == 1
+
+    def test_file_counts_empty(
+        self, client, test_project, mock_project_from_id, saved_skill
+    ):
+        response = client.get(
+            f"/api/projects/{test_project.id}/skills/{saved_skill.id}/file_counts"
+        )
+        assert response.status_code == 200
+        result = response.json()
+        assert result["reference_count"] == 0
+        assert result["asset_count"] == 0
+
+    def test_file_counts_not_found(self, client, test_project, mock_project_from_id):
+        response = client.get(
+            f"/api/projects/{test_project.id}/skills/nonexistent-id/file_counts"
+        )
+        assert response.status_code == 404
+
+
+class TestOpenSkillFolder:
+    def test_open_folder_calls_utility(
+        self, client, test_project, mock_project_from_id, saved_skill
+    ):
+        with patch("app.desktop.studio_server.skill_api.open_folder") as mock_open:
+            response = client.post(
+                f"/api/projects/{test_project.id}/skills/{saved_skill.id}/open_folder"
+            )
+            assert response.status_code == 200
+            result = response.json()
+            assert "path" in result
+            mock_open.assert_called_once()
+            call_arg = mock_open.call_args[0][0]
+            assert call_arg.endswith("SKILL.md")
+
+    def test_open_folder_not_found(self, client, test_project, mock_project_from_id):
+        response = client.post(
+            f"/api/projects/{test_project.id}/skills/nonexistent-id/open_folder"
+        )
+        assert response.status_code == 404

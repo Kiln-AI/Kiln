@@ -90,6 +90,10 @@ tags_metadata = [
         "name": "Settings & Utilities",
         "description": "Server settings, connectivity checks, and utility endpoints.",
     },
+    {
+        "name": "Doc Skills",
+        "description": "Create and manage document skills that convert uploaded documents into agent skills.",
+    },
 ]
 
 

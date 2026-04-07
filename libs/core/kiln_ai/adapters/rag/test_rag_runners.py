@@ -2433,3 +2433,161 @@ class TestRagStepRunnersWithTagFiltering:
         job_doc_ids = {job.doc.id for job in jobs}
         assert "doc1" in job_doc_ids
         assert "doc2" in job_doc_ids
+
+
+class TestExtractionStepRunnerTagsParam:
+    """Tests for the standalone tags parameter on RagExtractionStepRunner."""
+
+    @pytest.fixture
+    def tagged_documents(self, mock_project):
+        doc1 = MagicMock(spec=Document)
+        doc1.id = "doc1"
+        doc1.tags = ["api"]
+        doc1.extractions.return_value = []
+
+        doc2 = MagicMock(spec=Document)
+        doc2.id = "doc2"
+        doc2.tags = ["internal"]
+        doc2.extractions.return_value = []
+
+        mock_project.documents.return_value = [doc1, doc2]
+        return [doc1, doc2]
+
+    @pytest.mark.asyncio
+    async def test_tags_param_filters_documents(
+        self, mock_project, mock_extractor_config, tagged_documents
+    ):
+        runner = RagExtractionStepRunner(
+            mock_project,
+            mock_extractor_config,
+            concurrency=1,
+            tags=["api"],
+        )
+        jobs = await runner.collect_jobs()
+        assert len(jobs) == 1
+        assert jobs[0].doc.id == "doc1"
+
+    @pytest.mark.asyncio
+    async def test_tags_param_overrides_rag_config_tags(
+        self, mock_project, mock_extractor_config, tagged_documents
+    ):
+        rag_config = MagicMock(spec=RagConfig)
+        rag_config.tags = ["internal"]
+
+        runner = RagExtractionStepRunner(
+            mock_project,
+            mock_extractor_config,
+            concurrency=1,
+            rag_config=rag_config,
+            tags=["api"],
+        )
+        jobs = await runner.collect_jobs()
+        assert len(jobs) == 1
+        assert jobs[0].doc.id == "doc1"
+
+    @pytest.mark.asyncio
+    async def test_no_tags_falls_back_to_rag_config(
+        self, mock_project, mock_extractor_config, tagged_documents
+    ):
+        rag_config = MagicMock(spec=RagConfig)
+        rag_config.tags = ["internal"]
+
+        runner = RagExtractionStepRunner(
+            mock_project,
+            mock_extractor_config,
+            concurrency=1,
+            rag_config=rag_config,
+        )
+        jobs = await runner.collect_jobs()
+        assert len(jobs) == 1
+        assert jobs[0].doc.id == "doc2"
+
+
+class TestChunkingStepRunnerTagsParam:
+    """Tests for the standalone tags parameter on RagChunkingStepRunner."""
+
+    @pytest.fixture
+    def tagged_documents_with_extractions(self, mock_project, mock_extractor_config):
+        extraction1 = MagicMock(spec=Extraction)
+        extraction1.extractor_config_id = mock_extractor_config.id
+        extraction1.created_at = datetime(2024, 1, 1)
+        extraction1.chunked_documents.return_value = []
+
+        doc1 = MagicMock(spec=Document)
+        doc1.id = "doc1"
+        doc1.tags = ["api"]
+        doc1.extractions.return_value = [extraction1]
+
+        extraction2 = MagicMock(spec=Extraction)
+        extraction2.extractor_config_id = mock_extractor_config.id
+        extraction2.created_at = datetime(2024, 1, 1)
+        extraction2.chunked_documents.return_value = []
+
+        doc2 = MagicMock(spec=Document)
+        doc2.id = "doc2"
+        doc2.tags = ["internal"]
+        doc2.extractions.return_value = [extraction2]
+
+        mock_project.documents.return_value = [doc1, doc2]
+        return [doc1, doc2]
+
+    @pytest.mark.asyncio
+    async def test_tags_param_filters_documents(
+        self,
+        mock_project,
+        mock_extractor_config,
+        mock_chunker_config,
+        tagged_documents_with_extractions,
+    ):
+        runner = RagChunkingStepRunner(
+            mock_project,
+            mock_extractor_config,
+            mock_chunker_config,
+            concurrency=1,
+            tags=["api"],
+        )
+        jobs = await runner.collect_jobs()
+        assert len(jobs) == 1
+
+    @pytest.mark.asyncio
+    async def test_tags_param_overrides_rag_config_tags(
+        self,
+        mock_project,
+        mock_extractor_config,
+        mock_chunker_config,
+        tagged_documents_with_extractions,
+    ):
+        rag_config = MagicMock(spec=RagConfig)
+        rag_config.tags = ["internal"]
+
+        runner = RagChunkingStepRunner(
+            mock_project,
+            mock_extractor_config,
+            mock_chunker_config,
+            concurrency=1,
+            rag_config=rag_config,
+            tags=["api"],
+        )
+        jobs = await runner.collect_jobs()
+        assert len(jobs) == 1
+
+    @pytest.mark.asyncio
+    async def test_no_tags_falls_back_to_rag_config(
+        self,
+        mock_project,
+        mock_extractor_config,
+        mock_chunker_config,
+        tagged_documents_with_extractions,
+    ):
+        rag_config = MagicMock(spec=RagConfig)
+        rag_config.tags = ["internal"]
+
+        runner = RagChunkingStepRunner(
+            mock_project,
+            mock_extractor_config,
+            mock_chunker_config,
+            concurrency=1,
+            rag_config=rag_config,
+        )
+        jobs = await runner.collect_jobs()
+        assert len(jobs) == 1

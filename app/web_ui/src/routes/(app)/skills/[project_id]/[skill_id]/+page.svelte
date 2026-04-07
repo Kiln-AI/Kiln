@@ -2,7 +2,7 @@
   import AppPage from "../../../app_page.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import Warning from "$lib/ui/warning.svelte"
-  import { client } from "$lib/api_client"
+  import { client, base_url } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
@@ -28,9 +28,60 @@
   let loading_error: KilnError | null = null
   let archive_error: KilnError | null = null
 
+  let doc_skill_source: {
+    doc_skill_id: string | null
+    doc_skill_name: string | null
+  } | null = null
+
+  let file_counts: { reference_count: number; asset_count: number } | null =
+    null
+
   onMount(async () => {
-    await fetch_skill()
+    await Promise.all([
+      fetch_skill(),
+      fetch_doc_skill_source(),
+      fetch_file_counts(),
+    ])
   })
+
+  // Raw fetch used because these endpoints aren't in the generated OpenAPI types
+  async function fetch_file_counts() {
+    try {
+      const response = await fetch(
+        `${base_url}/api/projects/${project_id}/skills/${skill_id}/file_counts`,
+      )
+      if (response.ok) {
+        file_counts = await response.json()
+      }
+    } catch (e) {
+      console.warn("Failed to fetch file counts", e)
+    }
+  }
+
+  async function open_skill_folder() {
+    try {
+      await fetch(
+        `${base_url}/api/projects/${project_id}/skills/${skill_id}/open_folder`,
+        { method: "POST" },
+      )
+    } catch (e) {
+      console.warn("Failed to open skill folder", e)
+    }
+  }
+
+  async function fetch_doc_skill_source() {
+    try {
+      const { data } = await client.GET(
+        "/api/projects/{project_id}/skills/{skill_id}/doc_skill_source",
+        { params: { path: { project_id, skill_id } } },
+      )
+      if (data) {
+        doc_skill_source = data
+      }
+    } catch {
+      // Non-critical — silently ignore
+    }
+  }
 
   async function fetch_skill() {
     try {
@@ -56,11 +107,53 @@
     }
   }
 
-  function get_properties(skill: Skill): UiProperty[] {
+  function build_file_count_string(
+    counts: { reference_count: number; asset_count: number } | null,
+  ): string | null {
+    if (!counts) return null
+    const parts: string[] = []
+    if (counts.reference_count > 0)
+      parts.push(
+        `${counts.reference_count} ${counts.reference_count === 1 ? "reference" : "references"}`,
+      )
+    if (counts.asset_count > 0)
+      parts.push(
+        `${counts.asset_count} ${counts.asset_count === 1 ? "asset" : "assets"}`,
+      )
+    return parts.length > 0 ? parts.join(", ") : null
+  }
+
+  function get_properties(
+    skill: Skill,
+    doc_skill_source: {
+      doc_skill_id: string | null
+      doc_skill_name: string | null
+    } | null,
+    file_counts: { reference_count: number; asset_count: number } | null,
+  ): UiProperty[] {
     const props: UiProperty[] = [
       { name: "ID", value: skill.id ?? "" },
       { name: "Name", value: skill.name },
     ]
+    if (doc_skill_source?.doc_skill_id) {
+      props.push({
+        name: "Source",
+        value_with_link: {
+          prefix: "",
+          link_text: `Document Skill: ${doc_skill_source.doc_skill_name || "View Doc Skill"}`,
+          link: `/docs/doc_skills/${project_id}/${doc_skill_source.doc_skill_id}/doc_skill`,
+        },
+        value: "",
+      })
+    }
+    const file_count_str = build_file_count_string(file_counts)
+    if (file_count_str) {
+      props.push({
+        name: "Additional Files",
+        value: file_count_str,
+        handler: open_skill_folder,
+      })
+    }
     if (skill.created_at) {
       props.push({
         name: "Created At",
@@ -171,7 +264,10 @@
           />
         </div>
         <div class="flex flex-col gap-4 max-w-[400px]">
-          <PropertyList properties={get_properties(skill)} title="Properties" />
+          <PropertyList
+            properties={get_properties(skill, doc_skill_source, file_counts)}
+            title="Properties"
+          />
         </div>
       </div>
     {:else}

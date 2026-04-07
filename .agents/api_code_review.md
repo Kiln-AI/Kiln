@@ -57,3 +57,10 @@ async def delete_project(
 - Docstrings containing code artifacts, raw `Args:` blocks, or formatting that doesn't read as clean prose in OpenAPI
 - Pydantic models used in API request/response types (nested included) missing a class docstring, if the class name alone isn't obvious
 - Custom string types with validator-based constraints that don't surface in the OpenAPI schema. Use `StringConstraints` in the `Annotated` type definition so `minLength`/`maxLength` appear automatically (see `FilenameString`, `SkillNameString` for examples). Don't duplicate constraints in individual `Field()` calls.
+
+**Client Usage**
+
+All client calls should use the typed API via `api_client.ts`. The API is auto-generated to `api_schema.d.ts` with the `generate_schema.sh` command.
+ - SSE calls are only exception, may use fetch as typed client does not support SSE
+ - If an API isn't in api_schema, regenerate the schema -- don't fallback to fetch
+ - In `libs/types.ts` define exported types for the type names from auto-generation, eg `export type Task = components["schemas"]["Task"]`. Use these throughout codebase instead of long names from api_schema.d.ts

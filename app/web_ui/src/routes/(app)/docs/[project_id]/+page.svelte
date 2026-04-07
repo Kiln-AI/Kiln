@@ -8,7 +8,7 @@
   $: project_id = $page.params.project_id!
   $: agentInfo.set({
     name: "Documents & Search",
-    description: `Documents and search home page for project ID ${project_id}. Provides access to document library, extractors, and search tool (RAG) configuration.`,
+    description: `Documents and search home page for project ID ${project_id}. Provides access to document library, extractors, search tool (RAG) configuration, and doc skills.`,
   })
 </script>
 
@@ -50,6 +50,18 @@
           },
         ],
       },
+      {
+        title: "Doc Skills",
+        description:
+          "Convert your documents into agent skills. Agents can browse and read your documents on demand.",
+        action_buttons: [
+          {
+            label: "Manage Doc Skills",
+            href: `/docs/doc_skills/${project_id}`,
+            primary: true,
+          },
+        ],
+      },
     ]}
   >
     <div slot="image-0">
@@ -57,6 +69,9 @@
     </div>
     <div slot="image-1">
       <img src="/images/card-search.svg" alt="Search Tool" class="w-12 h-12" />
+    </div>
+    <div slot="image-2">
+      <img src="/images/doc_skill.svg" alt="Doc Skills" class="w-12 h-12" />
     </div>
   </MultiIntro>
 </AppPage>

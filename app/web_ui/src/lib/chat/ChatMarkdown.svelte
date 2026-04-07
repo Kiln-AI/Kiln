@@ -52,8 +52,11 @@
       codespan({ text }: { text: string }) {
         return `<code class="px-1.5 py-0.5 rounded bg-base-300/50 text-sm font-mono text-base-content/90">${escapeHtml(text ?? "")}</code>`
       },
-      blockquote({ tokens }: { tokens: Token[] }) {
-        const inner = this.parser.parse(tokens)
+      blockquote(
+        this: { parser: { parse: (tokens: Token[]) => string } },
+        { tokens }: { tokens: Token[] },
+      ): string {
+        const inner: string = this.parser.parse(tokens)
         return `<blockquote class="border-l-4 border-base-300 pl-4 my-2 text-base-content/80">${inner}</blockquote>`
       },
     },
