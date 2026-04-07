@@ -699,6 +699,7 @@
             requires_structured_output={true}
             hide_prompt_selector={true}
             show_tools_selector_in_advanced={true}
+            show_name_field={false}
             model_dropdown_settings={{
               requires_data_gen: true,
               requires_uncensored_data_gen:
@@ -773,6 +774,7 @@
           requires_structured_output={true}
           hide_prompt_selector={true}
           show_tools_selector_in_advanced={true}
+          show_name_field={false}
           model_dropdown_settings={{
             requires_data_gen: true,
             requires_uncensored_data_gen:
