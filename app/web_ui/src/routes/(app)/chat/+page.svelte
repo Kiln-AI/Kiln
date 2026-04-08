@@ -30,12 +30,14 @@
           ...(hasMessages
             ? [
                 {
+                  label: "New Chat",
                   icon: "/images/new_chat.svg",
                   handler: () => chatRef?.newChat(),
                 } as ActionButton,
               ]
             : []),
           {
+            label: "History",
             icon: "/images/history.svg",
             handler: () => chatRef?.openHistory(),
           },
