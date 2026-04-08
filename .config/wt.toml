@@ -2,8 +2,8 @@
 deps = "uv sync && cd app/web_ui && npm install"
 claude = "utils/setup_claude.sh"
 
-[post-start]
+[pre-start]
 copy = "wt step copy-ignored"
 
 [pre-remove]
-session = "zellij delete-session {{ branch | sanitize }} 2>/dev/null || true"
+-session = "zellij delete-session {{ branch | sanitize }} 2>/dev/null || true"
