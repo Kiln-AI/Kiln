@@ -81,6 +81,7 @@ interface StreamEvent {
   code?: string
   messageMetadata?: { finishReason?: string; usage?: unknown }
   items?: ToolCallsPendingItem[]
+  tool_count?: number
 }
 
 export interface ToolCallsPendingItem {
@@ -113,6 +114,8 @@ export interface StreamChatOptions {
   onToolCallsPending?: (
     payload: ToolCallsPendingPayload,
   ) => Promise<Record<string, boolean>>
+  onToolExecutionStart?: (toolCount: number) => void
+  onToolExecutionEnd?: (toolCount: number) => void
   onFinish: () => void
   onError: (error: Error) => void
   signal?: AbortSignal
@@ -172,6 +175,8 @@ class StreamEventProcessor {
     traceId?: string,
     code?: string,
   ) => void
+  private onToolExecutionStart?: (toolCount: number) => void
+  private onToolExecutionEnd?: (toolCount: number) => void
 
   private HANDLERS: Record<string, (event: StreamEvent) => void>
 
@@ -179,10 +184,14 @@ class StreamEventProcessor {
     onAssistantMessage: (update: (draft: ChatMessage) => void) => void
     onChatTrace?: (traceId: string) => void
     onInlineError?: (message: string, traceId?: string, code?: string) => void
+    onToolExecutionStart?: (toolCount: number) => void
+    onToolExecutionEnd?: (toolCount: number) => void
   }) {
     this.onAssistantMessage = opts.onAssistantMessage
     this.onChatTrace = opts.onChatTrace
     this.onInlineError = opts.onInlineError
+    this.onToolExecutionStart = opts.onToolExecutionStart
+    this.onToolExecutionEnd = opts.onToolExecutionEnd
 
     this.HANDLERS = {
       "text-start": (e) => this.handleTextStart(e),
@@ -197,6 +206,10 @@ class StreamEventProcessor {
       "tool-output-available": (e) => this.handleToolOutputAvailable(e),
       "tool-output-error": (e) => this.handleToolOutputError(e),
       kiln_chat_trace: (e) => this.handleChatTrace(e),
+      "kiln-tool-execution-start": (e) =>
+        this.onToolExecutionStart?.(e.tool_count ?? 0),
+      "kiln-tool-execution-end": (e) =>
+        this.onToolExecutionEnd?.(e.tool_count ?? 0),
       error: (e) => this.handleError(e),
     }
   }
@@ -419,6 +432,8 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     onChatTrace,
     onInlineError,
     onToolCallsPending,
+    onToolExecutionStart,
+    onToolExecutionEnd,
     onFinish,
     onError,
     signal,
@@ -492,6 +507,8 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
       onChatTrace?.(tid)
     },
     onInlineError,
+    onToolExecutionStart,
+    onToolExecutionEnd,
   })
 
   try {

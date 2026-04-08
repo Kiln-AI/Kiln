@@ -9,6 +9,8 @@ CHAT_TIMEOUT = httpx.Timeout(timeout=300.0, connect=30.0)
 MAX_TOOL_ROUNDS = 25
 
 SSE_TYPE_TOOL_CALLS_PENDING = "tool-calls-pending"
+SSE_TYPE_TOOL_EXEC_START = "kiln-tool-execution-start"
+SSE_TYPE_TOOL_EXEC_END = "kiln-tool-execution-end"
 
 DENIED_TOOL_OUTPUT = json.dumps({"error": "The user did not accept the toolcall"})
 FUNCTION_NAME_TO_TOOL_ID: dict[str, str] = {

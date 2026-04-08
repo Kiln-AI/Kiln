@@ -79,3 +79,21 @@ class TestEventParser:
         )
         result = EventParser().parse(raw)
         assert result.chat_trace_id == "second-id"
+
+    def test_tool_execution_start_passes_through(self):
+        raw = b'data: {"type":"kiln-tool-execution-start","tool_count":3}\n\n'
+        result = EventParser().parse(raw)
+        assert any(
+            b"kiln-tool-execution-start" in line for line in result.lines_to_forward
+        )
+        assert result.finish_tool_calls is False
+        assert result.tool_input_events == []
+
+    def test_tool_execution_end_passes_through(self):
+        raw = b'data: {"type":"kiln-tool-execution-end","tool_count":3}\n\n'
+        result = EventParser().parse(raw)
+        assert any(
+            b"kiln-tool-execution-end" in line for line in result.lines_to_forward
+        )
+        assert result.finish_tool_calls is False
+        assert result.tool_input_events == []

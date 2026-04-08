@@ -133,8 +133,10 @@ def connect_chat_api(app: FastAPI) -> None:
         )
 
         async def generate():
+            yield ChatStreamSession._format_tool_exec_start(len(tool_results))
             for tc_id, output in tool_results.items():
                 yield ChatStreamSession._format_tool_output(tc_id, output)
+            yield ChatStreamSession._format_tool_exec_end(len(tool_results))
             async for chunk in session.stream():
                 yield chunk
 

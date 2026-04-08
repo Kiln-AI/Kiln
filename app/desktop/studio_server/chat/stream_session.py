@@ -11,6 +11,8 @@ from app.desktop.studio_server.chat.constants import (
     FUNCTION_NAME_TO_TOOL_ID,
     MAX_TOOL_ROUNDS,
     SSE_TYPE_TOOL_CALLS_PENDING,
+    SSE_TYPE_TOOL_EXEC_END,
+    SSE_TYPE_TOOL_EXEC_START,
 )
 from app.desktop.studio_server.chat.sse_parser import EventParser
 from app.desktop.studio_server.chat.tool_metadata import (
@@ -187,9 +189,18 @@ class ChatStreamSession:
                     yield _format_tool_calls_pending_sse(client_events)
                     return
 
+                tool_count = len(
+                    [
+                        e
+                        for e in round_state.tool_input_events
+                        if not tool_input_executor_is_server(e)
+                    ]
+                )
+                yield self._format_tool_exec_start(tool_count)
                 tool_results = await self._execute_client_tools(round_state, None)
                 for tc_id, output in tool_results.items():
                     yield self._format_tool_output(tc_id, output)
+                yield self._format_tool_exec_end(tool_count)
 
                 if not tool_results:
                     return
@@ -237,6 +248,16 @@ class ChatStreamSession:
     @staticmethod
     def _format_tool_output(tc_id: str, output: str) -> bytes:
         return f"data: {json.dumps({'type': 'tool-output-available', 'toolCallId': tc_id, 'output': output})}\n\n".encode()
+
+    @staticmethod
+    def _format_tool_exec_start(tool_count: int) -> bytes:
+        payload = {"type": SSE_TYPE_TOOL_EXEC_START, "tool_count": tool_count}
+        return f"data: {json.dumps(payload)}\n\n".encode()
+
+    @staticmethod
+    def _format_tool_exec_end(tool_count: int) -> bytes:
+        payload = {"type": SSE_TYPE_TOOL_EXEC_END, "tool_count": tool_count}
+        return f"data: {json.dumps(payload)}\n\n".encode()
 
 
 async def execute_tool(tool_name: str, args: dict[str, Any]) -> str:

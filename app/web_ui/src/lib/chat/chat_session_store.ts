@@ -33,6 +33,7 @@ export interface ChatSessionState extends PersistedChatSession {
   abortController: AbortController | null
   toolApprovalWaiter: ToolApprovalWaiter | null
   toolApprovalPicks: Record<string, boolean | undefined>
+  toolExecuting: boolean
 }
 
 export interface ChatSessionStore extends Readable<ChatSessionState> {
@@ -75,6 +76,7 @@ export function createChatSessionStore(
     abortController,
     toolApprovalWaiter: null,
     toolApprovalPicks: {},
+    toolExecuting: false,
   })
 
   persisted.subscribe(($persisted) => {
@@ -157,6 +159,11 @@ export function createChatSessionStore(
       lastSentAppState: currentAppState,
     }))
 
+    combined.update((s) => ({
+      ...s,
+      toolExecuting: false,
+    }))
+
     const controller = new AbortController()
     setRuntimeState("submitted", controller)
 
@@ -165,6 +172,19 @@ export function createChatSessionStore(
       messages: [apiMessage],
       traceId,
       onToolCallsPending: handleToolCallsPending,
+      onToolExecutionStart: () => {
+        combined.update((s) => ({
+          ...s,
+          toolExecuting: true,
+        }))
+      },
+      onToolExecutionEnd: () => {
+        combined.update((s) => ({
+          ...s,
+          toolExecuting: false,
+          toolExecEndTime: Date.now(),
+        }))
+      },
       onAssistantMessage: (update) => {
         if (status !== "streaming") {
           setRuntimeState("streaming", controller)
@@ -261,6 +281,10 @@ export function createChatSessionStore(
       collapsedPartKeys: {},
       lastSentAppState: null,
     })
+    combined.update((s) => ({
+      ...s,
+      toolExecuting: false,
+    }))
     setRuntimeState("ready", null)
   }
 
@@ -271,6 +295,10 @@ export function createChatSessionStore(
     clearToolApprovalState()
     continuationTraceId = traceId
     persisted.set({ messages, collapsedPartKeys: {}, lastSentAppState: null })
+    combined.update((s) => ({
+      ...s,
+      toolExecuting: false,
+    }))
     setRuntimeState("ready", null)
   }
 
