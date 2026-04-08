@@ -120,32 +120,6 @@
     return seconds === 1 ? "1 second" : `${seconds} seconds`
   }
 
-  $: toolExecuting = $store.toolExecuting
-
-  function allToolsInMessageComplete(message: ChatMessage): boolean {
-    const tools = (message.parts ?? []).filter(
-      (p): p is Extract<ChatMessagePart, { toolCallId: string }> =>
-        typeof p.type === "string" && p.type.startsWith("tool-"),
-    )
-    return tools.length > 0 && tools.every((t) => t.output !== undefined)
-  }
-
-  function isFirstToolPartInMessage(
-    message: ChatMessage,
-    partIndex: number,
-  ): boolean {
-    const parts = message.parts ?? []
-    for (let i = 0; i < parts.length; i++) {
-      if (
-        typeof parts[i].type === "string" &&
-        parts[i].type.startsWith("tool-")
-      ) {
-        return i === partIndex
-      }
-    }
-    return false
-  }
-
   $: showStreamingCursor =
     isLoading && lastMessage?.role === "assistant" && lastParts.length === 0
 
@@ -564,16 +538,6 @@
                               onSkip={() => applyToolApprovalSkip(tcId)}
                             />
                           </div>
-                        {:else if isFirstToolPartInMessage(message, partIndex)}
-                          {@const isCurrentMessage =
-                            message.id === lastMessage?.id}
-                          {@const complete = isCurrentMessage
-                            ? !toolExecuting &&
-                              allToolsInMessageComplete(message)
-                            : allToolsInMessageComplete(message)}
-                          {#if !complete}
-                            <ChatLoading />
-                          {/if}
                         {/if}
                       {:else}
                         <div class="mt-2 overflow-hidden text-sm">
@@ -681,6 +645,24 @@
                       {/if}
                     {/if}
                   {/each}
+                  {#if !showToolCallDetails && isLoading && message.role === "assistant" && message.id === lastMessage?.id}
+                    {@const hasTextPart = (message.parts ?? []).some(
+                      (p) => p.type === "text",
+                    )}
+                    {@const hasToolPart = (message.parts ?? []).some(
+                      (p) =>
+                        typeof p.type === "string" &&
+                        p.type.startsWith("tool-"),
+                    )}
+                    {@const hasVisibleApproval =
+                      toolApprovalWaiter !== null &&
+                      toolApprovalWaiter.payload.items.some(
+                        (i) => toolApprovalPicks[i.toolCallId] === undefined,
+                      )}
+                    {#if hasToolPart && !hasTextPart && !hasVisibleApproval}
+                      <ChatLoading />
+                    {/if}
+                  {/if}
                 {:else if message.role === "assistant" && showStreamingCursor && message.id === lastMessage?.id}
                   <div class="flex items-center py-0.5" aria-hidden="true">
                     <ChatLoading />

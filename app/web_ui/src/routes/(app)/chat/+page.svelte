@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getContext, onDestroy, onMount } from "svelte"
   import type { Writable } from "svelte/store"
+  import { env } from "$env/dynamic/public"
   import AppPage from "../app_page.svelte"
   import Chat from "./chat.svelte"
   import { agentInfo } from "$lib/agent"
@@ -10,6 +11,9 @@
     kilnCopilotConnected,
     initCopilotConnectionStore,
   } from "$lib/stores/copilot_connection_store"
+
+  const chatPageTitle =
+    env.PUBLIC_SHOW_TOOL_CALL_DETAILS === "true" ? "Chat (debug mode)" : "Chat"
 
   agentInfo.set({
     name: "Chat",
@@ -48,7 +52,7 @@
   })
 </script>
 
-<AppPage title="Chat" no_y_padding={true} {action_buttons}>
+<AppPage title={chatPageTitle} no_y_padding={true} {action_buttons}>
   <div class="flex flex-col h-[calc(100vh-8rem)] pt-4">
     {#if $kilnCopilotConnected === null}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
