@@ -6,130 +6,129 @@ status: draft
 
 ## Overview
 
-Git Auto Sync adds transparent git-based synchronization to Kiln projects. The system is built as a general-purpose library in `app/desktop/...` with a clean integration layer into `libs/core/` via a thin write-interception pattern.
+Git Auto Sync adds transparent git-based synchronization to Kiln projects. The system works at the HTTP middleware level — no changes to `libs/core/` or `KilnBaseModel`. File I/O happens exactly as it does today; the git sync system observes and commits changes after the fact via `git status`.
 
 The architecture has four major components:
-1. **StorageWriter** — Write-side abstraction in `libs/core/` (thin protocol, 3 methods)
-2. **GitSyncManager** — Core sync engine in `app/desktop/...` (locking, pygit2, write_context)
-3. **FastAPI Middleware** — Request-level write_context wrapper in `app/desktop/...`
-4. **Background Sync** — Async poller keeping repos fresh
+1. **FastAPI Middleware** — Acquires write lock for mutating requests, commits/pushes on exit
+2. **GitSyncManager** — Core sync engine (locking, pygit2, commit/push/rollback)
+3. **Background Sync** — Async poller keeping repos fresh
+4. **Manager Registry** — Singleton management of per-repo managers
 
 ## Component Breakdown
 
-### 1. StorageWriter Protocol (`libs/core/`)
+### 1. FastAPI Middleware (`app/desktop/`)
 
-A minimal write-interception layer. Reads are untouched — only the 3 existing write operations in `KilnBaseModel` are routed through this protocol.
+Uses Starlette's `BaseHTTPMiddleware` to buffer the response body before committing. This allows commit/push failures to return error responses instead of silently failing after a 200 has been sent.
+
+**Fallback:** If integration testing reveals issues with `BaseHTTPMiddleware` (contextvar propagation, Starlette version compatibility), a raw ASGI middleware is the documented fallback. An early integration test is a blocking gate before other git sync work proceeds.
 
 ```python
-# libs/core/kiln_ai/datamodel/storage_writer.py
+# app/desktop/git_sync/middleware.py
 
-from pathlib import Path
-from typing import Protocol, runtime_checkable
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 
-@runtime_checkable
-class StorageWriter(Protocol):
-    """Write-side storage abstraction. Sync-only interface.
+MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
-    All logic lives in these sync methods. The async path
-    (asave_to_file) calls these via asyncio.to_thread.
+class GitSyncMiddleware(BaseHTTPMiddleware):
+    """Wraps mutating requests with write lock + git commit/push.
+
+    For non-mutating requests and non-auto-sync routes,
+    passes through without buffering (preserves streaming responses).
     """
 
-    def write_file(self, path: Path, data: str) -> None: ...
-    def delete_tree(self, path: Path) -> None: ...
-    def copy_file(self, src: Path, dest: Path) -> None: ...
+    async def dispatch(self, request: Request, call_next):
+        manager = self._get_manager_for_request(request)
 
+        if manager is None:
+            # No auto-sync for this route — pass through
+            return await call_next(request)
 
-class FileStorageWriter:
-    """Default writer — direct filesystem I/O. Current behavior, extracted."""
+        needs_lock = (
+            request.method in MUTATING_METHODS
+            or getattr(request.state, "write_lock", False)  # @write_lock annotation
+        ) and not getattr(request.state, "no_write_lock", False)  # @no_write_lock
 
-    def write_file(self, path: Path, data: str) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(data)
+        if not needs_lock:
+            # GET/HEAD — pass through, no locking or buffering
+            # Dev-mode: check for dirty state before/after (safety net)
+            if settings.dev_mode:
+                await self._check_dirty_state(manager, request, "before")
+            response = await call_next(request)
+            if settings.dev_mode:
+                await self._check_dirty_state(manager, request, "after")
+            return response
 
-    def delete_tree(self, path: Path) -> None:
-        import shutil
-        shutil.rmtree(path)
+        # Mutating request — acquire lock, commit on exit
+        lock_start = time.monotonic()
+        async with manager.write_lock():
+            # Recovery: ensure clean state
+            await manager.ensure_clean()
 
-    def copy_file(self, src: Path, dest: Path) -> None:
-        import shutil
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(src, dest)
+            # Ensure fresh: pull/rebase
+            await manager.ensure_fresh()
+
+            # Capture pre-request HEAD for rollback
+            pre_request_head = await manager.get_head()
+
+            try:
+                response = await call_next(request)
+
+                # Buffer full body — route handler has completed
+                body = b""
+                async for chunk in response.body_iterator:
+                    body += chunk
+
+                # Dev-mode: warn on long lock hold
+                if settings.dev_mode:
+                    held = time.monotonic() - lock_start
+                    if held > 5.0:
+                        logger.warning(
+                            "Write lock held %.1fs for %s %s — "
+                            "consider @no_write_lock",
+                            held, request.method, request.url.path,
+                        )
+
+                # Commit if there are changes
+                has_changes = await manager.has_dirty_files()
+                if has_changes:
+                    await manager.commit_and_push(
+                        api_path=f"{request.method} {request.url.path}",
+                        pre_request_head=pre_request_head,
+                    )
+
+                return Response(
+                    content=body,
+                    status_code=response.status_code,
+                    headers=dict(response.headers),
+                    media_type=response.media_type,
+                )
+
+            except Exception as e:
+                # Rollback any changes
+                await manager.rollback(pre_request_head)
+                if isinstance(e, GitSyncError):
+                    status, message = self._map_error(e)
+                    return Response(
+                        content=json.dumps({"detail": message}),
+                        status_code=status,
+                        media_type="application/json",
+                    )
+                raise
+
+    def _get_manager_for_request(self, request: Request) -> GitSyncManager | None:
+        """Extract project_id from URL, return manager if auto-sync enabled."""
+        # Parse /api/projects/{project_id}/... from request.url.path
+        # Returns None for non-project routes (settings, etc.)
+        ...
 ```
 
-**Integration into KilnBaseModel:**
+**No buffering overhead when sync is disabled:** If `_get_manager_for_request` returns `None`, or the request is a GET without `@write_lock`, the middleware calls `call_next` directly — no body buffering, streaming preserved.
 
-```python
-# basemodel.py changes (minimal)
+**Route handling:** The middleware extracts `project_id` from the URL path. Routes without a project ID (settings, provider config, project creation) are passed through without wrapping.
 
-class KilnBaseModel(BaseModel):
-    # Class-level writer, defaults to filesystem. Overridden per-project.
-    _storage_writer: ClassVar[StorageWriter] = FileStorageWriter()
-    # Resolver: given a file path, return the appropriate writer.
-    # Default returns the class-level writer. Git sync sets this to
-    # a function that checks project config and returns the git writer
-    # for auto-sync projects, or the default writer otherwise.
-    _storage_writer_resolver: ClassVar[Callable[[Path], StorageWriter] | None] = None
-
-    def _get_writer(self, path: Path) -> StorageWriter:
-        if self._storage_writer_resolver:
-            return self._storage_writer_resolver(path)
-        return self._storage_writer
-
-    def save_to_file(self) -> None:
-        """Sync save — works with all writers including git sync.
-        All logic lives here. asave_to_file() delegates to this via asyncio.to_thread."""
-        path = self.build_path()
-        # ... existing validation ...
-        json_data = self.model_dump_json(
-            indent=2,
-            exclude={"path"},
-            context={
-                "save_attachments": True,
-                "dest_path": path.parent,
-                "storage_writer": self._get_writer(path),
-            },
-        )
-        self._get_writer(path).write_file(path, json_data)
-        self.path = path
-        ModelCache.shared().invalidate(path)
-
-    async def asave_to_file(self) -> None:
-        """Async save — runs save_to_file in a thread via asyncio.to_thread.
-        Preferred in async contexts. Does not block the event loop."""
-        await asyncio.to_thread(self.save_to_file)
-
-    def delete(self) -> None:
-        # ... existing validation ...
-        self._get_writer(self.path).delete_tree(dir_path)
-        ModelCache.shared().invalidate(self.path)
-        self.path = None
-
-    async def adelete(self) -> None:
-        """Async delete — runs delete in a thread via asyncio.to_thread."""
-        await asyncio.to_thread(self.delete)
-```
-
-```python
-# KilnAttachmentModel changes
-
-class KilnAttachmentModel(BaseModel):
-    def copy_file_to(self, dest_folder: Path, filename_prefix: str | None = None,
-                     storage_writer: StorageWriter | None = None) -> Path:
-        # ... existing path logic ...
-        writer = storage_writer or FileStorageWriter()
-        writer.copy_file(self.input_path, target_path)
-        return target_path
-```
-
-The `storage_writer` is passed through the serialization context so attachment copies during `model_dump_json` use the same writer as the parent `save_to_file()` call.
-
-**Why this approach:**
-- Only 3 methods to implement — not a full storage backend
-- Reads (`load_from_file`, `load_from_folder`, `os.scandir`) untouched
-- `ModelCache` untouched
-- No changes to any model subclasses
-- The resolver pattern allows per-project writer selection without the model knowing about git
+**Registration:** Added in `desktop_server.py`'s `make_app()`, before CORS middleware.
 
 ### 2. GitSyncManager (`app/desktop/...`)
 
@@ -141,10 +140,8 @@ The core sync engine. One instance per git repository path (singleton by repo pa
 # app/desktop/git_sync/git_sync_manager.py
 
 class GitSyncManager:
-    # Internal constants — not user-configurable
-    _POLL_INTERVAL = 10.0           # seconds between background syncs
-    _IDLE_PAUSE_AFTER = 300.0       # pause polling after 5 min with no requests
-    _SYNC_FRESHNESS_THRESHOLD = 15.0  # max age (seconds) before blocking
+    # Internal constants
+    _GIT_EXECUTOR_TIMEOUT = 20.0  # seconds — timeout for pygit2 operations
 
     def __init__(self, repo_path: Path, remote_name: str = "origin"):
         self._repo_path = repo_path
@@ -153,15 +150,9 @@ class GitSyncManager:
         # pygit2 executor — ALL pygit2 calls go through here
         self._git_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pygit2")
 
-        # Write lock — acquired lazily on first write within a context.
+        # Write lock — acquired by middleware for mutating requests.
         # threading.Lock because writes run in threads (via asyncio.to_thread).
-        # Async callers never block the event loop — they're in a thread when they acquire.
-        # Sync callers block their thread briefly under contention (acceptable).
         self._write_lock = threading.Lock()
-
-        # Active context tracking (per-task via contextvars)
-        self._active_context: contextvars.ContextVar[WriteContext | None] = \
-            contextvars.ContextVar("active_write_context", default=None)
 
         # Background sync state
         self._sync_task: asyncio.Task | None = None
@@ -174,196 +165,163 @@ pygit2 objects are C extensions and not thread-safe. ALL pygit2 operations — i
 
 ```python
 async def _run_git(self, fn: Callable[..., T], *args) -> T:
-    """Run a pygit2 operation in the dedicated git thread."""
+    """Run a pygit2 operation in the dedicated git thread.
+    Raises TimeoutError if the operation exceeds _GIT_EXECUTOR_TIMEOUT."""
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(self._git_executor, fn, *args)
+    return await asyncio.wait_for(
+        loop.run_in_executor(self._git_executor, fn, *args),
+        timeout=self._GIT_EXECUTOR_TIMEOUT,
+    )
 ```
 
 The pygit2 `Repository` object is created lazily within the executor thread and cached there. It is never accessed from any other thread.
 
-#### write_context
+#### Write Lock
 
 ```python
 @asynccontextmanager
-async def write_context(self, push: bool = True, check_in_sync: bool = True):
-    parent_ctx = self._active_context.get()
-
-    if parent_ctx is not None and parent_ctx.has_writes:
-        raise RuntimeError("Cannot nest write_context after parent already has writes")
-
-    ctx = WriteContext(push=push, check_in_sync=check_in_sync, parent=parent_ctx)
-
-    if parent_ctx is not None and parent_ctx.holds_lock:
-        # Parent releases lock for nested context
-        self._write_lock.release()
-        parent_ctx.holds_lock = False
-
-    if check_in_sync:
-        await self._ensure_fresh()
-
-    self._active_context.set(ctx)
+async def write_lock(self):
+    """Acquire the write lock for the duration of a mutating request.
+    Blocks until available (waits behind other requests in queue)."""
+    # Run in thread to avoid blocking event loop
+    acquired = await asyncio.to_thread(self._write_lock.acquire)
     try:
-        yield ctx
-    except Exception:
-        # Git-native rollback: reset to last clean commit
-        if ctx.has_writes:
-            await self._rollback(ctx)
-        raise
-    else:
-        # Success path: commit if writes occurred
-        if ctx.has_writes:
-            await self._commit_context(ctx)
+        yield
     finally:
-        if ctx.holds_lock:
-            self._write_lock.release()
-            ctx.holds_lock = False
-        self._active_context.set(parent_ctx)
-
-        # Parent exit: push all unpushed commits
-        if parent_ctx is None and push:
-            await self._push_with_retry()
+        self._write_lock.release()
 ```
-
-#### WriteContext (internal)
-
-```python
-@dataclass
-class WriteContext:
-    push: bool
-    check_in_sync: bool
-    parent: WriteContext | None
-    tracked_files: list[Path] = field(default_factory=list)
-    new_files: set[Path] = field(default_factory=set)
-    # Files that didn't exist before the write (need manual cleanup on rollback)
-    holds_lock: bool = False  # tracks whether this context owns the write lock
-
-    @property
-    def has_writes(self) -> bool:
-        return len(self.tracked_files) > 0
-```
-
-#### GitSyncStorageWriter
-
-```python
-class GitSyncStorageWriter:
-    """StorageWriter that routes writes through GitSyncManager.
-
-    All methods are sync. Called either directly (save_to_file)
-    or from a thread (asave_to_file via asyncio.to_thread).
-    Both paths work — the threading.Lock handles either.
-    """
-
-    def __init__(self, manager: GitSyncManager):
-        self._manager = manager
-
-    def write_file(self, path: Path, data: str) -> None:
-        self._manager.write_file(path, data)
-
-    def delete_tree(self, path: Path) -> None:
-        self._manager.delete_tree(path)
-
-    def copy_file(self, src: Path, dest: Path) -> None:
-        self._manager.copy_file(src, dest)
-```
-
-**Both sync and async callers work.** The manager's write methods are sync and use `threading.Lock`:
-- **`asave_to_file()` path (preferred):** `asyncio.to_thread` runs `save_to_file` in a thread pool. `threading.Lock.acquire()` blocks that thread (not the event loop) during contention. Event loop stays responsive.
-- **`save_to_file()` path (deprecated):** Called directly from the event loop thread. `threading.Lock.acquire()` blocks the event loop briefly during contention. Contention is rare (two parallel writes to same project) and brief (held only during file I/O — microseconds). Acceptable for backwards compat.
-
-contextvars propagate into `asyncio.to_thread` automatically (Python 3.10+), so the `write_context` contextvar is visible in either path.
 
 #### Key Operations
 
 | Method | Description | Threading |
 |--------|-------------|-----------|
-| `write_context()` | Async context manager for atomic writes | Async |
-| `write_file()` | Sync write + track + lazy lock | Sync, uses threading.Lock |
-| `delete_tree()` | Sync delete + track | Sync, uses threading.Lock |
-| `copy_file()` | Sync copy + track | Sync, uses threading.Lock |
-| `push()` | Push unpushed commits (rejects if write lock held) | Async, uses _git_executor |
-| `is_fresh()` | Check if repo is up-to-date | Async, uses _git_executor |
-| `is_clean()` | Check for unexpected dirty files | Async, uses _git_executor |
-| `_ensure_fresh()` | Pull/rebase if stale | Async, uses _git_executor |
-| `_commit_context()` | Stage tracked files + commit | Async, uses _git_executor |
-| `_rollback()` | Git-native rollback: reset, checkout HEAD, delete new files | Async, uses _git_executor |
-| `_push_with_retry()` | Push, retry once on conflict | Async, uses _git_executor |
+| `write_lock()` | Async context manager for exclusive write access | Async, uses threading.Lock |
+| `ensure_clean()` | Verify repo is clean, run recovery if dirty | Async, uses _git_executor |
+| `ensure_fresh()` | Pull/rebase if stale | Async, uses _git_executor |
+| `get_head()` | Return current HEAD commit ref | Async, uses _git_executor |
+| `has_dirty_files()` | Check if git status shows changes | Async, uses _git_executor |
+| `commit_and_push()` | Stage all dirty files, commit, push | Async, uses _git_executor |
+| `rollback()` | Stash dirty state, reset to given HEAD | Async, uses _git_executor |
+| `fetch()` | Fetch from remote (no working tree changes) | Async, uses _git_executor |
+| `fast_forward()` | Update working tree to match fetched state | Async, uses _git_executor |
 | `close()` | Shut down `_git_executor`, called during FastAPI lifespan shutdown | Async |
 
-### 3. FastAPI Middleware (`app/desktop/`)
+### 3. Commit and Push Flow
 
-Uses Starlette's `BaseHTTPMiddleware` to buffer the response body before committing. This allows commit/push failures to return error responses instead of silently failing after a 200 has been sent.
+#### Happy Path (single API call)
 
-```python
-# app/desktop/git_sync/middleware.py
-
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
-
-class WriteContextMiddleware(BaseHTTPMiddleware):
-    """Wraps each request in a write_context for auto-sync projects.
-
-    For non-auto-sync routes, passes through without buffering
-    (preserves streaming responses).
-    """
-
-    async def dispatch(self, request: Request, call_next):
-        manager = self._get_manager_for_request(request)
-
-        if manager is None:
-            # No auto-sync — pass through without buffering
-            return await call_next(request)
-
-        async with manager.write_context() as ctx:
-            request.state.write_context = ctx
-            try:
-                response = await call_next(request)
-
-                # Buffer full body — route handler has completed
-                body = b""
-                async for chunk in response.body_iterator:
-                    body += chunk
-
-                # Commit after body is fully read, before sending to client
-                # (commit_and_push happens in write_context __aexit__)
-
-                return Response(
-                    content=body,
-                    status_code=response.status_code,
-                    headers=dict(response.headers),
-                    media_type=response.media_type,
-                )
-            except GitSyncError as e:
-                # Map error type to HTTP status per error table
-                status, message = self._map_error(e)
-                return Response(
-                    content=json.dumps({"detail": message}),
-                    status_code=status,
-                    media_type="application/json",
-                )
-
-    def _get_manager_for_request(self, request: Request) -> GitSyncManager | None:
-        """Extract project_id from URL, return manager if auto-sync enabled."""
-        # Parse /api/projects/{project_id}/... from request.url.path
-        # Returns None for non-project routes (settings, etc.)
-        ...
+```
+Mutating request arrives
+  → Middleware: async with manager.write_lock()
+    → ensure_clean() — verify repo clean, recover if needed
+    → ensure_fresh() — pull/rebase from remote
+    → Capture pre_request_head
+    → Handler runs, writes files normally (any filesystem operation)
+    → Buffer response body
+    → has_dirty_files() — check git status
+    → If dirty: commit_and_push()
+      1. git add -A (stage everything — it's all ours)
+      2. git commit with auto-generated message
+      3. git push
+    → Release write lock
+  → Response sent
 ```
 
-**No buffering overhead when sync is disabled:** If `_get_manager_for_request` returns `None`, the middleware calls `call_next` directly — no body buffering, streaming preserved. The buffering cost only applies to auto-sync routes, where responses are small JSON payloads.
+#### Push Failure with Retry
 
-**Contextvar propagation:** `BaseHTTPMiddleware` runs `call_next` in a separate anyio task internally. Python 3.10+ copies context to child tasks, so the `write_context` contextvar should propagate. **An early integration test must verify** that `write_file()` can read the contextvar when called from a route handler through this middleware.
+```
+Push fails (remote diverged)
+  → Fetch remote
+  → Rebase local commit onto fetched remote HEAD
+  → If clean: push again (once)
+    → If second push fails: rollback to pre_request_head, return 409
+  → If rebase conflicts:
+    → git rebase --abort
+    → Rollback to pre_request_head
+    → Return 409
+```
 
-**Route handling:** The middleware extracts `project_id` from the URL path. Routes without a project ID (settings, provider config, etc.) are passed through without wrapping. This is clean because all data-mutating routes already include `project_id` in the path.
+#### Rollback
 
-**Registration:** Added in `desktop_server.py`'s `make_app()`, before CORS middleware.
+```python
+async def rollback(self, pre_request_head: str) -> None:
+    """Rollback all changes to pre-request state.
+    Uses git stash to preserve dirty state recoverably."""
 
-### 4. Background Sync (`app/desktop/`)
+    has_changes = await self.has_dirty_files()
+    if has_changes:
+        # Stash everything (including untracked files) — recoverable
+        await self._run_git(
+            lambda: self._stash_all("[Kiln] Rollback stash")
+        )
+
+    # Reset to pre-request HEAD if we committed
+    current_head = await self.get_head()
+    if current_head != pre_request_head:
+        await self._run_git(
+            lambda: self._repo.reset(
+                pre_request_head, pygit2.enums.ResetMode.HARD
+            )
+        )
+```
+
+### 4. Recovery (Crash Recovery)
+
+Runs at the start of every write request, after lock acquisition:
+
+```python
+async def ensure_clean(self) -> None:
+    """Ensure repo is in a clean state. Recover from crashes if needed."""
+    if await self._is_clean():
+        return
+
+    # Another process may be mid-operation — give it a chance
+    await asyncio.sleep(0.5)
+
+    if await self._is_clean():
+        return
+
+    # Still dirty — recover
+    logger.warning("Repo dirty on write request — running crash recovery")
+
+    # Abort any in-progress rebase/merge
+    state = await self._run_git(lambda: self._repo.state())
+    if state != pygit2.enums.RepositoryState.NONE:
+        logger.warning("Aborting in-progress rebase/merge")
+        await self._run_git(lambda: self._repo.state_cleanup())
+
+    # Stash all dirty state (tracked + untracked)
+    await self._run_git(
+        lambda: self._stash_all(
+            "[Kiln] Auto-recovery stash — dirty state from prior session"
+        )
+    )
+
+    # Reset unpushed local commits to match remote
+    unpushed = await self._count_unpushed_commits()
+    if unpushed > 0:
+        logger.warning("Resetting %d unpushed commits to match remote", unpushed)
+        remote_head = await self._get_remote_head()
+        await self._run_git(
+            lambda: self._repo.reset(remote_head, pygit2.enums.ResetMode.HARD)
+        )
+
+async def _is_clean(self) -> bool:
+    """Check repo state: no dirty files, no in-progress rebase/merge."""
+    state = await self._run_git(lambda: self._repo.state())
+    if state != pygit2.enums.RepositoryState.NONE:
+        return False
+    return not await self.has_dirty_files()
+```
+
+### 5. Background Sync (`app/desktop/`)
 
 ```python
 # app/desktop/git_sync/background_sync.py
 
 class BackgroundSync:
-    """Polls remote for changes on a configurable interval.
+    """Polls remote for changes. Two-phase: fetch without lock,
+    fast-forward under lock.
 
     Pauses automatically when idle (no API requests) to avoid
     running indefinitely in the background.
@@ -371,20 +329,23 @@ class BackgroundSync:
 
     def __init__(self, manager: GitSyncManager,
                  poll_interval: float = 10.0,
-                 idle_pause_after: float = 300.0):  # 5 minutes
+                 idle_pause_after: float = 300.0):
         self._manager = manager
         self._poll_interval = poll_interval
         self._idle_pause_after = idle_pause_after
         self._task: asyncio.Task | None = None
         self._last_request_time: float = 0.0
         self._paused: bool = False
+        self._resuming: bool = False  # Guard against double-resume
 
     def notify_request(self) -> None:
         """Called by middleware on each request. Resets idle timer, resumes if paused."""
         self._last_request_time = time.monotonic()
-        if self._paused and self._task is None:
+        if self._paused and not self._resuming:
+            self._resuming = True
             self._paused = False
             self._task = asyncio.create_task(self._poll_loop())
+            self._resuming = False
 
     async def start(self):
         self._last_request_time = time.monotonic()
@@ -409,17 +370,24 @@ class BackgroundSync:
                 return
 
             try:
-                # Respects write lock — waits if a write is in progress
-                await self._manager.pull_if_needed()
+                # Phase 1: fetch (no lock — only updates remote tracking refs)
+                await self._manager.fetch()
+
+                # Phase 2: check if update needed
+                if not await self._manager.has_new_remote_commits():
+                    continue
+
+                # Phase 3: fast-forward under write lock
+                async with self._manager.write_lock():
+                    await self._manager.fast_forward()
+
             except Exception:
                 logger.warning("Background sync failed, will retry", exc_info=True)
 ```
 
-**Lifecycle:** Started via the FastAPI lifespan context when auto-sync is enabled. Pauses automatically after `idle_pause_after` seconds with no API requests (default: 5 minutes). Resumes on the next request via `notify_request()`. Stopped fully on shutdown.
+**Lifecycle:** Started via the FastAPI lifespan context when auto-sync is enabled. Pauses automatically after 5 minutes with no API requests. Resumes on next request via `notify_request()`. Stopped fully on shutdown.
 
-**Freshness:** The middleware's `_ensure_fresh()` check uses `sync_freshness_threshold` (default: 15s) — if the last successful sync was within this window, the request proceeds without waiting. This is slightly longer than the poll interval (10s) to provide a buffer. If the repo is stale (e.g., polling was paused), the middleware blocks the request until a sync completes.
-
-### 5. Manager Registry
+### 6. Manager Registry
 
 ```python
 # app/desktop/git_sync/registry.py
@@ -440,19 +408,27 @@ class GitSyncRegistry:
         cls._managers[repo_path.resolve()] = manager
 
     @classmethod
-    def get_or_create_for_project(cls, project_path: Path) -> GitSyncManager | None:
-        """Given a project path, find its git repo root and return/create a manager."""
-        repo_path = cls._find_repo_root(project_path)
-        if repo_path is None:
-            return None
+    def get_or_create(cls, repo_path: Path, remote_name: str = "origin") -> GitSyncManager:
+        """Return existing manager or create a new one. Thread-safe."""
+        resolved = repo_path.resolve()
         with cls._lock:
-            if repo_path not in cls._managers:
-                manager = GitSyncManager(repo_path=repo_path)
-                cls.register(repo_path, manager)
-            return cls._managers[repo_path]
+            if resolved not in cls._managers:
+                manager = GitSyncManager(repo_path=resolved, remote_name=remote_name)
+                cls._managers[resolved] = manager
+            return cls._managers[resolved]
+
+    @classmethod
+    def reset(cls) -> None:
+        """Clear all cached managers. For test teardown."""
+        with cls._lock:
+            for manager in cls._managers.values():
+                # Shut down executors
+                manager._git_executor.shutdown(wait=False)
+            cls._managers.clear()
+            cls._background_syncs.clear()
 ```
 
-### 6. Configuration
+### 7. Configuration
 
 **Settings storage** in `~/.kiln_ai/settings.yaml`:
 
@@ -461,9 +437,11 @@ git_sync_projects:
   "project_id_abc":
     sync_mode: "auto"       # "auto" | "manual"
     remote_name: "origin"   # git remote name
+    branch: "main"          # branch to sync
+    clone_path: "/Users/x/Kiln Projects/.git-projects/abc - My Project"
 ```
 
-Timing parameters (`poll_interval`, `idle_pause_after`, `sync_freshness_threshold`) are internal constants on `GitSyncManager`, not user-configurable. `branch` is always the current branch.
+Timing parameters (`poll_interval`, `idle_pause_after`, `git_executor_timeout`) are internal constants on `GitSyncManager`, not user-configurable.
 
 **Config integration** via existing `Config` class using a pydantic model:
 
@@ -471,221 +449,20 @@ Timing parameters (`poll_interval`, `idle_pause_after`, `sync_freshness_threshol
 class GitSyncProjectConfig(BaseModel):
     sync_mode: Literal["auto", "manual"] = "manual"
     remote_name: str = "origin"
+    branch: str = "main"
+    clone_path: str | None = None
 
 # New ConfigProperty on Config class
-# NOTE: verify that Config supports pydantic models as property types
 git_sync_projects: ConfigProperty(dict[str, GitSyncProjectConfig], default_lambda=lambda: {})
 ```
 
-**Writer resolver** — installed during app startup:
-
-```python
-# In desktop_server.py lifespan or startup
-
-def find_project_id_for_path(path: Path) -> str | None:
-    """Walk up from path until a directory contains 'project.kiln'.
-    Read the project ID from that file."""
-    current = path if path.is_dir() else path.parent
-    while current != current.parent:
-        project_file = current / "project.kiln"
-        if project_file.exists():
-            # Read and parse project.kiln to get project ID
-            ...
-            return project_id
-        current = current.parent
-    return None
-
-def resolve_writer(path: Path) -> StorageWriter:
-    """Given a file path, determine which writer to use."""
-    project_id = find_project_id_for_path(path)
-    if project_id is None:
-        return FileStorageWriter()
-
-    config = Config.shared().git_sync_projects.get(project_id)
-    if config is None or config.get("sync_mode") != "auto":
-        return FileStorageWriter()
-
-    manager = GitSyncRegistry.get_or_create_for_project(path)
-    if manager is None:
-        return FileStorageWriter()
-
-    return GitSyncStorageWriter(manager)
-
-KilnBaseModel._storage_writer_resolver = resolve_writer
-```
-
-This keeps `libs/core/` completely ignorant of git sync — the resolver is injected from `app/desktop/` at startup.
-
-## Sync/Async Write Design
-
-The design is simple: all write logic is sync. The async path (`asave_to_file`) just wraps it with `asyncio.to_thread`.
-
-**The write flow (both paths share the same code):**
-
-```python
-# In GitSyncManager
-
-def write_file(self, path: Path, data: str) -> None:
-    """Sync write: check context, acquire lock, write, track.
-    Called directly by save_to_file(), or from a thread by asave_to_file()."""
-    ctx = self._active_context.get()
-    if ctx is None:
-        raise NotInWriteContextError("write_file called outside write_context")
-
-    # Lazy lock acquisition on first write
-    if not ctx.has_writes:
-        acquired = self._write_lock.acquire(timeout=30)
-        if not acquired:
-            raise WriteLockTimeoutError("Timed out waiting for write lock")
-        ctx.holds_lock = True
-
-    # Track new files for rollback (git checkout handles existing files)
-    if not path.exists():
-        ctx.new_files.add(path)
-
-    # Actual filesystem write
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(data)
-
-    ctx.tracked_files.append(path)
-```
-
-**How both paths work:**
-- **`await model.asave_to_file()` (preferred):** `asyncio.to_thread(self.save_to_file)` runs in a thread pool. `threading.Lock.acquire()` blocks that thread, not the event loop. Other requests proceed normally during contention.
-- **`model.save_to_file()` (deprecated, backwards compat):** Runs directly on the event loop thread. `threading.Lock.acquire()` blocks the event loop briefly during contention. Contention is rare and brief — acceptable for third-party callers who haven't migrated yet.
-
-contextvars propagate into `asyncio.to_thread` automatically (Python 3.10+), so the `write_context` contextvar is visible in either path. No special handling needed.
-
-**Migration plan:** ~54 API handler call sites and ~30 `libs/core/` adapter calls — almost all already in async methods. Mechanical change: `model.save_to_file()` → `await model.asave_to_file()`. Our code migrates fully; third-party callers continue working via the sync path. **This migration is a separate PR** — last phase of the project, branched separately to keep the main git sync PR focused.
-
-## Commit and Push Flow
-
-### Happy Path (single API call)
-
-```
-Request arrives
-  → Middleware: async with manager.write_context(push=True, check_in_sync=True)
-    → Entry: await _ensure_fresh() (pull/rebase)
-    → Handler runs, calls await model.asave_to_file() one or more times
-      → asyncio.to_thread(save_to_file) — runs in thread pool
-        → First write: threading.Lock.acquire() (blocks thread, not event loop)
-        → Save original contents for rollback
-        → Each write: filesystem write + track path
-    → Exit (success):
-      1. Check for out-of-band changes (dirty files not in tracked set)
-      2. git add tracked files
-      3. git commit with auto-generated message
-      4. git push
-      5. Release write lock
-  → Response sent
-```
-
-### Push Failure with Retry
-
-```
-Push fails (remote diverged)
-  → Revert local commit (keep working tree)
-  → git pull --rebase
-  → If clean: re-commit, re-push (once)
-  → If conflict or second push failure:
-    → git rebase --abort (if needed)
-    → Reset to last clean commit (unstage, checkout HEAD, delete new files)
-    → Return 409
-```
-
-Note: commits already pushed via `manager.push()` during nested contexts (e.g. periodic push in eval loops) are done and stay done. "Reset to last clean commit" only affects unpushed local state.
-
-### Rollback on Error (git-native)
-
-```
-Exception during handler (or push failure)
-  → git reset HEAD (unstage everything)
-  → git checkout HEAD -- tracked_files (restore to last commit)
-  → Delete new_files (untracked files created during context)
-  → Release write lock
-  → Re-raise exception
-```
-
-Rollback uses git itself — no in-memory file content storage. Writes only touch the working tree; staging and commit happen on the success path. HEAD always represents the pre-context state during writes.
-
-```python
-async def _rollback(self, ctx: WriteContext) -> None:
-    # Unstage everything
-    await self._run_git(lambda: self._repo.reset(
-        self._repo.head.target, pygit2.enums.ResetMode.MIXED))
-    # Restore tracked files to HEAD
-    await self._run_git(lambda: self._repo.checkout_head(
-        paths=[str(p) for p in ctx.tracked_files],
-        strategy=CheckoutStrategy.FORCE))
-    # Delete new untracked files
-    for path in ctx.new_files:
-        path.unlink(missing_ok=True)
-```
-
-## Out-of-Band Change Detection
-
-Before committing, the manager compares `git status` dirty files against the write context's tracked files:
-
-```python
-async def _check_out_of_band(self, ctx: WriteContext) -> None:
-    dirty_files = await self._run_git(self._get_dirty_files)
-    tracked_set = {p.resolve() for p in ctx.tracked_files}
-    unexpected = {f for f in dirty_files if f.resolve() not in tracked_set}
-    if unexpected:
-        raise OutOfBandChangesError(unexpected)
-```
-
-This is safe from background-sync interference because the background poller respects the write lock — it cannot modify the working tree while a write context holds the lock.
-
-## Commit Messages
-
-Auto-generated from tracked files and change type:
-
-```python
-def _generate_commit_message(self, ctx: WriteContext) -> str:
-    """Generate descriptive commit message from tracked changes.
-
-    Programmatic — no LLM. Uses git status/diff to determine change types,
-    and parses file paths and .kiln JSON for model type and name.
-    """
-    # Use git status (repo.diff('HEAD')) to determine:
-    # - Nature of change: new file, modified, or deleted
-    # - Model types from file paths (e.g. tasks/my_task/task.kiln → Task)
-    # - Names from path structure or .kiln JSON (for new/modified files)
-    # - For deletions: file list comes from git status (files are already
-    #   gone from disk), model type/name parsed from the path
-    #
-    # Format: "[Kiln] <action> <summary>"
-    # Examples:
-    #   [Kiln] Create task 'Summarize articles'
-    #   [Kiln] Update prompt for task 'Translation'
-    #   [Kiln] Eval run: 15 results for task 'QA'
-    #   [Kiln] Delete task 'Old reference'
-    ...
-```
-
-The commit message generator is purely programmatic — it uses `repo.diff('HEAD')` to determine change types and parses file paths and `.kiln` JSON content for model type and name fields. For deletions, the file list comes from git status since the files are already removed from the working tree. For multi-file commits, it groups by model type and summarizes.
-
-## Error Handling Strategy
+## Error Handling
 
 ### Error Types
 
 ```python
 class GitSyncError(Exception):
     """Base class for git sync errors."""
-    pass
-
-class NotInWriteContextError(GitSyncError):
-    """Write attempted outside write_context."""
-    pass
-
-class WriteLockTimeoutError(GitSyncError):
-    """Write lock acquisition timed out."""
-    pass
-
-class OutOfBandChangesError(GitSyncError):
-    """Unexpected file changes detected."""
     pass
 
 class SyncConflictError(GitSyncError):
@@ -697,7 +474,7 @@ class RemoteUnreachableError(GitSyncError):
     pass
 
 class CorruptRepoError(GitSyncError):
-    """Git repo is in unexpected state."""
+    """Git repo is in unexpected state after recovery attempt."""
     pass
 ```
 
@@ -706,18 +483,17 @@ class CorruptRepoError(GitSyncError):
 | Error | HTTP Status | Message |
 |-------|-------------|---------|
 | `RemoteUnreachableError` | 503 | "Cannot sync with remote. Check your connection." |
-| `WriteLockTimeoutError` | 503 | "Server busy. Please retry." |
 | `SyncConflictError` | 409 | "Conflict detected. Please retry." |
-| `OutOfBandChangesError` | 400 | "Unexpected file changes detected outside of API." |
 | `CorruptRepoError` | 500 | "Git repository is in an unexpected state." |
-| `NotInWriteContextError` | 500 | Internal error (bug — should never reach client) |
+| HTTP request timeout | 503 | "Server busy. Please retry." |
 
 ### Recovery
 
-- **All errors during write:** Rollback tracked files to pre-write state before surfacing
-- **Push conflict:** Automatic retry once (pull/rebase/re-commit/re-push)
-- **Network errors:** No retry in middleware — fail fast, let client retry
-- **Corrupt state:** Refuse to operate, require manual intervention
+- **All errors during write:** Rollback to pre-request state (stash + reset) before surfacing
+- **Push conflict:** Automatic retry once (fetch/rebase/re-push)
+- **Network errors:** Fail fast, let client retry
+- **Crash state:** Auto-recovery on next write request (stash, reset)
+- **Corrupt state (unrecoverable):** Refuse to operate, require manual intervention
 
 ## File Structure
 
@@ -725,67 +501,66 @@ class CorruptRepoError(GitSyncError):
 app/desktop/
 ├── git_sync/
 │   ├── __init__.py
-│   ├── git_sync_manager.py     # Core manager + WriteContext
-│   ├── storage_writer.py       # GitSyncStorageWriter
+│   ├── git_sync_manager.py     # Core manager (locking, pygit2, commit/push/rollback)
 │   ├── middleware.py            # FastAPI middleware
 │   ├── background_sync.py      # Polling background task
 │   ├── registry.py             # Manager singleton registry
 │   ├── commit_message.py       # Auto commit message generation
 │   ├── errors.py               # Error types
 │   └── config.py               # Git sync config helpers
-├── desktop_server.py           # Modified: add middleware, writer resolver
-└── ...
-
-libs/core/kiln_ai/datamodel/
-├── storage_writer.py           # StorageWriter protocol + FileStorageWriter
-├── basemodel.py                # Modified: use StorageWriter for writes
+├── desktop_server.py           # Modified: add middleware
 └── ...
 ```
+
+Note: compared to the earlier design, the following are **removed** — no longer needed:
+- `libs/core/kiln_ai/datamodel/storage_writer.py` — no StorageWriter protocol
+- `git_sync/storage_writer.py` — no GitSyncStorageWriter
+- Changes to `basemodel.py` — zero modifications to libs/core
 
 ## Testing Strategy
 
 ### Unit Tests
 
-**StorageWriter (libs/core/):**
-- `FileStorageWriter` correctly writes/deletes/copies
-- `save_to_file()` and `asave_to_file()` delegate to writer
-- `delete()` and `adelete()` delegate to writer
-- `asave_to_file()` runs `save_to_file` via `asyncio.to_thread`
-- Attachment copies go through writer
-- Writer resolver selects correct writer per project
-
 **GitSyncManager:**
-- `write_context` lifecycle: enter → write → commit → push → exit
-- Lazy lock: read-only contexts never acquire lock
-- Nesting: parent releases lock, child acquires, parent pushes on exit
-- Mixing error: parent has writes + nested context = immediate error
-- Rollback: exception during writes restores originals
-- Out-of-band detection: untracked dirty files cause error
-- Push retry: conflict → pull/rebase → re-push
-- Push failure: rollback commit, surface error
-- Context enforcement: write outside context raises
+- `ensure_clean()`: detects dirty state, runs recovery
+- `ensure_fresh()`: pulls/rebases to keep up-to-date
+- `commit_and_push()`: stages all dirty files, commits, pushes
+- `rollback()`: stashes dirty state, resets to pre-request HEAD
+- Push retry: conflict → fetch → rebase → re-push
+- Push failure after retry: rollback, surface error
+- Recovery: abort rebase, stash dirty state, reset unpushed commits
 
 **Middleware:**
-- Project ID extraction from various URL patterns
-- Auto-sync projects get wrapped, manual projects pass through
-- Non-project routes pass through
+- Mutating methods (POST/PATCH/DELETE) acquire write lock
+- GET/HEAD pass through without lock
+- `@write_lock` annotation forces lock on GET
+- `@no_write_lock` annotation skips lock on POST
 - Error mapping to HTTP status codes
+- Dev-mode dirty state detection fires on unexpected changes
+- Non-auto-sync routes pass through without buffering
 
 **Background Sync:**
-- Polls at configured interval
-- Skips when write lock held
-- Recovers from network errors
+- Fetch phase runs without lock
+- Fast-forward phase acquires lock
+- Skips update when no new remote commits
+- Idle pause after configured interval
+- Resume on notify_request (no double-resume race)
+
+**Registry:**
+- Thread-safe get_or_create
+- reset() clears all managers (test teardown)
 
 ### Integration Tests
 
-- Full request lifecycle: API call → write_context → commit → push → verify remote
-- Concurrent requests: two writes to different files → both succeed
-- Conflict simulation: modify remote between write and push → retry succeeds
-- Nested contexts: eval-style loop with periodic push
+- Full request lifecycle: API call → lock → commit → push → verify remote
+- Concurrent requests: two writes → serialized via lock → both succeed
+- Conflict simulation: modify remote between ensure_fresh and push → retry succeeds
+- Recovery: dirty repo on startup → auto-recovery → next request succeeds
+- Background sync: remote changes picked up within poll interval
 
 ### Test Approach for pygit2
 
-Tests create temporary git repos (local bare repos as "remotes") using pygit2 directly. No network calls, no real remotes. This makes tests fast and deterministic.
+Tests create temporary git repos (local bare repos as "remotes") using pygit2 directly. No network calls, no real remotes. Fast and deterministic.
 
 ```python
 @pytest.fixture
@@ -798,47 +573,50 @@ def git_repos(tmp_path):
     return local, remote
 ```
 
+### Test Teardown
+
+Use a conftest fixture to reset the `GitSyncRegistry` after each test:
+
+```python
+@pytest.fixture(autouse=True)
+def reset_git_sync_registry():
+    yield
+    GitSyncRegistry.reset()
+```
+
 ## Design Decisions
 
-### Why StorageWriter protocol, not full StorageBackend
+### Why HTTP-method middleware lock, not StorageWriter protocol
 
-The functional spec discussed a `StorageBackend` with `save()` and `load()`. We narrowed to write-only because:
-- Only 3 write operations exist in basemodel.py
-- Reads don't need interception (freshness is handled by middleware/background sync)
-- A full backend would require abstracting `load_from_file`, `load_from_folder`, `os.scandir` iteration, `ModelCache` — massive scope
-- The write-only approach achieves all functional goals with minimal changes to `libs/core/`
+An earlier design used a `StorageWriter` protocol injected into `KilnBaseModel` to track individual file writes. This was replaced because:
 
-### Why asyncio.to_thread for async path
+- **Dual tracking is fragile.** Maintaining our own file list alongside git's `git status` creates divergence when any write path isn't instrumented (attachments, delete_tree, future code paths).
+- **Zero changes to libs/core.** The middleware approach requires no modifications to `KilnBaseModel`, no resolver pattern, no ClassVar interactions with Pydantic.
+- **Any filesystem operation works.** No special writer needed — the middleware observes changes via `git status` after the fact.
+- **Better footgun profile.** "Accidentally used wrong HTTP method" (detectable, rare) is better than "accidentally did filesystem I/O outside the writer" (silent, easy to do).
 
-`asave_to_file()` is a one-liner: `await asyncio.to_thread(self.save_to_file)`. This means:
-- All write logic lives in one place (sync `save_to_file`)
-- No dual interfaces on `StorageWriter` (sync-only protocol)
-- No async/sync bridging hacks
-- `threading.Lock` just works — the async caller is in a real thread when it acquires
-- contextvars propagate automatically (Python 3.10+)
+The isolated repo is the key enabler — since we fully control the repo, git status is a reliable single source of truth.
 
-The sync `save_to_file()` is deprecated but fully functional in git sync mode. Third-party callers who haven't migrated to the async path will block the event loop briefly during lock contention, but this is rare and brief.
+### Why full repo clone, not worktree
 
-**Important: this has no performance penalty vs "real" async I/O.** This design looks like a shortcut — wrapping sync I/O in a thread instead of using proper async file I/O — but it's not. Python has no true async filesystem I/O. Libraries like `aiofiles` appear async but internally use thread pools (typically `asyncio.to_thread` or `loop.run_in_executor`) to run the same sync `open()`/`write()` calls. There is no kernel-level async file I/O API exposed to Python (unlike network sockets, which do have real async via `select`/`epoll`/`kqueue`). So `asyncio.to_thread(save_to_file)` does exactly what `aiofiles` would do, minus a dependency and an extra layer of abstraction. **Add a concise comment in the code** explaining this (e.g., on `asave_to_file` or the `StorageWriter` module). Specs aren't always referenced — this is a key technical decision that needs to be visible where the code lives.
+Worktrees share `.git` internals (reflog, stash, gc, index locks). Operations on one worktree can affect another. A full clone is truly isolated. Shallow clone keeps disk usage minimal.
 
-### Why threading.Lock, not asyncio.Lock
+### Why rebase-only
 
-Writes run in threads (via `asyncio.to_thread`), so `threading.Lock` is the natural choice:
-- Async callers (`asave_to_file`) are in a thread pool — `threading.Lock` blocks that thread, event loop stays responsive
-- Sync callers (`save_to_file`) block their thread directly — works correctly, brief contention is acceptable for the deprecated path
-- `asyncio.Lock` would require all callers to be async, preventing backwards-compatible sync `save_to_file`
-
-### Why contextvars for active context tracking
-
-The write context needs to be visible to `write_file()` which is called deep in the `save_to_file()` call stack. Options:
-- **Thread-local:** Doesn't work — `asyncio.to_thread` runs in a different thread than where the contextvar was set. contextvars propagate correctly; thread-locals don't.
-- **Pass context through call stack:** Would require changing `save_to_file()` signature and every caller
-- **contextvars:** Designed for exactly this — per-task context in asyncio, propagates into `asyncio.to_thread` automatically (Python 3.10+)
+Merge commits create non-linear history that's harder to reason about for automated rollback. Rebase keeps history linear: each commit is a clean, independent change. Rollback is simply resetting to a prior commit.
 
 ### Why single-threaded executor for pygit2
 
 pygit2 wraps libgit2 C objects which are not thread-safe. Concurrent calls from different threads can cause segfaults. A single-threaded executor serializes all git operations safely. This includes read operations (status, log) — not just writes.
 
-### Why rebase-only
+### Why git stash for rollback
 
-Merge commits create non-linear history that's harder to reason about for automated rollback. Rebase keeps history linear: each commit is a clean, independent change. Rollback is simply resetting to a prior commit.
+`git stash -u` captures all dirty state (modified tracked files + untracked files) into a recoverable stash entry. This is better than `git checkout HEAD` + manual cleanup because:
+- Handles all cases uniformly (modified, deleted, new files, directory trees)
+- Preserves state recoverably (`git stash list`, `git stash pop`)
+- Nothing is silently destroyed
+- Single operation, no edge cases to enumerate
+
+### Why asyncio.to_thread for sync operations
+
+`save_to_file()` and other file I/O are sync operations. `asyncio.to_thread` runs them in a thread pool so they don't block the event loop. This has no performance penalty vs "real" async I/O — Python has no true async filesystem I/O. Libraries like `aiofiles` internally use thread pools too.

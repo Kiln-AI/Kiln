@@ -1,5 +1,5 @@
 ---
-status: complete
+status: draft
 ---
 
 # Functional Spec: Git Auto Sync
@@ -18,230 +18,187 @@ The user manages git themselves. No sync middleware, no background pulls. This i
 
 Git operations are fully managed. Every API write is committed and pushed. The repo is kept fresh via background polling. Users never interact with git directly.
 
-**Toggle:** Per-project setting stored in project configuration. Default: manual. Can be switched at any time. When switching to auto, the system verifies the repo is in a clean state (no uncommitted changes, no conflicts) before enabling.
+**Toggle:** Per-project setting stored in project configuration. Default: manual. Can be switched at any time (takes effect on the next request). When switching to auto, the system verifies the repo is in a clean state (no uncommitted changes, no conflicts) before enabling.
 
-## Core Architecture: write_context API
+## Isolated Repo Per Project
 
-The git sync system is a general-purpose library (not tied to FastAPI). It enforces correct usage through a single context manager — writes are impossible outside the proper context, so misuse is an immediate, obvious error rather than a subtle runtime bug.
+Each Kiln project using auto-sync gets its own full clone of the repository. Even if the user has a local repo, Kiln manages its own isolated copy. This ensures:
 
-### Design Goals
+- No interference from the user's editor, IDE, or other tools
+- No conflicts with other Kiln projects in the same repo
+- Clean, predictable repo state for the sync system
 
-1. **Zero change for 99% of APIs.** The middleware wraps every request in a `write_context()`. Normal API handlers just call `save_to_file()` as usual — the context handles pull, commit, push, and locking transparently.
-2. **Only special APIs think about contexts.** Long-running or batched operations (e.g., evals) opt into nested contexts for finer-grained commit/push control.
-3. **Hard to misuse.** Writing outside a context is an immediate error. Mixing patterns (writing in parent context then nesting) is an immediate error. The library enforces correct usage rather than relying on callers to get the order right.
-4. **Single concept.** One context manager (`write_context`) with configurable behavior via parameters, not multiple context types with different semantics.
+**Location:** `.git-projects/[ID] - [projectname][N]` inside the existing default Kiln projects directory (`~/Kiln Projects`, use existing constant/path). The `.git-projects` folder is hidden by convention — the user doesn't need to know where it is. `[N]` is a counter suffix (2, 3, ...) added only if the name collides with an existing entry.
 
-### StorageWriter Abstraction
+**Why full clone, not worktree:** Worktrees share `.git` internals (reflog, stash, gc, index locks). A full clone is truly isolated — operations on one project can never affect another. Shallow clone keeps disk usage minimal.
 
-> **Note:** Originally called `StorageBackend` — renamed to `StorageWriter` because the scope was narrowed to write-only operations (3 methods). Reads are untouched.
+**Phased implementation:**
+- **Phase 1:** Assume the configured repo is single-purpose. No clone setup needed. Configuration is manual.
+- **Phase 2:** UI-driven setup flow creates the isolated clone automatically. See Setup Flow section.
 
-An abstract `StorageWriter` base class defines the interface for model persistence. Two implementations:
+## Core Design: HTTP-Method Middleware Lock
 
-- **`FileStorageWriter`** — Current behavior. Reads/writes `.kiln` files directly to disk. No git awareness.
-- **`GitSyncStorageWriter`** — Wraps file I/O with git sync. All writes must occur within a `write_context`. Tracks written files automatically. Delegates actual file I/O to the same underlying logic.
+The git sync system works at the HTTP middleware level. No changes to `KilnBaseModel` or `libs/core/` are needed — filesystem writes happen exactly as they do today.
 
-`KilnBaseModel` loads the appropriate storage backend based on the project's configuration (auto mode → git sync backend, manual mode → file backend). The base model code doesn't know or care which backend is active — it calls the same interface.
+### How It Works
 
-**Key property:** The storage backend is how file writes are automatically tracked. When `save_to_file()` goes through `GitSyncStorageWriter`, the backend records the written file path in the active context. No explicit file tracking by the caller.
+1. **Middleware inspects HTTP method.** For mutating requests (POST, PATCH, PUT, DELETE), acquire the write lock. For GET/HEAD, pass through without locking.
+2. **On lock acquisition:** Verify the repo is clean via `git status`. If dirty, run crash recovery (see Recovery section). If still dirty after recovery, error.
+3. **Ensure fresh:** Pull/rebase to ensure the repo is up-to-date with remote. If offline, fail (503).
+4. **Handler runs normally.** Any filesystem operation works — no special writer or tracking needed. The handler reads and writes `.kiln` files exactly as it does today.
+5. **On request exit (success):** Use `git status` to find all changed files. Stage everything, commit with auto-generated message, push to remote. Release lock.
+6. **On request exit (failure):** Rollback all changes to the clean state verified at lock acquisition. Release lock.
+7. **On request exit (no changes):** No-op. Release lock.
 
-### GitSyncManager
+### Why This Works
 
-A singleton per git repository path (not per project — a repo may contain multiple projects). Constructed with:
+The write lock + clean-state verification + isolated repo guarantees that any dirty files at commit time were created by the current request. Git is the single source of truth for what changed — no internal file tracking list that can get out of sync.
 
-- **`repo_path`** — Path to the git repository root.
-- **`project_path`** — Path to the project directory within the repo (may equal `repo_path`).
-- **Configuration** — Remote name, branch, poll interval.
+### Annotations
 
-**Singleton scope:** One instance per repo path. If two projects share a repo, they share a manager. Created on first access, cached by repo path.
+Two annotations modify the default middleware behavior:
 
-**State queries:** `is_fresh()`, `is_clean()`, `has_conflicts()`, etc.
+- **`@write_lock`** — For GET endpoints that perform mutations (e.g., browser limitations requiring GET for a mutating action). Middleware acquires the write lock as if it were a POST.
+- **`@no_write_lock`** — For long-running endpoints (SSE eval batch jobs) that manage their own commit cycle. Middleware skips the lock. See Long-Running Requests.
 
-**Standalone helper:** `manager.push()` — pushes all unpushed local commits to remote. Can only be called when the write lock is NOT held (i.e., between write contexts, not inside one). Useful for periodic push in long-running tasks.
+### Dev-Mode Safety Nets
 
-### write_context
-
-```python
-with manager.write_context(push=True, check_in_sync=True) as ctx:
-    # Entry: if check_in_sync, pull/rebase to ensure fresh (fail if offline)
-    # During: writes via storage backend are tracked automatically
-    # First write: acquires exclusive write lock (blocks with timeout if held)
-    # Exit: commit tracked files, optionally push to remote, release lock
-```
-
-**Parameters:**
-- **`push`** (default `True`) — Whether to push to remote after committing on exit.
-- **`check_in_sync`** (default `True`) — Whether to pull/rebase on entry to ensure the repo is up-to-date. Fails if remote is unreachable (online-only).
-
-**Lazy lock acquisition:** The write lock is NOT acquired on context entry. It is acquired on the first write within the context. This means read-only API calls wrapped in a `write_context` by the middleware never acquire the lock and never block. Only requests that actually write pay the locking cost.
-
-**Writes go through the manager:** The `GitSyncStorageWriter` delegates all file I/O to the manager:
-
-- **`manager.write_file(file_path, data)`** — In a single call: acquires the write lock if not already held (errors if no active `write_context`), writes the file to disk, and tracks it in the active context. Impossible to forget a step.
-- **`manager.read_file(file_path)`** — Reads a file. No lock, no context required.
-
-This is the only way the storage backend does I/O. The manager knows its own active context internally — no context objects are passed around.
-
-**Enforced constraint:** `manager.write_file()` raises an error if called outside any `write_context`. This makes "forgot to wrap in context" an immediate, obvious failure.
-
-**On exit behavior:**
-- Files written, no exception: commit + push (if `push=True`). If push fails, revert commit and raise. Release lock.
-- Files written, exception occurred (non-nested): **rollback** — revert written files to their pre-write state, do not commit. Release lock. Re-raise.
-- Files written, exception occurred (nested): any already-committed nested contexts are preserved (they already committed on their own exit). Push those commits if `push=True`. Rollback any uncommitted writes from the failed context. Re-raise.
-- No files written: no-op, no lock to release.
-
-**Auto-generated commit message** based on tracked files and the nature of changes (see Commit Messages section).
-
-### Nesting Behavior
-
-`write_context` supports nesting with clear rules designed to prevent misuse:
-
-**How nesting works:**
-- When a nested `write_context` opens, the **parent releases its write lock** (if held). The parent becomes a lifecycle boundary (responsible for its `check_in_sync` on entry and `push` on exit) but no longer holds the lock.
-- The **nested context acquires the lock lazily** (on first write). On its exit, it commits its tracked files and releases the lock.
-- Between nested contexts, the lock is free — other API requests can proceed.
-- On parent exit, it pushes all unpushed commits if `push=True`.
-
-**Parent push failure (nested case):** If the parent context's final push fails (remote diverged since the nested contexts committed), the recovery is: pull/rebase (which replays the nested commits on top of the new remote state), then re-push. If rebase conflicts, revert the local commits that haven't been pushed (via `git rebase --abort` + `git reset` to the last pushed state) and surface an error. The already-pushed commits from earlier `manager.push()` calls within the loop are safe.
-
-**The mixing error:** If the parent context has already tracked writes (files were saved directly in it) and a nested context opens, this is an **immediate error**. You must pick one pattern: either write directly in the context (no nesting), or delegate all writes to nested contexts. This prevents confusing scenarios where some writes land in the parent's commit and others in nested commits.
-
-**Examples:**
-
-```python
-# Normal API call — middleware wraps, handler just writes (99% of APIs)
-with manager.write_context():  # push=True, check_in_sync=True
-    task = Task(name="My Task")
-    task.save_to_file()  # tracked automatically
-# Exit: commit, push, done. No API code changes needed.
-
-# Long-running eval — nested contexts for incremental commits
-with manager.write_context():  # outer: pulls on entry, pushes on exit
-    for item in eval_items:
-        with manager.write_context(push=False, check_in_sync=False):  # inner: commit only
-            result = run_eval(item)
-            result.save_to_file()
-        # Inner exit: commit, release lock. App remains usable.
-        if should_push_now():
-            manager.push()  # periodic push between contexts
-    # Outer exit: final push of any unpushed commits
-
-# Async dispatch — each task gets its own write context
-with manager.write_context():  # outer: pulls, pushes on exit
-    async def process(item):
-        with manager.write_context(push=False, check_in_sync=False):
-            result = run_eval(item)
-            result.save_to_file()
-    await asyncio.gather(*[process(i) for i in eval_items])
-    # Inner contexts serialize via the write lock
-    # Outer exit: pushes all commits
-
-# ERROR — mixing patterns
-with manager.write_context():
-    task.save_to_file()  # write tracked in outer context
-    with manager.write_context(push=False):  # ERROR: outer already has writes
-        something.save_to_file()
-```
-
-### Error Summary
-
-| Situation | Behavior |
-|-----------|----------|
-| Write outside any write_context (git backend) | Immediate error |
-| Nested context opens after parent already has writes | Immediate error |
-| `manager.push()` while write lock is held | Immediate error |
-| `manager.push()` with nothing to push | No-op |
-| Write lock acquisition times out | Error (503 to client) |
+- **Dirty state detection:** In development mode, check `git status` at the start and end of any request that did NOT hold the write lock. Dirty state at either point indicates a serious bug (likely a mutation in a GET endpoint). Raise a loud error.
+- **Long lock hold warning:** In development mode, warn if the write lock is held for more than 5 seconds. Flags endpoints that should use `@no_write_lock` with explicit commit management instead.
 
 ## Request Lifecycle (Auto Mode)
 
-### Standard Requests (reads and writes)
+### Standard Requests (reads)
 
-The middleware wraps every request in a `write_context()` with defaults (`push=True, check_in_sync=True`):
+GET/HEAD requests pass through middleware without locking. Served from local state. Background sync keeps the repo fresh.
 
-1. **Entry:** Pull/rebase to ensure fresh. If offline → 503. Lock is NOT acquired yet.
-2. **Execution:** API handler runs. If it writes, the first `save_to_file()` call acquires the write lock and tracks files. Read-only requests never acquire the lock.
-3. **Exit (writes occurred):** Check for out-of-band changes → commit tracked files → push. On push failure: revert, re-pull, retry once, else 409. Release lock.
-4. **Exit (no writes):** No-op. No lock was acquired, nothing to release.
-5. **Exit (exception, non-nested):** Rollback written files, do not commit. Release lock. Return error.
+### Standard Requests (writes)
+
+POST/PATCH/PUT/DELETE requests:
+
+1. **Acquire write lock.** Blocks if another write is in progress (waits in queue).
+2. **Verify clean state.** `git status` — if dirty, run recovery routine.
+3. **Ensure fresh.** Pull/rebase from remote. If offline → 503.
+4. **Handler executes.** Reads and writes files normally.
+5. **Exit (writes occurred):** `git status` finds changes → `git add` all → commit → push. If push fails, retry once (see Conflict Handling). If retry fails, rollback → error.
+6. **Exit (no writes):** No-op.
+7. **Exit (exception):** Rollback all changes (see Rollback). Return error.
+8. **Release write lock.**
 
 ### Long-Running Write Requests
 
-The middleware still wraps these in a `write_context()`. The API handler opens nested `write_context(push=False, check_in_sync=False)` blocks for each atomic unit:
+Endpoints annotated `@no_write_lock` (e.g., SSE eval batch jobs) manage their own commit cycle:
 
-1. **Outer context (middleware):** Ensures fresh on entry. Does not write directly — delegates to nested contexts. Pushes all unpushed commits on exit.
-2. **Each nested context:** Acquires lock, tracks writes, commits on exit, releases lock.
-3. **Between nested contexts:** Lock is released — other API requests can proceed. `manager.push()` can be called for periodic push.
-4. **On error mid-loop:** Previously committed iterations are preserved. Outer context pushes them on exit. The failed iteration's writes are rolled back.
+1. Middleware passes through without acquiring the lock.
+2. The handler performs work in iterations. Between iterations, it calls a helper:
+
+```python
+await manager.commit_and_push()  # commits all dirty files, pushes
+```
+
+3. This helper acquires the write lock, commits everything dirty, pushes, and releases the lock. Between calls, the lock is free — other requests can proceed.
+
+This is simpler than nested contexts — no context tracking, no lock handoff. Just "commit what's dirty and push."
+
+**Parallel writes within a single request handler are not supported.** This is not a new limitation — concurrent filesystem writes within a single handler are already unsafe regardless of git sync. Use sequential iteration.
 
 ## Background Sync
 
-A background async task polls remote for changes every few seconds (configurable, default: 5s). This keeps the local repo fresh so that `ensure_fresh()` in the middleware rarely needs to block.
+A background async task keeps the local repo fresh by polling for remote changes.
 
 - Runs only when auto mode is enabled for at least one project in the repo.
-- Uses the same `GitSyncManager` — respects the write lock (waits if a write is in progress).
-- On pull failure (network): logs warning, retries on next poll. Does not block API calls (the middleware's `ensure_fresh()` will catch staleness).
+- **Two-phase approach:**
+  1. **Fetch (no lock):** `git fetch` updates remote tracking refs only — doesn't touch the working tree. Safe to run concurrently with anything.
+  2. **Check:** Compare local HEAD against fetched remote tracking ref. If no new commits, done.
+  3. **Fast-forward (with lock):** Acquire the write lock (blocking — waits behind in-flight requests). Update the working tree to match fetched state. Release lock.
+- Poll interval: 10 seconds (internal constant).
+- **Idle pause:** Stops polling after 5 minutes with no API requests. Resumes on next request.
+- On pull failure (network): logs warning, retries on next poll.
 
 ## Conflict Handling
 
 ### Strategy: Rebase-Only
 
-All pulls use `git pull --rebase`. No merge commits. This keeps history linear and is simpler to reason about.
+All pulls use rebase. No merge commits. This keeps history linear and is simpler to reason about.
 
 ### Conflict During Push
 
-When `commit_and_push()` fails because remote has diverged:
+When push fails because remote has diverged:
 
-1. Revert the local commit (preserving the working tree changes).
-2. Pull + rebase from remote.
-3. If rebase succeeds cleanly: re-commit and re-push. *(Note: this retry happens once — if it fails again, abort.)*
-4. If rebase has conflicts: abort rebase, restore pre-request state, return error to client.
+1. Fetch remote.
+2. Rebase the local commit directly onto the fetched remote HEAD (commit stays intact — no revert needed).
+3. If rebase succeeds cleanly → push again (once). If second push also fails → rollback to pre-request state → return error.
+4. If rebase conflicts → `git rebase --abort` → rollback to pre-request state → return error.
 
-The client receives a 409 error. The user's action is: retry the operation (which will now be based on fresh data).
+The client receives a 409 error. The user's action: retry the operation (which will now be based on fresh data).
 
 ### Why Conflicts Are Rare
 
 - Data model is append-only and immutable for most operations (new runs, new documents, etc.)
 - Files use unique IDs in paths — two users creating items won't touch the same files
 - The background poller keeps local state within seconds of remote
-- Write lock prevents local interleaving
+- Isolated repo eliminates local interference
 
-## Out-of-Band File Edits
+## Rollback
 
-**Problem:** If a user manually edits `.kiln` files outside the API, `git status` will show unexpected dirty files. This could interfere with the commit logic.
+On error (exception during handler, or push failure after retry exhausted):
 
-**Approach: Detect and Reject**
+1. `git stash -u -m "[Kiln] Rollback: <error description>"` — captures all dirty state (modified + untracked files) into a recoverable stash.
+2. If a commit was made but not pushed: reset branch to pre-request HEAD (captured at lock acquisition time). Orphaned commit remains in reflog.
+3. Release write lock.
+4. Re-raise exception / return error.
 
-- Before committing, compare the set of dirty files (from `git status`) against the set of files tracked by the write context (recorded by `save_to_file()` calls).
-- If any dirty files are NOT in the tracked set, **fail the API call** with a clear error (400: "Unexpected file changes detected outside of API. Please resolve before continuing.").
-- This comparison is specific: only files outside the tracked set are flagged. Files that are dirty because of a background pull (which modifies the working tree) are not a concern because the background poller respects the write lock — it cannot run while a write context holds the lock, so the working tree is stable during the detection window.
-- Provides a `manager.is_clean()` check for use in health checks or pre-request validation.
+Using `git stash` preserves dirty state recoverably — a technical user can inspect with `git stash list` and recover with `git stash pop` if needed. Nothing is silently destroyed.
 
-This is the strictest approach — it ensures git state is always predictable and prevents accidental commits of garbage. The tradeoff is that a user manually editing files will break API calls until the changes are reverted or committed manually. This is acceptable for V1; a more lenient approach (auto-committing or ignoring out-of-band changes) can be added later.
+## Recovery (Crash Recovery)
+
+If the process crashes mid-operation (OOM, power loss, kill), the repo may be left in a dirty state. A recovery routine runs at the start of every write request (after lock acquisition, before ensure-fresh):
+
+1. **Detect:** Check repo state — `git status` clean, no in-progress rebase/merge.
+2. **Wait and recheck:** If dirty, sleep 0.5s then recheck. Another process or manager instance may be mid-operation and about to clean up.
+3. **Still dirty → recover:**
+   - Abort rebase/merge if in progress (`git rebase --abort`).
+   - `git stash -u -m "[Kiln] Auto-recovery stash — dirty state from prior session"` to capture all dirty state into a recoverable stash.
+   - If local branch has unpushed commits ahead of remote tracking branch: reset branch to remote tracking ref. Orphaned commits remain reachable via reflog.
+4. **Log warnings** for every recovery action taken.
+
+This ensures the system self-heals from crashes without requiring manual intervention from non-technical users.
 
 ## Commit Messages
 
-Auto-generate descriptive commit messages based on the changes made:
+Auto-generated from `git status` / `git diff` at commit time plus the API request path:
 
-- Include the API action that triggered the commit (e.g., "Create task 'Summarize articles'", "Update prompt for task 'Translation'", "Run eval on task 'QA'")
-- For multi-file commits, summarize the batch (e.g., "Eval run: 15 results for task 'QA'")
-- Keep messages concise but informative — they should be meaningful when browsing git history
-- Format: `[Kiln] <action description>` prefix for easy identification in shared repos
+```
+[Kiln] Auto-sync: 3 files changed
+
+API: POST /api/projects/abc123/tasks
+```
+
+The first line summarizes file-level changes (new/modified/deleted, count, inferred model types from file paths). The body includes the API path for traceability in git history.
+
+The commit message generator is purely programmatic — it uses `git diff` to determine change types and parses file paths and `.kiln` JSON content for model type and name fields. For deletions, the file list comes from `git status` since the files are already removed from the working tree.
 
 ## Configuration
 
 ### Per-Project Settings
 
 - **sync_mode:** `"manual"` | `"auto"` (default: `"manual"`)
-
-### Per-Repo Settings (managed by GitSyncManager)
-
-- **poll_interval_seconds:** Background sync interval (default: 5)
 - **remote_name:** Git remote to sync with (default: `"origin"`)
-- **branch:** Branch to sync (default: current branch)
+- **branch:** Branch to sync (default: current branch at setup time)
+- **clone_path:** Path to the isolated repo clone (set by setup flow)
+- **credentials:** PAT token (per-project, stored securely)
 
 ### Where Configuration Lives
 
 Stored in the existing Kiln config system. Not in git-tracked files (sync settings are per-machine, not shared).
+
+### Internal Constants (not user-configurable)
+
+- Poll interval: 10 seconds
+- Idle pause: 5 minutes
+- Sync freshness threshold: 15 seconds
+- Git executor timeout: 20 seconds
+- Long lock hold warning: 5 seconds (dev mode only)
 
 ## Error Handling
 
@@ -249,58 +206,106 @@ Stored in the existing Kiln config system. Not in git-tracked files (sync settin
 |----------|----------|-------------------|
 | Remote unreachable on write | Rollback, fail request | 503: "Cannot sync with remote. Check your connection." |
 | Remote unreachable on read | Fail request | 503: "Cannot sync with remote. Check your connection." |
-| Push conflict | Rollback, re-pull, retry once | 409: "Conflict detected. Please retry." |
-| Rebase conflict (unresolvable) | Abort rebase, restore state | 500: "Sync conflict could not be auto-resolved. Disable auto-sync and resolve manually." |
-| Write lock timeout | Fail request | 503: "Server busy. Please retry." |
-| Out-of-band file changes | Reject API call, do not commit | 400: "Unexpected file changes detected outside of API. Resolve before continuing." |
-| Corrupt repo state | Refuse to operate, surface error | 500: "Git repository is in an unexpected state. Disable auto-sync and check manually." |
+| Push conflict | Rollback, fetch, rebase, retry once | 409: "Conflict detected. Please retry." |
+| Rebase conflict (unresolvable) | Abort rebase, rollback | 500: "Sync conflict could not be auto-resolved. Disable auto-sync and resolve manually." |
+| Write lock timeout (HTTP) | Fail request | 503: "Server busy. Please retry." |
+| Dirty repo on write request | Auto-recovery via stash | Transparent — recovered automatically. Error only if recovery fails. |
+| Corrupt repo state (unrecoverable) | Refuse to operate, surface error | 500: "Git repository is in an unexpected state. Disable auto-sync and check manually." |
 
-## Out of Scope (V1)
+## Setup Flow
 
-- **Login/auth UX:** V1 assumes the repo is already cloned and credentials are configured.
-- **Clone/setup flow:** User must set up the repo manually. Setup wizard is a future feature.
-- **Non-GitHub remotes:** Should work (pygit2 is provider-agnostic) but not explicitly tested in V1.
+### Phase 1 (Initial)
+
+Manual configuration only. User provides repo path via config. Assumes the repo is already cloned, credentials configured, and single-purpose.
+
+### Phase 2: UI-Driven Setup
+
+Accessed via the Import Project UI with a new "Sync from Git" option. Wizard steps:
+
+**Step 1: Provide Git URL**
+- User enters repo URL (HTTPS or SSH).
+- We attempt to access the repo via git API call (list branches — needed for next step).
+- If access fails due to credentials → show credentials screen.
+
+**Step 2: Credentials (shown on demand)**
+- PAT token entry.
+- For GitHub URLs, show a deeplink: [Get Token from GitHub](https://github.com/settings/tokens/new?scopes=repo&description=Kiln+AI&default_expires_at=none)
+- For non-GitHub URLs, show a brief explainer of what a PAT is and where to find it.
+- On save: test access with the provided token. Don't leave this screen unless the test succeeds.
+- Token saved in memory during wizard, persisted to project-specific git config on final step.
+
+**Credentials can be needed at multiple points:** It's possible to list branches successfully but fail on clone or push (different permission levels). The wizard supports jumping into the credentials flow at any failure point, adding/updating the PAT, and retrying the failed operation.
+
+**Step 3: Branch Selection**
+- List branches from the remote. Default selection: default branch > main > master.
+- On confirm:
+  1. Shallow clone of the selected branch into the hidden `.git-projects/` directory.
+  2. Test write access: empty commit + push. Message: `"Empty commit: checking write access for Kiln AI Git Auto Sync setup"`
+  3. If clone or push fails due to permissions → jump to credentials screen, retry.
+
+**Step 4: Project Selection**
+- Scan the cloned repo for all `project.kiln` files.
+- If exactly one in repo root: auto-select, skip this step.
+- If multiple: show a picker with paths + project names/descriptions loaded from the files.
+- If none: show error ("No Kiln project found in this repository").
+
+**Step 5: Complete**
+- Save the project's git sync config (token, repo URL, clone path, branch, project path).
+- Auto-sync is now enabled for this project.
+
+### Phase 3 (Future, Not Part of This Project)
+
+Create new project in git from UI. Rough sketch: select existing repo or "new repo" (git init + add remote), select subfolder or root, standard project creation wizard. Design TBD.
+
+## Credentials
+
+pygit2 will use a user's SSH keys if available.
+
+- **Phase 1:** Manual config only. User handles credentials themselves.
+- **Phase 2:** PAT token-based auth in the setup wizard. Per-project token storage (different projects may use different hosts/tokens).
+
+## Out of Scope (V1 / Phase 1)
+
+- **Setup wizard:** Phase 1 uses manual config. Phase 2 adds UI-driven setup.
+- **Non-GitHub remotes:** Should work (pygit2 is provider-agnostic) but not explicitly tested in Phase 1.
 - **Multi-remote sync:** Single remote only.
-- **Branch management:** Syncs current branch only. No branch creation/switching.
+- **Branch management:** Syncs configured branch only. No branch creation/switching.
 - **UI for conflict resolution:** If auto-resolve fails, user must resolve manually in git.
-- **Offline mode:** No offline support. All writes require successful push.
-- **Dirty repo resolution UX:** When enabling auto mode on a repo with uncommitted changes, V1 requires the user to resolve this manually. A future enhancement should provide a UI flow to help non-technical users clean up (e.g., "commit all and enable" or "discard and enable").
+- **Offline mode:** No offline support. All writes require successful push. Reads also require freshness check.
+- **Dirty repo resolution UX:** When enabling auto mode on a repo with uncommitted changes, Phase 1 requires the user to resolve this manually.
 
 ## Technical Constraints
 
 - **Library:** pygit2 (libgit2 Python bindings). No shelling out to git CLI — users are non-technical.
-- **Code location:** All git sync code lives in `app/desktop/` as a new sub-project. Middleware and settings integration also in `app/`.
+- **Code location:** All git sync code lives in `app/desktop/` as a new sub-project. No changes to `libs/core/`.
 - **Async compatibility:** The library must work with asyncio (FastAPI is async). Blocking git operations should run in a thread executor to avoid blocking the event loop.
 - **Thread safety:** `GitSyncManager` must be thread-safe. The write lock must work across async tasks and threads.
-- **pygit2 thread safety:** pygit2 objects (Repository, Index, etc.) are C extension objects backed by libgit2 and are not thread-safe. The `GitSyncManager` should funnel ALL pygit2 operations (including background sync, status checks, and read operations) through a single-threaded executor to prevent concurrent libgit2 calls, which can cause segfaults.
+- **pygit2 thread safety:** pygit2 objects (Repository, Index, etc.) are C extension objects backed by libgit2 and are not thread-safe. The `GitSyncManager` should funnel ALL pygit2 operations through a single-threaded executor to prevent concurrent libgit2 calls, which can cause segfaults.
+- **Async runtime required:** Auto-sync requires the FastAPI middleware (async). Standalone sync callers outside the FastAPI server cannot use auto-sync mode.
 
 ## Integration with Existing Code
 
-### Storage Backend in BaseModel
+### No Changes to libs/core/
 
-`KilnBaseModel` is refactored to use a `StorageWriter` abstraction:
-
-- An abstract `StorageWriter` defines `save()` and `load()` methods.
-- `FileStorageWriter` implements current behavior (direct file I/O).
-- `GitSyncStorageWriter` wraps file I/O with context tracking and enforces writes only within a `write_context`.
-- The backend is selected based on the project's sync mode configuration. `KilnBaseModel` resolves the backend for the relevant project and delegates to it.
-
-This is the only change to `libs/core` — the storage backend abstraction. All git sync logic lives in `app/desktop/`.
+Design B requires zero modifications to `KilnBaseModel` or any code in `libs/core/`. The middleware handles git operations at the HTTP layer. File I/O happens exactly as it does today — the git sync system observes changes via `git status` after the fact.
 
 ### FastAPI Middleware
 
-New middleware wraps each request in a `write_context()` with defaults (`push=True, check_in_sync=True`). Added to the server stack in `app/desktop/`.
+New middleware wraps mutating requests with the write lock, clean-state verification, ensure-fresh, and commit-on-exit. Added to the server stack in `app/desktop/`. Uses `BaseHTTPMiddleware` with response body buffering (allows commit/push failures to return error responses instead of silently failing after a 200). Raw ASGI middleware is the documented fallback if integration testing reveals issues with `BaseHTTPMiddleware`.
+
+**Early integration test (blocking gate):** Before other git sync work proceeds, verify that `BaseHTTPMiddleware` correctly holds the lock across the request lifecycle and that response buffering works for error detection.
 
 ### Config System
 
-Extended to store sync mode per project.
+Extended to store sync mode, credentials, and clone path per project.
 
 ## Documentation
 
-A README must be created describing library usage. It should cover:
+A README must be created describing the feature. It should cover:
 
-- How to configure a project for auto sync
-- The `write_context` API with parameter explanations
-- Usage patterns: simple (middleware default), long-running (nested), async (dispatch)
+- How to configure a project for auto sync (Phase 1: manual config)
+- How the middleware works and what it does automatically
+- The `@write_lock` and `@no_write_lock` annotations
+- Long-running request patterns with `commit_and_push()`
 - Error handling and what each error means
-- The nesting rules and the mixing error
+- Dev-mode safety nets
