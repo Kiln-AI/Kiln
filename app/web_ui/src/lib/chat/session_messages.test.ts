@@ -167,6 +167,45 @@ describe("hydrateSessionFromSnapshot", () => {
     )
     expect(messages[0].content).toBe("plain question")
   })
+
+  it("skips empty assistant messages (no content, no tool_calls)", () => {
+    const { messages } = hydrateSessionFromSnapshot(
+      snap("empty-asst", [
+        { role: "user", content: "list projects" },
+        { role: "assistant", content: "", tool_calls: [] },
+        { role: "assistant", content: "", tool_calls: [] },
+        { role: "assistant", content: "", tool_calls: [] },
+        {
+          role: "assistant",
+          content: "",
+          tool_calls: [
+            {
+              id: "tc1",
+              type: "function",
+              function: {
+                name: "call_kiln_api",
+                arguments: '{"method":"GET"}',
+              },
+            },
+          ],
+        },
+        { role: "tool", tool_call_id: "tc1", content: "result" },
+        { role: "assistant", content: "Here are your projects" },
+      ]),
+    )
+    expect(messages).toHaveLength(3)
+    expect(messages[0].role).toBe("user")
+    expect(messages[1].role).toBe("assistant")
+    expect(messages[1].parts?.[0]).toMatchObject({
+      type: "tool-call_kiln_api",
+      output: "result",
+    })
+    expect(messages[2].role).toBe("assistant")
+    expect(messages[2].parts?.[0]).toEqual({
+      type: "text",
+      text: "Here are your projects",
+    })
+  })
 })
 
 describe("stripAppUiContext", () => {

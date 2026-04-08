@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from "svelte"
   import { fly } from "svelte/transition"
-  import ChatCostDisclaimer from "./ChatCostDisclaimer.svelte"
+  import ChatCostDisclaimer from "./chat_cost_disclaimer.svelte"
   import type { ChatMessage, ChatMessagePart } from "$lib/chat/streaming_chat"
   import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
-  import ChatMarkdown from "$lib/chat/ChatMarkdown.svelte"
+  import ChatMarkdown from "$lib/ui/chat/chat_markdown.svelte"
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
   import StopIcon from "$lib/ui/icons/stop_icon.svelte"
   import {
@@ -13,6 +13,7 @@
   } from "$lib/chat/chat_session_store"
   import ChatWelcome from "./chat_welcome.svelte"
   import ChatHistory from "./chat_history.svelte"
+  import ToolApprovalBox from "./tool_approval_box.svelte"
   import ChatLoading from "./chat_loading.svelte"
 
   export let store: ChatSessionStore = chatSessionStore
@@ -28,6 +29,9 @@
   let reasoningPartStartTimes: Record<string, number> = {}
   let reasoningPartEndTimes: Record<string, number> = {}
   let lastSeenLastPartKey: string | null = null
+  import { env } from "$env/dynamic/public"
+
+  const showToolCallDetails = env.PUBLIC_SHOW_TOOL_CALL_DETAILS === "true"
 
   $: toolApprovalWaiter = $store.toolApprovalWaiter
   $: toolApprovalPicks = $store.toolApprovalPicks
@@ -118,6 +122,29 @@
 
   $: showStreamingCursor =
     isLoading && lastMessage?.role === "assistant" && lastParts.length === 0
+
+  function isMessageVisible(message: ChatMessage): boolean {
+    if (message.role !== "assistant") return true
+    if (isLoading && message.id === lastMessage?.id) return true
+    const parts = message.parts ?? []
+    if (parts.length === 0 && !message.content) return false
+    if (!showToolCallDetails && !message.content) {
+      const hasNonToolPart = parts.some(
+        (p) => p.type === "text" || p.type === "reasoning",
+      )
+      if (!hasNonToolPart) {
+        const allComplete = parts.every(
+          (p) =>
+            typeof p.type === "string" &&
+            p.type.startsWith("tool-") &&
+            "output" in p &&
+            p.output !== undefined,
+        )
+        if (allComplete) return false
+      }
+    }
+    return true
+  }
 
   function isReasoningStreaming(
     message: ChatMessage,
@@ -366,272 +393,287 @@
         <div class="flex-[2] shrink-0"></div>
       {/if}
       {#each messages as message (message.id)}
-        <div
-          in:fly={{ y: 8, duration: 200 }}
-          out:fly={{ y: -4, duration: 150 }}
-          class={message.role === "user"
-            ? "leading-tight rounded-xl bg-base-content/[0.06] px-3 py-2.5 max-w-2xl ml-auto text-sm"
-            : message.role === "error"
-              ? "rounded-lg bg-error/10 border border-error/30 px-3 py-2.5 text-error text-sm"
-              : "flex flex-col gap-3"}
-        >
-          {#if message.role === "error"}
-            {#if message.errorCode === CHAT_CLIENT_VERSION_TOO_OLD}
-              <div class="flex items-center gap-3">
-                <span
-                  >A newer version of Kiln is required.
-                  <a
-                    href="/settings/check_for_update"
-                    class="underline font-medium hover:text-error/80"
-                    >Check for updates</a
-                  ></span
-                >
-              </div>
+        {#if isMessageVisible(message)}
+          <div
+            in:fly={{ y: 8, duration: 200 }}
+            out:fly={{ y: -4, duration: 150 }}
+            class={message.role === "user"
+              ? "leading-tight rounded-xl bg-base-content/[0.06] px-3 py-2.5 max-w-2xl ml-auto text-sm"
+              : message.role === "error"
+                ? "rounded-lg bg-error/10 border border-error/30 px-3 py-2.5 text-error text-sm"
+                : "flex flex-col gap-3"}
+          >
+            {#if message.role === "error"}
+              {#if message.errorCode === CHAT_CLIENT_VERSION_TOO_OLD}
+                <div class="flex items-center gap-3">
+                  <span
+                    >A newer version of Kiln is required.
+                    <a
+                      href="/settings/check_for_update"
+                      class="underline font-medium hover:text-error/80"
+                      >Check for updates</a
+                    ></span
+                  >
+                </div>
+              {:else}
+                <div class="flex items-center justify-between gap-3">
+                  <span>{message.content}</span>
+                  <button
+                    type="button"
+                    class="shrink-0 rounded-md bg-error/20 px-2 py-1 text-xs font-medium hover:bg-error/30 transition-colors"
+                    on:click={retryLastRequest}
+                    disabled={isLoading}
+                  >
+                    Retry
+                  </button>
+                </div>
+              {/if}
             {:else}
-              <div class="flex items-center justify-between gap-3">
-                <span>{message.content}</span>
-                <button
-                  type="button"
-                  class="shrink-0 rounded-md bg-error/20 px-2 py-1 text-xs font-medium hover:bg-error/30 transition-colors"
-                  on:click={retryLastRequest}
-                  disabled={isLoading}
-                >
-                  Retry
-                </button>
-              </div>
-            {/if}
-          {:else}
-            <div class="flex flex-col leading-tight">
-              {#if message.parts && message.parts.length > 0}
-                {#each message.parts as part, partIndex (partKey(message, part, partIndex))}
-                  {#if part.type === "text"}
-                    <ChatMarkdown text={part.text ?? ""} />
-                  {:else if part.type === "reasoning"}
-                    {@const collapsed = isPartCollapsed(
-                      collapsedPartKeys,
-                      message,
-                      part,
-                      partIndex,
-                      message.parts ?? [],
-                    )}
-                    {@const key = partKey(message, part, partIndex)}
-                    {@const streaming = isReasoningStreaming(
-                      message,
-                      partIndex,
-                      message.parts ?? [],
-                    )}
-                    {@const duration = reasoningDurationSeconds(key, streaming)}
-                    <div
-                      class="mt-2 overflow-hidden text-sm text-base-content/60"
-                    >
-                      <button
-                        type="button"
-                        class="group/btn w-full flex items-center gap-1.5 py-1 text-left text-base-content/60 hover:text-base-content/80 transition-colors cursor-pointer"
-                        on:click={() =>
-                          togglePartCollapsed(message, part, partIndex)}
-                      >
-                        <span class="flex items-center gap-1.5 min-w-0">
-                          {#if streaming}
-                            <span class="inline-flex items-baseline gap-px">
-                              Thinking
-                              <span
-                                class="thinking-dot"
-                                style="animation-delay: 0ms">.</span
-                              ><span
-                                class="thinking-dot"
-                                style="animation-delay: 160ms">.</span
-                              ><span
-                                class="thinking-dot"
-                                style="animation-delay: 320ms">.</span
-                              >
-                            </span>
-                          {:else}
-                            <span
-                              ><span class="font-semibold">Thought</span>
-                              {#if duration != null}
-                                for {durationLabel(duration)}
-                              {:else}
-                                …
-                              {/if}</span
-                            >
-                          {/if}
-                          {#if collapsed}
-                            <span
-                              class="shrink-0 text-base-content/40 transition-opacity opacity-0 group-hover/btn:opacity-100"
-                              aria-hidden="true">▶</span
-                            >
-                          {:else}
-                            <span
-                              class="shrink-0 text-base-content/40"
-                              aria-hidden="true">▼</span
-                            >
-                          {/if}
-                        </span>
-                      </button>
-                      {#if !collapsed}
-                        <div class="pt-1">
-                          <ChatMarkdown text={part.reasoning ?? ""} />
-                        </div>
-                      {/if}
-                    </div>
-                  {:else if typeof part.type === "string" && part.type.startsWith("tool-")}
-                    {@const tcId = getToolCallId(part)}
-                    {@const approvalItem =
-                      toolApprovalWaiter?.payload.items.find(
-                        (i) => i.toolCallId === tcId,
+              <div class="flex flex-col leading-tight">
+                {#if message.parts && message.parts.length > 0}
+                  {#each message.parts as part, partIndex (partKey(message, part, partIndex))}
+                    {#if part.type === "text"}
+                      <ChatMarkdown text={part.text ?? ""} />
+                    {:else if part.type === "reasoning"}
+                      {@const collapsed = isPartCollapsed(
+                        collapsedPartKeys,
+                        message,
+                        part,
+                        partIndex,
+                        message.parts ?? [],
                       )}
-                    {@const pendingInlineApproval =
-                      toolApprovalWaiter !== null &&
-                      approvalItem !== undefined &&
-                      part.output === undefined}
-                    {@const toolCollapsed = isPartCollapsed(
-                      collapsedPartKeys,
-                      message,
-                      part,
-                      partIndex,
-                      message.parts ?? [],
-                    )}
-                    {@const hasOutput = part.output !== undefined}
-                    {@const hasError =
-                      hasOutput &&
-                      typeof part.output === "object" &&
-                      part.output !== null &&
-                      "error" in part.output}
-                    <div class="mt-2 overflow-hidden text-sm">
-                      <button
-                        type="button"
-                        class="group/btn w-full flex items-center gap-1.5 py-1 text-left text-base-content/60 hover:text-base-content/80 transition-colors cursor-pointer"
-                        on:click={() =>
-                          togglePartCollapsed(message, part, partIndex)}
+                      {@const key = partKey(message, part, partIndex)}
+                      {@const streaming = isReasoningStreaming(
+                        message,
+                        partIndex,
+                        message.parts ?? [],
+                      )}
+                      {@const duration = reasoningDurationSeconds(
+                        key,
+                        streaming,
+                      )}
+                      <div
+                        class="mt-2 overflow-hidden text-sm text-base-content/60"
                       >
-                        <span class="flex items-center gap-1.5">
-                          {formatToolName(part.type)} was called
-                          {#if toolCollapsed}
-                            <span
-                              class="shrink-0 text-base-content/40 transition-opacity opacity-0 group-hover/btn:opacity-100"
-                              aria-hidden="true">▶</span
-                            >
-                          {:else}
-                            <span
-                              class="shrink-0 text-base-content/40"
-                              aria-hidden="true">▼</span
-                            >
-                          {/if}
-                        </span>
-                      </button>
-                      {#if !toolCollapsed}
-                        <div
-                          class="mt-2 overflow-hidden rounded-md {hasError
-                            ? 'bg-error/5 text-error'
-                            : 'bg-base-content/[0.04]'}"
+                        <button
+                          type="button"
+                          class="group/btn w-full flex items-center gap-1.5 py-1 text-left text-base-content/60 hover:text-base-content/80 transition-colors cursor-pointer"
+                          on:click={() =>
+                            togglePartCollapsed(message, part, partIndex)}
                         >
-                          <div class="px-3 py-2.5 flex flex-col gap-2.5">
-                            <div>
+                          <span class="flex items-center gap-1.5 min-w-0">
+                            {#if streaming}
+                              <span class="inline-flex items-baseline gap-px">
+                                Thinking
+                                <span
+                                  class="thinking-dot"
+                                  style="animation-delay: 0ms">.</span
+                                ><span
+                                  class="thinking-dot"
+                                  style="animation-delay: 160ms">.</span
+                                ><span
+                                  class="thinking-dot"
+                                  style="animation-delay: 320ms">.</span
+                                >
+                              </span>
+                            {:else}
                               <span
-                                class="text-base-content/50 text-xs font-medium"
-                                >Input</span
-                              >
-                              <div class="mt-0.5">
-                                {#if hasToolInput(part)}
-                                  <pre
-                                    class="text-xs overflow-x-auto rounded py-1.5 font-mono text-base-content/80">{formatToolInput(
-                                      part.input,
-                                    )}</pre>
+                                ><span class="font-semibold">Thought</span>
+                                {#if duration != null}
+                                  for {durationLabel(duration)}
                                 {:else}
-                                  <span
-                                    class="text-base-content/50 italic text-xs"
-                                    >Calling…</span
-                                  >
-                                {/if}
-                              </div>
-                            </div>
-                            <div>
-                              <span
-                                class="text-base-content/50 text-xs font-medium"
-                                >Output</span
+                                  …
+                                {/if}</span
                               >
-                              <div class="mt-0.5">
-                                {#if hasError}
-                                  <div class="text-xs">
-                                    {getToolOutputError(part)}
-                                  </div>
-                                {:else if hasOutput}
-                                  <pre
-                                    class="text-xs overflow-x-auto rounded py-1.5 font-mono text-base-content/80">{formatToolOutput(
-                                      part.output,
-                                    )}</pre>
-                                {:else if pendingInlineApproval}
-                                  <div class="flex flex-col gap-3">
-                                    {#if toolApprovalPicks[tcId] === undefined}
-                                      <p
-                                        class="text-xs text-base-content/80 leading-relaxed"
-                                      >
-                                        {#if approvalItem?.approvalDescription?.trim()}
-                                          {approvalItem.approvalDescription}
-                                        {:else}
-                                          This tool call requires approval.
-                                        {/if}
-                                      </p>
-                                      <div
-                                        class="flex flex-row flex-wrap items-center justify-end gap-2"
-                                      >
-                                        <button
-                                          type="button"
-                                          class="btn btn-ghost btn-sm"
-                                          on:click={() =>
-                                            applyToolApprovalSkip(tcId)}
-                                        >
-                                          Skip
-                                        </button>
-                                        <button
-                                          type="button"
-                                          class="btn btn-primary btn-sm"
-                                          on:click={() =>
-                                            applyToolApprovalRun(tcId)}
-                                        >
-                                          Run
-                                        </button>
-                                      </div>
-                                    {:else if toolApprovalPicks[tcId] === true}
-                                      <p
-                                        class="text-xs text-base-content/60 italic"
-                                      >
-                                        Approved.
-                                      </p>
+                            {/if}
+                            {#if collapsed}
+                              <span
+                                class="shrink-0 text-base-content/40 transition-opacity opacity-0 group-hover/btn:opacity-100"
+                                aria-hidden="true">▶</span
+                              >
+                            {:else}
+                              <span
+                                class="shrink-0 text-base-content/40"
+                                aria-hidden="true">▼</span
+                              >
+                            {/if}
+                          </span>
+                        </button>
+                        {#if !collapsed}
+                          <div class="pt-1">
+                            <ChatMarkdown text={part.reasoning ?? ""} />
+                          </div>
+                        {/if}
+                      </div>
+                    {:else if typeof part.type === "string" && part.type.startsWith("tool-")}
+                      {@const tcId = getToolCallId(part)}
+                      {@const approvalItem =
+                        toolApprovalWaiter?.payload.items.find(
+                          (i) => i.toolCallId === tcId,
+                        )}
+                      {@const pendingInlineApproval =
+                        toolApprovalWaiter !== null &&
+                        approvalItem !== undefined &&
+                        part.output === undefined}
+                      {@const toolCollapsed = isPartCollapsed(
+                        collapsedPartKeys,
+                        message,
+                        part,
+                        partIndex,
+                        message.parts ?? [],
+                      )}
+                      {@const hasOutput = part.output !== undefined}
+                      {@const hasError =
+                        hasOutput &&
+                        typeof part.output === "object" &&
+                        part.output !== null &&
+                        "error" in part.output}
+                      {#if !showToolCallDetails}
+                        {#if pendingInlineApproval && toolApprovalPicks[tcId] === undefined}
+                          <div class="mt-2 text-sm">
+                            <ToolApprovalBox
+                              description={approvalItem?.approvalDescription ??
+                                ""}
+                              onRun={() => applyToolApprovalRun(tcId)}
+                              onSkip={() => applyToolApprovalSkip(tcId)}
+                            />
+                          </div>
+                        {/if}
+                      {:else}
+                        <div class="mt-2 overflow-hidden text-sm">
+                          <button
+                            type="button"
+                            class="group/btn w-full flex items-center gap-1.5 py-1 text-left text-base-content/60 hover:text-base-content/80 transition-colors cursor-pointer"
+                            on:click={() =>
+                              togglePartCollapsed(message, part, partIndex)}
+                          >
+                            <span class="flex items-center gap-1.5">
+                              {formatToolName(part.type)} was called
+                              {#if toolCollapsed}
+                                <span
+                                  class="shrink-0 text-base-content/40 transition-opacity opacity-0 group-hover/btn:opacity-100"
+                                  aria-hidden="true">▶</span
+                                >
+                              {:else}
+                                <span
+                                  class="shrink-0 text-base-content/40"
+                                  aria-hidden="true">▼</span
+                                >
+                              {/if}
+                            </span>
+                          </button>
+                          {#if !toolCollapsed}
+                            <div
+                              class="mt-2 overflow-hidden rounded-md {hasError
+                                ? 'bg-error/5 text-error'
+                                : 'bg-base-content/[0.04]'}"
+                            >
+                              <div class="px-3 py-2.5 flex flex-col gap-2.5">
+                                <div>
+                                  <span
+                                    class="text-base-content/50 text-xs font-medium"
+                                    >Input</span
+                                  >
+                                  <div class="mt-0.5">
+                                    {#if hasToolInput(part)}
+                                      <pre
+                                        class="text-xs overflow-x-auto rounded py-1.5 font-mono text-base-content/80">{formatToolInput(
+                                          part.input,
+                                        )}</pre>
                                     {:else}
-                                      <p
-                                        class="text-xs text-base-content/60 italic"
+                                      <span
+                                        class="text-base-content/50 italic text-xs"
+                                        >Calling…</span
                                       >
-                                        Skipped.
-                                      </p>
                                     {/if}
                                   </div>
-                                {:else}
-                                  <div
-                                    class="flex items-center gap-2 text-base-content/50 italic text-xs"
+                                </div>
+                                <div>
+                                  <span
+                                    class="text-base-content/50 text-xs font-medium"
+                                    >Output</span
                                   >
-                                    <span
-                                      class="inline-block w-3 h-3 rounded-full border border-base-content/30 border-t-base-content/60 animate-spin"
-                                    />
-                                    <span>…</span>
+                                  <div class="mt-0.5">
+                                    {#if hasError}
+                                      <div class="text-xs">
+                                        {getToolOutputError(part)}
+                                      </div>
+                                    {:else if hasOutput}
+                                      <pre
+                                        class="text-xs overflow-x-auto rounded py-1.5 font-mono text-base-content/80">{formatToolOutput(
+                                          part.output,
+                                        )}</pre>
+                                    {:else if pendingInlineApproval}
+                                      {#if toolApprovalPicks[tcId] === undefined}
+                                        <ToolApprovalBox
+                                          description={approvalItem?.approvalDescription ??
+                                            ""}
+                                          onRun={() =>
+                                            applyToolApprovalRun(tcId)}
+                                          onSkip={() =>
+                                            applyToolApprovalSkip(tcId)}
+                                        />
+                                      {:else if toolApprovalPicks[tcId] === true}
+                                        <p
+                                          class="text-xs text-base-content/60 italic"
+                                        >
+                                          Approved.
+                                        </p>
+                                      {:else}
+                                        <p
+                                          class="text-xs text-base-content/60 italic"
+                                        >
+                                          Skipped.
+                                        </p>
+                                      {/if}
+                                    {:else}
+                                      <div
+                                        class="flex items-center gap-2 text-base-content/50 italic text-xs"
+                                      >
+                                        <span
+                                          class="inline-block w-3 h-3 rounded-full border border-base-content/30 border-t-base-content/60 animate-spin"
+                                        />
+                                        <span>…</span>
+                                      </div>
+                                    {/if}
                                   </div>
-                                {/if}
+                                </div>
                               </div>
                             </div>
-                          </div>
+                          {/if}
                         </div>
                       {/if}
-                    </div>
+                    {/if}
+                  {/each}
+                  {#if !showToolCallDetails && isLoading && message.role === "assistant" && message.id === lastMessage?.id}
+                    {@const hasTextPart = (message.parts ?? []).some(
+                      (p) => p.type === "text",
+                    )}
+                    {@const hasToolPart = (message.parts ?? []).some(
+                      (p) =>
+                        typeof p.type === "string" &&
+                        p.type.startsWith("tool-"),
+                    )}
+                    {@const hasVisibleApproval =
+                      toolApprovalWaiter !== null &&
+                      toolApprovalWaiter.payload.items.some(
+                        (i) => toolApprovalPicks[i.toolCallId] === undefined,
+                      )}
+                    {#if hasToolPart && !hasTextPart && !hasVisibleApproval}
+                      <ChatLoading />
+                    {/if}
                   {/if}
-                {/each}
-              {:else if message.role === "assistant" && showStreamingCursor && message.id === lastMessage?.id}
-                <ChatLoading />
-              {:else if message.content}
-                <div class="whitespace-pre-wrap">{message.content}</div>
-              {/if}
-            </div>
-          {/if}
-        </div>
+                {:else if message.role === "assistant" && showStreamingCursor && message.id === lastMessage?.id}
+                  <div class="flex items-center py-0.5" aria-hidden="true">
+                    <ChatLoading />
+                  </div>
+                {:else if message.content}
+                  <div class="whitespace-pre-wrap">{message.content}</div>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        {/if}
       {/each}
       <div
         bind:this={messagesEndRef}

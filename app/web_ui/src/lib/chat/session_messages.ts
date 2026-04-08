@@ -83,10 +83,11 @@ export function hydrateSessionFromSnapshot(snapshot: ChatSessionSnapshot): {
       }
       case "assistant": {
         const parts = buildAssistantParts(msg)
+        if (parts.length === 0) break
         messages.push({
           id: chatGenerateId(),
           role: "assistant",
-          parts: parts.length > 0 ? parts : undefined,
+          parts,
         })
         break
       }
