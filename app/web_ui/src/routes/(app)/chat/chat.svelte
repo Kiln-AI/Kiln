@@ -15,6 +15,7 @@
   import ChatHistory from "./chat_history.svelte"
   import ToolApprovalBox from "./tool_approval_box.svelte"
   import ChatLoading from "./chat_loading.svelte"
+  import { env } from "$env/dynamic/public"
 
   export let store: ChatSessionStore = chatSessionStore
 
@@ -29,7 +30,6 @@
   let reasoningPartStartTimes: Record<string, number> = {}
   let reasoningPartEndTimes: Record<string, number> = {}
   let lastSeenLastPartKey: string | null = null
-  import { env } from "$env/dynamic/public"
 
   const showToolCallDetails = env.PUBLIC_SHOW_TOOL_CALL_DETAILS === "true"
 

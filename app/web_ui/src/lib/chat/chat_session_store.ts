@@ -182,7 +182,6 @@ export function createChatSessionStore(
         combined.update((s) => ({
           ...s,
           toolExecuting: false,
-          toolExecEndTime: Date.now(),
         }))
       },
       onAssistantMessage: (update) => {
