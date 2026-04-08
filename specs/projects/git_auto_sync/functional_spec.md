@@ -30,7 +30,7 @@ Each Kiln project using auto-sync gets its own full clone of the repository. Eve
 
 **Location:** `.git-projects/[ID] - [projectname][N]` inside the existing default Kiln projects directory (`~/Kiln Projects`, use existing constant/path). The `.git-projects` folder is hidden by convention — the user doesn't need to know where it is. `[N]` is a counter suffix (2, 3, ...) added only if the name collides with an existing entry.
 
-**Why full clone, not worktree:** Worktrees share `.git` internals (reflog, stash, gc, index locks). A full clone is truly isolated — operations on one project can never affect another. Shallow clone keeps disk usage minimal.
+**Why full clone, not worktree:** Worktrees share `.git` internals (reflog, stash, gc, index locks). A full clone is truly isolated — operations on one project can never affect another.
 
 **Phased implementation:**
 - **Phase 1:** Assume the configured repo is single-purpose. No clone setup needed. Configuration is manual.
@@ -59,7 +59,9 @@ The write lock + clean-state verification + isolated repo guarantees that any di
 Two annotations modify the default middleware behavior:
 
 - **`@write_lock`** — For GET endpoints that perform mutations (e.g., browser limitations requiring GET for a mutating action). Middleware acquires the write lock as if it were a POST.
-- **`@no_write_lock`** — For long-running endpoints (SSE eval batch jobs) that manage their own commit cycle. Middleware skips the lock. See Long-Running Requests.
+- **`@no_write_lock`** — For long-running endpoints (SSE eval batch jobs) that manage their own lock scopes and commit cycle. Middleware skips the automatic lock. See Long-Running Requests.
+
+These annotations are implemented as decorators that set attributes on the endpoint function at import time. The middleware reads these attributes via `request.scope["endpoint"]` before dispatching — not via `request.state` (which would be too late, since the middleware runs before the handler).
 
 ### Dev-Mode Safety Nets
 
@@ -70,7 +72,7 @@ Two annotations modify the default middleware behavior:
 
 ### Standard Requests (reads)
 
-GET/HEAD requests pass through middleware without locking. Served from local state. Background sync keeps the repo fresh.
+GET/HEAD requests pass through middleware without locking. Served from local state. Background sync keeps the repo fresh. Before serving, the middleware checks the sync freshness threshold (15 seconds) — if the last successful sync is stale and the remote is unreachable, the request fails with 503.
 
 ### Standard Requests (writes)
 
@@ -90,15 +92,18 @@ POST/PATCH/PUT/DELETE requests:
 Endpoints annotated `@no_write_lock` (e.g., SSE eval batch jobs) manage their own commit cycle:
 
 1. Middleware passes through without acquiring the lock.
-2. The handler performs work in iterations. Between iterations, it calls a helper:
+2. The handler performs work in iterations. Each iteration acquires the write lock for its batch:
 
 ```python
-await manager.commit_and_push()  # commits all dirty files, pushes
+results = await compute_batch(batch)  # no lock held, no file writes
+async with manager.write_lock():
+    save_results(results)             # writes files
+    await manager.commit_and_push()   # commits and pushes
 ```
 
-3. This helper acquires the write lock, commits everything dirty, pushes, and releases the lock. Between calls, the lock is free — other requests can proceed.
+3. Between lock scopes, the lock is free — other requests can proceed. The contract: all file writes happen inside a `write_lock()` scope.
 
-This is simpler than nested contexts — no context tracking, no lock handoff. Just "commit what's dirty and push."
+`commit_and_push()` never acquires the lock itself — it assumes the caller already holds it. This avoids deadlock with the non-reentrant lock.
 
 **Parallel writes within a single request handler are not supported.** This is not a new limitation — concurrent filesystem writes within a single handler are already unsafe regardless of git sync. Use sequential iteration.
 
@@ -155,18 +160,17 @@ Using `git stash` preserves dirty state recoverably — a technical user can ins
 If the process crashes mid-operation (OOM, power loss, kill), the repo may be left in a dirty state. A recovery routine runs at the start of every write request (after lock acquisition, before ensure-fresh):
 
 1. **Detect:** Check repo state — `git status` clean, no in-progress rebase/merge.
-2. **Wait and recheck:** If dirty, sleep 0.5s then recheck. Another process or manager instance may be mid-operation and about to clean up.
-3. **Still dirty → recover:**
+2. **If dirty → recover:**
+   - `git stash -u -m "[Kiln] Auto-recovery stash — dirty state from prior session"` to capture all dirty state (including conflict markers) into a recoverable stash.
    - Abort rebase/merge if in progress (`git rebase --abort`).
-   - `git stash -u -m "[Kiln] Auto-recovery stash — dirty state from prior session"` to capture all dirty state into a recoverable stash.
    - If local branch has unpushed commits ahead of remote tracking branch: reset branch to remote tracking ref. Orphaned commits remain reachable via reflog.
-4. **Log warnings** for every recovery action taken.
+3. **Log warnings** for every recovery action taken.
 
 This ensures the system self-heals from crashes without requiring manual intervention from non-technical users.
 
 ## Commit Messages
 
-Auto-generated from `git status` / `git diff` at commit time plus the API request path:
+Auto-generated from `git status` file count plus the API request path:
 
 ```
 [Kiln] Auto-sync: 3 files changed
@@ -174,9 +178,7 @@ Auto-generated from `git status` / `git diff` at commit time plus the API reques
 API: POST /api/projects/abc123/tasks
 ```
 
-The first line summarizes file-level changes (new/modified/deleted, count, inferred model types from file paths). The body includes the API path for traceability in git history.
-
-The commit message generator is purely programmatic — it uses `git diff` to determine change types and parses file paths and `.kiln` JSON content for model type and name fields. For deletions, the file list comes from `git status` since the files are already removed from the working tree.
+Simple template — count changed files from `git status`, include the API path for traceability. No file content parsing or diff parsing.
 
 ## Configuration
 
@@ -196,8 +198,9 @@ Stored in the existing Kiln config system. Not in git-tracked files (sync settin
 
 - Poll interval: 10 seconds
 - Idle pause: 5 minutes
-- Sync freshness threshold: 15 seconds
-- Git executor timeout: 20 seconds
+- Sync freshness threshold: 15 seconds (used by both reads and writes to skip redundant fetches)
+- Git executor timeout: 30 seconds
+- Write lock acquisition timeout: 30 seconds
 - Long lock hold warning: 5 seconds (dev mode only)
 
 ## Error Handling
@@ -206,11 +209,11 @@ Stored in the existing Kiln config system. Not in git-tracked files (sync settin
 |----------|----------|-------------------|
 | Remote unreachable on write | Rollback, fail request | 503: "Cannot sync with remote. Check your connection." |
 | Remote unreachable on read | Fail request | 503: "Cannot sync with remote. Check your connection." |
-| Push conflict | Rollback, fetch, rebase, retry once | 409: "Conflict detected. Please retry." |
-| Rebase conflict (unresolvable) | Abort rebase, rollback | 500: "Sync conflict could not be auto-resolved. Disable auto-sync and resolve manually." |
-| Write lock timeout (HTTP) | Fail request | 503: "Server busy. Please retry." |
+| Push conflict | Rollback, fetch, rebase, retry once | 409: "There was a problem saving. Please try again." |
+| Rebase conflict (unresolvable) | Abort rebase, rollback | 500: "There was a problem saving. Please try again." |
+| Write lock timeout (HTTP) | Fail request | 503: "Another save is in progress. Please wait a moment and try again." |
 | Dirty repo on write request | Auto-recovery via stash | Transparent — recovered automatically. Error only if recovery fails. |
-| Corrupt repo state (unrecoverable) | Refuse to operate, surface error | 500: "Git repository is in an unexpected state. Disable auto-sync and check manually." |
+| Corrupt repo state (unrecoverable) | Refuse to operate, surface error | 500: "Git repository is in an unexpected state." |
 
 ## Setup Flow
 
@@ -236,10 +239,12 @@ Accessed via the Import Project UI with a new "Sync from Git" option. Wizard ste
 
 **Credentials can be needed at multiple points:** It's possible to list branches successfully but fail on clone or push (different permission levels). The wizard supports jumping into the credentials flow at any failure point, adding/updating the PAT, and retrying the failed operation.
 
+**Token expiration:** If a PAT expires after initial setup, sync operations will fail with 401. Detect this and surface a clear "Your access token has expired. [Update token]" flow rather than a generic sync error.
+
 **Step 3: Branch Selection**
 - List branches from the remote. Default selection: default branch > main > master.
 - On confirm:
-  1. Shallow clone of the selected branch into the hidden `.git-projects/` directory.
+  1. Full clone of the selected branch into the hidden `.git-projects/` directory. Ensure the clone has a good default `.gitignore` covering common OS artifacts cross-platform (`.DS_Store`, `Thumbs.db`, `desktop.ini`, `._*`, etc.).
   2. Test write access: empty commit + push. Message: `"Empty commit: checking write access for Kiln AI Git Auto Sync setup"`
   3. If clone or push fails due to permissions → jump to credentials screen, retry.
 

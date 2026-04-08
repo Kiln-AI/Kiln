@@ -45,13 +45,16 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
             # No auto-sync for this route — pass through
             return await call_next(request)
 
+        endpoint = request.scope.get("endpoint")
         needs_lock = (
             request.method in MUTATING_METHODS
-            or getattr(request.state, "write_lock", False)  # @write_lock annotation
-        ) and not getattr(request.state, "no_write_lock", False)  # @no_write_lock
+            or getattr(endpoint, "_git_sync_write_lock", False)
+        ) and not getattr(endpoint, "_git_sync_no_write_lock", False)
 
         if not needs_lock:
             # GET/HEAD — pass through, no locking or buffering
+            # Check freshness threshold for reads
+            await manager.ensure_fresh_for_read()
             # Dev-mode: check for dirty state before/after (safety net)
             if settings.dev_mode:
                 await self._check_dirty_state(manager, request, "before")
@@ -89,6 +92,15 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
                             "consider @no_write_lock",
                             held, request.method, request.url.path,
                         )
+
+                # Detect streaming responses — refuse to buffer
+                if hasattr(response, "media_type") and response.media_type == "text/event-stream":
+                    logger.error(
+                        "Streaming response under write lock for %s %s — "
+                        "use @no_write_lock instead",
+                        request.method, request.url.path,
+                    )
+                    return response
 
                 # Commit if there are changes
                 has_changes = await manager.has_dirty_files()
@@ -141,7 +153,8 @@ The core sync engine. One instance per git repository path (singleton by repo pa
 
 class GitSyncManager:
     # Internal constants
-    _GIT_EXECUTOR_TIMEOUT = 20.0  # seconds — timeout for pygit2 operations
+    _GIT_EXECUTOR_TIMEOUT = 30.0  # seconds — timeout for pygit2 operations
+    _WRITE_LOCK_TIMEOUT = 30.0    # seconds — timeout for write lock acquisition
 
     def __init__(self, repo_path: Path, remote_name: str = "origin"):
         self._repo_path = repo_path
@@ -182,9 +195,14 @@ The pygit2 `Repository` object is created lazily within the executor thread and 
 @asynccontextmanager
 async def write_lock(self):
     """Acquire the write lock for the duration of a mutating request.
-    Blocks until available (waits behind other requests in queue)."""
+    Blocks until available (waits behind other requests in queue).
+    Raises WriteLockTimeoutError after _WRITE_LOCK_TIMEOUT seconds."""
     # Run in thread to avoid blocking event loop
-    acquired = await asyncio.to_thread(self._write_lock.acquire)
+    acquired = await asyncio.to_thread(
+        self._write_lock.acquire, timeout=self._WRITE_LOCK_TIMEOUT
+    )
+    if not acquired:
+        raise WriteLockTimeoutError("Another save is in progress")
     try:
         yield
     finally:
@@ -197,12 +215,14 @@ async def write_lock(self):
 |--------|-------------|-----------|
 | `write_lock()` | Async context manager for exclusive write access | Async, uses threading.Lock |
 | `ensure_clean()` | Verify repo is clean, run recovery if dirty | Async, uses _git_executor |
-| `ensure_fresh()` | Pull/rebase if stale | Async, uses _git_executor |
+| `ensure_fresh()` | Pull/rebase if last sync exceeds freshness threshold (15s) | Async, uses _git_executor |
+| `ensure_fresh_for_read()` | Check freshness threshold; if stale, fetch + fast-forward under lock. Raises RemoteUnreachableError if stale and offline. | Async |
 | `get_head()` | Return current HEAD commit ref | Async, uses _git_executor |
 | `has_dirty_files()` | Check if git status shows changes | Async, uses _git_executor |
-| `commit_and_push()` | Stage all dirty files, commit, push | Async, uses _git_executor |
+| `commit_and_push()` | Stage all dirty files, commit, push. Caller must hold write lock. | Async, uses _git_executor |
 | `rollback()` | Stash dirty state, reset to given HEAD | Async, uses _git_executor |
 | `fetch()` | Fetch from remote (no working tree changes) | Async, uses _git_executor |
+| `can_fast_forward()` | Check if local can fast-forward to remote (no unpushed commits) | Async, uses _git_executor |
 | `fast_forward()` | Update working tree to match fetched state | Async, uses _git_executor |
 | `close()` | Shut down `_git_executor`, called during FastAPI lifespan shutdown | Async |
 
@@ -275,27 +295,22 @@ async def ensure_clean(self) -> None:
     if await self._is_clean():
         return
 
-    # Another process may be mid-operation — give it a chance
-    await asyncio.sleep(0.5)
-
-    if await self._is_clean():
-        return
-
-    # Still dirty — recover
+    # Dirty state in an isolated repo means a prior crash — recover immediately
     logger.warning("Repo dirty on write request — running crash recovery")
+
+    # Stash all dirty state FIRST (including conflict markers from interrupted rebase)
+    if await self.has_dirty_files():
+        await self._run_git(
+            lambda: self._stash_all(
+                "[Kiln] Auto-recovery stash — dirty state from prior session"
+            )
+        )
 
     # Abort any in-progress rebase/merge
     state = await self._run_git(lambda: self._repo.state())
     if state != pygit2.enums.RepositoryState.NONE:
         logger.warning("Aborting in-progress rebase/merge")
         await self._run_git(lambda: self._repo.state_cleanup())
-
-    # Stash all dirty state (tracked + untracked)
-    await self._run_git(
-        lambda: self._stash_all(
-            "[Kiln] Auto-recovery stash — dirty state from prior session"
-        )
-    )
 
     # Reset unpushed local commits to match remote
     unpushed = await self._count_unpushed_commits()
@@ -335,17 +350,12 @@ class BackgroundSync:
         self._idle_pause_after = idle_pause_after
         self._task: asyncio.Task | None = None
         self._last_request_time: float = 0.0
-        self._paused: bool = False
-        self._resuming: bool = False  # Guard against double-resume
+        self._wake_event: asyncio.Event = asyncio.Event()
 
     def notify_request(self) -> None:
-        """Called by middleware on each request. Resets idle timer, resumes if paused."""
+        """Called by middleware on each request. Resets idle timer, wakes paused loop."""
         self._last_request_time = time.monotonic()
-        if self._paused and not self._resuming:
-            self._resuming = True
-            self._paused = False
-            self._task = asyncio.create_task(self._poll_loop())
-            self._resuming = False
+        self._wake_event.set()
 
     async def start(self):
         self._last_request_time = time.monotonic()
@@ -365,9 +375,9 @@ class BackgroundSync:
             idle_time = time.monotonic() - self._last_request_time
             if idle_time > self._idle_pause_after:
                 logger.info("Background sync pausing — no requests for %.0fs", idle_time)
-                self._paused = True
-                self._task = None
-                return
+                self._wake_event.clear()
+                await self._wake_event.wait()  # Sleep until next request
+                continue
 
             try:
                 # Phase 1: fetch (no lock — only updates remote tracking refs)
@@ -377,9 +387,10 @@ class BackgroundSync:
                 if not await self._manager.has_new_remote_commits():
                     continue
 
-                # Phase 3: fast-forward under write lock
+                # Phase 3: fast-forward under write lock (skip if not FF-able)
                 async with self._manager.write_lock():
-                    await self._manager.fast_forward()
+                    if await self._manager.can_fast_forward():
+                        await self._manager.fast_forward()
 
             except Exception:
                 logger.warning("Background sync failed, will retry", exc_info=True)
@@ -443,17 +454,28 @@ git_sync_projects:
 
 Timing parameters (`poll_interval`, `idle_pause_after`, `git_executor_timeout`) are internal constants on `GitSyncManager`, not user-configurable.
 
-**Config integration** via existing `Config` class using a pydantic model:
+**Config integration** via existing `Config` class using a TypedDict with validation on read:
 
 ```python
-class GitSyncProjectConfig(BaseModel):
-    sync_mode: Literal["auto", "manual"] = "manual"
-    remote_name: str = "origin"
-    branch: str = "main"
-    clone_path: str | None = None
+class GitSyncProjectConfig(TypedDict):
+    sync_mode: str   # "auto" | "manual"
+    remote_name: str
+    branch: str
+    clone_path: str | None
 
-# New ConfigProperty on Config class
-git_sync_projects: ConfigProperty(dict[str, GitSyncProjectConfig], default_lambda=lambda: {})
+# New ConfigProperty on Config class — stores as plain dict (YAML-safe)
+git_sync_projects: ConfigProperty(dict, default_lambda=lambda: {})
+
+def get_git_sync_config(project_id: str) -> GitSyncProjectConfig | None:
+    raw = config.git_sync_projects.get(project_id)
+    if raw is None:
+        return None
+    return GitSyncProjectConfig(
+        sync_mode=raw.get("sync_mode", "manual"),
+        remote_name=raw.get("remote_name", "origin"),
+        branch=raw.get("branch", "main"),
+        clone_path=raw.get("clone_path"),
+    )
 ```
 
 ## Error Handling
@@ -473,6 +495,10 @@ class RemoteUnreachableError(GitSyncError):
     """Cannot reach git remote."""
     pass
 
+class WriteLockTimeoutError(GitSyncError):
+    """Write lock acquisition timed out."""
+    pass
+
 class CorruptRepoError(GitSyncError):
     """Git repo is in unexpected state after recovery attempt."""
     pass
@@ -483,9 +509,9 @@ class CorruptRepoError(GitSyncError):
 | Error | HTTP Status | Message |
 |-------|-------------|---------|
 | `RemoteUnreachableError` | 503 | "Cannot sync with remote. Check your connection." |
-| `SyncConflictError` | 409 | "Conflict detected. Please retry." |
+| `SyncConflictError` | 409 | "There was a problem saving. Please try again." |
+| `WriteLockTimeoutError` | 503 | "Another save is in progress. Please wait a moment and try again." |
 | `CorruptRepoError` | 500 | "Git repository is in an unexpected state." |
-| HTTP request timeout | 503 | "Server busy. Please retry." |
 
 ### Recovery
 
@@ -599,7 +625,7 @@ The isolated repo is the key enabler — since we fully control the repo, git st
 
 ### Why full repo clone, not worktree
 
-Worktrees share `.git` internals (reflog, stash, gc, index locks). Operations on one worktree can affect another. A full clone is truly isolated. Shallow clone keeps disk usage minimal.
+Worktrees share `.git` internals (reflog, stash, gc, index locks). Operations on one worktree can affect another. A full clone is truly isolated. The repos contain small `.kiln` JSON files, so disk usage is not a concern. (Shallow clones were considered but rejected — libgit2's shallow support is limited and conflicts with rebase, stash, and recovery operations.)
 
 ### Why rebase-only
 
