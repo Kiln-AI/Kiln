@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from "svelte"
   import { fly } from "svelte/transition"
-  import ChatCostDisclaimer from "./ChatCostDisclaimer.svelte"
+  import ChatCostDisclaimer from "./chat_cost_disclaimer.svelte"
   import type { ChatMessage, ChatMessagePart } from "$lib/chat/streaming_chat"
   import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
-  import ChatMarkdown from "$lib/chat/ChatMarkdown.svelte"
+  import ChatMarkdown from "$lib/ui/chat/chat_markdown.svelte"
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
   import StopIcon from "$lib/ui/icons/stop_icon.svelte"
   import {
@@ -13,8 +13,8 @@
   } from "$lib/chat/chat_session_store"
   import ChatWelcome from "./chat_welcome.svelte"
   import ChatHistory from "./chat_history.svelte"
-  import ToolApprovalBox from "./ToolApprovalBox.svelte"
-  import ToolExecutionIndicator from "./ToolExecutionIndicator.svelte"
+  import ToolApprovalBox from "./tool_approval_box.svelte"
+  import ChatLoading from "./chat_loading.svelte"
 
   export let store: ChatSessionStore = chatSessionStore
 
@@ -572,7 +572,7 @@
                               allToolsInMessageComplete(message)
                             : allToolsInMessageComplete(message)}
                           {#if !complete}
-                            <ToolExecutionIndicator />
+                            <ChatLoading />
                           {/if}
                         {/if}
                       {:else}
@@ -683,10 +683,7 @@
                   {/each}
                 {:else if message.role === "assistant" && showStreamingCursor && message.id === lastMessage?.id}
                   <div class="flex items-center py-0.5" aria-hidden="true">
-                    <span
-                      class="inline-block w-2 h-2 rounded-full bg-base-content/60 animate-pulse"
-                      style="animation-duration: 1.2s"
-                    />
+                    <ChatLoading />
                   </div>
                 {:else if message.content}
                   <div class="whitespace-pre-wrap">{message.content}</div>

@@ -2,7 +2,7 @@
 <style>
   @keyframes bounce {
     0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-16px); }
+    50% { transform: translateY(-24px); }
   }
   .dot1 { animation: bounce 1.2s ease-in-out infinite; }
   .dot2 { animation: bounce 1.2s ease-in-out 0.2s infinite; }
@@ -15,13 +15,13 @@
 <path d="M37 185.5V226L54 220.407V174.5L37 185.5Z" fill="#F4B544"/>
 <path d="M313 32L266.5 32V49H270.5L313 32Z" fill="#E74D31"/>
 <g class="dot1">
-  <circle cx="144" cy="131" r="17" fill="#E74D31"/>
+  <circle cx="144" cy="139" r="21" fill="#E74D31"/>
 </g>
 <g class="dot2">
-  <circle cx="217" cy="131" r="17" fill="#F4B544"/>
+  <circle cx="217" cy="139" r="21" fill="#F4B544"/>
 </g>
 <g class="dot3">
-  <circle cx="290" cy="131" r="17" fill="#415CF5"/>
+  <circle cx="290" cy="139" r="21" fill="#415CF5"/>
 </g>
 <path d="M380 140V148.5L397 146V129L380 140Z" fill="#415CF5"/>
 <path d="M380 140V116.5L397 107V129L380 140Z" fill="#F4B544"/>
