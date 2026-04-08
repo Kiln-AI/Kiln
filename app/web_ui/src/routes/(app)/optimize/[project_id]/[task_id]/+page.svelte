@@ -33,7 +33,7 @@
     split_tool_and_skill_ids,
   } from "$lib/stores/tools_store"
   import { goto } from "$app/navigation"
-  import TableButton from "../../../generate/[project_id]/[task_id]/table_button.svelte"
+  import TableButton from "$lib/ui/table_button.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import { client } from "$lib/api_client"
   import StarIcon from "$lib/ui/icons/star_icon.svelte"

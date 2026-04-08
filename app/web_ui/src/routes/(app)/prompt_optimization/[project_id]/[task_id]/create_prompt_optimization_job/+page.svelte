@@ -40,7 +40,7 @@
   import PromptOptimizationCopilotRequired from "../prompt_optimization_copilot_required.svelte"
   import EntitlementRequiredCard from "$lib/ui/kiln_copilot/entitlement_required_card.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
-  import TableButton from "../../../../generate/[project_id]/[task_id]/table_button.svelte"
+  import TableButton from "$lib/ui/table_button.svelte"
   import posthog from "posthog-js"
   import { agentInfo } from "$lib/agent"
 

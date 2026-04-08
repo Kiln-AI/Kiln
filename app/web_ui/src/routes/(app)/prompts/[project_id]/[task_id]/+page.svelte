@@ -5,7 +5,7 @@
   import { goto } from "$app/navigation"
   import { formatDate } from "$lib/utils/formatters"
   import { prompt_link } from "$lib/utils/link_builder"
-  import TableButton from "../../../generate/[project_id]/[task_id]/table_button.svelte"
+  import TableButton from "$lib/ui/table_button.svelte"
   import {
     load_task_prompts,
     prompts_by_task_composite_id,

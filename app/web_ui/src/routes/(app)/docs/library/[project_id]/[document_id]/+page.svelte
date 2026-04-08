@@ -17,7 +17,7 @@
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
   import { ui_state } from "$lib/stores"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import TableButton from "../../../../generate/[project_id]/[task_id]/table_button.svelte"
+  import TableButton from "$lib/ui/table_button.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import { agentInfo } from "$lib/agent"

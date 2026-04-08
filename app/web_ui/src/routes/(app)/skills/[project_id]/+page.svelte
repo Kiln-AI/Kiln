@@ -10,7 +10,7 @@
   import { formatDate } from "$lib/utils/formatters"
   import type { Skill } from "$lib/types"
   import SkillsIcon from "$lib/ui/icons/skills_icon.svelte"
-  import TableButton from "../../generate/[project_id]/[task_id]/table_button.svelte"
+  import TableButton from "$lib/ui/table_button.svelte"
   import Float from "$lib/ui/float.svelte"
   import { ui_state } from "$lib/stores"
 

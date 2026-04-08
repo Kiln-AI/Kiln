@@ -9,7 +9,7 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import { getContext } from "svelte"
   import type { Writable } from "svelte/store"
-  import TableButton from "../../../generate/[project_id]/[task_id]/table_button.svelte"
+  import TableButton from "$lib/ui/table_button.svelte"
   import Intro from "$lib/ui/intro.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"

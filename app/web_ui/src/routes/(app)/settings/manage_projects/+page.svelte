@@ -4,7 +4,7 @@
   import { agentInfo } from "$lib/agent"
   import type { Project } from "$lib/types"
   import { client } from "$lib/api_client"
-  import TableButton from "../../generate/[project_id]/[task_id]/table_button.svelte"
+  import TableButton from "$lib/ui/table_button.svelte"
   import { goto } from "$app/navigation"
   import { formatDate } from "$lib/utils/formatters"
 
