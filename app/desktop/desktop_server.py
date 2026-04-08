@@ -80,10 +80,10 @@ def make_app(tk_root: tk.Tk | None = None):
     return app
 
 
-def server_config(port=8757, tk_root: tk.Tk | None = None):
+def server_config(port: int, host: str, tk_root: tk.Tk | None = None):
     return uvicorn.Config(
         make_app(tk_root=tk_root),
-        host="127.0.0.1",
+        host=host,
         port=port,
         use_colors=False,
         log_config=log_config(),
@@ -118,7 +118,14 @@ class ThreadedServer(uvicorn.Server):
 
 
 def run_studio():
-    uvicorn.run(kiln_server.app, host="127.0.0.1", port=8757, log_level="warning")
+    from kiln_ai.utils.config import Config
+
+    uvicorn.run(
+        kiln_server.app,
+        host=Config.shared().kiln_local_api_host,
+        port=Config.shared().kiln_local_api_port,
+        log_level="warning",
+    )
 
 
 def run_studio_thread():
