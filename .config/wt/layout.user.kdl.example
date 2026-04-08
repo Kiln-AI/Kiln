@@ -1,0 +1,36 @@
+// Per-user Zellij layout for the Kiln dev environment.
+// Copy this file to layout.user.kdl and customize:
+//   cp .config/wt/layout.user.kdl.example .config/wt/layout.user.kdl
+//
+// layout.user.kdl is gitignored — your changes stay local.
+// If present, it takes priority over the default layout.kdl.
+//
+// This example uses a single "dev" tab with 4 vertical splits, so all
+// panes are visible at once. Adjust pane sizes or add/remove panes to
+// suit your workflow.
+
+layout {
+    default_tab_template {
+        pane size=1 borderless=true {
+            plugin location="zellij:tab-bar"
+        }
+        children
+        pane size=2 borderless=true {
+            plugin location="zellij:status-bar"
+        }
+    }
+    tab name="dev" focus=true split_direction="vertical" {
+        pane size="40%" command="bash" start_suspended=false {
+            args "-c" "echo \"\nWeb UI: $KILN_WEB_URL\nBackend: http://localhost:$KILN_PORT\n\nType 'web' to open in browser.\n\"; exec $SHELL"
+        }
+        pane size="20%" command="bash" start_suspended=false {
+            args "-c" "$KILN_CODER_CMD"
+        }
+        pane size="20%" command="bash" start_suspended=false {
+            args "-c" "uv run python -m app.desktop.dev_server"
+        }
+        pane size="20%" cwd="app/web_ui" command="bash" start_suspended=false {
+            args "-c" "npm run dev -- --host --port $KILN_FRONTEND_PORT"
+        }
+    }
+}

@@ -25,5 +25,6 @@ test_output/
 
 .specs_skill_state/
 .config/wt/user_settings.sh
+.config/wt/layout.user.kdl
 .worktrees/
 

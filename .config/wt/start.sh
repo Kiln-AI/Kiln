@@ -37,7 +37,10 @@ printf '\e]0;FEAT: %s\a' "$BRANCH"
 
 cd "$REPO_ROOT"
 
-LAYOUT="$REPO_ROOT/.config/wt/layout.kdl"
+LAYOUT="$REPO_ROOT/.config/wt/layout.user.kdl"
+if [ ! -f "$LAYOUT" ]; then
+    LAYOUT="$REPO_ROOT/.config/wt/layout.kdl"
+fi
 
 SESSION_STATUS=$(zellij list-sessions --no-formatting 2>/dev/null \
     | awk -v name="$SESSION_NAME" '{ n=$1; gsub(/[[:space:]]/, "", n); if (n == name) { print (/EXITED/ ? "exited" : "active"); exit } }') || true

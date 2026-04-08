@@ -163,7 +163,11 @@ keybinds clear-defaults=true {
 
 - `.config/wt.toml` — project hooks: dependency install on create, Zellij session cleanup on remove
 - `.config/wt/start.sh` — launches a Zellij session with per-branch ports (via `hash_port`)
-- `.config/wt/layout.kdl` — Zellij layout: terminal, coding agent, backend server, frontend dev server
+- `.config/wt/layout.kdl` — default Zellij layout: terminal, coding agent, backend server, frontend dev server
+- `.config/wt/layout.user.kdl` — per-user layout override (gitignored); if present, takes priority over `layout.kdl`. Copy from `layout.user.kdl.example` to get started:
+  ```bash
+  cp .config/wt/layout.user.kdl.example .config/wt/layout.user.kdl
+  ```
 - `.config/wt/bin/web` — opens the worktree's web UI in a browser (type `web` in the terminal tab)
 - `.config/wt/user_settings.sh` — per-user overrides (gitignored); copy from `user_settings.sh.example`
 - `.config/wt/config.toml` — worktrunk user config (worktree path template)
