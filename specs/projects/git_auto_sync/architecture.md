@@ -141,14 +141,14 @@ The core sync engine. One instance per git repository path (singleton by repo pa
 # app/desktop/git_sync/git_sync_manager.py
 
 class GitSyncManager:
-    def __init__(self, repo_path: Path, remote_name: str = "origin",
-                 branch: str | None = None, poll_interval: float = 10.0,
-                 sync_freshness_threshold: float = 15.0):
+    # Internal constants — not user-configurable
+    _POLL_INTERVAL = 10.0           # seconds between background syncs
+    _IDLE_PAUSE_AFTER = 300.0       # pause polling after 5 min with no requests
+    _SYNC_FRESHNESS_THRESHOLD = 15.0  # max age (seconds) before blocking
+
+    def __init__(self, repo_path: Path, remote_name: str = "origin"):
         self._repo_path = repo_path
         self._remote_name = remote_name
-        self._branch = branch  # None = current branch
-        self._poll_interval = poll_interval
-        self._sync_freshness_threshold = sync_freshness_threshold
 
         # pygit2 executor — ALL pygit2 calls go through here
         self._git_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="pygit2")
@@ -205,9 +205,9 @@ async def write_context(self, push: bool = True, check_in_sync: bool = True):
     try:
         yield ctx
     except Exception:
-        # Rollback any uncommitted writes in this context
+        # Git-native rollback: reset to last clean commit
         if ctx.has_writes:
-            self._rollback_writes(ctx)
+            await self._rollback(ctx)
         raise
     else:
         # Success path: commit if writes occurred
@@ -233,8 +233,8 @@ class WriteContext:
     check_in_sync: bool
     parent: WriteContext | None
     tracked_files: list[Path] = field(default_factory=list)
-    original_contents: dict[Path, bytes | None] = field(default_factory=dict)
-    # None value = file didn't exist before
+    new_files: set[Path] = field(default_factory=set)
+    # Files that didn't exist before the write (need manual cleanup on rollback)
     holds_lock: bool = False  # tracks whether this context owns the write lock
 
     @property
@@ -280,51 +280,78 @@ contextvars propagate into `asyncio.to_thread` automatically (Python 3.10+), so 
 | `write_file()` | Sync write + track + lazy lock | Sync, uses threading.Lock |
 | `delete_tree()` | Sync delete + track | Sync, uses threading.Lock |
 | `copy_file()` | Sync copy + track | Sync, uses threading.Lock |
-| `push()` | Push unpushed commits (between contexts only) | Async, uses _git_executor |
+| `push()` | Push unpushed commits (rejects if write lock held) | Async, uses _git_executor |
 | `is_fresh()` | Check if repo is up-to-date | Async, uses _git_executor |
 | `is_clean()` | Check for unexpected dirty files | Async, uses _git_executor |
 | `_ensure_fresh()` | Pull/rebase if stale | Async, uses _git_executor |
 | `_commit_context()` | Stage tracked files + commit | Async, uses _git_executor |
-| `_rollback_writes()` | Restore original file contents | Sync |
+| `_rollback()` | Git-native rollback: reset, checkout HEAD, delete new files | Async, uses _git_executor |
 | `_push_with_retry()` | Push, retry once on conflict | Async, uses _git_executor |
+| `close()` | Shut down `_git_executor`, called during FastAPI lifespan shutdown | Async |
 
 ### 3. FastAPI Middleware (`app/desktop/`)
+
+Uses Starlette's `BaseHTTPMiddleware` to buffer the response body before committing. This allows commit/push failures to return error responses instead of silently failing after a 200 has been sent.
 
 ```python
 # app/desktop/git_sync/middleware.py
 
-class GitSyncMiddleware:
-    """Wraps each request in a write_context for auto-sync projects."""
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 
-    def __init__(self, app: ASGIApp):
-        self.app = app
+class WriteContextMiddleware(BaseHTTPMiddleware):
+    """Wraps each request in a write_context for auto-sync projects.
 
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
+    For non-auto-sync routes, passes through without buffering
+    (preserves streaming responses).
+    """
 
-        # Determine project from request path
-        project_id = self._extract_project_id(scope["path"])
-        manager = self._get_manager_for_project(project_id)
+    async def dispatch(self, request: Request, call_next):
+        manager = self._get_manager_for_request(request)
 
         if manager is None:
-            # No auto-sync for this project/route
-            await self.app(scope, receive, send)
-            return
+            # No auto-sync — pass through without buffering
+            return await call_next(request)
 
-        async with manager.write_context():
-            await self.app(scope, receive, send)
+        async with manager.write_context() as ctx:
+            request.state.write_context = ctx
+            try:
+                response = await call_next(request)
 
-    def _extract_project_id(self, path: str) -> str | None:
-        """Extract project_id from /api/projects/{project_id}/... routes."""
+                # Buffer full body — route handler has completed
+                body = b""
+                async for chunk in response.body_iterator:
+                    body += chunk
+
+                # Commit after body is fully read, before sending to client
+                # (commit_and_push happens in write_context __aexit__)
+
+                return Response(
+                    content=body,
+                    status_code=response.status_code,
+                    headers=dict(response.headers),
+                    media_type=response.media_type,
+                )
+            except GitSyncError as e:
+                # Map error type to HTTP status per error table
+                status, message = self._map_error(e)
+                return Response(
+                    content=json.dumps({"detail": message}),
+                    status_code=status,
+                    media_type="application/json",
+                )
+
+    def _get_manager_for_request(self, request: Request) -> GitSyncManager | None:
+        """Extract project_id from URL, return manager if auto-sync enabled."""
+        # Parse /api/projects/{project_id}/... from request.url.path
         # Returns None for non-project routes (settings, etc.)
         ...
-
-    def _get_manager_for_project(self, project_id: str | None) -> GitSyncManager | None:
-        """Return manager if project has auto-sync enabled, else None."""
-        ...
 ```
+
+**No buffering overhead when sync is disabled:** If `_get_manager_for_request` returns `None`, the middleware calls `call_next` directly — no body buffering, streaming preserved. The buffering cost only applies to auto-sync routes, where responses are small JSON payloads.
+
+**Contextvar propagation:** `BaseHTTPMiddleware` runs `call_next` in a separate anyio task internally. Python 3.10+ copies context to child tasks, so the `write_context` contextvar should propagate. **An early integration test must verify** that `write_file()` can read the contextvar when called from a route handler through this middleware.
 
 **Route handling:** The middleware extracts `project_id` from the URL path. Routes without a project ID (settings, provider config, etc.) are passed through without wrapping. This is clean because all data-mutating routes already include `project_id` in the path.
 
@@ -402,6 +429,7 @@ class GitSyncRegistry:
 
     _managers: dict[Path, GitSyncManager] = {}
     _background_syncs: dict[Path, BackgroundSync] = {}
+    _lock: threading.Lock = threading.Lock()
 
     @classmethod
     def get_manager(cls, repo_path: Path) -> GitSyncManager | None:
@@ -417,10 +445,11 @@ class GitSyncRegistry:
         repo_path = cls._find_repo_root(project_path)
         if repo_path is None:
             return None
-        if repo_path not in cls._managers:
-            manager = GitSyncManager(repo_path=repo_path)
-            cls.register(repo_path, manager)
-        return cls._managers[repo_path]
+        with cls._lock:
+            if repo_path not in cls._managers:
+                manager = GitSyncManager(repo_path=repo_path)
+                cls.register(repo_path, manager)
+            return cls._managers[repo_path]
 ```
 
 ### 6. Configuration
@@ -430,19 +459,22 @@ class GitSyncRegistry:
 ```yaml
 git_sync_projects:
   "project_id_abc":
-    sync_mode: "auto"              # "auto" | "manual"
-    remote_name: "origin"
-    branch: null                   # null = current branch
-    poll_interval: 10.0            # seconds between background syncs
-    idle_pause_after: 300.0        # pause polling after 5 min with no requests
-    sync_freshness_threshold: 15.0 # max age (seconds) of last sync before blocking
+    sync_mode: "auto"       # "auto" | "manual"
+    remote_name: "origin"   # git remote name
 ```
 
-**Config integration** via existing `Config` class:
+Timing parameters (`poll_interval`, `idle_pause_after`, `sync_freshness_threshold`) are internal constants on `GitSyncManager`, not user-configurable. `branch` is always the current branch.
+
+**Config integration** via existing `Config` class using a pydantic model:
 
 ```python
+class GitSyncProjectConfig(BaseModel):
+    sync_mode: Literal["auto", "manual"] = "manual"
+    remote_name: str = "origin"
+
 # New ConfigProperty on Config class
-git_sync_projects: ConfigProperty(dict, default_lambda=lambda: {})
+# NOTE: verify that Config supports pydantic models as property types
+git_sync_projects: ConfigProperty(dict[str, GitSyncProjectConfig], default_lambda=lambda: {})
 ```
 
 **Writer resolver** — installed during app startup:
@@ -450,9 +482,21 @@ git_sync_projects: ConfigProperty(dict, default_lambda=lambda: {})
 ```python
 # In desktop_server.py lifespan or startup
 
+def find_project_id_for_path(path: Path) -> str | None:
+    """Walk up from path until a directory contains 'project.kiln'.
+    Read the project ID from that file."""
+    current = path if path.is_dir() else path.parent
+    while current != current.parent:
+        project_file = current / "project.kiln"
+        if project_file.exists():
+            # Read and parse project.kiln to get project ID
+            ...
+            return project_id
+        current = current.parent
+    return None
+
 def resolve_writer(path: Path) -> StorageWriter:
     """Given a file path, determine which writer to use."""
-    # Find the project that owns this path
     project_id = find_project_id_for_path(path)
     if project_id is None:
         return FileStorageWriter()
@@ -495,9 +539,9 @@ def write_file(self, path: Path, data: str) -> None:
             raise WriteLockTimeoutError("Timed out waiting for write lock")
         ctx.holds_lock = True
 
-    # Save original for rollback
-    if path not in ctx.original_contents:
-        ctx.original_contents[path] = path.read_bytes() if path.exists() else None
+    # Track new files for rollback (git checkout handles existing files)
+    if not path.exists():
+        ctx.new_files.add(path)
 
     # Actual filesystem write
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -513,7 +557,7 @@ def write_file(self, path: Path, data: str) -> None:
 
 contextvars propagate into `asyncio.to_thread` automatically (Python 3.10+), so the `write_context` contextvar is visible in either path. No special handling needed.
 
-**Migration plan:** ~54 API handler call sites and ~30 `libs/core/` adapter calls — almost all already in async methods. Mechanical change: `model.save_to_file()` → `await model.asave_to_file()`. Our code migrates fully; third-party callers continue working via the sync path.
+**Migration plan:** ~54 API handler call sites and ~30 `libs/core/` adapter calls — almost all already in async methods. Mechanical change: `model.save_to_file()` → `await model.asave_to_file()`. Our code migrates fully; third-party callers continue working via the sync path. **This migration is a separate PR** — last phase of the project, branched separately to keep the main git sync PR focused.
 
 ## Commit and Push Flow
 
@@ -544,18 +588,39 @@ Push fails (remote diverged)
   → Revert local commit (keep working tree)
   → git pull --rebase
   → If clean: re-commit, re-push (once)
-  → If conflict: git rebase --abort, rollback files, return 409
+  → If conflict or second push failure:
+    → git rebase --abort (if needed)
+    → Reset to last clean commit (unstage, checkout HEAD, delete new files)
+    → Return 409
 ```
 
-### Rollback on Error
+Note: commits already pushed via `manager.push()` during nested contexts (e.g. periodic push in eval loops) are done and stay done. "Reset to last clean commit" only affects unpushed local state.
+
+### Rollback on Error (git-native)
 
 ```
-Exception during handler
-  → For each tracked file:
-    → If original_contents[path] is None: delete file
-    → Else: restore original bytes
+Exception during handler (or push failure)
+  → git reset HEAD (unstage everything)
+  → git checkout HEAD -- tracked_files (restore to last commit)
+  → Delete new_files (untracked files created during context)
   → Release write lock
   → Re-raise exception
+```
+
+Rollback uses git itself — no in-memory file content storage. Writes only touch the working tree; staging and commit happen on the success path. HEAD always represents the pre-context state during writes.
+
+```python
+async def _rollback(self, ctx: WriteContext) -> None:
+    # Unstage everything
+    await self._run_git(lambda: self._repo.reset(
+        self._repo.head.target, pygit2.enums.ResetMode.MIXED))
+    # Restore tracked files to HEAD
+    await self._run_git(lambda: self._repo.checkout_head(
+        paths=[str(p) for p in ctx.tracked_files],
+        strategy=CheckoutStrategy.FORCE))
+    # Delete new untracked files
+    for path in ctx.new_files:
+        path.unlink(missing_ok=True)
 ```
 
 ## Out-of-Band Change Detection
@@ -579,22 +644,28 @@ Auto-generated from tracked files and change type:
 
 ```python
 def _generate_commit_message(self, ctx: WriteContext) -> str:
-    """Generate descriptive commit message from tracked changes."""
-    # Analyze tracked files to determine:
-    # - Model types affected (Task, Document, TaskRun, etc.)
-    # - Nature of change (create vs update — based on original_contents)
-    # - Names/identifiers where available
+    """Generate descriptive commit message from tracked changes.
+
+    Programmatic — no LLM. Uses git status/diff to determine change types,
+    and parses file paths and .kiln JSON for model type and name.
+    """
+    # Use git status (repo.diff('HEAD')) to determine:
+    # - Nature of change: new file, modified, or deleted
+    # - Model types from file paths (e.g. tasks/my_task/task.kiln → Task)
+    # - Names from path structure or .kiln JSON (for new/modified files)
+    # - For deletions: file list comes from git status (files are already
+    #   gone from disk), model type/name parsed from the path
     #
     # Format: "[Kiln] <action> <summary>"
     # Examples:
     #   [Kiln] Create task 'Summarize articles'
     #   [Kiln] Update prompt for task 'Translation'
     #   [Kiln] Eval run: 15 results for task 'QA'
-    #   [Kiln] Delete document 'Old reference'
+    #   [Kiln] Delete task 'Old reference'
     ...
 ```
 
-The commit message generator reads the `.kiln` JSON files being committed to extract model type and name fields. For multi-file commits, it groups by model type and summarizes.
+The commit message generator is purely programmatic — it uses `repo.diff('HEAD')` to determine change types and parses file paths and `.kiln` JSON content for model type and name fields. For deletions, the file list comes from git status since the files are already removed from the working tree. For multi-file commits, it groups by model type and summarizes.
 
 ## Error Handling Strategy
 

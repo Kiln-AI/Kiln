@@ -31,16 +31,18 @@ The git sync system is a general-purpose library (not tied to FastAPI). It enfor
 3. **Hard to misuse.** Writing outside a context is an immediate error. Mixing patterns (writing in parent context then nesting) is an immediate error. The library enforces correct usage rather than relying on callers to get the order right.
 4. **Single concept.** One context manager (`write_context`) with configurable behavior via parameters, not multiple context types with different semantics.
 
-### Storage Backend Abstraction
+### StorageWriter Abstraction
 
-An abstract `StorageBackend` base class defines the interface for model persistence. Two implementations:
+> **Note:** Originally called `StorageBackend` — renamed to `StorageWriter` because the scope was narrowed to write-only operations (3 methods). Reads are untouched.
 
-- **`FileStorageBackend`** — Current behavior. Reads/writes `.kiln` files directly to disk. No git awareness.
-- **`GitSyncStorageBackend`** — Wraps file I/O with git sync. All writes must occur within a `write_context`. Tracks written files automatically. Delegates actual file I/O to the same underlying logic.
+An abstract `StorageWriter` base class defines the interface for model persistence. Two implementations:
+
+- **`FileStorageWriter`** — Current behavior. Reads/writes `.kiln` files directly to disk. No git awareness.
+- **`GitSyncStorageWriter`** — Wraps file I/O with git sync. All writes must occur within a `write_context`. Tracks written files automatically. Delegates actual file I/O to the same underlying logic.
 
 `KilnBaseModel` loads the appropriate storage backend based on the project's configuration (auto mode → git sync backend, manual mode → file backend). The base model code doesn't know or care which backend is active — it calls the same interface.
 
-**Key property:** The storage backend is how file writes are automatically tracked. When `save_to_file()` goes through `GitSyncStorageBackend`, the backend records the written file path in the active context. No explicit file tracking by the caller.
+**Key property:** The storage backend is how file writes are automatically tracked. When `save_to_file()` goes through `GitSyncStorageWriter`, the backend records the written file path in the active context. No explicit file tracking by the caller.
 
 ### GitSyncManager
 
@@ -72,7 +74,7 @@ with manager.write_context(push=True, check_in_sync=True) as ctx:
 
 **Lazy lock acquisition:** The write lock is NOT acquired on context entry. It is acquired on the first write within the context. This means read-only API calls wrapped in a `write_context` by the middleware never acquire the lock and never block. Only requests that actually write pay the locking cost.
 
-**Writes go through the manager:** The `GitSyncStorageBackend` delegates all file I/O to the manager:
+**Writes go through the manager:** The `GitSyncStorageWriter` delegates all file I/O to the manager:
 
 - **`manager.write_file(file_path, data)`** — In a single call: acquires the write lock if not already held (errors if no active `write_context`), writes the file to disk, and tracks it in the active context. Impossible to forget a step.
 - **`manager.read_file(file_path)`** — Reads a file. No lock, no context required.
@@ -276,11 +278,11 @@ Stored in the existing Kiln config system. Not in git-tracked files (sync settin
 
 ### Storage Backend in BaseModel
 
-`KilnBaseModel` is refactored to use a `StorageBackend` abstraction:
+`KilnBaseModel` is refactored to use a `StorageWriter` abstraction:
 
-- An abstract `StorageBackend` defines `save()` and `load()` methods.
-- `FileStorageBackend` implements current behavior (direct file I/O).
-- `GitSyncStorageBackend` wraps file I/O with context tracking and enforces writes only within a `write_context`.
+- An abstract `StorageWriter` defines `save()` and `load()` methods.
+- `FileStorageWriter` implements current behavior (direct file I/O).
+- `GitSyncStorageWriter` wraps file I/O with context tracking and enforces writes only within a `write_context`.
 - The backend is selected based on the project's sync mode configuration. `KilnBaseModel` resolves the backend for the relevant project and delegates to it.
 
 This is the only change to `libs/core` — the storage backend abstraction. All git sync logic lives in `app/desktop/`.
