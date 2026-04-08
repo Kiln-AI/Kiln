@@ -229,7 +229,6 @@ class Config:
         except AttributeError:
             return None
 
-    @property
     def kiln_local_api_base_url(self) -> str:
         return f"http://{self.kiln_local_api_host}:{self.kiln_local_api_port}"
 
