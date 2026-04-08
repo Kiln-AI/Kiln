@@ -1,5 +1,5 @@
 <script lang="ts">
-  import TableButton from "../table_button.svelte"
+  import TableButton from "$lib/ui/table_button.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import Output from "$lib/ui/output.svelte"
   import { createEventDispatcher } from "svelte"

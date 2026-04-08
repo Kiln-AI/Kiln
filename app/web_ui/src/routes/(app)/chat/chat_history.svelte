@@ -9,6 +9,7 @@
   import { formatDate } from "$lib/utils/formatters"
   import Dialog from "$lib/ui/dialog.svelte"
   import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
+  import TableButton from "$lib/ui/table_button.svelte"
 
   /** Called before the modal opens (e.g. abort in-flight stream). */
   export let onBeforeOpen: (() => void) | undefined = undefined
@@ -25,7 +26,6 @@
   let sessionRows: SessionListItem[] = []
   let sessionDetailLoading: string | null = null
   let deletingSessionId: string | null = null
-  let openDropdownId: string | null = null
 
   function displayTitle(item: SessionListItem): string {
     if (item.title) return item.title
@@ -58,18 +58,10 @@
 
   function resetAfterClose() {
     sessionsError = null
-    openDropdownId = null
   }
 
   function close() {
     historyDialog?.close()
-  }
-
-  function onDialogCancel(e: CustomEvent<Event>) {
-    if (openDropdownId) {
-      e.detail.preventDefault()
-      openDropdownId = null
-    }
   }
 
   async function selectSession(sessionId: string) {
@@ -113,17 +105,7 @@
       sessionsError = createKilnError(e)
     } finally {
       deletingSessionId = null
-      openDropdownId = null
     }
-  }
-
-  function toggleDropdown(e: Event, sessionId: string) {
-    e.stopPropagation()
-    openDropdownId = openDropdownId === sessionId ? null : sessionId
-  }
-
-  function onGlobalClick() {
-    if (openDropdownId) openDropdownId = null
   }
 
   $: subtitle =
@@ -132,15 +114,12 @@
       : null
 </script>
 
-<svelte:window on:click={onGlobalClick} />
-
 <Dialog
   bind:this={historyDialog}
   title="Chat History"
   sub_subtitle={sessionsLoading ? null : subtitle}
   action_buttons={[]}
   on:close={resetAfterClose}
-  on:cancel={onDialogCancel}
 >
   <div class="max-h-[min(60vh,520px)] overflow-y-auto -mx-1 px-1">
     {#if sessionsLoading}
@@ -207,57 +186,29 @@
             {:else}
               {#if row.updated_at}
                 <span
-                  class="text-xs text-gray-500 shrink-0 ml-3 whitespace-nowrap"
+                  class="text-xs text-base-content/50 shrink-0 ml-3 whitespace-nowrap"
                   >{formatDate(row.updated_at)}</span
                 >
               {/if}
-              <div class="relative shrink-0">
-                <button
-                  type="button"
-                  class="btn btn-xs btn-circle btn-ghost opacity-0 group-hover:opacity-100 transition-opacity"
-                  on:click|stopPropagation={(e) => toggleDropdown(e, row.id)}
-                  aria-label="Session options"
+              <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+              <div
+                class="dropdown dropdown-end dropdown-hover shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                on:click|stopPropagation
+              >
+                <TableButton />
+                <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+                <ul
+                  tabindex="0"
+                  class="dropdown-content menu bg-base-100 rounded-box z-[1] w-40 p-2 shadow"
                 >
-                  <svg
-                    class="h-4 w-4"
-                    viewBox="0 0 16 16"
-                    fill="currentColor"
-                    xmlns="http://www.w3.org/2000/svg"
-                    aria-hidden="true"
-                  >
-                    <circle cx="8" cy="3" r="1.5" />
-                    <circle cx="8" cy="8" r="1.5" />
-                    <circle cx="8" cy="13" r="1.5" />
-                  </svg>
-                </button>
-                {#if openDropdownId === row.id}
-                  <div
-                    class="absolute right-0 top-full mt-1 z-20 rounded-lg bg-base-100 shadow-lg border border-base-content/10 py-1 min-w-[120px]"
-                  >
+                  <li>
                     <button
-                      type="button"
-                      class="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-error hover:bg-base-200 transition-colors"
+                      class="text-error"
                       on:click|stopPropagation={() => deleteSession(row.id)}
+                      >Delete</button
                     >
-                      <svg
-                        class="h-4 w-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M6 7V18C6 19.1046 6.89543 20 8 20H16C17.1046 20 18 19.1046 18 18V7M6 7H5M6 7H8M18 7H19M18 7H16M10 11V16M14 11V16M8 7V5C8 3.89543 8.89543 3 10 3H14C15.1046 3 16 3.89543 16 5V7M8 7H16"
-                          stroke="currentColor"
-                          stroke-width="1.5"
-                          stroke-linecap="round"
-                          stroke-linejoin="round"
-                        />
-                      </svg>
-                      Delete
-                    </button>
-                  </div>
-                {/if}
+                  </li>
+                </ul>
               </div>
             {/if}
           </div>

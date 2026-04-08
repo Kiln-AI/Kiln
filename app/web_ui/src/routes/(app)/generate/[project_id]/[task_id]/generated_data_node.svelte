@@ -12,7 +12,7 @@
   import { get } from "svelte/store"
   import posthog from "posthog-js"
   import { isKilnAgentRunConfig } from "$lib/types"
-  import TableButton from "./table_button.svelte"
+  import TableButton from "$lib/ui/table_button.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
