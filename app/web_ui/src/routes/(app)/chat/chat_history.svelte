@@ -196,11 +196,6 @@
               }
             }}
           >
-            <div
-              class="shrink-0 w-5 h-5 mr-3 text-base-content/20 group-hover:text-base-content/35 transition-colors"
-            >
-              <ChatIcon />
-            </div>
             <div class="flex-1 min-w-0">
               <span class="block text-sm font-medium truncate"
                 >{displayTitle(row)}</span
