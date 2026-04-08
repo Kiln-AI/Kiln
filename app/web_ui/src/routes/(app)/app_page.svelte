@@ -95,7 +95,6 @@
           {#if action_button.notice}
             <span class="bg-primary rounded-full w-3 h-3 mr-1" />
           {/if}
-          {action_button.label || ""}
           {#if action_button.icon}
             <img
               alt={action_button.label || ""}
@@ -103,6 +102,7 @@
               class="w-6 h-6"
             />
           {/if}
+          {action_button.label || ""}
         </button>
       </div>
     {/each}

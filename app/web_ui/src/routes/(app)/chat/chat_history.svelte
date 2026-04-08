@@ -8,6 +8,7 @@
   import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
   import { formatDate } from "$lib/utils/formatters"
   import Dialog from "$lib/ui/dialog.svelte"
+  import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
 
   /** Called before the modal opens (e.g. abort in-flight stream). */
   export let onBeforeOpen: (() => void) | undefined = undefined
@@ -124,13 +125,19 @@
   function onGlobalClick() {
     if (openDropdownId) openDropdownId = null
   }
+
+  $: subtitle =
+    sessionRows.length > 0
+      ? `${sessionRows.length} conversation${sessionRows.length === 1 ? "" : "s"}`
+      : null
 </script>
 
 <svelte:window on:click={onGlobalClick} />
 
 <Dialog
   bind:this={historyDialog}
-  title="Past conversations"
+  title="Chat History"
+  sub_subtitle={sessionsLoading ? null : subtitle}
   action_buttons={[]}
   on:close={resetAfterClose}
   on:cancel={onDialogCancel}
@@ -158,14 +165,22 @@
         {/if}
       </div>
     {:else if sessionRows.length === 0}
-      <p class="text-sm text-base-content/60 px-2 py-4 text-center">
-        No conversations yet.
-      </p>
+      <div class="flex flex-col items-center justify-center py-10 px-4">
+        <div class="w-10 h-10 text-base-content/15 mb-3">
+          <ChatIcon />
+        </div>
+        <p class="text-sm font-medium text-base-content/70">
+          No conversations yet
+        </p>
+        <p class="text-xs text-base-content/40 mt-1">
+          Start a chat to see it saved here
+        </p>
+      </div>
     {:else}
-      <div class="flex flex-col gap-1.5">
+      <div class="flex flex-col gap-0.5">
         {#each sessionRows as row (row.id)}
           <div
-            class="group relative flex items-center w-full rounded-xl px-3 py-2.5 text-left transition-colors bg-base-200/50 hover:bg-base-200"
+            class="group relative flex items-center w-full rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-base-200/80 cursor-pointer"
             class:opacity-50={deletingSessionId === row.id}
             role="button"
             tabindex="0"
@@ -181,19 +196,26 @@
               }
             }}
           >
+            <div
+              class="shrink-0 w-5 h-5 mr-3 text-base-content/20 group-hover:text-base-content/35 transition-colors"
+            >
+              <ChatIcon />
+            </div>
             <div class="flex-1 min-w-0">
               <span class="block text-sm font-medium truncate"
                 >{displayTitle(row)}</span
               >
+            </div>
+            {#if sessionDetailLoading === row.id || deletingSessionId === row.id}
+              <span class="loading loading-spinner loading-xs shrink-0 ml-2"
+              ></span>
+            {:else}
               {#if row.updated_at}
-                <span class="block text-xs text-gray-500 mt-0.5"
+                <span
+                  class="text-xs text-gray-500 shrink-0 ml-3 whitespace-nowrap"
                   >{formatDate(row.updated_at)}</span
                 >
               {/if}
-            </div>
-            {#if sessionDetailLoading === row.id || deletingSessionId === row.id}
-              <span class="loading loading-spinner loading-xs shrink-0"></span>
-            {:else}
               <div class="relative shrink-0">
                 <button
                   type="button"
