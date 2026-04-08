@@ -186,7 +186,7 @@
             {:else}
               {#if row.updated_at}
                 <span
-                  class="text-xs text-base-content/50 shrink-0 ml-3 whitespace-nowrap"
+                  class="text-xs text-gray-500 shrink-0 ml-3 whitespace-nowrap"
                   >{formatDate(row.updated_at)}</span
                 >
               {/if}
