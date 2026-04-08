@@ -21,6 +21,7 @@ from kiln_ai.tools.built_in_tools.math_tools import (
 )
 from kiln_ai.tools.kiln_task_tool import KilnTaskTool
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
+from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 
 
@@ -41,7 +42,12 @@ def tool_from_id(tool_id: str, task: Task | None = None) -> KilnToolInterface:
             case KilnBuiltInToolId.DIVIDE_NUMBERS:
                 return DivideTool()
             case KilnBuiltInToolId.CALL_KILN_API:
-                return KilnApiCallTool()
+                api_base_url = Config.shared().kiln_local_api_base_url()
+                if not api_base_url:
+                    raise ValueError(
+                        "kiln_local_api_base_url is not configured. The server must set this before starting."
+                    )
+                return KilnApiCallTool(api_base_url=api_base_url)
             case _:
                 raise_exhaustive_enum_error(typed_tool_id)
 

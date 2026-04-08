@@ -13,7 +13,7 @@ from kiln_ai.tools.base_tool import KilnTool, ToolCallResult
 class KilnApiCallTool(KilnTool):
     """Tool for making HTTP requests to the Kiln API server."""
 
-    def __init__(self, api_base_url: str = "http://localhost:8757"):
+    def __init__(self, api_base_url: str):
         self._api_base_url = api_base_url
         super().__init__(
             tool_id=KilnBuiltInToolId.CALL_KILN_API,

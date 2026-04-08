@@ -14,10 +14,6 @@ def tool():
 
 
 class TestKilnApiCallToolInit:
-    def test_default_base_url(self):
-        tool = KilnApiCallTool()
-        assert tool._api_base_url == "http://localhost:8757"
-
     def test_custom_base_url(self):
         tool = KilnApiCallTool(api_base_url="http://custom:9999")
         assert tool._api_base_url == "http://custom:9999"
