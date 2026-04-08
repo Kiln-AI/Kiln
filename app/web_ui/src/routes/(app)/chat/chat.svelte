@@ -13,6 +13,7 @@
   } from "$lib/chat/chat_session_store"
   import ChatWelcome from "./chat_welcome.svelte"
   import ChatHistory from "./chat_history.svelte"
+  import ChatLoading from "./chat_loading.svelte"
 
   export let store: ChatSessionStore = chatSessionStore
 
@@ -624,12 +625,7 @@
                   {/if}
                 {/each}
               {:else if message.role === "assistant" && showStreamingCursor && message.id === lastMessage?.id}
-                <div class="flex items-center py-0.5" aria-hidden="true">
-                  <span
-                    class="inline-block w-2 h-2 rounded-full bg-base-content/60 animate-pulse"
-                    style="animation-duration: 1.2s"
-                  />
-                </div>
+                <ChatLoading />
               {:else if message.content}
                 <div class="whitespace-pre-wrap">{message.content}</div>
               {/if}
