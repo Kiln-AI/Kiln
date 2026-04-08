@@ -27,6 +27,9 @@
   let reasoningPartStartTimes: Record<string, number> = {}
   let reasoningPartEndTimes: Record<string, number> = {}
   let lastSeenLastPartKey: string | null = null
+  import { env } from "$env/dynamic/public"
+
+  const showToolCallDetails = env.PUBLIC_SHOW_TOOL_CALL_DETAILS === "true"
 
   $: toolApprovalWaiter = $store.toolApprovalWaiter
   $: toolApprovalPicks = $store.toolApprovalPicks
@@ -496,131 +499,179 @@
                       typeof part.output === "object" &&
                       part.output !== null &&
                       "error" in part.output}
-                    <div class="mt-2 overflow-hidden text-sm">
-                      <button
-                        type="button"
-                        class="group/btn w-full flex items-center gap-1.5 py-1 text-left text-base-content/60 hover:text-base-content/80 transition-colors cursor-pointer"
-                        on:click={() =>
-                          togglePartCollapsed(message, part, partIndex)}
-                      >
-                        <span class="flex items-center gap-1.5">
-                          {formatToolName(part.type)} was called
-                          {#if toolCollapsed}
-                            <span
-                              class="shrink-0 text-base-content/40 transition-opacity opacity-0 group-hover/btn:opacity-100"
-                              aria-hidden="true">▶</span
+                    {#if !showToolCallDetails}
+                      <div class="mt-2 text-sm">
+                        {#if pendingInlineApproval && toolApprovalPicks[tcId] === undefined}
+                          <div
+                            class="max-w-md rounded-md bg-base-content/[0.04] px-3 py-2.5 flex flex-col gap-2"
+                          >
+                            <p
+                              class="text-xs text-base-content/80 leading-relaxed"
                             >
-                          {:else}
-                            <span
-                              class="shrink-0 text-base-content/40"
-                              aria-hidden="true">▼</span
+                              {#if approvalItem?.approvalDescription?.trim()}
+                                {approvalItem.approvalDescription}
+                              {:else}
+                                This tool call requires approval.
+                              {/if}
+                            </p>
+                            <div
+                              class="flex flex-row flex-wrap items-center justify-end gap-2"
                             >
-                          {/if}
-                        </span>
-                      </button>
-                      {#if !toolCollapsed}
-                        <div
-                          class="mt-2 overflow-hidden rounded-md {hasError
-                            ? 'bg-error/5 text-error'
-                            : 'bg-base-content/[0.04]'}"
-                        >
-                          <div class="px-3 py-2.5 flex flex-col gap-2.5">
-                            <div>
-                              <span
-                                class="text-base-content/50 text-xs font-medium"
-                                >Input</span
+                              <button
+                                type="button"
+                                class="btn btn-ghost btn-sm"
+                                on:click={() => applyToolApprovalSkip(tcId)}
                               >
-                              <div class="mt-0.5">
-                                {#if hasToolInput(part)}
-                                  <pre
-                                    class="text-xs overflow-x-auto rounded py-1.5 font-mono text-base-content/80">{formatToolInput(
-                                      part.input,
-                                    )}</pre>
-                                {:else}
-                                  <span
-                                    class="text-base-content/50 italic text-xs"
-                                    >Calling…</span
-                                  >
-                                {/if}
-                              </div>
+                                Skip
+                              </button>
+                              <button
+                                type="button"
+                                class="btn btn-primary btn-sm"
+                                on:click={() => applyToolApprovalRun(tcId)}
+                              >
+                                Run
+                              </button>
                             </div>
-                            <div>
+                          </div>
+                        {:else}
+                          <div
+                            class="flex items-center py-0.5"
+                            aria-hidden="true"
+                          >
+                            <span
+                              class="inline-block w-2 h-2 rounded-full bg-base-content/60 animate-pulse"
+                              style="animation-duration: 1.2s"
+                            />
+                          </div>
+                        {/if}
+                      </div>
+                    {:else}
+                      <div class="mt-2 overflow-hidden text-sm">
+                        <button
+                          type="button"
+                          class="group/btn w-full flex items-center gap-1.5 py-1 text-left text-base-content/60 hover:text-base-content/80 transition-colors cursor-pointer"
+                          on:click={() =>
+                            togglePartCollapsed(message, part, partIndex)}
+                        >
+                          <span class="flex items-center gap-1.5">
+                            {formatToolName(part.type)} was called
+                            {#if toolCollapsed}
                               <span
-                                class="text-base-content/50 text-xs font-medium"
-                                >Output</span
+                                class="shrink-0 text-base-content/40 transition-opacity opacity-0 group-hover/btn:opacity-100"
+                                aria-hidden="true">▶</span
                               >
-                              <div class="mt-0.5">
-                                {#if hasError}
-                                  <div class="text-xs">
-                                    {getToolOutputError(part)}
-                                  </div>
-                                {:else if hasOutput}
-                                  <pre
-                                    class="text-xs overflow-x-auto rounded py-1.5 font-mono text-base-content/80">{formatToolOutput(
-                                      part.output,
-                                    )}</pre>
-                                {:else if pendingInlineApproval}
-                                  <div class="flex flex-col gap-3">
-                                    {#if toolApprovalPicks[tcId] === undefined}
-                                      <p
-                                        class="text-xs text-base-content/80 leading-relaxed"
-                                      >
-                                        {#if approvalItem?.approvalDescription?.trim()}
-                                          {approvalItem.approvalDescription}
-                                        {:else}
-                                          This tool call requires approval.
-                                        {/if}
-                                      </p>
-                                      <div
-                                        class="flex flex-row flex-wrap items-center justify-end gap-2"
-                                      >
-                                        <button
-                                          type="button"
-                                          class="btn btn-ghost btn-sm"
-                                          on:click={() =>
-                                            applyToolApprovalSkip(tcId)}
-                                        >
-                                          Skip
-                                        </button>
-                                        <button
-                                          type="button"
-                                          class="btn btn-primary btn-sm"
-                                          on:click={() =>
-                                            applyToolApprovalRun(tcId)}
-                                        >
-                                          Run
-                                        </button>
-                                      </div>
-                                    {:else if toolApprovalPicks[tcId] === true}
-                                      <p
-                                        class="text-xs text-base-content/60 italic"
-                                      >
-                                        Approved.
-                                      </p>
-                                    {:else}
-                                      <p
-                                        class="text-xs text-base-content/60 italic"
-                                      >
-                                        Skipped.
-                                      </p>
-                                    {/if}
-                                  </div>
-                                {:else}
-                                  <div
-                                    class="flex items-center gap-2 text-base-content/50 italic text-xs"
-                                  >
+                            {:else}
+                              <span
+                                class="shrink-0 text-base-content/40"
+                                aria-hidden="true">▼</span
+                              >
+                            {/if}
+                          </span>
+                        </button>
+                        {#if !toolCollapsed}
+                          <div
+                            class="mt-2 overflow-hidden rounded-md {hasError
+                              ? 'bg-error/5 text-error'
+                              : 'bg-base-content/[0.04]'}"
+                          >
+                            <div class="px-3 py-2.5 flex flex-col gap-2.5">
+                              <div>
+                                <span
+                                  class="text-base-content/50 text-xs font-medium"
+                                  >Input</span
+                                >
+                                <div class="mt-0.5">
+                                  {#if hasToolInput(part)}
+                                    <pre
+                                      class="text-xs overflow-x-auto rounded py-1.5 font-mono text-base-content/80">{formatToolInput(
+                                        part.input,
+                                      )}</pre>
+                                  {:else}
                                     <span
-                                      class="inline-block w-3 h-3 rounded-full border border-base-content/30 border-t-base-content/60 animate-spin"
-                                    />
-                                    <span>…</span>
-                                  </div>
-                                {/if}
+                                      class="text-base-content/50 italic text-xs"
+                                      >Calling…</span
+                                    >
+                                  {/if}
+                                </div>
+                              </div>
+                              <div>
+                                <span
+                                  class="text-base-content/50 text-xs font-medium"
+                                  >Output</span
+                                >
+                                <div class="mt-0.5">
+                                  {#if hasError}
+                                    <div class="text-xs">
+                                      {getToolOutputError(part)}
+                                    </div>
+                                  {:else if hasOutput}
+                                    <pre
+                                      class="text-xs overflow-x-auto rounded py-1.5 font-mono text-base-content/80">{formatToolOutput(
+                                        part.output,
+                                      )}</pre>
+                                  {:else if pendingInlineApproval}
+                                    <div class="flex flex-col gap-3">
+                                      {#if toolApprovalPicks[tcId] === undefined}
+                                        <p
+                                          class="text-xs text-base-content/80 leading-relaxed"
+                                        >
+                                          {#if approvalItem?.approvalDescription?.trim()}
+                                            {approvalItem.approvalDescription}
+                                          {:else}
+                                            This tool call requires approval.
+                                          {/if}
+                                        </p>
+                                        <div
+                                          class="flex flex-row flex-wrap items-center justify-end gap-2"
+                                        >
+                                          <button
+                                            type="button"
+                                            class="btn btn-ghost btn-sm"
+                                            on:click={() =>
+                                              applyToolApprovalSkip(tcId)}
+                                          >
+                                            Skip
+                                          </button>
+                                          <button
+                                            type="button"
+                                            class="btn btn-primary btn-sm"
+                                            on:click={() =>
+                                              applyToolApprovalRun(tcId)}
+                                          >
+                                            Run
+                                          </button>
+                                        </div>
+                                      {:else if toolApprovalPicks[tcId] === true}
+                                        <p
+                                          class="text-xs text-base-content/60 italic"
+                                        >
+                                          Approved.
+                                        </p>
+                                      {:else}
+                                        <p
+                                          class="text-xs text-base-content/60 italic"
+                                        >
+                                          Skipped.
+                                        </p>
+                                      {/if}
+                                    </div>
+                                  {:else}
+                                    <div
+                                      class="flex items-center gap-2 text-base-content/50 italic text-xs"
+                                    >
+                                      <span
+                                        class="inline-block w-3 h-3 rounded-full border border-base-content/30 border-t-base-content/60 animate-spin"
+                                      />
+                                      <span>…</span>
+                                    </div>
+                                  {/if}
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                      {/if}
-                    </div>
+                        {/if}
+                      </div>
+                    {/if}
                   {/if}
                 {/each}
               {:else if message.role === "assistant" && showStreamingCursor && message.id === lastMessage?.id}
