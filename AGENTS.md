@@ -41,6 +41,7 @@ Agents have access to a range of tools for running tests, linting, formatting an
 | `npm run test_run` | — | Web tests (from `app/web_ui`) |
 | `npm run build` | — | Web build (from `app/web_ui`) |
 | `app/web_ui/src/lib/check_schema.sh` | `app/web_ui/src/lib/generate_schema.sh` | OpenAPI client up to date |
+| `misspell` | — | Spelling check (optional if not installed) |
 
 ### Agent Prompts
 
