@@ -3043,6 +3043,10 @@ export interface components {
             tool_call_id: string;
             /** Kiln Task Tool Data */
             kiln_task_tool_data?: string | null;
+            /** Is Error */
+            is_error?: boolean | null;
+            /** Error Message */
+            error_message?: string | null;
         };
         /** ChatCompletionUserMessageParam */
         "ChatCompletionUserMessageParam-Input": {
