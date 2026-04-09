@@ -156,5 +156,5 @@ export function isGitHubUrl(url: string): boolean {
 }
 
 export function gitHubPatDeepLink(): string {
-  return "https://github.com/settings/tokens/new?scopes=repo&description=Kiln+AI&default_expires_at=none"
+  return "https://github.com/settings/personal-access-tokens/new?name=Kiln+AI&description=Kiln+AI+auto+sync&contents=write&metadata=read&expires_in=none"
 }

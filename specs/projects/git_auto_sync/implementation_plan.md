@@ -39,3 +39,13 @@ status: complete
   - Step 5: Save config, enable auto-sync
   - Token expiration detection and "Update token" re-auth flow
   - API endpoints to support wizard steps (list branches, clone, test access, scan projects)
+
+- [x] Phase 5: Import Flow Unification & Git Sync UX
+  - Merge "Sync from Git" into "Import Project" as a single entry point
+  - New shared `ImportProject` component: method selection (local file vs git), then per-method steps
+  - Extract local file import logic out of `edit_project.svelte`
+  - Move git sync wizard steps to shared location, integrate into import flow
+  - New `/settings/import_project` route (replaces both `?import=true` and `/settings/git_sync`)
+  - New `/setup/import_project` route — git import now available during onboarding
+  - Manage Projects: 2 buttons (Create, Import) instead of 3
+  - Clean up `edit_project.svelte` to only handle create/edit

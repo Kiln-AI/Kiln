@@ -5,6 +5,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import { listBranches, cloneRepo, testWriteAccess } from "$lib/git_sync/api"
   import { onMount } from "svelte"
+  import type { OptionGroup } from "$lib/ui/fancy_select_types"
 
   export let git_url: string
   export let pat_token: string | null
@@ -13,7 +14,6 @@
     clone_path: string,
     needs_credentials: boolean,
   ) => void
-  export let on_back: () => void
 
   let branches: string[] = []
   let default_branch: string | null = null
@@ -42,10 +42,19 @@
     }
   })
 
-  $: branch_options = branches.map((b): [string, string] => [
-    b,
-    b === default_branch ? `${b} (default)` : b,
-  ])
+  $: branch_option_groups = (() => {
+    const sorted = [...branches].sort((a, b) => {
+      if (a === default_branch) return -1
+      if (b === default_branch) return 1
+      return a.localeCompare(b)
+    })
+    const options = sorted.map((branch) => ({
+      label: branch,
+      value: branch,
+      badge: branch === default_branch ? "default" : undefined,
+    }))
+    return [{ options }] as OptionGroup[]
+  })()
 
   async function clone_and_test() {
     try {
@@ -95,8 +104,8 @@
 
 <h2 class="text-xl font-medium mb-2">Select Branch</h2>
 <p class="text-sm text-gray-500 mb-6">
-  Choose the branch to sync with. This will clone the repository to a local
-  directory managed by Kiln.
+  Choose the branch Kiln will auto-sync with. This will clone the repository to
+  a local directory managed by Kiln.
 </p>
 
 {#if loading}
@@ -105,9 +114,6 @@
   </div>
 {:else if branches.length === 0 && error}
   <Warning warning_message={error.getMessage()} warning_color="error" />
-  <div class="mt-4">
-    <button class="btn btn-ghost btn-sm" on:click={on_back}>Back</button>
-  </div>
 {:else}
   <FormContainer
     submit_label="Clone & Continue"
@@ -120,9 +126,10 @@
     <FormElement
       label="Branch"
       id="branch"
-      inputType="select"
+      inputType="fancy_select"
+      info_description="This is the Git branch Kiln will auto sync with. It must be an existing branch in the repository."
       bind:value={selected_branch}
-      select_options={branch_options}
+      fancy_select_options={branch_option_groups}
     />
 
     {#if status_message}
@@ -132,8 +139,4 @@
       </div>
     {/if}
   </FormContainer>
-
-  <div class="mt-4">
-    <button class="btn btn-ghost btn-sm" on:click={on_back}>Back</button>
-  </div>
 {/if}

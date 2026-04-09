@@ -10,7 +10,6 @@
     project_id: string,
     project_name: string,
   ) => void
-  export let on_back: () => void
 
   let projects: ProjectInfo[] = []
   let loading = true
@@ -47,17 +46,11 @@
   </div>
 {:else if error}
   <Warning warning_message={error.getMessage()} warning_color="error" />
-  <div class="mt-4">
-    <button class="btn btn-ghost btn-sm" on:click={on_back}>Back</button>
-  </div>
 {:else if projects.length === 0}
   <Warning
     warning_message="No Kiln project found in this repository. The repository must contain at least one project.kiln file."
     warning_color="error"
   />
-  <div class="mt-4">
-    <button class="btn btn-ghost btn-sm" on:click={on_back}>Back</button>
-  </div>
 {:else}
   <div class="space-y-2">
     {#each projects as project}
@@ -72,9 +65,5 @@
         <div class="text-xs text-gray-400 mt-1">{project.path}</div>
       </button>
     {/each}
-  </div>
-
-  <div class="mt-4">
-    <button class="btn btn-ghost btn-sm" on:click={on_back}>Back</button>
   </div>
 {/if}

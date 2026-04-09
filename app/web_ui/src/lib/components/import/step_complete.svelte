@@ -3,7 +3,6 @@
   import Warning from "$lib/ui/warning.svelte"
   import { saveConfig } from "$lib/git_sync/api"
   import { load_projects } from "$lib/stores"
-  import { goto } from "$app/navigation"
   import { onMount } from "svelte"
 
   export let git_url: string
@@ -13,6 +12,8 @@
   export let project_path: string
   export let project_id: string
   export let project_name: string
+  export let on_complete: (project_id: string) => void
+  export let on_back: () => void
 
   let saving = true
   let error: KilnError | null = null
@@ -48,12 +49,7 @@
   <h2 class="text-xl font-medium mb-2">Setup Error</h2>
   <Warning warning_message={error.getMessage()} warning_color="error" />
   <div class="mt-6">
-    <button
-      class="btn btn-primary"
-      on:click={() => goto("/settings/manage_projects")}
-    >
-      Back to Projects
-    </button>
+    <button class="btn btn-primary" on:click={on_back}> Back </button>
   </div>
 {:else if done}
   <div class="flex flex-col items-center py-8 gap-4">
@@ -83,10 +79,7 @@
     </p>
 
     <div class="flex flex-row gap-4 mt-4">
-      <button
-        class="btn btn-primary"
-        on:click={() => goto("/settings/manage_projects")}
-      >
+      <button class="btn btn-primary" on:click={() => on_complete(project_id)}>
         Done
       </button>
     </div>

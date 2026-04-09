@@ -199,9 +199,8 @@
               rel="noopener noreferrer"
               class="link text-primary"
             >
-              Generate a GitHub token
-            </a>
-            with "repo" scope.
+              Generate a GitHub token</a
+            >. It must have read/write access to the selected repo.
           </div>
         {/if}
         {#if token_error}

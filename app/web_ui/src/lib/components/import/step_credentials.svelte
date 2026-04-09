@@ -8,7 +8,6 @@
   export let git_url: string
   export let initial_token: string | null = null
   export let on_success: (token: string) => void
-  export let on_back: () => void
 
   let pat_token = initial_token || ""
   let error: KilnError | null = null
@@ -56,6 +55,25 @@
   bind:saved
   focus_on_mount={true}
 >
+  {#if is_github}
+    <div class="text-sm">
+      <a
+        href={gitHubPatDeepLink()}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="link text-primary"
+      >
+        Generate a GitHub token</a
+      > and paste it below. It must have read/write access to the selected repo.
+    </div>
+  {:else}
+    <Warning
+      warning_message="Generate an access token following instructions from your Git hosting provider (GitLab, Bitbucket, etc). The process varies from host to host."
+      warning_color="gray"
+      warning_icon="info"
+    />
+  {/if}
+
   <FormElement
     label="Personal Access Token"
     id="pat_token"
@@ -63,28 +81,4 @@
     bind:value={pat_token}
     placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
   />
-
-  {#if is_github}
-    <div class="text-sm text-gray-500">
-      <a
-        href={gitHubPatDeepLink()}
-        target="_blank"
-        rel="noopener noreferrer"
-        class="link text-primary"
-      >
-        Generate a GitHub token
-      </a>
-      with "repo" scope. Classic tokens with "repo" scope are recommended.
-    </div>
-  {:else}
-    <Warning
-      warning_message="You'll need a personal access token from your git hosting provider. It should have read and write access to the repository."
-      warning_color="gray"
-      warning_icon="info"
-    />
-  {/if}
 </FormContainer>
-
-<div class="mt-4">
-  <button class="btn btn-ghost btn-sm" on:click={on_back}>Back</button>
-</div>

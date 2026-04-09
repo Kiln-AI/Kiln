@@ -65,14 +65,7 @@
   breadcrumbs={[{ label: "Settings", href: "/settings" }]}
   action_buttons={[
     { label: "Create Project", href: "/settings/create_project" },
-    {
-      label: "Import Project",
-      href: "/settings/create_project?import=true",
-    },
-    {
-      label: "Sync from Git",
-      href: "/settings/git_sync",
-    },
+    { label: "Import Project", href: "/settings/import_project" },
   ]}
 >
   {#if $projects == null}

@@ -42,10 +42,10 @@ describe("isGitHubUrl", () => {
 })
 
 describe("gitHubPatDeepLink", () => {
-  it("returns GitHub token creation URL with repo scope", () => {
+  it("returns GitHub fine-grained token creation URL", () => {
     const link = gitHubPatDeepLink()
-    expect(link).toContain("github.com/settings/tokens/new")
-    expect(link).toContain("scopes=repo")
+    expect(link).toContain("github.com/settings/personal-access-tokens/new")
+    expect(link).toContain("contents=write")
     expect(link).toContain("Kiln")
   })
 })

@@ -17,7 +17,7 @@
     breadcrumbs={[{ label: "Settings", href: "/settings" }]}
     sub_subtitle={`ID: ${project_id || "Unknown"}`}
   >
-    <EditProject {project} />
+    <EditProject {project} import_link="/settings/import_project" />
 
     {#if project_id}
       <div class="mt-8">
