@@ -24,6 +24,7 @@
     try {
       await saveConfig({
         project_id: project_id,
+        project_path: project_path,
         git_url: git_url,
         clone_path: clone_path,
         branch: branch,

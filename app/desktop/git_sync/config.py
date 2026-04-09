@@ -1,6 +1,7 @@
 from typing import Literal, TypedDict
 
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.project_utils import project_from_id
 
 AuthMode = Literal["system_keys", "pat_token"]
 
@@ -15,13 +16,20 @@ class GitSyncProjectConfig(TypedDict):
     pat_token: str | None
 
 
-def get_git_sync_config(project_id: str) -> GitSyncProjectConfig | None:
+def project_path_from_id(project_id: str) -> str | None:
+    project = project_from_id(project_id)
+    if project is None or project.path is None:
+        return None
+    return str(project.path)
+
+
+def get_git_sync_config(project_path: str) -> GitSyncProjectConfig | None:
     config = Config.shared()
     raw = config.git_sync_projects
     if raw is None:
         return None
 
-    project_raw = raw.get(project_id)
+    project_raw = raw.get(project_path)
     if project_raw is None:
         return None
 
@@ -36,15 +44,17 @@ def get_git_sync_config(project_id: str) -> GitSyncProjectConfig | None:
     )
 
 
-def save_git_sync_config(project_id: str, project_config: GitSyncProjectConfig) -> None:
+def save_git_sync_config(
+    project_path: str, project_config: GitSyncProjectConfig
+) -> None:
     config = Config.shared()
     raw = config.git_sync_projects or {}
-    raw[project_id] = dict(project_config)
+    raw[project_path] = dict(project_config)
     config.git_sync_projects = raw
 
 
-def delete_git_sync_config(project_id: str) -> None:
+def delete_git_sync_config(project_path: str) -> None:
     config = Config.shared()
     raw = config.git_sync_projects or {}
-    raw.pop(project_id, None)
+    raw.pop(project_path, None)
     config.git_sync_projects = raw

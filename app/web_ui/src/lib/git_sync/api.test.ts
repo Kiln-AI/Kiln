@@ -172,6 +172,7 @@ describe("saveConfig", () => {
 
     const result = await saveConfig({
       project_id: "proj_1",
+      project_path: "project.kiln",
       git_url: "https://github.com/org/repo.git",
       clone_path: "/tmp/clone",
       branch: "main",

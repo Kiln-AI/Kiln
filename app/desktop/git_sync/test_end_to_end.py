@@ -4,6 +4,7 @@ These tests exercise the full stack: middleware + manager + real git repos.
 """
 
 import asyncio
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -20,6 +21,22 @@ from app.desktop.git_sync.git_sync_manager import GitSyncManager
 from app.desktop.git_sync.middleware import GitSyncMiddleware
 
 PROJECT_ID = "e2e_proj"
+PROJECT_PATH = "/tmp/e2e/project.kiln"
+
+
+@contextmanager
+def mock_git_sync_config(config):
+    with (
+        patch(
+            "app.desktop.git_sync.middleware.project_path_from_id",
+            return_value=PROJECT_PATH,
+        ),
+        patch(
+            "app.desktop.git_sync.middleware.get_git_sync_config",
+            return_value=config,
+        ),
+    ):
+        yield
 
 
 def _auto_config(clone_path: str) -> GitSyncProjectConfig:
@@ -74,10 +91,7 @@ def test_full_write_lifecycle(git_repos):
     remote_repo = pygit2.Repository(str(remote_path))
     head_before = str(remote_repo.head.target)
 
-    with patch(
-        "app.desktop.git_sync.middleware.get_git_sync_config",
-        return_value=config,
-    ):
+    with mock_git_sync_config(config):
         client = TestClient(app)
         resp = client.post(f"/api/projects/{PROJECT_ID}/items", json={})
 
@@ -119,10 +133,7 @@ def test_concurrent_writes_serialized(git_repos):
     def endpoint_b():
         return post_write_b()
 
-    with patch(
-        "app.desktop.git_sync.middleware.get_git_sync_config",
-        return_value=config,
-    ):
+    with mock_git_sync_config(config):
         client = TestClient(app)
         resp_a = client.post(f"/api/projects/{PROJECT_ID}/items/a", json={})
         resp_b = client.post(f"/api/projects/{PROJECT_ID}/items/b", json={})
@@ -162,10 +173,7 @@ def test_conflict_retry_succeeds(git_repos, tmp_path):
 
     app = _build_app(local_path, post_endpoint=post_that_triggers_conflict)
 
-    with patch(
-        "app.desktop.git_sync.middleware.get_git_sync_config",
-        return_value=config,
-    ):
+    with mock_git_sync_config(config):
         client = TestClient(app)
         resp = client.post(f"/api/projects/{PROJECT_ID}/items", json={})
 
@@ -191,10 +199,7 @@ def test_crash_recovery_on_next_write(git_repos):
 
     app = _build_app(local_path, post_endpoint=post_clean_write)
 
-    with patch(
-        "app.desktop.git_sync.middleware.get_git_sync_config",
-        return_value=config,
-    ):
+    with mock_git_sync_config(config):
         client = TestClient(app)
         resp = client.post(f"/api/projects/{PROJECT_ID}/items", json={})
 

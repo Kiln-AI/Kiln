@@ -114,6 +114,7 @@ export async function scanProjects(
 
 export async function saveConfig(config: {
   project_id: string
+  project_path: string
   git_url: string
   clone_path: string
   branch: string

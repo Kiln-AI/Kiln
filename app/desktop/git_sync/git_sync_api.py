@@ -5,7 +5,7 @@ from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi import Path as FastAPIPath
-from kiln_server.project_api import default_project_path
+from kiln_server.project_api import add_project_to_config, default_project_path
 from pydantic import BaseModel, Field
 
 from app.desktop.git_sync.clone import (
@@ -20,6 +20,7 @@ from app.desktop.git_sync.config import (
     GitSyncProjectConfig,
     delete_git_sync_config,
     get_git_sync_config,
+    project_path_from_id,
     save_git_sync_config,
 )
 
@@ -138,6 +139,9 @@ class SaveConfigRequest(BaseModel):
     """Request to save a complete git sync configuration for a project."""
 
     project_id: str = Field(description="Unique project identifier.")
+    project_path: str = Field(
+        description="Relative path to the project.kiln file within the clone."
+    )
     git_url: str = Field(description="The git remote URL.")
     clone_path: str = Field(description="Local filesystem path of the clone.")
     branch: str = Field(description="Branch name to sync.")
@@ -307,6 +311,13 @@ def connect_git_sync_api(app: FastAPI):
         tags=["Git Sync"],
     )
     async def api_save_config(request: SaveConfigRequest) -> GitSyncConfigResponse:
+        if Path(request.project_path).is_absolute():
+            raise HTTPException(
+                status_code=400,
+                detail="project_path must be a relative path within the clone",
+            )
+        full_project_path = str(Path(request.clone_path) / request.project_path)
+
         project_config = GitSyncProjectConfig(
             sync_mode=request.sync_mode,
             auth_mode=request.auth_mode,
@@ -316,7 +327,8 @@ def connect_git_sync_api(app: FastAPI):
             git_url=request.git_url,
             pat_token=request.pat_token,
         )
-        save_git_sync_config(request.project_id, project_config)
+        save_git_sync_config(full_project_path, project_config)
+        add_project_to_config(full_project_path)
 
         return GitSyncConfigResponse(
             sync_mode=request.sync_mode,
@@ -338,7 +350,10 @@ def connect_git_sync_api(app: FastAPI):
             description="The unique identifier of the project."
         ),
     ) -> GitSyncConfigResponse:
-        config = get_git_sync_config(project_id)
+        project_path = project_path_from_id(project_id)
+        if project_path is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        config = get_git_sync_config(project_path)
         if config is None:
             raise HTTPException(
                 status_code=404, detail="Git sync config not found for this project"
@@ -365,7 +380,10 @@ def connect_git_sync_api(app: FastAPI):
             description="The unique identifier of the project."
         ),
     ) -> GitSyncConfigResponse:
-        config = get_git_sync_config(project_id)
+        project_path = project_path_from_id(project_id)
+        if project_path is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        config = get_git_sync_config(project_path)
         if config is None:
             raise HTTPException(
                 status_code=404, detail="Git sync config not found for this project"
@@ -378,7 +396,7 @@ def connect_git_sync_api(app: FastAPI):
         if request.auth_mode is not None:
             config["auth_mode"] = request.auth_mode
 
-        save_git_sync_config(project_id, config)
+        save_git_sync_config(project_path, config)
 
         return GitSyncConfigResponse(
             sync_mode=config["sync_mode"],
@@ -400,5 +418,8 @@ def connect_git_sync_api(app: FastAPI):
             description="The unique identifier of the project."
         ),
     ) -> DeleteConfigResponse:
-        delete_git_sync_config(project_id)
+        project_path = project_path_from_id(project_id)
+        if project_path is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+        delete_git_sync_config(project_path)
         return DeleteConfigResponse(message="Config deleted")

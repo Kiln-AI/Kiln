@@ -10,7 +10,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Match
 
-from app.desktop.git_sync.config import get_git_sync_config
+from app.desktop.git_sync.config import get_git_sync_config, project_path_from_id
 from app.desktop.git_sync.errors import (
     CorruptRepoError,
     GitSyncError,
@@ -181,13 +181,16 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
         return None
 
     def _get_manager_for_request(self, request: Request) -> GitSyncManager | None:
-        """Extract project_id from URL, return manager if auto-sync enabled."""
+        """Extract project_id from URL, resolve to path, return manager if auto-sync enabled."""
         match = PROJECT_ID_PATTERN.match(request.url.path)
         if match is None:
             return None
 
         project_id = match.group(1)
-        config = get_git_sync_config(project_id)
+        project_path = project_path_from_id(project_id)
+        if project_path is None:
+            return None
+        config = get_git_sync_config(project_path)
         if config is None:
             return None
 

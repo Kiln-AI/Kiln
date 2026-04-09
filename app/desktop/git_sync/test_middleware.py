@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
 import pygit2
@@ -19,6 +20,23 @@ from app.desktop.git_sync.middleware import GitSyncMiddleware
 from app.desktop.git_sync.registry import GitSyncRegistry
 
 PROJECT_ID = "test_proj_123"
+PROJECT_PATH = "/tmp/test/project.kiln"
+
+
+@contextmanager
+def mock_git_sync_config(config):
+    """Mock both project_path_from_id and get_git_sync_config for middleware tests."""
+    with (
+        patch(
+            "app.desktop.git_sync.middleware.project_path_from_id",
+            return_value=PROJECT_PATH,
+        ),
+        patch(
+            "app.desktop.git_sync.middleware.get_git_sync_config",
+            return_value=config,
+        ),
+    ):
+        yield
 
 
 def _auto_config(clone_path: str) -> GitSyncProjectConfig:
@@ -101,10 +119,7 @@ def test_get_request_passes_through_without_lock(git_repos):
 
     app = _build_app()
 
-    with patch(
-        "app.desktop.git_sync.middleware.get_git_sync_config",
-        return_value=config,
-    ):
+    with mock_git_sync_config(config):
         client = TestClient(app)
         resp = client.get(f"/api/projects/{PROJECT_ID}/items")
         assert resp.status_code == 200
@@ -114,10 +129,7 @@ def test_sync_disabled_passes_through():
     config = _manual_config()
     app = _build_app()
 
-    with patch(
-        "app.desktop.git_sync.middleware.get_git_sync_config",
-        return_value=config,
-    ):
+    with mock_git_sync_config(config):
         client = TestClient(app)
         resp = client.post(
             f"/api/projects/{PROJECT_ID}/items",
@@ -135,10 +147,7 @@ def test_no_clone_path_passes_through():
     )
     app = _build_app()
 
-    with patch(
-        "app.desktop.git_sync.middleware.get_git_sync_config",
-        return_value=config,
-    ):
+    with mock_git_sync_config(config):
         client = TestClient(app)
         resp = client.post(
             f"/api/projects/{PROJECT_ID}/items",
@@ -159,10 +168,7 @@ def test_mutating_request_no_changes_no_commit(git_repos):
     remote_repo = pygit2.Repository(str(remote_path))
     head_before = str(remote_repo.head.target)
 
-    with patch(
-        "app.desktop.git_sync.middleware.get_git_sync_config",
-        return_value=config,
-    ):
+    with mock_git_sync_config(config):
         client = TestClient(app)
         resp = client.post(
             f"/api/projects/{PROJECT_ID}/items",
@@ -188,10 +194,7 @@ def test_mutating_request_commits_and_pushes(git_repos):
     remote_repo = pygit2.Repository(str(remote_path))
     head_before = str(remote_repo.head.target)
 
-    with patch(
-        "app.desktop.git_sync.middleware.get_git_sync_config",
-        return_value=config,
-    ):
+    with mock_git_sync_config(config):
         client = TestClient(app)
         resp = client.post(
             f"/api/projects/{PROJECT_ID}/items",
@@ -214,10 +217,7 @@ def test_mutating_request_error_rolls_back(git_repos):
 
     app = _build_app(post_endpoint=post_endpoint_that_errors)
 
-    with patch(
-        "app.desktop.git_sync.middleware.get_git_sync_config",
-        return_value=config,
-    ):
+    with mock_git_sync_config(config):
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.post(
             f"/api/projects/{PROJECT_ID}/items",
@@ -253,10 +253,7 @@ def test_mutating_request_handler_4xx_commits_changes(git_repos):
     remote_repo = pygit2.Repository(str(remote_path))
     head_before = str(remote_repo.head.target)
 
-    with patch(
-        "app.desktop.git_sync.middleware.get_git_sync_config",
-        return_value=config,
-    ):
+    with mock_git_sync_config(config):
         client = TestClient(app)
         resp = client.post(
             f"/api/projects/{PROJECT_ID}/items",
@@ -287,10 +284,7 @@ def test_write_lock_decorator_on_get(git_repos):
     remote_repo = pygit2.Repository(str(remote_path))
     head_before = str(remote_repo.head.target)
 
-    with patch(
-        "app.desktop.git_sync.middleware.get_git_sync_config",
-        return_value=config,
-    ):
+    with mock_git_sync_config(config):
         client = TestClient(app)
         resp = client.get(f"/api/projects/{PROJECT_ID}/items")
 
@@ -314,10 +308,7 @@ def test_no_write_lock_decorator_on_post(git_repos):
     remote_repo = pygit2.Repository(str(remote_path))
     head_before = str(remote_repo.head.target)
 
-    with patch(
-        "app.desktop.git_sync.middleware.get_git_sync_config",
-        return_value=config,
-    ):
+    with mock_git_sync_config(config):
         client = TestClient(app)
         resp = client.post(
             f"/api/projects/{PROJECT_ID}/items",
@@ -359,10 +350,7 @@ def test_error_mapping(git_repos, error_class, expected_status, expected_detail)
 
     app = _build_app(post_endpoint=post_endpoint_that_raises)
 
-    with patch(
-        "app.desktop.git_sync.middleware.get_git_sync_config",
-        return_value=config,
-    ):
+    with mock_git_sync_config(config):
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.post(
             f"/api/projects/{PROJECT_ID}/items",
@@ -390,10 +378,7 @@ def test_middleware_holds_lock_across_lifecycle(git_repos):
 
     app = _build_app(post_endpoint=post_endpoint_checks_lock)
 
-    with patch(
-        "app.desktop.git_sync.middleware.get_git_sync_config",
-        return_value=config,
-    ):
+    with mock_git_sync_config(config):
         client = TestClient(app)
         resp = client.post(
             f"/api/projects/{PROJECT_ID}/items",
@@ -415,6 +400,10 @@ def test_get_request_checks_freshness(git_repos):
     app = _build_app()
 
     with (
+        patch(
+            "app.desktop.git_sync.middleware.project_path_from_id",
+            return_value=PROJECT_PATH,
+        ),
         patch(
             "app.desktop.git_sync.middleware.get_git_sync_config",
             return_value=config,
@@ -444,10 +433,7 @@ def test_notify_request_called_on_read(git_repos):
 
     app = _build_app()
 
-    with patch(
-        "app.desktop.git_sync.middleware.get_git_sync_config",
-        return_value=config,
-    ):
+    with mock_git_sync_config(config):
         client = TestClient(app)
         resp = client.get(f"/api/projects/{PROJECT_ID}/items")
 
@@ -465,10 +451,7 @@ def test_notify_request_called_on_write(git_repos):
 
     app = _build_app()
 
-    with patch(
-        "app.desktop.git_sync.middleware.get_git_sync_config",
-        return_value=config,
-    ):
+    with mock_git_sync_config(config):
         client = TestClient(app)
         resp = client.post(f"/api/projects/{PROJECT_ID}/items", json={})
 

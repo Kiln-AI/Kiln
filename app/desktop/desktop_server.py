@@ -53,8 +53,8 @@ async def _start_background_syncs() -> None:
     if not raw_projects:
         return
 
-    for project_id in raw_projects:
-        project_config = get_git_sync_config(project_id)
+    for project_path in raw_projects:
+        project_config = get_git_sync_config(project_path)
         if project_config is None:
             continue
         if project_config["sync_mode"] != "auto":
@@ -68,7 +68,7 @@ async def _start_background_syncs() -> None:
             logger.warning(
                 "Clone path %s for project %s does not exist, skipping background sync",
                 clone_path,
-                project_id,
+                project_path,
             )
             continue
 
@@ -80,7 +80,7 @@ async def _start_background_syncs() -> None:
         bg_sync = BackgroundSync(manager)
         GitSyncRegistry.register_background_sync(repo_path, bg_sync)
         await bg_sync.start()
-        logger.info("Started background sync for project %s", project_id)
+        logger.info("Started background sync for project %s", project_path)
 
 
 async def _stop_background_syncs() -> None:

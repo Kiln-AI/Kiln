@@ -10,7 +10,7 @@ from app.desktop.git_sync.config import (
 
 def test_get_git_sync_config_returns_config():
     mock_projects = {
-        "proj_123": {
+        "/tmp/clone/project.kiln": {
             "sync_mode": "auto",
             "remote_name": "upstream",
             "branch": "develop",
@@ -20,7 +20,7 @@ def test_get_git_sync_config_returns_config():
 
     with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
         mock_shared.return_value.git_sync_projects = mock_projects
-        result = get_git_sync_config("proj_123")
+        result = get_git_sync_config("/tmp/clone/project.kiln")
 
     assert result is not None
     assert result["sync_mode"] == "auto"
@@ -30,7 +30,7 @@ def test_get_git_sync_config_returns_config():
 
 
 def test_get_git_sync_config_returns_none_for_missing_project():
-    mock_projects = {"other_project": {"sync_mode": "auto"}}
+    mock_projects = {"/tmp/other_project/project.kiln": {"sync_mode": "auto"}}
 
     with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
         mock_shared.return_value.git_sync_projects = mock_projects
@@ -42,17 +42,17 @@ def test_get_git_sync_config_returns_none_for_missing_project():
 def test_get_git_sync_config_returns_none_when_no_projects():
     with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
         mock_shared.return_value.git_sync_projects = None
-        result = get_git_sync_config("proj_123")
+        result = get_git_sync_config("/tmp/clone/project.kiln")
 
     assert result is None
 
 
 def test_get_git_sync_config_uses_defaults():
-    mock_projects = {"proj_456": {}}
+    mock_projects = {"/tmp/other/project.kiln": {}}
 
     with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
         mock_shared.return_value.git_sync_projects = mock_projects
-        result = get_git_sync_config("proj_456")
+        result = get_git_sync_config("/tmp/other/project.kiln")
 
     assert result is not None
     assert result["sync_mode"] == "manual"
@@ -64,7 +64,7 @@ def test_get_git_sync_config_uses_defaults():
 
 def test_get_git_sync_config_includes_new_fields():
     mock_projects = {
-        "proj_789": {
+        "/tmp/clone3/project.kiln": {
             "sync_mode": "auto",
             "remote_name": "origin",
             "branch": "main",
@@ -76,7 +76,7 @@ def test_get_git_sync_config_includes_new_fields():
 
     with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
         mock_shared.return_value.git_sync_projects = mock_projects
-        result = get_git_sync_config("proj_789")
+        result = get_git_sync_config("/tmp/clone3/project.kiln")
 
     assert result is not None
     assert result["git_url"] == "https://github.com/test/repo.git"
@@ -84,11 +84,11 @@ def test_get_git_sync_config_includes_new_fields():
 
 
 def test_get_git_sync_config_defaults_new_fields():
-    mock_projects = {"proj_456": {}}
+    mock_projects = {"/tmp/other/project.kiln": {}}
 
     with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
         mock_shared.return_value.git_sync_projects = mock_projects
-        result = get_git_sync_config("proj_456")
+        result = get_git_sync_config("/tmp/other/project.kiln")
 
     assert result is not None
     assert result["git_url"] is None
@@ -110,25 +110,25 @@ def test_save_git_sync_config():
             git_url="https://github.com/test/repo.git",
             pat_token="ghp_test",
         )
-        save_git_sync_config("proj_new", config)
+        save_git_sync_config("/tmp/new/project.kiln", config)
 
         # save_git_sync_config sets config.git_sync_projects = updated_dict
         # The mock captures this as a property assignment
         # Verify via the mock's attribute setting
         saved_value = instance.git_sync_projects
-        assert "proj_new" in saved_value
-        assert saved_value["proj_new"]["sync_mode"] == "auto"
+        assert "/tmp/new/project.kiln" in saved_value
+        assert saved_value["/tmp/new/project.kiln"]["sync_mode"] == "auto"
 
 
 def test_delete_git_sync_config():
-    mock_raw = {"proj_del": {"sync_mode": "auto"}}
+    mock_raw = {"/tmp/del/project.kiln": {"sync_mode": "auto"}}
 
     with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
         instance = mock_shared.return_value
         instance.git_sync_projects = mock_raw
-        delete_git_sync_config("proj_del")
+        delete_git_sync_config("/tmp/del/project.kiln")
 
-    assert "proj_del" not in mock_raw
+    assert "/tmp/del/project.kiln" not in mock_raw
 
 
 def test_delete_nonexistent_config():

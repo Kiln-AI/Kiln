@@ -190,11 +190,15 @@ class TestScanProjects:
 
 class TestSaveAndGetConfig:
     def test_save_and_retrieve(self, api_client):
-        with patch("app.desktop.git_sync.git_sync_api.save_git_sync_config"):
+        with (
+            patch("app.desktop.git_sync.git_sync_api.save_git_sync_config"),
+            patch("app.desktop.git_sync.git_sync_api.add_project_to_config"),
+        ):
             resp = api_client.post(
                 "/api/git_sync/save_config",
                 json={
                     "project_id": "proj1",
+                    "project_path": "project.kiln",
                     "git_url": "https://github.com/test/repo.git",
                     "clone_path": "/tmp/clone",
                     "branch": "main",
@@ -206,8 +210,39 @@ class TestSaveAndGetConfig:
         assert data["has_pat_token"] is True
         assert "pat_token" not in data
 
+    def test_save_adds_project_to_config(self, api_client):
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.save_git_sync_config"
+            ) as mock_save,
+            patch(
+                "app.desktop.git_sync.git_sync_api.add_project_to_config"
+            ) as mock_add,
+        ):
+            resp = api_client.post(
+                "/api/git_sync/save_config",
+                json={
+                    "project_id": "proj1",
+                    "project_path": "subdir/project.kiln",
+                    "git_url": "https://github.com/test/repo.git",
+                    "clone_path": "/tmp/clone",
+                    "branch": "main",
+                },
+            )
+        assert resp.status_code == 200
+        mock_save.assert_called_once()
+        saved_key = mock_save.call_args[0][0]
+        assert saved_key == "/tmp/clone/subdir/project.kiln"
+        mock_add.assert_called_once_with("/tmp/clone/subdir/project.kiln")
+
     def test_get_config_exists(self, api_client):
-        with patch("app.desktop.git_sync.git_sync_api.get_git_sync_config") as mock:
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.project_path_from_id",
+                return_value="/tmp/clone/project.kiln",
+            ),
+            patch("app.desktop.git_sync.git_sync_api.get_git_sync_config") as mock,
+        ):
             mock.return_value = {
                 "sync_mode": "auto",
                 "remote_name": "origin",
@@ -221,11 +256,26 @@ class TestSaveAndGetConfig:
         assert data["sync_mode"] == "auto"
         assert data["has_pat_token"] is True
         assert "pat_token" not in data
+        mock.assert_called_once_with("/tmp/clone/project.kiln")
 
-    def test_get_config_not_found(self, api_client):
-        with patch("app.desktop.git_sync.git_sync_api.get_git_sync_config") as mock:
-            mock.return_value = None
+    def test_get_config_project_not_found(self, api_client):
+        with patch(
+            "app.desktop.git_sync.git_sync_api.project_path_from_id",
+            return_value=None,
+        ):
             resp = api_client.get("/api/git_sync/config/nonexistent")
+        assert resp.status_code == 404
+
+    def test_get_config_no_sync_config(self, api_client):
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.project_path_from_id",
+                return_value="/tmp/clone/project.kiln",
+            ),
+            patch("app.desktop.git_sync.git_sync_api.get_git_sync_config") as mock,
+        ):
+            mock.return_value = None
+            resp = api_client.get("/api/git_sync/config/proj1")
         assert resp.status_code == 404
 
 
@@ -240,6 +290,10 @@ class TestUpdateConfig:
             "pat_token": None,
         }
         with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.project_path_from_id",
+                return_value="/tmp/clone/project.kiln",
+            ),
             patch("app.desktop.git_sync.git_sync_api.get_git_sync_config") as mock_get,
             patch(
                 "app.desktop.git_sync.git_sync_api.save_git_sync_config"
@@ -253,6 +307,8 @@ class TestUpdateConfig:
         data = resp.json()
         assert data["sync_mode"] == "manual"
         mock_save.assert_called_once()
+        saved_key = mock_save.call_args[0][0]
+        assert saved_key == "/tmp/clone/project.kiln"
 
     def test_update_pat_token(self, api_client):
         existing = {
@@ -264,6 +320,10 @@ class TestUpdateConfig:
             "pat_token": None,
         }
         with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.project_path_from_id",
+                return_value="/tmp/clone/project.kiln",
+            ),
             patch("app.desktop.git_sync.git_sync_api.get_git_sync_config") as mock_get,
             patch("app.desktop.git_sync.git_sync_api.save_git_sync_config"),
         ):
@@ -275,8 +335,25 @@ class TestUpdateConfig:
         data = resp.json()
         assert data["has_pat_token"] is True
 
-    def test_update_not_found(self, api_client):
-        with patch("app.desktop.git_sync.git_sync_api.get_git_sync_config") as mock:
+    def test_update_project_not_found(self, api_client):
+        with patch(
+            "app.desktop.git_sync.git_sync_api.project_path_from_id",
+            return_value=None,
+        ):
+            resp = api_client.post(
+                "/api/git_sync/update_config/nonexistent",
+                json={"sync_mode": "manual"},
+            )
+        assert resp.status_code == 404
+
+    def test_update_no_sync_config(self, api_client):
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.project_path_from_id",
+                return_value="/tmp/clone/project.kiln",
+            ),
+            patch("app.desktop.git_sync.git_sync_api.get_git_sync_config") as mock,
+        ):
             mock.return_value = None
             resp = api_client.post(
                 "/api/git_sync/update_config/nonexistent",
@@ -287,8 +364,22 @@ class TestUpdateConfig:
 
 class TestDeleteConfig:
     def test_delete_success(self, api_client):
-        with patch("app.desktop.git_sync.git_sync_api.delete_git_sync_config") as mock:
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.project_path_from_id",
+                return_value="/tmp/clone/project.kiln",
+            ),
+            patch("app.desktop.git_sync.git_sync_api.delete_git_sync_config") as mock,
+        ):
             resp = api_client.delete("/api/git_sync/config/proj1")
         assert resp.status_code == 200
         assert resp.json()["message"] == "Config deleted"
-        mock.assert_called_once_with("proj1")
+        mock.assert_called_once_with("/tmp/clone/project.kiln")
+
+    def test_delete_project_not_found(self, api_client):
+        with patch(
+            "app.desktop.git_sync.git_sync_api.project_path_from_id",
+            return_value=None,
+        ):
+            resp = api_client.delete("/api/git_sync/config/nonexistent")
+        assert resp.status_code == 404
