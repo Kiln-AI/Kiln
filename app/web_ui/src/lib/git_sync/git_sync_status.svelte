@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import {
     getConfig,
@@ -17,12 +18,12 @@
   let config: GitSyncConfigResponse | null = null
   let loading = true
   let error: KilnError | null = null
-  let toggling = false
-  let show_token_form = false
+  let show_auth_form = false
   let new_pat_token = ""
   let saving_token = false
   let token_error: KilnError | null = null
   let removing = false
+  let disable_dialog: Dialog
 
   onMount(async () => {
     await load_config()
@@ -37,20 +38,6 @@
       error = createKilnError(e)
     } finally {
       loading = false
-    }
-  }
-
-  async function toggle_mode() {
-    if (!config) return
-    try {
-      toggling = true
-      error = null
-      const new_mode = config.sync_mode === "auto" ? "manual" : "auto"
-      config = await updateConfig(project_id, { sync_mode: new_mode })
-    } catch (e) {
-      error = createKilnError(e)
-    } finally {
-      toggling = false
     }
   }
 
@@ -69,7 +56,7 @@
       }
 
       config = await updateConfig(project_id, { pat_token: new_pat_token })
-      show_token_form = false
+      show_auth_form = false
       new_pat_token = ""
     } catch (e) {
       token_error = createKilnError(e)
@@ -78,26 +65,23 @@
     }
   }
 
-  async function remove_sync() {
-    if (
-      !confirm(
-        "Are you sure you want to remove git sync for this project? This will disable automatic syncing.",
-      )
-    )
-      return
+  async function disable_sync(): Promise<boolean> {
     try {
       removing = true
       error = null
       await deleteConfig(project_id)
       config = null
+      return true
     } catch (e) {
       error = createKilnError(e)
+      return false
     } finally {
       removing = false
     }
   }
 
   $: is_github = config?.git_url ? isGitHubUrl(config.git_url) : false
+  $: is_system_keys = config?.auth_mode === "system_keys"
 </script>
 
 {#if loading}
@@ -107,15 +91,11 @@
   </div>
 {:else if config}
   <div class="border rounded-lg p-4">
-    <div class="flex items-center justify-between">
-      <div>
+    <div class="flex items-center justify-between gap-4">
+      <div class="min-w-0">
         <h3 class="text-sm font-medium">Git Sync</h3>
         <p class="text-xs text-gray-500 mt-1">
-          {#if config.sync_mode === "auto"}
-            Auto-syncing with <span class="font-medium">{config.branch}</span> branch
-          {:else}
-            Manual mode (sync disabled)
-          {/if}
+          Syncing with <span class="font-medium">{config.branch}</span> branch
         </p>
         {#if config.git_url}
           <p class="text-xs text-gray-400 mt-0.5 truncate max-w-sm">
@@ -123,93 +103,76 @@
           </p>
         {/if}
       </div>
-      <div class="flex items-center gap-3">
-        {#if config.sync_mode === "auto"}
-          <span class="badge badge-success badge-sm">Active</span>
-        {:else}
-          <span class="badge badge-sm">Disabled</span>
-        {/if}
+      <div class="flex flex-col gap-1.5 flex-shrink-0">
         <button
           class="btn btn-sm btn-ghost"
-          on:click={toggle_mode}
-          disabled={toggling}
+          on:click={() => disable_dialog.show()}
         >
-          {#if toggling}
-            <span class="loading loading-spinner loading-xs"></span>
-          {:else}
-            {config.sync_mode === "auto" ? "Disable" : "Enable"}
-          {/if}
+          Disable
+        </button>
+        <button
+          class="btn btn-sm btn-ghost"
+          on:click={() => {
+            show_auth_form = !show_auth_form
+            token_error = null
+          }}
+        >
+          {show_auth_form ? "Cancel" : "Update Auth"}
         </button>
       </div>
     </div>
 
-    <div class="flex gap-2 mt-3 border-t pt-3">
-      <button
-        class="btn btn-xs btn-ghost"
-        on:click={() => {
-          show_token_form = !show_token_form
-          token_error = null
-        }}
-      >
-        {show_token_form ? "Cancel" : "Update Token"}
-      </button>
-      <button
-        class="btn btn-xs btn-ghost text-error"
-        on:click={remove_sync}
-        disabled={removing}
-      >
-        {#if removing}
-          <span class="loading loading-spinner loading-xs"></span>
-        {:else}
-          Remove Sync
-        {/if}
-      </button>
-    </div>
-
-    {#if show_token_form}
+    {#if show_auth_form}
       <div class="mt-3 border-t pt-3">
-        <label class="label" for="update_pat">
-          <span class="label-text text-sm">New Personal Access Token</span>
-        </label>
-        <div class="flex gap-2">
-          <input
-            id="update_pat"
-            type="password"
-            class="input input-bordered input-sm flex-1"
-            bind:value={new_pat_token}
-            placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+        {#if is_system_keys}
+          <Warning
+            warning_message="This repo was connected via system SSH keys. Either fix your SSH key connection to your git provider, or remove this project and re-add it with another auth mechanism like tokens."
+            warning_color="warning"
           />
-          <button
-            class="btn btn-sm btn-primary"
-            on:click={save_token}
-            disabled={saving_token || !new_pat_token.trim()}
-          >
-            {#if saving_token}
-              <span class="loading loading-spinner loading-xs"></span>
-            {:else}
-              Save
-            {/if}
-          </button>
-        </div>
-        {#if is_github}
-          <div class="text-xs text-gray-500 mt-1">
-            <a
-              href={gitHubPatDeepLink()}
-              target="_blank"
-              rel="noopener noreferrer"
-              class="link text-primary"
-            >
-              Generate a GitHub token</a
-            >. It must have read/write access to the selected repo.
-          </div>
-        {/if}
-        {#if token_error}
-          <div class="mt-2">
-            <Warning
-              warning_message={token_error.getMessage()}
-              warning_color="error"
+        {:else}
+          <label class="label" for="update_pat">
+            <span class="label-text text-sm">New Personal Access Token</span>
+          </label>
+          <div class="flex gap-2">
+            <input
+              id="update_pat"
+              type="password"
+              class="input input-bordered input-sm flex-1"
+              bind:value={new_pat_token}
+              placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
             />
+            <button
+              class="btn btn-sm btn-primary"
+              on:click={save_token}
+              disabled={saving_token || !new_pat_token.trim()}
+            >
+              {#if saving_token}
+                <span class="loading loading-spinner loading-xs"></span>
+              {:else}
+                Save
+              {/if}
+            </button>
           </div>
+          {#if is_github}
+            <div class="text-xs text-gray-500 mt-1">
+              <a
+                href={gitHubPatDeepLink()}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="link text-primary"
+              >
+                Generate a GitHub token</a
+              >. It must have read/write access to the selected repo.
+            </div>
+          {/if}
+          {#if token_error}
+            <div class="mt-2">
+              <Warning
+                warning_message={token_error.getMessage()}
+                warning_color="error"
+              />
+            </div>
+          {/if}
         {/if}
       </div>
     {/if}
@@ -221,3 +184,25 @@
     </div>
   {/if}
 {/if}
+
+<Dialog
+  bind:this={disable_dialog}
+  title="Remove Git Connection"
+  action_buttons={[
+    {
+      label: "Delete",
+      isError: true,
+      asyncAction: disable_sync,
+      loading: removing,
+    },
+    {
+      label: "Cancel",
+      isCancel: true,
+    },
+  ]}
+>
+  <p class="text-sm">
+    Connection will be removed and sync will no longer work. You'll need to
+    reconnect to re-establish sync.
+  </p>
+</Dialog>

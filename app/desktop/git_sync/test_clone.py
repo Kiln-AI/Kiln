@@ -142,7 +142,7 @@ class TestTestRemoteAccess:
             )
             success, msg, mode = check_remote_access("https://github.com/org/repo.git")
             assert success is False
-            assert msg == "Authentication required"
+            assert msg == "Authentication failed"
             assert mode is None
 
     def test_other_error(self):

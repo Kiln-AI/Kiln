@@ -36,7 +36,7 @@ class TestTestAccess:
 
     def test_auth_required(self, api_client):
         with patch("app.desktop.git_sync.git_sync_api.test_remote_access") as mock:
-            mock.return_value = (False, "Authentication required", None)
+            mock.return_value = (False, "Authentication failed", None)
             resp = api_client.post(
                 "/api/git_sync/test_access",
                 json={"git_url": "https://github.com/private/repo.git"},

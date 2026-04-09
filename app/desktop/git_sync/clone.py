@@ -94,7 +94,7 @@ def make_credentials(
                 return pygit2.Username("x-token")
 
         raise pygit2.GitError(
-            "Authentication required but no credentials available. "
+            "Authentication failed: no credentials available. "
             f"auth_mode={auth_mode}. "
             "Configure a Personal Access Token (PAT) for this repository."
         )
@@ -158,7 +158,7 @@ def test_remote_access(
             or "auth" in error_lower
             or "credentials" in error_lower
         ):
-            return False, "Authentication required", None
+            return False, "Authentication failed", None
         return False, f"Cannot access remote: {e}", None
     except Exception as e:
         return False, f"Cannot access remote: {e}", None
