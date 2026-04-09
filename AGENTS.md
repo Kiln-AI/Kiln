@@ -37,6 +37,7 @@ These prompts can be accessed from the `get_prompt` tool, and you may request se
 
 ### General Agent Guidance
 
+- When spawning subagents, always use the same model as the current agent
 - Don't include comments in code explaining changes, explain changes in chat instead.
 - Use `TODO` comments to mark any temporary code, placeholders, or items that must be addressed before merging to main. CI enforces that no `TODO` comments remain on main, so they are a safe way to flag work-in-progress during development. Clean up all `TODO` comments before the final PR.
 - Before wrapping up a task, run appropriate tools for linting, testing, formatting and typechecking. Fix any issues you introduced.
