@@ -187,6 +187,10 @@ class Config:
                 dict[str, str],
                 sensitive=True,
             ),
+            "git_sync_projects": ConfigProperty(
+                dict,
+                default_lambda=lambda: {},
+            ),
             # has the user indicated it's for personal or work use?
             "user_type": ConfigProperty(
                 str,  # "personal" or "work"

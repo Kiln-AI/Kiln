@@ -6,11 +6,11 @@ status: complete
 
 I'm thinking about doing a new project, and wanted to spec it with you. Early planning/ideation for now. not our formal specs flow yet. 
 
-Generaly idea: read basemodel.py. It's the core to our kiln datamodel. It currenlty is designed to save files to disk, for use in Git, and git adds version tracking/conflict management. However it was always designed to be pluggable: all load/save logic is in this one class, so we could add an alternative backend.       
+Generally idea: read basemodel.py. It's the core to our kiln datamodel. It currently is designed to save files to disk, for use in Git, and git adds version tracking/conflict management. However it was always designed to be pluggable: all load/save logic is in this one class, so we could add an alternative backend.       
 
 Issue: less technical users can't work git. The don't remember to sync, they don't remember to push, they def can't handle merge conflicts.                           
 
-Note: merge conflicts are designed to be super rare: datamodel is almost always append only an immutable. However not guarunteed so we need to handle conflicts.                                                 
+Note: merge conflicts are designed to be super rare: datamodel is almost always append only an immutable. However not guaranteed so we need to handle conflicts.                                                 
 
 Core Idea: a feature that still uses git, but is hidden to the user, and accessible to non-technical users.
 
@@ -18,7 +18,7 @@ Core Idea: a feature that still uses git, but is hidden to the user, and accessi
 
 All edits happen through our fastAPI API. We add a FastAPI middleware for Git management/sync.
 
- - start API call (middleware): checks git pull has been run recently and we're relativly up to date (few seconds okay, but don't want to start a read or write if it's a week stale). Trigger sync/pull if out of date (blocking API call start until we're up to sync, and failing if sync fails). All APIs share a git manager singleton for this, so we're not making many parallel syncs. 
+ - start API call (middleware): checks git pull has been run recently and we're relatively up to date (few seconds okay, but don't want to start a read or write if it's a week stale). Trigger sync/pull if out of date (blocking API call start until we're up to sync, and failing if sync fails). All APIs share a git manager singleton for this, so we're not making many parallel syncs. 
  - API call: API code runs normally. Under the hood the datamodel is running normally, writing files locally.
  - end API call (middleware): we "commit" all changed made in this API call as a batch. See "hard part" below.
  - background process: keep git sync/pull up to date every few seconds from python process. Poll I think unless there's a notification channel? Goal is that start API call never hangs waiting for sync, execept maybe on startup.
@@ -51,11 +51,11 @@ I think projet should be rebase only?
 
 ### Safe Commit
 
-Commiting safely, robustly, and with zero-management isn't easy.
+Committing safely, robustly, and with zero-management isn't easy.
 
 Concerns:
 
- - 1 API may edit many many files, not just 1. The commit should be atomic per API endpoint, never commiting/syncing partial state part way through API call, which might be invalid.
+ - 1 API may edit many many files, not just 1. The commit should be atomic per API endpoint, never committing/syncing partial state part way through API call, which might be invalid.
  - merge conflict: server could change between read and write and then our local writes have a conflict. While this will be rare (few second sync gap, generally append only system) we need to handle it.
  - parallelism: making 2 API calls at a time can edit different sets
  - rollback on push failure: we want "online" experience. If they are offline and can't push, they risk getting more and more out of sync, accumulating iresolvable git conflicts. We want the API call to fail, and to rollback disk changes, if push doesn't work on the middleware wrap up.

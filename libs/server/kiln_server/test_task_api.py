@@ -292,7 +292,7 @@ def test_update_task_validation_error(client, project_and_task):
         )
 
     assert response.status_code == 400
-    assert response.json()["message"] == "Failed to create task."
+    assert response.json()["message"] == "Failed to update task."
 
 
 def test_update_task_unexpected_return_type(client, project_and_task):

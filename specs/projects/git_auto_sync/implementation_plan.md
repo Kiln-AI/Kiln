@@ -6,7 +6,7 @@ status: complete
 
 ## Phases
 
-- [ ] Phase 1: Core GitSyncManager
+- [x] Phase 1: Core GitSyncManager
   - Error types (`errors.py`)
   - Config model and helpers (`config.py`)
   - `GitSyncManager` class: pygit2 single-threaded executor, write lock, all core operations (`ensure_clean`, `ensure_fresh`, `get_head`, `has_dirty_files`, `commit_and_push`, `rollback`, `fetch`, `can_fast_forward`, `fast_forward`, `close`)

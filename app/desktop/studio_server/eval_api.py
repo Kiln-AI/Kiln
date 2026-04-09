@@ -817,9 +817,11 @@ def connect_evals_api(app: FastAPI):
     ) -> Eval:
         eval = eval_from_id(project_id, task_id, eval_id)
 
+        resolved_config_id: str | None = None
         if eval_config_id == "None":
-            eval_config_id = None
+            resolved_config_id = None
         else:
+            resolved_config_id = eval_config_id
             eval_config = next(
                 (
                     eval_config
@@ -834,7 +836,7 @@ def connect_evals_api(app: FastAPI):
                     detail="Eval config not found.",
                 )
 
-        eval.current_config_id = eval_config_id
+        eval.current_config_id = resolved_config_id
         eval.save_to_file()
 
         return eval
