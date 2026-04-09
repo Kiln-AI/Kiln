@@ -10,7 +10,7 @@
   - Missing comments: comments should document the "why" not the what. If code does something unexpected, and the "why" is non obvious, the why should be documented.
 - Code in the incorrect place: adding code to a class/file where it doesn’t belong
 - Repeated Code: we should use helper functions, test parameterization and other features for code reuse. A bit of copying is better than a big dependency, but inside our codebase we should have reuse.
-- `TODO` comments: before the final PR, all `TODO` comments must be resolved. Any code that still needs revision before merging to main should be marked with a `TODO` comment so CI catches it. `TODO` comments are acceptable in intermediate commits but must be cleaned up before the final PR/phase.
+- `TODO` comments: before the final PR, all `TODO` comments must be resolved. Any code or comment that must be changed before merging to main must include the exact string `TODO` in the comment — `FIXME`, `HACK`, `XXX`, and other alternatives do not count, as only `TODO` is enforced by CI. `TODO` comments are acceptable in intermediate commits but must be cleaned up before the final PR/phase.
 - Editing globals: rarely a good idea. When done it should be thoughtful and clear: singletons clearly designed to be singletons and labeled as such. Never set globals on external libs (structlog) unless this project is an “application” (server always run at top level) and not a library (potentially called from many apps).
 
 ### Python specific guide
