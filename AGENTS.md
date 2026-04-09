@@ -25,9 +25,22 @@ This repo is a monorepo containing all of the source code, in the following stru
 
 ### Agent Tools
 
-Agents have access to a range of tools for running tests, linting, formatting and typechecking. Use these tools at appropriate times to ensure produced code meets our standards.
+Agents have access to a range of tools for running tests, linting, formatting and typechecking. Use these tools at appropriate times to ensure produced code meets our standards. All checks must pass before merging. When iterating on a specific failure, use the targeted command before re-running the full suite.
 
-To run all checks in a CLI, run `uv run ./checks.sh --agent-mode` (agent mode will reduce tokens unless there is an error).
+- **All checks:** `uv run ./checks.sh --agent-mode` (agent mode suppresses output unless there's a failure)
+
+| Check | Fix | Description |
+|---|---|---|
+| `uv run ruff check` | `uv run ruff check --fix` | Python lint |
+| `uv run ruff format --check .` | `uv run ruff format .` | Python format |
+| `uv run ty check` | — | Python type check |
+| `uv run python3 -m pytest --benchmark-quiet -q -n auto .` | — | Python tests |
+| `npm run lint` | — | Web lint (from `app/web_ui`) |
+| `npm run format_check` | `npm run format` | Web format (from `app/web_ui`) |
+| `npm run check` | — | Web type check and svelte check (from `app/web_ui`) |
+| `npm run test_run` | — | Web tests (from `app/web_ui`) |
+| `npm run build` | — | Web build (from `app/web_ui`) |
+| `app/web_ui/src/lib/check_schema.sh` | `app/web_ui/src/lib/generate_schema.sh` | OpenAPI client up to date |
 
 ### Agent Prompts
 
