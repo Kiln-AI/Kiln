@@ -1,13 +1,21 @@
+import json
 import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from http import HTTPStatus
 from typing import Annotated, Any, Dict, List, Literal
 
 import httpx
 import litellm
 import openai
 import requests
+from app.desktop.studio_server.api_client.kiln_ai_server_client.api.auth import (
+    create_api_key_v1_create_api_key_post,
+)
+from app.desktop.studio_server.api_client.kiln_server_client import (
+    get_authenticated_client,
+)
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 from kiln_ai.adapters.docker_model_runner_tools import (
@@ -237,6 +245,10 @@ class OpenAICompatibleProviderConfig(BaseModel):
     name: str = Field(description="Name for the OpenAI compatible provider.")
     base_url: str = Field(description="Base URL for the OpenAI compatible API.")
     api_key: str = Field(description="API key for authentication.")
+
+
+class CreateKilnCopilotApiKeyRequest(BaseModel):
+    access_token: str = Field(description="Kinde OAuth access token.")
 
 
 def connect_provider_api(app: FastAPI):
@@ -983,6 +995,56 @@ def connect_provider_api(app: FastAPI):
             status_code=200,
             content={"message": "Provider disconnected"},
         )
+
+    @app.post(
+        "/api/provider/create_kiln_copilot_api_key",
+        summary="Create Kiln Copilot API Key",
+        tags=["Providers & Models"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def create_kiln_copilot_api_key(
+        payload: CreateKilnCopilotApiKeyRequest,
+    ) -> JSONResponse:
+        return await _create_kiln_copilot_api_key(payload.access_token)
+
+
+async def _create_kiln_copilot_api_key(access_token: str) -> JSONResponse:
+    if not access_token:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Access token is required"},
+        )
+
+    client = get_authenticated_client(access_token)
+    try:
+        response = await create_api_key_v1_create_api_key_post.asyncio_detailed(
+            client=client,
+        )
+    except httpx.RequestError as e:
+        return JSONResponse(
+            status_code=502,
+            content={"message": f"Failed to connect to Kiln server. Error: {e!s}"},
+        )
+
+    if response.status_code == HTTPStatus.CREATED and response.parsed is not None:
+        Config.shared().kiln_copilot_api_key = response.parsed.api_key
+        return JSONResponse(
+            status_code=200,
+            content={"message": "Connected to Kiln Copilot"},
+        )
+
+    try:
+        error_body = json.loads(response.content)
+        error_message = error_body.get(
+            "detail", f"Failed to create API key (HTTP {response.status_code.value})"
+        )
+    except Exception:
+        error_message = f"Failed to create API key (HTTP {response.status_code.value})"
+
+    return JSONResponse(
+        status_code=response.status_code.value,
+        content={"message": error_message},
+    )
 
 
 async def connect_openrouter(key: str):
