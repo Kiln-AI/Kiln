@@ -35,13 +35,20 @@ class GitSyncRegistry:
 
     @classmethod
     def get_or_create(
-        cls, repo_path: Path, remote_name: str = "origin"
+        cls,
+        repo_path: Path,
+        remote_name: str = "origin",
+        pat_token: str | None = None,
     ) -> GitSyncManager:
         """Return existing manager or create a new one. Thread-safe."""
         resolved = repo_path.resolve()
         with cls._lock:
             if resolved not in cls._managers:
-                manager = GitSyncManager(repo_path=resolved, remote_name=remote_name)
+                manager = GitSyncManager(
+                    repo_path=resolved,
+                    remote_name=remote_name,
+                    pat_token=pat_token,
+                )
                 cls._managers[resolved] = manager
             else:
                 existing = cls._managers[resolved]
@@ -53,6 +60,8 @@ class GitSyncRegistry:
                         existing._remote_name,
                         resolved,
                     )
+                if pat_token is not None and existing._pat_token != pat_token:
+                    existing._pat_token = pat_token
             return cls._managers[resolved]
 
     @classmethod

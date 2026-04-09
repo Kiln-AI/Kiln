@@ -190,6 +190,7 @@ class Config:
             "git_sync_projects": ConfigProperty(
                 dict,
                 default_lambda=lambda: {},
+                sensitive_keys=["pat_token"],
             ),
             # has the user indicated it's for personal or work use?
             "user_type": ConfigProperty(

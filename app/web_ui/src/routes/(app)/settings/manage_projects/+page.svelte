@@ -69,6 +69,10 @@
       label: "Import Project",
       href: "/settings/create_project?import=true",
     },
+    {
+      label: "Sync from Git",
+      href: "/settings/git_sync",
+    },
   ]}
 >
   {#if $projects == null}

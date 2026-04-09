@@ -1,0 +1,90 @@
+<script lang="ts">
+  import FormContainer from "$lib/utils/form_container.svelte"
+  import FormElement from "$lib/utils/form_element.svelte"
+  import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import Warning from "$lib/ui/warning.svelte"
+  import { testAccess, isGitHubUrl, gitHubPatDeepLink } from "$lib/git_sync/api"
+
+  export let git_url: string
+  export let initial_token: string | null = null
+  export let on_success: (token: string) => void
+  export let on_back: () => void
+
+  let pat_token = initial_token || ""
+  let error: KilnError | null = null
+  let submitting = false
+  let saved = false
+
+  $: is_github = isGitHubUrl(git_url)
+
+  async function test_and_save() {
+    try {
+      error = null
+      submitting = true
+
+      if (!pat_token.trim()) {
+        error = new KilnError("A personal access token is required")
+        return
+      }
+
+      const result = await testAccess(git_url, pat_token)
+
+      if (result.success) {
+        on_success(pat_token)
+      } else {
+        error = new KilnError(result.message)
+      }
+    } catch (e) {
+      error = createKilnError(e)
+    } finally {
+      submitting = false
+    }
+  }
+</script>
+
+<h2 class="text-xl font-medium mb-2">Authentication</h2>
+<p class="text-sm text-gray-500 mb-6">
+  This repository requires authentication. Enter a Personal Access Token (PAT)
+  with read and write access to the repository.
+</p>
+
+<FormContainer
+  submit_label="Verify Token"
+  on:submit={test_and_save}
+  bind:submitting
+  bind:error
+  bind:saved
+  focus_on_mount={true}
+>
+  <FormElement
+    label="Personal Access Token"
+    id="pat_token"
+    inputType="input"
+    bind:value={pat_token}
+    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+  />
+
+  {#if is_github}
+    <div class="text-sm text-gray-500">
+      <a
+        href={gitHubPatDeepLink()}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="link text-primary"
+      >
+        Generate a GitHub token
+      </a>
+      with "repo" scope. Classic tokens with "repo" scope are recommended.
+    </div>
+  {:else}
+    <Warning
+      warning_message="You'll need a personal access token from your git hosting provider. It should have read and write access to the repository."
+      warning_color="gray"
+      warning_icon="info"
+    />
+  {/if}
+</FormContainer>
+
+<div class="mt-4">
+  <button class="btn btn-ghost btn-sm" on:click={on_back}>Back</button>
+</div>

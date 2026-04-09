@@ -29,7 +29,7 @@ status: complete
   - End-to-end integration tests (full request lifecycle, concurrent writes, conflict simulation, crash recovery, background pickup)
   - README documentation
 
-- [ ] Phase 4: Setup Wizard UI
+- [x] Phase 4: Setup Wizard UI
   - Auto/manual mode toggle in project settings UI
   - Setup wizard: "Sync from Git" option in Import Project flow
   - Step 1: Git URL entry + remote access check

@@ -201,6 +201,7 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
         return GitSyncRegistry.get_or_create(
             repo_path=Path(clone_path),
             remote_name=config["remote_name"],
+            pat_token=config.get("pat_token"),
         )
 
     def _notify_background_sync(self, manager: GitSyncManager) -> None:

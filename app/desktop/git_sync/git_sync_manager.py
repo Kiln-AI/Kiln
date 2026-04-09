@@ -31,9 +31,15 @@ class GitSyncManager:
     _GIT_EXECUTOR_TIMEOUT = 30.0
     _WRITE_LOCK_TIMEOUT = 30.0
 
-    def __init__(self, repo_path: Path, remote_name: str = "origin"):
+    def __init__(
+        self,
+        repo_path: Path,
+        remote_name: str = "origin",
+        pat_token: str | None = None,
+    ):
         self._repo_path = repo_path
         self._remote_name = remote_name
+        self._pat_token = pat_token
         self._git_executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="pygit2"
         )
@@ -204,6 +210,18 @@ class GitSyncManager:
             self._repo.free()
             self._repo = None
 
+    def _make_remote_callbacks(self) -> pygit2.RemoteCallbacks:
+        """Create RemoteCallbacks that never prompt for credentials.
+
+        Always returns callbacks -- with PAT auth if configured, or with a
+        credentials callback that raises an error.  This prevents pygit2
+        from falling through to system credential helpers which may prompt
+        on stdin (fatal for a headless server process).
+        """
+        from app.desktop.git_sync.clone import make_credentials
+
+        return make_credentials(self._pat_token)
+
     # --- Synchronous helpers (run inside _git_executor) ---
 
     def _get_head_oid_hex(self) -> str:
@@ -268,18 +286,15 @@ class GitSyncManager:
         return repo.create_commit(repo.head.name, sig, sig, message, tree, parents)
 
     def _push_sync(self) -> None:
+        from app.desktop.git_sync.clone import make_push_callbacks
+
         repo = self._get_repo()
         remote = repo.remotes[self._remote_name]
         branch_name = repo.head.shorthand
 
         push_errors: list[str] = []
-
-        class PushCallbacks(pygit2.RemoteCallbacks):
-            def push_update_reference(self, refname: str, message: str | None) -> None:
-                if message is not None:
-                    push_errors.append(f"Push rejected for {refname}: {message}")
-
-        callbacks = PushCallbacks()
+        cred_callbacks = self._make_remote_callbacks()
+        callbacks = make_push_callbacks(cred_callbacks, push_errors)
         remote.push([f"refs/heads/{branch_name}"], callbacks=callbacks)
 
         if push_errors:
@@ -288,7 +303,8 @@ class GitSyncManager:
     def _fetch_sync(self) -> None:
         repo = self._get_repo()
         remote = repo.remotes[self._remote_name]
-        remote.fetch()
+        callbacks = self._make_remote_callbacks()
+        remote.fetch(callbacks=callbacks)
 
     async def _get_remote_head_oid(self) -> pygit2.Oid:
         return await self._run_git(self._get_remote_head_oid_sync)

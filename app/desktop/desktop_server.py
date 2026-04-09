@@ -21,6 +21,7 @@ from kiln_ai.utils.logging import setup_litellm_logging
 
 from app.desktop.git_sync.background_sync import BackgroundSync
 from app.desktop.git_sync.config import get_git_sync_config
+from app.desktop.git_sync.git_sync_api import connect_git_sync_api
 from app.desktop.git_sync.middleware import GitSyncMiddleware
 from app.desktop.git_sync.registry import GitSyncRegistry
 from app.desktop.log_config import log_config
@@ -74,6 +75,7 @@ async def _start_background_syncs() -> None:
         manager = GitSyncRegistry.get_or_create(
             repo_path=repo_path,
             remote_name=project_config["remote_name"],
+            pat_token=project_config.get("pat_token"),
         )
         bg_sync = BackgroundSync(manager)
         GitSyncRegistry.register_background_sync(repo_path, bg_sync)
@@ -132,6 +134,7 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_skill_api(app)
     connect_prompt_optimization_job_api(app)
     connect_copilot_api(app)
+    connect_git_sync_api(app)
     connect_dev_tools(app)
 
     # Important: webhost must be last, it handles all other URLs
