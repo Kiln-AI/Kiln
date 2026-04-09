@@ -16,6 +16,7 @@ from kiln_ai.adapters.remote_config import (
 )
 from kiln_ai.utils.logging import setup_litellm_logging
 
+from app.desktop.git_sync.middleware import GitSyncMiddleware
 from app.desktop.log_config import log_config
 from app.desktop.studio_server.copilot_api import connect_copilot_api
 from app.desktop.studio_server.data_gen_api import connect_data_gen_api
@@ -59,6 +60,7 @@ def make_app(tk_root: tk.Tk | None = None):
         refresh_model_list_background()
 
     app = kiln_server.make_app(lifespan=lifespan)
+    app.add_middleware(GitSyncMiddleware)
     connect_provider_api(app)
     connect_prompt_api(app)
     connect_repair_api(app)

@@ -13,7 +13,7 @@ status: complete
   - Commit message generation (`commit_message.py`)
   - Unit tests using temporary bare/cloned git repos via pygit2
 
-- [ ] Phase 2: Middleware, Decorators, and Registry
+- [x] Phase 2: Middleware, Decorators, and Registry
   - `@write_lock` and `@no_write_lock` decorator annotations
   - `GitSyncRegistry` singleton registry
   - `GitSyncMiddleware` (BaseHTTPMiddleware): lock acquisition, clean/fresh checks, commit-on-exit, rollback-on-error, response buffering, error-to-HTTP mapping
