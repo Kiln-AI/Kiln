@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte"
   import createKindeClient from "@kinde-oss/kinde-auth-pkce-js"
-  import { base_url } from "$lib/api_client"
+  import { client } from "$lib/api_client"
   import posthog from "posthog-js"
   import { env } from "$env/dynamic/public"
 
@@ -99,24 +99,21 @@
     submitting = true
 
     try {
-      const res = await fetch(base_url + "/api/provider/connect_api_key", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+      const { error } = await client.POST("/api/provider/connect_api_key", {
+        body: {
           provider: "kiln_copilot",
           key_data: {
             "API Key": apiKey,
           },
-        }),
+        },
       })
 
-      const data = await res.json()
-
-      if (!res.ok) {
+      if (error) {
+        const err = error as Record<string, unknown>
         apiKeyMessage =
-          data.message || data.detail || "Failed to connect to provider"
+          (err.message as string) ||
+          (err.detail as string) ||
+          "Failed to connect to provider"
         apiKeyError = true
         return false
       }

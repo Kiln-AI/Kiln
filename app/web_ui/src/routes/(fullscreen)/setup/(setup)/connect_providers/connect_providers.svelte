@@ -8,7 +8,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { client, base_url } from "$lib/api_client"
+  import { client } from "$lib/api_client"
   import Warning from "$lib/ui/warning.svelte"
   import { available_tuning_models } from "$lib/stores/fine_tune_store"
   import { clear_available_models_cache } from "$lib/stores"
@@ -649,21 +649,18 @@
     api_key_submitting = true
     try {
       const provider_id = api_key_provider ? api_key_provider.id : ""
-      let res = await fetch(base_url + "/api/provider/connect_api_key", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+      const { error } = await client.POST("/api/provider/connect_api_key", {
+        body: {
           provider: provider_id,
           key_data: apiKeyData,
-        }),
+        },
       })
-      let data = await res.json()
 
-      if (res.status !== 200) {
+      if (error) {
+        const err = error as Record<string, unknown>
         api_key_message =
-          data.message || "Failed to connect to provider. Unknown error."
+          (err.message as string) ||
+          "Failed to connect to provider. Unknown error."
         return
       }
 
@@ -700,8 +697,10 @@
   let custom_openai_compatible_providers: CustomOpenAICompatibleProvider[] = []
   const check_existing_providers = async () => {
     try {
-      let res = await fetch(base_url + "/api/settings")
-      let data = await res.json()
+      const { data, error } = await client.GET("/api/settings")
+      if (error) {
+        throw error
+      }
       if (data["open_ai_api_key"]) {
         status.openai.connected = true
       }
@@ -721,10 +720,12 @@
         status.vertex.connected = true
       }
       if (data["ollama_base_url"]) {
-        custom_ollama_url = data["ollama_base_url"]
+        custom_ollama_url = data["ollama_base_url"] as string
       }
       if (data["docker_model_runner_base_url"]) {
-        docker_model_runner_custom_url = data["docker_model_runner_base_url"]
+        docker_model_runner_custom_url = data[
+          "docker_model_runner_base_url"
+        ] as string
       }
       if (data["anthropic_api_key"]) {
         status.anthropic.connected = true
@@ -753,12 +754,12 @@
       if (data["kiln_copilot_api_key"]) {
         status.kiln_copilot.connected = true
       }
-      if (
-        data["openai_compatible_providers"] &&
-        data["openai_compatible_providers"].length > 0
-      ) {
+      const compatProviders = data["openai_compatible_providers"] as
+        | CustomOpenAICompatibleProvider[]
+        | undefined
+      if (compatProviders && compatProviders.length > 0) {
         status.openai_compatible.connected = true
-        custom_openai_compatible_providers = data["openai_compatible_providers"]
+        custom_openai_compatible_providers = compatProviders
       }
     } catch (e) {
       console.error("check_existing_providers error", e)
