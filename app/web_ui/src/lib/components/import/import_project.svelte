@@ -45,6 +45,7 @@
   let current_step: WizardStep = "method"
   let git_url = ""
   let pat_token: string | null = null
+  let auth_mode: string = "system_keys"
   let clone_path = ""
   let selected_branch = ""
   let selected_project_path = ""
@@ -117,8 +118,9 @@
     set_step("credentials")
   }
 
-  function on_url_success(url: string) {
+  function on_url_success(url: string, detected_auth_method: string) {
     git_url = url
+    auth_mode = detected_auth_method
     set_step("branch")
   }
 
@@ -127,8 +129,9 @@
     go_to_credentials()
   }
 
-  function on_credentials_success(token: string) {
+  function on_credentials_success(token: string, detected_auth_method: string) {
     pat_token = token
+    auth_mode = detected_auth_method
     set_step("branch")
   }
 
@@ -311,13 +314,19 @@
       on_success={on_credentials_success}
     />
   {:else if current_step === "branch"}
-    <StepBranch {git_url} {pat_token} on_selected={on_branch_selected} />
+    <StepBranch
+      {git_url}
+      {pat_token}
+      {auth_mode}
+      on_selected={on_branch_selected}
+    />
   {:else if current_step === "project"}
     <StepProject {clone_path} on_selected={on_project_selected} />
   {:else if current_step === "complete"}
     <StepComplete
       {git_url}
       {pat_token}
+      {auth_mode}
       {clone_path}
       branch={selected_branch}
       project_path={selected_project_path}

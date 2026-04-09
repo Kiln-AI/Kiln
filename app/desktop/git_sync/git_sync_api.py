@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi import Path as FastAPIPath
@@ -43,6 +44,10 @@ class TestAccessResponse(BaseModel):
         default=False,
         description="True when the failure is due to missing authentication.",
     )
+    auth_method: str | None = Field(
+        default=None,
+        description="Auth method that succeeded: 'system_keys' or 'pat_token'. Null on failure.",
+    )
 
 
 class ListBranchesRequest(BaseModel):
@@ -51,6 +56,10 @@ class ListBranchesRequest(BaseModel):
     git_url: str = Field(description="The git remote URL to list branches from.")
     pat_token: str | None = Field(
         default=None, description="Optional personal access token for authentication."
+    )
+    auth_mode: Literal["system_keys", "pat_token"] = Field(
+        default="system_keys",
+        description="Auth mode: 'system_keys' (SSH agent) or 'pat_token' (HTTPS PAT).",
     )
 
 
@@ -70,6 +79,10 @@ class CloneRequest(BaseModel):
     branch: str = Field(description="The branch to check out after cloning.")
     pat_token: str | None = Field(
         default=None, description="Optional personal access token for authentication."
+    )
+    auth_mode: Literal["system_keys", "pat_token"] = Field(
+        default="system_keys",
+        description="Auth mode: 'system_keys' (SSH agent) or 'pat_token' (HTTPS PAT).",
     )
     project_name: str = Field(
         default="project", description="Human-readable project name for the clone dir."
@@ -93,6 +106,10 @@ class TestWriteAccessRequest(BaseModel):
     clone_path: str = Field(description="Local filesystem path of the cloned repo.")
     pat_token: str | None = Field(
         default=None, description="Optional personal access token for authentication."
+    )
+    auth_mode: Literal["system_keys", "pat_token"] = Field(
+        default="system_keys",
+        description="Auth mode: 'system_keys' (SSH agent) or 'pat_token' (HTTPS PAT).",
     )
 
 
@@ -128,6 +145,10 @@ class SaveConfigRequest(BaseModel):
     pat_token: str | None = Field(
         default=None, description="Optional personal access token for authentication."
     )
+    auth_mode: Literal["system_keys", "pat_token"] = Field(
+        default="system_keys",
+        description="Auth mode detected during setup: 'system_keys' or 'pat_token'.",
+    )
     sync_mode: str = Field(default="auto", description="Sync mode: 'auto' or 'manual'.")
 
 
@@ -135,6 +156,10 @@ class GitSyncConfigResponse(BaseModel):
     """Current git sync configuration for a project (PAT redacted)."""
 
     sync_mode: str = Field(description="Sync mode: 'auto' or 'manual'.")
+    auth_mode: Literal["system_keys", "pat_token"] = Field(
+        default="system_keys",
+        description="Auth mode: 'system_keys' (SSH agent) or 'pat_token' (HTTPS PAT).",
+    )
     remote_name: str = Field(description="Git remote name.")
     branch: str = Field(description="Branch name being synced.")
     clone_path: str | None = Field(
@@ -156,6 +181,9 @@ class UpdateConfigRequest(BaseModel):
     pat_token: str | None = Field(
         default=None, description="New personal access token, if changing."
     )
+    auth_mode: Literal["system_keys", "pat_token"] | None = Field(
+        default=None, description="New auth mode, if changing."
+    )
 
 
 class DeleteConfigResponse(BaseModel):
@@ -171,12 +199,15 @@ def connect_git_sync_api(app: FastAPI):
         tags=["Git Sync"],
     )
     async def api_test_access(request: TestAccessRequest) -> TestAccessResponse:
-        success, message = await asyncio.to_thread(
+        success, message, detected_mode = await asyncio.to_thread(
             test_remote_access, request.git_url, request.pat_token
         )
         auth_required = not success and "auth" in message.lower()
         return TestAccessResponse(
-            success=success, message=message, auth_required=auth_required
+            success=success,
+            message=message,
+            auth_required=auth_required,
+            auth_method=detected_mode,
         )
 
     @app.post(
@@ -189,7 +220,10 @@ def connect_git_sync_api(app: FastAPI):
     ) -> ListBranchesResponse:
         try:
             branches, default_branch = await asyncio.to_thread(
-                list_remote_branches, request.git_url, request.pat_token
+                list_remote_branches,
+                request.git_url,
+                request.pat_token,
+                request.auth_mode,
             )
             return ListBranchesResponse(
                 branches=branches, default_branch=default_branch
@@ -215,6 +249,7 @@ def connect_git_sync_api(app: FastAPI):
                 clone_path,
                 request.branch,
                 request.pat_token,
+                request.auth_mode,
             )
 
             return CloneResponse(
@@ -240,7 +275,10 @@ def connect_git_sync_api(app: FastAPI):
         request: TestWriteAccessRequest,
     ) -> TestAccessResponse:
         success, message = await asyncio.to_thread(
-            test_write_access, Path(request.clone_path), request.pat_token
+            test_write_access,
+            Path(request.clone_path),
+            request.pat_token,
+            request.auth_mode,
         )
         auth_required = not success and "auth" in message.lower()
         return TestAccessResponse(
@@ -271,6 +309,7 @@ def connect_git_sync_api(app: FastAPI):
     async def api_save_config(request: SaveConfigRequest) -> GitSyncConfigResponse:
         project_config = GitSyncProjectConfig(
             sync_mode=request.sync_mode,
+            auth_mode=request.auth_mode,
             remote_name=request.remote_name,
             branch=request.branch,
             clone_path=request.clone_path,
@@ -281,6 +320,7 @@ def connect_git_sync_api(app: FastAPI):
 
         return GitSyncConfigResponse(
             sync_mode=request.sync_mode,
+            auth_mode=request.auth_mode,
             remote_name=request.remote_name,
             branch=request.branch,
             clone_path=request.clone_path,
@@ -306,6 +346,7 @@ def connect_git_sync_api(app: FastAPI):
 
         return GitSyncConfigResponse(
             sync_mode=config["sync_mode"],
+            auth_mode=config.get("auth_mode", "system_keys"),
             remote_name=config["remote_name"],
             branch=config["branch"],
             clone_path=config.get("clone_path"),
@@ -334,11 +375,14 @@ def connect_git_sync_api(app: FastAPI):
             config["sync_mode"] = request.sync_mode
         if request.pat_token is not None:
             config["pat_token"] = request.pat_token
+        if request.auth_mode is not None:
+            config["auth_mode"] = request.auth_mode
 
         save_git_sync_config(project_id, config)
 
         return GitSyncConfigResponse(
             sync_mode=config["sync_mode"],
+            auth_mode=config.get("auth_mode", "system_keys"),
             remote_name=config["remote_name"],
             branch=config["branch"],
             clone_path=config.get("clone_path"),

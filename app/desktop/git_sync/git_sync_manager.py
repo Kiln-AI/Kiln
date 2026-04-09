@@ -3,6 +3,8 @@ import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+
+from app.desktop.git_sync.config import AuthMode
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Callable, TypeVar
@@ -36,10 +38,12 @@ class GitSyncManager:
         repo_path: Path,
         remote_name: str = "origin",
         pat_token: str | None = None,
+        auth_mode: AuthMode = "system_keys",
     ):
         self._repo_path = repo_path
         self._remote_name = remote_name
         self._pat_token = pat_token
+        self._auth_mode = auth_mode
         self._git_executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="pygit2"
         )
@@ -220,7 +224,7 @@ class GitSyncManager:
         """
         from app.desktop.git_sync.clone import make_credentials
 
-        return make_credentials(self._pat_token)
+        return make_credentials(self._pat_token, self._auth_mode)
 
     # --- Synchronous helpers (run inside _git_executor) ---
 

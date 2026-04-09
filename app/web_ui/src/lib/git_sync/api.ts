@@ -26,6 +26,7 @@ export type TestAccessResponse = {
   success: boolean
   message: string
   auth_required: boolean
+  auth_method: string | null
 }
 
 export type ListBranchesResponse = {
@@ -52,6 +53,7 @@ export type ScanProjectsResponse = {
 
 export type GitSyncConfigResponse = {
   sync_mode: string
+  auth_mode: string
   remote_name: string
   branch: string
   clone_path: string | null
@@ -69,14 +71,16 @@ export async function testAccess(
 export async function listBranches(
   git_url: string,
   pat_token: string | null = null,
+  auth_mode: string = "system_keys",
 ): Promise<ListBranchesResponse> {
-  return post("/api/git_sync/list_branches", { git_url, pat_token })
+  return post("/api/git_sync/list_branches", { git_url, pat_token, auth_mode })
 }
 
 export async function cloneRepo(
   git_url: string,
   branch: string,
   pat_token: string | null = null,
+  auth_mode: string = "system_keys",
   project_name: string = "project",
   project_id: string = "",
 ): Promise<CloneResponse> {
@@ -84,6 +88,7 @@ export async function cloneRepo(
     git_url,
     branch,
     pat_token,
+    auth_mode,
     project_name,
     project_id,
   })
@@ -92,8 +97,13 @@ export async function cloneRepo(
 export async function testWriteAccess(
   clone_path: string,
   pat_token: string | null = null,
+  auth_mode: string = "system_keys",
 ): Promise<TestAccessResponse> {
-  return post("/api/git_sync/test_write_access", { clone_path, pat_token })
+  return post("/api/git_sync/test_write_access", {
+    clone_path,
+    pat_token,
+    auth_mode,
+  })
 }
 
 export async function scanProjects(
@@ -109,6 +119,7 @@ export async function saveConfig(config: {
   branch: string
   remote_name?: string
   pat_token?: string | null
+  auth_mode?: string
   sync_mode?: string
 }): Promise<GitSyncConfigResponse> {
   return post("/api/git_sync/save_config", config)
@@ -133,6 +144,7 @@ export async function updateConfig(
   updates: {
     sync_mode?: string
     pat_token?: string
+    auth_mode?: string
   },
 ): Promise<GitSyncConfigResponse> {
   return post(`/api/git_sync/update_config/${project_id}`, updates)

@@ -1,11 +1,10 @@
 import json
-import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+import pygit2
+
 from app.desktop.git_sync.clone import (
-    _build_authenticated_url,
-    _parse_ls_remote_output,
     compute_clone_path,
     list_remote_branches,
     scan_for_projects,
@@ -102,145 +101,130 @@ class TestScanForProjects:
         assert paths == sorted(paths)
 
 
-class TestBuildAuthenticatedUrl:
-    def test_no_token(self):
-        assert _build_authenticated_url("https://github.com/org/repo.git", None) == (
-            "https://github.com/org/repo.git"
+def _make_ref_dicts(refs: list[tuple[str, str | None]]) -> list[dict]:
+    """Helper to build ref dicts matching Remote.ls_remotes() output."""
+    result = []
+    for name, symref in refs:
+        result.append(
+            {
+                "local": False,
+                "oid": pygit2.Oid(hex="a" * 40),
+                "loid": None,
+                "name": name,
+                "symref_target": symref,
+            }
         )
-
-    def test_https_with_token(self):
-        result = _build_authenticated_url(
-            "https://github.com/org/repo.git", "ghp_abc123"
-        )
-        assert result == "https://x-token:ghp_abc123@github.com/org/repo.git"
-
-    def test_non_https_unchanged(self):
-        result = _build_authenticated_url("git@github.com:org/repo.git", "ghp_abc123")
-        assert result == "git@github.com:org/repo.git"
-
-
-class TestParseLsRemoteOutput:
-    def test_basic_output(self):
-        output = (
-            "ref: refs/heads/main\tHEAD\n"
-            "abc123\tHEAD\n"
-            "abc123\trefs/heads/main\n"
-            "def456\trefs/heads/develop\n"
-            "ghi789\trefs/heads/feature\n"
-        )
-        branches, default = _parse_ls_remote_output(output)
-        assert branches == ["develop", "feature", "main"]
-        assert default == "main"
-
-    def test_no_symref_falls_back_to_main(self):
-        output = "abc123\tHEAD\nabc123\trefs/heads/main\ndef456\trefs/heads/develop\n"
-        branches, default = _parse_ls_remote_output(output)
-        assert branches == ["develop", "main"]
-        assert default == "main"
-
-    def test_no_symref_falls_back_to_master(self):
-        output = "abc123\tHEAD\nabc123\trefs/heads/master\n"
-        branches, default = _parse_ls_remote_output(output)
-        assert branches == ["master"]
-        assert default == "master"
-
-    def test_no_symref_no_main_or_master(self):
-        output = "abc123\tHEAD\nabc123\trefs/heads/develop\n"
-        branches, default = _parse_ls_remote_output(output)
-        assert branches == ["develop"]
-        assert default is None
-
-    def test_ignores_tags_and_other_refs(self):
-        output = (
-            "abc123\trefs/heads/main\n"
-            "def456\trefs/tags/v1.0\n"
-            "ghi789\trefs/pull/1/head\n"
-        )
-        branches, default = _parse_ls_remote_output(output)
-        assert branches == ["main"]
-
-    def test_empty_output(self):
-        branches, default = _parse_ls_remote_output("")
-        assert branches == []
-        assert default is None
+    return result
 
 
 class TestTestRemoteAccess:
-    def test_success(self):
-        with patch("app.desktop.git_sync.clone._run_git_ls_remote") as mock:
-            mock.return_value = subprocess.CompletedProcess(
-                args=[], returncode=0, stdout="abc\tHEAD\n", stderr=""
-            )
-            success, msg = check_remote_access("https://github.com/org/repo.git")
+    def test_success_system_keys(self):
+        with patch("app.desktop.git_sync.clone._ls_remote_pygit2") as mock:
+            mock.return_value = _make_ref_dicts([("HEAD", None)])
+            success, msg, mode = check_remote_access("git@github.com:org/repo.git")
             assert success is True
             assert msg == "Access successful"
+            assert mode == "system_keys"
+
+    def test_success_with_pat(self):
+        with patch("app.desktop.git_sync.clone._ls_remote_pygit2") as mock:
+            mock.return_value = _make_ref_dicts([("HEAD", None)])
+            success, msg, mode = check_remote_access(
+                "https://github.com/org/repo.git", pat_token="ghp_token"
+            )
+            assert success is True
+            assert mode == "pat_token"
 
     def test_auth_failure(self):
-        with patch("app.desktop.git_sync.clone._run_git_ls_remote") as mock:
-            mock.return_value = subprocess.CompletedProcess(
-                args=[],
-                returncode=128,
-                stdout="",
-                stderr="fatal: Authentication failed for 'https://github.com/org/repo.git'",
+        with patch("app.desktop.git_sync.clone._ls_remote_pygit2") as mock:
+            mock.side_effect = pygit2.GitError(
+                "Authentication failed for 'https://github.com/org/repo.git'"
             )
-            success, msg = check_remote_access("https://github.com/org/repo.git")
+            success, msg, mode = check_remote_access("https://github.com/org/repo.git")
             assert success is False
             assert msg == "Authentication required"
+            assert mode is None
 
     def test_other_error(self):
-        with patch("app.desktop.git_sync.clone._run_git_ls_remote") as mock:
-            mock.return_value = subprocess.CompletedProcess(
-                args=[],
-                returncode=128,
-                stdout="",
-                stderr="fatal: repository not found",
-            )
-            success, msg = check_remote_access("https://github.com/org/repo.git")
+        with patch("app.desktop.git_sync.clone._ls_remote_pygit2") as mock:
+            mock.side_effect = pygit2.GitError("repository not found")
+            success, msg, mode = check_remote_access("https://github.com/org/repo.git")
             assert success is False
             assert "repository not found" in msg
+            assert mode is None
 
-    def test_timeout(self):
-        with patch("app.desktop.git_sync.clone._run_git_ls_remote") as mock:
-            mock.side_effect = subprocess.TimeoutExpired(cmd="git", timeout=30)
-            success, msg = check_remote_access("https://github.com/org/repo.git")
-            assert success is False
-            assert "timed out" in msg
-
-    def test_passes_pat_token(self):
-        with patch("app.desktop.git_sync.clone._run_git_ls_remote") as mock:
-            mock.return_value = subprocess.CompletedProcess(
-                args=[], returncode=0, stdout="abc\tHEAD\n", stderr=""
+    def test_explicit_auth_mode(self):
+        with patch("app.desktop.git_sync.clone._ls_remote_pygit2") as mock:
+            mock.return_value = _make_ref_dicts([("HEAD", None)])
+            success, msg, mode = check_remote_access(
+                "https://github.com/org/repo.git",
+                pat_token="ghp_token",
+                auth_mode="pat_token",
             )
-            check_remote_access("https://github.com/org/repo.git", "ghp_token")
-            mock.assert_called_once_with("https://github.com/org/repo.git", "ghp_token")
+            assert success is True
+            assert mode == "pat_token"
+            mock.assert_called_once_with(
+                "https://github.com/org/repo.git", "ghp_token", "pat_token"
+            )
 
 
 class TestListRemoteBranches:
     def test_returns_branches_and_default(self):
-        ls_output = (
-            "ref: refs/heads/main\tHEAD\n"
-            "abc123\tHEAD\n"
-            "abc123\trefs/heads/main\n"
-            "def456\trefs/heads/feature\n"
+        refs = _make_ref_dicts(
+            [
+                ("HEAD", "refs/heads/main"),
+                ("refs/heads/main", None),
+                ("refs/heads/feature", None),
+            ]
         )
-        with patch("app.desktop.git_sync.clone._run_git_ls_remote") as mock:
-            mock.return_value = subprocess.CompletedProcess(
-                args=[], returncode=0, stdout=ls_output, stderr=""
-            )
+        with patch("app.desktop.git_sync.clone._ls_remote_pygit2") as mock:
+            mock.return_value = refs
             branches, default = list_remote_branches("https://github.com/org/repo.git")
             assert branches == ["feature", "main"]
             assert default == "main"
 
     def test_raises_on_failure(self):
-        with patch("app.desktop.git_sync.clone._run_git_ls_remote") as mock:
-            mock.return_value = subprocess.CompletedProcess(
-                args=[],
-                returncode=128,
-                stdout="",
-                stderr="fatal: repository not found",
-            )
+        with patch("app.desktop.git_sync.clone._ls_remote_pygit2") as mock:
+            mock.side_effect = pygit2.GitError("repository not found")
             try:
                 list_remote_branches("https://github.com/org/repo.git")
                 assert False, "Should have raised"
             except Exception as e:
                 assert "repository not found" in str(e)
+
+    def test_no_symref_falls_back_to_main(self):
+        refs = _make_ref_dicts(
+            [
+                ("HEAD", None),
+                ("refs/heads/main", None),
+                ("refs/heads/develop", None),
+            ]
+        )
+        with patch("app.desktop.git_sync.clone._ls_remote_pygit2") as mock:
+            mock.return_value = refs
+            branches, default = list_remote_branches("https://github.com/org/repo.git")
+            assert default == "main"
+
+    def test_no_symref_falls_back_to_master(self):
+        refs = _make_ref_dicts(
+            [
+                ("HEAD", None),
+                ("refs/heads/master", None),
+            ]
+        )
+        with patch("app.desktop.git_sync.clone._ls_remote_pygit2") as mock:
+            mock.return_value = refs
+            branches, default = list_remote_branches("https://github.com/org/repo.git")
+            assert default == "master"
+
+    def test_ignores_tags(self):
+        refs = _make_ref_dicts(
+            [
+                ("refs/heads/main", None),
+                ("refs/tags/v1.0", None),
+            ]
+        )
+        with patch("app.desktop.git_sync.clone._ls_remote_pygit2") as mock:
+            mock.return_value = refs
+            branches, _ = list_remote_branches("https://github.com/org/repo.git")
+            assert branches == ["main"]

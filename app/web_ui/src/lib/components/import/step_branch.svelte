@@ -9,6 +9,7 @@
 
   export let git_url: string
   export let pat_token: string | null
+  export let auth_mode: string
   export let on_selected: (
     branch: string,
     clone_path: string,
@@ -26,7 +27,7 @@
 
   onMount(async () => {
     try {
-      const result = await listBranches(git_url, pat_token)
+      const result = await listBranches(git_url, pat_token, auth_mode)
       branches = result.branches
       default_branch = result.default_branch
 
@@ -62,7 +63,12 @@
       submitting = true
       status_message = "Cloning repository..."
 
-      const clone_result = await cloneRepo(git_url, selected_branch, pat_token)
+      const clone_result = await cloneRepo(
+        git_url,
+        selected_branch,
+        pat_token,
+        auth_mode,
+      )
 
       if (!clone_result.success) {
         error = new KilnError(clone_result.message)
@@ -73,6 +79,7 @@
       const write_result = await testWriteAccess(
         clone_result.clone_path,
         pat_token,
+        auth_mode,
       )
 
       if (!write_result.success) {

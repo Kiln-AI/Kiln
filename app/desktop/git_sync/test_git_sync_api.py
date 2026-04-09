@@ -21,9 +21,9 @@ def api_client(app):
 
 
 class TestTestAccess:
-    def test_success(self, api_client):
+    def test_success_system_keys(self, api_client):
         with patch("app.desktop.git_sync.git_sync_api.test_remote_access") as mock:
-            mock.return_value = (True, "Access successful")
+            mock.return_value = (True, "Access successful", "system_keys")
             resp = api_client.post(
                 "/api/git_sync/test_access",
                 json={"git_url": "https://github.com/test/repo.git"},
@@ -32,10 +32,11 @@ class TestTestAccess:
         data = resp.json()
         assert data["success"] is True
         assert data["auth_required"] is False
+        assert data["auth_method"] == "system_keys"
 
     def test_auth_required(self, api_client):
         with patch("app.desktop.git_sync.git_sync_api.test_remote_access") as mock:
-            mock.return_value = (False, "Authentication required")
+            mock.return_value = (False, "Authentication required", None)
             resp = api_client.post(
                 "/api/git_sync/test_access",
                 json={"git_url": "https://github.com/private/repo.git"},
@@ -43,10 +44,11 @@ class TestTestAccess:
         data = resp.json()
         assert data["success"] is False
         assert data["auth_required"] is True
+        assert data["auth_method"] is None
 
     def test_with_pat(self, api_client):
         with patch("app.desktop.git_sync.git_sync_api.test_remote_access") as mock:
-            mock.return_value = (True, "Access successful")
+            mock.return_value = (True, "Access successful", "pat_token")
             resp = api_client.post(
                 "/api/git_sync/test_access",
                 json={
@@ -56,6 +58,7 @@ class TestTestAccess:
             )
         data = resp.json()
         assert data["success"] is True
+        assert data["auth_method"] == "pat_token"
         mock.assert_called_once_with(
             "https://github.com/private/repo.git", "ghp_test123"
         )

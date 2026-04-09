@@ -7,6 +7,7 @@
 
   export let git_url: string
   export let pat_token: string | null
+  export let auth_mode: string
   export let clone_path: string
   export let branch: string
   export let project_path: string
@@ -27,6 +28,7 @@
         clone_path: clone_path,
         branch: branch,
         pat_token: pat_token,
+        auth_mode: auth_mode,
         sync_mode: "auto",
       })
 

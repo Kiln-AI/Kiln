@@ -56,6 +56,7 @@ def test_get_git_sync_config_uses_defaults():
 
     assert result is not None
     assert result["sync_mode"] == "manual"
+    assert result["auth_mode"] == "system_keys"
     assert result["remote_name"] == "origin"
     assert result["branch"] == "main"
     assert result["clone_path"] is None
@@ -102,6 +103,7 @@ def test_save_git_sync_config():
         instance.git_sync_projects = mock_raw
         config = GitSyncProjectConfig(
             sync_mode="auto",
+            auth_mode="system_keys",
             remote_name="origin",
             branch="main",
             clone_path="/tmp/clone",
@@ -143,6 +145,7 @@ def test_delete_nonexistent_config():
 def test_git_sync_project_config_type():
     config = GitSyncProjectConfig(
         sync_mode="auto",
+        auth_mode="system_keys",
         remote_name="origin",
         branch="main",
         clone_path=None,

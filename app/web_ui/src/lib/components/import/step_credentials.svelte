@@ -7,7 +7,7 @@
 
   export let git_url: string
   export let initial_token: string | null = null
-  export let on_success: (token: string) => void
+  export let on_success: (token: string, auth_method: string) => void
 
   let pat_token = initial_token || ""
   let error: KilnError | null = null
@@ -29,7 +29,7 @@
       const result = await testAccess(git_url, pat_token)
 
       if (result.success) {
-        on_success(pat_token)
+        on_success(pat_token, result.auth_method || "pat_token")
       } else {
         error = new KilnError(result.message)
       }

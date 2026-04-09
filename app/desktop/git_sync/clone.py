@@ -2,11 +2,14 @@ import json
 import logging
 import os
 import re
-import subprocess
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
 import pygit2
+
+from app.desktop.git_sync.config import AuthMode
 
 logger = logging.getLogger(__name__)
 
@@ -46,27 +49,53 @@ def make_push_callbacks(
     return _PushCallbacks(credentials=cred_callbacks.credentials)  # type: ignore[arg-type]
 
 
-def make_credentials(pat_token: str | None) -> pygit2.RemoteCallbacks:
-    """Create pygit2 RemoteCallbacks that never prompt for credentials.
+def make_credentials(
+    pat_token: str | None, auth_mode: str = "system_keys"
+) -> pygit2.RemoteCallbacks:
+    """Create pygit2 RemoteCallbacks using the specified auth strategy.
 
-    If a PAT token is provided, uses it for authentication.
-    If no token is provided, the callback raises an error instead of
-    allowing pygit2 to fall through to system credential helpers
-    (which may prompt on stdin).
+    auth_mode="system_keys": Use SSH keys from ~/.ssh/ (id_ed25519, id_rsa, id_ecdsa).
+    auth_mode="pat_token": Use PAT token for HTTPS auth.
+
+    This prevents pygit2 from falling through to system credential
+    helpers which may prompt on stdin (fatal for a headless server).
     """
+
+    called = False
 
     def credentials_callback(
         url: str,
         username_from_url: str | None,
         allowed_types: int,
     ) -> Any:
-        if pat_token is not None:
+        nonlocal called
+        if called:
+            raise pygit2.GitError(
+                "Authentication failed. Credentials were rejected by the server."
+            )
+        called = True
+
+        if auth_mode == "system_keys":
+            if allowed_types & pygit2.enums.CredentialType.SSH_KEY:
+                username = username_from_url or "git"
+                ssh_dir = os.path.expanduser("~/.ssh")
+                for key_name in ("id_ed25519", "id_rsa", "id_ecdsa"):
+                    priv = os.path.join(ssh_dir, key_name)
+                    pub = priv + ".pub"
+                    if os.path.isfile(priv) and os.path.isfile(pub):
+                        return pygit2.Keypair(username, pub, priv, "")  # type: ignore[attr-defined]
+            if allowed_types & pygit2.enums.CredentialType.USERNAME:
+                return pygit2.Username("git")
+
+        if auth_mode == "pat_token" and pat_token is not None:
             if allowed_types & pygit2.enums.CredentialType.USERPASS_PLAINTEXT:
                 return pygit2.UserPass(username="x-token", password=pat_token)  # type: ignore[attr-defined]
             if allowed_types & pygit2.enums.CredentialType.USERNAME:
                 return pygit2.Username("x-token")
+
         raise pygit2.GitError(
             "Authentication required but no credentials available. "
+            f"auth_mode={auth_mode}. "
             "Configure a Personal Access Token (PAT) for this repository."
         )
 
@@ -74,102 +103,93 @@ def make_credentials(pat_token: str | None) -> pygit2.RemoteCallbacks:
     return callbacks
 
 
-def _build_authenticated_url(git_url: str, pat_token: str | None) -> str:
-    """Insert PAT token into a git URL for authentication.
+def _ls_remote_pygit2(
+    git_url: str,
+    pat_token: str | None = None,
+    auth_mode: AuthMode = "system_keys",
+) -> list[dict[str, Any]]:
+    """Fetch remote references using pygit2 (no system git required).
 
-    Supports https:// URLs. For other URL schemes, returns the original URL.
+    Creates a temporary bare repo and uses Remote.ls_remotes() to list
+    refs from the remote URL with proper auth callbacks.
+
+    Returns list of ref dicts with keys: name, oid, symref_target, etc.
+    Raises pygit2.GitError on failure.
     """
-    if pat_token is None:
-        return git_url
-
-    if git_url.startswith("https://"):
-        return git_url.replace("https://", f"https://x-token:{pat_token}@", 1)
-
-    return git_url
-
-
-def _run_git_ls_remote(
-    git_url: str, pat_token: str | None = None
-) -> subprocess.CompletedProcess[str]:
-    """Run git ls-remote --symref against the given URL.
-
-    Returns the CompletedProcess result. Raises no exception on failure;
-    caller should check returncode.
-    """
-    authenticated_url = _build_authenticated_url(git_url, pat_token)
-    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
-    return subprocess.run(
-        ["git", "ls-remote", "--symref", authenticated_url],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        env=env,
-        stdin=subprocess.DEVNULL,
-    )
-
-
-def test_remote_access(git_url: str, pat_token: str | None = None) -> tuple[bool, str]:
-    """Test access to a remote by listing references.
-
-    Returns (success, message). On auth failure, message indicates credentials are needed.
-    """
+    callbacks = make_credentials(pat_token, auth_mode)
+    tmpdir = tempfile.mkdtemp(prefix="kiln_ls_remote_")
     try:
-        result = _run_git_ls_remote(git_url, pat_token)
-        if result.returncode == 0:
-            return True, "Access successful"
-        error_str = result.stderr.lower()
-        # TODO: make auth detection more robust — this is brittle string matching
-        if (
-            "401" in error_str
-            or "403" in error_str
-            or "auth" in error_str
-            or "terminal prompts disabled" in error_str
-        ):
-            return False, "Authentication required"
-        return False, f"Cannot access remote: {result.stderr.strip()}"
-    except subprocess.TimeoutExpired:
-        return False, "Cannot access remote: connection timed out"
-    except Exception as e:
-        return False, f"Cannot access remote: {e}"
+        repo = pygit2.init_repository(tmpdir, bare=True)
+        remote = repo.remotes.create("probe", git_url)
+        return remote.ls_remotes(callbacks=callbacks)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def _parse_ls_remote_output(output: str) -> tuple[list[str], str | None]:
-    """Parse the output of git ls-remote --symref.
+def test_remote_access(
+    git_url: str,
+    pat_token: str | None = None,
+    auth_mode: AuthMode | None = None,
+) -> tuple[bool, str, str | None]:
+    """Test access to a remote by listing references via pygit2.
 
-    The output contains lines like:
-        ref: refs/heads/main\tHEAD
-        <oid>\tHEAD
-        <oid>\trefs/heads/main
-        <oid>\trefs/heads/feature
+    If auth_mode is provided, tests with that specific mode.
+    If auth_mode is None, infers mode from pat_token: uses "pat_token"
+    when a PAT is provided, "system_keys" otherwise.
 
-    Returns (branches, default_branch).
+    Returns (success, message, auth_mode_used).
+    auth_mode_used is set on success to indicate which mode worked.
     """
-    head_target: str | None = None
+    if auth_mode is not None:
+        mode = auth_mode
+    elif pat_token is not None:
+        mode = "pat_token"
+    else:
+        mode = "system_keys"
+
+    try:
+        _ls_remote_pygit2(git_url, pat_token, mode)
+        return True, "Access successful", mode
+    except pygit2.GitError as e:
+        error_lower = str(e).lower()
+        if (
+            "401" in error_lower
+            or "403" in error_lower
+            or "auth" in error_lower
+            or "credentials" in error_lower
+        ):
+            return False, "Authentication required", None
+        return False, f"Cannot access remote: {e}", None
+    except Exception as e:
+        return False, f"Cannot access remote: {e}", None
+
+
+def list_remote_branches(
+    git_url: str,
+    pat_token: str | None = None,
+    auth_mode: AuthMode = "system_keys",
+) -> tuple[list[str], str | None]:
+    """List branches from a remote using pygit2.
+
+    Returns (branches, default_branch). default_branch is the HEAD symref target
+    if available, otherwise None.
+    """
+    ref_list = _ls_remote_pygit2(git_url, pat_token, auth_mode)
+
     branches: list[str] = []
+    head_target: str | None = None
 
-    for line in output.strip().splitlines():
-        line = line.strip()
-        if not line:
-            continue
+    for ref_dict in ref_list:
+        name = ref_dict.get("name", "")
+        symref_target = ref_dict.get("symref_target")
 
-        # Parse symref lines: "ref: refs/heads/main\tHEAD"
-        if line.startswith("ref:"):
-            parts = line.split("\t", 1)
-            if len(parts) == 2 and parts[1].strip() == "HEAD":
-                symref = parts[0].removeprefix("ref:").strip()
-                if symref.startswith("refs/heads/"):
-                    head_target = symref.removeprefix("refs/heads/")
-            continue
+        if name.startswith("refs/heads/"):
+            branches.append(name.removeprefix("refs/heads/"))
 
-        # Parse ref lines: "<oid>\t<refname>"
-        parts = line.split("\t", 1)
-        if len(parts) != 2:
-            continue
-
-        ref_name = parts[1].strip()
-        if ref_name.startswith("refs/heads/"):
-            branch_name = ref_name.removeprefix("refs/heads/")
-            branches.append(branch_name)
+        if name == "HEAD" and symref_target:
+            symref = str(symref_target)
+            if symref.startswith("refs/heads/"):
+                head_target = symref.removeprefix("refs/heads/")
 
     branches.sort()
 
@@ -180,21 +200,6 @@ def _parse_ls_remote_output(output: str) -> tuple[list[str], str | None]:
             head_target = "master"
 
     return branches, head_target
-
-
-def list_remote_branches(
-    git_url: str, pat_token: str | None = None
-) -> tuple[list[str], str | None]:
-    """List branches from a remote.
-
-    Returns (branches, default_branch). default_branch is the HEAD symref target
-    if available, otherwise None.
-    """
-    result = _run_git_ls_remote(git_url, pat_token)
-    if result.returncode != 0:
-        raise pygit2.GitError(f"Failed to list remote refs: {result.stderr.strip()}")
-
-    return _parse_ls_remote_output(result.stdout)
 
 
 def compute_clone_path(base_dir: Path, project_name: str, project_id: str) -> Path:
@@ -229,13 +234,14 @@ def clone_repo(
     clone_path: Path,
     branch: str,
     pat_token: str | None = None,
+    auth_mode: AuthMode = "system_keys",
 ) -> pygit2.Repository:
     """Clone a repository into the given path.
 
     Sets up the clone with the specified branch and adds a .gitignore
     for common OS artifacts.
     """
-    callbacks = make_credentials(pat_token)
+    callbacks = make_credentials(pat_token, auth_mode)
 
     repo = pygit2.clone_repository(
         git_url,
@@ -244,13 +250,16 @@ def clone_repo(
         callbacks=callbacks,
     )
 
-    _ensure_gitignore(repo, clone_path, pat_token)
+    _ensure_gitignore(repo, clone_path, pat_token, auth_mode)
 
     return repo
 
 
 def _ensure_gitignore(
-    repo: pygit2.Repository, clone_path: Path, pat_token: str | None = None
+    repo: pygit2.Repository,
+    clone_path: Path,
+    pat_token: str | None = None,
+    auth_mode: AuthMode = "system_keys",
 ) -> None:
     """Ensure the clone has a .gitignore covering common OS artifacts."""
     gitignore_path = clone_path / ".gitignore"
@@ -290,14 +299,16 @@ def _ensure_gitignore(
         parents,
     )
 
-    callbacks = make_credentials(pat_token)
+    callbacks = make_credentials(pat_token, auth_mode)
     remote = repo.remotes[DEFAULT_REMOTE_NAME]
     branch_name = repo.head.shorthand
     remote.push([f"refs/heads/{branch_name}"], callbacks=callbacks)
 
 
 def test_write_access(
-    clone_path: Path, pat_token: str | None = None
+    clone_path: Path,
+    pat_token: str | None = None,
+    auth_mode: AuthMode = "system_keys",
 ) -> tuple[bool, str]:
     """Test write access by pushing an empty commit.
 
@@ -318,7 +329,7 @@ def test_write_access(
             parents,
         )
 
-        cred_callbacks = make_credentials(pat_token)
+        cred_callbacks = make_credentials(pat_token, auth_mode)
         remote = repo.remotes[DEFAULT_REMOTE_NAME]
         branch_name = repo.head.shorthand
 

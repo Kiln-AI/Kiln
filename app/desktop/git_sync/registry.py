@@ -5,6 +5,7 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from app.desktop.git_sync.config import AuthMode
 from app.desktop.git_sync.git_sync_manager import GitSyncManager
 
 if TYPE_CHECKING:
@@ -39,6 +40,7 @@ class GitSyncRegistry:
         repo_path: Path,
         remote_name: str = "origin",
         pat_token: str | None = None,
+        auth_mode: AuthMode = "system_keys",
     ) -> GitSyncManager:
         """Return existing manager or create a new one. Thread-safe."""
         resolved = repo_path.resolve()
@@ -48,6 +50,7 @@ class GitSyncRegistry:
                     repo_path=resolved,
                     remote_name=remote_name,
                     pat_token=pat_token,
+                    auth_mode=auth_mode,
                 )
                 cls._managers[resolved] = manager
             else:
@@ -62,6 +65,8 @@ class GitSyncRegistry:
                     )
                 if pat_token is not None and existing._pat_token != pat_token:
                     existing._pat_token = pat_token
+                if existing._auth_mode != auth_mode:
+                    existing._auth_mode = auth_mode
             return cls._managers[resolved]
 
     @classmethod

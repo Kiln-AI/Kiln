@@ -104,6 +104,7 @@ describe("cloneRepo", () => {
       "https://github.com/org/repo.git",
       "main",
       "token",
+      "pat_token",
       "My Project",
       "proj_123",
     )
@@ -113,6 +114,7 @@ describe("cloneRepo", () => {
     expect(body.git_url).toBe("https://github.com/org/repo.git")
     expect(body.branch).toBe("main")
     expect(body.pat_token).toBe("token")
+    expect(body.auth_mode).toBe("pat_token")
     expect(body.project_name).toBe("My Project")
     expect(body.project_id).toBe("proj_123")
   })
