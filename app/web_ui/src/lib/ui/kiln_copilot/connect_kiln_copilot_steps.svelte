@@ -124,7 +124,7 @@
   <ol class="flex-none my-2 text-gray-700">
     <li class="list-decimal pl-1 mx-8 my-4">
       <button class="link underline" on:click={openSignup}>Sign Up</button>
-      to create your free Kiln Copilot account.
+      to create your Kiln Copilot account.
     </li>
     <li class="list-decimal pl-1 mx-8 my-4">
       {#if connecting}

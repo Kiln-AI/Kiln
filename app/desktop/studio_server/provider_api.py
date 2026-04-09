@@ -1038,7 +1038,7 @@ async def _create_kiln_copilot_api_key(access_token: str) -> JSONResponse:
         error_message = error_body.get(
             "detail", f"Failed to create API key (HTTP {response.status_code.value})"
         )
-    except Exception:
+    except json.JSONDecodeError:
         error_message = f"Failed to create API key (HTTP {response.status_code.value})"
 
     return JSONResponse(
