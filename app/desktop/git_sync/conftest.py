@@ -39,3 +39,26 @@ def git_repos(tmp_path: Path):
     pygit2.clone_repository(str(remote_path), str(local_path))
 
     return local_path, remote_path
+
+
+def commit_in_repo(
+    repo_path: Path, filename: str, content: str, message: str
+) -> pygit2.Oid:
+    """Create a commit adding/updating a file in the given repo."""
+    repo = pygit2.Repository(str(repo_path))
+    filepath = repo_path / filename
+    filepath.write_text(content)
+    index = repo.index
+    index.add_all()
+    index.write()
+    tree = index.write_tree()
+    parents = [repo.head.target]
+    return repo.create_commit(repo.head.name, SIG, SIG, message, tree, parents)
+
+
+def push_from(repo_path: Path) -> None:
+    """Push the current branch of the repo at repo_path to origin."""
+    repo = pygit2.Repository(str(repo_path))
+    remote = repo.remotes["origin"]
+    branch = repo.head.shorthand
+    remote.push([f"refs/heads/{branch}"])

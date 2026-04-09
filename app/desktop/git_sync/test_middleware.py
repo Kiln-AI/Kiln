@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pygit2
 import pygit2.enums
@@ -402,3 +402,75 @@ def test_middleware_holds_lock_across_lifecycle(git_repos):
 
     assert resp.status_code == 200
     assert lock_held_during_handler == [True]
+
+
+# --- Freshness check for reads ---
+
+
+def test_get_request_checks_freshness(git_repos):
+    """GET requests call ensure_fresh_for_read on the manager."""
+    local_path, _ = git_repos
+    config = _auto_config(str(local_path))
+
+    app = _build_app()
+
+    with (
+        patch(
+            "app.desktop.git_sync.middleware.get_git_sync_config",
+            return_value=config,
+        ),
+        patch.object(
+            GitSyncRegistry.get_or_create(local_path),
+            "ensure_fresh_for_read",
+        ) as mock_fresh,
+    ):
+        client = TestClient(app)
+        resp = client.get(f"/api/projects/{PROJECT_ID}/items")
+
+    assert resp.status_code == 200
+    mock_fresh.assert_called_once()
+
+
+# --- Background sync notify ---
+
+
+def test_notify_request_called_on_read(git_repos):
+    """Middleware calls notify_request on background sync for read requests."""
+    local_path, _ = git_repos
+    config = _auto_config(str(local_path))
+
+    mock_bg = MagicMock()
+    GitSyncRegistry.register_background_sync(local_path, mock_bg)
+
+    app = _build_app()
+
+    with patch(
+        "app.desktop.git_sync.middleware.get_git_sync_config",
+        return_value=config,
+    ):
+        client = TestClient(app)
+        resp = client.get(f"/api/projects/{PROJECT_ID}/items")
+
+    assert resp.status_code == 200
+    mock_bg.notify_request.assert_called()
+
+
+def test_notify_request_called_on_write(git_repos):
+    """Middleware calls notify_request on background sync for write requests."""
+    local_path, _ = git_repos
+    config = _auto_config(str(local_path))
+
+    mock_bg = MagicMock()
+    GitSyncRegistry.register_background_sync(local_path, mock_bg)
+
+    app = _build_app()
+
+    with patch(
+        "app.desktop.git_sync.middleware.get_git_sync_config",
+        return_value=config,
+    ):
+        client = TestClient(app)
+        resp = client.post(f"/api/projects/{PROJECT_ID}/items", json={})
+
+    assert resp.status_code == 200
+    mock_bg.notify_request.assert_called()

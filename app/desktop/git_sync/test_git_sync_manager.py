@@ -6,44 +6,12 @@ import pygit2
 import pygit2.enums
 import pytest
 
+from app.desktop.git_sync.conftest import SIG, commit_in_repo, push_from
 from app.desktop.git_sync.errors import (
     SyncConflictError,
     WriteLockTimeoutError,
 )
-from app.desktop.git_sync.git_sync_manager import (
-    KILN_COMMITTER_EMAIL,
-    KILN_COMMITTER_NAME,
-    GitSyncManager,
-)
-
-SIG = pygit2.Signature(KILN_COMMITTER_NAME, KILN_COMMITTER_EMAIL)
-
-
-def _make_initial_commit(repo: pygit2.Repository, message: str = "init") -> pygit2.Oid:
-    """Create an initial commit with a dummy file in the given repo."""
-    blob_oid = repo.create_blob(b"initial content")
-    tb = repo.TreeBuilder()
-    tb.insert("README.md", blob_oid, pygit2.enums.FileMode.BLOB)
-    tree = tb.write()
-    return repo.create_commit("refs/heads/main", SIG, SIG, message, tree, [])
-
-
-@pytest.fixture
-def git_repos(tmp_path: Path):
-    """Create a bare 'remote' repo and a cloned 'local' repo with an initial commit."""
-    remote_path = tmp_path / "remote.git"
-    remote_repo = pygit2.init_repository(str(remote_path), bare=True)
-
-    _make_initial_commit(remote_repo, "Initial commit")
-
-    remote_repo.set_head("refs/heads/main")
-
-    local_path = tmp_path / "local"
-    local_repo = pygit2.clone_repository(str(remote_path), str(local_path))
-
-    local_repo.remotes.set_url("origin", str(remote_path))
-
-    return local_path, remote_path
+from app.desktop.git_sync.git_sync_manager import GitSyncManager
 
 
 @pytest.fixture
@@ -70,28 +38,6 @@ def _write_file(repo_path: Path, name: str, content: str = "test") -> Path:
     f = repo_path / name
     f.write_text(content)
     return f
-
-
-def _commit_in_repo(
-    repo_path: Path, filename: str, content: str, message: str
-) -> pygit2.Oid:
-    repo = pygit2.Repository(str(repo_path))
-    filepath = repo_path / filename
-    filepath.write_text(content)
-    index = repo.index
-    index.add_all()
-    index.write()
-    tree = index.write_tree()
-    parents = [repo.head.target]
-    oid = repo.create_commit(repo.head.name, SIG, SIG, message, tree, parents)
-    return oid
-
-
-def _push_from(repo_path: Path) -> None:
-    repo = pygit2.Repository(str(repo_path))
-    remote = repo.remotes["origin"]
-    branch = repo.head.shorthand
-    remote.push([f"refs/heads/{branch}"])
 
 
 # --- has_dirty_files ---
@@ -157,8 +103,8 @@ async def test_commit_and_push_conflict_retry_success(manager, git_repos, second
     local_path, remote_path = git_repos
     pre_head = await manager.get_head()
 
-    _commit_in_repo(second_clone, "other.txt", "from second", "second commit")
-    _push_from(second_clone)
+    commit_in_repo(second_clone, "other.txt", "from second", "second commit")
+    push_from(second_clone)
 
     _write_file(local_path, "data.txt", "from first")
 
@@ -181,8 +127,8 @@ async def test_commit_and_push_conflict_same_file(manager, git_repos, second_clo
     local_path, _ = git_repos
     pre_head = await manager.get_head()
 
-    _commit_in_repo(second_clone, "README.md", "conflict from second", "second")
-    _push_from(second_clone)
+    commit_in_repo(second_clone, "README.md", "conflict from second", "second")
+    push_from(second_clone)
 
     _write_file(local_path, "README.md", "conflict from first")
 
@@ -255,7 +201,7 @@ async def test_ensure_clean_unpushed_commits(manager, git_repos):
     local_path, _ = git_repos
     pre_head = await manager.get_head()
 
-    _commit_in_repo(local_path, "unpushed.txt", "data", "unpushed commit")
+    commit_in_repo(local_path, "unpushed.txt", "data", "unpushed commit")
     assert await manager.get_head() != pre_head
 
     _write_file(local_path, "crash_leftover.txt", "dirty from crash")
@@ -273,8 +219,8 @@ async def test_ensure_clean_unpushed_commits(manager, git_repos):
 async def test_ensure_fresh_fetches_and_forwards(manager, git_repos, second_clone):
     local_path, _ = git_repos
 
-    _commit_in_repo(second_clone, "remote_file.txt", "from remote", "remote commit")
-    _push_from(second_clone)
+    commit_in_repo(second_clone, "remote_file.txt", "from remote", "remote commit")
+    push_from(second_clone)
 
     old_head = await manager.get_head()
 
@@ -297,6 +243,54 @@ async def test_ensure_fresh_skips_when_recent(manager):
     assert await manager.get_head() == old_head
 
 
+# --- ensure_fresh_for_read ---
+
+
+@pytest.mark.asyncio
+async def test_ensure_fresh_for_read_when_fresh(manager):
+    manager._last_sync = time.monotonic()
+    old_head = await manager.get_head()
+    await manager.ensure_fresh_for_read()
+    assert await manager.get_head() == old_head
+
+
+@pytest.mark.asyncio
+async def test_ensure_fresh_for_read_fetches_when_stale(
+    manager, git_repos, second_clone
+):
+    local_path, _ = git_repos
+
+    commit_in_repo(second_clone, "read_fresh.txt", "from remote", "remote commit")
+    push_from(second_clone)
+
+    old_head = await manager.get_head()
+    manager._last_sync = 0.0
+
+    await manager.ensure_fresh_for_read()
+
+    new_head = await manager.get_head()
+    assert new_head != old_head
+    assert (local_path / "read_fresh.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_ensure_fresh_for_read_raises_when_unreachable(
+    manager, git_repos, tmp_path
+):
+    """When stale and remote is unreachable, raises RemoteUnreachableError."""
+    from app.desktop.git_sync.errors import RemoteUnreachableError
+
+    manager._last_sync = 0.0
+
+    def broken_fetch():
+        raise pygit2.GitError("simulated network error")
+
+    manager._fetch_sync = broken_fetch  # type: ignore[assignment]
+
+    with pytest.raises(RemoteUnreachableError):
+        await manager.ensure_fresh_for_read()
+
+
 # --- fetch ---
 
 
@@ -304,8 +298,8 @@ async def test_ensure_fresh_skips_when_recent(manager):
 async def test_fetch(manager, git_repos, second_clone):
     _, remote_path = git_repos
 
-    _commit_in_repo(second_clone, "fetched.txt", "data", "remote")
-    _push_from(second_clone)
+    commit_in_repo(second_clone, "fetched.txt", "data", "remote")
+    push_from(second_clone)
 
     old_head = await manager.get_head()
     await manager.fetch()
@@ -319,8 +313,8 @@ async def test_fetch(manager, git_repos, second_clone):
 
 @pytest.mark.asyncio
 async def test_can_fast_forward_true(manager, git_repos, second_clone):
-    _commit_in_repo(second_clone, "ff.txt", "data", "ff commit")
-    _push_from(second_clone)
+    commit_in_repo(second_clone, "ff.txt", "data", "ff commit")
+    push_from(second_clone)
 
     await manager.fetch()
     assert await manager.can_fast_forward() is True
@@ -335,10 +329,10 @@ async def test_can_fast_forward_false_when_up_to_date(manager):
 async def test_can_fast_forward_false_when_diverged(manager, git_repos, second_clone):
     local_path, _ = git_repos
 
-    _commit_in_repo(second_clone, "remote.txt", "remote", "remote")
-    _push_from(second_clone)
+    commit_in_repo(second_clone, "remote.txt", "remote", "remote")
+    push_from(second_clone)
 
-    _commit_in_repo(local_path, "local.txt", "local", "local")
+    commit_in_repo(local_path, "local.txt", "local", "local")
 
     await manager.fetch()
     assert await manager.can_fast_forward() is False
@@ -348,8 +342,8 @@ async def test_can_fast_forward_false_when_diverged(manager, git_repos, second_c
 async def test_fast_forward(manager, git_repos, second_clone):
     local_path, _ = git_repos
 
-    _commit_in_repo(second_clone, "ff_file.txt", "fast forward content", "ff")
-    _push_from(second_clone)
+    commit_in_repo(second_clone, "ff_file.txt", "fast forward content", "ff")
+    push_from(second_clone)
 
     await manager.fetch()
     assert await manager.can_fast_forward() is True
@@ -406,8 +400,8 @@ async def test_has_new_remote_commits_false_when_up_to_date(manager):
 
 @pytest.mark.asyncio
 async def test_has_new_remote_commits_true(manager, git_repos, second_clone):
-    _commit_in_repo(second_clone, "new.txt", "data", "new commit")
-    _push_from(second_clone)
+    commit_in_repo(second_clone, "new.txt", "data", "new commit")
+    push_from(second_clone)
 
     await manager.fetch()
     assert await manager.has_new_remote_commits() is True

@@ -22,7 +22,7 @@ status: complete
   - Early integration test: verify BaseHTTPMiddleware holds lock correctly across request lifecycle (blocking gate per spec)
   - Unit + integration tests for middleware and registry
 
-- [ ] Phase 3: Background Sync and End-to-End
+- [x] Phase 3: Background Sync and End-to-End
   - `BackgroundSync` class: two-phase poll loop (fetch without lock, fast-forward under lock), idle pause/resume
   - Lifecycle management via FastAPI lifespan
   - `ensure_fresh_for_read()` freshness threshold for GET requests

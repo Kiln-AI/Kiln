@@ -1,8 +1,14 @@
+from __future__ import annotations
+
 import logging
 import threading
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from app.desktop.git_sync.git_sync_manager import GitSyncManager
+
+if TYPE_CHECKING:
+    from app.desktop.git_sync.background_sync import BackgroundSync
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +19,7 @@ class GitSyncRegistry:
     # Class-level mutable state: intentional singleton pattern.
     # All instances share one registry; access is guarded by _lock.
     _managers: dict[Path, GitSyncManager] = {}
+    _background_syncs: dict[Path, BackgroundSync] = {}
     _lock: threading.Lock = threading.Lock()
 
     @classmethod
@@ -49,9 +56,29 @@ class GitSyncRegistry:
             return cls._managers[resolved]
 
     @classmethod
+    def get_background_sync(cls, repo_path: Path) -> BackgroundSync | None:
+        return cls._background_syncs.get(repo_path.resolve())
+
+    @classmethod
+    def register_background_sync(cls, repo_path: Path, bg_sync: BackgroundSync) -> None:
+        with cls._lock:
+            cls._background_syncs[repo_path.resolve()] = bg_sync
+
+    @classmethod
+    def all_background_syncs(cls) -> list[BackgroundSync]:
+        """Return a snapshot of all registered background syncs."""
+        return list(cls._background_syncs.values())
+
+    @classmethod
+    def all_managers(cls) -> list[GitSyncManager]:
+        """Return a snapshot of all registered managers."""
+        return list(cls._managers.values())
+
+    @classmethod
     def reset(cls) -> None:
         """Clear all cached managers. For test teardown."""
         with cls._lock:
             for manager in cls._managers.values():
                 manager._git_executor.shutdown(wait=False)
             cls._managers.clear()
+            cls._background_syncs.clear()

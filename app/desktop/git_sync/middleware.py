@@ -69,9 +69,19 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
         ) and not getattr(endpoint, "_git_sync_no_write_lock", False)
 
         if not needs_lock:
-            # Phase 3: freshness check for reads is deferred to a future phase.
+            try:
+                await manager.ensure_fresh_for_read()
+            except GitSyncError as e:
+                status, message = self._map_error(e)
+                return Response(
+                    content=json.dumps({"detail": message}, ensure_ascii=False),
+                    status_code=status,
+                    media_type="application/json",
+                )
+            self._notify_background_sync(manager)
             return await call_next(request)
 
+        self._notify_background_sync(manager)
         lock_start = time.monotonic()
         async with manager.write_lock():
             await manager.ensure_clean()
@@ -192,6 +202,12 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
             repo_path=Path(clone_path),
             remote_name=config["remote_name"],
         )
+
+    def _notify_background_sync(self, manager: GitSyncManager) -> None:
+        """Notify background sync of activity to prevent idle pause."""
+        bg_sync = GitSyncRegistry.get_background_sync(manager.repo_path)
+        if bg_sync is not None:
+            bg_sync.notify_request()
 
     def _map_error(self, error: GitSyncError) -> tuple[int, str]:
         for error_type, (status, message) in ERROR_MAP.items():

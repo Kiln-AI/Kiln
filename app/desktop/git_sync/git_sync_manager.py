@@ -41,6 +41,10 @@ class GitSyncManager:
         self._repo: pygit2.Repository | None = None
         self._last_sync: float = 0.0
 
+    @property
+    def repo_path(self) -> Path:
+        return self._repo_path
+
     def _get_repo(self) -> pygit2.Repository:
         if self._repo is None:
             self._repo = pygit2.Repository(str(self._repo_path))
@@ -107,6 +111,31 @@ class GitSyncManager:
 
         if await self.can_fast_forward():
             await self.fast_forward()
+
+        self._last_sync = time.monotonic()
+
+    async def ensure_fresh_for_read(self) -> None:
+        """Check freshness for read requests. Fetch + fast-forward if stale.
+
+        Unlike ensure_fresh(), this acquires the write lock only for the
+        fast-forward step (not the fetch), since reads don't already hold
+        the lock.
+        """
+        now = time.monotonic()
+        if now - self._last_sync < FRESHNESS_THRESHOLD:
+            return
+
+        try:
+            await self.fetch()
+        except RemoteUnreachableError:
+            raise
+        except Exception as e:
+            raise RemoteUnreachableError(f"Cannot sync with remote: {e}") from e
+
+        if await self.can_fast_forward():
+            async with self.write_lock():
+                if await self.can_fast_forward():
+                    await self.fast_forward()
 
         self._last_sync = time.monotonic()
 
