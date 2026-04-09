@@ -91,19 +91,21 @@
       }
 
       tokenExchangeFailed = false
-      window.history.replaceState({}, "", window.location.pathname)
-
-      posthog.capture("connect_provider", {
-        provider_id: "kiln_copilot",
-      })
-
-      onSuccess()
     } catch (e) {
       console.error("createApiKeyFromToken error", e)
       errorMessage = "Failed to connect to Kiln Copilot. Please try again."
+      return
     } finally {
       connecting = false
     }
+
+    window.history.replaceState({}, "", window.location.pathname)
+
+    posthog.capture("connect_provider", {
+      provider_id: "kiln_copilot",
+    })
+
+    onSuccess()
   }
 
   onMount(async () => {
