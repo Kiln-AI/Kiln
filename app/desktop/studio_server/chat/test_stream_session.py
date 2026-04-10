@@ -4,7 +4,10 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from app.desktop.studio_server.chat import _build_openai_tool_continuation, execute_tool
+from app.desktop.studio_server.chat import execute_tool
+from app.desktop.studio_server.chat.stream_session import (
+    _build_openai_tool_continuation,
+)
 from app.desktop.studio_server.chat.constants import SSE_TYPE_TOOL_CALLS_PENDING
 from app.desktop.studio_server.chat.stream_session import (
     ChatStreamSession,
@@ -19,13 +22,11 @@ from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
 class TestExecuteTool:
     @pytest.mark.asyncio
     async def test_runs_multiply_builtin(self):
-        assert (
-            await execute_tool("kiln_tool::multiply_numbers", {"a": 2, "b": 8}) == "16"
-        )
+        assert await execute_tool("multiply", {"a": 2, "b": 8}) == "16"
 
     @pytest.mark.asyncio
     async def test_runs_add_builtin(self):
-        assert await execute_tool("kiln_tool::add_numbers", {"a": 1, "b": 2}) == "3"
+        assert await execute_tool("add", {"a": 1, "b": 2}) == "3"
 
     @pytest.mark.asyncio
     async def test_unknown_tool_returns_json_error(self):

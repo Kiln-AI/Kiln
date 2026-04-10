@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, TypedDict
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from kiln_ai.datamodel.json_schema import validate_schema_dict
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId, ToolId
@@ -33,6 +33,14 @@ class ToolCallContext:
 
 class ToolCallResult(BaseModel):
     output: str
+    is_error: bool = Field(
+        default=False,
+        description="Whether the tool call returned an error. When True, output contains the error text for model consumption.",
+    )
+    error_message: str | None = Field(
+        default=None,
+        description="Human-readable error message, set when is_error is True.",
+    )
 
 
 class KilnToolInterface(ABC):

@@ -63,7 +63,7 @@ Endpoint paths, request schemas, response fields, and jq filters are defined in 
     ) -> ToolCallResult:
         body_str: str | None = None
         if isinstance(body, (dict, list)):
-            body_str = json.dumps(body)
+            body_str = json.dumps(body, ensure_ascii=False)
         elif isinstance(body, str):
             body_str = body
 
@@ -90,6 +90,8 @@ Endpoint paths, request schemas, response fields, and jq filters are defined in 
         timeout_seconds = 30.0 if method in {"GET", "DELETE"} else 300.0
         timeout = httpx.Timeout(timeout_seconds)
 
+        # Per-request client: tool instances are short-lived (created per call
+        # via tool_from_id), so a shared client wouldn't persist across calls anyway.
         async with httpx.AsyncClient(timeout=timeout) as client:
             request_funcs = {
                 "GET": lambda: client.get(full_url, headers=headers),
@@ -138,4 +140,4 @@ Endpoint paths, request schemas, response fields, and jq filters are defined in 
                 pass
 
         result = {"status_code": status_code, "body": response_body}
-        return ToolCallResult(output=json.dumps(result))
+        return ToolCallResult(output=json.dumps(result, ensure_ascii=False))

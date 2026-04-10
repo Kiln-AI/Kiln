@@ -1890,7 +1890,7 @@ def _sdk_unmanaged_multiply_tool() -> UnmanagedKilnTool:
 
 
 def test_external_tools_invalid_type_raises(mock_task, config):
-    with pytest.raises(TypeError, match="must be a KilnToolInterface instance"):
+    with pytest.raises(AssertionError, match="must be a KilnToolInterface instance"):
         LiteLlmAdapter(
             config=config,
             kiln_task=mock_task,
@@ -2214,3 +2214,103 @@ async def test_build_completion_kwargs_with_automatic_prompt_caching(config, moc
     assert kwargs["cache_control_injection_points"] == [
         {"location": "message", "index": -1}
     ]
+
+
+@pytest.mark.asyncio
+async def test_process_tool_calls_propagates_error_fields(config, mock_task):
+    """Test that is_error and error_message from ToolCallResult propagate to the tool message wrapper."""
+    from kiln_ai.datamodel.tool_id import ToolId
+    from kiln_ai.tools.base_tool import (
+        KilnToolInterface,
+        ToolCallContext,
+        ToolCallDefinition,
+        ToolCallResult,
+    )
+
+    class FakeErrorTool(KilnToolInterface):
+        async def run(
+            self, context: ToolCallContext | None = None, **kwargs
+        ) -> ToolCallResult:
+            return ToolCallResult(
+                output="something went wrong",
+                is_error=True,
+                error_message="something went wrong",
+            )
+
+        async def toolcall_definition(self) -> ToolCallDefinition:
+            return {
+                "type": "function",
+                "function": {
+                    "name": "error_tool",
+                    "description": "A tool that errors",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+
+        async def id(self) -> ToolId:
+            return "error_tool"
+
+        async def name(self) -> str:
+            return "error_tool"
+
+        async def description(self) -> str:
+            return "A tool that errors"
+
+    class FakeSuccessTool(KilnToolInterface):
+        async def run(
+            self, context: ToolCallContext | None = None, **kwargs
+        ) -> ToolCallResult:
+            return ToolCallResult(output="all good")
+
+        async def toolcall_definition(self) -> ToolCallDefinition:
+            return {
+                "type": "function",
+                "function": {
+                    "name": "success_tool",
+                    "description": "A tool that succeeds",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+
+        async def id(self) -> ToolId:
+            return "success_tool"
+
+        async def name(self) -> str:
+            return "success_tool"
+
+        async def description(self) -> str:
+            return "A tool that succeeds"
+
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    error_tool_call = ChatCompletionMessageToolCall(
+        id="call_err",
+        type="function",
+        function=Function(name="error_tool", arguments="{}"),
+    )
+    success_tool_call = ChatCompletionMessageToolCall(
+        id="call_ok",
+        type="function",
+        function=Function(name="success_tool", arguments="{}"),
+    )
+
+    with patch.object(
+        adapter,
+        "available_tools",
+        return_value=[FakeErrorTool(), FakeSuccessTool()],
+    ):
+        _, messages = await adapter.process_tool_calls(
+            [error_tool_call, success_tool_call]
+        )
+
+    assert len(messages) == 2
+
+    error_msg = next(m for m in messages if m["tool_call_id"] == "call_err")
+    assert error_msg["content"] == "something went wrong"
+    assert error_msg["is_error"] is True
+    assert error_msg["error_message"] == "something went wrong"
+
+    success_msg = next(m for m in messages if m["tool_call_id"] == "call_ok")
+    assert success_msg["content"] == "all good"
+    assert success_msg.get("is_error") is None
+    assert success_msg.get("error_message") is None

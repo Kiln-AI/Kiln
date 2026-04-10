@@ -6,14 +6,28 @@ import httpx
 from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.chat_session_list_item import ChatSessionListItem
-from ...types import Response
+from ...models.http_validation_error import HTTPValidationError
+from ...types import UNSET, Response, Unset
 
 
-def _get_kwargs() -> dict[str, Any]:
+def _get_kwargs(
+    *,
+    limit: int | Unset = 50,
+    offset: int | Unset = 0,
+) -> dict[str, Any]:
+
+    params: dict[str, Any] = {}
+
+    params["limit"] = limit
+
+    params["offset"] = offset
+
+    params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
     _kwargs: dict[str, Any] = {
         "method": "get",
         "url": "/v1/chat/sessions",
+        "params": params,
     }
 
     return _kwargs
@@ -21,7 +35,7 @@ def _get_kwargs() -> dict[str, Any]:
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> list[ChatSessionListItem] | None:
+) -> HTTPValidationError | list[ChatSessionListItem] | None:
     if response.status_code == 200:
         response_200 = []
         _response_200 = response.json()
@@ -32,6 +46,11 @@ def _parse_response(
 
         return response_200
 
+    if response.status_code == 422:
+        response_422 = HTTPValidationError.from_dict(response.json())
+
+        return response_422
+
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
     else:
@@ -40,7 +59,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[list[ChatSessionListItem]]:
+) -> Response[HTTPValidationError | list[ChatSessionListItem]]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -52,18 +71,27 @@ def _build_response(
 def sync_detailed(
     *,
     client: AuthenticatedClient,
-) -> Response[list[ChatSessionListItem]]:
+    limit: int | Unset = 50,
+    offset: int | Unset = 0,
+) -> Response[HTTPValidationError | list[ChatSessionListItem]]:
     """List Sessions
+
+    Args:
+        limit (int | Unset):  Default: 50.
+        offset (int | Unset):  Default: 0.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[list[ChatSessionListItem]]
+        Response[HTTPValidationError | list[ChatSessionListItem]]
     """
 
-    kwargs = _get_kwargs()
+    kwargs = _get_kwargs(
+        limit=limit,
+        offset=offset,
+    )
 
     response = client.get_httpx_client().request(
         **kwargs,
@@ -75,37 +103,54 @@ def sync_detailed(
 def sync(
     *,
     client: AuthenticatedClient,
-) -> list[ChatSessionListItem] | None:
+    limit: int | Unset = 50,
+    offset: int | Unset = 0,
+) -> HTTPValidationError | list[ChatSessionListItem] | None:
     """List Sessions
+
+    Args:
+        limit (int | Unset):  Default: 50.
+        offset (int | Unset):  Default: 0.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        list[ChatSessionListItem]
+        HTTPValidationError | list[ChatSessionListItem]
     """
 
     return sync_detailed(
         client=client,
+        limit=limit,
+        offset=offset,
     ).parsed
 
 
 async def asyncio_detailed(
     *,
     client: AuthenticatedClient,
-) -> Response[list[ChatSessionListItem]]:
+    limit: int | Unset = 50,
+    offset: int | Unset = 0,
+) -> Response[HTTPValidationError | list[ChatSessionListItem]]:
     """List Sessions
+
+    Args:
+        limit (int | Unset):  Default: 50.
+        offset (int | Unset):  Default: 0.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[list[ChatSessionListItem]]
+        Response[HTTPValidationError | list[ChatSessionListItem]]
     """
 
-    kwargs = _get_kwargs()
+    kwargs = _get_kwargs(
+        limit=limit,
+        offset=offset,
+    )
 
     response = await client.get_async_httpx_client().request(**kwargs)
 
@@ -115,19 +160,27 @@ async def asyncio_detailed(
 async def asyncio(
     *,
     client: AuthenticatedClient,
-) -> list[ChatSessionListItem] | None:
+    limit: int | Unset = 50,
+    offset: int | Unset = 0,
+) -> HTTPValidationError | list[ChatSessionListItem] | None:
     """List Sessions
+
+    Args:
+        limit (int | Unset):  Default: 50.
+        offset (int | Unset):  Default: 0.
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        list[ChatSessionListItem]
+        HTTPValidationError | list[ChatSessionListItem]
     """
 
     return (
         await asyncio_detailed(
             client=client,
+            limit=limit,
+            offset=offset,
         )
     ).parsed

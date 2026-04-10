@@ -21,12 +21,14 @@ class Usage:
         total_tokens (int | None | Unset): The total number of tokens used in the task run.
         cost (float | None | Unset): The cost of the task run in US dollars, saved at runtime (prices can change over
             time).
+        cached_tokens (int | None | Unset): Number of tokens served from prompt cache. None if not reported.
     """
 
     input_tokens: int | None | Unset = UNSET
     output_tokens: int | None | Unset = UNSET
     total_tokens: int | None | Unset = UNSET
     cost: float | None | Unset = UNSET
+    cached_tokens: int | None | Unset = UNSET
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -54,6 +56,12 @@ class Usage:
         else:
             cost = self.cost
 
+        cached_tokens: int | None | Unset
+        if isinstance(self.cached_tokens, Unset):
+            cached_tokens = UNSET
+        else:
+            cached_tokens = self.cached_tokens
+
         field_dict: dict[str, Any] = {}
         field_dict.update(self.additional_properties)
         field_dict.update({})
@@ -65,6 +73,8 @@ class Usage:
             field_dict["total_tokens"] = total_tokens
         if cost is not UNSET:
             field_dict["cost"] = cost
+        if cached_tokens is not UNSET:
+            field_dict["cached_tokens"] = cached_tokens
 
         return field_dict
 
@@ -108,11 +118,21 @@ class Usage:
 
         cost = _parse_cost(d.pop("cost", UNSET))
 
+        def _parse_cached_tokens(data: object) -> int | None | Unset:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(int | None | Unset, data)
+
+        cached_tokens = _parse_cached_tokens(d.pop("cached_tokens", UNSET))
+
         usage = cls(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             total_tokens=total_tokens,
             cost=cost,
+            cached_tokens=cached_tokens,
         )
 
         usage.additional_properties = d

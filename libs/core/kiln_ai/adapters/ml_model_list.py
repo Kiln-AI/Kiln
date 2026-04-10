@@ -44,6 +44,7 @@ class ModelFamily(str, Enum):
     stepfun = "stepfun"
     mimo = "mimo"
     nemotron = "nemotron"
+    arcee = "arcee"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -228,6 +229,7 @@ class ModelName(str, Enum):
     kimi_k2_thinking = "kimi_k2_thinking"
     kimi_k2_5 = "kimi_k2_5"
     kimi_dev_72b = "kimi_dev_72b"
+    glm_5_1 = "glm_5_1"
     glm_5_turbo = "glm_5_turbo"
     glm_5v_turbo = "glm_5v_turbo"
     glm_5 = "glm_5"
@@ -253,6 +255,7 @@ class ModelName(str, Enum):
     bytedance_seed_oss_36b = "bytedance_seed_oss_36b"
     bytedance_seed_1_6 = "bytedance_seed_1_6"
     bytedance_seed_1_6_flash = "bytedance_seed_1_6_flash"
+    arcee_trinity_large_thinking = "arcee_trinity_large_thinking"
     stepfun_step3 = "stepfun_step3"
     mimo_v2_pro = "mimo_v2_pro"
     mimo_v2_flash = "mimo_v2_flash"
@@ -6343,6 +6346,22 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # GLM 5.1
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5_1,
+        friendly_name="GLM 5.1",
+        featured_rank=4,
+        editorial_notes="Z.ai's newest flagship for long-horizon agentic tasks. Coding performance on par with Claude Opus 4.6, and can autonomously execute complex engineering work for up to 8 hours.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-5.1",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+        ],
+    ),
     # GLM 5V Turbo
     KilnModel(
         family=ModelFamily.glm,
@@ -6389,8 +6408,6 @@ built_in_models: List[KilnModel] = [
         family=ModelFamily.glm,
         name=ModelName.glm_5,
         friendly_name="GLM 5",
-        featured_rank=4,
-        editorial_notes="Open, state-of-the-art model from Z.ai. Quality close to the big names, at a fraction of the cost.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -7160,6 +7177,23 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 supports_data_gen=True,
+            ),
+        ],
+    ),
+    # Arcee AI Trinity Large Thinking
+    KilnModel(
+        family=ModelFamily.arcee,
+        name=ModelName.arcee_trinity_large_thinking,
+        friendly_name="Arcee Trinity Large (Thinking)",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="arcee-ai/trinity-large-thinking",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                reasoning_capable=True,
+                require_openrouter_reasoning=True,
             ),
         ],
     ),

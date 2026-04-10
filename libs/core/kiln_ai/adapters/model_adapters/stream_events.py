@@ -19,6 +19,9 @@ class AiSdkStreamEventBase(BaseModel):
 
 
 class AiSdkEventType(str, Enum):
+    """String constants for AI SDK event types. Used only in tests — production
+    code uses Literal discriminators on the typed event classes instead."""
+
     START = "start"
     FINISH = "finish"
     ERROR = "error"

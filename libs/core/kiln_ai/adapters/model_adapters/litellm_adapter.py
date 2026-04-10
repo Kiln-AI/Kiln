@@ -65,10 +65,9 @@ logger = logging.getLogger(__name__)
 
 def _validate_external_tools(tools: list[KilnToolInterface]) -> None:
     for i, tool in enumerate(tools):
-        if not isinstance(tool, KilnToolInterface):
-            raise TypeError(
-                f"external_tools[{i}] must be a KilnToolInterface instance, got {type(tool).__name__}"
-            )
+        assert isinstance(tool, KilnToolInterface), (
+            f"external_tools[{i}] must be a KilnToolInterface instance, got {type(tool).__name__}"
+        )
 
 
 @dataclass
@@ -794,6 +793,10 @@ class LiteLlmAdapter(BaseAdapter):
                     content=result.output,
                     kiln_task_tool_data=result.kiln_task_tool_data
                     if isinstance(result, KilnTaskToolResult)
+                    else None,
+                    is_error=result.is_error if result.is_error else None,
+                    error_message=result.error_message
+                    if result.error_message
                     else None,
                 )
 

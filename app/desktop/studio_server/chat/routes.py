@@ -1,12 +1,15 @@
 import json
 from datetime import datetime
 from http import HTTPStatus
-from typing import Any, NoReturn
+from typing import Annotated, Any, NoReturn
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.chat import (
     delete_session_v1_chat_sessions_session_id_delete,
     get_session_v1_chat_sessions_session_id_get,
     list_sessions_v1_chat_sessions_get,
+)
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.chat_session_list_item import (
+    ChatSessionListItem as ApiSessionListItem,
 )
 from app.desktop.studio_server.api_client.kiln_ai_server_client.types import (
     Response as KilnResponse,
@@ -22,7 +25,7 @@ from app.desktop.studio_server.chat.stream_session import (
     execute_tool_batch,
 )
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
-from fastapi import FastAPI, HTTPException, Path, Request
+from fastapi import FastAPI, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
 from kiln_server.utils.agent_checks.policy import DENY_AGENT
 from pydantic import BaseModel, ConfigDict
@@ -91,6 +94,20 @@ class ChatSessionSnapshot(BaseModel):
     task_run: TaskRunSnapshot
 
 
+class ChatRequestMessage(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    role: str
+    content: str | list[dict[str, Any]] | None = None
+
+
+class ChatRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    messages: list[ChatRequestMessage]
+    trace_id: str | None = None
+
+
 class ExecuteToolsRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -151,17 +168,31 @@ def connect_chat_api(app: FastAPI) -> None:
         tags=["Copilot"],
         openapi_extra=DENY_AGENT,
     )
-    async def list_chat_sessions() -> list[ChatSessionListItem]:
+    async def list_chat_sessions(
+        limit: Annotated[
+            int, Query(description="Maximum number of sessions to return")
+        ] = 50,
+        offset: Annotated[int, Query(description="Number of sessions to skip")] = 0,
+    ) -> list[ChatSessionListItem]:
         """Proxy to Kiln Copilot ``GET /v1/chat/sessions``."""
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
         detailed = await list_sessions_v1_chat_sessions_get.asyncio_detailed(
             client=client,
+            limit=limit,
+            offset=offset,
         )
-        if detailed.status_code == HTTPStatus.OK and detailed.parsed is not None:
+        if detailed.status_code == HTTPStatus.OK and isinstance(detailed.parsed, list):
             return [
-                ChatSessionListItem.model_validate(item.to_dict())
+                ChatSessionListItem.model_validate(
+                    {
+                        "id": item.id,
+                        "title": item.title,
+                        "updated_at": item.updated_at,
+                    }
+                )
                 for item in detailed.parsed
+                if isinstance(item, ApiSessionListItem)
             ]
         _raise_upstream_error(detailed)
 
@@ -173,10 +204,10 @@ def connect_chat_api(app: FastAPI) -> None:
         response_model_exclude_none=True,
     )
     async def get_chat_session(
-        session_id: str = Path(
-            ...,
-            description="Chat session id (same as trace id for continuation).",
-        ),
+        session_id: Annotated[
+            str,
+            Path(description="Chat session id (same as trace id for continuation)."),
+        ],
     ) -> ChatSessionSnapshot:
         """Proxy to Kiln Copilot ``GET /v1/chat/sessions/{session_id}``."""
         api_key = get_copilot_api_key()
@@ -197,7 +228,7 @@ def connect_chat_api(app: FastAPI) -> None:
         status_code=204,
     )
     async def delete_chat_session(
-        session_id: str = Path(..., description="Chat session id to delete."),
+        session_id: Annotated[str, Path(description="Chat session id to delete.")],
     ) -> None:
         """Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{session_id}``."""
         api_key = get_copilot_api_key()
@@ -217,16 +248,14 @@ def connect_chat_api(app: FastAPI) -> None:
         tags=["Copilot"],
         openapi_extra=DENY_AGENT,
     )
-    async def chat(request: Request) -> StreamingResponse:
+    async def chat(body: ChatRequest) -> StreamingResponse:
         """Forward chat to Kiln Copilot and stream AI SDK events as Server-Sent Events."""
         api_key = get_copilot_api_key()
-        body_bytes = await request.body()
-        body_json = json.loads(body_bytes)
 
         session = ChatStreamSession(
             upstream_url=f"{_get_base_url()}/v1/chat/",
             headers=_build_upstream_headers(api_key),
-            initial_body=body_json,
+            initial_body=body.model_dump(exclude_none=True),
         )
         return StreamingResponse(
             content=session.stream(),

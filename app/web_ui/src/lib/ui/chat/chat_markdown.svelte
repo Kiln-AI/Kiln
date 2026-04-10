@@ -105,7 +105,12 @@
 
   $: rawHtml = text ? (marked.parse(text, { async: false }) as string) : ""
   $: sanitized = rawHtml
-    ? DOMPurify.sanitize(rawHtml, { ALLOWED_TAGS, ALLOWED_ATTR })
+    ? DOMPurify.sanitize(rawHtml, {
+        ALLOWED_TAGS,
+        ALLOWED_ATTR,
+        ALLOWED_URI_REGEXP:
+          /^(?:(?:https?|mailto|tel):|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i,
+      })
     : ""
 </script>
 

@@ -17,6 +17,7 @@ from app.desktop.studio_server.chat.helpers import (
     PATCH_ASYNC_CLIENT,
     PATCH_EXECUTE_TOOL,
     make_httpx_mock,
+    make_n_round_mock_client,
     sse_text_delta,
 )
 from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
@@ -242,40 +243,11 @@ def test_list_chat_sessions_passes_through_version_error_code(
 
 
 class TestRemoteToolRoundTrip:
-    def _make_stream_mock(self, chunks: list[bytes]):
-        async def mock_aiter_bytes():
-            for chunk in chunks:
-                yield chunk
-
-        mock_upstream = MagicMock()
-        mock_upstream.status_code = 200
-        mock_upstream.aiter_bytes.return_value = mock_aiter_bytes()
-        mock_upstream.__aenter__ = AsyncMock(return_value=mock_upstream)
-        mock_upstream.__aexit__ = AsyncMock(return_value=None)
-        return mock_upstream
-
-    def _make_mock_client(self, first_chunks: list[bytes], second_chunks: list[bytes]):
-        call_count = 0
-        first_mock = self._make_stream_mock(first_chunks)
-        second_mock = self._make_stream_mock(second_chunks)
-
-        def side_effect(*args, **kwargs):
-            nonlocal call_count
-            call_count_ref = call_count
-            call_count += 1
-            return first_mock if call_count_ref == 0 else second_mock
-
-        mock_client = MagicMock()
-        mock_client.stream.side_effect = side_effect
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-        return mock_client, lambda: call_count
-
     def test_continues_after_tool_input_available(self, client, mock_api_key):
         """First request returns tool-input-available + finish tool-calls; proxy runs the built-in tool and continues."""
         first_chunks = [
             sse_text_delta("Let me compute that"),
-            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_tool::multiply_numbers","input":{"a":2,"b":8}}\n\n',
+            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"call_kiln_api","input":{"method":"GET","url_path":"/api/test"}}\n\n',
             b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
         ]
         second_chunks = [
@@ -283,16 +255,17 @@ class TestRemoteToolRoundTrip:
             b'data: {"type":"finish"}\n\n',
         ]
 
-        mock_client, get_call_count = self._make_mock_client(
+        mock_client, get_call_count = make_n_round_mock_client(
             first_chunks, second_chunks
         )
         mock_class = MagicMock(return_value=mock_client)
 
         with patch(PATCH_ASYNC_CLIENT, mock_class):
-            response = client.post(
-                "/api/chat",
-                json={"messages": [{"role": "user", "content": "compute 2*8"}]},
-            )
+            with patch(PATCH_EXECUTE_TOOL, AsyncMock(return_value="16")):
+                response = client.post(
+                    "/api/chat",
+                    json={"messages": [{"role": "user", "content": "compute 2*8"}]},
+                )
 
         assert response.status_code == 200
         content = response.content
@@ -315,8 +288,7 @@ class TestRemoteToolRoundTrip:
         tc = assistant_msg["tool_calls"][0]
         assert tc["id"] == "tc1"
         assert tc["type"] == "function"
-        assert tc["function"]["name"] == "kiln_tool::multiply_numbers"
-        assert json.loads(tc["function"]["arguments"]) == {"a": 2, "b": 8}
+        assert tc["function"]["name"] == "call_kiln_api"
 
         tool_msg = messages[2]
         assert tool_msg["role"] == "tool"
@@ -330,7 +302,7 @@ class TestRemoteToolRoundTrip:
         trace_tid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         first_chunks = [
             sse_text_delta("Let me compute that"),
-            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_tool::multiply_numbers","input":{"a":2,"b":8}}\n\n',
+            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"call_kiln_api","input":{"method":"GET","url_path":"/api/test"}}\n\n',
             b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
             f'data: {{"type":"kiln_chat_trace","trace_id":"{trace_tid}"}}\n\n'.encode(),
         ]
@@ -339,16 +311,17 @@ class TestRemoteToolRoundTrip:
             b'data: {"type":"finish"}\n\n',
         ]
 
-        mock_client, get_call_count = self._make_mock_client(
+        mock_client, get_call_count = make_n_round_mock_client(
             first_chunks, second_chunks
         )
         mock_class = MagicMock(return_value=mock_client)
 
         with patch(PATCH_ASYNC_CLIENT, mock_class):
-            response = client.post(
-                "/api/chat",
-                json={"messages": [{"role": "user", "content": "compute 2*8"}]},
-            )
+            with patch(PATCH_EXECUTE_TOOL, AsyncMock(return_value="16")):
+                response = client.post(
+                    "/api/chat",
+                    json={"messages": [{"role": "user", "content": "compute 2*8"}]},
+                )
 
         assert response.status_code == 200
         assert get_call_count() == 2
@@ -371,7 +344,7 @@ class TestRemoteToolRoundTrip:
             b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_tool::multiply_numbers","input":{"a":2,"b":8},"kiln_metadata":{"executor":"server"}}\n\n',
             b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
         ]
-        mock_client, get_call_count = self._make_mock_client(first_chunks, [])
+        mock_client, get_call_count = make_n_round_mock_client(first_chunks, [])
         mock_class = MagicMock(return_value=mock_client)
         execute_tool_mock = AsyncMock()
 
@@ -392,19 +365,20 @@ class TestRemoteToolRoundTrip:
     def test_emits_tool_output_available_to_ui(self, client, mock_api_key):
         """Proxy should emit tool-output-available SSE so the UI can show the result."""
         first_chunks = [
-            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_tool::add_numbers","input":{"a":1,"b":2}}\n\n',
+            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"call_kiln_api","input":{"method":"GET","url_path":"/api/test"}}\n\n',
             b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
         ]
         second_chunks = [b'data: {"type":"finish"}\n\n']
 
-        mock_client, _ = self._make_mock_client(first_chunks, second_chunks)
+        mock_client, _ = make_n_round_mock_client(first_chunks, second_chunks)
         mock_class = MagicMock(return_value=mock_client)
 
         with patch(PATCH_ASYNC_CLIENT, mock_class):
-            response = client.post(
-                "/api/chat",
-                json={"messages": [{"role": "user", "content": "add 1+2"}]},
-            )
+            with patch(PATCH_EXECUTE_TOOL, AsyncMock(return_value="3")):
+                response = client.post(
+                    "/api/chat",
+                    json={"messages": [{"role": "user", "content": "add 1+2"}]},
+                )
 
         content = response.content
         assert b"tool-output-available" in content
@@ -414,23 +388,29 @@ class TestRemoteToolRoundTrip:
     def test_multiple_tool_calls_in_one_round(self, client, mock_api_key):
         """All tools in a single round are handled and forwarded as continuation."""
         first_chunks = [
-            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_tool::add_numbers","input":{"a":1,"b":2}}\n\n',
-            b'data: {"type":"tool-input-available","toolCallId":"tc2","toolName":"kiln_tool::multiply_numbers","input":{"a":3,"b":4}}\n\n',
+            b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"call_kiln_api","input":{"method":"GET","url_path":"/api/a"}}\n\n',
+            b'data: {"type":"tool-input-available","toolCallId":"tc2","toolName":"call_kiln_api","input":{"method":"GET","url_path":"/api/b"}}\n\n',
             b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
         ]
         second_chunks = [b'data: {"type":"finish"}\n\n']
 
-        mock_client, get_call_count = self._make_mock_client(
+        mock_client, get_call_count = make_n_round_mock_client(
             first_chunks, second_chunks
         )
         mock_class = MagicMock(return_value=mock_client)
 
+        execute_results = iter(["3", "12"])
+
         with patch(PATCH_ASYNC_CLIENT, mock_class):
-            response = client.post(
-                "/api/chat",
-                json={"messages": [{"role": "user", "content": "compute"}]},
-            )
-            _ = response.content
+            with patch(
+                PATCH_EXECUTE_TOOL,
+                AsyncMock(side_effect=lambda *_: next(execute_results)),
+            ):
+                response = client.post(
+                    "/api/chat",
+                    json={"messages": [{"role": "user", "content": "compute"}]},
+                )
+                _ = response.content
 
         assert get_call_count() == 2
         continuation_body = json.loads(
@@ -470,7 +450,7 @@ class TestRemoteToolRoundTrip:
             b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_tool::add_numbers","input":{"a":1,"b":2},"kiln_metadata":{"requires_approval":true}}\n\n',
             b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
         ]
-        mock_client, get_call_count = self._make_mock_client(first_chunks, [])
+        mock_client, get_call_count = make_n_round_mock_client(first_chunks, [])
         mock_class = MagicMock(return_value=mock_client)
         execute_tool_mock = AsyncMock(return_value="3")
 
@@ -493,7 +473,7 @@ class TestRemoteToolRoundTrip:
             b'data: {"type":"tool-input-available","toolCallId":"tc1","toolName":"kiln_tool::add_numbers","input":{"a":1,"b":2},"kiln_metadata":{"requires_approval":true}}\n\n',
             b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
         ]
-        mock_client, _ = self._make_mock_client(first_chunks, [])
+        mock_client, _ = make_n_round_mock_client(first_chunks, [])
         mock_class = MagicMock(return_value=mock_client)
 
         with patch(PATCH_ASYNC_CLIENT, mock_class):
@@ -522,7 +502,7 @@ class TestRemoteToolRoundTrip:
             b'data: {"type":"tool-input-available","toolCallId":"tc_need","toolName":"kiln_tool::multiply_numbers","input":{"a":3,"b":4},"kiln_metadata":{"requires_approval":true}}\n\n',
             b'data: {"type":"finish","messageMetadata":{"finishReason":"tool-calls"}}\n\n',
         ]
-        mock_client, _ = self._make_mock_client(first_chunks, [])
+        mock_client, _ = make_n_round_mock_client(first_chunks, [])
         mock_class = MagicMock(return_value=mock_client)
         execute_tool_mock = AsyncMock(return_value="3")
 
@@ -606,34 +586,6 @@ def _parse_sse_events(content: bytes) -> list[dict[str, Any]]:
 
 
 class TestMockedFlows:
-    def _make_stream_mock(self, chunks: list[bytes]):
-        async def mock_aiter_bytes():
-            for chunk in chunks:
-                yield chunk
-
-        mock_upstream = MagicMock()
-        mock_upstream.status_code = 200
-        mock_upstream.aiter_bytes.return_value = mock_aiter_bytes()
-        mock_upstream.__aenter__ = AsyncMock(return_value=mock_upstream)
-        mock_upstream.__aexit__ = AsyncMock(return_value=None)
-        return mock_upstream
-
-    def _make_n_round_mock_client(self, *chunk_rounds: list[bytes]):
-        mocks = [self._make_stream_mock(chunks) for chunks in chunk_rounds]
-        call_count = 0
-
-        def side_effect(*args, **kwargs):
-            nonlocal call_count
-            idx = min(call_count, len(mocks) - 1)
-            call_count += 1
-            return mocks[idx]
-
-        mock_client = MagicMock()
-        mock_client.stream.side_effect = side_effect
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-        return mock_client, lambda: call_count
-
     def test_text_only_chat_no_tools(self, client, mock_api_key):
         trace_id = "trace-text-only-abc"
         chunks = [
@@ -642,7 +594,7 @@ class TestMockedFlows:
             sse_text_delta(" is the capital."),
             _sse_event({"type": "finish", "messageMetadata": {"finishReason": "stop"}}),
         ]
-        mock_client, get_call_count = self._make_n_round_mock_client(chunks)
+        mock_client, get_call_count = make_n_round_mock_client(chunks)
         mock_class = MagicMock(return_value=mock_client)
 
         with patch(PATCH_ASYNC_CLIENT, mock_class):
@@ -694,16 +646,17 @@ class TestMockedFlows:
             sse_text_delta("The result is 16."),
             _sse_event({"type": "finish", "messageMetadata": {"finishReason": "stop"}}),
         ]
-        mock_client, get_call_count = self._make_n_round_mock_client(
+        mock_client, get_call_count = make_n_round_mock_client(
             first_chunks, second_chunks
         )
         mock_class = MagicMock(return_value=mock_client)
 
         with patch(PATCH_ASYNC_CLIENT, mock_class):
-            response = client.post(
-                "/api/chat",
-                json={"messages": [{"role": "user", "content": "compute 2*8"}]},
-            )
+            with patch(PATCH_EXECUTE_TOOL, AsyncMock(return_value="16")):
+                response = client.post(
+                    "/api/chat",
+                    json={"messages": [{"role": "user", "content": "compute 2*8"}]},
+                )
 
         assert response.status_code == 200
         events = _parse_sse_events(response.content)
@@ -740,7 +693,7 @@ class TestMockedFlows:
             sse_text_delta("Your name is Bob."),
             _sse_event({"type": "finish", "messageMetadata": {"finishReason": "stop"}}),
         ]
-        mock_client, get_call_count = self._make_n_round_mock_client(
+        mock_client, get_call_count = make_n_round_mock_client(
             first_chunks, second_chunks
         )
         mock_class = MagicMock(return_value=mock_client)
@@ -779,9 +732,7 @@ class TestMockedFlows:
             sse_text_delta("Tool was denied."),
             _sse_event({"type": "finish", "messageMetadata": {"finishReason": "stop"}}),
         ]
-        mock_client, get_call_count = self._make_n_round_mock_client(
-            continuation_chunks
-        )
+        mock_client, get_call_count = make_n_round_mock_client(continuation_chunks)
         mock_class = MagicMock(return_value=mock_client)
 
         body = {
@@ -822,7 +773,7 @@ class TestMockedFlows:
             sse_text_delta("Done."),
             _sse_event({"type": "finish", "messageMetadata": {"finishReason": "stop"}}),
         ]
-        mock_client, _ = self._make_n_round_mock_client(continuation_chunks)
+        mock_client, _ = make_n_round_mock_client(continuation_chunks)
         mock_class = MagicMock(return_value=mock_client)
 
         body = {
@@ -901,7 +852,7 @@ class TestMockedFlows:
         second_chunks = [
             _sse_event({"type": "finish", "messageMetadata": {"finishReason": "stop"}}),
         ]
-        mock_client, get_call_count = self._make_n_round_mock_client(
+        mock_client, get_call_count = make_n_round_mock_client(
             first_chunks, second_chunks
         )
         mock_class = MagicMock(return_value=mock_client)
@@ -981,7 +932,7 @@ class TestMockedFlows:
                 {"type": "finish", "messageMetadata": {"finishReason": "tool-calls"}}
             ),
         ]
-        mock_client, get_call_count = self._make_n_round_mock_client(first_chunks)
+        mock_client, get_call_count = make_n_round_mock_client(first_chunks)
         mock_class = MagicMock(return_value=mock_client)
         execute_tool_mock = AsyncMock()
 
@@ -1033,14 +984,15 @@ class TestMockedFlows:
             sse_text_delta("15"),
             _sse_event({"type": "finish", "messageMetadata": {"finishReason": "stop"}}),
         ]
-        mock_client, _ = self._make_n_round_mock_client(first_chunks, second_chunks)
+        mock_client, _ = make_n_round_mock_client(first_chunks, second_chunks)
         mock_class = MagicMock(return_value=mock_client)
 
         with patch(PATCH_ASYNC_CLIENT, mock_class):
-            response = client.post(
-                "/api/chat",
-                json={"messages": [{"role": "user", "content": "add 5+10"}]},
-            )
+            with patch(PATCH_EXECUTE_TOOL, AsyncMock(return_value="15")):
+                response = client.post(
+                    "/api/chat",
+                    json={"messages": [{"role": "user", "content": "add 5+10"}]},
+                )
 
         assert response.status_code == 200
         events = _parse_sse_events(response.content)
