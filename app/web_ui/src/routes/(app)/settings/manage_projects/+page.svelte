@@ -95,6 +95,10 @@
                   .replace("/project.kiln", "")
                   .replace("\\project.kiln", "")
               : "Unknown"}
+            {@const is_git_managed = project.path
+              ? project.path.includes("Kiln Projects/.git-projects/") ||
+                project.path.includes("Kiln Projects\\.git-projects\\")
+              : false}
             <tr>
               <td class="font-medium">{project.name}</td>
               <td>{project.description || "N/A"}</td>
@@ -102,12 +106,16 @@
                 {formatDate(project.created_at)}
               </td>
               <td>
-                <button
-                  class="link text-gray-500"
-                  on:click={() => open_project_folder(project)}
-                >
-                  {path.length > 64 ? path.slice(0, 64) + "..." : path}
-                </button>
+                {#if is_git_managed}
+                  <span class="text-gray-500">Managed: Git Auto Sync</span>
+                {:else}
+                  <button
+                    class="link text-gray-500"
+                    on:click={() => open_project_folder(project)}
+                  >
+                    {path.length > 64 ? path.slice(0, 64) + "..." : path}
+                  </button>
+                {/if}
               </td>
               <td class="p-0">
                 <div class="dropdown dropdown-end dropdown-hover">
@@ -136,11 +144,13 @@
                         >Remove Project</button
                       >
                     </li>
-                    <li>
-                      <button on:click={() => open_project_folder(project)}
-                        >Open Folder</button
-                      >
-                    </li>
+                    {#if !is_git_managed}
+                      <li>
+                        <button on:click={() => open_project_folder(project)}
+                          >Open Folder</button
+                        >
+                      </li>
+                    {/if}
                   </ul>
                 </div>
               </td>
