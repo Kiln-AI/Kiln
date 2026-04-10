@@ -4,7 +4,7 @@
   import { agentInfo } from "$lib/agent"
   import type { Project } from "$lib/types"
   import { client } from "$lib/api_client"
-  import TableButton from "$lib/ui/table_button.svelte"
+  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import { goto } from "$app/navigation"
   import { formatDate } from "$lib/utils/formatters"
 
@@ -120,39 +120,28 @@
                 </button>
               </td>
               <td class="p-0">
-                <div class="dropdown dropdown-end dropdown-hover">
-                  <TableButton />
-                  <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-                  <ul
-                    tabindex="0"
-                    class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
-                  >
-                    <li>
-                      <button
-                        on:click={() =>
-                          goto(`/settings/create_task/${project.id}`)}
-                        >Add Task</button
-                      >
-                    </li>
-                    <li>
-                      <button
-                        on:click={() =>
-                          goto(`/settings/edit_project/${project.id}`)}
-                        >Edit Project</button
-                      >
-                    </li>
-                    <li>
-                      <button on:click={() => remove_project(project)}
-                        >Remove Project</button
-                      >
-                    </li>
-                    <li>
-                      <button on:click={() => open_project_folder(project)}
-                        >Open Folder</button
-                      >
-                    </li>
-                  </ul>
-                </div>
+                <TableActionMenu
+                  items={[
+                    {
+                      label: "Add Task",
+                      onclick: () =>
+                        goto(`/settings/create_task/${project.id}`),
+                    },
+                    {
+                      label: "Edit Project",
+                      onclick: () =>
+                        goto(`/settings/edit_project/${project.id}`),
+                    },
+                    {
+                      label: "Remove Project",
+                      onclick: () => remove_project(project),
+                    },
+                    {
+                      label: "Open Folder",
+                      onclick: () => open_project_folder(project),
+                    },
+                  ]}
+                />
               </td>
             </tr>
           {/each}

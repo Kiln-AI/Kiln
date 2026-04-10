@@ -26,6 +26,13 @@ The SDK in `/libs/core` is a SDK/library we expose to third parties. We code rev
 - All visible classes/vars should have docstrings explaining their purpose. These will be pulled into 3rd party docs automatically. The doc strings should be written for 3rd party devs learning the SDK.
 - Performance: the base_adapter and litellm_adapter are performance critical. They are the core run-loop of our agent system. We should avoid anything that would slow them down (file reads should be done once and passed in, etc). It's critical to avoid blocking IO - a process may be executing hundreds of these in parallel.
 
+### UI-Specific Review Guides
+
+If the change contains UI changes read:
+
+ - `./frontend_design_guide.md`
+ - `./frontend_controls.md`
+
 ### FastAPI / OpenAPI Standards
 
 If the change impacts API endpoints, read `.agents/api_code_review.md` for instructions on how to code review API endpoints.

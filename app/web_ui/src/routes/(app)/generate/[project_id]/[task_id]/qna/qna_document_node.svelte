@@ -1,5 +1,5 @@
 <script lang="ts">
-  import TableButton from "$lib/ui/table_button.svelte"
+  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import Output from "$lib/ui/output.svelte"
   import { createEventDispatcher } from "svelte"
@@ -130,30 +130,24 @@
     </div>
   </td>
   <td class="p-0">
-    <div class="dropdown dropdown-end dropdown-hover">
-      <TableButton />
-      <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-      <ul
-        tabindex="0"
-        class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
-      >
-        <li>
-          <button
-            on:click|stopPropagation={() =>
-              dispatch("delete_document", { document_id: document.id })}
-          >
-            Remove Document
-          </button>
-        </li>
-        {#if $qnaMaxStep && $qnaMaxStep > 2 && !document.extraction_failed}
-          <li>
-            <button on:click|stopPropagation={handle_generate_for_document}>
-              Generate Q&A Pairs
-            </button>
-          </li>
-        {/if}
-      </ul>
-    </div>
+    <TableActionMenu
+      items={[
+        {
+          label: "Remove Document",
+          onclick: () =>
+            dispatch("delete_document", { document_id: document.id }),
+        },
+        {
+          label: "Generate Q&A Pairs",
+          onclick: handle_generate_for_document,
+          hidden: !(
+            $qnaMaxStep &&
+            $qnaMaxStep > 2 &&
+            !document.extraction_failed
+          ),
+        },
+      ]}
+    />
   </td>
 </tr>
 
@@ -183,31 +177,19 @@
           </div>
         </td>
         <td class="p-0">
-          <div class="dropdown dropdown-end dropdown-hover">
-            <TableButton />
-            <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-            <ul
-              tabindex="0"
-              class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
-            >
-              <li>
-                <button on:click|stopPropagation={() => remove_part(part.id)}>
-                  Remove Chunk
-                </button>
-              </li>
-              <li>
-                <button
-                  on:click|stopPropagation={() =>
-                    dispatch("generate_for_part", {
-                      document_id: document.id,
-                      part_id: part.id,
-                    })}
-                >
-                  Generate Q&A Pairs for Chunk
-                </button>
-              </li>
-            </ul>
-          </div>
+          <TableActionMenu
+            items={[
+              { label: "Remove Chunk", onclick: () => remove_part(part.id) },
+              {
+                label: "Generate Q&A Pairs for Chunk",
+                onclick: () =>
+                  dispatch("generate_for_part", {
+                    document_id: document.id,
+                    part_id: part.id,
+                  }),
+              },
+            ]}
+          />
         </td>
       </tr>
     {/if}
@@ -245,32 +227,19 @@
           {/if}
         </td>
         <td class="p-0">
-          <div class="dropdown dropdown-end dropdown-hover">
-            <TableButton />
-            <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-            <ul
-              tabindex="0"
-              class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
-            >
-              <li>
-                <button
-                  on:click|stopPropagation={() =>
-                    delete_qa_pair(part.id, qa.id)}
-                >
-                  Delete Q&A Pair
-                </button>
-              </li>
-              {#if qa.saved_id}
-                <li>
-                  <button
-                    on:click|stopPropagation={() => openQAPairInDataset(qa)}
-                  >
-                    View in Dataset</button
-                  >
-                </li>
-              {/if}
-            </ul>
-          </div>
+          <TableActionMenu
+            items={[
+              {
+                label: "Delete Q&A Pair",
+                onclick: () => delete_qa_pair(part.id, qa.id),
+              },
+              {
+                label: "View in Dataset",
+                onclick: () => openQAPairInDataset(qa),
+                hidden: !qa.saved_id,
+              },
+            ]}
+          />
         </td>
       </tr>
     {/each}

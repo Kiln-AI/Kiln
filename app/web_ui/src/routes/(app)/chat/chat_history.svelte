@@ -9,7 +9,7 @@
   import { formatDate } from "$lib/utils/formatters"
   import Dialog from "$lib/ui/dialog.svelte"
   import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
-  import TableButton from "$lib/ui/table_button.svelte"
+  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
 
   /** Called before the modal opens (e.g. abort in-flight stream). */
   export let onBeforeOpen: (() => void) | undefined = undefined
@@ -192,23 +192,18 @@
               {/if}
               <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
               <div
-                class="dropdown dropdown-end dropdown-hover shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                class="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
                 on:click|stopPropagation
               >
-                <TableButton />
-                <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-                <ul
-                  tabindex="0"
-                  class="dropdown-content menu bg-base-100 rounded-box z-[1] w-40 p-2 shadow"
-                >
-                  <li>
-                    <button
-                      class="text-error"
-                      on:click|stopPropagation={() => deleteSession(row.id)}
-                      >Delete</button
-                    >
-                  </li>
-                </ul>
+                <TableActionMenu
+                  width="w-40"
+                  items={[
+                    {
+                      label: "Delete",
+                      onclick: () => deleteSession(row.id),
+                    },
+                  ]}
+                />
               </div>
             {/if}
           </div>

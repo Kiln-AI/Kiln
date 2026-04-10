@@ -40,7 +40,7 @@
   import PromptOptimizationCopilotRequired from "../prompt_optimization_copilot_required.svelte"
   import EntitlementRequiredCard from "$lib/ui/kiln_copilot/entitlement_required_card.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
-  import TableButton from "$lib/ui/table_button.svelte"
+  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import posthog from "posthog-js"
   import { agentInfo } from "$lib/agent"
 
@@ -1138,28 +1138,17 @@
                               {formatDate(evalItem.created_at || undefined)}
                             </td>
                             <td class="p-0" on:click|stopPropagation>
-                              {#if eval_url}
-                                <div
-                                  class="dropdown dropdown-end dropdown-hover"
-                                >
-                                  <TableButton />
-                                  <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-                                  <ul
-                                    tabindex="0"
-                                    class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
-                                  >
-                                    <li>
-                                      <a
-                                        href={eval_url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                      >
-                                        View Eval
-                                      </a>
-                                    </li>
-                                  </ul>
-                                </div>
-                              {/if}
+                              <TableActionMenu
+                                items={[
+                                  {
+                                    label: "View Eval",
+                                    href: eval_url,
+                                    target: "_blank",
+                                    rel: "noopener noreferrer",
+                                    hidden: !eval_url,
+                                  },
+                                ]}
+                              />
                             </td>
                           </tr>
                         {/each}
