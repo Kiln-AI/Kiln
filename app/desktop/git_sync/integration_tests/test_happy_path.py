@@ -10,6 +10,7 @@ import pytest
 from app.desktop.git_sync.integration_tests.conftest import (
     assert_clean_working_tree,
     assert_commit_contains_files,
+    assert_linear_history,
     assert_remote_has_commit,
     get_commit_count,
     get_head_sync,
@@ -107,6 +108,38 @@ class TestMultiFileAtomicCommit:
             local_path, post_head, ["file_a.kiln", "file_b.kiln", "file_c.kiln"]
         )
         assert_remote_has_commit(remote_path, post_head)
+
+
+class TestSequentialWritesOwnCommits:
+    """Scenario 28: Multiple sequential writes each get their own commit."""
+
+    @pytest.mark.asyncio
+    async def test_three_sequential_writes(self, write_ctx, git_repos):
+        """3 sequential writes produce 3 commits, each with own files, linear history."""
+        local_path, remote_path = git_repos
+        pre_count = get_commit_count(local_path)
+
+        heads = [get_head_sync(local_path)]
+
+        result1 = await write_ctx.do_write(lambda p: (p / "seq_a.kiln").write_text("a"))
+        heads.append(get_head_sync(local_path))
+
+        result2 = await write_ctx.do_write(lambda p: (p / "seq_b.kiln").write_text("b"))
+        heads.append(get_head_sync(local_path))
+
+        result3 = await write_ctx.do_write(lambda p: (p / "seq_c.kiln").write_text("c"))
+        heads.append(get_head_sync(local_path))
+
+        assert result1.committed and result1.pushed
+        assert result2.committed and result2.pushed
+        assert result3.committed and result3.pushed
+        assert get_commit_count(local_path) == pre_count + 3
+
+        assert_commit_contains_files(local_path, heads[1], ["seq_a.kiln"])
+        assert_commit_contains_files(local_path, heads[2], ["seq_b.kiln"])
+        assert_commit_contains_files(local_path, heads[3], ["seq_c.kiln"])
+
+        assert_linear_history(remote_path, 4)  # init + 3 writes
 
 
 class TestArbitraryDiskWrites:

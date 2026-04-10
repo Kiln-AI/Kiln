@@ -28,7 +28,7 @@ status: complete
 - [x] Phase 4: Crash Recovery
   - `test_crash_recovery.py`: scenarios 10–13, 35–37 (dirty state, in-progress rebase, unpushed commits, unrecoverable, all-three-combined, force-push, partial recovery failure)
 
-- [ ] Phase 5: Locking, Freshness, Sync, Decorators, and Batch
+- [x] Phase 5: Locking, Freshness, Sync, Decorators, and Batch
   - `test_locking.py`: scenarios 14–15, 45 (serialization, timeout, non-reentrant deadlock)
   - `test_freshness.py`: scenarios 16, 18, 29 (pull before write, stale read updates, threshold skips fetch)
   - `test_background_sync.py`: scenarios 19–21 (fetch+ff, no-op, skip diverged)
