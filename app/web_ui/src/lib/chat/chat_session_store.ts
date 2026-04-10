@@ -66,6 +66,7 @@ export function createChatSessionStore(
   let status: ChatSessionState["status"] = "ready"
   let abortController: AbortController | null = null
   let continuationTraceId: string | undefined = undefined
+  let generation = 0
   let toolApprovalResolver:
     | ((decisions: Record<string, boolean>) => void)
     | null = null
@@ -167,30 +168,41 @@ export function createChatSessionStore(
     const controller = new AbortController()
     setRuntimeState("submitted", controller)
 
+    const thisGeneration = ++generation
+
+    const isStale = () => thisGeneration !== generation
+
     streamChat({
       apiUrl: CHAT_API_URL,
       messages: [apiMessage],
       traceId,
-      onToolCallsPending: handleToolCallsPending,
+      onToolCallsPending: (payload) => {
+        if (isStale()) return Promise.resolve({})
+        return handleToolCallsPending(payload)
+      },
       onToolExecutionStart: () => {
+        if (isStale()) return
         combined.update((s) => ({
           ...s,
           toolExecuting: true,
         }))
       },
       onToolExecutionEnd: () => {
+        if (isStale()) return
         combined.update((s) => ({
           ...s,
           toolExecuting: false,
         }))
       },
       onAssistantMessage: (update) => {
+        if (isStale()) return
         if (status !== "streaming") {
           setRuntimeState("streaming", controller)
         }
         updateLastAssistant(update)
       },
       onChatTrace: (traceId) => {
+        if (isStale()) return
         persisted.update((p) => {
           const msgs = p.messages
           const last = msgs[msgs.length - 1]
@@ -204,6 +216,7 @@ export function createChatSessionStore(
         })
       },
       onInlineError: (message, traceId, code) => {
+        if (isStale()) return
         const errorMsg: ChatMessage = {
           id: chatGenerateId(),
           role: "error",
@@ -215,9 +228,11 @@ export function createChatSessionStore(
         setRuntimeState("ready", null)
       },
       onFinish: () => {
+        if (isStale()) return
         setRuntimeState("ready", null)
       },
       onError: (err) => {
+        if (isStale()) return
         const errorMsg: ChatMessage = {
           id: chatGenerateId(),
           role: "error",
