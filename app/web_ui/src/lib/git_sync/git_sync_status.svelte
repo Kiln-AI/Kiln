@@ -9,7 +9,9 @@
     deleteConfig,
     testAccess,
     isGitHubUrl,
+    isGitLabUrl,
     gitHubPatDeepLink,
+    gitLabPatDeepLink,
     type GitSyncConfigResponse,
   } from "$lib/git_sync/api"
 
@@ -81,6 +83,7 @@
   }
 
   $: is_github = config?.git_url ? isGitHubUrl(config.git_url) : false
+  $: is_gitlab = config?.git_url ? isGitLabUrl(config.git_url) : false
   $: is_system_keys = config?.auth_mode === "system_keys"
 </script>
 
@@ -163,6 +166,17 @@
               >
                 Generate a GitHub token</a
               >. It must have read/write access to the selected repo.
+            </div>
+          {:else if is_gitlab && config?.git_url}
+            <div class="text-xs text-gray-500 mt-1">
+              <a
+                href={gitLabPatDeepLink(config.git_url)}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="link text-primary"
+              >
+                Generate a GitLab token</a
+              >. Set expiration to at least 1 year.
             </div>
           {/if}
           {#if token_error}

@@ -2,7 +2,13 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import Warning from "$lib/ui/warning.svelte"
-  import { testAccess, isGitHubUrl, gitHubPatDeepLink } from "$lib/git_sync/api"
+  import {
+    testAccess,
+    isGitHubUrl,
+    isGitLabUrl,
+    gitHubPatDeepLink,
+    gitLabPatDeepLink,
+  } from "$lib/git_sync/api"
 
   export let git_url: string
   export let initial_token: string | null = null
@@ -14,6 +20,7 @@
   let saved = false
 
   $: is_github = isGitHubUrl(git_url)
+  $: is_gitlab = isGitLabUrl(git_url)
 
   async function test_and_save() {
     try {
@@ -65,9 +72,21 @@
         Generate a GitHub token</a
       > and paste it below. It must have read/write access to the selected repo.
     </div>
+  {:else if is_gitlab}
+    <div class="text-sm">
+      <a
+        href={gitLabPatDeepLink(git_url)}
+        target="_blank"
+        rel="noopener noreferrer"
+        class="link text-primary"
+      >
+        Generate a GitLab token</a
+      > and paste it below. Set expiration to at least 1 year. It must have read/write
+      access to the selected repo.
+    </div>
   {:else}
     <Warning
-      warning_message="Generate an access token following instructions from your Git hosting provider (GitLab, Bitbucket, etc). The process varies from host to host."
+      warning_message="Generate an access token following instructions from your Git hosting provider (Bitbucket, etc). The process varies from host to host."
       warning_color="gray"
       warning_icon="info"
     />
@@ -82,7 +101,9 @@
       type="password"
       class="input input-bordered w-full"
       bind:value={pat_token}
-      placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+      placeholder={is_gitlab
+        ? "glpat-xxxxxxxxxxxxxxxxxxxx"
+        : "ghp_xxxxxxxxxxxxxxxxxxxx"}
       autocomplete="off"
     />
   </div>

@@ -187,6 +187,29 @@ export function isGitHubUrl(url: string): boolean {
   return url.includes("github.com")
 }
 
+export function isGitLabUrl(url: string): boolean {
+  const hostname = gitHostname(url)
+  if (!hostname) return false
+  return hostname === "gitlab.com" || hostname.startsWith("gitlab.")
+}
+
+export function gitHostname(url: string): string | null {
+  try {
+    // Handle SSH-style URLs like git@gitlab.example.com:org/repo.git
+    const sshMatch = url.match(/^[\w-]+@([\w.-]+):/)
+    if (sshMatch) return sshMatch[1]
+    // Handle HTTPS-style URLs
+    return new URL(url).hostname
+  } catch {
+    return null
+  }
+}
+
 export function gitHubPatDeepLink(): string {
   return "https://github.com/settings/personal-access-tokens/new?name=Kiln+AI&description=Kiln+AI+auto+sync&contents=write&metadata=read&expires_in=none"
+}
+
+export function gitLabPatDeepLink(git_url: string): string {
+  const host = gitHostname(git_url) || "gitlab.com"
+  return `https://${host}/-/user_settings/personal_access_tokens?name=Kiln+AI&scopes=write_repository&description=Kiln+AI+auto+sync`
 }
