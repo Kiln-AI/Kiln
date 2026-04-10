@@ -25,7 +25,7 @@ status: complete
   - `test_conflicts.py`: scenarios 8–9, 38–41 (push race + rebase succeeds, unresolvable rebase, delete/modify, add/add, empty commit, ABA)
   - `test_network_failure.py`: scenarios 17, 26 (parameterized network failures on reads and writes)
 
-- [ ] Phase 4: Crash Recovery
+- [x] Phase 4: Crash Recovery
   - `test_crash_recovery.py`: scenarios 10–13, 35–37 (dirty state, in-progress rebase, unpushed commits, unrecoverable, all-three-combined, force-push, partial recovery failure)
 
 - [ ] Phase 5: Locking, Freshness, Sync, Decorators, and Batch
