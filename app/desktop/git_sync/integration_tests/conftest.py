@@ -293,7 +293,7 @@ def assert_commit_contains_files(
     else:
         diff = commit.tree.diff_to_tree()
 
-    changed = {patch.delta.new_file.path for patch in diff}
+    changed = {patch.delta.new_file.path or patch.delta.old_file.path for patch in diff}
     expected = set(filenames)
     assert expected == changed, (
         f"Expected exactly {expected} in commit, but found {changed}"
@@ -391,7 +391,7 @@ def break_network(monkeypatch, network_failure):
 # ---------------------------------------------------------------------------
 
 
-def _auto_config(clone_path: str) -> GitSyncProjectConfig:
+def auto_config(clone_path: str) -> GitSyncProjectConfig:
     return GitSyncProjectConfig(
         sync_mode="auto",
         auth_mode="system_keys",
@@ -422,7 +422,7 @@ def manager(git_repos) -> Generator[GitSyncManager]:
 @pytest.fixture(params=["library", "api"])
 def write_ctx(request, git_repos):
     local_path, remote_path = git_repos
-    config = _auto_config(str(local_path))
+    config = auto_config(str(local_path))
 
     if request.param == "library":
         mgr = GitSyncManager(repo_path=local_path, auth_mode="system_keys")
@@ -442,7 +442,7 @@ def write_ctx(request, git_repos):
 @pytest.fixture
 def library_ctx(git_repos):
     local_path, remote_path = git_repos
-    config = _auto_config(str(local_path))
+    config = auto_config(str(local_path))
     mgr = GitSyncManager(repo_path=local_path, auth_mode="system_keys")
     ctx = LibraryWriteContext(mgr, local_path, remote_path)
     with mock_git_sync_config(config):
@@ -453,7 +453,7 @@ def library_ctx(git_repos):
 @pytest.fixture
 def api_ctx(git_repos):
     local_path, remote_path = git_repos
-    config = _auto_config(str(local_path))
+    config = auto_config(str(local_path))
     write_fn_slot: list = []
     app = build_test_app(local_path, write_fn_slot)
     with mock_git_sync_config(config):
@@ -464,7 +464,7 @@ def api_ctx(git_repos):
 @pytest.fixture
 def api_client(git_repos):
     local_path, remote_path = git_repos
-    config = _auto_config(str(local_path))
+    config = auto_config(str(local_path))
     write_fn_slot: list = []
     app = build_test_app(local_path, write_fn_slot)
     with mock_git_sync_config(config):

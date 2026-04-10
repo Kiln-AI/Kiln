@@ -8,6 +8,7 @@ import pygit2
 import pytest
 
 from app.desktop.git_sync.conftest import commit_in_repo, push_from
+from app.desktop.git_sync.errors import RemoteUnreachableError
 from app.desktop.git_sync.integration_tests.conftest import (
     assert_clean_working_tree,
     assert_commit_contains_files,
@@ -249,5 +250,5 @@ class TestNetworkFailure:
         local_path, _ = git_repos
         commit_in_repo(local_path, "push_test.txt", "data", "test")
 
-        with pytest.raises((pygit2.GitError, TimeoutError)):
+        with pytest.raises((pygit2.GitError, TimeoutError, RemoteUnreachableError)):
             await manager._run_git(manager._push_sync)

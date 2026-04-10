@@ -15,7 +15,7 @@ status: complete
   - Network failure fixtures (`NetworkFailure`, `NETWORK_FAILURES`, `break_network`)
   - `test_fixtures.py`: validation tests proving the infrastructure works — git repo creation, clone, commit, push, second clone divergence, WriteContext in both modes, assertion helpers, network failure injection
 
-- [ ] Phase 2: Happy Path and Basic Operations
+- [x] Phase 2: Happy Path and Basic Operations
   - `test_happy_path.py`: scenarios 1–5 (write→commit→push, read passes through, no-op write, multi-file atomic, arbitrary disk writes)
   - `test_file_operations.py`: scenarios 32–33, 42–43 (file deletions, .gitignore, mixed create+delete, net-zero)
   - `test_middleware_routing.py`: scenarios 30–31 (non-project routes, manual mode)
