@@ -125,28 +125,17 @@ class TestNoWriteLockDecoratorOnPost:
 
 
 class TestStreamingResponseUnderLock:
-    """Scenario 24: Streaming response under write lock returns 500.
+    """Scenario 24: Streaming response under write lock should return 500."""
 
-    Known bug: Starlette's BaseHTTPMiddleware.call_next() returns a
-    _StreamingResponse that does NOT populate the `media_type` attribute
-    from the Content-Type header. It sets `raw_headers` directly but
-    leaves `media_type` as None. This means the middleware check
-    `response.media_type == "text/event-stream"` always evaluates to
-    False, and the SSE detection safety net doesn't trigger.
-
-    The tests below document the actual behavior (streaming passes
-    through as 200) rather than the intended behavior (500 error).
-    """
-
+    @pytest.mark.xfail(
+        reason="Starlette's BaseHTTPMiddleware.call_next() returns a response "
+        "where media_type is None (even when Content-Type is text/event-stream), "
+        "so the middleware's SSE detection check never fires.",
+        strict=True,
+    )
     @pytest.mark.asyncio
-    async def test_streaming_detection_known_gap(self, git_repos):
-        """SSE response under write lock is NOT caught due to Starlette limitation.
-
-        The middleware checks response.media_type, but call_next() returns
-        a response where media_type is None (even when Content-Type header
-        is text/event-stream). This is a known gap — the streaming
-        detection code exists but doesn't fire in practice.
-        """
+    async def test_streaming_under_lock_returns_500(self, git_repos):
+        """SSE response under write lock should return 500 with @no_write_lock hint."""
         local_path, remote_path = git_repos
         config = auto_config(str(local_path))
 
@@ -170,9 +159,8 @@ class TestStreamingResponseUnderLock:
 
             resp = client.post(f"/api/projects/{PROJECT_ID}/test_stream")
 
-            # Documents actual behavior: streaming passes through because
-            # media_type is None on the response from call_next().
-            assert resp.status_code == 200
+            assert resp.status_code == 500
+            assert "no_write_lock" in resp.json().get("detail", "").lower()
 
 
 class TestLongLockHoldWarning:

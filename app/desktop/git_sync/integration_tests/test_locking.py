@@ -136,15 +136,14 @@ class TestWriteLockTimeout:
             holder.join(timeout=5)
 
     @pytest.mark.asyncio
+    @pytest.mark.xfail(
+        reason="WriteLockTimeoutError is raised outside the middleware's inner "
+        "try/except that maps GitSyncError to HTTP status codes, so it "
+        "propagates as 500 instead of the intended 503.",
+        strict=True,
+    )
     async def test_lock_timeout_api_returns_error(self, api_client, git_repos):
-        """API mode: lock timeout returns 500.
-
-        WriteLockTimeoutError is raised from `manager.write_lock()` which
-        is outside the middleware's inner try/except that maps
-        GitSyncErrors to HTTP status codes. As a result, the error
-        propagates as an unhandled 500 rather than the ideal 503. This
-        test documents the actual behavior.
-        """
+        """API mode: lock timeout should return 503 'Another save is in progress'."""
         from app.desktop.git_sync.registry import GitSyncRegistry
 
         client, local_path, remote_path, write_fn_slot = api_client
@@ -173,7 +172,7 @@ class TestWriteLockTimeout:
             resp = client.post(
                 "/api/projects/integration_test_proj/test_write", json={}
             )
-            assert resp.status_code == 500
+            assert resp.status_code == 503
         finally:
             release.set()
             holder.join(timeout=5)

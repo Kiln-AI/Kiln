@@ -255,29 +255,27 @@ class TestInProgressRebaseRecovery:
         post_head = get_head_sync(local_path)
         assert remote_has_commit(remote_path, post_head)
 
+    @pytest.mark.xfail(
+        reason="state_cleanup() clears the cherry-pick state marker but leaves "
+        "conflict entries in the index. The subsequent stash fails with "
+        "'cannot create a tree from a not fully merged index'.",
+        strict=True,
+    )
     @pytest.mark.asyncio
-    async def test_conflicted_rebase_recovery_fails(
+    async def test_conflicted_rebase_recovery_succeeds(
         self, write_ctx, git_repos, second_clone
     ):
-        """Known bug: conflicted cherry-pick state cannot be recovered.
-
-        When a cherry-pick has unresolved conflicts, state_cleanup() removes
-        the cherry-pick state marker but leaves conflict entries in the index.
-        The subsequent stash fails because git cannot create a tree from a
-        not-fully-merged index. This results in CorruptRepoError.
-
-        This test documents the current behavior. The production code has a
-        TODO acknowledging this gap.
-        """
+        """Conflicted cherry-pick state should be recoverable like clean state."""
         local_path, remote_path = git_repos
         leave_rebase_state_conflicted(local_path, second_clone, remote_path)
 
         result = await write_ctx.do_write(
             lambda p: (p / "after_rebase.kiln").write_text("post-recovery write"),
-            expect_error=True,
         )
 
-        assert result.error is not None
+        assert result.committed
+        assert result.pushed
+        assert_clean_working_tree(local_path)
 
 
 # ---------------------------------------------------------------------------
