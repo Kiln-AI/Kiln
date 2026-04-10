@@ -296,8 +296,9 @@ class GitSyncManager:
             and flags != pygit2.enums.FileStatus.CURRENT
         )
         if file_count == 0:
-            logger.warning("_create_commit called with no dirty files")
-            file_count = 1
+            raise CorruptRepoError(
+                "_create_commit called with no dirty files -- this is a bug"
+            )
 
         index = repo.index
         index.add_all()

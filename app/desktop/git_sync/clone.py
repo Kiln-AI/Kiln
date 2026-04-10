@@ -360,6 +360,7 @@ def test_write_access(
         repo = pygit2.Repository(str(clone_path))
         sig = pygit2.Signature("Kiln AI", "sync@kiln.ai")
 
+        pre_commit_head = repo.head.target
         tree = repo.index.write_tree()
         parents = [repo.head.target]
         repo.create_commit(
@@ -381,6 +382,7 @@ def test_write_access(
         remote.push([f"refs/heads/{branch_name}"], callbacks=push_cb)
 
         if push_errors:
+            repo.reset(pre_commit_head, pygit2.enums.ResetMode.HARD)
             return False, "; ".join(push_errors)
 
         return True, "Write access confirmed"
