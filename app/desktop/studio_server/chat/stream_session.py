@@ -261,7 +261,9 @@ async def execute_tool(tool_name: str, args: dict[str, Any]) -> str:
         tool_name,
         json.dumps(args, default=str, ensure_ascii=False),
     )
-    tool_id = FUNCTION_NAME_TO_TOOL_ID.get(tool_name, tool_name)
+    tool_id = FUNCTION_NAME_TO_TOOL_ID.get(tool_name)
+    if tool_id is None:
+        raise ValueError(f"Unknown tool name: {tool_name}")
     try:
         tool = tool_from_id(tool_id)
         result = await tool.run(**args)
