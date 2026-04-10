@@ -325,7 +325,7 @@
   }
 
   // Handler for "Create with Copilot" button
-  async function handle_analyze_with_copilot() {
+  async function handle_create_with_copilot() {
     error = null
 
     try {
@@ -876,7 +876,7 @@
         {task_id}
         bind:few_shot_example
         bind:has_unsaved_manual_entry
-        on:analyze_with_copilot={handle_analyze_with_copilot}
+        on:create_with_copilot={handle_create_with_copilot}
         on:create_without_copilot={handle_create_spec_without_copilot}
       />
     {:else if current_state === "analyzing_for_review"}

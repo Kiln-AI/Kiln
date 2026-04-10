@@ -29,7 +29,7 @@
   let form_container: FormContainer
 
   const dispatch = createEventDispatcher<{
-    analyze_with_copilot: void
+    create_with_copilot: void
     create_without_copilot: void
   }>()
 
@@ -54,7 +54,7 @@
 
   function handle_submit() {
     if (copilot_enabled) {
-      dispatch("analyze_with_copilot")
+      dispatch("create_with_copilot")
     } else {
       dispatch("create_without_copilot")
     }
