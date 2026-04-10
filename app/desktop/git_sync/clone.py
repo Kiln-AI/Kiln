@@ -244,19 +244,20 @@ def compute_temp_clone_path() -> Path:
 
 
 def rename_clone_to_final_path(
-    current_path: Path, base_dir: Path, project_name: str, project_id: str
+    current_path: Path,
+    final_path: Path,
 ) -> Path:
     """Move a cloned repo from its current (temp) location to its final path.
 
-    Computes the final path using compute_clone_path and renames the directory.
-    Returns the new path.
+    The caller is responsible for computing final_path (via compute_clone_path)
+    and validating it before calling this function.
 
-    Raises ValueError if current_path does not exist or if the rename fails.
+    Returns the final path.
+
+    Raises ValueError if current_path does not exist.
     """
     if not current_path.exists():
         raise ValueError(f"Clone path does not exist: {current_path}")
-
-    final_path = compute_clone_path(base_dir, project_name, project_id)
 
     final_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(current_path), str(final_path))

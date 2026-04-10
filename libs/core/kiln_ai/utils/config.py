@@ -302,14 +302,18 @@ class Config:
             else copy.deepcopy(v)
             for k, v in combined.items()
         }
-        # Hide sensitive keys in lists. Could generalize this if we every have more types, but right not it's only needed for root elements of lists
+        # Hide sensitive keys in nested structures (lists of dicts, or dicts of dicts)
         for key, value in settings.items():
             if key in self._properties and self._properties[key].sensitive_keys:
                 sensitive_keys = self._properties[key].sensitive_keys or []
                 for sensitive_key in sensitive_keys:
                     if isinstance(value, list):
                         for item in value:
-                            if sensitive_key in item:
+                            if isinstance(item, dict) and sensitive_key in item:
+                                item[sensitive_key] = "[hidden]"
+                    elif isinstance(value, dict):
+                        for item in value.values():
+                            if isinstance(item, dict) and sensitive_key in item:
                                 item[sensitive_key] = "[hidden]"
 
         return settings

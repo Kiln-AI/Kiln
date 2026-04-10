@@ -356,9 +356,7 @@ def connect_git_sync_api(app: FastAPI):
             new_path = await asyncio.to_thread(
                 rename_clone_to_final_path,
                 current_path,
-                base_dir,
-                request.project_name,
-                request.project_id,
+                final_path,
             )
 
             return RenameCloneResponse(

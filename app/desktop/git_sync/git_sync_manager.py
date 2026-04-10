@@ -62,10 +62,15 @@ class GitSyncManager:
 
     async def _run_git(self, fn: Callable[..., T], *args: Any) -> T:
         loop = asyncio.get_running_loop()
-        return await asyncio.wait_for(
-            loop.run_in_executor(self._git_executor, fn, *args),
-            timeout=self._GIT_EXECUTOR_TIMEOUT,
-        )
+        try:
+            return await asyncio.wait_for(
+                loop.run_in_executor(self._git_executor, fn, *args),
+                timeout=self._GIT_EXECUTOR_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            raise RemoteUnreachableError(
+                "Git operation timed out. Check your connection."
+            ) from None
 
     @asynccontextmanager
     async def write_lock(self):
@@ -85,16 +90,20 @@ class GitSyncManager:
 
         logger.warning("Repo dirty on write request -- running crash recovery")
 
+        # Abort in-progress rebase/merge FIRST -- stash fails if the index
+        # has unresolved conflict entries from a mid-rebase crash.
+        # TODO: add integration test with a real local repo that simulates
+        # a crash mid-rebase with conflicts and verifies ensure_clean recovers.
+        state = await self._run_git(self._get_repo_state)
+        if state != pygit2.enums.RepositoryState.NONE:
+            logger.warning("Aborting in-progress rebase/merge")
+            await self._run_git(self._state_cleanup)
+
         if await self.has_dirty_files():
             await self._run_git(
                 self._stash_all,
                 "[Kiln] Auto-recovery stash -- dirty state from prior session",
             )
-
-        state = await self._run_git(self._get_repo_state)
-        if state != pygit2.enums.RepositoryState.NONE:
-            logger.warning("Aborting in-progress rebase/merge")
-            await self._run_git(self._state_cleanup)
 
         unpushed = await self._count_unpushed_commits()
         if unpushed > 0:
