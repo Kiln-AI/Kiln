@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -11,7 +12,9 @@ from pydantic import BaseModel, Field
 from app.desktop.git_sync.clone import (
     clone_repo,
     compute_clone_path,
+    compute_temp_clone_path,
     list_remote_branches,
+    rename_clone_to_final_path,
     scan_for_projects,
     test_remote_access,
     test_write_access,
@@ -73,7 +76,7 @@ class ListBranchesResponse(BaseModel):
 
 
 class CloneRequest(BaseModel):
-    """Request to clone a git repository."""
+    """Request to clone a git repository into a temporary directory."""
 
     git_url: str = Field(description="The git remote URL to clone.")
     branch: str = Field(description="The branch to check out after cloning.")
@@ -83,12 +86,6 @@ class CloneRequest(BaseModel):
     auth_mode: Literal["system_keys", "pat_token"] = Field(
         default="system_keys",
         description="Auth mode: 'system_keys' (SSH agent) or 'pat_token' (HTTPS PAT).",
-    )
-    project_name: str = Field(
-        default="project", description="Human-readable project name for the clone dir."
-    )
-    project_id: str = Field(
-        default="", description="Unique project identifier used in the clone path."
     )
 
 
@@ -117,6 +114,30 @@ class ScanProjectsRequest(BaseModel):
     """Request to scan a cloned repo for Kiln project files."""
 
     clone_path: str = Field(description="Local filesystem path of the cloned repo.")
+
+
+class RenameCloneRequest(BaseModel):
+    """Request to rename a temp clone directory to its final path."""
+
+    clone_path: str = Field(
+        description="Current filesystem path of the cloned repo (typically in .tmp/)."
+    )
+    project_name: str = Field(
+        description="Human-readable project name for the final directory."
+    )
+    project_id: str = Field(
+        description="Unique project identifier used in the final path."
+    )
+
+
+class RenameCloneResponse(BaseModel):
+    """Result of renaming a clone directory."""
+
+    new_clone_path: str = Field(
+        description="The new filesystem path of the renamed clone."
+    )
+    success: bool = Field(description="Whether the rename succeeded.")
+    message: str = Field(description="Human-readable result message.")
 
 
 class ProjectInfo(BaseModel):
@@ -238,10 +259,7 @@ def connect_git_sync_api(app: FastAPI):
     )
     async def api_clone(request: CloneRequest) -> CloneResponse:
         try:
-            base_dir = Path(default_project_path())
-            clone_path = compute_clone_path(
-                base_dir, request.project_name, request.project_id
-            )
+            clone_path = compute_temp_clone_path()
 
             await asyncio.to_thread(
                 clone_repo,
@@ -300,6 +318,50 @@ def connect_git_sync_api(app: FastAPI):
         results = await asyncio.to_thread(scan_for_projects, clone_path)
         projects = [ProjectInfo(**r) for r in results]
         return ScanProjectsResponse(projects=projects)
+
+    @app.post(
+        "/api/git_sync/rename_clone",
+        summary="Rename Clone to Final Path",
+        tags=["Git Sync"],
+    )
+    async def api_rename_clone(request: RenameCloneRequest) -> RenameCloneResponse:
+        base_dir = Path(default_project_path())
+        current_path = Path(request.clone_path).resolve()
+
+        if not current_path.is_dir():
+            raise HTTPException(
+                status_code=400,
+                detail="clone_path does not exist or is not a directory",
+            )
+
+        final_path = compute_clone_path(
+            base_dir, request.project_name, request.project_id
+        )
+        allowed_dir = (base_dir / ".git-projects").resolve()
+        if not str(final_path.resolve()).startswith(str(allowed_dir) + os.sep):
+            raise HTTPException(
+                status_code=400,
+                detail="Destination path must be within the .git-projects directory",
+            )
+
+        try:
+            new_path = await asyncio.to_thread(
+                rename_clone_to_final_path,
+                current_path,
+                base_dir,
+                request.project_name,
+                request.project_id,
+            )
+
+            return RenameCloneResponse(
+                new_clone_path=str(new_path),
+                success=True,
+                message="Clone renamed successfully",
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to rename clone: {e}")
 
     @app.post(
         "/api/git_sync/save_config",

@@ -51,6 +51,12 @@ export type ScanProjectsResponse = {
   projects: ProjectInfo[]
 }
 
+export type RenameCloneResponse = {
+  new_clone_path: string
+  success: boolean
+  message: string
+}
+
 export type GitSyncConfigResponse = {
   sync_mode: string
   auth_mode: string
@@ -81,14 +87,22 @@ export async function cloneRepo(
   branch: string,
   pat_token: string | null = null,
   auth_mode: string = "system_keys",
-  project_name: string = "project",
-  project_id: string = "",
 ): Promise<CloneResponse> {
   return post("/api/git_sync/clone", {
     git_url,
     branch,
     pat_token,
     auth_mode,
+  })
+}
+
+export async function renameClone(
+  clone_path: string,
+  project_name: string,
+  project_id: string,
+): Promise<RenameCloneResponse> {
+  return post("/api/git_sync/rename_clone", {
+    clone_path,
     project_name,
     project_id,
   })

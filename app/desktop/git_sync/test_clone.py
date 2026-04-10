@@ -3,10 +3,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pygit2
+import pytest
 
 from app.desktop.git_sync.clone import (
     compute_clone_path,
+    compute_temp_clone_path,
     list_remote_branches,
+    rename_clone_to_final_path,
     scan_for_projects,
 )
 from app.desktop.git_sync.clone import test_remote_access as check_remote_access
@@ -42,6 +45,72 @@ class TestComputeClonePath:
     def test_empty_project_name(self, tmp_path: Path):
         result = compute_clone_path(tmp_path, "", "abc")
         assert "project" in result.name
+
+    def test_empty_project_id(self, tmp_path: Path):
+        result = compute_clone_path(tmp_path, "My Project", "")
+        assert result.name == "My Project"
+
+    def test_sanitizes_project_id(self, tmp_path: Path):
+        result = compute_clone_path(tmp_path, "Test", "../../escape")
+        assert "/" not in result.name
+        assert ".." not in result.name
+
+
+class TestComputeTempClonePath:
+    def test_uses_os_temp_dir(self):
+        import tempfile
+
+        result = compute_temp_clone_path()
+        assert result.exists()
+        assert result.is_dir()
+        assert str(result).startswith(tempfile.gettempdir())
+        result.rmdir()
+
+    def test_unique_paths(self):
+        path1 = compute_temp_clone_path()
+        path2 = compute_temp_clone_path()
+        assert path1 != path2
+        path1.rmdir()
+        path2.rmdir()
+
+    def test_path_starts_with_kiln_clone_prefix(self):
+        result = compute_temp_clone_path()
+        assert result.name.startswith("kiln_clone_")
+        result.rmdir()
+
+
+class TestRenameCloneToFinalPath:
+    def test_renames_to_proper_path(self, tmp_path: Path):
+        import tempfile
+
+        temp_dir = Path(tempfile.mkdtemp(prefix="kiln_clone_"))
+        (temp_dir / "marker.txt").write_text("hello")
+
+        result = rename_clone_to_final_path(
+            temp_dir, tmp_path, "My Project", "proj_123"
+        )
+
+        assert result.name == "proj_123 - My Project"
+        assert result.parent.name == ".git-projects"
+        assert (result / "marker.txt").read_text() == "hello"
+        assert not temp_dir.exists()
+
+    def test_raises_for_nonexistent_path(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="does not exist"):
+            rename_clone_to_final_path(
+                tmp_path / "nonexistent", tmp_path, "Test", "id1"
+            )
+
+    def test_handles_collision(self, tmp_path: Path):
+        import tempfile
+
+        existing = tmp_path / ".git-projects" / "id1 - Test"
+        existing.mkdir(parents=True)
+
+        temp_dir = Path(tempfile.mkdtemp(prefix="kiln_clone_"))
+
+        result = rename_clone_to_final_path(temp_dir, tmp_path, "Test", "id1")
+        assert result.name == "id1 - Test2"
 
 
 class TestScanForProjects:
