@@ -42,6 +42,7 @@ def mock_git_sync_config(config):
 def _auto_config(clone_path: str) -> GitSyncProjectConfig:
     return GitSyncProjectConfig(
         sync_mode="auto",
+        auth_mode="system_keys",
         remote_name="origin",
         branch="main",
         clone_path=clone_path,
@@ -51,6 +52,7 @@ def _auto_config(clone_path: str) -> GitSyncProjectConfig:
 def _manual_config() -> GitSyncProjectConfig:
     return GitSyncProjectConfig(
         sync_mode="manual",
+        auth_mode="system_keys",
         remote_name="origin",
         branch="main",
         clone_path=None,
@@ -95,7 +97,7 @@ def _build_app(
 @pytest.fixture
 def manager(git_repos):
     local_path, _ = git_repos
-    mgr = GitSyncRegistry.get_or_create(local_path)
+    mgr = GitSyncRegistry.get_or_create(local_path, auth_mode="system_keys")
     yield mgr
 
 
@@ -141,6 +143,7 @@ def test_sync_disabled_passes_through():
 def test_no_clone_path_passes_through():
     config = GitSyncProjectConfig(
         sync_mode="auto",
+        auth_mode="system_keys",
         remote_name="origin",
         branch="main",
         clone_path=None,
@@ -368,7 +371,7 @@ def test_error_mapping(git_repos, error_class, expected_status, expected_detail)
 def test_middleware_holds_lock_across_lifecycle(git_repos):
     local_path, _ = git_repos
     config = _auto_config(str(local_path))
-    manager = GitSyncRegistry.get_or_create(local_path)
+    manager = GitSyncRegistry.get_or_create(local_path, auth_mode="system_keys")
 
     lock_held_during_handler = []
 
@@ -409,7 +412,7 @@ def test_get_request_checks_freshness(git_repos):
             return_value=config,
         ),
         patch.object(
-            GitSyncRegistry.get_or_create(local_path),
+            GitSyncRegistry.get_or_create(local_path, auth_mode="system_keys"),
             "ensure_fresh_for_read",
         ) as mock_fresh,
     ):

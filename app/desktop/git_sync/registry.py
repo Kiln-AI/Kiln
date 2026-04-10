@@ -38,9 +38,9 @@ class GitSyncRegistry:
     def get_or_create(
         cls,
         repo_path: Path,
+        auth_mode: AuthMode,
         remote_name: str = "origin",
         pat_token: str | None = None,
-        auth_mode: AuthMode = "system_keys",
     ) -> GitSyncManager:
         """Return existing manager or create a new one. Thread-safe."""
         resolved = repo_path.resolve()

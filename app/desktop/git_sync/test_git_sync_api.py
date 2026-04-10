@@ -287,6 +287,7 @@ class TestSaveAndGetConfig:
         ):
             mock.return_value = {
                 "sync_mode": "auto",
+                "auth_mode": "system_keys",
                 "remote_name": "origin",
                 "branch": "main",
                 "clone_path": "/tmp/clone",
@@ -325,6 +326,7 @@ class TestUpdateConfig:
     def test_toggle_mode(self, api_client):
         existing = {
             "sync_mode": "auto",
+            "auth_mode": "system_keys",
             "remote_name": "origin",
             "branch": "main",
             "clone_path": "/tmp/clone",
@@ -355,6 +357,7 @@ class TestUpdateConfig:
     def test_update_pat_token(self, api_client):
         existing = {
             "sync_mode": "auto",
+            "auth_mode": "system_keys",
             "remote_name": "origin",
             "branch": "main",
             "clone_path": "/tmp/clone",

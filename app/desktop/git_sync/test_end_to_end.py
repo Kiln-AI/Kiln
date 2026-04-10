@@ -42,6 +42,7 @@ def mock_git_sync_config(config):
 def _auto_config(clone_path: str) -> GitSyncProjectConfig:
     return GitSyncProjectConfig(
         sync_mode="auto",
+        auth_mode="system_keys",
         remote_name="origin",
         branch="main",
         clone_path=clone_path,
@@ -226,7 +227,7 @@ async def test_background_sync_picks_up_remote_changes(git_repos, tmp_path):
     second_clone = tmp_path / "second_clone"
     pygit2.clone_repository(str(remote_path), str(second_clone))
 
-    manager = GitSyncManager(repo_path=local_path)
+    manager = GitSyncManager(repo_path=local_path, auth_mode="system_keys")
     try:
         bg = BackgroundSync(manager, poll_interval=0.05, idle_pause_after=60.0)
         await bg.start()

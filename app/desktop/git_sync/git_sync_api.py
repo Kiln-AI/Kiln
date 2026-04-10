@@ -432,7 +432,7 @@ def connect_git_sync_api(app: FastAPI):
 
         return GitSyncConfigResponse(
             sync_mode=config["sync_mode"],
-            auth_mode=config.get("auth_mode", "system_keys"),
+            auth_mode=config["auth_mode"],
             remote_name=config["remote_name"],
             branch=config["branch"],
             clone_path=config.get("clone_path"),
@@ -471,7 +471,7 @@ def connect_git_sync_api(app: FastAPI):
 
         return GitSyncConfigResponse(
             sync_mode=config["sync_mode"],
-            auth_mode=config.get("auth_mode", "system_keys"),
+            auth_mode=config["auth_mode"],
             remote_name=config["remote_name"],
             branch=config["branch"],
             clone_path=config.get("clone_path"),

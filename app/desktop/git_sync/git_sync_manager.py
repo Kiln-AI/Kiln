@@ -36,9 +36,9 @@ class GitSyncManager:
     def __init__(
         self,
         repo_path: Path,
+        auth_mode: AuthMode,
         remote_name: str = "origin",
         pat_token: str | None = None,
-        auth_mode: AuthMode = "system_keys",
     ):
         self._repo_path = repo_path
         self._remote_name = remote_name

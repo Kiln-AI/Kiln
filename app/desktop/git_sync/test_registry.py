@@ -6,14 +6,14 @@ from app.desktop.git_sync.registry import GitSyncRegistry
 
 def test_get_or_create_new(git_repos):
     local_path, _ = git_repos
-    manager = GitSyncRegistry.get_or_create(local_path)
+    manager = GitSyncRegistry.get_or_create(local_path, auth_mode="system_keys")
     assert isinstance(manager, GitSyncManager)
 
 
 def test_get_or_create_returns_existing(git_repos):
     local_path, _ = git_repos
-    m1 = GitSyncRegistry.get_or_create(local_path)
-    m2 = GitSyncRegistry.get_or_create(local_path)
+    m1 = GitSyncRegistry.get_or_create(local_path, auth_mode="system_keys")
+    m2 = GitSyncRegistry.get_or_create(local_path, auth_mode="system_keys")
     assert m1 is m2
 
 
@@ -23,14 +23,14 @@ def test_get_manager_returns_none_for_unknown(tmp_path):
 
 def test_register_and_get(git_repos):
     local_path, _ = git_repos
-    manager = GitSyncManager(repo_path=local_path)
+    manager = GitSyncManager(repo_path=local_path, auth_mode="system_keys")
     GitSyncRegistry.register(local_path, manager)
     assert GitSyncRegistry.get_manager(local_path) is manager
 
 
 def test_reset_clears_all(git_repos):
     local_path, _ = git_repos
-    GitSyncRegistry.get_or_create(local_path)
+    GitSyncRegistry.get_or_create(local_path, auth_mode="system_keys")
     assert GitSyncRegistry.get_manager(local_path) is not None
 
     GitSyncRegistry.reset()
@@ -44,7 +44,9 @@ def test_thread_safety(git_repos):
 
     def create():
         barrier.wait()
-        results.append(GitSyncRegistry.get_or_create(local_path))
+        results.append(
+            GitSyncRegistry.get_or_create(local_path, auth_mode="system_keys")
+        )
 
     threads = [threading.Thread(target=create) for _ in range(4)]
     for t in threads:

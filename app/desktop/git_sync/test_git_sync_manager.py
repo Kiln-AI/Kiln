@@ -17,7 +17,7 @@ from app.desktop.git_sync.git_sync_manager import GitSyncManager
 @pytest.fixture
 def manager(git_repos):
     local_path, _ = git_repos
-    mgr = GitSyncManager(repo_path=local_path)
+    mgr = GitSyncManager(repo_path=local_path, auth_mode="system_keys")
     yield mgr
     mgr._git_executor.shutdown(wait=True)
     if mgr._repo is not None:
