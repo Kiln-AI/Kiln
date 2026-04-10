@@ -344,7 +344,7 @@ class TestUpdateConfig:
             ) as mock_save,
         ):
             mock_get.return_value = existing
-            resp = api_client.post(
+            resp = api_client.patch(
                 "/api/git_sync/update_config/proj1",
                 json={"sync_mode": "manual"},
             )
@@ -373,7 +373,7 @@ class TestUpdateConfig:
             patch("app.desktop.git_sync.git_sync_api.save_git_sync_config"),
         ):
             mock_get.return_value = existing
-            resp = api_client.post(
+            resp = api_client.patch(
                 "/api/git_sync/update_config/proj1",
                 json={"pat_token": "ghp_new_token"},
             )
@@ -385,7 +385,7 @@ class TestUpdateConfig:
             "app.desktop.git_sync.git_sync_api.project_path_from_id",
             return_value=None,
         ):
-            resp = api_client.post(
+            resp = api_client.patch(
                 "/api/git_sync/update_config/nonexistent",
                 json={"sync_mode": "manual"},
             )
@@ -400,7 +400,7 @@ class TestUpdateConfig:
             patch("app.desktop.git_sync.git_sync_api.get_git_sync_config") as mock,
         ):
             mock.return_value = None
-            resp = api_client.post(
+            resp = api_client.patch(
                 "/api/git_sync/update_config/nonexistent",
                 json={"sync_mode": "manual"},
             )

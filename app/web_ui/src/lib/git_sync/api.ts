@@ -1,8 +1,12 @@
 import { base_url } from "$lib/api_client"
 
-async function post<T>(path: string, body: unknown): Promise<T> {
+async function request<T>(
+  method: string,
+  path: string,
+  body: unknown,
+): Promise<T> {
   const resp = await fetch(`${base_url}${path}`, {
-    method: "POST",
+    method,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   })
@@ -15,13 +19,12 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return resp.json()
 }
 
-async function get<T>(path: string): Promise<T> {
-  const resp = await fetch(`${base_url}${path}`)
-  if (!resp.ok) {
-    const detail = await resp.json().catch(() => null)
-    throw new Error(detail?.detail || `Request failed: ${resp.statusText}`)
-  }
-  return resp.json()
+async function post<T>(path: string, body: unknown): Promise<T> {
+  return request("POST", path, body)
+}
+
+async function patch<T>(path: string, body: unknown): Promise<T> {
+  return request("PATCH", path, body)
 }
 
 export type TestAccessResponse = {
@@ -164,7 +167,7 @@ export async function updateConfig(
     auth_mode?: string
   },
 ): Promise<GitSyncConfigResponse> {
-  return post(`/api/git_sync/update_config/${project_id}`, updates)
+  return patch(`/api/git_sync/update_config/${project_id}`, updates)
 }
 
 export async function deleteConfig(

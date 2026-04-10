@@ -178,13 +178,17 @@ class SaveConfigRequest(BaseModel):
         default="system_keys",
         description="Auth mode detected during setup: 'system_keys' or 'pat_token'.",
     )
-    sync_mode: str = Field(default="auto", description="Sync mode: 'auto' or 'manual'.")
+    sync_mode: Literal["auto", "manual"] = Field(
+        default="auto", description="Sync mode: 'auto' or 'manual'."
+    )
 
 
 class GitSyncConfigResponse(BaseModel):
     """Current git sync configuration for a project (PAT redacted)."""
 
-    sync_mode: str = Field(description="Sync mode: 'auto' or 'manual'.")
+    sync_mode: Literal["auto", "manual"] = Field(
+        description="Sync mode: 'auto' or 'manual'."
+    )
     auth_mode: Literal["system_keys", "pat_token"] = Field(
         default="system_keys",
         description="Auth mode: 'system_keys' (SSH agent) or 'pat_token' (HTTPS PAT).",
@@ -204,7 +208,7 @@ class GitSyncConfigResponse(BaseModel):
 class UpdateConfigRequest(BaseModel):
     """Request to partially update a git sync configuration."""
 
-    sync_mode: str | None = Field(
+    sync_mode: Literal["auto", "manual"] | None = Field(
         default=None, description="New sync mode, if changing."
     )
     pat_token: str | None = Field(
@@ -459,7 +463,7 @@ def connect_git_sync_api(app: FastAPI):
             has_pat_token=config.get("pat_token") is not None,
         )
 
-    @app.post(
+    @app.patch(
         "/api/git_sync/update_config/{project_id}",
         summary="Update Git Sync Config",
         tags=["Git Sync"],

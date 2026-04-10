@@ -400,6 +400,11 @@ def scan_for_projects(clone_path: Path) -> list[dict[str, str]]:
     """
     results: list[dict[str, str]] = []
     for kiln_file in clone_path.rglob("project.kiln"):
+        if any(
+            part.startswith(".")
+            for part in kiln_file.relative_to(clone_path).parts[:-1]
+        ):
+            continue
         rel_path = str(kiln_file.relative_to(clone_path))
         name = ""
         description = ""

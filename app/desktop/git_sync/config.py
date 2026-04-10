@@ -7,7 +7,7 @@ AuthMode = Literal["system_keys", "pat_token"]
 
 
 class GitSyncProjectConfig(TypedDict):
-    sync_mode: str  # "auto" | "manual"
+    sync_mode: Literal["auto", "manual"]
     auth_mode: AuthMode
     remote_name: str
     branch: str
