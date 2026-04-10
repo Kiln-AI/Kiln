@@ -11,6 +11,10 @@
   import { load_projects } from "$lib/stores"
   import { tick, onMount, onDestroy } from "svelte"
   import posthog from "posthog-js"
+  import {
+    sync_url_query_param,
+    read_url_query_param,
+  } from "$lib/git_sync/url_utils"
 
   export let create_link: string
   export let on_complete: (project_id: string) => void
@@ -87,6 +91,9 @@
       select_file_unavailable = false
       import_done = false
     }
+    if (step !== "url") {
+      sync_url_query_param("url", null)
+    }
     current_step = step
     const hash = step_to_hash[step]
     if (hash) {
@@ -106,6 +113,15 @@
   }
 
   onMount(() => {
+    const url_param = read_url_query_param("url")
+    if (url_param) {
+      git_url = url_param
+      // Use window.location.hash directly instead of set_step("url") because
+      // set_step clears the "url" query param, which we just read above.
+      if (window.location.hash !== "#git") {
+        window.location.hash = "#git"
+      }
+    }
     current_step = step_from_hash()
     window.addEventListener("hashchange", on_hash_change)
   })
