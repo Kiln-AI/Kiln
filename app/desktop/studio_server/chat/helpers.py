@@ -11,7 +11,7 @@ def sse_text_delta(delta: str, text_id: str = "text-test") -> bytes:
         "id": text_id,
         "delta": delta,
     }
-    return f"data: {json.dumps(payload)}\n\n".encode()
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
 
 
 def make_httpx_mock(status_code: int = 200, chunks: list[bytes] | None = None):

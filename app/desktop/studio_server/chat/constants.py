@@ -12,7 +12,9 @@ SSE_TYPE_TOOL_CALLS_PENDING = "tool-calls-pending"
 SSE_TYPE_TOOL_EXEC_START = "kiln-tool-execution-start"
 SSE_TYPE_TOOL_EXEC_END = "kiln-tool-execution-end"
 
-DENIED_TOOL_OUTPUT = json.dumps({"error": "The user did not accept the toolcall"})
+DENIED_TOOL_OUTPUT = json.dumps(
+    {"error": "The user did not accept the toolcall"}, ensure_ascii=False
+)
 FUNCTION_NAME_TO_TOOL_ID: dict[str, str] = {
     "call_kiln_api": KilnBuiltInToolId.CALL_KILN_API,
 }

@@ -64,7 +64,7 @@ def _pending_item_from_event(event: ToolInputAvailableEvent) -> dict[str, Any]:
 def _format_tool_calls_pending_sse(events: list[ToolInputAvailableEvent]) -> bytes:
     items = [_pending_item_from_event(e) for e in events]
     payload = {"type": SSE_TYPE_TOOL_CALLS_PENDING, "items": items}
-    return f"data: {json.dumps(payload)}\n\n".encode()
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
 
 
 async def execute_tool_batch(
@@ -107,7 +107,7 @@ class ChatStreamSession:
                 async with client.stream(
                     "POST",
                     self._upstream_url,
-                    content=json.dumps(self._body).encode(),
+                    content=json.dumps(self._body, ensure_ascii=False).encode(),
                     headers=self._headers,
                 ) as upstream:
                     if upstream.status_code != 200:
@@ -129,7 +129,7 @@ class ChatStreamSession:
                             error_payload["code"] = code
                         if trace_id_for_error:
                             error_payload["trace_id"] = trace_id_for_error
-                        yield f"data: {json.dumps(error_payload)}\n\n".encode()
+                        yield f"data: {json.dumps(error_payload, ensure_ascii=False)}\n\n".encode()
                         return
 
                     try:
@@ -160,7 +160,7 @@ class ChatStreamSession:
                                 "message": "Something went wrong.",
                                 "trace_id": trace_id,
                             }
-                            yield f"data: {json.dumps(error_payload)}\n\n".encode()
+                            yield f"data: {json.dumps(error_payload, ensure_ascii=False)}\n\n".encode()
                             logger.exception(
                                 "RemoteProtocolError during streaming (trace_id=%s)",
                                 trace_id,
@@ -189,18 +189,12 @@ class ChatStreamSession:
                     yield _format_tool_calls_pending_sse(client_events)
                     return
 
-                tool_count = len(
-                    [
-                        e
-                        for e in round_state.tool_input_events
-                        if not tool_input_executor_is_server(e)
-                    ]
-                )
-                yield self._format_tool_exec_start(tool_count)
+                expected_tool_count = len(client_events)
+                yield self._format_tool_exec_start(expected_tool_count)
                 tool_results = await self._execute_client_tools(round_state, None)
                 for tc_id, output in tool_results.items():
                     yield self._format_tool_output(tc_id, output)
-                yield self._format_tool_exec_end(tool_count)
+                yield self._format_tool_exec_end(len(tool_results))
 
                 if not tool_results:
                     return
@@ -247,17 +241,17 @@ class ChatStreamSession:
 
     @staticmethod
     def _format_tool_output(tc_id: str, output: str) -> bytes:
-        return f"data: {json.dumps({'type': 'tool-output-available', 'toolCallId': tc_id, 'output': output})}\n\n".encode()
+        return f"data: {json.dumps({'type': 'tool-output-available', 'toolCallId': tc_id, 'output': output}, ensure_ascii=False)}\n\n".encode()
 
     @staticmethod
     def _format_tool_exec_start(tool_count: int) -> bytes:
         payload = {"type": SSE_TYPE_TOOL_EXEC_START, "tool_count": tool_count}
-        return f"data: {json.dumps(payload)}\n\n".encode()
+        return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
 
     @staticmethod
     def _format_tool_exec_end(tool_count: int) -> bytes:
         payload = {"type": SSE_TYPE_TOOL_EXEC_END, "tool_count": tool_count}
-        return f"data: {json.dumps(payload)}\n\n".encode()
+        return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
 
 
 async def execute_tool(tool_name: str, args: dict[str, Any]) -> str:
@@ -265,7 +259,7 @@ async def execute_tool(tool_name: str, args: dict[str, Any]) -> str:
     logger.info(
         "Executing server tool %s with args: %s",
         tool_name,
-        json.dumps(args, default=str),
+        json.dumps(args, default=str, ensure_ascii=False),
     )
     tool_id = FUNCTION_NAME_TO_TOOL_ID.get(tool_name, tool_name)
     try:
@@ -274,7 +268,7 @@ async def execute_tool(tool_name: str, args: dict[str, Any]) -> str:
         return result.output
     except Exception as e:
         logger.exception("Built-in tool %s failed", tool_name)
-        return json.dumps({"error": str(e)})
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
 def _build_openai_tool_continuation(
@@ -319,7 +313,7 @@ def _build_openai_tool_continuation(
         for event in local_events:
             tc_id = event.toolCallId
             tool_name = event.toolName
-            args_str = json.dumps(event.input)
+            args_str = json.dumps(event.input, ensure_ascii=False)
             tool_calls.append(
                 {
                     "id": tc_id,

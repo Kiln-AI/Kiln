@@ -63,7 +63,7 @@ Endpoint paths, request schemas, response fields, and jq filters are defined in 
     ) -> ToolCallResult:
         body_str: str | None = None
         if isinstance(body, (dict, list)):
-            body_str = json.dumps(body)
+            body_str = json.dumps(body, ensure_ascii=False)
         elif isinstance(body, str):
             body_str = body
 
@@ -138,4 +138,4 @@ Endpoint paths, request schemas, response fields, and jq filters are defined in 
                 pass
 
         result = {"status_code": status_code, "body": response_body}
-        return ToolCallResult(output=json.dumps(result))
+        return ToolCallResult(output=json.dumps(result, ensure_ascii=False))
