@@ -259,9 +259,12 @@
         class="w-full text-left p-5 border rounded-lg hover:border-primary hover:bg-base-200 transition-colors"
         on:click={() => set_step("url")}
       >
-        <div class="font-medium">Import from Git</div>
+        <div class="font-medium flex flex-row gap-2 items-center">
+          <div class="flex-1">Automatic Git Sync</div>
+          <div class="badge badge-secondary">Beta</div>
+        </div>
         <div class="text-sm text-gray-500 mt-1">
-          Clone a project from a git repository with automatic sync.
+          Requires a hosted git repository.
         </div>
       </button>
     </div>
