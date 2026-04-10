@@ -127,12 +127,6 @@ class TestNoWriteLockDecoratorOnPost:
 class TestStreamingResponseUnderLock:
     """Scenario 24: Streaming response under write lock should return 500."""
 
-    @pytest.mark.xfail(
-        reason="Starlette's BaseHTTPMiddleware.call_next() returns a response "
-        "where media_type is None (even when Content-Type is text/event-stream), "
-        "so the middleware's SSE detection check never fires.",
-        strict=True,
-    )
     @pytest.mark.asyncio
     async def test_streaming_under_lock_returns_500(self, git_repos):
         """SSE response under write lock should return 500 with @no_write_lock hint."""

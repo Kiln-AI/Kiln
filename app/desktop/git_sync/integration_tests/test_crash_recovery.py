@@ -255,12 +255,6 @@ class TestInProgressRebaseRecovery:
         post_head = get_head_sync(local_path)
         assert remote_has_commit(remote_path, post_head)
 
-    @pytest.mark.xfail(
-        reason="state_cleanup() clears the cherry-pick state marker but leaves "
-        "conflict entries in the index. The subsequent stash fails with "
-        "'cannot create a tree from a not fully merged index'.",
-        strict=True,
-    )
     @pytest.mark.asyncio
     async def test_conflicted_rebase_recovery_succeeds(
         self, write_ctx, git_repos, second_clone
