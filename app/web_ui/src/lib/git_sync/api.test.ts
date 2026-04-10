@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import {
   isGitHubUrl,
+  isGitLabUrl,
   gitHubPatDeepLink,
+  gitLabPatDeepLink,
+  gitHostname,
   testAccess,
   listBranches,
   cloneRepo,
@@ -42,12 +45,71 @@ describe("isGitHubUrl", () => {
   })
 })
 
+describe("isGitLabUrl", () => {
+  it("returns true for GitLab URLs", () => {
+    expect(isGitLabUrl("https://gitlab.com/org/repo.git")).toBe(true)
+    expect(isGitLabUrl("https://gitlab.example.com/org/repo.git")).toBe(true)
+    expect(isGitLabUrl("git@gitlab.com:org/repo.git")).toBe(true)
+  })
+
+  it("returns false for non-GitLab URLs", () => {
+    expect(isGitLabUrl("https://github.com/org/repo.git")).toBe(false)
+    expect(isGitLabUrl("https://bitbucket.org/org/repo")).toBe(false)
+    expect(isGitLabUrl("https://notgitlab.com/org/repo")).toBe(false)
+    expect(isGitLabUrl("https://example.com/gitlab.backup/repo")).toBe(false)
+  })
+})
+
+describe("gitHostname", () => {
+  it("extracts hostname from HTTPS URLs", () => {
+    expect(gitHostname("https://gitlab.com/org/repo.git")).toBe("gitlab.com")
+    expect(gitHostname("https://gitlab.example.com/org/repo.git")).toBe(
+      "gitlab.example.com",
+    )
+  })
+
+  it("extracts hostname from SSH URLs", () => {
+    expect(gitHostname("git@gitlab.com:org/repo.git")).toBe("gitlab.com")
+    expect(gitHostname("git@gitlab.example.com:org/repo.git")).toBe(
+      "gitlab.example.com",
+    )
+  })
+
+  it("returns null for invalid URLs", () => {
+    expect(gitHostname("not-a-url")).toBeNull()
+  })
+})
+
 describe("gitHubPatDeepLink", () => {
   it("returns GitHub fine-grained token creation URL", () => {
     const link = gitHubPatDeepLink()
     expect(link).toContain("github.com/settings/personal-access-tokens/new")
     expect(link).toContain("contents=write")
     expect(link).toContain("Kiln")
+  })
+})
+
+describe("gitLabPatDeepLink", () => {
+  it("returns GitLab token creation URL with correct scopes", () => {
+    const link = gitLabPatDeepLink("https://gitlab.com/org/repo.git")
+    expect(link).toContain("gitlab.com/-/user_settings/personal_access_tokens")
+    expect(link).toContain("scopes=write_repository")
+    expect(link).toContain("Kiln")
+  })
+
+  it("uses self-hosted hostname", () => {
+    const link = gitLabPatDeepLink("https://gitlab.example.com/org/repo.git")
+    expect(link).toContain("gitlab.example.com/-/user_settings")
+  })
+
+  it("handles SSH URLs", () => {
+    const link = gitLabPatDeepLink("git@gitlab.myco.com:org/repo.git")
+    expect(link).toContain("gitlab.myco.com/-/user_settings")
+  })
+
+  it("falls back to gitlab.com for invalid URLs", () => {
+    const link = gitLabPatDeepLink("not-a-url")
+    expect(link).toContain("gitlab.com/-/user_settings")
   })
 })
 
