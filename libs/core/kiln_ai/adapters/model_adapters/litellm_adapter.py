@@ -644,13 +644,6 @@ class LiteLlmAdapter(BaseAdapter):
                     "top_p and temperature can not both have custom values for this model. This is a restriction from the model provider. Please set only one of them to a custom value (not 1.0)."
                 )
 
-        # Anthropic requires temperature=1 when thinking/reasoning is active (including adaptive mode).
-        # Remove temperature so litellm sends the required default rather than an incompatible value.
-        if provider.name == ModelProviderName.anthropic and (
-            "reasoning_effort" in completion_kwargs or "thinking" in completion_kwargs
-        ):
-            completion_kwargs.pop("temperature", None)
-
         if not skip_response_format:
             # Response format: json_schema, json_instructions, json_mode, function_calling, etc
             response_format_options = await self.response_format_options()

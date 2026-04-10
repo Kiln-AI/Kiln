@@ -1395,46 +1395,6 @@ async def test_build_completion_kwargs_temp_top_p_not_exclusive(config, mock_tas
         assert kwargs["top_p"] == 0.9
 
 
-@pytest.mark.parametrize(
-    "provider_name,extra_body,temperature,expect_temperature",
-    [
-        (ModelProviderName.anthropic, {"reasoning_effort": "high"}, 0.0, False),
-        (ModelProviderName.anthropic, {"reasoning_effort": "low"}, 0.7, False),
-        (
-            ModelProviderName.anthropic,
-            {"thinking": {"type": "enabled", "budget_tokens": 4000}},
-            0.5,
-            False,
-        ),
-        (ModelProviderName.anthropic, {}, 0.5, True),
-        (ModelProviderName.openai, {"reasoning_effort": "high"}, 0.0, True),
-    ],
-)
-async def test_build_completion_kwargs_anthropic_thinking_drops_temperature(
-    config, mock_task, provider_name, extra_body, temperature, expect_temperature
-):
-    config.run_config_properties.temperature = temperature
-
-    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
-    mock_provider = Mock()
-    mock_provider.name = provider_name
-    mock_provider.temp_top_p_exclusive = False
-    messages = [{"role": "user", "content": "Hello"}]
-
-    with (
-        patch.object(adapter, "model_provider", return_value=mock_provider),
-        patch.object(adapter, "litellm_model_id", return_value=f"{provider_name}/test"),
-        patch.object(adapter, "build_extra_body", return_value=extra_body),
-        patch.object(adapter, "response_format_options", return_value={}),
-    ):
-        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
-
-    if expect_temperature:
-        assert kwargs["temperature"] == temperature
-    else:
-        assert "temperature" not in kwargs
-
-
 @pytest.mark.asyncio
 async def test_array_input_converted_to_json(tmp_path, config):
     """Test that array inputs are converted to JSON and passed to the model"""

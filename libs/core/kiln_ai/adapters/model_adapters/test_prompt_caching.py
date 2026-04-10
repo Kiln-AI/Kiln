@@ -16,7 +16,6 @@ from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
 # Repeated to exceed minimum token thresholds for cache eligibility (e.g. 1024 tokens for Anthropic)
 CACHE_SEED_SYSTEM_PROMPT = ("You are a helpful assistant. " * 1000).strip()
-SIMPLE_SYSTEM_PROMPT = "You are a calculator. Return the final answer only."
 
 
 def build_caching_test_task(tmp_path) -> Task:
@@ -122,36 +121,3 @@ async def test_prompt_caching_cache_hit(
         await asyncio.sleep(10)
 
     assert has_cached_tokens_at_least_once
-
-
-@pytest.mark.paid
-async def test_anthropic_thinking_with_temperature_zero(tmp_path):
-    """Verify that Anthropic models with default thinking level work when temperature=0.
-
-    Anthropic requires temperature=1 when thinking is active. The adapter should
-    handle this transparently rather than requiring callers to know about it.
-    """
-    skip_if_missing_provider_keys(ModelProviderName.anthropic)
-
-    project = Project(name="test", path=tmp_path / "test.kiln")
-    project.save_to_file()
-    task = Task(
-        parent=project,
-        name="temp zero thinking test",
-        instruction=SIMPLE_SYSTEM_PROMPT,
-    )
-    task.save_to_file()
-
-    adapter = adapter_for_task(
-        task,
-        KilnAgentRunConfigProperties(
-            model_name="claude_sonnet_4_6",
-            model_provider_name=ModelProviderName.anthropic,
-            prompt_id="simple_prompt_builder",
-            structured_output_mode=StructuredOutputMode.json_instructions,
-            temperature=0,
-        ),
-    )
-
-    run = await adapter.invoke("What is 2+2?")
-    assert run.output is not None
