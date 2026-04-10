@@ -83,24 +83,17 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
 
         self._notify_background_sync(manager)
         lock_start = time.monotonic()
-        async with manager.write_lock():
-            pre_request_head: str | None = None
-            try:
+        pre_request_head: str | None = None
+        try:
+            async with manager.write_lock():
                 await manager.ensure_clean()
                 await manager.ensure_fresh()
 
                 pre_request_head = await manager.get_head()
                 response = await call_next(request)
 
-                # Detect streaming responses before consuming body
-                # SSE streams must not be returned under the write lock:
-                # the lock would be held for the entire stream duration,
-                # blocking all other mutating requests. Mark SSE endpoints
-                # with @no_write_lock to avoid this path entirely.
-                if (
-                    hasattr(response, "media_type")
-                    and response.media_type == "text/event-stream"
-                ):
+                content_type = response.headers.get("content-type", "")
+                if "text/event-stream" in content_type:
                     logger.error(
                         "Streaming response under write lock for %s %s -- "
                         "use @no_write_lock instead",
@@ -150,17 +143,17 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
                     media_type=response.media_type,
                 )
 
-            except Exception as e:
-                if pre_request_head is not None:
-                    await manager.rollback(pre_request_head)
-                if isinstance(e, GitSyncError):
-                    status, message = self._map_error(e)
-                    return Response(
-                        content=json.dumps({"detail": message}, ensure_ascii=False),
-                        status_code=status,
-                        media_type="application/json",
-                    )
-                raise
+        except Exception as e:
+            if pre_request_head is not None:
+                await manager.rollback(pre_request_head)
+            if isinstance(e, GitSyncError):
+                status, message = self._map_error(e)
+                return Response(
+                    content=json.dumps({"detail": message}, ensure_ascii=False),
+                    status_code=status,
+                    media_type="application/json",
+                )
+            raise
 
     def _resolve_endpoint(self, request: Request) -> Callable[..., Any] | None:
         """Resolve the endpoint function for this request by matching routes.

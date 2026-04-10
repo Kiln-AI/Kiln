@@ -225,11 +225,15 @@ class TestInProgressRebaseRecovery:
         assert repo2.state() == pygit2.enums.RepositoryState.NONE
 
     @pytest.mark.asyncio
-    async def test_in_progress_rebase_dirty_state_stashed(self, write_ctx, git_repos):
-        """Cherry-picked changes are stashed during recovery."""
+    async def test_in_progress_rebase_state_cleaned(self, write_ctx, git_repos):
+        """Cherry-pick state is cleaned via hard reset during recovery.
+
+        _state_cleanup() hard-resets to HEAD to clear both the cherry-pick
+        state marker and any index entries (including conflicts), so the
+        cherry-picked changes are discarded rather than stashed.
+        """
         local_path, remote_path = git_repos
         leave_rebase_state_clean(local_path)
-        pre_stash_count = len(get_stash_list(local_path))
 
         result = await write_ctx.do_write(
             lambda p: (p / "normal.kiln").write_text("works normally")
@@ -237,9 +241,7 @@ class TestInProgressRebaseRecovery:
 
         assert result.committed
         assert result.pushed
-        stashes = get_stash_list(local_path)
-        assert len(stashes) > pre_stash_count
-        assert_stash_contains(local_path, "Kiln")
+        assert_clean_working_tree(local_path)
 
     @pytest.mark.asyncio
     async def test_in_progress_rebase_new_write_succeeds(self, write_ctx, git_repos):
@@ -395,12 +397,7 @@ class TestUnrecoverableState:
 
 
 class TestAllThreeSimultaneous:
-    """Scenario 35: Dirty files + in-progress rebase + unpushed commits all at once.
-
-    Uses the clean (non-conflicting) cherry-pick state since conflicted
-    cherry-pick recovery is a known bug documented in
-    TestInProgressRebaseRecovery.test_conflicted_rebase_recovery_fails.
-    """
+    """Scenario 35: Dirty files + in-progress rebase + unpushed commits all at once."""
 
     @pytest.mark.asyncio
     async def test_all_three_simultaneous_recovery(self, write_ctx, git_repos):

@@ -365,6 +365,45 @@ def test_error_mapping(git_repos, error_class, expected_status, expected_detail)
     assert body["detail"] == expected_detail
 
 
+def test_write_lock_timeout_from_lock_acquisition(git_repos):
+    """WriteLockTimeoutError raised by write_lock() itself (not the handler)
+    must be caught and mapped to 503, not bubble as a 500."""
+    local_path, _ = git_repos
+    config = _auto_config(str(local_path))
+
+    app = _build_app()
+
+    with (
+        mock_git_sync_config(config),
+        patch.object(
+            GitSyncRegistry,
+            "get_or_create",
+            return_value=MagicMock(
+                write_lock=MagicMock(
+                    side_effect=WriteLockTimeoutError("lock timed out")
+                ),
+                repo_path=local_path,
+            ),
+        ),
+        patch(
+            "app.desktop.git_sync.middleware.GitSyncRegistry.get_background_sync",
+            return_value=None,
+        ),
+    ):
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post(
+            f"/api/projects/{PROJECT_ID}/items",
+            json={},
+        )
+
+    assert resp.status_code == 503
+    body = resp.json()
+    assert (
+        body["detail"]
+        == "Another save is in progress. Please wait a moment and try again."
+    )
+
+
 # --- Integration: lock held across lifecycle ---
 
 

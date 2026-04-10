@@ -92,8 +92,8 @@ class GitSyncManager:
 
         # Abort in-progress rebase/merge FIRST -- stash fails if the index
         # has unresolved conflict entries from a mid-rebase crash.
-        # TODO: add integration test with a real local repo that simulates
-        # a crash mid-rebase with conflicts and verifies ensure_clean recovers.
+        # _state_cleanup() clears state and hard-resets to HEAD to resolve
+        # any conflict entries in the index before stashing.
         state = await self._run_git(self._get_repo_state)
         if state != pygit2.enums.RepositoryState.NONE:
             logger.warning("Aborting in-progress rebase/merge")
@@ -197,7 +197,7 @@ class GitSyncManager:
         state = await self._run_git(self._get_repo_state)
         if state != pygit2.enums.RepositoryState.NONE:
             try:
-                await self._run_git(self._state_cleanup)
+                await self._run_git(self._state_cleanup_no_reset)
             except Exception:
                 logger.warning("state_cleanup failed during rollback", exc_info=True)
 
@@ -269,6 +269,11 @@ class GitSyncManager:
         return repo.state()
 
     def _state_cleanup(self) -> None:
+        repo = self._get_repo()
+        repo.state_cleanup()
+        repo.reset(repo.head.target, pygit2.enums.ResetMode.HARD)
+
+    def _state_cleanup_no_reset(self) -> None:
         repo = self._get_repo()
         repo.state_cleanup()
 
