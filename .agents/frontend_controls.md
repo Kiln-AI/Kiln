@@ -17,7 +17,8 @@ The following controls are commonly used in our design language:
 - `dialog.svelte` a modal dialog with close button, title, area for content, and action buttons.
 - `edit_dialog.svelte` a dialog for editing properties like name/description. Has save/cancel buttons.
 - `collapse.svelte` a collapsible section, often titled "Advanced Options" to hide optional controls
-- `float.svelte` - a svelte wrapper for floating components using floating_ui.
+- `float.svelte` - a low-level wrapper for `@floating-ui/dom` positioning. Prefer higher-level components (`floating_menu.svelte`, `info_tooltip.svelte`) when they fit your use case.
+- `floating_menu.svelte` / `table_action_menu.svelte` - floating dropdown menus using `@floating-ui/dom`. Use instead of DaisyUI's `dropdown-content` class, which breaks inside tables, dialogs, and scroll areas. `table_action_menu.svelte` is a convenience wrapper that includes the "..." ellipsis button with hover-to-open; `floating_menu.svelte` is the generic version with a trigger slot.
 
 Read the control's code to better understand it and its parameters. Optionally search for an existing use of the control to see it in use.
 
