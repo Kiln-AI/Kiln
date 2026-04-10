@@ -13,7 +13,7 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.api.auth import 
     create_api_key_v1_create_api_key_post,
 )
 from app.desktop.studio_server.api_client.kiln_server_client import (
-    get_authenticated_client,
+    get_oauth_authenticated_client,
 )
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -1014,7 +1014,7 @@ async def _create_kiln_copilot_api_key(access_token: str) -> JSONResponse:
             content={"message": "Access token is required"},
         )
 
-    client = get_authenticated_client(access_token)
+    client = get_oauth_authenticated_client(access_token)
     try:
         response = await create_api_key_v1_create_api_key_post.asyncio_detailed(
             client=client,
