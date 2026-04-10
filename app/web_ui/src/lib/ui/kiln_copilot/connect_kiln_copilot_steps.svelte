@@ -25,6 +25,7 @@
       client_id: KINDE_ACCOUNT_CLIENT_ID,
       domain: KINDE_ACCOUNT_DOMAIN,
       redirect_uri: window.location.origin + window.location.pathname,
+      // Kinde SDK requires this callback; we handle the redirect ourselves in onMount
       on_redirect_callback: () => {},
     })
 
@@ -119,12 +120,12 @@
 <h1 class="text-xl font-medium flex-none text-center">Connect Kiln Copilot</h1>
 
 {#if showCheckmark}
-  <div class="flex justify-center py-4">
+  <div class="flex justify-center my-4">
     <img src="/images/circle-check.svg" class="size-8" alt="Connected" />
   </div>
 {:else if errorMessage}
-  <p class="text-error text-center pt-4 pb-2">{errorMessage}</p>
-  <div class="flex justify-center pb-4">
+  <p class="text-error text-center mx-8 my-4">{errorMessage}</p>
+  <div class="flex justify-center">
     <button
       class="btn min-w-[130px]"
       on:click={tokenExchangeFailed ? createApiKeyFromToken : openSignup}
@@ -135,7 +136,7 @@
   <p class="text-center text-gray-700 mx-8 my-4">
     Sign in or create an account to get started.
   </p>
-  <div class="flex justify-center pt-2">
+  <div class="flex justify-center">
     <button
       class="btn min-w-[130px]"
       on:click={openSignup}
