@@ -102,12 +102,14 @@
     </div>
     {#if isOpen}
       <Float {placement} strategy="fixed">
-        <ul class="menu bg-base-100 rounded-box p-2 shadow {width}">
+        <ul class="menu bg-base-100 rounded-box p-2 shadow z-[1] {width}">
           {#each visibleItems as item}
             <li>
               {#if item.href}
                 <a
                   href={item.href}
+                  target={item.target}
+                  rel={item.rel}
                   on:click|stopPropagation={() => {
                     item.onclick?.()
                     close()
@@ -116,7 +118,10 @@
                   {item.label}
                 </a>
               {:else}
-                <button on:click={(e) => handleItemClick(e, item)}>
+                <button
+                  type="button"
+                  on:click={(e) => handleItemClick(e, item)}
+                >
                   {item.label}
                 </button>
               {/if}

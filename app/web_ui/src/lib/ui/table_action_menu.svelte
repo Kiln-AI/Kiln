@@ -9,6 +9,7 @@
 <FloatingMenu {items} {width} hover={true} placement="bottom-end">
   <button
     slot="trigger"
+    type="button"
     class="btn btn-square btn-ghost btn-sm p-0"
     aria-label="More options"
   >

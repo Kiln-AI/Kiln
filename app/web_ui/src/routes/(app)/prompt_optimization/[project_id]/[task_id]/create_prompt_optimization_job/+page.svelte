@@ -1137,15 +1137,9 @@
                                 items={[
                                   {
                                     label: "View Eval",
-                                    onclick: () => {
-                                      if (eval_url) {
-                                        window.open(
-                                          eval_url,
-                                          "_blank",
-                                          "noopener,noreferrer",
-                                        )
-                                      }
-                                    },
+                                    href: eval_url,
+                                    target: "_blank",
+                                    rel: "noopener noreferrer",
                                     hidden: !eval_url,
                                   },
                                 ]}
