@@ -221,6 +221,25 @@ class DeleteConfigResponse(BaseModel):
     message: str = Field(description="Human-readable confirmation message.")
 
 
+def _validate_clone_path(clone_path: str) -> Path:
+    """Validate that a clone_path is within an OS temp directory.
+
+    Setup wizard clone paths are created by compute_temp_clone_path() which
+    uses tempfile.mkdtemp(), so legitimate paths always reside under the
+    system temp directory.
+    """
+    import tempfile
+
+    resolved = Path(clone_path).resolve()
+    tmp_root = Path(tempfile.gettempdir()).resolve()
+    if not str(resolved).startswith(str(tmp_root) + os.sep):
+        raise HTTPException(
+            status_code=400,
+            detail="clone_path must be within the system temp directory",
+        )
+    return resolved
+
+
 def connect_git_sync_api(app: FastAPI):
     @app.post(
         "/api/git_sync/test_access",
@@ -300,6 +319,7 @@ def connect_git_sync_api(app: FastAPI):
     async def api_test_write_access(
         request: TestWriteAccessRequest,
     ) -> TestAccessResponse:
+        _validate_clone_path(request.clone_path)
         success, message = await asyncio.to_thread(
             test_write_access,
             Path(request.clone_path),
@@ -319,6 +339,7 @@ def connect_git_sync_api(app: FastAPI):
     async def api_scan_projects(
         request: ScanProjectsRequest,
     ) -> ScanProjectsResponse:
+        _validate_clone_path(request.clone_path)
         clone_path = Path(request.clone_path)
         if not clone_path.exists():
             raise HTTPException(status_code=400, detail="Clone path does not exist")

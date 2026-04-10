@@ -194,8 +194,20 @@ class GitSyncManager:
         self._last_sync = time.monotonic()
 
     async def rollback(self, pre_request_head: str) -> None:
-        if await self.has_dirty_files():
-            await self._run_git(self._stash_all, "[Kiln] Rollback stash")
+        state = await self._run_git(self._get_repo_state)
+        if state != pygit2.enums.RepositoryState.NONE:
+            try:
+                await self._run_git(self._state_cleanup)
+            except Exception:
+                logger.warning("state_cleanup failed during rollback", exc_info=True)
+
+        try:
+            if await self.has_dirty_files():
+                await self._run_git(self._stash_all, "[Kiln] Rollback stash")
+        except Exception:
+            logger.warning(
+                "Stash failed during rollback, proceeding to reset", exc_info=True
+            )
 
         current_head = await self.get_head()
         if current_head != pre_request_head:
@@ -468,7 +480,7 @@ class GitSyncManager:
             repo.state_cleanup()
             repo.checkout_head(strategy=pygit2.enums.CheckoutStrategy.FORCE)
             return True
-        except pygit2.GitError:
+        except Exception:
             try:
                 repo.state_cleanup()
                 repo.reset(remote_target, pygit2.enums.ResetMode.HARD)

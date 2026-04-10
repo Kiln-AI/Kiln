@@ -335,10 +335,16 @@ def _ensure_gitignore(
         parents,
     )
 
-    callbacks = make_credentials(pat_token, auth_mode)
+    cred_callbacks = make_credentials(pat_token, auth_mode)
     remote = repo.remotes[DEFAULT_REMOTE_NAME]
     branch_name = repo.head.shorthand
-    remote.push([f"refs/heads/{branch_name}"], callbacks=callbacks)
+
+    push_errors: list[str] = []
+    push_cb = make_push_callbacks(cred_callbacks, push_errors)
+    remote.push([f"refs/heads/{branch_name}"], callbacks=push_cb)
+
+    if push_errors:
+        logger.warning("Gitignore push failed: %s", "; ".join(push_errors))
 
 
 def test_write_access(
