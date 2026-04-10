@@ -5,6 +5,7 @@ import {
   testAccess,
   listBranches,
   cloneRepo,
+  renameClone,
   testWriteAccess,
   scanProjects,
   saveConfig,
@@ -105,8 +106,6 @@ describe("cloneRepo", () => {
       "main",
       "token",
       "pat_token",
-      "My Project",
-      "proj_123",
     )
     expect(result.success).toBe(true)
 
@@ -115,6 +114,24 @@ describe("cloneRepo", () => {
     expect(body.branch).toBe("main")
     expect(body.pat_token).toBe("token")
     expect(body.auth_mode).toBe("pat_token")
+  })
+})
+
+describe("renameClone", () => {
+  it("sends correct request", async () => {
+    const response = {
+      new_clone_path: "/tmp/proj_123 - My Project",
+      success: true,
+      message: "OK",
+    }
+    mockFetch.mockResolvedValue(jsonResponse(response))
+
+    const result = await renameClone("/tmp/clone_abc", "My Project", "proj_123")
+    expect(result.success).toBe(true)
+    expect(result.new_clone_path).toBe("/tmp/proj_123 - My Project")
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body.clone_path).toBe("/tmp/clone_abc")
     expect(body.project_name).toBe("My Project")
     expect(body.project_id).toBe("proj_123")
   })

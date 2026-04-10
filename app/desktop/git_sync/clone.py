@@ -215,7 +215,11 @@ def compute_clone_path(base_dir: Path, project_name: str, project_id: str) -> Pa
     if not safe_name:
         safe_name = "project"
 
-    base_name = f"{project_id} - {safe_name}"
+    safe_id = re.sub(r"[^\w\s-]", "", project_id).strip() if project_id else ""
+    if safe_id:
+        base_name = f"{safe_id} - {safe_name}"
+    else:
+        base_name = safe_name
     candidate = git_projects_dir / base_name
 
     if not candidate.exists():
@@ -227,6 +231,37 @@ def compute_clone_path(base_dir: Path, project_name: str, project_id: str) -> Pa
         if not candidate.exists():
             return candidate
         counter += 1
+
+
+def compute_temp_clone_path() -> Path:
+    """Create a temporary directory for cloning using the OS temp directory.
+
+    Uses tempfile.mkdtemp() so the OS can clean up abandoned clones
+    automatically. The clone only moves into .git-projects/ after
+    verification succeeds (via rename_clone_to_final_path).
+    """
+    return Path(tempfile.mkdtemp(prefix="kiln_clone_"))
+
+
+def rename_clone_to_final_path(
+    current_path: Path, base_dir: Path, project_name: str, project_id: str
+) -> Path:
+    """Move a cloned repo from its current (temp) location to its final path.
+
+    Computes the final path using compute_clone_path and renames the directory.
+    Returns the new path.
+
+    Raises ValueError if current_path does not exist or if the rename fails.
+    """
+    if not current_path.exists():
+        raise ValueError(f"Clone path does not exist: {current_path}")
+
+    final_path = compute_clone_path(base_dir, project_name, project_id)
+
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(current_path), str(final_path))
+
+    return final_path
 
 
 def clone_repo(

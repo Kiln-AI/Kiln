@@ -1,7 +1,7 @@
 <script lang="ts">
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import Warning from "$lib/ui/warning.svelte"
-  import { saveConfig } from "$lib/git_sync/api"
+  import { renameClone, saveConfig } from "$lib/git_sync/api"
   import { load_projects } from "$lib/stores"
   import { onMount } from "svelte"
 
@@ -22,11 +22,26 @@
 
   onMount(async () => {
     try {
+      let final_clone_path = clone_path
+
+      const rename_result = await renameClone(
+        clone_path,
+        project_name,
+        project_id,
+      )
+      if (rename_result.success) {
+        final_clone_path = rename_result.new_clone_path
+      } else {
+        throw new Error(
+          rename_result.message || "Failed to rename clone directory",
+        )
+      }
+
       await saveConfig({
         project_id: project_id,
         project_path: project_path,
         git_url: git_url,
-        clone_path: clone_path,
+        clone_path: final_clone_path,
         branch: branch,
         pat_token: pat_token,
         auth_mode: auth_mode,

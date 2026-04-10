@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -105,11 +106,11 @@ class TestClone:
             ) as mock_path,
             patch("app.desktop.git_sync.git_sync_api.clone_repo") as mock_clone,
             patch(
-                "app.desktop.git_sync.git_sync_api.compute_clone_path"
+                "app.desktop.git_sync.git_sync_api.compute_temp_clone_path"
             ) as mock_compute,
         ):
             mock_path.return_value = str(tmp_path)
-            expected_clone = tmp_path / ".git-projects" / "id - proj"
+            expected_clone = tmp_path / "kiln_clone_abc123"
             mock_compute.return_value = expected_clone
             mock_clone.return_value = MagicMock()
 
@@ -118,8 +119,6 @@ class TestClone:
                 json={
                     "git_url": "https://github.com/test/repo.git",
                     "branch": "main",
-                    "project_name": "proj",
-                    "project_id": "id",
                 },
             )
         data = resp.json()
@@ -133,7 +132,7 @@ class TestClone:
             ) as mock_path,
             patch("app.desktop.git_sync.git_sync_api.clone_repo") as mock_clone,
             patch(
-                "app.desktop.git_sync.git_sync_api.compute_clone_path"
+                "app.desktop.git_sync.git_sync_api.compute_temp_clone_path"
             ) as mock_compute,
         ):
             mock_path.return_value = str(tmp_path)
@@ -403,6 +402,69 @@ class TestUpdateConfig:
                 json={"sync_mode": "manual"},
             )
         assert resp.status_code == 404
+
+
+class TestRenameClone:
+    def test_success(self, api_client, tmp_path):
+        import tempfile
+
+        clone_dir = Path(tempfile.mkdtemp(prefix="kiln_clone_"))
+        (clone_dir / "project.kiln").write_text("{}")
+
+        with patch(
+            "app.desktop.git_sync.git_sync_api.default_project_path"
+        ) as mock_path:
+            mock_path.return_value = str(tmp_path)
+            resp = api_client.post(
+                "/api/git_sync/rename_clone",
+                json={
+                    "clone_path": str(clone_dir),
+                    "project_name": "My Project",
+                    "project_id": "proj_123",
+                },
+            )
+        data = resp.json()
+        assert data["success"] is True
+        assert "proj_123 - My Project" in data["new_clone_path"]
+        assert not clone_dir.exists()
+
+    def test_path_traversal_project_id_returns_400(self, api_client, tmp_path):
+        import tempfile
+
+        clone_dir = Path(tempfile.mkdtemp(prefix="kiln_clone_"))
+        (clone_dir / "project.kiln").write_text("{}")
+
+        with patch(
+            "app.desktop.git_sync.git_sync_api.default_project_path"
+        ) as mock_path:
+            mock_path.return_value = str(tmp_path)
+            resp = api_client.post(
+                "/api/git_sync/rename_clone",
+                json={
+                    "clone_path": str(clone_dir),
+                    "project_name": "Test",
+                    "project_id": "../../escape",
+                },
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert ".." not in data["new_clone_path"]
+        assert ".git-projects" in data["new_clone_path"]
+
+    def test_nonexistent_path_returns_400(self, api_client, tmp_path):
+        with patch(
+            "app.desktop.git_sync.git_sync_api.default_project_path"
+        ) as mock_path:
+            mock_path.return_value = str(tmp_path)
+            resp = api_client.post(
+                "/api/git_sync/rename_clone",
+                json={
+                    "clone_path": "/nonexistent/path",
+                    "project_name": "Test",
+                    "project_id": "id1",
+                },
+            )
+        assert resp.status_code == 400
 
 
 class TestDeleteConfig:
