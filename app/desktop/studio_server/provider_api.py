@@ -3,7 +3,6 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from http import HTTPStatus
 from typing import Annotated, Any, Dict, List, Literal
 
 import httpx
@@ -1026,7 +1025,7 @@ async def _create_kiln_copilot_api_key(access_token: str) -> JSONResponse:
             content={"message": f"Failed to connect to Kiln server. Error: {e!s}"},
         )
 
-    if response.status_code == HTTPStatus.CREATED and response.parsed is not None:
+    if response.parsed is not None:
         Config.shared().kiln_copilot_api_key = response.parsed.api_key
         return JSONResponse(
             status_code=200,

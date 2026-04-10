@@ -122,31 +122,30 @@
   <div class="flex justify-center py-4">
     <img src="/images/circle-check.svg" class="size-8" alt="Connected" />
   </div>
+{:else if errorMessage}
+  <p class="text-error text-center pt-4 pb-2">{errorMessage}</p>
+  <div class="flex justify-center pb-4">
+    <button
+      class="btn min-w-[130px]"
+      on:click={tokenExchangeFailed ? createApiKeyFromToken : openSignup}
+      >Try Again</button
+    >
+  </div>
 {:else}
-  <ol class="flex-none my-2 text-gray-700">
-    <li class="list-decimal pl-1 mx-8 my-4">
-      <button class="link underline" on:click={openSignup}>Sign Up</button>
-      to create your Kiln Copilot account.
-    </li>
-    <li class="list-decimal pl-1 mx-8 my-4">
+  <p class="text-center text-gray-700 mx-8 my-4">
+    Sign in or create an account to get started.
+  </p>
+  <div class="flex justify-center pt-2">
+    <button
+      class="btn min-w-[130px]"
+      on:click={openSignup}
+      disabled={connecting}
+    >
       {#if connecting}
-        <span class="flex items-center gap-2">
-          <span class="loading loading-spinner loading-sm"></span>
-          Creating your API key...
-        </span>
+        <div class="loading loading-spinner loading-md"></div>
       {:else}
-        Your API key will be created automatically.
+        Connect
       {/if}
-    </li>
-  </ol>
-  {#if errorMessage}
-    <p class="text-error text-center pb-2">{errorMessage}</p>
-    <div class="flex justify-center pb-4">
-      <button
-        class="btn min-w-[130px]"
-        on:click={tokenExchangeFailed ? createApiKeyFromToken : openSignup}
-        >Try Again</button
-      >
-    </div>
-  {/if}
+    </button>
+  </div>
 {/if}
