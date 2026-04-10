@@ -6,4 +6,4 @@ claude = "utils/setup_claude.sh"
 copy = "wt step copy-ignored"
 
 [pre-remove]
--session = "zellij delete-session {{ branch | sanitize }} 2>/dev/null || true"
+session = "zellij delete-session {{ branch | sanitize }} 2>/dev/null || true"
