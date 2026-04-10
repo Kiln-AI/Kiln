@@ -178,13 +178,17 @@ class SaveConfigRequest(BaseModel):
         default="system_keys",
         description="Auth mode detected during setup: 'system_keys' or 'pat_token'.",
     )
-    sync_mode: str = Field(default="auto", description="Sync mode: 'auto' or 'manual'.")
+    sync_mode: Literal["auto", "manual"] = Field(
+        default="auto", description="Sync mode: 'auto' or 'manual'."
+    )
 
 
 class GitSyncConfigResponse(BaseModel):
     """Current git sync configuration for a project (PAT redacted)."""
 
-    sync_mode: str = Field(description="Sync mode: 'auto' or 'manual'.")
+    sync_mode: Literal["auto", "manual"] = Field(
+        description="Sync mode: 'auto' or 'manual'."
+    )
     auth_mode: Literal["system_keys", "pat_token"] = Field(
         default="system_keys",
         description="Auth mode: 'system_keys' (SSH agent) or 'pat_token' (HTTPS PAT).",
@@ -204,7 +208,7 @@ class GitSyncConfigResponse(BaseModel):
 class UpdateConfigRequest(BaseModel):
     """Request to partially update a git sync configuration."""
 
-    sync_mode: str | None = Field(
+    sync_mode: Literal["auto", "manual"] | None = Field(
         default=None, description="New sync mode, if changing."
     )
     pat_token: str | None = Field(
@@ -219,6 +223,25 @@ class DeleteConfigResponse(BaseModel):
     """Confirmation that a git sync configuration was deleted."""
 
     message: str = Field(description="Human-readable confirmation message.")
+
+
+def _validate_clone_path(clone_path: str) -> Path:
+    """Validate that a clone_path is within an OS temp directory.
+
+    Setup wizard clone paths are created by compute_temp_clone_path() which
+    uses tempfile.mkdtemp(), so legitimate paths always reside under the
+    system temp directory.
+    """
+    import tempfile
+
+    resolved = Path(clone_path).resolve()
+    tmp_root = Path(tempfile.gettempdir()).resolve()
+    if not str(resolved).startswith(str(tmp_root) + os.sep):
+        raise HTTPException(
+            status_code=400,
+            detail="clone_path must be within the system temp directory",
+        )
+    return resolved
 
 
 def connect_git_sync_api(app: FastAPI):
@@ -300,6 +323,7 @@ def connect_git_sync_api(app: FastAPI):
     async def api_test_write_access(
         request: TestWriteAccessRequest,
     ) -> TestAccessResponse:
+        _validate_clone_path(request.clone_path)
         success, message = await asyncio.to_thread(
             test_write_access,
             Path(request.clone_path),
@@ -319,6 +343,7 @@ def connect_git_sync_api(app: FastAPI):
     async def api_scan_projects(
         request: ScanProjectsRequest,
     ) -> ScanProjectsResponse:
+        _validate_clone_path(request.clone_path)
         clone_path = Path(request.clone_path)
         if not clone_path.exists():
             raise HTTPException(status_code=400, detail="Clone path does not exist")
@@ -356,9 +381,7 @@ def connect_git_sync_api(app: FastAPI):
             new_path = await asyncio.to_thread(
                 rename_clone_to_final_path,
                 current_path,
-                base_dir,
-                request.project_name,
-                request.project_id,
+                final_path,
             )
 
             return RenameCloneResponse(
@@ -440,7 +463,7 @@ def connect_git_sync_api(app: FastAPI):
             has_pat_token=config.get("pat_token") is not None,
         )
 
-    @app.post(
+    @app.patch(
         "/api/git_sync/update_config/{project_id}",
         summary="Update Git Sync Config",
         tags=["Git Sync"],

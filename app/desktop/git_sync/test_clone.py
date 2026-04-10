@@ -86,9 +86,8 @@ class TestRenameCloneToFinalPath:
         temp_dir = Path(tempfile.mkdtemp(prefix="kiln_clone_"))
         (temp_dir / "marker.txt").write_text("hello")
 
-        result = rename_clone_to_final_path(
-            temp_dir, tmp_path, "My Project", "proj_123"
-        )
+        final_path = compute_clone_path(tmp_path, "My Project", "proj_123")
+        result = rename_clone_to_final_path(temp_dir, final_path)
 
         assert result.name == "proj_123 - My Project"
         assert result.parent.name == ".git-projects"
@@ -96,10 +95,9 @@ class TestRenameCloneToFinalPath:
         assert not temp_dir.exists()
 
     def test_raises_for_nonexistent_path(self, tmp_path: Path):
+        final_path = compute_clone_path(tmp_path, "Test", "id1")
         with pytest.raises(ValueError, match="does not exist"):
-            rename_clone_to_final_path(
-                tmp_path / "nonexistent", tmp_path, "Test", "id1"
-            )
+            rename_clone_to_final_path(tmp_path / "nonexistent", final_path)
 
     def test_handles_collision(self, tmp_path: Path):
         import tempfile
@@ -109,7 +107,8 @@ class TestRenameCloneToFinalPath:
 
         temp_dir = Path(tempfile.mkdtemp(prefix="kiln_clone_"))
 
-        result = rename_clone_to_final_path(temp_dir, tmp_path, "Test", "id1")
+        final_path = compute_clone_path(tmp_path, "Test", "id1")
+        result = rename_clone_to_final_path(temp_dir, final_path)
         assert result.name == "id1 - Test2"
 
 

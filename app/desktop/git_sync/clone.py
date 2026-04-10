@@ -244,19 +244,20 @@ def compute_temp_clone_path() -> Path:
 
 
 def rename_clone_to_final_path(
-    current_path: Path, base_dir: Path, project_name: str, project_id: str
+    current_path: Path,
+    final_path: Path,
 ) -> Path:
     """Move a cloned repo from its current (temp) location to its final path.
 
-    Computes the final path using compute_clone_path and renames the directory.
-    Returns the new path.
+    The caller is responsible for computing final_path (via compute_clone_path)
+    and validating it before calling this function.
 
-    Raises ValueError if current_path does not exist or if the rename fails.
+    Returns the final path.
+
+    Raises ValueError if current_path does not exist.
     """
     if not current_path.exists():
         raise ValueError(f"Clone path does not exist: {current_path}")
-
-    final_path = compute_clone_path(base_dir, project_name, project_id)
 
     final_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(current_path), str(final_path))
@@ -334,10 +335,16 @@ def _ensure_gitignore(
         parents,
     )
 
-    callbacks = make_credentials(pat_token, auth_mode)
+    cred_callbacks = make_credentials(pat_token, auth_mode)
     remote = repo.remotes[DEFAULT_REMOTE_NAME]
     branch_name = repo.head.shorthand
-    remote.push([f"refs/heads/{branch_name}"], callbacks=callbacks)
+
+    push_errors: list[str] = []
+    push_cb = make_push_callbacks(cred_callbacks, push_errors)
+    remote.push([f"refs/heads/{branch_name}"], callbacks=push_cb)
+
+    if push_errors:
+        logger.warning("Gitignore push failed: %s", "; ".join(push_errors))
 
 
 def test_write_access(
@@ -353,6 +360,7 @@ def test_write_access(
         repo = pygit2.Repository(str(clone_path))
         sig = pygit2.Signature("Kiln AI", "sync@kiln.ai")
 
+        pre_commit_head = repo.head.target
         tree = repo.index.write_tree()
         parents = [repo.head.target]
         repo.create_commit(
@@ -374,6 +382,7 @@ def test_write_access(
         remote.push([f"refs/heads/{branch_name}"], callbacks=push_cb)
 
         if push_errors:
+            repo.reset(pre_commit_head, pygit2.enums.ResetMode.HARD)
             return False, "; ".join(push_errors)
 
         return True, "Write access confirmed"
@@ -393,6 +402,11 @@ def scan_for_projects(clone_path: Path) -> list[dict[str, str]]:
     """
     results: list[dict[str, str]] = []
     for kiln_file in clone_path.rglob("project.kiln"):
+        if any(
+            part.startswith(".")
+            for part in kiln_file.relative_to(clone_path).parts[:-1]
+        ):
+            continue
         rel_path = str(kiln_file.relative_to(clone_path))
         name = ""
         description = ""

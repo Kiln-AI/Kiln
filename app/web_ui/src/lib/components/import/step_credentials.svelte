@@ -1,6 +1,5 @@
 <script lang="ts">
   import FormContainer from "$lib/utils/form_container.svelte"
-  import FormElement from "$lib/utils/form_element.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import Warning from "$lib/ui/warning.svelte"
   import { testAccess, isGitHubUrl, gitHubPatDeepLink } from "$lib/git_sync/api"
@@ -74,11 +73,17 @@
     />
   {/if}
 
-  <FormElement
-    label="Personal Access Token"
-    id="pat_token"
-    inputType="input"
-    bind:value={pat_token}
-    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
-  />
+  <div class="form-control w-full">
+    <label class="label" for="pat_token">
+      <span class="label-text">Personal Access Token</span>
+    </label>
+    <input
+      id="pat_token"
+      type="password"
+      class="input input-bordered w-full"
+      bind:value={pat_token}
+      placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+      autocomplete="off"
+    />
+  </div>
 </FormContainer>

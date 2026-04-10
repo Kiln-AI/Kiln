@@ -62,10 +62,15 @@ class GitSyncManager:
 
     async def _run_git(self, fn: Callable[..., T], *args: Any) -> T:
         loop = asyncio.get_running_loop()
-        return await asyncio.wait_for(
-            loop.run_in_executor(self._git_executor, fn, *args),
-            timeout=self._GIT_EXECUTOR_TIMEOUT,
-        )
+        try:
+            return await asyncio.wait_for(
+                loop.run_in_executor(self._git_executor, fn, *args),
+                timeout=self._GIT_EXECUTOR_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            raise RemoteUnreachableError(
+                "Git operation timed out. Check your connection."
+            ) from None
 
     @asynccontextmanager
     async def write_lock(self):
@@ -85,16 +90,20 @@ class GitSyncManager:
 
         logger.warning("Repo dirty on write request -- running crash recovery")
 
+        # Abort in-progress rebase/merge FIRST -- stash fails if the index
+        # has unresolved conflict entries from a mid-rebase crash.
+        # TODO: add integration test with a real local repo that simulates
+        # a crash mid-rebase with conflicts and verifies ensure_clean recovers.
+        state = await self._run_git(self._get_repo_state)
+        if state != pygit2.enums.RepositoryState.NONE:
+            logger.warning("Aborting in-progress rebase/merge")
+            await self._run_git(self._state_cleanup)
+
         if await self.has_dirty_files():
             await self._run_git(
                 self._stash_all,
                 "[Kiln] Auto-recovery stash -- dirty state from prior session",
             )
-
-        state = await self._run_git(self._get_repo_state)
-        if state != pygit2.enums.RepositoryState.NONE:
-            logger.warning("Aborting in-progress rebase/merge")
-            await self._run_git(self._state_cleanup)
 
         unpushed = await self._count_unpushed_commits()
         if unpushed > 0:
@@ -185,8 +194,20 @@ class GitSyncManager:
         self._last_sync = time.monotonic()
 
     async def rollback(self, pre_request_head: str) -> None:
-        if await self.has_dirty_files():
-            await self._run_git(self._stash_all, "[Kiln] Rollback stash")
+        state = await self._run_git(self._get_repo_state)
+        if state != pygit2.enums.RepositoryState.NONE:
+            try:
+                await self._run_git(self._state_cleanup)
+            except Exception:
+                logger.warning("state_cleanup failed during rollback", exc_info=True)
+
+        try:
+            if await self.has_dirty_files():
+                await self._run_git(self._stash_all, "[Kiln] Rollback stash")
+        except Exception:
+            logger.warning(
+                "Stash failed during rollback, proceeding to reset", exc_info=True
+            )
 
         current_head = await self.get_head()
         if current_head != pre_request_head:
@@ -275,8 +296,9 @@ class GitSyncManager:
             and flags != pygit2.enums.FileStatus.CURRENT
         )
         if file_count == 0:
-            logger.warning("_create_commit called with no dirty files")
-            file_count = 1
+            raise CorruptRepoError(
+                "_create_commit called with no dirty files -- this is a bug"
+            )
 
         index = repo.index
         index.add_all()
@@ -459,7 +481,7 @@ class GitSyncManager:
             repo.state_cleanup()
             repo.checkout_head(strategy=pygit2.enums.CheckoutStrategy.FORCE)
             return True
-        except pygit2.GitError:
+        except Exception:
             try:
                 repo.state_cleanup()
                 repo.reset(remote_target, pygit2.enums.ResetMode.HARD)

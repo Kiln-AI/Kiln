@@ -84,12 +84,12 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
         self._notify_background_sync(manager)
         lock_start = time.monotonic()
         async with manager.write_lock():
-            await manager.ensure_clean()
-            await manager.ensure_fresh()
-
-            pre_request_head = await manager.get_head()
-
+            pre_request_head: str | None = None
             try:
+                await manager.ensure_clean()
+                await manager.ensure_fresh()
+
+                pre_request_head = await manager.get_head()
                 response = await call_next(request)
 
                 # Detect streaming responses before consuming body
@@ -107,6 +107,7 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
                         request.method,
                         request.url.path,
                     )
+                    await manager.rollback(pre_request_head)
                     return Response(
                         content=json.dumps(
                             {
@@ -150,7 +151,8 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
                 )
 
             except Exception as e:
-                await manager.rollback(pre_request_head)
+                if pre_request_head is not None:
+                    await manager.rollback(pre_request_head)
                 if isinstance(e, GitSyncError):
                     status, message = self._map_error(e)
                     return Response(
