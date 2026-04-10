@@ -114,6 +114,13 @@ def connect_project_api(app: FastAPI):
         projects_after = [p for p in projects_before if p != str(project.path)]
         Config.shared().save_setting("projects", projects_after)
 
+        # Remove git sync config for this project if it exists
+        git_sync = Config.shared().git_sync_projects or {}
+        project_path_str = str(project.path)
+        if project_path_str in git_sync:
+            git_sync.pop(project_path_str)
+            Config.shared().save_setting("git_sync_projects", git_sync)
+
         return {"message": f"Project removed. ID: {project_id}"}
 
     @app.post("/api/import_project", summary="Import Project", tags=["Projects"])

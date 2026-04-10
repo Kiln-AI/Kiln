@@ -424,6 +424,7 @@ def test_delete_project_success(client):
             "/path/to/project.kiln",
             "/path/to/other_project.kiln",
         ]
+        mock_config.return_value.git_sync_projects = None
         mock_config.return_value.save_setting = MagicMock()
 
         response = client.delete("/api/projects/test-id")
@@ -432,6 +433,39 @@ def test_delete_project_success(client):
     assert response.json() == {"message": "Project removed. ID: test-id"}
     mock_config.return_value.save_setting.assert_called_once_with(
         "projects", ["/path/to/other_project.kiln"]
+    )
+
+
+def test_delete_project_cleans_up_git_sync(client):
+    mock_project = MagicMock(path="/path/to/project.kiln")
+    with (
+        patch(
+            "kiln_server.project_api.project_from_id",
+            return_value=mock_project,
+        ),
+        patch.object(Config, "shared") as mock_config,
+    ):
+        mock_config.return_value.projects = [
+            "/path/to/project.kiln",
+            "/path/to/other_project.kiln",
+        ]
+        mock_config.return_value.git_sync_projects = {
+            "/path/to/project.kiln": {"sync_mode": "auto", "branch": "main"},
+            "/path/to/other_project.kiln": {"sync_mode": "manual", "branch": "dev"},
+        }
+        mock_config.return_value.save_setting = MagicMock()
+
+        response = client.delete("/api/projects/test-id")
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Project removed. ID: test-id"}
+    assert mock_config.return_value.save_setting.call_count == 2
+    mock_config.return_value.save_setting.assert_any_call(
+        "projects", ["/path/to/other_project.kiln"]
+    )
+    mock_config.return_value.save_setting.assert_any_call(
+        "git_sync_projects",
+        {"/path/to/other_project.kiln": {"sync_mode": "manual", "branch": "dev"}},
     )
 
 
