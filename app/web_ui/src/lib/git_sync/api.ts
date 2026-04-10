@@ -8,7 +8,9 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   })
   if (!resp.ok) {
     const detail = await resp.json().catch(() => null)
-    throw new Error(detail?.detail || `Request failed: ${resp.statusText}`)
+    throw new Error(
+      detail?.detail || detail?.message || `Request failed: ${resp.statusText}`,
+    )
   }
   return resp.json()
 }

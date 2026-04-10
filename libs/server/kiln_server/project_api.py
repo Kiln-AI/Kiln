@@ -5,7 +5,13 @@ from typing import Annotated, Any, Dict
 from fastapi import Body, FastAPI, HTTPException, Path, Query
 from kiln_ai.datamodel import Project
 from kiln_ai.utils.config import Config
-from kiln_ai.utils.project_utils import project_from_id as project_from_id_core
+from kiln_ai.utils.project_utils import (
+    DuplicateProjectError,
+    check_duplicate_project_id,
+)
+from kiln_ai.utils.project_utils import (
+    project_from_id as project_from_id_core,
+)
 
 
 def default_project_path():
@@ -129,6 +135,12 @@ def connect_project_api(app: FastAPI):
                 status_code=500,
                 detail=f"Failed to load project. The file is invalid: {e}",
             )
+
+        if project.id is not None:
+            try:
+                check_duplicate_project_id(project.id, project_path)
+            except DuplicateProjectError as e:
+                raise HTTPException(status_code=409, detail=str(e))
 
         # add to projects list
         add_project_to_config(project_path)

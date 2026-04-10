@@ -5,6 +5,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from kiln_ai.utils.project_utils import DuplicateProjectError
+
 from app.desktop.git_sync.git_sync_api import connect_git_sync_api
 
 
@@ -209,6 +211,47 @@ class TestSaveAndGetConfig:
         assert data["sync_mode"] == "auto"
         assert data["has_pat_token"] is True
         assert "pat_token" not in data
+
+    def test_save_duplicate_same_path(self, api_client):
+        with patch(
+            "app.desktop.git_sync.git_sync_api.check_duplicate_project_id",
+            side_effect=DuplicateProjectError(
+                "This project is already imported.", same_path=True
+            ),
+        ):
+            resp = api_client.post(
+                "/api/git_sync/save_config",
+                json={
+                    "project_id": "proj1",
+                    "project_path": "project.kiln",
+                    "git_url": "https://github.com/test/repo.git",
+                    "clone_path": "/tmp/clone",
+                    "branch": "main",
+                },
+            )
+        assert resp.status_code == 409
+        assert "already imported" in resp.json()["detail"]
+
+    def test_save_duplicate_different_path(self, api_client):
+        with patch(
+            "app.desktop.git_sync.git_sync_api.check_duplicate_project_id",
+            side_effect=DuplicateProjectError(
+                'You already have a project with this ID. You must remove project "Existing" before adding this.',
+                same_path=False,
+            ),
+        ):
+            resp = api_client.post(
+                "/api/git_sync/save_config",
+                json={
+                    "project_id": "proj1",
+                    "project_path": "project.kiln",
+                    "git_url": "https://github.com/test/repo.git",
+                    "clone_path": "/tmp/clone",
+                    "branch": "main",
+                },
+            )
+        assert resp.status_code == 409
+        assert "remove project" in resp.json()["detail"]
 
     def test_save_adds_project_to_config(self, api_client):
         with (

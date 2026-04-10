@@ -5,6 +5,10 @@ from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi import Path as FastAPIPath
+from kiln_ai.utils.project_utils import (
+    DuplicateProjectError,
+    check_duplicate_project_id,
+)
 from kiln_server.project_api import add_project_to_config, default_project_path
 from pydantic import BaseModel, Field
 
@@ -317,6 +321,11 @@ def connect_git_sync_api(app: FastAPI):
                 detail="project_path must be a relative path within the clone",
             )
         full_project_path = str(Path(request.clone_path) / request.project_path)
+
+        try:
+            check_duplicate_project_id(request.project_id, full_project_path)
+        except DuplicateProjectError as e:
+            raise HTTPException(status_code=409, detail=str(e))
 
         project_config = GitSyncProjectConfig(
             sync_mode=request.sync_mode,

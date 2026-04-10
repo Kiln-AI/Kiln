@@ -8,6 +8,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.project_utils import DuplicateProjectError
 
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.project_api import (
@@ -221,6 +222,47 @@ def test_import_project_load_error(client):
     assert response.json() == {
         "message": "Failed to load project. The file is invalid: Load error"
     }
+
+
+def test_import_project_duplicate_same_path(client):
+    mock_project = Project(
+        name="Imported Project", description="An imported project", id="dup-id"
+    )
+    with (
+        patch("os.path.exists", return_value=True),
+        patch("kiln_ai.datamodel.Project.load_from_file", return_value=mock_project),
+        patch(
+            "kiln_server.project_api.check_duplicate_project_id",
+            side_effect=DuplicateProjectError(
+                "This project is already imported.", same_path=True
+            ),
+        ),
+    ):
+        response = client.post("/api/import_project?project_path=/path/to/project.kiln")
+
+    assert response.status_code == 409
+    assert response.json()["message"] == "This project is already imported."
+
+
+def test_import_project_duplicate_different_path(client):
+    mock_project = Project(
+        name="Imported Project", description="An imported project", id="dup-id"
+    )
+    with (
+        patch("os.path.exists", return_value=True),
+        patch("kiln_ai.datamodel.Project.load_from_file", return_value=mock_project),
+        patch(
+            "kiln_server.project_api.check_duplicate_project_id",
+            side_effect=DuplicateProjectError(
+                'You already have a project with this ID. You must remove project "Existing" before adding this.',
+                same_path=False,
+            ),
+        ),
+    ):
+        response = client.post("/api/import_project?project_path=/path/to/project.kiln")
+
+    assert response.status_code == 409
+    assert "remove project" in response.json()["message"]
 
 
 def test_import_project_missing_path(client):
