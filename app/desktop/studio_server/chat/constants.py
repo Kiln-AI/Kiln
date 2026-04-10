@@ -17,6 +17,10 @@ DENIED_TOOL_OUTPUT = json.dumps(
 )
 FUNCTION_NAME_TO_TOOL_ID: dict[str, str] = {
     "call_kiln_api": KilnBuiltInToolId.CALL_KILN_API,
+    "add": KilnBuiltInToolId.ADD_NUMBERS,
+    "subtract": KilnBuiltInToolId.SUBTRACT_NUMBERS,
+    "multiply": KilnBuiltInToolId.MULTIPLY_NUMBERS,
+    "divide": KilnBuiltInToolId.DIVIDE_NUMBERS,
 }
 
 KILN_SSE_CHAT_TRACE = "kiln_chat_trace"

@@ -1826,7 +1826,7 @@ def _sdk_unmanaged_multiply_tool() -> UnmanagedKilnTool:
 
 
 def test_external_tools_invalid_type_raises(mock_task, config):
-    with pytest.raises(TypeError, match="must be a KilnToolInterface instance"):
+    with pytest.raises(AssertionError, match="must be a KilnToolInterface instance"):
         LiteLlmAdapter(
             config=config,
             kiln_task=mock_task,

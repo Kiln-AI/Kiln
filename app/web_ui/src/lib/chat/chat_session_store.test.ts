@@ -718,6 +718,99 @@ describe("createChatSessionStore", () => {
     })
   })
 
+  describe("loadSession", () => {
+    it("loads messages and sets continuation trace id", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore()
+
+      const messages: ChatMessage[] = [
+        { id: "u1", role: "user", content: "hello" },
+        { id: "a1", role: "assistant", parts: [{ type: "text", text: "hi" }] },
+      ]
+      store.loadSession(messages, "trace-123")
+
+      const state = get(store)
+      expect(state.messages).toHaveLength(2)
+      expect(state.messages[0].content).toBe("hello")
+      expect(state.status).toBe("ready")
+      expect(state.abortController).toBeNull()
+    })
+
+    it("aborts in-flight request when loading a session", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      streamChatMock.mockImplementation(noopStreamChat)
+      const store = createChatSessionStore()
+
+      await store.sendMessage("hi")
+      const controller = get(store).abortController!
+
+      store.loadSession([], "trace-456")
+      expect(controller.signal.aborted).toBe(true)
+    })
+
+    it("uses continuation trace id for subsequent messages", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      store.loadSession([], "trace-cont")
+      await store.sendMessage("follow up")
+
+      expect(capture.options!.traceId).toBe("trace-cont")
+    })
+  })
+
+  describe("toolExecuting", () => {
+    it("sets toolExecuting to true on onToolExecutionStart", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      await store.sendMessage("hi")
+      expect(get(store).toolExecuting).toBe(false)
+
+      capture.options!.onToolExecutionStart!(1)
+      expect(get(store).toolExecuting).toBe(true)
+    })
+
+    it("sets toolExecuting to false on onToolExecutionEnd", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      await store.sendMessage("hi")
+      capture.options!.onToolExecutionStart!(1)
+      expect(get(store).toolExecuting).toBe(true)
+
+      capture.options!.onToolExecutionEnd!(1)
+      expect(get(store).toolExecuting).toBe(false)
+    })
+
+    it("resets toolExecuting on reset", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      await store.sendMessage("hi")
+      capture.options!.onToolExecutionStart!(1)
+      expect(get(store).toolExecuting).toBe(true)
+
+      store.reset()
+      expect(get(store).toolExecuting).toBe(false)
+    })
+  })
+
   describe("streaming status guard", () => {
     it("only transitions to streaming once across multiple onAssistantMessage calls", async () => {
       const { createChatSessionStore, streamChatMock } =

@@ -90,6 +90,8 @@ Endpoint paths, request schemas, response fields, and jq filters are defined in 
         timeout_seconds = 30.0 if method in {"GET", "DELETE"} else 300.0
         timeout = httpx.Timeout(timeout_seconds)
 
+        # Per-request client: tool instances are short-lived (created per call
+        # via tool_from_id), so a shared client wouldn't persist across calls anyway.
         async with httpx.AsyncClient(timeout=timeout) as client:
             request_funcs = {
                 "GET": lambda: client.get(full_url, headers=headers),

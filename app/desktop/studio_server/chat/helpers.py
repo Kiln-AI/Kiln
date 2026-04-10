@@ -38,3 +38,36 @@ def make_httpx_mock(status_code: int = 200, chunks: list[bytes] | None = None):
 
     mock_async_client_class = MagicMock(return_value=mock_client)
     return mock_async_client_class, mock_client, mock_upstream
+
+
+def make_stream_mock(chunks: list[bytes]):
+    """Create a mock upstream response that yields the given SSE chunks."""
+
+    async def mock_aiter_bytes():
+        for chunk in chunks:
+            yield chunk
+
+    mock_upstream = MagicMock()
+    mock_upstream.status_code = 200
+    mock_upstream.aiter_bytes.return_value = mock_aiter_bytes()
+    mock_upstream.__aenter__ = AsyncMock(return_value=mock_upstream)
+    mock_upstream.__aexit__ = AsyncMock(return_value=None)
+    return mock_upstream
+
+
+def make_n_round_mock_client(*chunk_rounds: list[bytes]):
+    """Create a mock httpx client that serves multiple streaming rounds in sequence."""
+    mocks = [make_stream_mock(chunks) for chunks in chunk_rounds]
+    call_count = 0
+
+    def side_effect(*args, **kwargs):
+        nonlocal call_count
+        idx = min(call_count, len(mocks) - 1)
+        call_count += 1
+        return mocks[idx]
+
+    mock_client = MagicMock()
+    mock_client.stream.side_effect = side_effect
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+    return mock_client, lambda: call_count

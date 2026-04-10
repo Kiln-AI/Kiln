@@ -30,6 +30,7 @@ from .clarify_spec_input import ClarifySpecInput
 from .clarify_spec_output import ClarifySpecOutput
 from .client_chat_message import ClientChatMessage
 from .client_chat_message_role import ClientChatMessageRole
+from .create_api_key_response import CreateApiKeyResponse
 from .data_source import DataSource
 from .data_source_properties import DataSourceProperties
 from .data_source_type import DataSourceType
@@ -124,6 +125,7 @@ __all__ = (
     "ClarifySpecOutput",
     "ClientChatMessage",
     "ClientChatMessageRole",
+    "CreateApiKeyResponse",
     "DataSource",
     "DataSourceProperties",
     "DataSourceType",

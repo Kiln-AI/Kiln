@@ -3155,6 +3155,26 @@ export interface components {
             /** Name */
             name?: string;
         };
+        /** ChatRequest */
+        ChatRequest: {
+            /** Messages */
+            messages: components["schemas"]["ChatRequestMessage"][];
+            /** Trace Id */
+            trace_id?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ChatRequestMessage */
+        ChatRequestMessage: {
+            /** Role */
+            role: string;
+            /** Content */
+            content?: string | {
+                [key: string]: unknown;
+            }[] | null;
+        } & {
+            [key: string]: unknown;
+        };
         /** ChatSessionListItem */
         ChatSessionListItem: {
             /** Id */
@@ -14835,7 +14855,12 @@ export interface operations {
     };
     list_chat_sessions_api_chat_sessions_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Maximum number of sessions to return */
+                limit?: number;
+                /** @description Number of sessions to skip */
+                offset?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -14849,6 +14874,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatSessionListItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -14922,7 +14956,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -14931,6 +14969,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

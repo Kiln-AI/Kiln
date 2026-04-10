@@ -95,13 +95,14 @@ class ChatStreamSession:
         self._upstream_url = upstream_url
         self._headers = headers
         self._body = initial_body
+        self._initial_trace_id: str | None = initial_body.get("trace_id")
 
     async def stream(self):
         """AsyncGenerator yielding SSE bytes to the client."""
         for _ in range(MAX_TOOL_ROUNDS):
             round_state = RoundState()
             parser = EventParser()
-            trace_id_for_error: str | None = None
+            trace_id_for_error: str | None = self._initial_trace_id
 
             async with httpx.AsyncClient(timeout=CHAT_TIMEOUT) as client:
                 async with client.stream(
@@ -214,7 +215,7 @@ class ChatStreamSession:
         round_state: RoundState,
         approval_decisions: dict[str, bool] | None,
     ) -> dict[str, str]:
-        tool_results: dict[str, str] = {}
+        tool_calls: list[ToolCallInfo] = []
         for event in round_state.tool_input_events:
             if tool_input_executor_is_server(event):
                 logger.debug(
@@ -223,21 +224,15 @@ class ChatStreamSession:
                     event.toolCallId,
                 )
                 continue
-            tc_id = event.toolCallId
-            if tool_requires_user_approval(event):
-                if approval_decisions is None or not approval_decisions.get(tc_id):
-                    tool_results[tc_id] = DENIED_TOOL_OUTPUT
-                    continue
-            tool_name = event.toolName
-            tool_args = event.input
-            logger.info(
-                "Executing server tool: %s (call_id=%s)",
-                tool_name,
-                tc_id,
+            tool_calls.append(
+                ToolCallInfo(
+                    toolCallId=event.toolCallId,
+                    toolName=event.toolName,
+                    input=event.input,
+                    requiresApproval=tool_requires_user_approval(event),
+                )
             )
-            tool_result = await execute_tool(tool_name, tool_args)
-            tool_results[tc_id] = tool_result
-        return tool_results
+        return await execute_tool_batch(tool_calls, approval_decisions or {})
 
     @staticmethod
     def _format_tool_output(tc_id: str, output: str) -> bytes:
@@ -256,14 +251,17 @@ class ChatStreamSession:
 
 async def execute_tool(tool_name: str, args: dict[str, Any]) -> str:
     """Run a Kiln built-in tool by OpenAI function name; return its output string."""
-    logger.info(
-        "Executing server tool %s with args: %s",
+    logger.info("Executing server tool %s", tool_name)
+    logger.debug(
+        "Tool %s args: %s",
         tool_name,
         json.dumps(args, default=str, ensure_ascii=False),
     )
     tool_id = FUNCTION_NAME_TO_TOOL_ID.get(tool_name)
     if tool_id is None:
-        raise ValueError(f"Unknown tool name: {tool_name}")
+        return json.dumps(
+            {"error": f"Unknown tool name: {tool_name}"}, ensure_ascii=False
+        )
     try:
         tool = tool_from_id(tool_id)
         result = await tool.run(**args)
