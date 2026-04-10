@@ -324,7 +324,7 @@
     current_state = "review"
   }
 
-  // Handler for "Analyze with Copilot" button
+  // Handler for "Create with Copilot" button
   async function handle_analyze_with_copilot() {
     error = null
 

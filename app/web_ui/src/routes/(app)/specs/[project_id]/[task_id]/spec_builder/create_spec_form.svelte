@@ -69,7 +69,7 @@
 
 <FormContainer
   bind:this={form_container}
-  submit_label={copilot_enabled ? "Analyze with Copilot" : "Create Spec"}
+  submit_label={copilot_enabled ? "Create with Copilot" : "Create Spec"}
   on:submit={handle_submit}
   bind:error
   bind:submitting
@@ -140,7 +140,7 @@
       disabled={submitting}
       on:click={handle_secondary_click}
     >
-      Create without Copilot
+      Create manually
     </button>
   </div>
 {/if}
