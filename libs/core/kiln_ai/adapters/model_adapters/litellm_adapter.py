@@ -487,8 +487,7 @@ class LiteLlmAdapter(BaseAdapter):
         # Don't love having this logic here. But it's worth the usability improvement
         # so better to keep it than exclude it. Should figure out how I want to isolate
         # this sort of logic so it's config driven and can be overridden
-
-        extra_body = {}
+        extra_body: dict[str, Any] = {}
         provider_options = {}
 
         run_config = as_kiln_agent_run_config(self.run_config)
@@ -616,6 +615,14 @@ class LiteLlmAdapter(BaseAdapter):
             **self._additional_body_options,
         }
 
+        if self.base_adapter_config.automatic_prompt_caching:
+            # Mark the last message for cache control. Litellm's AnthropicCacheControlHook
+            # handles provider-specific injection. Providers auto-cache matching prefixes,
+            # so marking the last message is sufficient for multi-turn conversations.
+            completion_kwargs["cache_control_injection_points"] = [
+                {"location": "message", "index": -1}
+            ]
+
         tool_calls = await self.litellm_tools()
         has_tools = len(tool_calls) > 0
         if has_tools:
@@ -636,6 +643,13 @@ class LiteLlmAdapter(BaseAdapter):
                 raise ValueError(
                     "top_p and temperature can not both have custom values for this model. This is a restriction from the model provider. Please set only one of them to a custom value (not 1.0)."
                 )
+
+        # Anthropic requires temperature=1 when thinking/reasoning is active (including adaptive mode).
+        # Remove temperature so litellm sends the required default rather than an incompatible value.
+        if provider.name == ModelProviderName.anthropic and (
+            "reasoning_effort" in completion_kwargs or "thinking" in completion_kwargs
+        ):
+            completion_kwargs.pop("temperature", None)
 
         if not skip_response_format:
             # Response format: json_schema, json_instructions, json_mode, function_calling, etc
@@ -673,6 +687,13 @@ class LiteLlmAdapter(BaseAdapter):
             usage.input_tokens = litellm_usage.get("prompt_tokens", None)
             usage.output_tokens = litellm_usage.get("completion_tokens", None)
             usage.total_tokens = litellm_usage.get("total_tokens", None)
+            prompt_details = litellm_usage.get("prompt_tokens_details", None)
+            if prompt_details and hasattr(prompt_details, "cached_tokens"):
+                usage.cached_tokens = prompt_details.cached_tokens
+            elif prompt_details:
+                logger.warning(
+                    f"prompt_tokens_details has unexpected type {type(prompt_details)}, cached_tokens not extracted"
+                )
         else:
             logger.warning(
                 f"Unexpected usage format from litellm: {litellm_usage}. Expected Usage object, got {type(litellm_usage)}"

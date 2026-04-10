@@ -10,6 +10,7 @@ import pytest
 from dotenv import load_dotenv
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
 from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
+from kiln_ai.pytest_test_output import make_test_output_dir
 from kiln_ai.utils.config import Config
 
 
@@ -129,6 +130,11 @@ def pytest_collection_modifyitems(config, items):
         for item in items:
             if "ollama" in item.keywords:
                 item.add_marker(skip_ollama)
+
+
+@pytest.fixture
+def test_output_dir(request: pytest.FixtureRequest) -> Path:
+    return make_test_output_dir(request)
 
 
 @pytest.fixture

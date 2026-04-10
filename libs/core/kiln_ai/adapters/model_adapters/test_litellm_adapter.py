@@ -828,6 +828,39 @@ async def test_build_completion_kwargs(
             None,
             Usage(input_tokens=10, output_tokens=20, total_tokens=30, cost=0.5),
         ),
+        # Cached tokens present
+        (
+            litellm.types.utils.Usage(
+                prompt_tokens=100,
+                completion_tokens=20,
+                total_tokens=120,
+                prompt_tokens_details={"cached_tokens": 80},
+            ),
+            None,
+            Usage(
+                input_tokens=100,
+                output_tokens=20,
+                total_tokens=120,
+                cached_tokens=80,
+            ),
+        ),
+        # Cached tokens with cost
+        (
+            litellm.types.utils.Usage(
+                prompt_tokens=100,
+                completion_tokens=20,
+                total_tokens=120,
+                prompt_tokens_details={"cached_tokens": 80},
+            ),
+            0.5,
+            Usage(
+                input_tokens=100,
+                output_tokens=20,
+                total_tokens=120,
+                cost=0.5,
+                cached_tokens=80,
+            ),
+        ),
     ],
 )
 def test_usage_from_response(config, mock_task, litellm_usage, cost, expected_usage):
@@ -855,6 +888,7 @@ def test_usage_from_response(config, mock_task, litellm_usage, cost, expected_us
         assert result.output_tokens == expected_usage.output_tokens
         assert result.total_tokens == expected_usage.total_tokens
         assert result.cost == expected_usage.cost
+        assert result.cached_tokens == expected_usage.cached_tokens
 
     # Verify the response was queried correctly
     response.get.assert_called_once_with("usage", None)
@@ -1359,6 +1393,46 @@ async def test_build_completion_kwargs_temp_top_p_not_exclusive(config, mock_tas
 
         assert kwargs["temperature"] == 0.7
         assert kwargs["top_p"] == 0.9
+
+
+@pytest.mark.parametrize(
+    "provider_name,extra_body,temperature,expect_temperature",
+    [
+        (ModelProviderName.anthropic, {"reasoning_effort": "high"}, 0.0, False),
+        (ModelProviderName.anthropic, {"reasoning_effort": "low"}, 0.7, False),
+        (
+            ModelProviderName.anthropic,
+            {"thinking": {"type": "enabled", "budget_tokens": 4000}},
+            0.5,
+            False,
+        ),
+        (ModelProviderName.anthropic, {}, 0.5, True),
+        (ModelProviderName.openai, {"reasoning_effort": "high"}, 0.0, True),
+    ],
+)
+async def test_build_completion_kwargs_anthropic_thinking_drops_temperature(
+    config, mock_task, provider_name, extra_body, temperature, expect_temperature
+):
+    config.run_config_properties.temperature = temperature
+
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    mock_provider.name = provider_name
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value=f"{provider_name}/test"),
+        patch.object(adapter, "build_extra_body", return_value=extra_body),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    if expect_temperature:
+        assert kwargs["temperature"] == temperature
+    else:
+        assert "temperature" not in kwargs
 
 
 @pytest.mark.asyncio
@@ -2106,3 +2180,47 @@ async def test_external_tools_only_return_on_tool_call_and_resume_mocked(
 
     assert not task_run2.is_toolcall_pending
     assert json.loads(task_run2.output.output) == {"test": "structured_response"}
+
+
+async def test_build_completion_kwargs_no_caching_by_default(config, mock_task):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        kwargs = await adapter.build_completion_kwargs(
+            mock_provider, messages, top_logprobs=None
+        )
+
+    assert "cache_control_injection_points" not in kwargs
+
+
+async def test_build_completion_kwargs_with_automatic_prompt_caching(config, mock_task):
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(automatic_prompt_caching=True),
+    )
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        kwargs = await adapter.build_completion_kwargs(
+            mock_provider, messages, top_logprobs=None
+        )
+
+    assert kwargs["cache_control_injection_points"] == [
+        {"location": "message", "index": -1}
+    ]

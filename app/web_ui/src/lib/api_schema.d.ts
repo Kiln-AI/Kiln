@@ -8663,6 +8663,11 @@ export interface components {
              * @description The cost of the task run in US dollars, saved at runtime (prices can change over time).
              */
             cost?: number | null;
+            /**
+             * Cached Tokens
+             * @description Number of tokens served from prompt cache. None if not reported.
+             */
+            cached_tokens?: number | null;
         };
         /**
          * UserModelEntry

@@ -117,6 +117,12 @@ class AdapterConfig:
     """
     external_tools: list[KilnToolInterface] | None = None
 
+    """
+    When True, automatically inject prompt caching hints into completion
+    requests. This is a cost optimization and does not affect model output.
+    """
+    automatic_prompt_caching: bool = False
+
 
 class BaseAdapter(metaclass=ABCMeta):
     """Base class for AI model adapters that handle task execution.
