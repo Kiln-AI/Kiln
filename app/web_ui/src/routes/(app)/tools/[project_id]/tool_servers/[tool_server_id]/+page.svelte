@@ -17,8 +17,6 @@
   import Warning from "$lib/ui/warning.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import { selected_tool_for_task } from "$lib/stores/tools_store"
-  import TableButton from "$lib/ui/table_button.svelte"
-  import Float from "$lib/ui/float.svelte"
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import ErrorDetailsBlock from "$lib/ui/error_details_block.svelte"
 
