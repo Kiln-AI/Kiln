@@ -894,6 +894,36 @@ def test_usage_from_response(config, mock_task, litellm_usage, cost, expected_us
     response.get.assert_called_once_with("usage", None)
 
 
+def test_usage_from_response_prompt_details_without_cached_tokens(config, mock_task):
+    """Test that a warning is logged when prompt_tokens_details lacks cached_tokens attribute"""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    # Create a usage object with prompt_tokens_details that lacks cached_tokens
+    usage = litellm.types.utils.Usage(
+        prompt_tokens=100,
+        completion_tokens=20,
+        total_tokens=120,
+    )
+    # Manually set prompt_tokens_details to a truthy object without cached_tokens attr
+    usage.prompt_tokens_details = Mock(spec=[])  # spec=[] means no attributes
+
+    response = Mock(spec=ModelResponse)
+    response.get.return_value = usage
+    response._hidden_params = {"response_cost": None}
+
+    with patch("kiln_ai.adapters.model_adapters.litellm_adapter.logger") as mock_logger:
+        result = adapter.usage_from_response(response)
+
+    assert result.input_tokens == 100
+    assert result.output_tokens == 20
+    assert result.total_tokens == 120
+    assert result.cached_tokens is None
+    mock_logger.warning.assert_called_once()
+    assert "prompt_tokens_details has unexpected type" in str(
+        mock_logger.warning.call_args
+    )
+
+
 @pytest.fixture
 def mock_math_tools():
     """Create a list of 4 math tools for testing"""
