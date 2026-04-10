@@ -197,7 +197,7 @@ export async function save_new_mcp_run_config(
   description?: string,
 ): Promise<TaskRunConfig> {
   const { error, data } = await client.POST(
-    "/api/projects/{project_id}/tasks/{task_id}/run_configs/mcp",
+    "/api/projects/{project_id}/tasks/{task_id}/mcp_run_config",
     {
       params: { path: { project_id, task_id } },
       body: { tool_id, name, description },

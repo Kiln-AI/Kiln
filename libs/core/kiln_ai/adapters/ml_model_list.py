@@ -44,6 +44,7 @@ class ModelFamily(str, Enum):
     stepfun = "stepfun"
     mimo = "mimo"
     nemotron = "nemotron"
+    arcee = "arcee"
 
 
 # Where models have instruct and raw versions, instruct is default and raw is specified
@@ -113,6 +114,10 @@ class ModelName(str, Enum):
     ministral_3_3b_2512 = "ministral_3_3b_2512"
     magistral_medium = "magistral_medium"
     magistral_medium_thinking = "magistral_medium_thinking"
+    gemma_4_31b = "gemma_4_31b"
+    gemma_4_27b = "gemma_4_27b"
+    gemma_4_e4b = "gemma_4_e4b"
+    gemma_4_e2b = "gemma_4_e2b"
     gemma_2_2b = "gemma_2_2b"
     gemma_2_9b = "gemma_2_9b"
     gemma_2_27b = "gemma_2_27b"
@@ -182,6 +187,7 @@ class ModelName(str, Enum):
     qwen_3p5_122b_a10b = "qwen_3p5_122b_a10b"
     qwen_3p5_27b = "qwen_3p5_27b"
     qwen_3p5_35b_a3b = "qwen_3p5_35b_a3b"
+    qwen_3p6_plus = "qwen_3p6_plus"
     qwen_3p5_plus = "qwen_3p5_plus"
     qwen_3p5_397b_a17b = "qwen_3p5_397b_a17b"
     qwen_3_next_80b_a3b = "qwen_3_next_80b_a3b"
@@ -223,6 +229,9 @@ class ModelName(str, Enum):
     kimi_k2_thinking = "kimi_k2_thinking"
     kimi_k2_5 = "kimi_k2_5"
     kimi_dev_72b = "kimi_dev_72b"
+    glm_5_1 = "glm_5_1"
+    glm_5_turbo = "glm_5_turbo"
+    glm_5v_turbo = "glm_5v_turbo"
     glm_5 = "glm_5"
     glm_4_7 = "glm_4_7"
     glm_4_7_flash = "glm_4_7_flash"
@@ -246,6 +255,7 @@ class ModelName(str, Enum):
     bytedance_seed_oss_36b = "bytedance_seed_oss_36b"
     bytedance_seed_1_6 = "bytedance_seed_1_6"
     bytedance_seed_1_6_flash = "bytedance_seed_1_6_flash"
+    arcee_trinity_large_thinking = "arcee_trinity_large_thinking"
     stepfun_step3 = "stepfun_step3"
     mimo_v2_pro = "mimo_v2_pro"
     mimo_v2_flash = "mimo_v2_flash"
@@ -464,6 +474,11 @@ GEMINI_3_FLASH_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
     "High": "high",
+}
+
+GEMMA_4_THINKING_LEVELS = {
+    "Off": "none",
+    "On": "high",
 }
 
 GPT_5_OPENAI_THINKING_LEVELS = {
@@ -2807,6 +2822,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_function_calling=False,
                 supports_doc_extraction=True,
@@ -3107,6 +3123,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="mistralai/Ministral-3-14B-Instruct-2512",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
                 supports_function_calling=False,
             ),
@@ -3208,6 +3225,11 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="mistralai/mistral-large-2512",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/mistral-large-3-fp8",
                 structured_output_mode=StructuredOutputMode.json_schema,
             ),
         ],
@@ -3550,6 +3572,120 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.ollama,
                 model_id="phi4-mini",
+                supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Gemma 4 31B
+    KilnModel(
+        family=ModelFamily.gemma,
+        name=ModelName.gemma_4_31b,
+        friendly_name="Gemma 4 31B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="gemma4:31b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemma-4-31b-it",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                gemini_reasoning_enabled=True,
+                available_thinking_levels=GEMMA_4_THINKING_LEVELS,
+                default_thinking_level="none",
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemma-4-31b-it",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                gemini_reasoning_enabled=True,
+                available_thinking_levels=GEMMA_4_THINKING_LEVELS,
+                default_thinking_level="none",
+                max_parallel_requests=2,
+            ),
+        ],
+    ),
+    # Gemma 4 27B (26B A4B MoE)
+    KilnModel(
+        family=ModelFamily.gemma,
+        name=ModelName.gemma_4_27b,
+        friendly_name="Gemma 4 27B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="gemma4:26b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemma-4-26b-a4b-it",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                gemini_reasoning_enabled=True,
+                available_thinking_levels=GEMMA_4_THINKING_LEVELS,
+                default_thinking_level="none",
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemma-4-26b-a4b-it",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                gemini_reasoning_enabled=True,
+                available_thinking_levels=GEMMA_4_THINKING_LEVELS,
+                default_thinking_level="none",
+                max_parallel_requests=2,
+            ),
+        ],
+    ),
+    # Gemma 4 E4B
+    KilnModel(
+        family=ModelFamily.gemma,
+        name=ModelName.gemma_4_e4b,
+        friendly_name="Gemma 4 4B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="gemma4:e4b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=False,
+                supports_function_calling=False,
+            ),
+        ],
+    ),
+    # Gemma 4 E2B
+    KilnModel(
+        family=ModelFamily.gemma,
+        name=ModelName.gemma_4_e2b,
+        friendly_name="Gemma 4 2B",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.ollama,
+                model_id="gemma4:e2b",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=False,
                 supports_function_calling=False,
             ),
         ],
@@ -4792,6 +4928,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="Qwen/Qwen3-Next-80B-A3B-Instruct",
+                deprecated=True,
                 supports_data_gen=True,
                 supports_function_calling=False,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
@@ -4938,6 +5075,21 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Qwen 3.6 Plus
+    KilnModel(
+        family=ModelFamily.qwen,
+        name=ModelName.qwen_3p6_plus,
+        friendly_name="Qwen 3.6 Plus",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/qwen3p6-plus",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+            ),
+        ],
+    ),
     # Qwen 3.5 Plus
     KilnModel(
         family=ModelFamily.qwen,
@@ -4987,6 +5139,24 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
                     KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="Qwen/Qwen3.5-397B-A17B",
+                supports_data_gen=False,
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_function_calling=False,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
                 ],
                 multimodal_requires_pdf_as_image=True,
             ),
@@ -6176,13 +6346,68 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # GLM 5.1
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5_1,
+        friendly_name="GLM 5.1",
+        featured_rank=4,
+        editorial_notes="Z.ai's newest flagship for long-horizon agentic tasks. Coding performance on par with Claude Opus 4.6, and can autonomously execute complex engineering work for up to 8 hours.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-5.1",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+        ],
+    ),
+    # GLM 5V Turbo
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5v_turbo,
+        friendly_name="GLM 5V Turbo (Vision-Language)",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-5v-turbo",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+        ],
+    ),
+    # GLM 5 Turbo
+    KilnModel(
+        family=ModelFamily.glm,
+        name=ModelName.glm_5_turbo,
+        friendly_name="GLM 5 Turbo",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="z-ai/glm-5-turbo",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+        ],
+    ),
     # GLM 5
     KilnModel(
         family=ModelFamily.glm,
         name=ModelName.glm_5,
         friendly_name="GLM 5",
-        featured_rank=4,
-        editorial_notes="Open, state-of-the-art model from Z.ai. Quality close to the big names, at a fraction of the cost.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -6195,6 +6420,13 @@ built_in_models: List[KilnModel] = [
                 model_id="accounts/fireworks/models/glm-5",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="zai-org/GLM-5",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                supports_function_calling=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
@@ -6423,6 +6655,7 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="zai-org/GLM-4.5-Air-FP8",
+                deprecated=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
                 parser=ModelParserID.r1_thinking,
@@ -6478,6 +6711,23 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="moonshotai/Kimi-K2.5",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                multimodal_requires_pdf_as_image=True,
             ),
         ],
     ),
@@ -6751,6 +7001,25 @@ built_in_models: List[KilnModel] = [
                 require_openrouter_reasoning=True,
                 parser=ModelParserID.r1_thinking,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/minimax-m2p5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                reasoning_optional_for_structured_output=True,
+                parser=ModelParserID.optional_r1_thinking,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="MiniMaxAI/MiniMax-M2.5",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                reasoning_optional_for_structured_output=True,
+                parser=ModelParserID.optional_r1_thinking,
+                supports_function_calling=False,
+            ),
         ],
     ),
     # Minimax M2.1
@@ -6908,6 +7177,23 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 reasoning_capable=True,
                 supports_data_gen=True,
+            ),
+        ],
+    ),
+    # Arcee AI Trinity Large Thinking
+    KilnModel(
+        family=ModelFamily.arcee,
+        name=ModelName.arcee_trinity_large_thinking,
+        friendly_name="Arcee Trinity Large (Thinking)",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="arcee-ai/trinity-large-thinking",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                reasoning_capable=True,
+                require_openrouter_reasoning=True,
             ),
         ],
     ),

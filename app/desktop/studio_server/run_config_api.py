@@ -13,6 +13,7 @@ from kiln_ai.tools.tool_registry import is_mcp_tool_id, tool_from_id
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
 from pydantic import BaseModel, Field
 
 
@@ -39,8 +40,8 @@ class CreateMcpRunConfigRequest(BaseModel):
 class TaskToolCompatibility(BaseModel):
     """Whether a task is compatible with a specific tool."""
 
-    task_id: str = Field(description="The task ID.")
-    task_name: str = Field(description="The task name.")
+    task_id: str = Field(description="The unique identifier of the task.")
+    task_name: str = Field(description="The human-readable name of the task.")
     compatible: bool = Field(
         description="Whether the task is compatible with the tool."
     )
@@ -190,7 +191,11 @@ def _create_mcp_run_config_properties(
 
 
 def connect_run_config_api(app: FastAPI):
-    @app.get("/api/projects/{project_id}/tasks_compatible_with_tool", tags=["Tasks"])
+    @app.get(
+        "/api/projects/{project_id}/tasks_compatible_with_tool",
+        tags=["Tasks"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def tasks_compatible_with_tool(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
@@ -233,8 +238,9 @@ def connect_run_config_api(app: FastAPI):
         return results
 
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/run_configs/mcp",
+        "/api/projects/{project_id}/tasks/{task_id}/mcp_run_config",
         tags=["Run Configs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def create_mcp_run_config(
         project_id: Annotated[
@@ -277,7 +283,11 @@ def connect_run_config_api(app: FastAPI):
         task_run_config.save_to_file()
         return task_run_config
 
-    @app.post("/api/projects/{project_id}/create_task_from_tool", tags=["Tasks"])
+    @app.post(
+        "/api/projects/{project_id}/create_task_from_tool",
+        tags=["Tasks"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def create_task_from_tool(
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")

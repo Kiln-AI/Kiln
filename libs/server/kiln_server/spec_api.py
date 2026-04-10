@@ -10,6 +10,11 @@ from kiln_ai.datamodel.spec_properties import SpecProperties
 from pydantic import BaseModel, Field
 
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    DENY_AGENT,
+    agent_policy_require_approval,
+)
 from kiln_server.utils.spec_utils import (
     generate_spec_eval_filter_ids,
     generate_spec_eval_tags,
@@ -51,7 +56,7 @@ def spec_from_id(project_id: str, task_id: str, spec_id: str) -> Spec:
 class SpecCreationRequest(BaseModel):
     """Request to create a new spec."""
 
-    name: FilenameString = Field(description="The name of the spec.", min_length=1)
+    name: FilenameString = Field(description="The name of the spec.")
     definition: str = Field(
         description="A detailed definition of the spec.", min_length=1
     )
@@ -80,6 +85,7 @@ def connect_spec_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/specs",
         summary="Create Spec",
         tags=["Specs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def create_spec(
         project_id: Annotated[
@@ -106,7 +112,7 @@ def connect_spec_api(app: FastAPI):
             spec_type, spec_data.evaluate_full_trace
         )
 
-        eval_model = Eval(
+        eval = Eval(
             parent=task,
             name=spec_data.name,
             description=None,
@@ -127,15 +133,15 @@ def connect_spec_api(app: FastAPI):
             priority=spec_data.priority,
             status=spec_data.status,
             tags=spec_data.tags,
-            eval_id=eval_model.id,
+            eval_id=eval.id,
             task_sample=spec_data.task_sample,
         )
 
-        eval_model.save_to_file()
+        eval.save_to_file()
         try:
             spec.save_to_file()
         except Exception:
-            eval_model.delete()
+            eval.delete()
             raise
 
         return spec
@@ -144,6 +150,7 @@ def connect_spec_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/specs",
         summary="List Specs",
         tags=["Specs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_specs(
         project_id: Annotated[
@@ -161,6 +168,7 @@ def connect_spec_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
         summary="Get Spec",
         tags=["Specs"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_spec(
         project_id: Annotated[
@@ -178,6 +186,9 @@ def connect_spec_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
         summary="Update Spec",
         tags=["Specs"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit spec? Ensure you backup your project before allowing agentic edits."
+        ),
     )
     async def update_spec(
         project_id: Annotated[
@@ -206,13 +217,37 @@ def connect_spec_api(app: FastAPI):
         if request.tags is not None:
             spec.tags = request.tags
 
-        spec.save_to_file()
+        # Sync eval name when spec name changes
+        eval: Eval | None = None
+        previous_eval_name: str | None = None
+        if request.name is not None and spec.eval_id:
+            parent_task = task_from_id(project_id, task_id)
+            eval = Eval.from_id_and_parent_path(spec.eval_id, parent_task.path)
+            if eval and eval.name != request.name:
+                previous_eval_name = eval.name
+                eval.name = request.name
+                eval.save_to_file()
+
+        try:
+            spec.save_to_file()
+        except Exception:
+            if eval is not None and previous_eval_name is not None:
+                try:
+                    eval.name = previous_eval_name
+                    eval.save_to_file()
+                except Exception:
+                    logger.exception(
+                        "Failed to roll back eval name after spec save failure"
+                    )
+            raise
+
         return spec
 
     @app.delete(
         "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
         summary="Delete Spec",
         tags=["Specs"],
+        openapi_extra=DENY_AGENT,
     )
     async def delete_spec(
         project_id: Annotated[
@@ -229,7 +264,9 @@ def connect_spec_api(app: FastAPI):
         # Delete associated eval if it exists
         if spec.eval_id:
             parent_task = task_from_id(project_id, task_id)
-            eval = Eval.from_id_and_parent_path(spec.eval_id, parent_task.path)
+            eval: Eval | None = Eval.from_id_and_parent_path(
+                spec.eval_id, parent_task.path
+            )
             if eval:
                 eval.delete()
 

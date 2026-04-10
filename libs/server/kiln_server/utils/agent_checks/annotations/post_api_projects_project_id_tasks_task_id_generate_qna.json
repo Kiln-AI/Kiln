@@ -1,0 +1,9 @@
+{
+  "method": "post",
+  "path": "/api/projects/{project_id}/tasks/{task_id}/generate_qna",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": true,
+    "approval_description": "Generate Q&A pairs using LLM?"
+  }
+}

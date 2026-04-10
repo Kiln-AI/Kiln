@@ -3,12 +3,12 @@ from typing import TYPE_CHECKING, Dict, List, Union
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 
 from kiln_ai.datamodel.basemodel import (
+    ID_FIELD,
     ID_TYPE,
     FilenameString,
     FilenameStringShort,
     KilnParentedModel,
     KilnParentModel,
-    generate_model_id,
 )
 from kiln_ai.datamodel.datamodel_enums import (
     Priority,
@@ -41,13 +41,11 @@ class TaskRequirement(BaseModel):
     priority level, and rating type (five_star, pass_fail, pass_fail_critical, custom).
     """
 
-    id: ID_TYPE = Field(
-        default_factory=generate_model_id,
-        description="Unique identifier for the requirement.",
-    )
+    id: ID_TYPE = ID_FIELD
     name: FilenameStringShort = Field(description="The name of the task requirement.")
     description: str | None = Field(
-        default=None, description="A description of the requirement."
+        default=None,
+        description="Optional elaboration on the requirement's purpose.",
     )
     instruction: str = Field(
         min_length=1, description="Instructions for meeting the requirement."
@@ -219,21 +217,3 @@ class Task(
         if self.parent is None or self.parent.__class__.__name__ != "Project":
             return None
         return self.parent  # type: ignore
-
-    def find_task_run_by_id_dfs(
-        self, task_run_id: str, readonly: bool = False
-    ) -> TaskRun | None:
-        """
-        Find a task run by id in the entire task run tree. This is an expensive DFS
-        traversal of the file system so do not use too willy nilly.
-
-        If you already know the root task run, you can use the same method on
-        the root TaskRun instead - that will save a bunch of subtree traversals.
-        """
-        stack: List[TaskRun] = list(self.runs(readonly=readonly))
-        while stack:
-            run = stack.pop()
-            if run.id == task_run_id:
-                return run
-            stack.extend(run.runs(readonly=readonly))
-        return None

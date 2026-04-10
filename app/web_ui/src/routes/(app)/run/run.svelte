@@ -774,12 +774,6 @@
             >
           </div>
         {/if}
-        <p class="text-xs text-gray-500 mt-1 font-light">
-          Ratings are defined in the <a
-            href={`/settings/edit_task/${project_id}/${task.id}`}
-            class="link">task settings</a
-          >.
-        </p>
       </div>
 
       <div class="grid grid-cols-[auto,1fr] gap-4 text-sm 2xl:text-base">

@@ -7,6 +7,11 @@ from kiln_ai.datamodel import BasePrompt, Prompt, PromptId
 from pydantic import BaseModel, Field
 
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    DENY_AGENT,
+    agent_policy_require_approval,
+)
 
 
 def editable_prompt_from_id(project_id: str, task_id: str, prompt_id: str) -> Prompt:
@@ -102,7 +107,7 @@ class BuildPromptRequest(BaseModel):
 
 
 class BuildPromptResponse(BaseModel):
-    """The generated prompt text."""
+    """Response containing a fully constructed prompt with examples."""
 
     prompt: str = Field(description="The generated prompt text.")
 
@@ -112,6 +117,7 @@ def connect_prompt_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/prompts",
         summary="Create Prompt",
         tags=["Prompts"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def create_prompt(
         project_id: Annotated[
@@ -139,6 +145,7 @@ def connect_prompt_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/prompts",
         summary="List Prompts",
         tags=["Prompts"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_prompts(
         project_id: Annotated[
@@ -178,6 +185,9 @@ def connect_prompt_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}",
         summary="Update Prompt",
         tags=["Prompts"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit prompt? Ensure you backup your project before allowing agentic edits."
+        ),
     )
     async def update_prompt(
         project_id: Annotated[
@@ -203,6 +213,7 @@ def connect_prompt_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}",
         summary="Delete Prompt",
         tags=["Prompts"],
+        openapi_extra=DENY_AGENT,
     )
     async def delete_prompt(
         project_id: Annotated[
@@ -223,6 +234,7 @@ def connect_prompt_api(app: FastAPI):
         "/api/projects/{project_id}/tasks/{task_id}/build_prompt_with_examples",
         summary="Build Prompt With Examples",
         tags=["Prompts"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def build_prompt_with_examples(
         project_id: Annotated[

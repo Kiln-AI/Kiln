@@ -17,6 +17,7 @@ from pydantic import (
     ConfigDict,
     Field,
     SerializationInfo,
+    StringConstraints,
     ValidationError,
     ValidationInfo,
     computed_field,
@@ -40,7 +41,10 @@ def generate_model_id() -> str:
 # Should be unique per item, at least inside the context of a parent/child relationship.
 # Use integers to make it easier to type for a search function.
 # Allow none, even though we generate it, because we clear it in the REST API if the object is ephemeral (not persisted to disk)
-ID_FIELD = Field(default_factory=generate_model_id)
+ID_FIELD = Field(
+    default_factory=generate_model_id,
+    description="Unique identifier for this record.",
+)
 ID_TYPE = Optional[str]
 T = TypeVar("T", bound="KilnBaseModel")
 PT = TypeVar("PT", bound="KilnParentedModel")
@@ -274,10 +278,14 @@ class KilnAttachmentModel(BaseModel):
 #     name: FilenameString = Field(description="The name of the model.")
 #     name_short: FilenameStringShort = Field(description="The short name of the model.")
 FilenameString = Annotated[
-    str, BeforeValidator(name_validator(min_length=1, max_length=MAX_FILENAME_LENGTH))
+    str,
+    BeforeValidator(name_validator(min_length=1, max_length=MAX_FILENAME_LENGTH)),
+    StringConstraints(min_length=1, max_length=MAX_FILENAME_LENGTH),
 ]
 FilenameStringShort = Annotated[
-    str, BeforeValidator(name_validator(min_length=1, max_length=32))
+    str,
+    BeforeValidator(name_validator(min_length=1, max_length=32)),
+    StringConstraints(min_length=1, max_length=32),
 ]
 
 
@@ -295,12 +303,9 @@ class KilnBaseModel(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
     v: int = Field(default=1, description="Schema version for migration support.")
-    id: ID_TYPE = Field(
-        default_factory=generate_model_id,
-        description="Unique identifier for the model instance.",
-    )
+    id: ID_TYPE = ID_FIELD
     path: Optional[Path] = Field(
-        default=None, description="File system path where the model is stored."
+        default=None, description="File system path where the record is stored."
     )
     created_at: datetime = Field(
         default_factory=datetime.now,
@@ -556,36 +561,10 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
     def parent_type(cls) -> Type[KilnBaseModel]:
         raise NotImplementedError("Parent type must be implemented")
 
-    @classmethod
-    def _parent_types(cls) -> List[Type["KilnBaseModel"]] | None:
-        """Return accepted parent types. This must be implemented by the subclass if
-        the model can have multiple parent types.
-
-        Return None (default) to use the single parent_type() check.
-        Override and return a list of parent types for models that can be nested
-        under more than one parent type (e.g. TaskRun can be nested under Task or TaskRun).
-        """
-        return None
-
-    def _check_parent_type(
-        self,
-        expected_parent_types: List[Type[KilnBaseModel]] | None = None,
-    ) -> Self:
+    @model_validator(mode="after")
+    def check_parent_type(self) -> Self:
         cached_parent = self.cached_parent()
-        if cached_parent is None:
-            return self
-
-        # some models support having multiple parent types, so we allow overriding the expected parent
-        if expected_parent_types is not None:
-            if not any(
-                isinstance(cached_parent, expected_parent_type)
-                for expected_parent_type in expected_parent_types
-            ):
-                raise ValueError(
-                    f"Parent must be one of {expected_parent_types}, but was {type(cached_parent)}"
-                )
-        else:
-            # default case where we expect a single parent type to be valid
+        if cached_parent is not None:
             expected_parent_type = self.__class__.parent_type()
             if not isinstance(cached_parent, expected_parent_type):
                 raise ValueError(
@@ -593,11 +572,6 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
                 )
 
         return self
-
-    @model_validator(mode="after")
-    def check_parent_type(self) -> Self:
-        """Default validation for parent type. Can be overridden by subclasses - for example if the parent is polymorphic."""
-        return self._check_parent_type()
 
     def build_child_dirname(self) -> Path:
         # Default implementation for readable folder names.
@@ -653,38 +627,9 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         else:
             parent_folder = parent_path
 
-        if not parent_path.exists():
+        parent = cls.parent_type().load_from_file(parent_path)
+        if parent is None:
             raise ValueError("Parent must be set to load children")
-
-        # Validate the parent file's declared type so we fail fast when the caller
-        # passes a wrong path.  For polymorphic children (e.g. TaskRun) the
-        # subclass overrides _accepted_parent_types() to broaden the check to all
-        # accepted parent types
-        parent_types_override = cls._parent_types()
-        if parent_types_override is None:
-            # Default: single expected parent type — original behaviour
-            parent = cls.parent_type().load_from_file(parent_path)
-            if parent is None:
-                raise ValueError("Parent must be set to load children")
-        else:
-            # Polymorphic parent: read only the model_type field to avoid a full load.
-            with open(parent_path, "r", encoding="utf-8") as fh:
-                actual_parent_type_name = json.loads(fh.read()).get("model_type", "")
-            parent_type_names = {t.type_name() for t in parent_types_override}
-            if actual_parent_type_name not in parent_type_names:
-                raise ValueError(
-                    f"Parent model_type '{actual_parent_type_name}' is not one of "
-                    f"{parent_type_names}"
-                )
-
-            parent_type = next(
-                t
-                for t in parent_types_override
-                if t.type_name() == actual_parent_type_name
-            )
-            parent = parent_type.load_from_file(parent_path)
-            if parent is None:
-                raise ValueError("Parent must be set to load children")
 
         # Ignore type error: this is abstract base class, but children must implement relationship_name
         relationship_folder = parent_folder / Path(cls.relationship_name())  # type: ignore

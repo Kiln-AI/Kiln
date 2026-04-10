@@ -16,8 +16,10 @@ class TaskInfoApi(BaseModel):
 class TaskMetadataApi(BaseModel):
     """Metadata about the model used for a task."""
 
-    model_name: str = Field(description="The model name.")
-    model_provider_name: ModelProviderName = Field(description="The model provider.")
+    model_name: str = Field(description="The name of the AI model used.")
+    model_provider_name: ModelProviderName = Field(
+        description="The provider hosting the model (e.g. OpenAI, Anthropic)."
+    )
 
 
 class SyntheticDataGenerationStepConfigApi(BaseModel):

@@ -4,13 +4,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from app.desktop.desktop_server import make_app
+from app.desktop.studio_server.webhost import HTMLStaticFiles
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_server.server import tags_metadata
-
-from app.desktop.desktop_server import make_app
-from app.desktop.studio_server.webhost import HTMLStaticFiles
 
 
 @pytest.fixture
@@ -101,15 +100,17 @@ def test_connect_ollama_no_models(client):
 
 
 @pytest.mark.parametrize(
-    "origin",
+    "origin_template",
     [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "https://localhost:5173",
-        "https://127.0.0.1:5173",
+        "http://localhost:PORT",
+        "http://127.0.0.1:PORT",
+        "https://localhost:PORT",
+        "https://127.0.0.1:PORT",
     ],
 )
-def test_cors_allowed_origins(client, origin):
+def test_cors_allowed_origins(client, origin_template):
+    port = os.environ.get("KILN_FRONTEND_PORT", "5173")
+    origin = origin_template.replace("PORT", port)
     response = client.get("/ping", headers={"Origin": origin})
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == origin
@@ -229,6 +230,44 @@ async def test_setup_route(client):
         client.get("/non_existing_file")
     with pytest.raises(Exception):
         client.get("/nested/non_existing_file")
+
+
+def test_custom_string_types_have_openapi_constraints(client):
+    """Custom string types like FilenameString must surface minLength/maxLength in the OpenAPI schema.
+
+    These constraints come from StringConstraints in the Annotated type definition,
+    not from individual Field() calls. If this test fails, a custom string type is
+    missing StringConstraints (see FilenameString in basemodel.py for the pattern).
+    """
+    schema = client.app.openapi()
+    schemas = schema.get("components", {}).get("schemas", {})
+
+    # Task.name uses FilenameString (max=120)
+    task_name = schemas["Task"]["properties"]["name"]
+    assert task_name.get("maxLength") == 120, (
+        "FilenameString should surface maxLength=120 in OpenAPI schema"
+    )
+    assert task_name.get("minLength") == 1, (
+        "FilenameString should surface minLength=1 in OpenAPI schema"
+    )
+
+    # TaskRequirement.name uses FilenameStringShort (max=32)
+    req_name = schemas["TaskRequirement"]["properties"]["name"]
+    assert req_name.get("maxLength") == 32, (
+        "FilenameStringShort should surface maxLength=32 in OpenAPI schema"
+    )
+    assert req_name.get("minLength") == 1, (
+        "FilenameStringShort should surface minLength=1 in OpenAPI schema"
+    )
+
+    # SkillCreationRequest.name uses SkillNameString (max=64)
+    skill_name = schemas["SkillCreationRequest"]["properties"]["name"]
+    assert skill_name.get("maxLength") == 64, (
+        "SkillNameString should surface maxLength=64 in OpenAPI schema"
+    )
+    assert skill_name.get("minLength") == 1, (
+        "SkillNameString should surface minLength=1 in OpenAPI schema"
+    )
 
 
 def test_api_parameter_descriptions(client):

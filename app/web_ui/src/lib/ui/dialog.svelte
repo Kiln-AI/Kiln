@@ -43,10 +43,13 @@
     error = null
     dispatch("show")
     const dialogElement = document.getElementById(id)
-    // @ts-expect-error showModal is not a method on HTMLElement
-    dialogElement?.showModal()
+    const htmlDialog = dialogElement as HTMLDialogElement | null
+    // Check if dialog is already open before calling showModal()
+    if (htmlDialog && !htmlDialog.open) {
+      htmlDialog.showModal()
+    }
     // Focus the dialog itself to prevent auto-focus on the first link
-    dialogElement?.focus()
+    htmlDialog?.focus()
   }
 
   export function close() {

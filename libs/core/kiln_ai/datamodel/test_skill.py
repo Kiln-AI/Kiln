@@ -4,11 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from kiln_ai.datamodel.project import Project
-from kiln_ai.datamodel.skill import (
-    Skill,
-    _parse_skill_md_body,
-    _validate_filename,
-)
+from kiln_ai.datamodel.skill import Skill, _parse_skill_md_body
 
 
 @pytest.fixture
@@ -108,6 +104,14 @@ def test_body_raises_without_skill_md(mock_project):
     skill.save_to_file()
     with pytest.raises(FileNotFoundError, match=r"SKILL\.md not found"):
         skill.body()
+
+
+def test_skill_md_path_is_directory(mock_project):
+    skill = make_skill(parent=mock_project)
+    skill.save_to_file()
+    skill.skill_md_path().mkdir()
+    with pytest.raises(FileNotFoundError, match=r"SKILL\.md path is a folder"):
+        skill.skill_md_raw()
 
 
 def test_save_skill_md_empty_body_rejected(mock_project):
@@ -343,42 +347,14 @@ def test_round_trip_description_with_dashes(mock_project):
     assert skill.body() == "The body"
 
 
-# -- Filename validation tests --
-
-
-class TestValidateFilename:
-    @pytest.mark.parametrize(
-        "filename",
-        [
-            "../etc/passwd",
-            "foo/../bar",
-            "..",
-            ".",
-            "sub/dir.md",
-            "back\\slash.md",
-            "",
-            "   ",
-        ],
-    )
-    def test_invalid_filenames(self, filename):
-        with pytest.raises(ValueError):
-            _validate_filename(filename)
-
-    @pytest.mark.parametrize(
-        "filename",
-        ["REFERENCE.md", "finance.md", "schema.json", "diagram.png", "a"],
-    )
-    def test_valid_filenames(self, filename):
-        _validate_filename(filename)
-
-
-# -- References tests --
+# -- References & assets tests --
 
 
 class TestReferences:
-    def test_save_skill_md_creates_references_dir(self, mock_project):
+    def test_save_skill_md_creates_dirs(self, mock_project):
         skill = save_skill_with_body(mock_project)
         assert skill.references_dir().is_dir()
+        assert skill.assets_dir().is_dir()
 
     def test_read_reference(self, mock_project):
         skill = save_skill_with_body(mock_project)
@@ -388,24 +364,106 @@ class TestReferences:
 
     def test_read_reference_not_found(self, mock_project):
         skill = save_skill_with_body(mock_project)
-        with pytest.raises(FileNotFoundError, match="Reference file not found"):
+        with pytest.raises(FileNotFoundError, match="Resource file not found"):
             skill.read_reference("missing.md")
 
-    @pytest.mark.parametrize("filename", ["../etc/passwd", "sub/dir.md", ".."])
-    def test_reference_path_traversal(self, mock_project, filename):
+    @pytest.mark.parametrize("path", ["../etc/passwd", "..", "../../secret.txt"])
+    def test_reference_path_traversal(self, mock_project, path):
         skill = save_skill_with_body(mock_project)
-        with pytest.raises(ValueError):
-            skill.read_reference(filename)
+        with pytest.raises(ValueError, match="Path traversal"):
+            skill.read_reference(path)
+
+    def test_reference_empty_path(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        with pytest.raises(ValueError, match="Path cannot be empty"):
+            skill.read_reference("")
+        with pytest.raises(ValueError, match="Path cannot be empty"):
+            skill.read_reference("   ")
+
+    def test_read_reference_in_subdirectory(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        sub_dir = skill.references_dir() / "guides"
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        (sub_dir / "style.md").write_text("# Style Guide", encoding="utf-8")
+        assert skill.read_reference("guides/style.md") == "# Style Guide"
+
+    def test_read_reference_in_deeply_nested_subdirectory(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        nested_dir = skill.references_dir() / "a" / "b" / "c"
+        nested_dir.mkdir(parents=True, exist_ok=True)
+        (nested_dir / "deep.md").write_text("Deep content", encoding="utf-8")
+        assert skill.read_reference("a/b/c/deep.md") == "Deep content"
+
+    @pytest.mark.parametrize(
+        "filename,content",
+        [
+            ("notes.txt", "Plain text notes"),
+            ("data.json", '{"key": "value"}'),
+            ("prices.csv", "item,price\nwidget,9.99"),
+            ("config.yaml", "key: value"),
+        ],
+    )
+    def test_non_md_extensions_accepted(self, mock_project, filename, content):
+        skill = save_skill_with_body(mock_project)
+        (skill.references_dir() / filename).write_text(content, encoding="utf-8")
+        assert skill.read_reference(filename) == content
+
+    def test_binary_file_rejected(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        (skill.references_dir() / "image.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00")
+        with pytest.raises(ValueError, match="not a readable text file"):
+            skill.read_reference("image.png")
+
+    def test_read_reference_path_is_directory(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        (skill.references_dir() / "subdir").mkdir()
+        with pytest.raises(ValueError, match="folder, not a file"):
+            skill.read_reference("subdir")
 
     def test_references_dir_requires_saved_skill(self):
         skill = make_skill()
         with pytest.raises(ValueError, match="Skill must be saved"):
             skill.references_dir()
 
-    @pytest.mark.parametrize(
-        "filename", ["notes.txt", "data.json", "image.png", "readme"]
-    )
-    def test_non_md_extension_rejected(self, mock_project, filename):
+
+class TestAssets:
+    def test_read_asset(self, mock_project):
         skill = save_skill_with_body(mock_project)
-        with pytest.raises(ValueError, match=r"\.md extension"):
-            skill.read_reference(filename)
+        (skill.assets_dir() / "template.csv").write_text(
+            "col1,col2\na,b", encoding="utf-8"
+        )
+        assert skill.read_asset("template.csv") == "col1,col2\na,b"
+
+    def test_read_asset_in_subdirectory(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        sub_dir = skill.assets_dir() / "data"
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        (sub_dir / "prices.csv").write_text("item,price", encoding="utf-8")
+        assert skill.read_asset("data/prices.csv") == "item,price"
+
+    def test_read_asset_not_found(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        with pytest.raises(FileNotFoundError, match="Resource file not found"):
+            skill.read_asset("missing.csv")
+
+    def test_asset_path_traversal(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        with pytest.raises(ValueError, match="Path traversal"):
+            skill.read_asset("../etc/passwd")
+
+    def test_asset_binary_file_rejected(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        (skill.assets_dir() / "photo.jpg").write_bytes(b"\xff\xd8\xff\xe0\x00\x10JFIF")
+        with pytest.raises(ValueError, match="not a readable text file"):
+            skill.read_asset("photo.jpg")
+
+    def test_read_asset_path_is_directory(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        (skill.assets_dir() / "data_dir").mkdir()
+        with pytest.raises(ValueError, match="folder, not a file"):
+            skill.read_asset("data_dir")
+
+    def test_assets_dir_requires_saved_skill(self):
+        skill = make_skill()
+        with pytest.raises(ValueError, match="Skill must be saved"):
+            skill.assets_dir()

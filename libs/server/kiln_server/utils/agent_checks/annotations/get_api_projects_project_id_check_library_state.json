@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/projects/{project_id}/check_library_state",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

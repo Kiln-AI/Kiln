@@ -75,6 +75,7 @@ from libs.core.kiln_ai.datamodel.copilot_models.questions import (
     RefineSpecApiOutput,
     SubmitAnswersRequest,
 )
+from kiln_server.utils.agent_checks.policy import agent_policy_require_approval
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -114,7 +115,11 @@ class CreateSpecWithCopilotRequest(BaseModel):
 
 
 def connect_copilot_api(app: FastAPI):
-    @app.post("/api/copilot/clarify_spec", tags=["Copilot"])
+    @app.post(
+        "/api/copilot/clarify_spec",
+        tags=["Copilot"],
+        openapi_extra=agent_policy_require_approval("Run Copilot spec clarification?"),
+    )
     async def clarify_spec(input: ClarifySpecApiInput) -> ClarifySpecApiOutput:
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
@@ -140,7 +145,11 @@ def connect_copilot_api(app: FastAPI):
             detail="Unknown error.",
         )
 
-    @app.post("/api/copilot/refine_spec", tags=["Copilot"])
+    @app.post(
+        "/api/copilot/refine_spec",
+        tags=["Copilot"],
+        openapi_extra=agent_policy_require_approval("Run Copilot spec refinement?"),
+    )
     async def refine_spec(input: RefineSpecApiInput) -> RefineSpecApiOutput:
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
@@ -166,7 +175,11 @@ def connect_copilot_api(app: FastAPI):
             detail="Unknown error.",
         )
 
-    @app.post("/api/copilot/generate_batch", tags=["Copilot"])
+    @app.post(
+        "/api/copilot/generate_batch",
+        tags=["Copilot"],
+        openapi_extra=agent_policy_require_approval("Run Copilot batch generation?"),
+    )
     async def generate_batch(input: GenerateBatchApiInput) -> GenerateBatchApiOutput:
         api_key = get_copilot_api_key()
         client = get_authenticated_client(api_key)
@@ -192,7 +205,11 @@ def connect_copilot_api(app: FastAPI):
             detail="Unknown error.",
         )
 
-    @app.post("/api/copilot/question_spec", tags=["Copilot"])
+    @app.post(
+        "/api/copilot/question_spec",
+        tags=["Copilot"],
+        openapi_extra=agent_policy_require_approval("Run Copilot spec questioner?"),
+    )
     async def question_spec(
         input: SpecQuestionerApiInput,
     ) -> QuestionSet:
@@ -220,7 +237,13 @@ def connect_copilot_api(app: FastAPI):
             detail="Unknown error.",
         )
 
-    @app.post("/api/copilot/refine_spec_with_question_answers", tags=["Copilot"])
+    @app.post(
+        "/api/copilot/refine_spec_with_question_answers",
+        tags=["Copilot"],
+        openapi_extra=agent_policy_require_approval(
+            "Run Copilot spec refinement with question answers?"
+        ),
+    )
     async def submit_question_answers(
         request: SubmitAnswersRequest,
     ) -> RefineSpecApiOutput:
@@ -249,6 +272,7 @@ def connect_copilot_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/spec_with_copilot",
         tags=["Copilot"],
+        openapi_extra=agent_policy_require_approval("Create spec with Copilot?"),
     )
     async def create_spec_with_copilot(
         project_id: Annotated[
@@ -295,7 +319,7 @@ def connect_copilot_api(app: FastAPI):
         models_to_save: list[Eval | EvalConfig | TaskRun | Spec] = []
 
         # 1. Create the Eval
-        eval_model = Eval(
+        eval = Eval(
             parent=task,
             name=request.name,
             description=None,
@@ -307,11 +331,11 @@ def connect_copilot_api(app: FastAPI):
             template_properties=None,
             evaluation_data_type=evaluation_data_type,
         )
-        models_to_save.append(eval_model)
+        models_to_save.append(eval)
 
         # 2. Create judge eval config
         eval_config = EvalConfig(
-            parent=eval_model,
+            parent=eval,
             name=generate_memorable_name(),
             config_type=EvalConfigType.llm_as_judge,
             model_name=request.judge_info.task_metadata.model_name,
@@ -324,7 +348,7 @@ def connect_copilot_api(app: FastAPI):
         models_to_save.append(eval_config)
 
         # Set as default config after ID is assigned
-        eval_model.current_config_id = eval_config.id
+        eval.current_config_id = eval_config.id
 
         # 3. Generate examples via copilot API
         api_key = get_copilot_api_key()
@@ -371,7 +395,7 @@ def connect_copilot_api(app: FastAPI):
             priority=Priority.p1,
             status=SpecStatus.active,
             tags=[],
-            eval_id=eval_model.id,
+            eval_id=eval.id,
             task_sample=request.task_sample,
             synthetic_data_generation_session_config=SyntheticDataGenerationSessionConfig(
                 topic_generation_config=SyntheticDataGenerationStepConfig(
@@ -397,8 +421,8 @@ def connect_copilot_api(app: FastAPI):
         # Save everything, with cleanup on failure.
         saved_models: list[Eval | EvalConfig | TaskRun | Spec] = []
         try:
-            eval_model.save_to_file()
-            saved_models.append(eval_model)
+            eval.save_to_file()
+            saved_models.append(eval)
 
             eval_config.save_to_file()
             saved_models.append(eval_config)

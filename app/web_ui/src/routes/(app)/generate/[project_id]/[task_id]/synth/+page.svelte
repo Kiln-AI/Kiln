@@ -1214,6 +1214,7 @@
             {project_id}
             current_task={task}
             requires_structured_output={!!task.output_json_schema}
+            show_name_field={false}
             tools_selector_settings={{
               mandatory_tools,
               optional: !mandatory_tools?.length,

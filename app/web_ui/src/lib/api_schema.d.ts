@@ -24,40 +24,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/project": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create Project */
-        post: operations["create_project_api_project_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/project/{project_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update Project */
-        patch: operations["update_project_api_project__project_id__patch"];
-        trace?: never;
-    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -68,7 +34,8 @@ export interface paths {
         /** List Projects */
         get: operations["get_projects_api_projects_get"];
         put?: never;
-        post?: never;
+        /** Create Project */
+        post: operations["create_project_api_projects_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -93,7 +60,8 @@ export interface paths {
         delete: operations["delete_project_api_projects__project_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update Project */
+        patch: operations["update_project_api_projects__project_id__patch"];
         trace?: never;
     };
     "/api/import_project": {
@@ -348,7 +316,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Execute Run */
+        /**
+         * Execute Run
+         * @description Invoke an AI model on a task and return the result. Unlike 'Create Run', this actually executes the model.
+         */
         post: operations["run_task_api_projects__project_id__tasks__task_id__run_post"];
         delete?: never;
         options?: never;
@@ -1309,7 +1280,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Generate Repair */
+        /**
+         * Generate Repair
+         * @description Invoke an AI model to generate a repaired output for a task run based on evaluator feedback. Returns the repair as a new TaskRun without persisting it.
+         */
         post: operations["run_repair_api_projects__project_id__tasks__task_id__runs__run_id__generate_repair_post"];
         delete?: never;
         options?: never;
@@ -1326,7 +1300,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Save Repair */
+        /**
+         * Save Repair
+         * @description Persist a repaired output for a task run. Use after reviewing the result from Generate Repair or creating a manual repair.
+         */
         post: operations["post_repair_run_api_projects__project_id__tasks__task_id__runs__run_id__save_repair_post"];
         delete?: never;
         options?: never;
@@ -1813,7 +1790,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Run Run Config Comparison */
+        /**
+         * Run Run Config Comparison
+         * @description Run a specific eval config against one or more run configs and stream progress via SSE. Executes model runs and scores them.
+         */
         get: operations["run_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_comparison_get"];
         put?: never;
         post?: never;
@@ -1847,7 +1827,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Run Eval Config Comparison */
+        /**
+         * Run Calibration
+         * @description Run all eval configs against each other for calibration and stream progress via SSE. Used to check that eval configs produce consistent scores.
+         */
         get: operations["run_eval_config_eval_api_projects__project_id__tasks__task_id__evals__eval_id__run_calibration_get"];
         put?: never;
         post?: never;
@@ -1959,7 +1942,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/run_configs/mcp": {
+    "/api/projects/{project_id}/tasks/{task_id}/mcp_run_config": {
         parameters: {
             query?: never;
             header?: never;
@@ -1969,7 +1952,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Create Mcp Run Config */
-        post: operations["create_mcp_run_config_api_projects__project_id__tasks__task_id__run_configs_mcp_post"];
+        post: operations["create_mcp_run_config_api_projects__project_id__tasks__task_id__mcp_run_config_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2593,6 +2576,160 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/git_sync/test_access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Git Remote Access */
+        post: operations["api_test_access_api_git_sync_test_access_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/list_branches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** List Remote Branches */
+        post: operations["api_list_branches_api_git_sync_list_branches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clone Repository */
+        post: operations["api_clone_api_git_sync_clone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/test_write_access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Write Access */
+        post: operations["api_test_write_access_api_git_sync_test_write_access_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/scan_projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Scan for Kiln Projects */
+        post: operations["api_scan_projects_api_git_sync_scan_projects_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/rename_clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rename Clone to Final Path */
+        post: operations["api_rename_clone_api_git_sync_rename_clone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/save_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save Git Sync Config */
+        post: operations["api_save_config_api_git_sync_save_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/config/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Git Sync Config */
+        get: operations["api_get_config_api_git_sync_config__project_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Git Sync Config */
+        delete: operations["api_delete_config_api_git_sync_config__project_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/update_config/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Git Sync Config */
+        patch: operations["api_update_config_api_git_sync_update_config__project_id__patch"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2718,12 +2855,12 @@ export interface components {
         AvailableProviderInfo: {
             /**
              * Id
-             * @description The provider identifier.
+             * @description The unique provider identifier used in API calls.
              */
             id: string;
             /**
              * Name
-             * @description The display name of the provider.
+             * @description The human-readable display name of the provider.
              */
             name: string;
             /**
@@ -2732,27 +2869,6 @@ export interface components {
              * @enum {string}
              */
             provider_type: "builtin" | "custom";
-        };
-        /**
-         * OpenAICompatibleProviderConfig
-         * @description Configuration for an OpenAI compatible provider.
-         */
-        OpenAICompatibleProviderConfig: {
-            /**
-             * Name
-             * @description Name for the OpenAI compatible provider.
-             */
-            name: string;
-            /**
-             * Base Url
-             * @description Base URL for the OpenAI compatible API.
-             */
-            base_url: string;
-            /**
-             * Api Key
-             * @description API key for authentication.
-             */
-            api_key: string;
         };
         /**
          * BasePrompt
@@ -2809,7 +2925,7 @@ export interface components {
             file: string;
             /**
              * Splits
-             * @description JSON string mapping split names to tag lists.
+             * @description JSON string mapping split names to numeric proportions (0-1).
              */
             splits?: string | null;
         };
@@ -2881,7 +2997,7 @@ export interface components {
         };
         /**
          * BuildPromptResponse
-         * @description The generated prompt text.
+         * @description Response containing a fully constructed prompt with examples.
          */
         BuildPromptResponse: {
             /**
@@ -3081,6 +3197,10 @@ export interface components {
             tool_call_id: string;
             /** Kiln Task Tool Data */
             kiln_task_tool_data?: string | null;
+            /** Is Error */
+            is_error?: boolean | null;
+            /** Error Message */
+            error_message?: string | null;
         };
         /** ChatCompletionUserMessageParam */
         "ChatCompletionUserMessageParam-Input": {
@@ -3145,12 +3265,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -3219,6 +3339,55 @@ export interface components {
             examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
             judge_result: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
             sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Output"];
+        };
+        /**
+         * CloneRequest
+         * @description Request to clone a git repository into a temporary directory.
+         */
+        CloneRequest: {
+            /**
+             * Git Url
+             * @description The git remote URL to clone.
+             */
+            git_url: string;
+            /**
+             * Branch
+             * @description The branch to check out after cloning.
+             */
+            branch: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys' (SSH agent) or 'pat_token' (HTTPS PAT).
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token";
+        };
+        /**
+         * CloneResponse
+         * @description Result of a clone operation.
+         */
+        CloneResponse: {
+            /**
+             * Clone Path
+             * @description Filesystem path where the repo was cloned.
+             */
+            clone_path: string;
+            /**
+             * Success
+             * @description Whether the clone succeeded.
+             */
+            success: boolean;
+            /**
+             * Message
+             * @description Human-readable result message.
+             */
+            message: string;
         };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
@@ -3413,7 +3582,7 @@ export interface components {
             output_format: components["schemas"]["OutputFormat"];
             /**
              * Passthrough Mimetypes
-             * @description The mimetypes to pass through to the extractor
+             * @description MIME types that bypass extraction and return the file content as-is.
              */
             passthrough_mimetypes?: components["schemas"]["OutputFormat"][];
             /** @description The properties of the extractor config, specific to the selected extractor_type. */
@@ -3789,7 +3958,7 @@ export interface components {
             num_samples: number;
             /**
              * Gen Type
-             * @description The type of task to generate topics for
+             * @description The type of data generation: eval or training.
              * @enum {string}
              */
             gen_type: "training" | "eval";
@@ -3917,12 +4086,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -3995,6 +4164,17 @@ export interface components {
          * @enum {string}
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
+        /**
+         * DeleteConfigResponse
+         * @description Confirmation that a git sync configuration was deleted.
+         */
+        DeleteConfigResponse: {
+            /**
+             * Message
+             * @description Human-readable confirmation message.
+             */
+            message: string;
+        };
         /** DesiredBehaviourProperties */
         DesiredBehaviourProperties: {
             /**
@@ -4033,12 +4213,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -4054,7 +4234,7 @@ export interface components {
             created_by?: string;
             /**
              * Name
-             * @description A name to identify the document.
+             * @description A name to identify the document. Should not be changed after creation.
              */
             name: string;
             /**
@@ -4102,12 +4282,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -4231,12 +4411,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -4323,12 +4503,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -4554,12 +4734,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -4701,12 +4881,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -4871,12 +5051,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -4960,7 +5140,7 @@ export interface components {
             output_format: components["schemas"]["OutputFormat"];
             /**
              * Passthrough Mimetypes
-             * @description MIME types that pass through without extraction.
+             * @description MIME types that bypass extraction and return the file content as-is.
              */
             passthrough_mimetypes: components["schemas"]["OutputFormat"][];
             /** @description The type of extractor. */
@@ -5095,12 +5275,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -5241,7 +5421,7 @@ export interface components {
         FinetuneDatasetTagInfo: {
             /**
              * Tag
-             * @description The tag name.
+             * @description The tag applied to matching runs.
              */
             tag: string;
             /**
@@ -5277,7 +5457,7 @@ export interface components {
             name: string;
             /**
              * Id
-             * @description The provider identifier.
+             * @description The unique provider identifier used in API calls.
              */
             id: string;
             /**
@@ -5323,7 +5503,7 @@ export interface components {
          * @description A finetune with its current status.
          */
         FinetuneWithStatus: {
-            /** @description The finetune. */
+            /** @description The finetune configuration and metadata. */
             finetune: components["schemas"]["Finetune"];
             /** @description The current status of the finetune. */
             status: components["schemas"]["FineTuneStatus"];
@@ -5419,6 +5599,51 @@ export interface components {
              * @description The RAG config ids to get progress for, if left empty, progress for all RAG configs in the project will be returned
              */
             rag_config_ids?: string[] | null;
+        };
+        /**
+         * GitSyncConfigResponse
+         * @description Current git sync configuration for a project (PAT redacted).
+         */
+        GitSyncConfigResponse: {
+            /**
+             * Sync Mode
+             * @description Sync mode: 'auto' or 'manual'.
+             * @enum {string}
+             */
+            sync_mode: "auto" | "manual";
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys' (SSH agent) or 'pat_token' (HTTPS PAT).
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token";
+            /**
+             * Remote Name
+             * @description Git remote name.
+             */
+            remote_name: string;
+            /**
+             * Branch
+             * @description Branch name being synced.
+             */
+            branch: string;
+            /**
+             * Clone Path
+             * @description Local filesystem path of the clone.
+             */
+            clone_path?: string | null;
+            /**
+             * Git Url
+             * @description The git remote URL.
+             */
+            git_url?: string | null;
+            /**
+             * Has Pat Token
+             * @description Whether a PAT token is configured (token not shown).
+             * @default false
+             */
+            has_pat_token: boolean;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -5558,12 +5783,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -5756,6 +5981,45 @@ export interface components {
              * @description The number of results to return from the vector store.
              */
             similarity_top_k: number;
+        };
+        /**
+         * ListBranchesRequest
+         * @description Request to list branches on a git remote.
+         */
+        ListBranchesRequest: {
+            /**
+             * Git Url
+             * @description The git remote URL to list branches from.
+             */
+            git_url: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys' (SSH agent) or 'pat_token' (HTTPS PAT).
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token";
+        };
+        /**
+         * ListBranchesResponse
+         * @description List of branches available on the remote.
+         */
+        ListBranchesResponse: {
+            /**
+             * Branches
+             * @description Branch names available on the remote.
+             */
+            branches: string[];
+            /**
+             * Default Branch
+             * @description The HEAD branch of the remote, if detected.
+             */
+            default_branch?: string | null;
         };
         /** LitellmExtractorConfigProperties */
         LitellmExtractorConfigProperties: {
@@ -6044,6 +6308,27 @@ export interface components {
             supported_embedding_models?: string[];
         };
         /**
+         * OpenAICompatibleProviderConfig
+         * @description Configuration for an OpenAI compatible provider.
+         */
+        OpenAICompatibleProviderConfig: {
+            /**
+             * Name
+             * @description Name for the OpenAI compatible provider.
+             */
+            name: string;
+            /**
+             * Base Url
+             * @description Base URL for the OpenAI compatible API.
+             */
+            base_url: string;
+            /**
+             * Api Key
+             * @description API key for authentication.
+             */
+            api_key: string;
+        };
+        /**
          * OpenFileResponse
          * @description Response containing the filesystem path to a file.
          */
@@ -6118,12 +6403,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -6164,12 +6449,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -6195,6 +6480,33 @@ export interface components {
             description?: string | null;
             /** Model Type */
             readonly model_type: string;
+        };
+        /**
+         * ProjectInfo
+         * @description Metadata about a discovered Kiln project.
+         */
+        ProjectInfo: {
+            /**
+             * Path
+             * @description Relative path to the project.kiln file.
+             */
+            path: string;
+            /**
+             * Name
+             * @description Project name from the project file.
+             */
+            name: string;
+            /**
+             * Description
+             * @description Project description from the project file.
+             */
+            description: string;
+            /**
+             * Id
+             * @description Unique project identifier.
+             * @default
+             */
+            id: string;
         };
         /**
          * Prompt
@@ -6234,12 +6546,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -6350,12 +6662,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -6560,12 +6872,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -6875,6 +7187,48 @@ export interface components {
             is_archived: boolean;
         };
         /**
+         * RenameCloneRequest
+         * @description Request to rename a temp clone directory to its final path.
+         */
+        RenameCloneRequest: {
+            /**
+             * Clone Path
+             * @description Current filesystem path of the cloned repo (typically in .tmp/).
+             */
+            clone_path: string;
+            /**
+             * Project Name
+             * @description Human-readable project name for the final directory.
+             */
+            project_name: string;
+            /**
+             * Project Id
+             * @description Unique project identifier used in the final path.
+             */
+            project_id: string;
+        };
+        /**
+         * RenameCloneResponse
+         * @description Result of renaming a clone directory.
+         */
+        RenameCloneResponse: {
+            /**
+             * New Clone Path
+             * @description The new filesystem path of the renamed clone.
+             */
+            new_clone_path: string;
+            /**
+             * Success
+             * @description Whether the rename succeeded.
+             */
+            success: boolean;
+            /**
+             * Message
+             * @description Human-readable result message.
+             */
+            message: string;
+        };
+        /**
          * RepairRunPost
          * @description Request to save a repair for a task run.
          */
@@ -6921,12 +7275,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -7015,12 +7369,12 @@ export interface components {
         RunConfigEvalResult: {
             /**
              * Eval Id
-             * @description The eval ID.
+             * @description The unique identifier of the eval.
              */
             eval_id: string | null;
             /**
              * Eval Name
-             * @description The eval name.
+             * @description The human-readable name of the eval.
              */
             eval_name: string;
             /**
@@ -7141,6 +7495,62 @@ export interface components {
             /** Output */
             output: string;
         };
+        /**
+         * SaveConfigRequest
+         * @description Request to save a complete git sync configuration for a project.
+         */
+        SaveConfigRequest: {
+            /**
+             * Project Id
+             * @description Unique project identifier.
+             */
+            project_id: string;
+            /**
+             * Project Path
+             * @description Relative path to the project.kiln file within the clone.
+             */
+            project_path: string;
+            /**
+             * Git Url
+             * @description The git remote URL.
+             */
+            git_url: string;
+            /**
+             * Clone Path
+             * @description Local filesystem path of the clone.
+             */
+            clone_path: string;
+            /**
+             * Branch
+             * @description Branch name to sync.
+             */
+            branch: string;
+            /**
+             * Remote Name
+             * @description Git remote name.
+             * @default origin
+             */
+            remote_name: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode detected during setup: 'system_keys' or 'pat_token'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token";
+            /**
+             * Sync Mode
+             * @description Sync mode: 'auto' or 'manual'.
+             * @default auto
+             * @enum {string}
+             */
+            sync_mode: "auto" | "manual";
+        };
         /** SaveQnaPairInput */
         SaveQnaPairInput: {
             /**
@@ -7168,6 +7578,28 @@ export interface components {
              * @description Optional tags
              */
             tags?: string[] | null;
+        };
+        /**
+         * ScanProjectsRequest
+         * @description Request to scan a cloned repo for Kiln project files.
+         */
+        ScanProjectsRequest: {
+            /**
+             * Clone Path
+             * @description Local filesystem path of the cloned repo.
+             */
+            clone_path: string;
+        };
+        /**
+         * ScanProjectsResponse
+         * @description Projects discovered inside a cloned repository.
+         */
+        ScanProjectsResponse: {
+            /**
+             * Projects
+             * @description List of discovered projects.
+             */
+            projects: components["schemas"]["ProjectInfo"][];
         };
         /**
          * ScoreSummary
@@ -7299,12 +7731,12 @@ export interface components {
         SkillResponse: {
             /**
              * Id
-             * @description The skill ID.
+             * @description The unique identifier of the skill.
              */
             id?: string | null;
             /**
              * Name
-             * @description The skill name.
+             * @description The human-readable name of the skill.
              */
             name: string;
             /**
@@ -7353,12 +7785,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -7664,12 +8096,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -7755,10 +8187,10 @@ export interface components {
         TaskMetadataApi: {
             /**
              * Model Name
-             * @description The model name.
+             * @description The name of the AI model used.
              */
             model_name: string;
-            /** @description The model provider. */
+            /** @description The provider hosting the model (e.g. OpenAI, Anthropic). */
             model_provider_name: components["schemas"]["ModelProviderName"];
         };
         /**
@@ -7777,12 +8209,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -7822,12 +8254,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -7871,12 +8303,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -7930,12 +8362,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -7989,7 +8421,7 @@ export interface components {
         TaskRequirement: {
             /**
              * Id
-             * @description Unique identifier for the requirement.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
@@ -7999,7 +8431,7 @@ export interface components {
             name: string;
             /**
              * Description
-             * @description A description of the requirement.
+             * @description Optional elaboration on the requirement's purpose.
              */
             description?: string | null;
             /**
@@ -8024,11 +8456,6 @@ export interface components {
          *
          *     Contains the input used, its source, the output produced, and optional
          *     repair information if the output needed correction.
-         *
-         *     Can be nested under another TaskRun; nested runs are stored as child runs
-         *     in a "runs" subfolder (same relationship name as Task's runs).
-         *
-         *     Accepts both Task and TaskRun as parents (polymorphic).
          */
         "TaskRun-Input": {
             /**
@@ -8039,12 +8466,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -8073,6 +8500,11 @@ export interface components {
              * @description Instructions for fixing the output. Should define what is wrong, and how to fix it. Will be used by models for both generating a fixed output, and evaluating future models.
              */
             repair_instructions?: string | null;
+            /**
+             * User Feedback
+             * @description User feedback from the spec review process explaining why the output passes or fails a requirement.
+             */
+            user_feedback?: string | null;
             /** @description An version of the output with issues fixed. This must be a 'fixed' version of the existing output, and not an entirely new output. If you wish to generate an ideal curatorial output for this task unrelated to this output, generate a new TaskOutput with type 'human' instead of using this field. */
             repaired_output?: components["schemas"]["TaskOutput-Input"] | null;
             /**
@@ -8095,6 +8527,11 @@ export interface components {
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
             trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Input"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            /**
+             * Parent Task Run Id
+             * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
+             */
+            parent_task_run_id?: string | null;
         };
         /**
          * TaskRun
@@ -8102,11 +8539,6 @@ export interface components {
          *
          *     Contains the input used, its source, the output produced, and optional
          *     repair information if the output needed correction.
-         *
-         *     Can be nested under another TaskRun; nested runs are stored as child runs
-         *     in a "runs" subfolder (same relationship name as Task's runs).
-         *
-         *     Accepts both Task and TaskRun as parents (polymorphic).
          */
         "TaskRun-Output": {
             /**
@@ -8117,12 +8549,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -8150,6 +8582,11 @@ export interface components {
              * @description Instructions for fixing the output. Should define what is wrong, and how to fix it. Will be used by models for both generating a fixed output, and evaluating future models.
              */
             repair_instructions?: string | null;
+            /**
+             * User Feedback
+             * @description User feedback from the spec review process explaining why the output passes or fails a requirement.
+             */
+            user_feedback?: string | null;
             /** @description An version of the output with issues fixed. This must be a 'fixed' version of the existing output, and not an entirely new output. If you wish to generate an ideal curatorial output for this task unrelated to this output, generate a new TaskOutput with type 'human' instead of using this field. */
             repaired_output?: components["schemas"]["TaskOutput-Output"] | null;
             /**
@@ -8172,6 +8609,11 @@ export interface components {
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
             trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Output"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Output"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            /**
+             * Parent Task Run Id
+             * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
+             */
+            parent_task_run_id?: string | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -8192,12 +8634,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -8260,12 +8702,12 @@ export interface components {
         TaskToolCompatibility: {
             /**
              * Task Id
-             * @description The task ID.
+             * @description The unique identifier of the task.
              */
             task_id: string;
             /**
              * Task Name
-             * @description The task name.
+             * @description The human-readable name of the task.
              */
             task_name: string;
             /**
@@ -8278,6 +8720,72 @@ export interface components {
              * @description Why the task is incompatible, if applicable.
              */
             incompatibility_reason?: string | null;
+        };
+        /**
+         * TestAccessRequest
+         * @description Request to test read access to a git remote.
+         */
+        TestAccessRequest: {
+            /**
+             * Git Url
+             * @description The git remote URL to test access against.
+             */
+            git_url: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+        };
+        /**
+         * TestAccessResponse
+         * @description Result of a git remote access test.
+         */
+        TestAccessResponse: {
+            /**
+             * Success
+             * @description Whether access to the remote succeeded.
+             */
+            success: boolean;
+            /**
+             * Message
+             * @description Human-readable result message.
+             */
+            message: string;
+            /**
+             * Auth Required
+             * @description True when the failure is due to missing authentication.
+             * @default false
+             */
+            auth_required: boolean;
+            /**
+             * Auth Method
+             * @description Auth method that succeeded: 'system_keys' or 'pat_token'. Null on failure.
+             */
+            auth_method?: string | null;
+        };
+        /**
+         * TestWriteAccessRequest
+         * @description Request to test push/write access to a cloned repo's remote.
+         */
+        TestWriteAccessRequest: {
+            /**
+             * Clone Path
+             * @description Local filesystem path of the cloned repo.
+             */
+            clone_path: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys' (SSH agent) or 'pat_token' (HTTPS PAT).
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token";
         };
         /** ToneProperties */
         ToneProperties: {
@@ -8367,6 +8875,27 @@ export interface components {
             core_requirement: string;
             /** Toxicity Examples */
             toxicity_examples: string;
+        };
+        /**
+         * UpdateConfigRequest
+         * @description Request to partially update a git sync configuration.
+         */
+        UpdateConfigRequest: {
+            /**
+             * Sync Mode
+             * @description New sync mode, if changing.
+             */
+            sync_mode?: ("auto" | "manual") | null;
+            /**
+             * Pat Token
+             * @description New personal access token, if changing.
+             */
+            pat_token?: string | null;
+            /**
+             * Auth Mode
+             * @description New auth mode, if changing.
+             */
+            auth_mode?: ("system_keys" | "pat_token") | null;
         };
         /**
          * UpdateEvalRequest
@@ -8563,12 +9092,12 @@ export interface components {
             v: number;
             /**
              * Id
-             * @description Unique identifier for the model instance.
+             * @description Unique identifier for this record.
              */
             id?: string | null;
             /**
              * Path
-             * @description File system path where the model is stored.
+             * @description File system path where the record is stored.
              */
             path?: string | null;
             /**
@@ -8637,7 +9166,27 @@ export interface operations {
             };
         };
     };
-    create_project_api_project_post: {
+    get_projects_api_projects_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project-Output"][];
+                };
+            };
+        };
+    };
+    create_project_api_projects_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -8666,64 +9215,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_project_api_project__project_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Project-Output"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_projects_api_projects_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Project-Output"][];
                 };
             };
         };
@@ -8781,6 +9272,44 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_project_api_projects__project_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project-Output"];
                 };
             };
             /** @description Validation Error */
@@ -11696,8 +12225,11 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The prompt generator ID to use. */
                 prompt_id: string;
             };
             cookie?: never;
@@ -13043,7 +13575,7 @@ export interface operations {
                 /** @description The unique identifier of the eval. */
                 eval_id: string;
                 /** @description The unique identifier of the eval configuration to set as default, or 'None' to clear the default. */
-                eval_config_id: string | null;
+                eval_config_id: string;
             };
             cookie?: never;
         };
@@ -13326,7 +13858,7 @@ export interface operations {
             };
         };
     };
-    create_mcp_run_config_api_projects__project_id__tasks__task_id__run_configs_mcp_post: {
+    create_mcp_run_config_api_projects__project_id__tasks__task_id__mcp_run_config_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -13783,7 +14315,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the tool server. */
                 tool_server_id: string;
             };
             cookie?: never;
@@ -14621,6 +15155,337 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Spec"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_test_access_api_git_sync_test_access_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestAccessRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestAccessResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_list_branches_api_git_sync_list_branches_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListBranchesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListBranchesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_clone_api_git_sync_clone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloneResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_test_write_access_api_git_sync_test_write_access_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestWriteAccessRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestAccessResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_scan_projects_api_git_sync_scan_projects_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScanProjectsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanProjectsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_rename_clone_api_git_sync_rename_clone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameCloneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenameCloneResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_save_config_api_git_sync_save_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitSyncConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_get_config_api_git_sync_config__project_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitSyncConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_delete_config_api_git_sync_config__project_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_update_config_api_git_sync_update_config__project_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitSyncConfigResponse"];
                 };
             };
             /** @description Validation Error */
