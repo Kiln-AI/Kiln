@@ -20,7 +20,7 @@ status: complete
   - `test_file_operations.py`: scenarios 32–33, 42–43 (file deletions, .gitignore, mixed create+delete, net-zero)
   - `test_middleware_routing.py`: scenarios 30–31 (non-project routes, manual mode)
 
-- [ ] Phase 3: Rollback, Conflicts, and Network Failures
+- [x] Phase 3: Rollback, Conflicts, and Network Failures
   - `test_rollback.py`: scenarios 6–7, 34 (handler error, push failure, rebase-then-fail reflog check)
   - `test_conflicts.py`: scenarios 8–9, 38–41 (push race + rebase succeeds, unresolvable rebase, delete/modify, add/add, empty commit, ABA)
   - `test_network_failure.py`: scenarios 17, 26 (parameterized network failures on reads and writes)

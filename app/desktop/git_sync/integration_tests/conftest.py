@@ -23,6 +23,7 @@ from app.desktop.git_sync.config import GitSyncProjectConfig
 from app.desktop.git_sync.conftest import (
     SIG,
     commit_in_repo,
+    delete_in_repo,
     git_repos,
     push_from,
     reset_git_sync_registry,
@@ -33,6 +34,7 @@ from app.desktop.git_sync.middleware import GitSyncMiddleware
 __all__ = [
     "SIG",
     "commit_in_repo",
+    "delete_in_repo",
     "git_repos",
     "push_from",
     "reset_git_sync_registry",
@@ -315,6 +317,33 @@ def assert_linear_history(repo_path: Path, count: int) -> None:
 def get_stash_list(repo_path: Path) -> list[str]:
     repo = pygit2.Repository(str(repo_path))
     return [s.message for s in repo.listall_stashes()]
+
+
+def assert_reflog_contains_commit_with_file(
+    repo_path: Path, filename: str, ref: str = "refs/heads/main"
+) -> None:
+    """Assert that a reflog entry points to a commit whose tree includes the file.
+
+    This proves the data is actually recoverable via reflog, not just that
+    the reflog has entries.
+    """
+    repo = pygit2.Repository(str(repo_path))
+    reference = repo.references.get(ref)
+    assert reference is not None, f"Reference {ref} not found"
+    reflog = list(reference.log())
+    for entry in reflog:
+        try:
+            commit = repo.get(entry.oid_new)
+            if not isinstance(commit, pygit2.Commit):
+                continue
+            tree = commit.peel(pygit2.Tree)
+            if filename in [e.name for e in tree]:
+                return
+        except Exception:
+            continue
+    raise AssertionError(
+        f"No reflog entry for {ref} points to a commit containing '{filename}'"
+    )
 
 
 def get_commit_count(repo_path: Path) -> int:
