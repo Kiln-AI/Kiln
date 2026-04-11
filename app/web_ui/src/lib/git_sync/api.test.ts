@@ -5,6 +5,7 @@ import {
   gitHubPatDeepLink,
   gitLabPatDeepLink,
   gitHostname,
+  gitOwnerFromUrl,
   testAccess,
   listBranches,
   cloneRepo,
@@ -77,6 +78,38 @@ describe("gitHostname", () => {
 
   it("returns null for invalid URLs", () => {
     expect(gitHostname("not-a-url")).toBeNull()
+  })
+})
+
+describe("gitOwnerFromUrl", () => {
+  it("extracts owner from HTTPS GitHub URLs", () => {
+    expect(gitOwnerFromUrl("https://github.com/Kiln-AI/sync_test")).toBe(
+      "Kiln-AI",
+    )
+    expect(gitOwnerFromUrl("https://github.com/Kiln-AI/sync_test.git")).toBe(
+      "Kiln-AI",
+    )
+  })
+
+  it("extracts owner from HTTPS GitLab URLs", () => {
+    expect(gitOwnerFromUrl("https://gitlab.com/my-org/repo.git")).toBe("my-org")
+    expect(gitOwnerFromUrl("https://gitlab.example.com/my-org/repo.git")).toBe(
+      "my-org",
+    )
+  })
+
+  it("extracts owner from SSH URLs", () => {
+    expect(gitOwnerFromUrl("git@github.com:Kiln-AI/repo.git")).toBe("Kiln-AI")
+    expect(gitOwnerFromUrl("git@gitlab.com:my-org/repo.git")).toBe("my-org")
+  })
+
+  it("returns null for invalid URLs", () => {
+    expect(gitOwnerFromUrl("not-a-url")).toBeNull()
+  })
+
+  it("returns null for URLs with no path segments", () => {
+    expect(gitOwnerFromUrl("https://github.com")).toBeNull()
+    expect(gitOwnerFromUrl("https://github.com/")).toBeNull()
   })
 })
 

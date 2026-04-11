@@ -1,13 +1,15 @@
 <script lang="ts">
   import FormContainer from "$lib/utils/form_container.svelte"
+  import FormElement from "$lib/utils/form_element.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import Warning from "$lib/ui/warning.svelte"
+  import MarkdownBlock from "$lib/ui/markdown_block.svelte"
   import {
     testAccess,
     isGitHubUrl,
     isGitLabUrl,
     gitHubPatDeepLink,
     gitLabPatDeepLink,
+    gitOwnerFromUrl,
   } from "$lib/git_sync/api"
 
   export let git_url: string
@@ -45,66 +47,105 @@
       submitting = false
     }
   }
+
+  function hint_text(is_error: boolean): string {
+    const prefix = is_error ? "**Authentication failed.**\n" : ""
+
+    if (is_github) {
+      const owner = gitOwnerFromUrl(git_url)
+      const owner_hint = owner
+        ? `Be sure to set Resource Owner to "${owner}".`
+        : "Be sure to set Resource Owner to the owner of this repository."
+      return `${prefix}${owner_hint}\nThe token must have read/write access to the repo. Select "Contents"=write in Permissions.`
+    }
+
+    if (is_gitlab) {
+      return `${prefix}The token must have read/write access to the repo.\nExtend the default expiration so you don't have to re-enter it later.`
+    }
+
+    return `${prefix}The token must have read/write access to the repository.`
+  }
+
+  $: token_link = is_github
+    ? gitHubPatDeepLink()
+    : is_gitlab
+      ? gitLabPatDeepLink(git_url)
+      : null
+
+  $: token_link_label = is_github
+    ? "Generate token on GitHub"
+    : is_gitlab
+      ? "Generate token on GitLab"
+      : null
 </script>
 
 <h2 class="text-xl font-medium mb-2">Authentication</h2>
-<p class="text-sm text-gray-500 mb-6">
-  This repository requires authentication. Enter a Personal Access Token (PAT)
-  with read and write access to the repository.
-</p>
+
+{#if is_github}
+  <p class="text-sm text-gray-500 mb-6">
+    Generate a fine-grained personal access token on GitHub, then paste it
+    below.
+  </p>
+{:else if is_gitlab}
+  <p class="text-sm text-gray-500 mb-6">
+    Generate a personal access token on GitLab with read/write repo access, then
+    paste it below. Extend the default expiration so you don't have to re-enter
+    it later.
+  </p>
+{:else}
+  <p class="text-sm text-gray-500 mb-6">
+    Generate an access token from your Git hosting provider and paste it below.
+  </p>
+{/if}
 
 <FormContainer
   submit_label="Verify Token"
+  submit_disabled={!pat_token.trim()}
   on:submit={test_and_save}
   bind:submitting
   bind:error
   bind:saved
   focus_on_mount={true}
 >
-  {#if is_github}
-    <div class="text-sm">
-      <a
-        href={gitHubPatDeepLink()}
-        target="_blank"
-        rel="noopener noreferrer"
-        class="link text-primary"
-      >
-        Generate a GitHub token</a
-      > and paste it below. It must have read/write access to the selected repo.
+  <div
+    class="border rounded-lg px-4 py-3 flex flex-row items-start gap-3 {error
+      ? 'border-error bg-error/5'
+      : 'border-base-200'}"
+  >
+    <svg
+      class="w-5 h-5 flex-none mt-0.5 {error ? 'text-error' : 'text-primary'}"
+      fill="currentColor"
+      viewBox="0 0 256 256"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M128,20.00012a108,108,0,1,0,108,108A108.12217,108.12217,0,0,0,128,20.00012Zm0,192a84,84,0,1,1,84-84A84.0953,84.0953,0,0,1,128,212.00012Zm-12-80v-52a12,12,0,1,1,24,0v52a12,12,0,1,1-24,0Zm28,40a16,16,0,1,1-16-16A16.018,16.018,0,0,1,144,172.00012Z"
+      />
+    </svg>
+    <div class="text-sm text-gray-500 flex flex-col gap-2">
+      <MarkdownBlock markdown_text={hint_text(!!error)} />
+      {#if token_link && token_link_label}
+        <a
+          href={token_link}
+          target="_blank"
+          rel="noopener noreferrer"
+          class="link text-primary font-medium"
+        >
+          {error ? `Generate a new token →` : `${token_link_label} →`}
+        </a>
+      {/if}
     </div>
-  {:else if is_gitlab}
-    <div class="text-sm">
-      <a
-        href={gitLabPatDeepLink(git_url)}
-        target="_blank"
-        rel="noopener noreferrer"
-        class="link text-primary"
-      >
-        Generate a GitLab token</a
-      > and paste it below. Set expiration to at least 1 year. It must have read/write
-      access to the selected repo.
-    </div>
-  {:else}
-    <Warning
-      warning_message="Generate an access token following instructions from your Git hosting provider (Bitbucket, etc). The process varies from host to host."
-      warning_color="gray"
-      warning_icon="info"
-    />
-  {/if}
-
-  <div class="form-control w-full">
-    <label class="label" for="pat_token">
-      <span class="label-text">Personal Access Token</span>
-    </label>
-    <input
-      id="pat_token"
-      type="password"
-      class="input input-bordered w-full"
-      bind:value={pat_token}
-      placeholder={is_gitlab
-        ? "glpat-xxxxxxxxxxxxxxxxxxxx"
-        : "ghp_xxxxxxxxxxxxxxxxxxxx"}
-      autocomplete="off"
-    />
   </div>
+
+  <FormElement
+    label="Personal Access Token"
+    id="pat_token"
+    inputType="input"
+    bind:value={pat_token}
+    placeholder={is_gitlab
+      ? "glpat-xxxxxxxxxxxxxxxxxxxx"
+      : is_github
+        ? "ghp_xxxxxxxxxxxxxxxxxxxx"
+        : "Access token"}
+  />
 </FormContainer>

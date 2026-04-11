@@ -205,6 +205,20 @@ export function gitHostname(url: string): string | null {
   }
 }
 
+export function gitOwnerFromUrl(url: string): string | null {
+  try {
+    // Handle SSH-style URLs like git@github.com:Kiln-AI/repo.git
+    const sshMatch = url.match(/^[\w-]+@[\w.-]+:([\w.-]+)\//)
+    if (sshMatch) return sshMatch[1]
+    // Handle HTTPS-style URLs
+    const pathname = new URL(url).pathname
+    const segments = pathname.split("/").filter(Boolean)
+    return segments.length >= 1 ? segments[0] : null
+  } catch {
+    return null
+  }
+}
+
 export function gitHubPatDeepLink(): string {
   return "https://github.com/settings/personal-access-tokens/new?name=Kiln+AI&description=Kiln+AI+auto+sync&contents=write&metadata=read&expires_in=none"
 }
