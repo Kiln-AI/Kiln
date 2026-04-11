@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 
 from app.desktop.git_sync.config import GitSyncProjectConfig
 from app.desktop.git_sync.conftest import (
-    SIG,
+    _test_sig,
     commit_in_repo,
     delete_in_repo,
     git_repos,
@@ -32,7 +32,7 @@ from app.desktop.git_sync.git_sync_manager import GitSyncManager
 from app.desktop.git_sync.middleware import GitSyncMiddleware
 
 __all__ = [
-    "SIG",
+    "_test_sig",
     "commit_in_repo",
     "delete_in_repo",
     "git_repos",

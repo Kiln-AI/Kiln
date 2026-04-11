@@ -5,12 +5,14 @@ import pygit2.enums
 import pytest
 
 from app.desktop.git_sync.git_sync_manager import (
-    KILN_COMMITTER_EMAIL,
-    KILN_COMMITTER_NAME,
+    get_committer_email,
+    get_committer_name,
 )
 from app.desktop.git_sync.registry import GitSyncRegistry
 
-SIG = pygit2.Signature(KILN_COMMITTER_NAME, KILN_COMMITTER_EMAIL)
+
+def _test_sig() -> pygit2.Signature:
+    return pygit2.Signature(get_committer_name(), get_committer_email())
 
 
 @pytest.fixture(autouse=True)
@@ -24,7 +26,9 @@ def _make_initial_commit(repo: pygit2.Repository, message: str = "init") -> pygi
     tb = repo.TreeBuilder()
     tb.insert("README.md", blob_oid, pygit2.enums.FileMode.BLOB)
     tree = tb.write()
-    return repo.create_commit("refs/heads/main", SIG, SIG, message, tree, [])
+    return repo.create_commit(
+        "refs/heads/main", _test_sig(), _test_sig(), message, tree, []
+    )
 
 
 @pytest.fixture
@@ -53,7 +57,9 @@ def commit_in_repo(
     index.write()
     tree = index.write_tree()
     parents = [repo.head.target]
-    return repo.create_commit(repo.head.name, SIG, SIG, message, tree, parents)
+    return repo.create_commit(
+        repo.head.name, _test_sig(), _test_sig(), message, tree, parents
+    )
 
 
 def delete_in_repo(repo_path: Path, filename: str, message: str) -> pygit2.Oid:
@@ -67,7 +73,9 @@ def delete_in_repo(repo_path: Path, filename: str, message: str) -> pygit2.Oid:
     index.write()
     tree = index.write_tree()
     parents = [repo.head.target]
-    return repo.create_commit(repo.head.name, SIG, SIG, message, tree, parents)
+    return repo.create_commit(
+        repo.head.name, _test_sig(), _test_sig(), message, tree, parents
+    )
 
 
 def push_from(repo_path: Path) -> None:

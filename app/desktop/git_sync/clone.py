@@ -10,6 +10,10 @@ from typing import Any
 import pygit2
 
 from app.desktop.git_sync.config import AuthMode
+from app.desktop.git_sync.git_sync_manager import (
+    get_committer_email,
+    get_committer_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -324,7 +328,7 @@ def _ensure_gitignore(
     index.write()
 
     tree = index.write_tree()
-    sig = pygit2.Signature("Kiln AI", "sync@kiln.ai")
+    sig = pygit2.Signature(get_committer_name(), get_committer_email())
     parents = [repo.head.target]
     repo.create_commit(
         repo.head.name,
@@ -358,7 +362,7 @@ def test_write_access(
     """
     try:
         repo = pygit2.Repository(str(clone_path))
-        sig = pygit2.Signature("Kiln AI", "sync@kiln.ai")
+        sig = pygit2.Signature(get_committer_name(), get_committer_email())
 
         pre_commit_head = repo.head.target
         tree = repo.index.write_tree()
