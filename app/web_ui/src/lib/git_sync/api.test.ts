@@ -6,6 +6,7 @@ import {
   gitLabPatDeepLink,
   gitHostname,
   gitOwnerFromUrl,
+  gitRepoNameFromUrl,
   testAccess,
   listBranches,
   cloneRepo,
@@ -113,21 +114,48 @@ describe("gitOwnerFromUrl", () => {
   })
 })
 
+describe("gitRepoNameFromUrl", () => {
+  it("extracts repo name from HTTPS URL", () => {
+    expect(gitRepoNameFromUrl("https://github.com/Kiln-AI/kiln.git")).toBe(
+      "kiln",
+    )
+  })
+
+  it("extracts repo name from SSH URL", () => {
+    expect(gitRepoNameFromUrl("git@github.com:Kiln-AI/kiln.git")).toBe("kiln")
+  })
+
+  it("handles URL without .git suffix", () => {
+    expect(gitRepoNameFromUrl("https://github.com/Kiln-AI/kiln")).toBe("kiln")
+  })
+
+  it("returns null for invalid URL", () => {
+    expect(gitRepoNameFromUrl("not-a-url")).toBeNull()
+  })
+})
+
 describe("gitHubPatDeepLink", () => {
-  it("returns GitHub fine-grained token creation URL", () => {
-    const link = gitHubPatDeepLink()
+  it("returns GitHub fine-grained token creation URL with repo name", () => {
+    const link = gitHubPatDeepLink("https://github.com/Kiln-AI/kiln.git")
     expect(link).toContain("github.com/settings/personal-access-tokens/new")
     expect(link).toContain("contents=write")
-    expect(link).toContain("Kiln")
+    expect(link).toContain("Kiln%20AI%20for%20kiln")
+    expect(link).toContain("auto%20sync%20for%20kiln")
+  })
+
+  it("falls back when repo name unavailable", () => {
+    const link = gitHubPatDeepLink("")
+    expect(link).toContain("name=Kiln%20AI")
+    expect(link).not.toContain("for%20")
   })
 })
 
 describe("gitLabPatDeepLink", () => {
-  it("returns GitLab token creation URL with correct scopes", () => {
+  it("returns GitLab token creation URL with correct scopes and repo name", () => {
     const link = gitLabPatDeepLink("https://gitlab.com/org/repo.git")
     expect(link).toContain("gitlab.com/-/user_settings/personal_access_tokens")
     expect(link).toContain("scopes=write_repository")
-    expect(link).toContain("Kiln")
+    expect(link).toContain("Kiln%20AI%20for%20repo")
   })
 
   it("uses self-hosted hostname", () => {

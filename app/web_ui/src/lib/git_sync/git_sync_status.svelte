@@ -159,7 +159,7 @@
           {#if is_github}
             <div class="text-xs text-gray-500 mt-1">
               <a
-                href={gitHubPatDeepLink()}
+                href={gitHubPatDeepLink(config?.git_url || "")}
                 target="_blank"
                 rel="noopener noreferrer"
                 class="link text-primary"

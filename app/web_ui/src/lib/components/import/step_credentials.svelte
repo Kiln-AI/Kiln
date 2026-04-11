@@ -67,7 +67,7 @@
   }
 
   $: token_link = is_github
-    ? gitHubPatDeepLink()
+    ? gitHubPatDeepLink(git_url)
     : is_gitlab
       ? gitLabPatDeepLink(git_url)
       : null
