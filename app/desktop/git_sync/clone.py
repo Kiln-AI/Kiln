@@ -50,12 +50,15 @@ def make_push_callbacks(
 
 
 def make_credentials(
-    pat_token: str | None, auth_mode: str = "system_keys"
+    pat_token: str | None,
+    auth_mode: AuthMode = "system_keys",
+    oauth_token: str | None = None,
 ) -> pygit2.RemoteCallbacks:
     """Create pygit2 RemoteCallbacks using the specified auth strategy.
 
     auth_mode="system_keys": Use SSH keys from ~/.ssh/ (id_ed25519, id_rsa, id_ecdsa).
     auth_mode="pat_token": Use PAT token for HTTPS auth.
+    auth_mode="github_oauth": Use GitHub OAuth token for HTTPS auth.
 
     This prevents pygit2 from falling through to system credential
     helpers which may prompt on stdin (fatal for a headless server).
@@ -93,6 +96,18 @@ def make_credentials(
             if allowed_types & pygit2.enums.CredentialType.USERNAME:
                 return pygit2.Username("x-token")
 
+        if auth_mode == "github_oauth" and oauth_token is not None:
+            if allowed_types & pygit2.enums.CredentialType.USERPASS_PLAINTEXT:
+                return pygit2.UserPass(username="x-token", password=oauth_token)  # type: ignore[attr-defined]
+            if allowed_types & pygit2.enums.CredentialType.USERNAME:
+                return pygit2.Username("x-token")
+
+        if auth_mode == "github_oauth":
+            raise pygit2.GitError(
+                "Authentication failed: no credentials available. "
+                f"auth_mode={auth_mode}. "
+                "Try re-authenticating via GitHub OAuth, or use a Personal Access Token (PAT)."
+            )
         raise pygit2.GitError(
             "Authentication failed: no credentials available. "
             f"auth_mode={auth_mode}. "
@@ -107,6 +122,7 @@ def _ls_remote_pygit2(
     git_url: str,
     pat_token: str | None = None,
     auth_mode: AuthMode = "system_keys",
+    oauth_token: str | None = None,
 ) -> list[dict[str, Any]]:
     """Fetch remote references using pygit2 (no system git required).
 
@@ -116,7 +132,7 @@ def _ls_remote_pygit2(
     Returns list of ref dicts with keys: name, oid, symref_target, etc.
     Raises pygit2.GitError on failure.
     """
-    callbacks = make_credentials(pat_token, auth_mode)
+    callbacks = make_credentials(pat_token, auth_mode, oauth_token=oauth_token)
     tmpdir = tempfile.mkdtemp(prefix="kiln_ls_remote_")
     try:
         repo = pygit2.init_repository(tmpdir, bare=True)
@@ -130,6 +146,7 @@ def test_remote_access(
     git_url: str,
     pat_token: str | None = None,
     auth_mode: AuthMode | None = None,
+    oauth_token: str | None = None,
 ) -> tuple[bool, str, str | None]:
     """Test access to a remote by listing references via pygit2.
 
@@ -148,7 +165,7 @@ def test_remote_access(
         mode = "system_keys"
 
     try:
-        _ls_remote_pygit2(git_url, pat_token, mode)
+        _ls_remote_pygit2(git_url, pat_token, mode, oauth_token=oauth_token)
         return True, "Access successful", mode
     except pygit2.GitError as e:
         error_lower = str(e).lower()
@@ -168,13 +185,14 @@ def list_remote_branches(
     git_url: str,
     pat_token: str | None = None,
     auth_mode: AuthMode = "system_keys",
+    oauth_token: str | None = None,
 ) -> tuple[list[str], str | None]:
     """List branches from a remote using pygit2.
 
     Returns (branches, default_branch). default_branch is the HEAD symref target
     if available, otherwise None.
     """
-    ref_list = _ls_remote_pygit2(git_url, pat_token, auth_mode)
+    ref_list = _ls_remote_pygit2(git_url, pat_token, auth_mode, oauth_token=oauth_token)
 
     branches: list[str] = []
     head_target: str | None = None
@@ -271,13 +289,14 @@ def clone_repo(
     branch: str,
     pat_token: str | None = None,
     auth_mode: AuthMode = "system_keys",
+    oauth_token: str | None = None,
 ) -> pygit2.Repository:
     """Clone a repository into the given path.
 
     Sets up the clone with the specified branch and adds a .gitignore
     for common OS artifacts.
     """
-    callbacks = make_credentials(pat_token, auth_mode)
+    callbacks = make_credentials(pat_token, auth_mode, oauth_token=oauth_token)
 
     repo = pygit2.clone_repository(
         git_url,
@@ -286,7 +305,7 @@ def clone_repo(
         callbacks=callbacks,
     )
 
-    _ensure_gitignore(repo, clone_path, pat_token, auth_mode)
+    _ensure_gitignore(repo, clone_path, pat_token, auth_mode, oauth_token=oauth_token)
 
     return repo
 
@@ -296,6 +315,7 @@ def _ensure_gitignore(
     clone_path: Path,
     pat_token: str | None = None,
     auth_mode: AuthMode = "system_keys",
+    oauth_token: str | None = None,
 ) -> None:
     """Ensure the clone has a .gitignore covering common OS artifacts."""
     gitignore_path = clone_path / ".gitignore"
@@ -335,7 +355,7 @@ def _ensure_gitignore(
         parents,
     )
 
-    cred_callbacks = make_credentials(pat_token, auth_mode)
+    cred_callbacks = make_credentials(pat_token, auth_mode, oauth_token=oauth_token)
     remote = repo.remotes[DEFAULT_REMOTE_NAME]
     branch_name = repo.head.shorthand
 
@@ -351,6 +371,7 @@ def test_write_access(
     clone_path: Path,
     pat_token: str | None = None,
     auth_mode: AuthMode = "system_keys",
+    oauth_token: str | None = None,
 ) -> tuple[bool, str]:
     """Test write access by pushing an empty commit.
 
@@ -372,7 +393,7 @@ def test_write_access(
             parents,
         )
 
-        cred_callbacks = make_credentials(pat_token, auth_mode)
+        cred_callbacks = make_credentials(pat_token, auth_mode, oauth_token=oauth_token)
         remote = repo.remotes[DEFAULT_REMOTE_NAME]
         branch_name = repo.head.shorthand
 

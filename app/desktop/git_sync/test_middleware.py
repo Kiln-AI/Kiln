@@ -46,6 +46,9 @@ def _auto_config(clone_path: str) -> GitSyncProjectConfig:
         remote_name="origin",
         branch="main",
         clone_path=clone_path,
+        git_url=None,
+        pat_token=None,
+        oauth_token=None,
     )
 
 
@@ -56,6 +59,9 @@ def _manual_config() -> GitSyncProjectConfig:
         remote_name="origin",
         branch="main",
         clone_path=None,
+        git_url=None,
+        pat_token=None,
+        oauth_token=None,
     )
 
 
@@ -147,6 +153,9 @@ def test_no_clone_path_passes_through():
         remote_name="origin",
         branch="main",
         clone_path=None,
+        git_url=None,
+        pat_token=None,
+        oauth_token=None,
     )
     app = _build_app()
 

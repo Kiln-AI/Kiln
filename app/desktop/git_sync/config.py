@@ -3,7 +3,7 @@ from typing import Literal, TypedDict
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.project_utils import project_from_id
 
-AuthMode = Literal["system_keys", "pat_token"]
+AuthMode = Literal["system_keys", "pat_token", "github_oauth"]
 
 
 class GitSyncProjectConfig(TypedDict):
@@ -14,6 +14,7 @@ class GitSyncProjectConfig(TypedDict):
     clone_path: str | None
     git_url: str | None
     pat_token: str | None
+    oauth_token: str | None
 
 
 def project_path_from_id(project_id: str) -> str | None:
@@ -41,6 +42,7 @@ def get_git_sync_config(project_path: str) -> GitSyncProjectConfig | None:
         clone_path=project_raw.get("clone_path"),
         git_url=project_raw.get("git_url"),
         pat_token=project_raw.get("pat_token"),
+        oauth_token=project_raw.get("oauth_token"),
     )
 
 

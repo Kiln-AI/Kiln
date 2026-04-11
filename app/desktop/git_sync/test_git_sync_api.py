@@ -63,7 +63,10 @@ class TestTestAccess:
         assert data["success"] is True
         assert data["auth_method"] == "pat_token"
         mock.assert_called_once_with(
-            "https://github.com/private/repo.git", "ghp_test123"
+            "https://github.com/private/repo.git",
+            "ghp_test123",
+            auth_mode="system_keys",
+            oauth_token=None,
         )
 
 
@@ -491,3 +494,346 @@ class TestDeleteConfig:
         ):
             resp = api_client.delete("/api/git_sync/config/nonexistent")
         assert resp.status_code == 404
+
+
+class TestOAuthStart:
+    def test_success_public_repo(self, api_client):
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_owner_id",
+                return_value=123,
+            ),
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_repo_id",
+                return_value=456,
+            ),
+        ):
+            resp = api_client.post(
+                "/api/git_sync/oauth/start",
+                json={"git_url": "https://github.com/Kiln-AI/kiln.git"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["owner_name"] == "Kiln-AI"
+        assert data["repo_name"] == "kiln"
+        assert data["owner_pre_selected"] is True
+        assert data["repo_pre_selected"] is True
+        assert "state" in data
+        assert "install_url" in data
+        assert "suggested_target_id=123" in data["install_url"]
+
+    def test_private_repo(self, api_client):
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_owner_id",
+                return_value=123,
+            ),
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_repo_id",
+                return_value=None,
+            ),
+        ):
+            resp = api_client.post(
+                "/api/git_sync/oauth/start",
+                json={"git_url": "https://github.com/owner/private-repo.git"},
+            )
+        data = resp.json()
+        assert data["owner_pre_selected"] is True
+        assert data["repo_pre_selected"] is False
+
+    def test_non_github_url(self, api_client):
+        resp = api_client.post(
+            "/api/git_sync/oauth/start",
+            json={"git_url": "https://gitlab.com/owner/repo.git"},
+        )
+        assert resp.status_code == 400
+
+
+class TestOAuthCallback:
+    def test_success(self, api_client):
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_owner_id",
+                return_value=None,
+            ),
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_repo_id",
+                return_value=None,
+            ),
+        ):
+            start_resp = api_client.post(
+                "/api/git_sync/oauth/start",
+                json={"git_url": "https://github.com/owner/repo.git"},
+            )
+        state = start_resp.json()["state"]
+
+        with patch(
+            "app.desktop.git_sync.git_sync_api.exchange_code_for_token",
+            return_value="ghu_token",
+        ):
+            resp = api_client.get(
+                f"/api/git_sync/oauth/callback?state={state}&code=auth_code"
+            )
+        assert resp.status_code == 200
+        assert "Authorization complete" in resp.text
+
+    def test_missing_state(self, api_client):
+        resp = api_client.get("/api/git_sync/oauth/callback?code=auth_code")
+        assert resp.status_code == 400
+        assert "Missing state" in resp.text
+
+    def test_invalid_state(self, api_client):
+        resp = api_client.get(
+            "/api/git_sync/oauth/callback?state=invalid&code=auth_code"
+        )
+        assert resp.status_code == 400
+        assert "expired" in resp.text
+
+    def test_error_from_github(self, api_client):
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_owner_id",
+                return_value=None,
+            ),
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_repo_id",
+                return_value=None,
+            ),
+        ):
+            start_resp = api_client.post(
+                "/api/git_sync/oauth/start",
+                json={"git_url": "https://github.com/owner/repo.git"},
+            )
+        state = start_resp.json()["state"]
+
+        resp = api_client.get(
+            f"/api/git_sync/oauth/callback?state={state}&error=access_denied&error_description=User+denied"
+        )
+        assert resp.status_code == 400
+        assert "User denied" in resp.text
+
+    def test_token_exchange_failure(self, api_client):
+        from app.desktop.git_sync.oauth import OAuthError
+
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_owner_id",
+                return_value=None,
+            ),
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_repo_id",
+                return_value=None,
+            ),
+        ):
+            start_resp = api_client.post(
+                "/api/git_sync/oauth/start",
+                json={"git_url": "https://github.com/owner/repo.git"},
+            )
+        state = start_resp.json()["state"]
+
+        with patch(
+            "app.desktop.git_sync.git_sync_api.exchange_code_for_token",
+            side_effect=OAuthError("Exchange failed"),
+        ):
+            resp = api_client.get(
+                f"/api/git_sync/oauth/callback?state={state}&code=bad_code"
+            )
+        assert resp.status_code == 400
+        assert "Exchange failed" in resp.text
+
+
+class TestOAuthAuthorize:
+    def test_redirects_to_github(self, api_client):
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_owner_id",
+                return_value=None,
+            ),
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_repo_id",
+                return_value=None,
+            ),
+        ):
+            start_resp = api_client.post(
+                "/api/git_sync/oauth/start",
+                json={"git_url": "https://github.com/owner/repo.git"},
+            )
+        state = start_resp.json()["state"]
+
+        resp = api_client.get("/api/git_sync/oauth/authorize", follow_redirects=False)
+        assert resp.status_code == 307
+        location = resp.headers["location"]
+        assert "github.com/login/oauth/authorize" in location
+        assert f"state={state}" in location
+        assert "code_challenge=" in location
+
+    def test_no_pending_flow(self, api_client):
+        resp = api_client.get("/api/git_sync/oauth/authorize")
+        assert resp.status_code == 400
+        assert "No pending authorization" in resp.text
+
+
+class TestOAuthStatus:
+    def test_pending(self, api_client):
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_owner_id",
+                return_value=None,
+            ),
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_repo_id",
+                return_value=None,
+            ),
+        ):
+            start_resp = api_client.post(
+                "/api/git_sync/oauth/start",
+                json={"git_url": "https://github.com/owner/repo.git"},
+            )
+        state = start_resp.json()["state"]
+
+        resp = api_client.get(f"/api/git_sync/oauth/status/{state}")
+        data = resp.json()
+        assert data["complete"] is False
+        assert data["oauth_token"] is None
+
+    def test_complete(self, api_client):
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_owner_id",
+                return_value=None,
+            ),
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_repo_id",
+                return_value=None,
+            ),
+        ):
+            start_resp = api_client.post(
+                "/api/git_sync/oauth/start",
+                json={"git_url": "https://github.com/owner/repo.git"},
+            )
+        state = start_resp.json()["state"]
+
+        with patch(
+            "app.desktop.git_sync.git_sync_api.exchange_code_for_token",
+            return_value="ghu_token",
+        ):
+            api_client.get(f"/api/git_sync/oauth/callback?state={state}&code=code")
+
+        resp = api_client.get(f"/api/git_sync/oauth/status/{state}")
+        data = resp.json()
+        assert data["complete"] is True
+        assert data["oauth_token"] == "ghu_token"
+
+    def test_consumed_flow_not_available_again(self, api_client):
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_owner_id",
+                return_value=None,
+            ),
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_repo_id",
+                return_value=None,
+            ),
+        ):
+            start_resp = api_client.post(
+                "/api/git_sync/oauth/start",
+                json={"git_url": "https://github.com/owner/repo.git"},
+            )
+        state = start_resp.json()["state"]
+
+        with patch(
+            "app.desktop.git_sync.git_sync_api.exchange_code_for_token",
+            return_value="ghu_token",
+        ):
+            api_client.get(f"/api/git_sync/oauth/callback?state={state}&code=code")
+
+        api_client.get(f"/api/git_sync/oauth/status/{state}")
+        resp = api_client.get(f"/api/git_sync/oauth/status/{state}")
+        data = resp.json()
+        assert data["complete"] is False
+        assert data["error"] == "Session expired or not found."
+
+    def test_nonexistent_state(self, api_client):
+        resp = api_client.get("/api/git_sync/oauth/status/nonexistent")
+        data = resp.json()
+        assert data["complete"] is False
+        assert data["error"] is not None
+
+
+class TestOAuthTokenInConfig:
+    def test_save_config_with_oauth_token(self, api_client):
+        with (
+            patch("app.desktop.git_sync.git_sync_api.save_git_sync_config"),
+            patch("app.desktop.git_sync.git_sync_api.add_project_to_config"),
+        ):
+            resp = api_client.post(
+                "/api/git_sync/save_config",
+                json={
+                    "project_id": "proj1",
+                    "project_path": "project.kiln",
+                    "git_url": "https://github.com/test/repo.git",
+                    "clone_path": "/tmp/clone",
+                    "branch": "main",
+                    "auth_mode": "github_oauth",
+                    "oauth_token": "ghu_token",
+                },
+            )
+        data = resp.json()
+        assert data["auth_mode"] == "github_oauth"
+        assert data["has_oauth_token"] is True
+        assert "oauth_token" not in data
+
+    def test_get_config_with_oauth_token(self, api_client):
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.project_path_from_id",
+                return_value="/tmp/clone/project.kiln",
+            ),
+            patch("app.desktop.git_sync.git_sync_api.get_git_sync_config") as mock,
+        ):
+            mock.return_value = {
+                "sync_mode": "auto",
+                "auth_mode": "github_oauth",
+                "remote_name": "origin",
+                "branch": "main",
+                "clone_path": "/tmp/clone",
+                "git_url": "https://github.com/test/repo.git",
+                "pat_token": None,
+                "oauth_token": "ghu_secret",
+            }
+            resp = api_client.get("/api/git_sync/config/proj1")
+        data = resp.json()
+        assert data["has_oauth_token"] is True
+        assert data["has_pat_token"] is False
+        assert "oauth_token" not in data
+
+    def test_update_config_with_oauth_token(self, api_client):
+        existing = {
+            "sync_mode": "auto",
+            "auth_mode": "pat_token",
+            "remote_name": "origin",
+            "branch": "main",
+            "clone_path": "/tmp/clone",
+            "git_url": "https://github.com/test/repo.git",
+            "pat_token": "ghp_old",
+            "oauth_token": None,
+        }
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.project_path_from_id",
+                return_value="/tmp/clone/project.kiln",
+            ),
+            patch("app.desktop.git_sync.git_sync_api.get_git_sync_config") as mock_get,
+            patch("app.desktop.git_sync.git_sync_api.save_git_sync_config"),
+        ):
+            mock_get.return_value = existing
+            resp = api_client.patch(
+                "/api/git_sync/update_config/proj1",
+                json={
+                    "oauth_token": "ghu_new",
+                    "auth_mode": "github_oauth",
+                },
+            )
+        data = resp.json()
+        assert data["has_oauth_token"] is True
+        assert data["auth_mode"] == "github_oauth"

@@ -109,6 +109,7 @@ def test_save_git_sync_config():
             clone_path="/tmp/clone",
             git_url="https://github.com/test/repo.git",
             pat_token="ghp_test",
+            oauth_token=None,
         )
         save_git_sync_config("/tmp/new/project.kiln", config)
 
@@ -151,6 +152,42 @@ def test_git_sync_project_config_type():
         clone_path=None,
         git_url=None,
         pat_token=None,
+        oauth_token=None,
     )
     assert config["sync_mode"] == "auto"
     assert config["clone_path"] is None
+    assert config["oauth_token"] is None
+
+
+def test_get_git_sync_config_includes_oauth_token():
+    mock_projects = {
+        "/tmp/clone/project.kiln": {
+            "sync_mode": "auto",
+            "auth_mode": "github_oauth",
+            "remote_name": "origin",
+            "branch": "main",
+            "clone_path": "/tmp/clone",
+            "git_url": "https://github.com/test/repo.git",
+            "pat_token": None,
+            "oauth_token": "ghu_token123",
+        }
+    }
+
+    with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
+        mock_shared.return_value.git_sync_projects = mock_projects
+        result = get_git_sync_config("/tmp/clone/project.kiln")
+
+    assert result is not None
+    assert result["oauth_token"] == "ghu_token123"
+    assert result["auth_mode"] == "github_oauth"
+
+
+def test_get_git_sync_config_defaults_oauth_token():
+    mock_projects = {"/tmp/other/project.kiln": {}}
+
+    with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
+        mock_shared.return_value.git_sync_projects = mock_projects
+        result = get_git_sync_config("/tmp/other/project.kiln")
+
+    assert result is not None
+    assert result["oauth_token"] is None

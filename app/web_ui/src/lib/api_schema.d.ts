@@ -2730,6 +2730,74 @@ export interface paths {
         patch: operations["api_update_config_api_git_sync_update_config__project_id__patch"];
         trace?: never;
     };
+    "/api/git_sync/oauth/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start GitHub OAuth Flow */
+        post: operations["api_oauth_start_api_git_sync_oauth_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** OAuth Callback */
+        get: operations["api_oauth_callback_api_git_sync_oauth_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/oauth/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** OAuth Authorize Redirect */
+        get: operations["api_oauth_authorize_api_git_sync_oauth_authorize_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/oauth/status/{state}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** OAuth Flow Status */
+        get: operations["api_oauth_status_api_git_sync_oauth_status__state__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3361,12 +3429,17 @@ export interface components {
              */
             pat_token?: string | null;
             /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
              * Auth Mode
-             * @description Auth mode: 'system_keys' (SSH agent) or 'pat_token' (HTTPS PAT).
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
              * @default system_keys
              * @enum {string}
              */
-            auth_mode: "system_keys" | "pat_token";
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
         };
         /**
          * CloneResponse
@@ -5613,11 +5686,11 @@ export interface components {
             sync_mode: "auto" | "manual";
             /**
              * Auth Mode
-             * @description Auth mode: 'system_keys' (SSH agent) or 'pat_token' (HTTPS PAT).
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
              * @default system_keys
              * @enum {string}
              */
-            auth_mode: "system_keys" | "pat_token";
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
             /**
              * Remote Name
              * @description Git remote name.
@@ -5644,6 +5717,12 @@ export interface components {
              * @default false
              */
             has_pat_token: boolean;
+            /**
+             * Has Oauth Token
+             * @description Whether an OAuth token is configured (token not shown).
+             * @default false
+             */
+            has_oauth_token: boolean;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -5998,12 +6077,17 @@ export interface components {
              */
             pat_token?: string | null;
             /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
              * Auth Mode
-             * @description Auth mode: 'system_keys' (SSH agent) or 'pat_token' (HTTPS PAT).
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
              * @default system_keys
              * @enum {string}
              */
-            auth_mode: "system_keys" | "pat_token";
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
         };
         /**
          * ListBranchesResponse
@@ -6293,6 +6377,74 @@ export interface components {
             core_requirement: string;
             /** Nsfw Examples */
             nsfw_examples: string;
+        };
+        /**
+         * OAuthStartRequest
+         * @description Request to start a GitHub OAuth flow.
+         */
+        OAuthStartRequest: {
+            /**
+             * Git Url
+             * @description The git remote URL to authenticate against.
+             */
+            git_url: string;
+        };
+        /**
+         * OAuthStartResponse
+         * @description Response from starting a GitHub OAuth flow.
+         */
+        OAuthStartResponse: {
+            /**
+             * Install Url
+             * @description GitHub App installation URL to open in the browser.
+             */
+            install_url: string;
+            /**
+             * State
+             * @description OAuth state parameter for polling.
+             */
+            state: string;
+            /**
+             * Owner Name
+             * @description Parsed owner name from git URL.
+             */
+            owner_name: string;
+            /**
+             * Repo Name
+             * @description Parsed repo name from git URL.
+             */
+            repo_name: string;
+            /**
+             * Owner Pre Selected
+             * @description Whether the owner was pre-selected in the install URL.
+             */
+            owner_pre_selected: boolean;
+            /**
+             * Repo Pre Selected
+             * @description Whether the repo was pre-selected in the install URL.
+             */
+            repo_pre_selected: boolean;
+        };
+        /**
+         * OAuthStatusResponse
+         * @description Status of an in-progress OAuth flow.
+         */
+        OAuthStatusResponse: {
+            /**
+             * Complete
+             * @description Whether the OAuth flow has completed.
+             */
+            complete: boolean;
+            /**
+             * Oauth Token
+             * @description The OAuth token, if flow completed successfully.
+             */
+            oauth_token?: string | null;
+            /**
+             * Error
+             * @description Error message, if flow failed.
+             */
+            error?: string | null;
         };
         /** OllamaConnection */
         OllamaConnection: {
@@ -7537,12 +7689,17 @@ export interface components {
              */
             pat_token?: string | null;
             /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
              * Auth Mode
-             * @description Auth mode detected during setup: 'system_keys' or 'pat_token'.
+             * @description Auth mode detected during setup: 'system_keys', 'pat_token', or 'github_oauth'.
              * @default system_keys
              * @enum {string}
              */
-            auth_mode: "system_keys" | "pat_token";
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
             /**
              * Sync Mode
              * @description Sync mode: 'auto' or 'manual'.
@@ -8736,6 +8893,18 @@ export interface components {
              * @description Optional personal access token for authentication.
              */
             pat_token?: string | null;
+            /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
         };
         /**
          * TestAccessResponse
@@ -8760,7 +8929,7 @@ export interface components {
             auth_required: boolean;
             /**
              * Auth Method
-             * @description Auth method that succeeded: 'system_keys' or 'pat_token'. Null on failure.
+             * @description Auth method that succeeded: 'system_keys', 'pat_token', or 'github_oauth'. Null on failure.
              */
             auth_method?: string | null;
         };
@@ -8780,12 +8949,17 @@ export interface components {
              */
             pat_token?: string | null;
             /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
              * Auth Mode
-             * @description Auth mode: 'system_keys' (SSH agent) or 'pat_token' (HTTPS PAT).
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
              * @default system_keys
              * @enum {string}
              */
-            auth_mode: "system_keys" | "pat_token";
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
         };
         /** ToneProperties */
         ToneProperties: {
@@ -8892,10 +9066,15 @@ export interface components {
              */
             pat_token?: string | null;
             /**
+             * Oauth Token
+             * @description New OAuth token, if changing.
+             */
+            oauth_token?: string | null;
+            /**
              * Auth Mode
              * @description New auth mode, if changing.
              */
-            auth_mode?: ("system_keys" | "pat_token") | null;
+            auth_mode?: ("system_keys" | "pat_token" | "github_oauth") | null;
         };
         /**
          * UpdateEvalRequest
@@ -15486,6 +15665,129 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GitSyncConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_oauth_start_api_git_sync_oauth_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthStartResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_oauth_callback_api_git_sync_oauth_callback_get: {
+        parameters: {
+            query?: {
+                /** @description OAuth state parameter linking the callback to a pending flow. */
+                state?: string;
+                /** @description Authorization code from GitHub to exchange for an access token. */
+                code?: string;
+                /** @description Error code returned by GitHub if authorization was denied. */
+                error?: string;
+                /** @description Human-readable description of the error from GitHub. */
+                error_description?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_oauth_authorize_api_git_sync_oauth_authorize_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_oauth_status_api_git_sync_oauth_status__state__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The OAuth state parameter to check. */
+                state: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthStatusResponse"];
                 };
             };
             /** @description Validation Error */

@@ -200,6 +200,7 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
             repo_path=Path(clone_path),
             remote_name=config["remote_name"],
             pat_token=config.get("pat_token"),
+            oauth_token=config.get("oauth_token"),
             auth_mode=config["auth_mode"],
         )
 
