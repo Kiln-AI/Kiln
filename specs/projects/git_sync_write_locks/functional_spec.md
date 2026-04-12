@@ -96,7 +96,11 @@ In production (non-dev mode), the existing `ensure_clean()` crash recovery conti
 
 ### Scope of the Check
 
-The dirty check only runs for requests that go through the middleware's read path (non-write-locked requests on projects with active git sync). Write-locked requests already commit their changes, so they don't need this check.
+The dirty check runs only for requests on the middleware's **regular read path** — i.e., non-write-locked requests that are also NOT `@no_write_lock` self-managed, on projects with active git sync.
+
+- Write-locked requests already commit their changes through `atomic_write`, so the check is unnecessary.
+- `@no_write_lock` endpoints manage their own locks per-job; their writes are committed inside the endpoint's own `atomic_write` blocks and will be clean by the time the response returns. Running the dirty check on them would either produce false positives (if the check races with an in-flight commit) or be redundant. They are explicitly skipped.
+- Only the regular read path remains — these are requests that *claim* not to write, so any dirty state afterward indicates a missing lock.
 
 ## Out of Scope
 

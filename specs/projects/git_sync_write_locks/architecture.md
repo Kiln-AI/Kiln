@@ -82,27 +82,32 @@ The middleware's write-lock path simplifies to:
 ```python
 # Before: 60 lines of lock/clean/fresh/buffer/commit/rollback
 # After:
-async with manager.atomic_write(f"{request.method} {request.url.path}"):
-    response = await call_next(request)
+try:
+    async with manager.atomic_write(f"{request.method} {request.url.path}"):
+        response = await call_next(request)
 
-    content_type = response.headers.get("content-type", "")
-    if "text/event-stream" in content_type:
-        # SSE safety net (unchanged)
+        content_type = response.headers.get("content-type", "")
+        if "text/event-stream" in content_type:
+            # SSE safety net (unchanged) — returns 500 before atomic_write
+            # can commit, so body_iterator is never consumed under lock
+            ...
+
+        body = b""
+        async for chunk in response.body_iterator:
+            body += chunk
+
+        # Long lock hold warning (unchanged)
         ...
 
-    body = b""
-    async for chunk in response.body_iterator:
-        body += chunk
-
-    # Long lock hold warning (unchanged)
-    ...
-
-return Response(content=body, ...)
+    return Response(content=body, ...)
+except GitSyncError as e:
+    status = ERROR_MAP.get(type(e), 500)
+    return JSONResponse({"detail": str(e)}, status_code=status)
 ```
 
 The SSE detection, body buffering, and long-lock-hold warning stay in the middleware — they're request-specific concerns. The lock lifecycle moves to `atomic_write`.
 
-Note: the existing error handling in the middleware catches `GitSyncError` and maps to HTTP status codes. This stays in the middleware's `except` block wrapping the `atomic_write` call, since error-to-HTTP mapping is a middleware concern.
+The `except GitSyncError` block wraps the `atomic_write` call (not inside it), because error-to-HTTP mapping is a middleware concern, not a lock-lifecycle concern. `atomic_write`'s rollback runs on its way out (via `__aexit__`), then the exception propagates to the middleware's `except` for HTTP mapping.
 
 ## Component 2: Save Context Injection into Runner Jobs
 
@@ -124,6 +129,19 @@ async def default_save_context() -> AsyncIterator[None]:
     yield
 ```
 
+**Protocol for type-safe manager references (in `libs/core`):**
+
+`libs/server` cannot import `GitSyncManager` directly (it lives in `app/desktop`). But we still want type-checked calls to `manager.atomic_write(...)` in the `libs/server` helper. Define a structural Protocol in `libs/core`:
+
+```python
+from typing import Protocol
+
+class AtomicWriteCapable(Protocol):
+    def atomic_write(self, context: str) -> AbstractAsyncContextManager[None]: ...
+```
+
+`GitSyncManager` satisfies this protocol structurally (no explicit inheritance needed). `libs/server` imports `AtomicWriteCapable` from `libs/core` and uses it when typing any `manager` reference pulled off `request.state`. A typo like `manager.atomc_write(...)` is then caught by the type checker.
+
 **Git sync factory (in `app/desktop`):**
 
 ```python
@@ -135,11 +153,21 @@ def make_git_sync_save_context(manager: GitSyncManager, context: str) -> SaveCon
 
 This is a one-liner — `atomic_write` already does the full lock cycle.
 
+### Placement Rule
+
+There is no universal rule for where to wrap with `save_context`. The guiding principle:
+
+- **Wrap a group of writes together** when they must succeed atomically — if one fails, all should roll back (e.g., a parent record + its attachments that only make sense together).
+- **Wrap individual writes** when the surrounding job is already designed to tolerate partial success (e.g., a batch job that reports per-item failures and keeps going).
+
+Place the `async with self._save_context():` block **inside** any existing runner try/except. Python's `async with` guarantees `__aexit__` runs before the enclosing `except` clause, so rollback happens even when the runner catches the exception. This means existing runner error-handling (swallow-and-return-False, re-raise, etc.) is preserved untouched — the `save_context` only adds rollback behavior.
+
 ### Runner Changes
 
 Each runner accepts `save_context: SaveContext | None = None` and wraps its write phase:
 
-**ExtractorRunner:**
+**ExtractorRunner** (`libs/core/.../extractor_runner.py:71-112`) — one `save_to_file()` per job, inside a broad `except Exception` that returns `False`. Wrap just the save call, inside the existing try:
+
 ```python
 class ExtractorRunner:
     def __init__(
@@ -152,20 +180,30 @@ class ExtractorRunner:
         # ... existing fields ...
 
     async def run_job(self, job: ExtractorJob) -> bool:
-        # Compute phase — no lock, can take minutes
-        output = await extractor.extract(...)
+        try:
+            # Compute phase — no lock, can take minutes
+            output = await extractor.extract(...)
 
-        # Write phase — under lock if git sync active, milliseconds
-        async with self._save_context():
-            extraction = Extraction(parent=job.doc, ...)
-            extraction.save_to_file()
+            # Write phase — under lock if git sync active
+            async with self._save_context():
+                extraction = Extraction(parent=job.doc, ...)
+                extraction.save_to_file()
 
-        return True
+            return True
+        except Exception as e:
+            logger.error(...)
+            return False   # rollback already ran via __aexit__
 ```
 
-**EvalRunner** — same pattern. Compute (run eval/run task), then write phase wrapping `eval_run.save_to_file()`.
+**EvalRunner** (`libs/core/.../eval_runner.py:198-277`) — one `save_to_file()` per job, re-raises on error (wrapping retryable errors). Wrap just the save call; rollback runs, then the exception propagates unchanged.
 
-**RAG step job functions** (`execute_extractor_job`, `execute_chunker_job`, `execute_embedding_job`) — these are standalone `async def`s. The step runner classes (`RagExtractionStepRunner`, etc.) accept `save_context` in their constructor and pass it via closure/partial to the job functions:
+**RAG step job functions** (`execute_extractor_job`, `execute_chunker_job`, `execute_embedding_job` in `libs/core/.../rag_runners.py`) — standalone `async def`s with a single `save_to_file()` each and no try/except. Wrap just the save call; exceptions continue propagating to `GenericErrorCollector` as today.
+
+**General rule for inclusion:** a write needs `save_context` wrapping only if it writes to the filesystem AND that filesystem location is inside the project repo. Vector store writes, remote API calls, external database writes, and writes to temp/cache directories outside the repo are all excluded — `save_context` is strictly about capturing file-level changes into git.
+
+**RagIndexingStepRunner excluded** under this rule — it writes to an external vector store, not a git-tracked file in the project repo. Do not wrap.
+
+The step runner classes (`RagExtractionStepRunner`, `RagChunkingStepRunner`, `RagEmbeddingStepRunner`) accept `save_context` in their constructor and pass it via closure/partial to the job functions:
 
 ```python
 class RagExtractionStepRunner(AbstractRagStepRunner):
@@ -181,7 +219,27 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
             yield progress
 ```
 
-The `RagWorkflowRunner` passes `save_context` through to each step runner it creates.
+### Threading `save_context` Through RAG Construction
+
+`RagWorkflowRunner` does NOT construct its step runners — it receives them pre-built via `RagWorkflowRunnerConfiguration`. Construction happens in `build_rag_workflow_runner()` at `libs/server/kiln_server/document_api.py:807`, which instantiates each step runner and packages them into the config.
+
+The injection point is therefore `build_rag_workflow_runner()`, not `RagWorkflowRunner`:
+
+```python
+async def build_rag_workflow_runner(
+    project, rag_config_id, save_context: SaveContext | None = None,
+):
+    # ... existing setup ...
+    step_runners = [
+        RagExtractionStepRunner(..., save_context=save_context),
+        RagChunkingStepRunner(..., save_context=save_context),
+        RagEmbeddingStepRunner(..., save_context=save_context),
+        RagIndexingStepRunner(...),  # no save_context — writes to vector store
+    ]
+    # ... pack into RagWorkflowRunnerConfiguration, construct RagWorkflowRunner ...
+```
+
+`RagWorkflowRunner` itself requires no changes. The endpoint passes `save_context` (built via `build_save_context(request)`) into `build_rag_workflow_runner()`.
 
 ### No AsyncJobRunner Changes
 
@@ -223,6 +281,18 @@ if not needs_lock:
     # ... existing ensure_fresh_for_read, notify_background_sync ...
 ```
 
+### Endpoint Signature: `Request` Parameter Required
+
+None of the 5 SSE endpoints currently accept `request: Request` in their signature:
+
+- `run_extractor_config` — `document_api.py:1380`
+- `extract_file` — `document_api.py:1725`
+- `run_rag_config` (the `run` endpoint) — `document_api.py:2360`
+- `run_eval_config_eval` / `run_comparison` — `eval_api.py:769`
+- `run_calibration` — `eval_api.py:873`
+
+Each needs `request: Request` added so it can read `request.state.git_sync_manager`. FastAPI auto-injects the `Request` object — no callers need to change. This is a required mechanical change to all 5 endpoint signatures.
+
 ### Endpoint Changes
 
 Each endpoint reads the manager, builds a save context, passes it to the runner:
@@ -231,28 +301,37 @@ Each endpoint reads the manager, builds a save context, passes it to the runner:
 @router.get("/.../run_extractor_config")
 @no_write_lock
 async def run_extractor_config(request: Request, ...):
-    manager = getattr(request.state, "git_sync_manager", None)
-    save_context = make_git_sync_save_context(manager, request.url.path) if manager else None
+    save_context = build_save_context(request)
     # ... existing setup ...
     runner = ExtractorRunner(documents, extractor_configs, save_context=save_context)
     return run_extractor_runner_with_status(runner)
 ```
 
-The SSE generator functions are unchanged — they still iterate `runner.run()` and yield SSE events. The lock cycle is invisible to them.
+The SSE generator functions (`run_extractor_runner_with_status`, `run_rag_workflow_runner_with_status`) are unchanged — they still iterate `runner.run()` and yield SSE events. The lock cycle is invisible to them.
 
-**`make_git_sync_save_context` location:** Lives in `app/desktop/git_sync/` (it imports `GitSyncManager`). The eval endpoints in `app/desktop/studio_server/` can import it directly. The document_api endpoints in `libs/server/` need the save context passed in from the endpoint layer — since these endpoints receive `request.state.git_sync_manager` at runtime, they can build the context there using a helper that doesn't import git sync types (just calls `manager.atomic_write(path)`).
-
-Simpler: put a thin `build_save_context(request)` helper in `libs/server/` that reads from `request.state` and returns a `SaveContext | None`. It calls `manager.atomic_write(path)` on an `Any`-typed manager — no git sync imports needed:
+**`build_save_context` helper** lives in `libs/server/` and returns a `SaveContext | None` using the `AtomicWriteCapable` Protocol for type safety:
 
 ```python
+from kiln_ai.git_sync_protocols import AtomicWriteCapable  # from libs/core
+
 def build_save_context(request: Request) -> SaveContext | None:
-    manager = getattr(request.state, "git_sync_manager", None)
+    manager: AtomicWriteCapable | None = getattr(
+        request.state, "git_sync_manager", None
+    )
     if manager is None:
         return None
     def factory():
         return manager.atomic_write(context=request.url.path)
     return factory
 ```
+
+No git sync imports from `app/desktop` are needed. The Protocol lives in `libs/core`, which both `libs/server` and `app/desktop` can import.
+
+### Error Mapping for Self-Managed Endpoints
+
+By moving lock management from the middleware into the endpoints, `GitSyncError` subclasses raised inside the endpoint no longer hit the middleware's `ERROR_MAP`. This is intentional — the SSE runner loop already catches per-item exceptions and surfaces them as per-item error events in the SSE stream, which is more informative than a single top-level 503. For example, "6 of 50 documents failed to extract because of git push rejection" is more actionable than a blanket 503 for the whole request.
+
+A bare `GitSyncError` raised outside any per-item try (e.g., from the initial `ensure_clean()` on the first job) will still bubble up as a generic 500 from FastAPI. This is acceptable — per-item errors are the common case, and first-job-setup failures are rare and loud.
 
 ## Component 4: Middleware Dev-Mode Dirty Check
 
@@ -352,18 +431,15 @@ class AtomicWriteContext:
         write_fn: Callable[[Path], object],
         expect_error: bool = False,
     ) -> WriteResult:
+        pre_head = get_head_sync(self.repo_path)
         try:
             async with self.manager.atomic_write("TEST atomic_write"):
                 write_fn(self.repo_path)
 
             post_head = get_head_sync(self.repo_path)
-            pushed = remote_has_commit(self.remote_path, post_head)
-            return WriteResult(
-                committed=await self.manager.has_dirty_files() is False
-                    and pushed,  # simplified — check head moved
-                committed=True,
-                pushed=pushed,
-            )
+            committed = post_head != pre_head
+            pushed = committed and remote_has_commit(self.remote_path, post_head)
+            return WriteResult(committed=committed, pushed=pushed)
         except Exception as e:
             if expect_error:
                 return WriteResult(committed=False, pushed=False, error=str(e))
