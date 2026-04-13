@@ -38,6 +38,11 @@ const MOCK_START_RESPONSE: OAuthStartResponse = {
   owner_name: "Kiln-AI",
   repo_name: "kiln",
   owner_pre_selected: true,
+  repo_pre_selected: true,
+}
+
+const MOCK_START_RESPONSE_NEEDS_HINT: OAuthStartResponse = {
+  ...MOCK_START_RESPONSE,
   repo_pre_selected: false,
 }
 
@@ -258,6 +263,63 @@ describe("startOAuthFlow", () => {
 
     expect(mockOpen).not.toHaveBeenCalled()
     expect(preOpenedPopup.location.href).toBe(MOCK_START_RESPONSE.install_url)
+  })
+
+  it("delays popup navigation when pre-selection hints are needed", async () => {
+    const preOpenedPopup = makeMockPopup()
+    const mockOpen = vi.fn()
+    const mockWindow = { open: mockOpen }
+    vi.stubGlobal("window", mockWindow)
+
+    mockOauthStart.mockResolvedValue(MOCK_START_RESPONSE_NEEDS_HINT)
+    mockOauthStatus.mockResolvedValue({
+      complete: false,
+      oauth_token: null,
+      error: null,
+    })
+
+    const cbs = makeCallbacks()
+    startOAuthFlow(
+      "https://github.com/Kiln-AI/kiln.git",
+      cbs,
+      preOpenedPopup as unknown as Window,
+    )
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(cbs.calls.onStarted).toHaveLength(1)
+    // Hint needs time to render: popup should not have navigated yet.
+    expect(preOpenedPopup.location.href).toBe("")
+    expect(cbs.calls.onPolling).toHaveLength(0)
+
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(preOpenedPopup.location.href).toBe(
+      MOCK_START_RESPONSE_NEEDS_HINT.install_url,
+    )
+    expect(cbs.calls.onPolling).toHaveLength(1)
+  })
+
+  it("gives up polling after repeated consecutive network errors", async () => {
+    const popup = makeMockPopup()
+    const mockWindow = { open: vi.fn(() => popup) }
+    vi.stubGlobal("window", mockWindow)
+
+    mockOauthStart.mockResolvedValue(MOCK_START_RESPONSE)
+    mockOauthStatus.mockRejectedValue(new Error("backend down"))
+
+    const cbs = makeCallbacks()
+    startOAuthFlow("https://github.com/Kiln-AI/kiln.git", cbs)
+
+    // 5 attempts at 2s each: drain all of them.
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(2000)
+    await vi.advanceTimersByTimeAsync(2000)
+    await vi.advanceTimersByTimeAsync(2000)
+    await vi.advanceTimersByTimeAsync(2000)
+
+    expect(mockOauthStatus).toHaveBeenCalledTimes(5)
+    expect(cbs.calls.onError).toHaveLength(1)
+    expect(cbs.calls.onError[0]).toContain("backend down")
+    expect(popup.close).toHaveBeenCalled()
   })
 
   it("closes the pre-opened popup on cancel", async () => {

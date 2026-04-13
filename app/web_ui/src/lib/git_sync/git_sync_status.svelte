@@ -41,7 +41,6 @@
   let mode: AuthFormMode = "pat"
 
   // OAuth state
-  let oauth_polling = false
   let oauth_starting = false
   let oauth_error: string | null = null
   let cancel_oauth: (() => void) | null = null
@@ -76,7 +75,6 @@
       cancel_oauth()
       cancel_oauth = null
     }
-    oauth_polling = false
     oauth_starting = false
     oauth_error = null
     start_response = null
@@ -110,7 +108,6 @@
 
     oauth_error = null
     oauth_starting = true
-    oauth_polling = false
     start_response = null
     oauth_generation++
     const this_generation = oauth_generation
@@ -124,11 +121,9 @@
       },
       onPolling: () => {
         if (this_generation !== oauth_generation) return
-        oauth_polling = true
       },
       onSuccess: async (token: string) => {
         if (this_generation !== oauth_generation) return
-        oauth_polling = false
         try {
           const result = await testAccess(git_url, null, "github_oauth", token)
           if (this_generation !== oauth_generation) return
@@ -151,7 +146,6 @@
       },
       onError: (err: string) => {
         if (this_generation !== oauth_generation) return
-        oauth_polling = false
         oauth_starting = false
         oauth_error = err
       },
@@ -280,7 +274,7 @@
             </div>
           {/if}
 
-          {#if oauth_polling}
+          {#if start_response && !oauth_error}
             <div class="flex flex-col items-center py-6 gap-3">
               <span class="loading loading-spinner loading-md text-primary"
               ></span>
@@ -299,7 +293,7 @@
                   href={start_response.authorize_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  class="text-xs text-gray-400 hover:text-gray-600 underline"
+                  class="text-xs text-gray-500 hover:text-gray-700 underline"
                 >
                   Already have the app installed? Authorize directly
                 </a>
@@ -327,7 +321,7 @@
             </button>
             <div class="mt-3 text-center">
               <button
-                class="btn btn-link btn-xs text-gray-400 no-underline hover:text-gray-600"
+                class="btn btn-link btn-xs text-gray-500 no-underline hover:text-gray-700 hover:underline focus-visible:underline"
                 on:click={() => {
                   mode = "pat"
                   reset_oauth()
@@ -395,7 +389,7 @@
           {#if is_github}
             <div class="mt-3 text-center">
               <button
-                class="btn btn-link btn-xs text-gray-400 no-underline hover:text-gray-600"
+                class="btn btn-link btn-xs text-gray-500 no-underline hover:text-gray-700 hover:underline focus-visible:underline"
                 on:click={() => {
                   mode = "oauth"
                   token_error = null

@@ -225,7 +225,14 @@ export async function oauthStart(git_url: string): Promise<OAuthStartResponse> {
 
 export async function oauthStatus(state: string): Promise<OAuthStatusResponse> {
   const resp = await fetch(`${base_url}/api/git_sync/oauth/status/${state}`)
-  if (!resp.ok) throw new Error("Failed to check OAuth status")
+  if (!resp.ok) {
+    const detail = await resp.json().catch(() => null)
+    throw new Error(
+      detail?.detail ||
+        detail?.message ||
+        `Failed to check OAuth status (${resp.status})`,
+    )
+  }
   return resp.json()
 }
 

@@ -3,6 +3,11 @@ import type { OAuthStartResponse } from "$lib/git_sync/api"
 
 const POLL_INTERVAL_MS = 2000
 const TIMEOUT_MS = 300_000
+const MAX_CONSECUTIVE_POLL_FAILURES = 5
+// When GitHub's org or repo couldn't be pre-selected, the component renders
+// a hint telling the user what to pick on GitHub. Delay popup navigation so
+// the hint is visible in Kiln before GitHub's tab steals focus.
+const HINT_DISPLAY_DELAY_MS = 1500
 
 export type OAuthFlowCallbacks = {
   onStarted: (response: OAuthStartResponse) => void
@@ -87,6 +92,19 @@ export function startOAuthFlow(
 
     callbacks.onStarted(startResponse)
 
+    // If Kiln needs to show the user a pre-selection hint (because we
+    // couldn't pre-fill the org or repo on GitHub's install page), pause
+    // briefly so the hint renders before the popup takes focus.
+    const needsHint =
+      !startResponse.owner_pre_selected || !startResponse.repo_pre_selected
+    if (needsHint) {
+      await new Promise((resolve) => setTimeout(resolve, HINT_DISPLAY_DELAY_MS))
+      if (cancelled) {
+        cleanup(true)
+        return
+      }
+    }
+
     // Navigate the popup to the install URL. For new users, GitHub chains:
     // install → setup URL redirect → OAuth authorize → callback.
     // For returning users who already have the app installed, the install
@@ -104,11 +122,14 @@ export function startOAuthFlow(
       }
     }, TIMEOUT_MS)
 
+    let consecutivePollFailures = 0
+
     async function poll() {
       if (cancelled) return
       try {
         const status = await oauthStatus(state)
         if (cancelled) return
+        consecutivePollFailures = 0
 
         if (status.complete && status.oauth_token) {
           cleanup()
@@ -120,10 +141,18 @@ export function startOAuthFlow(
           pollTimer = setTimeout(poll, POLL_INTERVAL_MS)
         }
       } catch (e) {
+        if (cancelled) return
+        consecutivePollFailures++
         console.warn("OAuth status polling network error:", e)
-        if (!cancelled) {
-          pollTimer = setTimeout(poll, POLL_INTERVAL_MS)
+        if (consecutivePollFailures >= MAX_CONSECUTIVE_POLL_FAILURES) {
+          const reason = e instanceof Error ? e.message : "connection failed"
+          cleanup(true)
+          callbacks.onError(
+            `Couldn't check GitHub authorization status (${reason}). Please try again.`,
+          )
+          return
         }
+        pollTimer = setTimeout(poll, POLL_INTERVAL_MS)
       }
     }
 

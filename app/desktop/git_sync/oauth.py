@@ -27,9 +27,12 @@ def _get_github_api_client() -> httpx.AsyncClient:
 
 
 # GitHub App credentials for Kiln AI.
-# Embedded client secret is standard practice for native/desktop OAuth apps --
-# the secret cannot be kept confidential in a distributed binary.
-# See: https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/best-practices-for-creating-an-oauth-app
+# This is a GitHub App using the user-access-token (OAuth) flow. Embedding
+# the client secret in a distributed desktop binary is standard for
+# native/public clients -- the secret cannot be kept confidential on the
+# user's machine, which is why PKCE protects the code exchange.
+# See the GitHub Apps user-access-token flow:
+# https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app
 GITHUB_CLIENT_ID = "Iv23liZBCgKzY3YowXCC"
 GITHUB_CLIENT_SECRET = "eb76bd5e3312c42fa08a63b90b1f152c161d9b2c"
 
@@ -226,8 +229,17 @@ class OAuthFlowManager:
     def get_flow(self, state: str) -> OAuthFlowState | None:
         """Retrieve a pending flow by state. Returns None if expired/missing."""
         self._cleanup_expired()
+        now = time.monotonic()
         with self._lock:
-            return self._flows.get(state)
+            flow = self._flows.get(state)
+            if flow is None:
+                return None
+            # Defense-in-depth: re-check TTL under the lock in case the flow
+            # sneaked past the sweep (e.g. crossed the boundary between
+            # _cleanup_expired() and this read).
+            if (now - flow.created_at) >= OAUTH_TIMEOUT_SECONDS:
+                return None
+            return flow
 
     def complete_flow(self, state: str, oauth_token: str) -> None:
         """Mark a flow as complete with the received token."""

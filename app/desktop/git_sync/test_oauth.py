@@ -196,6 +196,16 @@ class TestOAuthFlowManager:
         mgr._cleanup_expired()
         assert mgr.get_flow(flow.state) is flow
 
+    def test_get_flow_rejects_expired_flow_past_cleanup(self):
+        mgr = OAuthFlowManager()
+        flow = mgr.start_flow("https://github.com/owner/repo.git")
+        flow.created_at = time.monotonic() - OAUTH_TIMEOUT_SECONDS - 0.1
+        # Bypass the sweep so we specifically exercise the in-lock TTL
+        # recheck that guards against a flow crossing the TTL boundary
+        # between cleanup and read.
+        with patch.object(mgr, "_cleanup_expired"):
+            assert mgr.get_flow(flow.state) is None
+
     def test_complete_nonexistent_flow_is_noop(self):
         mgr = OAuthFlowManager()
         mgr.complete_flow("nonexistent", "token")
