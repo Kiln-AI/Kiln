@@ -27,7 +27,7 @@ Phases are ordered by risk (low → high) and by what unblocks later phases (e.g
   - Update refs: `CONTRIBUTING.md:69`, `.config/wt.toml:3`, `.config/wt/README.md:7`.
   - **Manual validation:** run `.config/utils/setup_env.sh` end-to-end in this worktree; confirm it completes without errors and `PROJECT_ROOT` resolves correctly (add a temporary `echo` if needed, then remove).
 
-- [ ] **Phase 4: Move `.planning/` → `specs/projects/mcp_sessions/`**
+- [x] **Phase 4: Move `.planning/` → `specs/projects/mcp_sessions/`**
   - `git mv .planning/projects/mcp_sessions specs/projects/mcp_sessions`.
   - Delete `.planning/` (empty after move).
   - **Manual validation:** none beyond checks — content only; no code affected.
