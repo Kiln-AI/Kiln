@@ -84,7 +84,7 @@ async def test_commit_and_push_success(manager, git_repos):
     _write_file(local_path, "data.txt", "hello")
 
     await manager.commit_and_push(
-        api_path="POST /api/projects/123/tasks",
+        context="POST /api/projects/123/tasks",
         pre_request_head=pre_head,
     )
 
@@ -109,7 +109,7 @@ async def test_commit_and_push_conflict_retry_success(manager, git_repos, second
     _write_file(local_path, "data.txt", "from first")
 
     await manager.commit_and_push(
-        api_path="POST /api/projects/123/tasks",
+        context="POST /api/projects/123/tasks",
         pre_request_head=pre_head,
     )
 
@@ -134,7 +134,7 @@ async def test_commit_and_push_conflict_same_file(manager, git_repos, second_clo
 
     with pytest.raises(SyncConflictError):
         await manager.commit_and_push(
-            api_path="POST /api/test",
+            context="POST /api/test",
             pre_request_head=pre_head,
         )
 
@@ -405,6 +405,66 @@ async def test_has_new_remote_commits_true(manager, git_repos, second_clone):
 
     await manager.fetch()
     assert await manager.has_new_remote_commits() is True
+
+
+# --- atomic_write ---
+
+
+@pytest.mark.asyncio
+async def test_atomic_write_success(manager, git_repos):
+    local_path, remote_path = git_repos
+    pre_head = await manager.get_head()
+
+    async with manager.atomic_write("test atomic_write success"):
+        _write_file(local_path, "atomic.txt", "hello")
+
+    assert await manager.has_dirty_files() is False
+    new_head = await manager.get_head()
+    assert new_head != pre_head
+
+    remote_repo = pygit2.Repository(str(remote_path))
+    remote_commit = remote_repo.revparse_single("refs/heads/main")
+    assert str(remote_commit.id) == new_head
+
+
+@pytest.mark.asyncio
+async def test_atomic_write_rolls_back_on_exception(manager, git_repos):
+    local_path, remote_path = git_repos
+    pre_head = await manager.get_head()
+
+    with pytest.raises(RuntimeError, match="boom"):
+        async with manager.atomic_write("test rollback"):
+            _write_file(local_path, "should_rollback.txt", "nope")
+            raise RuntimeError("boom")
+
+    assert await manager.has_dirty_files() is False
+    assert await manager.get_head() == pre_head
+
+    remote_repo = pygit2.Repository(str(remote_path))
+    assert str(remote_repo.head.target) == pre_head
+
+
+@pytest.mark.asyncio
+async def test_atomic_write_no_op(manager):
+    pre_head = await manager.get_head()
+
+    async with manager.atomic_write("no-op"):
+        pass
+
+    assert await manager.get_head() == pre_head
+
+
+@pytest.mark.asyncio
+async def test_atomic_write_context_in_commit_message(manager, git_repos):
+    local_path, _ = git_repos
+
+    async with manager.atomic_write("unique-ctx-string-123"):
+        _write_file(local_path, "ctx_file.txt", "content")
+
+    repo = pygit2.Repository(str(local_path))
+    head_commit = repo.revparse_single("HEAD")
+    assert isinstance(head_commit, pygit2.Commit)
+    assert "Context: unique-ctx-string-123" in head_commit.message
 
 
 # --- close ---

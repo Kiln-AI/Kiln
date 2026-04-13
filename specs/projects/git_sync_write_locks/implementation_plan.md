@@ -6,7 +6,7 @@ status: complete
 
 ## Phases
 
-- [ ] Phase 1: `atomic_write` context manager and middleware refactor
+- [x] Phase 1: `atomic_write` context manager and middleware refactor
   - Add `atomic_write` to `GitSyncManager`
   - Rename `api_path` → `context` in `commit_and_push` and `generate_commit_message`
   - Refactor middleware to use `atomic_write`

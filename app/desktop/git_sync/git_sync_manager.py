@@ -84,6 +84,35 @@ class GitSyncManager:
         finally:
             self._write_lock.release()
 
+    @asynccontextmanager
+    async def atomic_write(self, context: str):
+        """Context manager for atomic file writes with git sync.
+
+        Acquires the write lock, ensures the repo is clean and fresh, then
+        yields for the caller to perform file writes. On clean exit, dirty
+        files (if any) are committed and pushed. On exception, all writes
+        made within the block are rolled back to the pre-yield HEAD and the
+        exception re-raises.
+
+        Args:
+            context: Descriptive string used in the commit message. Examples:
+                "POST /api/projects/123/tasks", "extraction job for doc 456".
+        """
+        async with self.write_lock():
+            await self.ensure_clean()
+            await self.ensure_fresh()
+            pre_head = await self.get_head()
+            try:
+                yield
+                if await self.has_dirty_files():
+                    await self.commit_and_push(
+                        context=context,
+                        pre_request_head=pre_head,
+                    )
+            except Exception:
+                await self.rollback(pre_head)
+                raise
+
     async def ensure_clean(self) -> None:
         if await self._is_clean():
             return
@@ -164,8 +193,8 @@ class GitSyncManager:
     async def has_dirty_files(self) -> bool:
         return await self._run_git(self._has_dirty_files_sync)
 
-    async def commit_and_push(self, api_path: str, pre_request_head: str) -> None:
-        commit_oid = await self._run_git(self._create_commit, api_path)
+    async def commit_and_push(self, context: str, pre_request_head: str) -> None:
+        commit_oid = await self._run_git(self._create_commit, context)
         try:
             await self._run_git(self._push_sync)
         except Exception as first_push_error:
@@ -290,7 +319,7 @@ class GitSyncManager:
         oid = pygit2.Oid(hex=hex_str)
         self._hard_reset(oid)
 
-    def _create_commit(self, api_path: str) -> pygit2.Oid:
+    def _create_commit(self, context: str) -> pygit2.Oid:
         repo = self._get_repo()
 
         status = repo.status()
@@ -310,7 +339,7 @@ class GitSyncManager:
         index.write()
         tree = index.write_tree()
 
-        message = generate_commit_message(file_count, api_path)
+        message = generate_commit_message(file_count, context)
         sig = pygit2.Signature(KILN_COMMITTER_NAME, KILN_COMMITTER_EMAIL)
 
         parents = [repo.head.target]

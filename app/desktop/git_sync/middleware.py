@@ -29,6 +29,16 @@ PROJECT_ID_PATTERN = re.compile(r"^/api/projects/([^/]+)")
 
 LONG_LOCK_HOLD_THRESHOLD = 5.0
 
+
+class _StreamingUnderWriteLock(Exception):
+    """Sentinel raised when an SSE response is detected under the write lock.
+
+    Raising inside an atomic_write block triggers rollback of any dirty
+    changes. The middleware catches this sentinel just outside the block
+    and returns a 500 JSON response.
+    """
+
+
 ERROR_MAP: dict[type[GitSyncError], tuple[int, str]] = {
     RemoteUnreachableError: (
         503,
@@ -83,13 +93,8 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
 
         self._notify_background_sync(manager)
         lock_start = time.monotonic()
-        pre_request_head: str | None = None
         try:
-            async with manager.write_lock():
-                await manager.ensure_clean()
-                await manager.ensure_fresh()
-
-                pre_request_head = await manager.get_head()
+            async with manager.atomic_write(f"{request.method} {request.url.path}"):
                 response = await call_next(request)
 
                 content_type = response.headers.get("content-type", "")
@@ -100,17 +105,7 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
                         request.method,
                         request.url.path,
                     )
-                    await manager.rollback(pre_request_head)
-                    return Response(
-                        content=json.dumps(
-                            {
-                                "detail": "Internal error: streaming endpoint missing @no_write_lock decorator."
-                            },
-                            ensure_ascii=False,
-                        ),
-                        status_code=500,
-                        media_type="application/json",
-                    )
+                    raise _StreamingUnderWriteLock()
 
                 body = b""
                 # body_iterator is always present on StreamingResponse from
@@ -129,31 +124,35 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
                         request.url.path,
                     )
 
-                has_changes = await manager.has_dirty_files()
-                if has_changes:
-                    await manager.commit_and_push(
-                        api_path=f"{request.method} {request.url.path}",
-                        pre_request_head=pre_request_head,
-                    )
+                status_code = response.status_code
+                headers = dict(response.headers)
+                media_type = response.media_type
 
-                return Response(
-                    content=body,
-                    status_code=response.status_code,
-                    headers=dict(response.headers),
-                    media_type=response.media_type,
-                )
+            return Response(
+                content=body,
+                status_code=status_code,
+                headers=headers,
+                media_type=media_type,
+            )
 
-        except Exception as e:
-            if pre_request_head is not None:
-                await manager.rollback(pre_request_head)
-            if isinstance(e, GitSyncError):
-                status, message = self._map_error(e)
-                return Response(
-                    content=json.dumps({"detail": message}, ensure_ascii=False),
-                    status_code=status,
-                    media_type="application/json",
-                )
-            raise
+        except _StreamingUnderWriteLock:
+            return Response(
+                content=json.dumps(
+                    {
+                        "detail": "Internal error: streaming endpoint missing @no_write_lock decorator."
+                    },
+                    ensure_ascii=False,
+                ),
+                status_code=500,
+                media_type="application/json",
+            )
+        except GitSyncError as e:
+            status, message = self._map_error(e)
+            return Response(
+                content=json.dumps({"detail": message}, ensure_ascii=False),
+                status_code=status,
+                media_type="application/json",
+            )
 
     def _resolve_endpoint(self, request: Request) -> Callable[..., Any] | None:
         """Resolve the endpoint function for this request by matching routes.

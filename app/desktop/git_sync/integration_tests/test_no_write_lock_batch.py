@@ -62,7 +62,7 @@ def _build_batch_app(
                         await manager.rollback(pre_head)
                         raise ValueError(f"Simulated failure on iteration {i}")
                     await manager.commit_and_push(
-                        api_path=api_path,
+                        context=api_path,
                         pre_request_head=pre_head,
                     )
                     if iteration_commits is not None:
