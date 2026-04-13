@@ -108,6 +108,15 @@ describe("gitOwnerFromUrl", () => {
     expect(gitOwnerFromUrl("not-a-url")).toBeNull()
   })
 
+  it("handles owners with dots and dashes", () => {
+    expect(gitOwnerFromUrl("https://github.com/my.org-name/repo.git")).toBe(
+      "my.org-name",
+    )
+    expect(gitOwnerFromUrl("git@github.com:my.org-name/repo.git")).toBe(
+      "my.org-name",
+    )
+  })
+
   it("returns null for URLs with no path segments", () => {
     expect(gitOwnerFromUrl("https://github.com")).toBeNull()
     expect(gitOwnerFromUrl("https://github.com/")).toBeNull()
@@ -127,6 +136,21 @@ describe("gitRepoNameFromUrl", () => {
 
   it("handles URL without .git suffix", () => {
     expect(gitRepoNameFromUrl("https://github.com/Kiln-AI/kiln")).toBe("kiln")
+  })
+
+  it("handles repo names with dots and dashes", () => {
+    expect(gitRepoNameFromUrl("https://github.com/owner/my-repo.v2.git")).toBe(
+      "my-repo.v2",
+    )
+    expect(gitRepoNameFromUrl("https://github.com/owner/my-repo.v2")).toBe(
+      "my-repo.v2",
+    )
+    expect(gitRepoNameFromUrl("git@github.com:owner/my-repo.v2.git")).toBe(
+      "my-repo.v2",
+    )
+    expect(gitRepoNameFromUrl("git@github.com:owner/my-repo.v2")).toBe(
+      "my-repo.v2",
+    )
   })
 
   it("returns null for invalid URL", () => {
