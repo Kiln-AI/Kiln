@@ -902,6 +902,22 @@ async def test_litellm_tools_returns_empty_list_without_tools(config, mock_task)
     assert tools == []
 
 
+@pytest.mark.parametrize(
+    "kwargs_in,expected",
+    [
+        ({}, []),
+        ({"tools": []}, ["tools"]),
+        ({"tool_choice": "auto"}, ["tool_choice"]),
+        ({"tools": [], "tool_choice": "auto"}, ["tools", "tool_choice"]),
+    ],
+)
+def test_allowed_openai_params_for_completion_kwargs_independent_keys(
+    config, mock_task, kwargs_in, expected
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    assert adapter._allowed_openai_params_for_completion_kwargs(kwargs_in) == expected
+
+
 @pytest.mark.asyncio
 async def test_build_completion_kwargs_includes_tools(
     config, mock_task, mock_math_tools
@@ -926,12 +942,34 @@ async def test_build_completion_kwargs_includes_tools(
     assert len(kwargs["tools"]) == 4
     assert "tool_choice" in kwargs
     assert kwargs["tool_choice"] == "auto"
+    assert kwargs["allowed_openai_params"] == ["tools", "tool_choice"]
 
     # Verify tools are properly formatted
     for tool in kwargs["tools"]:
         assert "type" in tool
         assert tool["type"] == "function"
         assert "function" in tool
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_omits_allowed_openai_params_without_tools(
+    config, mock_task
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=[]),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    assert "allowed_openai_params" not in kwargs
 
 
 @pytest.mark.asyncio
