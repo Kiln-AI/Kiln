@@ -6383,7 +6383,6 @@ built_in_models: List[KilnModel] = [
                 model_id="zai-org/GLM-5.1",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
-                supports_function_calling=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
