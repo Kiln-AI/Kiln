@@ -21,7 +21,7 @@ Phases are ordered by risk (low → high) and by what unblocks later phases (e.g
   - Merge `pytest.ini` into `[tool.pytest.ini_options]`; delete `pytest.ini`.
   - **Manual validation:** run `uv run pytest --collect-only` and diff the test count against a pre-phase capture; run `uv run coverage run -m pytest && uv run coverage report` locally and confirm output matches pre-phase omits.
 
-- [ ] **Phase 3: Move `utils/` → `.config/utils/`**
+- [x] **Phase 3: Move `utils/` → `.config/utils/`**
   - `git mv utils/ .config/utils/` (except `setup_claude.sh` — see Phase 7).
   - Fix `PROJECT_ROOT` in `setup_env.sh`.
   - Update refs: `CONTRIBUTING.md:69`, `.config/wt.toml:3`, `.config/wt/README.md:7`.

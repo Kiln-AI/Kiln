@@ -4,7 +4,7 @@ We use [Worktrunk](https://worktrunk.dev/) to manage git worktrees for parallel 
 
 ## Setup
 
-Run `utils/setup_env.sh` — it installs project dependencies and optionally sets up workspaces (worktrunk, Zellij, and config).
+Run `.config/utils/setup_env.sh` — it installs project dependencies and optionally sets up workspaces (worktrunk, Zellij, and config).
 
 Or manually:
 
