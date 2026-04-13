@@ -964,7 +964,8 @@ async def test_build_completion_kwargs_includes_tools(
     assert len(kwargs["tools"]) == 4
     assert "tool_choice" in kwargs
     assert kwargs["tool_choice"] == "auto"
-    assert kwargs["allowed_openai_params"] == ["tools", "tool_choice"]
+    assert isinstance(kwargs["allowed_openai_params"], list)
+    assert sorted(kwargs["allowed_openai_params"]) == sorted(["tool_choice", "tools"])
 
     # Verify tools are properly formatted
     for tool in kwargs["tools"]:
