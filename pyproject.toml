@@ -59,6 +59,31 @@ extend-select = ["I","F401","RUF","FAST","TID"]
 "typing.cast" = { msg = "Avoid using typing.cast; prefer safer alternatives." }
 
 [tool.pytest.ini_options]
- addopts="-n auto"
+addopts = "-n auto"
+asyncio_mode = "auto"
+# Needed to silence warning. See https://github.com/pytest-dev/pytest-asyncio/issues/924
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "paid: marks tests as requring paid APIs. Not run by default, run with '--runpaid' option.",
+    "slow: marks tests as slow. Not run by default, run with '--runslow' option.",
+    "ollama: marks tests as requring ollama server. Not run by default, run with '--ollama' option.",
+]
+# pydantic deprecation warnings come from dependencies (not our code).
+# The benchmark fixture "not used at all" warning is a false-positive from pytest-benchmark.
+# File system timestamp warning is an intentional Kiln warning.
+filterwarnings = [
+    "ignore:File system does not support fine-grained timestamps",
+    "ignore::pydantic.PydanticDeprecatedSince20",
+    "ignore:Benchmark fixture was not used at all in this test",
+    "ignore::DeprecationWarning:websockets.legacy",
+    "ignore::DeprecationWarning:websockets.server",
+    "ignore:.*WebSocketServerProtocol is deprecated:DeprecationWarning:uvicorn.protocols.websockets.websockets_impl",
+]
 
-
+[tool.coverage.run]
+omit = [
+    "**/test_*.py",
+    "libs/core/kiln_ai/adapters/ml_model_list.py",
+    "conftest.py",
+    "*/kiln_ai_server_client/*",
+]

@@ -16,7 +16,7 @@ Phases are ordered by risk (low → high) and by what unblocks later phases (e.g
   - Edit `.cursor/mcp.json` (remove `tessl` MCP server entry).
   - **Manual validation:** run `rg -i tessl` and confirm only spec-doc hits remain; restart Cursor and confirm no tessl-related errors.
 
-- [ ] **Phase 2: Inline `.coveragerc` and `pytest.ini` into `pyproject.toml`**
+- [x] **Phase 2: Inline `.coveragerc` and `pytest.ini` into `pyproject.toml`**
   - Add `[tool.coverage.run]` to `pyproject.toml`; delete `.coveragerc`.
   - Merge `pytest.ini` into `[tool.pytest.ini_options]`; delete `pytest.ini`.
   - **Manual validation:** run `uv run pytest --collect-only` and diff the test count against a pre-phase capture; run `uv run coverage run -m pytest && uv run coverage report` locally and confirm output matches pre-phase omits.

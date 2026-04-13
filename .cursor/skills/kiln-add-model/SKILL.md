@@ -191,16 +191,16 @@ Tests call real LLMs and cost money. Ideally the user only needs to consent to t
 
 ### 4a. Enable parallel testing
 
-Before running paid tests, enable parallel testing in `pytest.ini`:
+Before running paid tests, enable parallel testing in `pyproject.toml` under `[tool.pytest.ini_options]`:
 
-```ini
+```toml
 # Change this line:
-# addopts = -n auto
+addopts = "-n auto"
 # To:
-addopts = -n 8
+addopts = "-n 8"
 ```
 
-**Important:** Revert this change after all tests complete (re-comment the line).
+**Important:** Revert this change after all tests complete.
 
 ### 4b. Smoke test — verify slug works
 
@@ -240,10 +240,10 @@ If a provider rejects a data type (400 error), remove that `KilnMimeType` and re
 
 ### 4e. Revert parallel testing
 
-After all tests complete, **revert `pytest.ini`** back to the commented-out state:
+After all tests complete, **revert `pyproject.toml`** back to the default state:
 
-```ini
-# addopts = -n auto
+```toml
+addopts = "-n auto"
 ```
 
 ### 4f. Test output format
@@ -330,11 +330,11 @@ Rules:
 - [ ] Preserve existing comments from predecessor (e.g. reasoning notes, MIME type groupings)
 - [ ] Zero-sum applied if model is suggested for evals/data gen
 - [ ] RAG config templates updated if the new model replaces one used in `app/web_ui/src/routes/(app)/docs/rag_configs/[project_id]/add_search_tool/rag_config_templates.ts`
-- [ ] Parallel testing enabled in `pytest.ini` (`addopts = -n 8`)
+- [ ] Parallel testing enabled in `pyproject.toml` (`addopts = "-n 8"`)
 - [ ] Smoke test passed
 - [ ] Full test suite passed
 - [ ] Per-model per-test result dump presented with nuance paragraphs
-- [ ] Parallel testing reverted in `pytest.ini` (re-commented)
+- [ ] Parallel testing reverted in `pyproject.toml` (`addopts = "-n auto"`)
 - [ ] Discord announcement drafted (only if user requests it)
 
 ---
