@@ -5379,3 +5379,31 @@ async def test_download_extraction_path_not_found(
 
     assert response.status_code == 500
     assert "Extraction path not found" in response.json()["message"]
+
+
+# --- SSE endpoints must carry @no_write_lock ---
+
+
+def _find_endpoint_by_path(app, path_suffix: str):
+    """Locate the endpoint function for a route ending with path_suffix."""
+    for route in app.routes:
+        if getattr(route, "path", "").endswith(path_suffix):
+            return route.endpoint  # type: ignore[attr-defined]
+    raise AssertionError(f"Route ending in {path_suffix} not found")
+
+
+def test_run_extractor_config_has_no_write_lock(app):
+    endpoint = _find_endpoint_by_path(
+        app, "/extractor_configs/{extractor_config_id}/run_extractor_config"
+    )
+    assert getattr(endpoint, "_git_sync_no_write_lock", False) is True
+
+
+def test_extract_file_has_no_write_lock(app):
+    endpoint = _find_endpoint_by_path(app, "/documents/{document_id}/extract")
+    assert getattr(endpoint, "_git_sync_no_write_lock", False) is True
+
+
+def test_run_rag_config_has_no_write_lock(app):
+    endpoint = _find_endpoint_by_path(app, "/rag_configs/{rag_config_id}/run")
+    assert getattr(endpoint, "_git_sync_no_write_lock", False) is True

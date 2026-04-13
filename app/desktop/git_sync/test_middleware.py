@@ -5,11 +5,11 @@ import pygit2
 import pygit2.enums
 import pytest
 from fastapi import FastAPI
+from fastapi import Request as FastAPIRequest
 from fastapi.testclient import TestClient
 from starlette.responses import JSONResponse
 
 from app.desktop.git_sync.config import GitSyncProjectConfig
-from app.desktop.git_sync.decorators import no_write_lock, write_lock
 from app.desktop.git_sync.errors import (
     CorruptRepoError,
     RemoteUnreachableError,
@@ -18,6 +18,7 @@ from app.desktop.git_sync.errors import (
 )
 from app.desktop.git_sync.middleware import GitSyncMiddleware
 from app.desktop.git_sync.registry import GitSyncRegistry
+from kiln_server.git_sync_decorators import no_write_lock, write_lock
 
 PROJECT_ID = "test_proj_123"
 PROJECT_PATH = "/tmp/test/project.kiln"
@@ -499,3 +500,33 @@ def test_notify_request_called_on_write(git_repos):
 
     assert resp.status_code == 200
     mock_bg.notify_request.assert_called()
+
+
+# --- request.state manager attachment for read path ---
+
+
+def test_manager_attached_to_request_state_for_read(git_repos):
+    """Middleware sets request.state.git_sync_manager on read requests so
+    @no_write_lock endpoints can build a SaveContext."""
+    local_path, _ = git_repos
+    config = _auto_config(str(local_path))
+
+    expected_manager = GitSyncRegistry.get_or_create(
+        local_path, auth_mode="system_keys"
+    )
+
+    seen_manager: list = []
+
+    def get_endpoint(request: FastAPIRequest):
+        seen_manager.append(getattr(request.state, "git_sync_manager", None))
+        return {"status": "ok"}
+
+    app = _build_app(get_endpoint=get_endpoint)
+
+    with mock_git_sync_config(config):
+        client = TestClient(app)
+        resp = client.get(f"/api/projects/{PROJECT_ID}/items")
+
+    assert resp.status_code == 200
+    assert len(seen_manager) == 1
+    assert seen_manager[0] is expected_manager

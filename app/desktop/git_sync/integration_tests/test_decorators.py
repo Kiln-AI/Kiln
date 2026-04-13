@@ -13,7 +13,6 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 
-from app.desktop.git_sync.decorators import no_write_lock, write_lock
 from app.desktop.git_sync.integration_tests.conftest import (
     PROJECT_ID,
     assert_clean_working_tree,
@@ -24,6 +23,7 @@ from app.desktop.git_sync.integration_tests.conftest import (
     mock_git_sync_config,
 )
 from app.desktop.git_sync.middleware import GitSyncMiddleware
+from kiln_server.git_sync_decorators import no_write_lock, write_lock
 
 
 class TestWriteLockDecoratorOnGet:

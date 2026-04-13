@@ -2579,3 +2579,26 @@ async def test_get_run_configs_includes_finetunes_with_run_config(
     assert "finetune_run_config::project1::task1::ft_failed" not in config_ids
     assert "finetune_run_config::project1::task1::ft_unknown" not in config_ids
     assert "finetune_run_config::project1::task1::ft_no_run_config" not in config_ids
+
+
+# --- SSE endpoints must carry @no_write_lock ---
+
+
+def _find_endpoint_by_path(app, path_suffix: str):
+    """Locate the endpoint function for a route ending with path_suffix."""
+    for route in app.routes:
+        if getattr(route, "path", "").endswith(path_suffix):
+            return route.endpoint  # type: ignore[attr-defined]
+    raise AssertionError(f"Route ending in {path_suffix} not found")
+
+
+def test_run_comparison_has_no_write_lock(app):
+    endpoint = _find_endpoint_by_path(
+        app, "/eval_config/{eval_config_id}/run_comparison"
+    )
+    assert getattr(endpoint, "_git_sync_no_write_lock", False) is True
+
+
+def test_run_calibration_has_no_write_lock(app):
+    endpoint = _find_endpoint_by_path(app, "/evals/{eval_id}/run_calibration")
+    assert getattr(endpoint, "_git_sync_no_write_lock", False) is True

@@ -21,7 +21,7 @@ status: complete
   - Thread `save_context` through `build_rag_workflow_runner()` in `libs/server` to the three file-writing step runner constructors
   - Unit tests for each runner verifying deferred save behavior and rollback on error
 
-- [ ] Phase 3: SSE endpoint wiring
+- [x] Phase 3: SSE endpoint wiring
   - Move decorators to `libs/server/kiln_server/git_sync_decorators.py`, update imports
   - Attach manager to `request.state` in middleware read path
   - Add `build_save_context` helper in `libs/server` (typed via `AtomicWriteCapable`)

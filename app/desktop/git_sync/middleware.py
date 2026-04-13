@@ -79,6 +79,9 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
         ) and not getattr(endpoint, "_git_sync_no_write_lock", False)
 
         if not needs_lock:
+            # Expose the manager so @no_write_lock endpoints can build a
+            # SaveContext without importing desktop-layer code.
+            request.state.git_sync_manager = manager
             try:
                 await manager.ensure_fresh_for_read()
             except GitSyncError as e:
