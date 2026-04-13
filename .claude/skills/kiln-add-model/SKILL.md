@@ -1,6 +1,7 @@
 ---
 name: kiln-add-model
 description: Add new AI models to Kiln's ml_model_list.py and produce a Discord announcement. Use when the user wants to add, integrate, or register a new LLM model (e.g. Claude, GPT, DeepSeek, Gemini, Kimi, Qwen, Grok) into the Kiln model list, mentions adding a model to ml_model_list.py, or asks to discover/find new models that are available but not yet in Kiln.
+allowed-tools: Read Edit Write Bash Grep Glob Agent WebSearch WebFetch
 ---
 
 # Add a New AI Model to Kiln
@@ -19,7 +20,6 @@ After code changes, run paid integration tests, then draft a Discord post.
 
 These apply throughout the entire workflow.
 
-- **Sandbox:** All `curl` and `uv run` commands MUST use `required_permissions: ["all"]`. The sandbox breaks `uv run` (Rust panics) and blocks network access for `curl`.
 - **Slug verification:** NEVER guess or infer model slugs from naming patterns. Every `model_id` must come from an authoritative source (LiteLLM catalog, official docs, API reference, or changelog). If you can't verify a slug, tell the user and ask them to provide it.
 - **Date awareness:** These models are often released very recently. Web search for current info before assuming you know the details.
 
