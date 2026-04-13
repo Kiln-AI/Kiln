@@ -116,6 +116,7 @@ export interface StreamChatOptions {
   ) => Promise<Record<string, boolean>>
   onToolExecutionStart?: (toolCount: number) => void
   onToolExecutionEnd?: (toolCount: number) => void
+  onShowActivityIndicator?: (show: boolean) => void
   onFinish: () => void
   onError: (error: Error) => void
   signal?: AbortSignal
@@ -177,6 +178,7 @@ class StreamEventProcessor {
   ) => void
   private onToolExecutionStart?: (toolCount: number) => void
   private onToolExecutionEnd?: (toolCount: number) => void
+  private onShowActivityIndicator?: (show: boolean) => void
 
   private HANDLERS: Record<string, (event: StreamEvent) => void>
 
@@ -186,28 +188,44 @@ class StreamEventProcessor {
     onInlineError?: (message: string, traceId?: string, code?: string) => void
     onToolExecutionStart?: (toolCount: number) => void
     onToolExecutionEnd?: (toolCount: number) => void
+    onShowActivityIndicator?: (show: boolean) => void
   }) {
     this.onAssistantMessage = opts.onAssistantMessage
     this.onChatTrace = opts.onChatTrace
     this.onInlineError = opts.onInlineError
     this.onToolExecutionStart = opts.onToolExecutionStart
     this.onToolExecutionEnd = opts.onToolExecutionEnd
+    this.onShowActivityIndicator = opts.onShowActivityIndicator
 
     this.HANDLERS = {
-      "text-start": (e) => this.handleTextStart(e),
+      "text-start": (e) => {
+        this.onShowActivityIndicator?.(false)
+        this.handleTextStart(e)
+      },
       "text-delta": (e) => this.handleTextDelta(e),
       "text-end": () => this.handleTextEnd(),
-      "reasoning-start": () => this.handleReasoningStart(),
+      "reasoning-start": () => {
+        this.onShowActivityIndicator?.(true)
+        this.handleReasoningStart()
+      },
       "reasoning-delta": (e) => this.handleReasoningDelta(e),
       "reasoning-end": () => this.handleReasoningEnd(),
-      "tool-input-start": (e) => this.handleToolInputStart(e),
+      "tool-input-start": (e) => {
+        this.onShowActivityIndicator?.(true)
+        this.handleToolInputStart(e)
+      },
       "tool-input-delta": (e) => this.handleToolInputDelta(e),
-      "tool-input-available": (e) => this.handleToolInputAvailable(e),
+      "tool-input-available": (e) => {
+        this.onShowActivityIndicator?.(true)
+        this.handleToolInputAvailable(e)
+      },
       "tool-output-available": (e) => this.handleToolOutputAvailable(e),
       "tool-output-error": (e) => this.handleToolOutputError(e),
       kiln_chat_trace: (e) => this.handleChatTrace(e),
-      "kiln-tool-execution-start": (e) =>
-        this.onToolExecutionStart?.(e.tool_count ?? 0),
+      "kiln-tool-execution-start": (e) => {
+        this.onShowActivityIndicator?.(true)
+        this.onToolExecutionStart?.(e.tool_count ?? 0)
+      },
       "kiln-tool-execution-end": (e) =>
         this.onToolExecutionEnd?.(e.tool_count ?? 0),
       error: (e) => this.handleError(e),
@@ -434,6 +452,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     onToolCallsPending,
     onToolExecutionStart,
     onToolExecutionEnd,
+    onShowActivityIndicator,
     onFinish,
     onError,
     signal,
@@ -509,6 +528,7 @@ export async function streamChat(options: StreamChatOptions): Promise<void> {
     onInlineError,
     onToolExecutionStart,
     onToolExecutionEnd,
+    onShowActivityIndicator,
   })
 
   try {

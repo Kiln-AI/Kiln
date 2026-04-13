@@ -34,6 +34,7 @@ export interface ChatSessionState extends PersistedChatSession {
   toolApprovalWaiter: ToolApprovalWaiter | null
   toolApprovalPicks: Record<string, boolean | undefined>
   toolExecuting: boolean
+  showActivityIndicator: boolean
 }
 
 export interface ChatSessionStore extends Readable<ChatSessionState> {
@@ -78,6 +79,7 @@ export function createChatSessionStore(
     toolApprovalWaiter: null,
     toolApprovalPicks: {},
     toolExecuting: false,
+    showActivityIndicator: false,
   })
 
   persisted.subscribe(($persisted) => {
@@ -163,6 +165,7 @@ export function createChatSessionStore(
     combined.update((s) => ({
       ...s,
       toolExecuting: false,
+      showActivityIndicator: false,
     }))
 
     const controller = new AbortController()
@@ -192,6 +195,13 @@ export function createChatSessionStore(
         combined.update((s) => ({
           ...s,
           toolExecuting: false,
+        }))
+      },
+      onShowActivityIndicator: (show) => {
+        if (isStale()) return
+        combined.update((s) => ({
+          ...s,
+          showActivityIndicator: show,
         }))
       },
       onAssistantMessage: (update) => {
@@ -298,6 +308,7 @@ export function createChatSessionStore(
     combined.update((s) => ({
       ...s,
       toolExecuting: false,
+      showActivityIndicator: false,
     }))
     setRuntimeState("ready", null)
   }
@@ -312,6 +323,7 @@ export function createChatSessionStore(
     combined.update((s) => ({
       ...s,
       toolExecuting: false,
+      showActivityIndicator: false,
     }))
     setRuntimeState("ready", null)
   }

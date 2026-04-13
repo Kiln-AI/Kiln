@@ -35,6 +35,7 @@
 
   $: toolApprovalWaiter = $store.toolApprovalWaiter
   $: toolApprovalPicks = $store.toolApprovalPicks
+  $: showActivityIndicator = $store.showActivityIndicator
 
   export let hasMessages = false
   $: messages = $store.messages
@@ -653,21 +654,13 @@
                       {/if}
                     {/if}
                   {/each}
-                  {#if !showToolCallDetails && isLoading && message.role === "assistant" && message.id === lastMessage?.id}
-                    {@const hasTextPart = (message.parts ?? []).some(
-                      (p) => p.type === "text",
-                    )}
-                    {@const hasToolPart = (message.parts ?? []).some(
-                      (p) =>
-                        typeof p.type === "string" &&
-                        p.type.startsWith("tool-"),
-                    )}
+                  {#if !showToolCallDetails && showActivityIndicator && message.role === "assistant" && message.id === lastMessage?.id}
                     {@const hasVisibleApproval =
                       toolApprovalWaiter !== null &&
                       toolApprovalWaiter.payload.items.some(
                         (i) => toolApprovalPicks[i.toolCallId] === undefined,
                       )}
-                    {#if hasToolPart && !hasTextPart && !hasVisibleApproval}
+                    {#if !hasVisibleApproval}
                       <ChatLoading />
                     {/if}
                   {/if}
