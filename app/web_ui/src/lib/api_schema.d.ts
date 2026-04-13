@@ -6395,8 +6395,13 @@ export interface components {
          */
         OAuthStartResponse: {
             /**
+             * Authorize Url
+             * @description GitHub OAuth authorization URL to open in the browser.
+             */
+            authorize_url: string;
+            /**
              * Install Url
-             * @description GitHub App installation URL to open in the browser.
+             * @description GitHub App installation URL (used if app not yet installed on repo).
              */
             install_url: string;
             /**

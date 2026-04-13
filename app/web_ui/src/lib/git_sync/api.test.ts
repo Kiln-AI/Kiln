@@ -16,6 +16,8 @@ import {
   getConfig,
   updateConfig,
   deleteConfig,
+  oauthStart,
+  oauthStatus,
 } from "./api"
 
 const mockFetch = vi.fn()
@@ -153,16 +155,11 @@ describe("testAccess", () => {
 
     const result = await testAccess("https://github.com/org/repo.git", "token")
     expect(result).toEqual(response)
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining("/api/git_sync/test_access"),
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({
-          git_url: "https://github.com/org/repo.git",
-          pat_token: "token",
-        }),
-      }),
-    )
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body.git_url).toBe("https://github.com/org/repo.git")
+    expect(body.pat_token).toBe("token")
+    expect(body.auth_mode).toBe("system_keys")
+    expect(body.oauth_token).toBeNull()
   })
 
   it("sends null pat_token by default", async () => {
@@ -173,6 +170,24 @@ describe("testAccess", () => {
     await testAccess("https://github.com/org/repo.git")
     const body = JSON.parse(mockFetch.mock.calls[0][1].body)
     expect(body.pat_token).toBeNull()
+    expect(body.oauth_token).toBeNull()
+  })
+
+  it("sends oauth_token and auth_mode when provided", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ success: true, message: "OK", auth_required: false }),
+    )
+
+    await testAccess(
+      "https://github.com/org/repo.git",
+      null,
+      "github_oauth",
+      "ghu_abc123",
+    )
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body.pat_token).toBeNull()
+    expect(body.auth_mode).toBe("github_oauth")
+    expect(body.oauth_token).toBe("ghu_abc123")
   })
 })
 
@@ -348,5 +363,75 @@ describe("deleteConfig", () => {
     mockFetch.mockResolvedValue(jsonResponse({ detail: "Not found" }, 404))
 
     await expect(deleteConfig("nonexistent")).rejects.toThrow("Not found")
+  })
+})
+
+describe("oauthStart", () => {
+  it("sends correct POST request", async () => {
+    const response = {
+      authorize_url:
+        "https://github.com/login/oauth/authorize?client_id=xyz&state=abc123",
+      install_url: "https://github.com/apps/kiln-ai/installations/new",
+      state: "abc123",
+      owner_name: "Kiln-AI",
+      repo_name: "kiln",
+      owner_pre_selected: true,
+      repo_pre_selected: true,
+    }
+    mockFetch.mockResolvedValue(jsonResponse(response))
+
+    const result = await oauthStart("https://github.com/Kiln-AI/kiln.git")
+    expect(result.state).toBe("abc123")
+    expect(result.install_url).toContain("github.com")
+    expect(result.authorize_url).toContain("github.com/login/oauth/authorize")
+    expect(result.authorize_url).toContain("state=abc123")
+    expect(result.owner_name).toBe("Kiln-AI")
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body.git_url).toBe("https://github.com/Kiln-AI/kiln.git")
+  })
+
+  it("throws on error response", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ detail: "Not a GitHub URL" }, 400),
+    )
+
+    await expect(
+      oauthStart("https://gitlab.com/org/repo.git"),
+    ).rejects.toThrow()
+  })
+})
+
+describe("oauthStatus", () => {
+  it("sends correct GET request", async () => {
+    const response = {
+      complete: true,
+      oauth_token: "ghu_token123",
+      error: null,
+    }
+    mockFetch.mockResolvedValue(jsonResponse(response))
+
+    const result = await oauthStatus("state_abc")
+    expect(result.complete).toBe(true)
+    expect(result.oauth_token).toBe("ghu_token123")
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/git_sync/oauth/status/state_abc"),
+    )
+  })
+
+  it("returns pending status", async () => {
+    const response = { complete: false, oauth_token: null, error: null }
+    mockFetch.mockResolvedValue(jsonResponse(response))
+
+    const result = await oauthStatus("state_xyz")
+    expect(result.complete).toBe(false)
+    expect(result.oauth_token).toBeNull()
+  })
+
+  it("throws on network error", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({}, 500))
+
+    await expect(oauthStatus("bad_state")).rejects.toThrow(
+      "Failed to check OAuth status",
+    )
   })
 })

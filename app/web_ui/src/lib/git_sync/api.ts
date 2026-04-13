@@ -70,21 +70,51 @@ export type GitSyncConfigResponse = {
   clone_path: string | null
   git_url: string | null
   has_pat_token: boolean
+  has_oauth_token: boolean
+}
+
+export type OAuthStartResponse = {
+  authorize_url: string
+  install_url: string
+  state: string
+  owner_name: string
+  repo_name: string
+  owner_pre_selected: boolean
+  repo_pre_selected: boolean
+}
+
+export type OAuthStatusResponse = {
+  complete: boolean
+  oauth_token: string | null
+  error: string | null
 }
 
 export async function testAccess(
   git_url: string,
   pat_token: string | null = null,
+  auth_mode: string = "system_keys",
+  oauth_token: string | null = null,
 ): Promise<TestAccessResponse> {
-  return post("/api/git_sync/test_access", { git_url, pat_token })
+  return post("/api/git_sync/test_access", {
+    git_url,
+    pat_token,
+    auth_mode,
+    oauth_token,
+  })
 }
 
 export async function listBranches(
   git_url: string,
   pat_token: string | null = null,
   auth_mode: string = "system_keys",
+  oauth_token: string | null = null,
 ): Promise<ListBranchesResponse> {
-  return post("/api/git_sync/list_branches", { git_url, pat_token, auth_mode })
+  return post("/api/git_sync/list_branches", {
+    git_url,
+    pat_token,
+    auth_mode,
+    oauth_token,
+  })
 }
 
 export async function cloneRepo(
@@ -92,12 +122,14 @@ export async function cloneRepo(
   branch: string,
   pat_token: string | null = null,
   auth_mode: string = "system_keys",
+  oauth_token: string | null = null,
 ): Promise<CloneResponse> {
   return post("/api/git_sync/clone", {
     git_url,
     branch,
     pat_token,
     auth_mode,
+    oauth_token,
   })
 }
 
@@ -117,11 +149,13 @@ export async function testWriteAccess(
   clone_path: string,
   pat_token: string | null = null,
   auth_mode: string = "system_keys",
+  oauth_token: string | null = null,
 ): Promise<TestAccessResponse> {
   return post("/api/git_sync/test_write_access", {
     clone_path,
     pat_token,
     auth_mode,
+    oauth_token,
   })
 }
 
@@ -139,6 +173,7 @@ export async function saveConfig(config: {
   branch: string
   remote_name?: string
   pat_token?: string | null
+  oauth_token?: string | null
   auth_mode?: string
   sync_mode?: string
 }): Promise<GitSyncConfigResponse> {
@@ -164,6 +199,7 @@ export async function updateConfig(
   updates: {
     sync_mode?: string
     pat_token?: string
+    oauth_token?: string
     auth_mode?: string
   },
 ): Promise<GitSyncConfigResponse> {
@@ -180,6 +216,16 @@ export async function deleteConfig(
     const detail = await resp.json().catch(() => null)
     throw new Error(detail?.detail || `Request failed: ${resp.statusText}`)
   }
+  return resp.json()
+}
+
+export async function oauthStart(git_url: string): Promise<OAuthStartResponse> {
+  return post("/api/git_sync/oauth/start", { git_url })
+}
+
+export async function oauthStatus(state: string): Promise<OAuthStatusResponse> {
+  const resp = await fetch(`${base_url}/api/git_sync/oauth/status/${state}`)
+  if (!resp.ok) throw new Error("Failed to check OAuth status")
   return resp.json()
 }
 

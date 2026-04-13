@@ -30,10 +30,10 @@ def _get_github_api_client() -> httpx.AsyncClient:
 # Embedded client secret is standard practice for native/desktop OAuth apps --
 # the secret cannot be kept confidential in a distributed binary.
 # See: https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/best-practices-for-creating-an-oauth-app
-GITHUB_CLIENT_ID = "Iv23liHpMqAOgmK3GM3z"
-GITHUB_CLIENT_SECRET = "ec10e57e0cac0680e828990cf7e5479461c0c0c3"
+GITHUB_CLIENT_ID = "Iv23liZBCgKzY3YowXCC"
+GITHUB_CLIENT_SECRET = "eb76bd5e3312c42fa08a63b90b1f152c161d9b2c"
 
-GITHUB_APP_NAME = "kiln-ai"
+GITHUB_APP_NAME = "kiln-ai-github-sync"
 CALLBACK_URL = "http://localhost:8757/api/git_sync/oauth/callback"
 OAUTH_TIMEOUT_SECONDS = 300
 
@@ -145,6 +145,19 @@ def build_install_url(
     if params:
         return f"{base}/permissions?{urlencode(params)}"
     return base
+
+
+def build_authorize_url(flow: OAuthFlowState) -> str:
+    """Build the GitHub OAuth authorize URL for a given flow."""
+    return "https://github.com/login/oauth/authorize?" + urlencode(
+        {
+            "client_id": GITHUB_CLIENT_ID,
+            "redirect_uri": CALLBACK_URL,
+            "state": flow.state,
+            "code_challenge": flow.code_challenge,
+            "code_challenge_method": "S256",
+        }
+    )
 
 
 async def exchange_code_for_token(code: str, code_verifier: str) -> str:

@@ -5,8 +5,6 @@ import os
 from pathlib import Path
 from typing import Literal
 
-from urllib.parse import urlencode
-
 from fastapi import FastAPI, HTTPException, Query
 from fastapi import Path as FastAPIPath
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -36,10 +34,9 @@ from app.desktop.git_sync.config import (
     save_git_sync_config,
 )
 from app.desktop.git_sync.oauth import (
-    CALLBACK_URL,
-    GITHUB_CLIENT_ID,
     OAuthError,
     OAuthFlowManager,
+    build_authorize_url,
     build_install_url,
     exchange_code_for_token,
     parse_github_owner_repo,
@@ -276,8 +273,11 @@ class OAuthStartRequest(BaseModel):
 class OAuthStartResponse(BaseModel):
     """Response from starting a GitHub OAuth flow."""
 
+    authorize_url: str = Field(
+        description="GitHub OAuth authorization URL to open in the browser."
+    )
     install_url: str = Field(
-        description="GitHub App installation URL to open in the browser."
+        description="GitHub App installation URL (used if app not yet installed on repo)."
     )
     state: str = Field(description="OAuth state parameter for polling.")
     owner_name: str = Field(description="Parsed owner name from git URL.")
@@ -627,8 +627,10 @@ def connect_git_sync_api(app: FastAPI):
 
         flow = oauth_manager.start_flow(request.git_url)
         install_url = build_install_url(owner_id, repo_id)
+        authorize_url = build_authorize_url(flow)
 
         return OAuthStartResponse(
+            authorize_url=authorize_url,
             install_url=install_url,
             state=flow.state,
             owner_name=owner,
@@ -735,15 +737,7 @@ def connect_git_sync_api(app: FastAPI):
                 ),
                 status_code=400,
             )
-        authorize_url = "https://github.com/login/oauth/authorize?" + urlencode(
-            {
-                "client_id": GITHUB_CLIENT_ID,
-                "redirect_uri": CALLBACK_URL,
-                "state": flow.state,
-                "code_challenge": flow.code_challenge,
-                "code_challenge_method": "S256",
-            }
-        )
+        authorize_url = build_authorize_url(flow)
         return RedirectResponse(authorize_url)
 
     @app.get(

@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from app.desktop.git_sync.oauth import (
+    GITHUB_APP_NAME,
     OAUTH_TIMEOUT_SECONDS,
     OAuthError,
     OAuthFlowManager,
@@ -77,7 +78,7 @@ class TestBuildInstallUrl:
         assert "repository_ids" in url
         assert "456" in url
         assert url.startswith(
-            "https://github.com/apps/kiln-ai/installations/new/permissions"
+            f"https://github.com/apps/{GITHUB_APP_NAME}/installations/new/permissions"
         )
 
     def test_with_owner_id_only(self):
@@ -92,7 +93,7 @@ class TestBuildInstallUrl:
 
     def test_with_no_ids(self):
         url = build_install_url()
-        assert url == "https://github.com/apps/kiln-ai/installations/new"
+        assert url == f"https://github.com/apps/{GITHUB_APP_NAME}/installations/new"
         assert "?" not in url
 
 

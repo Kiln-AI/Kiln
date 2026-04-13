@@ -520,7 +520,12 @@ class TestOAuthStart:
         assert data["repo_pre_selected"] is True
         assert "state" in data
         assert "install_url" in data
+        assert "authorize_url" in data
         assert "suggested_target_id=123" in data["install_url"]
+        assert "github.com/login/oauth/authorize" in data["authorize_url"]
+        assert data["state"] in data["authorize_url"]
+        assert "client_id=" in data["authorize_url"]
+        assert "code_challenge_method=S256" in data["authorize_url"]
 
     def test_private_repo(self, api_client):
         with (

@@ -49,6 +49,7 @@
   let current_step: WizardStep = "method"
   let git_url = ""
   let pat_token: string | null = null
+  let oauth_token: string | null = null
   let auth_mode: string = "system_keys"
   let clone_path = ""
   let selected_branch = ""
@@ -146,7 +147,13 @@
   }
 
   function on_credentials_success(token: string, detected_auth_method: string) {
-    pat_token = token
+    if (detected_auth_method === "github_oauth") {
+      oauth_token = token
+      pat_token = null
+    } else {
+      pat_token = token
+      oauth_token = null
+    }
     auth_mode = detected_auth_method
     set_step("branch")
   }
@@ -336,6 +343,7 @@
     <StepBranch
       {git_url}
       {pat_token}
+      {oauth_token}
       {auth_mode}
       on_selected={on_branch_selected}
     />
@@ -345,6 +353,7 @@
     <StepComplete
       {git_url}
       {pat_token}
+      {oauth_token}
       {auth_mode}
       {clone_path}
       branch={selected_branch}
