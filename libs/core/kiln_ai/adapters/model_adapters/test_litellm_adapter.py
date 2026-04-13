@@ -828,6 +828,39 @@ async def test_build_completion_kwargs(
             None,
             Usage(input_tokens=10, output_tokens=20, total_tokens=30, cost=0.5),
         ),
+        # Cached tokens present
+        (
+            litellm.types.utils.Usage(
+                prompt_tokens=100,
+                completion_tokens=20,
+                total_tokens=120,
+                prompt_tokens_details={"cached_tokens": 80},
+            ),
+            None,
+            Usage(
+                input_tokens=100,
+                output_tokens=20,
+                total_tokens=120,
+                cached_tokens=80,
+            ),
+        ),
+        # Cached tokens with cost
+        (
+            litellm.types.utils.Usage(
+                prompt_tokens=100,
+                completion_tokens=20,
+                total_tokens=120,
+                prompt_tokens_details={"cached_tokens": 80},
+            ),
+            0.5,
+            Usage(
+                input_tokens=100,
+                output_tokens=20,
+                total_tokens=120,
+                cost=0.5,
+                cached_tokens=80,
+            ),
+        ),
     ],
 )
 def test_usage_from_response(config, mock_task, litellm_usage, cost, expected_usage):
@@ -855,9 +888,40 @@ def test_usage_from_response(config, mock_task, litellm_usage, cost, expected_us
         assert result.output_tokens == expected_usage.output_tokens
         assert result.total_tokens == expected_usage.total_tokens
         assert result.cost == expected_usage.cost
+        assert result.cached_tokens == expected_usage.cached_tokens
 
     # Verify the response was queried correctly
     response.get.assert_called_once_with("usage", None)
+
+
+def test_usage_from_response_prompt_details_without_cached_tokens(config, mock_task):
+    """Test that a warning is logged when prompt_tokens_details lacks cached_tokens attribute"""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    # Create a usage object with prompt_tokens_details that lacks cached_tokens
+    usage = litellm.types.utils.Usage(
+        prompt_tokens=100,
+        completion_tokens=20,
+        total_tokens=120,
+    )
+    # Manually set prompt_tokens_details to a truthy object without cached_tokens attr
+    usage.prompt_tokens_details = Mock(spec=[])  # spec=[] means no attributes
+
+    response = Mock(spec=ModelResponse)
+    response.get.return_value = usage
+    response._hidden_params = {"response_cost": None}
+
+    with patch("kiln_ai.adapters.model_adapters.litellm_adapter.logger") as mock_logger:
+        result = adapter.usage_from_response(response)
+
+    assert result.input_tokens == 100
+    assert result.output_tokens == 20
+    assert result.total_tokens == 120
+    assert result.cached_tokens is None
+    mock_logger.warning.assert_called_once()
+    assert "prompt_tokens_details has unexpected type" in str(
+        mock_logger.warning.call_args
+    )
 
 
 @pytest.fixture
@@ -2106,6 +2170,50 @@ async def test_external_tools_only_return_on_tool_call_and_resume_mocked(
 
     assert not task_run2.is_toolcall_pending
     assert json.loads(task_run2.output.output) == {"test": "structured_response"}
+
+
+async def test_build_completion_kwargs_no_caching_by_default(config, mock_task):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        kwargs = await adapter.build_completion_kwargs(
+            mock_provider, messages, top_logprobs=None
+        )
+
+    assert "cache_control_injection_points" not in kwargs
+
+
+async def test_build_completion_kwargs_with_automatic_prompt_caching(config, mock_task):
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(automatic_prompt_caching=True),
+    )
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        kwargs = await adapter.build_completion_kwargs(
+            mock_provider, messages, top_logprobs=None
+        )
+
+    assert kwargs["cache_control_injection_points"] == [
+        {"location": "message", "index": -1}
+    ]
 
 
 @pytest.mark.asyncio

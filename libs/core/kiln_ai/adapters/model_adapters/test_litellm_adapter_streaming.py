@@ -1,7 +1,5 @@
 import json
 import logging
-import re
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 from unittest.mock import AsyncMock, patch
@@ -28,6 +26,7 @@ from kiln_ai.adapters.model_adapters.test_adapter_stream import (
 from kiln_ai.datamodel import Project, PromptGenerators, Task
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
+from kiln_ai.pytest_test_output import make_test_output_dir
 from kiln_ai.tools.base_tool import UnmanagedKilnTool
 
 logger = logging.getLogger(__name__)
@@ -53,8 +52,6 @@ STREAMING_MODELS = [
     ("claude_4_5_haiku", ModelProviderName.anthropic, "medium"),
 ]
 
-PAID_TEST_OUTPUT_DIR = Path(__file__).resolve().parents[5] / "test_output"
-
 
 def _serialize_for_dump(obj: Any) -> Any:
     if hasattr(obj, "model_dump"):
@@ -70,15 +67,7 @@ def _serialize_for_dump(obj: Any) -> Any:
 
 
 def _dump_paid_test_output(request: pytest.FixtureRequest, **payloads: Any) -> Path:
-    test_name = re.sub(r"[^\w\-]", "_", request.node.name)
-    param_id = "default"
-    if hasattr(request.node, "callspec") and request.node.callspec is not None:
-        id_attr = getattr(request.node.callspec, "id", None)
-        if id_attr is not None:
-            param_id = re.sub(r"[^\w\-]", "_", str(id_attr))
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
-    out_dir = PAID_TEST_OUTPUT_DIR / test_name / param_id / timestamp
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = make_test_output_dir(request)
     for filename, data in payloads.items():
         if data is None:
             continue
