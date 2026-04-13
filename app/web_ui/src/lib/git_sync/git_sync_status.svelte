@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { onMount } from "svelte"
+  import { onMount, onDestroy } from "svelte"
   import Warning from "$lib/ui/warning.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import MarkdownBlock from "$lib/ui/markdown_block.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import {
     getConfig,
@@ -13,7 +14,18 @@
     gitHubPatDeepLink,
     gitLabPatDeepLink,
     type GitSyncConfigResponse,
+    type OAuthStartResponse,
   } from "$lib/git_sync/api"
+  import {
+    startOAuthFlow,
+    type OAuthFlowCallbacks,
+  } from "$lib/git_sync/oauth_flow"
+  import {
+    initialAuthFormMode,
+    buildOAuthUpdatePayload,
+    buildPatUpdatePayload,
+    type AuthFormMode,
+  } from "$lib/git_sync/auth_form_mode"
 
   export let project_id: string
 
@@ -26,9 +38,25 @@
   let token_error: KilnError | null = null
   let removing = false
   let disable_dialog: Dialog
+  let mode: AuthFormMode = "pat"
+
+  // OAuth state
+  let oauth_polling = false
+  let oauth_starting = false
+  let oauth_error: string | null = null
+  let cancel_oauth: (() => void) | null = null
+  let start_response: OAuthStartResponse | null = null
+  let oauth_generation = 0
 
   onMount(async () => {
     await load_config()
+  })
+
+  onDestroy(() => {
+    if (cancel_oauth) {
+      cancel_oauth()
+      cancel_oauth = null
+    }
   })
 
   async function load_config() {
@@ -41,6 +69,96 @@
     } finally {
       loading = false
     }
+  }
+
+  function reset_oauth() {
+    if (cancel_oauth) {
+      cancel_oauth()
+      cancel_oauth = null
+    }
+    oauth_polling = false
+    oauth_starting = false
+    oauth_error = null
+    start_response = null
+    oauth_generation++
+  }
+
+  function open_auth_form() {
+    show_auth_form = true
+    token_error = null
+    new_pat_token = ""
+    mode = initialAuthFormMode(config?.auth_mode, config?.git_url)
+    reset_oauth()
+  }
+
+  function close_auth_form() {
+    show_auth_form = false
+    token_error = null
+    reset_oauth()
+  }
+
+  function start_oauth() {
+    if (!config?.git_url) return
+
+    // Open popup as the very first thing in the click handler so Safari
+    // recognizes it as user-initiated. Pass it to startOAuthFlow.
+    const popup = window.open("about:blank", "_blank")
+
+    if (cancel_oauth) {
+      cancel_oauth()
+    }
+
+    oauth_error = null
+    oauth_starting = true
+    oauth_polling = false
+    start_response = null
+    oauth_generation++
+    const this_generation = oauth_generation
+    const git_url = config.git_url
+
+    const callbacks: OAuthFlowCallbacks = {
+      onStarted: (response: OAuthStartResponse) => {
+        if (this_generation !== oauth_generation) return
+        start_response = response
+        oauth_starting = false
+      },
+      onPolling: () => {
+        if (this_generation !== oauth_generation) return
+        oauth_polling = true
+      },
+      onSuccess: async (token: string) => {
+        if (this_generation !== oauth_generation) return
+        oauth_polling = false
+        try {
+          const result = await testAccess(git_url, null, "github_oauth", token)
+          if (this_generation !== oauth_generation) return
+          if (!result.success) {
+            oauth_error =
+              result.message ||
+              "The GitHub App does not have access to this repository. Please ensure the app is installed on the correct organization and repository, then try again."
+            return
+          }
+          config = await updateConfig(
+            project_id,
+            buildOAuthUpdatePayload(token),
+          )
+          close_auth_form()
+        } catch (e) {
+          if (this_generation !== oauth_generation) return
+          oauth_error =
+            e instanceof Error ? e.message : "Failed to verify access"
+        }
+      },
+      onError: (err: string) => {
+        if (this_generation !== oauth_generation) return
+        oauth_polling = false
+        oauth_starting = false
+        oauth_error = err
+      },
+    }
+
+    const handle = startOAuthFlow(git_url, callbacks, popup)
+    cancel_oauth = handle.cancel
   }
 
   async function save_token() {
@@ -57,8 +175,11 @@
         }
       }
 
-      config = await updateConfig(project_id, { pat_token: new_pat_token })
-      show_auth_form = false
+      config = await updateConfig(
+        project_id,
+        buildPatUpdatePayload(new_pat_token, config.auth_mode),
+      )
+      close_auth_form()
       new_pat_token = ""
     } catch (e) {
       token_error = createKilnError(e)
@@ -85,6 +206,23 @@
   $: is_github = config?.git_url ? isGitHubUrl(config.git_url) : false
   $: is_gitlab = config?.git_url ? isGitLabUrl(config.git_url) : false
   $: is_system_keys = config?.auth_mode === "system_keys"
+  $: is_github_oauth = config?.auth_mode === "github_oauth"
+
+  $: needs_pre_selection_hint =
+    start_response &&
+    (!start_response.owner_pre_selected || !start_response.repo_pre_selected)
+
+  $: pre_selection_hint_md = (() => {
+    if (!start_response) return ""
+    const hints = []
+    if (!start_response.owner_pre_selected) {
+      hints.push(`select the **${start_response.owner_name}** organization`)
+    }
+    if (!start_response.repo_pre_selected) {
+      hints.push(`select the **${start_response.repo_name}** repository`)
+    }
+    return "Be sure to " + hints.join(" and ") + "."
+  })()
 </script>
 
 {#if loading}
@@ -116,8 +254,11 @@
         <button
           class="btn btn-sm btn-ghost"
           on:click={() => {
-            show_auth_form = !show_auth_form
-            token_error = null
+            if (show_auth_form) {
+              close_auth_form()
+            } else {
+              open_auth_form()
+            }
           }}
         >
           {show_auth_form ? "Cancel" : "Update Auth"}
@@ -132,6 +273,70 @@
             warning_message="This repo was connected via system SSH keys. Either fix your SSH key connection to your git provider, or remove this project and re-add it with another auth mechanism like tokens."
             warning_color="warning"
           />
+        {:else if is_github && mode === "oauth"}
+          {#if oauth_error}
+            <div class="mb-3">
+              <Warning warning_message={oauth_error} warning_color="error" />
+            </div>
+          {/if}
+
+          {#if oauth_polling}
+            <div class="flex flex-col items-center py-6 gap-3">
+              <span class="loading loading-spinner loading-md text-primary"
+              ></span>
+              <p class="text-sm text-gray-500">
+                Waiting for GitHub authorization...
+              </p>
+              {#if needs_pre_selection_hint && start_response}
+                <div
+                  class="border rounded-lg px-4 py-3 border-base-200 text-sm text-gray-500 max-w-md"
+                >
+                  <MarkdownBlock markdown_text={pre_selection_hint_md} />
+                </div>
+              {/if}
+              {#if start_response?.authorize_url}
+                <a
+                  href={start_response.authorize_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-xs text-gray-400 hover:text-gray-600 underline"
+                >
+                  Already have the app installed? Authorize directly
+                </a>
+              {/if}
+              <button class="btn btn-sm btn-ghost mt-1" on:click={reset_oauth}>
+                Cancel
+              </button>
+            </div>
+          {:else}
+            <button
+              class="btn btn-primary btn-sm w-full"
+              on:click={start_oauth}
+              disabled={oauth_starting}
+            >
+              {#if oauth_starting}
+                <span class="loading loading-spinner loading-xs"></span>
+              {/if}
+              {#if oauth_error}
+                Retry with GitHub
+              {:else if is_github_oauth}
+                Reconnect with GitHub
+              {:else}
+                Connect with GitHub
+              {/if}
+            </button>
+            <div class="mt-3 text-center">
+              <button
+                class="btn btn-link btn-xs text-gray-400 no-underline hover:text-gray-600"
+                on:click={() => {
+                  mode = "pat"
+                  reset_oauth()
+                }}
+              >
+                or use a Personal Access Token
+              </button>
+            </div>
+          {/if}
         {:else}
           <label class="label" for="update_pat">
             <span class="label-text text-sm">New Personal Access Token</span>
@@ -185,6 +390,19 @@
                 warning_message={token_error.getMessage()}
                 warning_color="error"
               />
+            </div>
+          {/if}
+          {#if is_github}
+            <div class="mt-3 text-center">
+              <button
+                class="btn btn-link btn-xs text-gray-400 no-underline hover:text-gray-600"
+                on:click={() => {
+                  mode = "oauth"
+                  token_error = null
+                }}
+              >
+                or connect with GitHub
+              </button>
             </div>
           {/if}
         {/if}

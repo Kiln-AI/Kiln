@@ -233,4 +233,57 @@ describe("startOAuthFlow", () => {
     expect(cbs.calls.onSuccess).toHaveLength(1)
     expect(cbs.calls.onSuccess[0]).toBe("ghu_recovered")
   })
+
+  it("uses pre-opened popup and does not call window.open itself", async () => {
+    const preOpenedPopup = makeMockPopup()
+    const mockOpen = vi.fn()
+    const mockWindow = { open: mockOpen }
+    vi.stubGlobal("window", mockWindow)
+
+    mockOauthStart.mockResolvedValue(MOCK_START_RESPONSE)
+    mockOauthStatus.mockResolvedValue({
+      complete: false,
+      oauth_token: null,
+      error: null,
+    })
+
+    const cbs = makeCallbacks()
+    startOAuthFlow(
+      "https://github.com/Kiln-AI/kiln.git",
+      cbs,
+      preOpenedPopup as unknown as Window,
+    )
+
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(mockOpen).not.toHaveBeenCalled()
+    expect(preOpenedPopup.location.href).toBe(MOCK_START_RESPONSE.install_url)
+  })
+
+  it("closes the pre-opened popup on cancel", async () => {
+    const preOpenedPopup = makeMockPopup()
+    const mockOpen = vi.fn()
+    const mockWindow = { open: mockOpen }
+    vi.stubGlobal("window", mockWindow)
+
+    mockOauthStart.mockResolvedValue(MOCK_START_RESPONSE)
+    mockOauthStatus.mockResolvedValue({
+      complete: false,
+      oauth_token: null,
+      error: null,
+    })
+
+    const cbs = makeCallbacks()
+    const handle = startOAuthFlow(
+      "https://github.com/Kiln-AI/kiln.git",
+      cbs,
+      preOpenedPopup as unknown as Window,
+    )
+
+    await vi.advanceTimersByTimeAsync(0)
+    handle.cancel()
+
+    expect(preOpenedPopup.close).toHaveBeenCalled()
+    expect(mockOpen).not.toHaveBeenCalled()
+  })
 })

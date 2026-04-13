@@ -60,6 +60,10 @@
   }
 
   function start_oauth() {
+    // Open popup as the very first thing in the click handler so Safari
+    // recognizes it as user-initiated. Pass it to startOAuthFlow.
+    const popup = window.open("about:blank", "_blank")
+
     if (cancel_oauth) {
       cancel_oauth()
     }
@@ -108,7 +112,7 @@
       },
     }
 
-    const handle = startOAuthFlow(git_url, callbacks)
+    const handle = startOAuthFlow(git_url, callbacks, popup)
     cancel_oauth = handle.cancel
   }
 
@@ -174,7 +178,7 @@
     if (!start_response) return ""
     const hints = []
     if (!start_response.owner_pre_selected) {
-      hints.push(`Select the **${start_response.owner_name}** organization`)
+      hints.push(`select the **${start_response.owner_name}** organization`)
     }
     if (!start_response.repo_pre_selected) {
       hints.push(`select the **${start_response.repo_name}** repository`)

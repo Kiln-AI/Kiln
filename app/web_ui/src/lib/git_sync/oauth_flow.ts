@@ -14,11 +14,12 @@ export type OAuthFlowCallbacks = {
 export function startOAuthFlow(
   git_url: string,
   callbacks: OAuthFlowCallbacks,
+  preOpenedPopup?: Window | null,
 ): { cancel: () => void } {
   let cancelled = false
   let pollTimer: ReturnType<typeof setTimeout> | null = null
   let timeoutTimer: ReturnType<typeof setTimeout> | null = null
-  let popup: Window | null = null
+  let popup: Window | null = preOpenedPopup ?? null
 
   function cleanup(closePopup: boolean = false) {
     cancelled = true
@@ -49,7 +50,12 @@ export function startOAuthFlow(
     // If this returns null, the popup was blocked — surface an error rather
     // than trying to re-open later (which would also be blocked since it runs
     // after an await, outside the user gesture).
-    popup = window.open("about:blank", "_blank")
+    // Callers may pass a pre-opened popup to ensure window.open is at the
+    // very top of the click handler (Safari is strict about user gestures
+    // even with synchronous async function bodies).
+    if (popup === null) {
+      popup = window.open("about:blank", "_blank")
+    }
 
     if (!popup) {
       if (!cancelled) {
