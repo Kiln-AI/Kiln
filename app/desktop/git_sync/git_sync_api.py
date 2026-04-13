@@ -587,6 +587,16 @@ def connect_git_sync_api(app: FastAPI):
             config["oauth_token"] = request.oauth_token
         if request.auth_mode is not None:
             config["auth_mode"] = request.auth_mode
+            # Clearing tokens that belong to other auth modes is the only way
+            # to remove stored credentials through this endpoint -- `None` in
+            # the request body means "don't change" rather than "clear".
+            if request.auth_mode == "pat_token":
+                config["oauth_token"] = None
+            elif request.auth_mode == "github_oauth":
+                config["pat_token"] = None
+            elif request.auth_mode == "system_keys":
+                config["pat_token"] = None
+                config["oauth_token"] = None
 
         save_git_sync_config(project_path, config)
 

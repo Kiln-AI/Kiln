@@ -65,6 +65,11 @@ def generate_pkce() -> tuple[str, str]:
     return verifier, challenge
 
 
+_GITHUB_URL_RE = re.compile(
+    r"(?:^|[@/])github\.com[:/]([^/\s]+?)/([^/\s]+?)(?:\.git)?/?$"
+)
+
+
 def parse_github_owner_repo(git_url: str) -> tuple[str, str] | None:
     """Extract (owner, repo) from a GitHub URL.
 
@@ -74,9 +79,13 @@ def parse_github_owner_repo(git_url: str) -> tuple[str, str] | None:
     - git@github.com:owner/repo.git
     - ssh://git@github.com/owner/repo.git
 
-    Returns None if the URL is not a recognizable GitHub URL.
+    Handles repo names containing dots (e.g. `owner/my.repo`), and rejects
+    lookalike hosts like `notgithub.com`, `evilgithub.com`, and
+    `subdomain.github.com`.
+
+    Returns None if the URL is not a recognizable github.com URL.
     """
-    match = re.search(r"github\.com[:/]([^/]+)/([^/.]+?)(?:\.git)?/?$", git_url)
+    match = _GITHUB_URL_RE.search(git_url)
     if match:
         return match.group(1), match.group(2)
     return None

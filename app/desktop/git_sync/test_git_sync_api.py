@@ -829,7 +829,9 @@ class TestOAuthTokenInConfig:
                 return_value="/tmp/clone/project.kiln",
             ),
             patch("app.desktop.git_sync.git_sync_api.get_git_sync_config") as mock_get,
-            patch("app.desktop.git_sync.git_sync_api.save_git_sync_config"),
+            patch(
+                "app.desktop.git_sync.git_sync_api.save_git_sync_config"
+            ) as mock_save,
         ):
             mock_get.return_value = existing
             resp = api_client.patch(
@@ -841,4 +843,79 @@ class TestOAuthTokenInConfig:
             )
         data = resp.json()
         assert data["has_oauth_token"] is True
+        assert data["has_pat_token"] is False
         assert data["auth_mode"] == "github_oauth"
+        saved_config = mock_save.call_args[0][1]
+        assert saved_config["pat_token"] is None
+        assert saved_config["oauth_token"] == "ghu_new"
+
+    def test_switch_from_oauth_to_pat_clears_oauth_token(self, api_client):
+        existing = {
+            "sync_mode": "auto",
+            "auth_mode": "github_oauth",
+            "remote_name": "origin",
+            "branch": "main",
+            "clone_path": "/tmp/clone",
+            "git_url": "https://github.com/test/repo.git",
+            "pat_token": None,
+            "oauth_token": "ghu_old",
+        }
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.project_path_from_id",
+                return_value="/tmp/clone/project.kiln",
+            ),
+            patch("app.desktop.git_sync.git_sync_api.get_git_sync_config") as mock_get,
+            patch(
+                "app.desktop.git_sync.git_sync_api.save_git_sync_config"
+            ) as mock_save,
+        ):
+            mock_get.return_value = existing
+            resp = api_client.patch(
+                "/api/git_sync/update_config/proj1",
+                json={
+                    "pat_token": "ghp_new",
+                    "auth_mode": "pat_token",
+                },
+            )
+        data = resp.json()
+        assert data["auth_mode"] == "pat_token"
+        assert data["has_pat_token"] is True
+        assert data["has_oauth_token"] is False
+        saved_config = mock_save.call_args[0][1]
+        assert saved_config["oauth_token"] is None
+        assert saved_config["pat_token"] == "ghp_new"
+
+    def test_switch_to_system_keys_clears_both_tokens(self, api_client):
+        existing = {
+            "sync_mode": "auto",
+            "auth_mode": "github_oauth",
+            "remote_name": "origin",
+            "branch": "main",
+            "clone_path": "/tmp/clone",
+            "git_url": "https://github.com/test/repo.git",
+            "pat_token": "ghp_stale",
+            "oauth_token": "ghu_stale",
+        }
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.project_path_from_id",
+                return_value="/tmp/clone/project.kiln",
+            ),
+            patch("app.desktop.git_sync.git_sync_api.get_git_sync_config") as mock_get,
+            patch(
+                "app.desktop.git_sync.git_sync_api.save_git_sync_config"
+            ) as mock_save,
+        ):
+            mock_get.return_value = existing
+            resp = api_client.patch(
+                "/api/git_sync/update_config/proj1",
+                json={"auth_mode": "system_keys"},
+            )
+        data = resp.json()
+        assert data["auth_mode"] == "system_keys"
+        assert data["has_pat_token"] is False
+        assert data["has_oauth_token"] is False
+        saved_config = mock_save.call_args[0][1]
+        assert saved_config["pat_token"] is None
+        assert saved_config["oauth_token"] is None

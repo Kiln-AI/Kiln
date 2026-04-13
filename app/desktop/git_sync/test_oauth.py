@@ -53,6 +53,11 @@ class TestParseGithubOwnerRepo:
             ("git@github.com:owner/repo.git", ("owner", "repo")),
             ("ssh://git@github.com/owner/repo.git", ("owner", "repo")),
             ("https://github.com/owner/repo/", ("owner", "repo")),
+            # Repo names with dots are legal on GitHub (e.g. octocat/hello.world)
+            ("https://github.com/octocat/hello.world", ("octocat", "hello.world")),
+            ("https://github.com/owner/my.repo.git", ("owner", "my.repo")),
+            ("https://github.com/owner/some.tool.js", ("owner", "some.tool.js")),
+            ("git@github.com:owner/my.repo.git", ("owner", "my.repo")),
         ],
     )
     def test_valid_urls(self, url, expected):
@@ -65,6 +70,14 @@ class TestParseGithubOwnerRepo:
             "https://example.com/owner/repo.git",
             "not-a-url",
             "",
+            # Lookalike hosts must be rejected -- an unanchored regex would
+            # happily treat these as github.com.
+            "https://notgithub.com/owner/repo",
+            "https://evilgithub.com/owner/repo.git",
+            "https://mygithub.com/owner/repo",
+            "https://subdomain.github.com/owner/repo",
+            "https://api.github.com/repos/owner/repo",
+            "git@subdomain.github.com:owner/repo.git",
         ],
     )
     def test_non_github_urls_return_none(self, url):
