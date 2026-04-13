@@ -7,13 +7,13 @@ the extracted JSON from extract_models.py. Reports missing models and
 
 Usage:
     # Check a single provider
-    python3 .cursor/skills/kiln-check-deprecation/scripts/check_provider.py openrouter
+    python3 .agents/skills/kiln-check-deprecation/scripts/check_provider.py openrouter
 
     # Check all configured providers
-    python3 .cursor/skills/kiln-check-deprecation/scripts/check_provider.py all
+    python3 .agents/skills/kiln-check-deprecation/scripts/check_provider.py all
 
     # Use a custom extracted JSON path
-    python3 .cursor/skills/kiln-check-deprecation/scripts/check_provider.py all --extracted /tmp/my_extract.json
+    python3 .agents/skills/kiln-check-deprecation/scripts/check_provider.py all --extracted /tmp/my_extract.json
 
 Requires:
     - Extracted JSON from extract_models.py at /tmp/kiln_extracted.json (or --extracted path)

@@ -105,7 +105,7 @@ This doc describes what each move looks like in detail: before/after, reference 
 **Move tracked content:** `.cursor/skills/*` → `.agents/skills/`. (Byte-identical to `.claude/skills/*` today, but `.claude/` is already gitignored, so only the Cursor copy is tracked.)
 
 **Edit:**
-- `.agents/skills/kiln-check-deprecation/SKILL.md` — fix 2 hardcoded path refs that currently point at `.cursor/skills/kiln-check-deprecation/scripts/...` → `.agents/skills/kiln-check-deprecation/scripts/...`.
+- `.agents/skills/kiln-check-deprecation/SKILL.md` — fix 3 hardcoded path refs that currently point at `.cursor/skills/kiln-check-deprecation/scripts/...` → `.agents/skills/kiln-check-deprecation/scripts/...`.
 
 **Gitignore:** add `.cursor/skills/` (becomes a setup-script artifact, parallel to how `.claude/` is handled today).
 

@@ -13,6 +13,7 @@ node_modules/
 conductor.json
 CLAUDE.md
 .claude/
+.cursor/skills/
 
 libs/core/docs
 libs/core/build

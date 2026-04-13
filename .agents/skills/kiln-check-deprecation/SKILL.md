@@ -24,7 +24,7 @@ Audit `libs/core/kiln_ai/adapters/ml_model_list.py` to find models that have bee
 Run the extraction script from the repo root:
 
 ```bash
-python3 .cursor/skills/kiln-check-deprecation/scripts/extract_models.py > /tmp/kiln_extracted.json
+python3 .agents/skills/kiln-check-deprecation/scripts/extract_models.py > /tmp/kiln_extracted.json
 ```
 
 This fetches the published model list from `https://remote-config.getkiln.ai/kiln_config_v2.json` and extracts:
@@ -49,14 +49,14 @@ The JSON contains:
 
 ```bash
 export $(grep -v '^#' .env | xargs)
-python3 .cursor/skills/kiln-check-deprecation/scripts/check_provider.py all > /tmp/kiln_check_results.json
+python3 .agents/skills/kiln-check-deprecation/scripts/check_provider.py all > /tmp/kiln_check_results.json
 ```
 
 ### Option B: Check a single provider
 
 ```bash
 export $(grep -v '^#' .env | xargs)
-python3 .cursor/skills/kiln-check-deprecation/scripts/check_provider.py openrouter > /tmp/kiln_check_openrouter.json
+python3 .agents/skills/kiln-check-deprecation/scripts/check_provider.py openrouter > /tmp/kiln_check_openrouter.json
 ```
 
 The script handles all provider API quirks automatically:

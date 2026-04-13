@@ -36,7 +36,7 @@ Phases are ordered by risk (low → high) and by what unblocks later phases (e.g
   - `git rm .cursor/rules/project.mdc`.
   - **Manual validation:** open Cursor in this worktree; confirm agent picks up rules from root `AGENTS.md` (ask it "what repo am I in?" — should reference Kiln goals/tech stack).
 
-- [ ] **Phase 6: Consolidate skills at `.agents/skills/`**
+- [x] **Phase 6: Consolidate skills at `.agents/skills/`**
   - Create `.agents/skills/` and copy content from `.cursor/skills/`.
   - Fix 2 hardcoded path refs in `.agents/skills/kiln-check-deprecation/SKILL.md` (`.cursor/skills/...` → `.agents/skills/...`).
   - `git rm -r --cached .cursor/skills`; add `.cursor/skills/` to `.gitignore`.

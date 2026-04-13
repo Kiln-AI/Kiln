@@ -10,7 +10,7 @@ JSON to stdout with:
 Also prints a human-readable summary to stderr.
 
 Usage:
-    python3 .cursor/skills/kiln-check-deprecation/scripts/extract_models.py > /tmp/kiln_extracted.json
+    python3 .agents/skills/kiln-check-deprecation/scripts/extract_models.py > /tmp/kiln_extracted.json
 """
 
 import json
