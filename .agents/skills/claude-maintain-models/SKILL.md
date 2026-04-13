@@ -1,5 +1,5 @@
 ---
-name: kiln-add-model
+name: claude-maintain-models
 description: Add new AI models to Kiln's ml_model_list.py and produce a Discord announcement. Use when the user wants to add, integrate, or register a new LLM model (e.g. Claude, GPT, DeepSeek, Gemini, Kimi, Qwen, Grok) into the Kiln model list, mentions adding a model to ml_model_list.py, or asks to discover/find new models that are available but not yet in Kiln.
 allowed-tools: Read Edit Write Bash Grep Glob Agent WebSearch WebFetch
 ---
@@ -248,73 +248,71 @@ After all tests complete, **revert `pytest.ini`** back to the commented-out stat
 
 ### 4f. Test output format
 
-After all tests finish, present results to the user as:
-
-1. **Two paragraphs of nuance** – describe any unusual findings, things you tried and reverted, known pre-existing failures vs new failures, API quirks discovered, and any config adjustments made during testing.
-
-2. **Per-model per-test dump** – organized by model name and provider, using this format:
-
-```text
-Model Name (provider):
-✅ test_name[model_enum-provider]
-❌ test_name[model_enum-provider] -- brief failure reason
-⏭️ test_name[model_enum-provider]
-```
-
-Use ✅ for PASSED, ❌ for FAILED (with brief reason), ⏭️ for SKIPPED.
-
----
-
-## Phase 5 – Discord Announcement
-
-**Do NOT draft the Discord announcement automatically.** After presenting test results, ask the user if they want a Discord announcement drafted. Only proceed if they confirm.
-
-When requested, use this format:
-
-```
-New Model: [Model Name] 🚀
-[One-liner about the model and that it's now in Kiln]
-
-Kiln Test Pass Results
-[Model Name]:
-✅ Tool Calling
-✅ Structured Data ([mode used])
-✅ Synthetic Data Generation
-✅ Evals (only if suggested_for_evals=True)
-✅ Document extraction: [formats] (only if supports_doc_extraction=True)
-✅ Vision: [formats] (only if supports_vision=True)
-
-Model Variants, Hosts and Quirks
-[Model Name]:
-Available on: [list providers]
-[Any quirks or notes]
-
-How to Use These Models in Kiln
-Simply restart Kiln, and all these models will appear in your model dropdown if you have the appropriate API configured.
-```
-
-Use ⚠️ for flaky features, ❌ for unsupported.
-
-### Test Summary
-
-After the Discord announcement, print a per-test summary listing every test that ran for the model. Use the full pytest parametrize ID so the user can see exactly which test+provider combos passed, failed, or were flaky.
-
-Format:
-```
-Test Summary: [Model Name]
-✅ test_data_gen_all_models_providers[model_enum-provider]
-✅ test_data_gen_sample_all_models_providers[model_enum-provider]
-✅ test_tools_all_built_in_models[model_enum-provider]
-⚠️ test_structured_input_cot_prompt_builder[model_enum-provider] — assert 3 == 5 (content quality flake)
-❌ test_all_built_in_models_structured_output[model_enum-provider] — 400 Bad Request (unsupported feature)
-```
-
-Rules:
+Collect test results for use in the PR body (Phase 5). Organize by model name and provider using these symbols:
 - ✅ for passed tests
 - ⚠️ for tests that failed due to content quality flakes (e.g. model returned fewer items than expected, weak assertion mismatches) — include a brief reason
 - ❌ for tests that failed due to real errors (bad slug, unsupported feature, 400/500 errors) — include a brief reason
-- List every test, grouped by provider if the model has multiple providers
-- Include extraction tests (Phase 4c) if they were run
+- List every test using the full pytest parametrize ID, grouped by provider
+- Include extraction tests (Phase 4d) if they were run
+
+---
+
+## Phase 5 – Create Pull Request
+
+After all tests pass and `pytest.ini` is reverted, commit the changes and open a PR against `main`.
+
+### 5a. Commit and push
+
+1. Create a new branch named `add-model/MODEL_NAME` (e.g. `add-model/glm-5-1`)
+2. Stage only the changed files (typically just `ml_model_list.py`)
+3. Commit with a concise message (e.g. "Add GLM 5.1 to model list (together_ai, siliconflow_cn)")
+4. Push the branch
+
+### 5b. Create the PR
+
+Use `gh pr create` against `main`. The PR body must follow this exact format:
+
+```
+## What does this PR do?
+
+ Test Results
+
+[Two paragraphs of nuance — describe any unusual findings, things you tried and reverted, known pre-existing failures vs new failures, API quirks discovered, and any config adjustments made during testing.]
+
+[Model Name] ([provider]):
+- [N] passed, [N] skipped[, [N] failed]
+- [Any notable failures or flakes]
+
+[Repeat for each model+provider combo]
+
+---
+[Model Name] ([provider]):
+✅ test_data_gen_all_models_providers[model_enum-provider]
+✅ test_data_gen_sample_all_models_providers[model_enum-provider]
+✅ test_data_gen_sample_all_models_providers_with_structured_output[model_enum-provider]
+✅ test_all_built_in_models_llm_as_judge[model_enum-provider]
+✅ test_all_built_in_models_structured_output[model_enum-provider]
+✅ test_all_built_in_models_structured_input[model_enum-provider]
+✅ test_structured_output_cot_prompt_builder[model_enum-provider]
+✅ test_all_models_providers_plaintext[model_enum-provider]
+✅ test_cot_prompt_builder[model_enum-provider]
+⚠️ test_structured_input_cot_prompt_builder[model_enum-provider] — brief reason
+❌ test_name[model_enum-provider] — brief reason
+
+[Repeat for each model+provider combo]
+
+## Checklists
+
+- [X] Tests have been run locally and passed
+- [X] New tests have been added to any work in /lib
+```
+
+**Rules for the PR body:**
+- Every test that ran must appear in the per-test dump, using the full pytest parametrize ID
+- Group tests by `[Model Name] ([provider]):` headers
+- The summary section at the top gives a quick pass/skip/fail count per model+provider
+- The detailed section below the `---` lists every individual test result
+- Use ⚠️ for content quality flakes (not real failures), ❌ for real errors
 
 ---
 
@@ -333,9 +331,8 @@ Rules:
 - [ ] Parallel testing enabled in `pytest.ini` (`addopts = -n 8`)
 - [ ] Smoke test passed
 - [ ] Full test suite passed
-- [ ] Per-model per-test result dump presented with nuance paragraphs
 - [ ] Parallel testing reverted in `pytest.ini` (re-commented)
-- [ ] Discord announcement drafted (only if user requests it)
+- [ ] PR created against `main` with test results in the body
 
 ---
 
