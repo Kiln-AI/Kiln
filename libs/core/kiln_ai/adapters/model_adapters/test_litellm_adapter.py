@@ -909,13 +909,35 @@ async def test_litellm_tools_returns_empty_list_without_tools(config, mock_task)
         ({"tools": []}, ["tools"]),
         ({"tool_choice": "auto"}, ["tool_choice"]),
         ({"tools": [], "tool_choice": "auto"}, ["tools", "tool_choice"]),
+        ({"allowed_openai_params": ["custom_param"]}, ["custom_param"]),
+        (
+            {"tools": [], "allowed_openai_params": ["custom_param"]},
+            ["custom_param", "tools"],
+        ),
     ],
 )
 def test_allowed_openai_params_for_completion_kwargs_independent_keys(
     config, mock_task, kwargs_in, expected
 ):
     adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
-    assert adapter._allowed_openai_params_for_completion_kwargs(kwargs_in) == expected
+    result = adapter._allowed_openai_params_for_completion_kwargs(kwargs_in)
+    assert sorted(result) == sorted(expected)
+
+
+def test_allowed_openai_params_raises_for_non_list(config, mock_task):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    with pytest.raises(ValueError, match="expected list"):
+        adapter._allowed_openai_params_for_completion_kwargs(
+            {"allowed_openai_params": "not_a_list"}
+        )
+
+
+def test_allowed_openai_params_raises_for_non_string_items(config, mock_task):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    with pytest.raises(ValueError, match="items are not strings"):
+        adapter._allowed_openai_params_for_completion_kwargs(
+            {"allowed_openai_params": ["valid", 123]}
+        )
 
 
 @pytest.mark.asyncio

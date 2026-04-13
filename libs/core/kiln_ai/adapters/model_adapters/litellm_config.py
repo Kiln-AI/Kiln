@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Any
 
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 
@@ -11,4 +12,4 @@ class LiteLlmConfig:
     # Headers to send with every request
     default_headers: dict[str, str] | None = None
     # Extra body to send with every request
-    additional_body_options: dict[str, str] = field(default_factory=dict)
+    additional_body_options: dict[str, Any] = field(default_factory=dict)
