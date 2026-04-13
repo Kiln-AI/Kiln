@@ -341,6 +341,7 @@
       continuationTraceId: string
     }>,
   ) {
+    clearReasoningTimers()
     store.loadSession(e.detail.messages, e.detail.continuationTraceId)
     tick().then(() => {
       messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })
@@ -348,8 +349,15 @@
     })
   }
 
+  function clearReasoningTimers() {
+    reasoningPartStartTimes = {}
+    reasoningPartEndTimes = {}
+    lastSeenLastPartKey = null
+  }
+
   export function newChat() {
     store.reset()
+    clearReasoningTimers()
   }
 
   export function openHistory() {
@@ -689,6 +697,7 @@
       <textarea
         bind:this={textareaRef}
         class="input input-bordered w-full min-h-[80px] max-h-[40vh] resize-none overflow-y-auto py-3 pr-12"
+        aria-label="Chat message"
         placeholder="Type a message…"
         bind:value={input}
         disabled={inputDisabled}

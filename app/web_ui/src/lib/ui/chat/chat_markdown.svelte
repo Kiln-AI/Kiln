@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { marked, type Token } from "marked"
+  import { Marked, type Token } from "marked"
   import DOMPurify from "dompurify"
   import hljs from "highlight.js/lib/core"
   import json from "highlight.js/lib/languages/json"
@@ -27,7 +27,7 @@
       .replace(/"/g, "&quot;")
   }
 
-  marked.use({
+  const md = new Marked({
     gfm: true,
     renderer: {
       code({ text, lang }: { text: string; lang?: string }) {
@@ -103,7 +103,7 @@
 
   export let text: string = ""
 
-  $: rawHtml = text ? (marked.parse(text, { async: false }) as string) : ""
+  $: rawHtml = text ? (md.parse(text, { async: false }) as string) : ""
   $: sanitized = rawHtml
     ? DOMPurify.sanitize(rawHtml, {
         ALLOWED_TAGS,

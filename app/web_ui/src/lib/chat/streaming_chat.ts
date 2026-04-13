@@ -128,7 +128,7 @@ export function chatExecuteToolsUrl(chatApiUrl: string): string {
 }
 
 function generateId(): string {
-  return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+  return `msg-${crypto.randomUUID()}`
 }
 
 /** Latest stored assistant ``traceId`` for continuing the conversation. */
