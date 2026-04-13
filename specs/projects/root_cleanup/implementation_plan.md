@@ -32,7 +32,7 @@ Phases are ordered by risk (low → high) and by what unblocks later phases (e.g
   - Delete `.planning/` (empty after move).
   - **Manual validation:** none beyond checks — content only; no code affected.
 
-- [ ] **Phase 5: Delete `.cursor/rules/project.mdc`**
+- [x] **Phase 5: Delete `.cursor/rules/project.mdc`**
   - `git rm .cursor/rules/project.mdc`.
   - **Manual validation:** open Cursor in this worktree; confirm agent picks up rules from root `AGENTS.md` (ask it "what repo am I in?" — should reference Kiln goals/tech stack).
 
