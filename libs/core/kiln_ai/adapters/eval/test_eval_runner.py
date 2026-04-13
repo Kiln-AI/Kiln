@@ -1,3 +1,5 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Dict
 from unittest.mock import AsyncMock, patch
 
@@ -25,6 +27,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import StructuredOutputMode, TaskRunConfig
+from kiln_ai.utils.git_sync_protocols import default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 
@@ -863,3 +866,157 @@ def test_is_retryable_error_returns_true(error):
 )
 def test_is_retryable_error_returns_false(error):
     assert _is_retryable_error(error) is False
+
+
+# --- save_context tests ---
+
+
+class _RecordingSaveContext:
+    def __init__(self):
+        self.enter_count = 0
+        self.exit_count = 0
+        self.last_exit_exc_type: type | None = None
+
+    def __call__(self):
+        @asynccontextmanager
+        async def cm() -> AsyncIterator[None]:
+            self.enter_count += 1
+            try:
+                yield
+            except BaseException as exc:
+                self.last_exit_exc_type = type(exc)
+                self.exit_count += 1
+                raise
+            else:
+                self.exit_count += 1
+
+        return cm()
+
+
+def test_eval_runner_defaults_to_default_save_context(
+    mock_eval, mock_eval_config, mock_run_config
+):
+    runner = EvalRunner(
+        eval_configs=[mock_eval_config],
+        run_configs=[mock_run_config],
+        eval_run_type="task_run_eval",
+    )
+    assert runner._save_context is default_save_context
+
+
+def test_eval_runner_accepts_custom_save_context(
+    mock_eval, mock_eval_config, mock_run_config
+):
+    recorder = _RecordingSaveContext()
+    runner = EvalRunner(
+        eval_configs=[mock_eval_config],
+        run_configs=[mock_run_config],
+        eval_run_type="task_run_eval",
+        save_context=recorder,
+    )
+    assert runner._save_context is recorder
+
+
+@pytest.mark.asyncio
+async def test_run_job_custom_save_context_wraps_save(
+    mock_task, data_source, mock_eval_config, mock_run_config
+):
+    recorder = _RecordingSaveContext()
+    runner = EvalRunner(
+        eval_configs=[mock_eval_config],
+        run_configs=[mock_run_config],
+        eval_run_type="task_run_eval",
+        save_context=recorder,
+    )
+
+    task_run = TaskRun(
+        parent=mock_task,
+        input="test input",
+        input_source=data_source,
+        output=TaskOutput(output="test output"),
+    )
+    task_run.save_to_file()
+
+    job = EvalJob(
+        item=task_run,
+        task_run_config=mock_run_config,
+        type="task_run_eval",
+        eval_config=mock_eval_config,
+    )
+
+    class MockEvaluator(BaseEval):
+        async def run_task_and_eval(self, eval_job_item):
+            return (
+                TaskRun(
+                    input=eval_job_item.input,
+                    input_source=data_source,
+                    output=TaskOutput(output="evaluated output"),
+                ),
+                {"accuracy": 1.0},
+                {},
+            )
+
+    with patch(
+        "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
+        return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
+    ):
+        success = await runner.run_job(job)
+
+    assert success is True
+    assert recorder.enter_count == 1
+    assert recorder.exit_count == 1
+    assert recorder.last_exit_exc_type is None
+
+
+@pytest.mark.asyncio
+async def test_run_job_save_context_sees_save_exception(
+    mock_task, data_source, mock_eval_config, mock_run_config
+):
+    recorder = _RecordingSaveContext()
+    runner = EvalRunner(
+        eval_configs=[mock_eval_config],
+        run_configs=[mock_run_config],
+        eval_run_type="task_run_eval",
+        save_context=recorder,
+    )
+
+    task_run = TaskRun(
+        parent=mock_task,
+        input="test input",
+        input_source=data_source,
+        output=TaskOutput(output="test output"),
+    )
+    task_run.save_to_file()
+
+    job = EvalJob(
+        item=task_run,
+        task_run_config=mock_run_config,
+        type="task_run_eval",
+        eval_config=mock_eval_config,
+    )
+
+    class MockEvaluator(BaseEval):
+        async def run_task_and_eval(self, eval_job_item):
+            return (
+                TaskRun(
+                    input=eval_job_item.input,
+                    input_source=data_source,
+                    output=TaskOutput(output="evaluated output"),
+                ),
+                {"accuracy": 1.0},
+                {},
+            )
+
+    with (
+        patch(
+            "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
+            return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
+        ),
+        patch.object(EvalRun, "save_to_file", side_effect=RuntimeError("disk full")),
+    ):
+        with pytest.raises(RuntimeError, match="disk full"):
+            await runner.run_job(job)
+
+    assert recorder.enter_count == 1
+    assert recorder.exit_count == 1
+    assert recorder.last_exit_exc_type is RuntimeError

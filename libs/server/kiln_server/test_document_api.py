@@ -1,5 +1,6 @@
 import io
 import json
+from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -3928,6 +3929,88 @@ async def test_build_rag_workflow_runner_ollama_extractor_concurrency_is_one(
         # __init__ is autospecced; args: (self, project, extractor_config, ...)
         _, _args, kwargs = mock_extract_runner_init.mock_calls[0]
         assert kwargs.get("concurrency") == 1
+
+
+async def test_build_rag_workflow_runner_threads_save_context(
+    mock_project,
+    mock_extractor_config,
+    mock_chunker_config,
+    mock_embedding_config,
+    mock_vector_store_config_fts,
+):
+    """Verify save_context is passed to the three file-writing step runners
+    but NOT to the indexing step runner."""
+    rag_config = RagConfig(
+        parent=mock_project,
+        name="Test RAG Config",
+        description="Test RAG Config description",
+        tool_name="test_search_tool",
+        tool_description="A test search tool for document retrieval",
+        extractor_config_id=mock_extractor_config.id,
+        chunker_config_id=mock_chunker_config.id,
+        embedding_config_id=mock_embedding_config.id,
+        vector_store_config_id=mock_vector_store_config_fts.id,
+    )
+    rag_config.save_to_file()
+
+    @asynccontextmanager
+    async def fake_ctx():
+        yield
+
+    def factory():
+        return fake_ctx()
+
+    with (
+        patch(
+            "kiln_ai.datamodel.rag.RagConfig.from_id_and_parent_path"
+        ) as mock_rag_from_id,
+        patch(
+            "kiln_ai.datamodel.extraction.ExtractorConfig.from_id_and_parent_path"
+        ) as mock_extractor_from_id,
+        patch(
+            "kiln_ai.datamodel.chunk.ChunkerConfig.from_id_and_parent_path"
+        ) as mock_chunker_from_id,
+        patch(
+            "kiln_ai.datamodel.embedding.EmbeddingConfig.from_id_and_parent_path"
+        ) as mock_embedding_from_id,
+        patch(
+            "kiln_ai.datamodel.vector_store.VectorStoreConfig.from_id_and_parent_path"
+        ) as mock_vector_store_from_id,
+        patch(
+            "kiln_server.document_api.compute_current_progress_for_rag_config"
+        ) as mock_compute_progress,
+        patch("kiln_server.document_api.RagWorkflowRunner") as mock_runner_class,
+    ):
+        mock_rag_from_id.return_value = rag_config
+        mock_extractor_from_id.return_value = mock_extractor_config
+        mock_chunker_from_id.return_value = mock_chunker_config
+        mock_embedding_from_id.return_value = mock_embedding_config
+        mock_vector_store_from_id.return_value = mock_vector_store_config_fts
+        mock_compute_progress.return_value = RagProgress(
+            total_document_count=0,
+            total_document_completed_count=0,
+            total_document_extracted_count=0,
+            total_document_chunked_count=0,
+            total_document_embedded_count=0,
+        )
+        mock_runner_class.return_value = MagicMock()
+
+        await build_rag_workflow_runner(
+            mock_project, str(rag_config.id), save_context=factory
+        )
+
+        # Inspect the step_runners passed into RagWorkflowRunnerConfiguration
+        assert mock_runner_class.call_count == 1
+        _args, _kwargs = mock_runner_class.call_args
+        config = _args[1]
+        step_runners = config.step_runners
+
+        # First three (extraction, chunking, embedding) get the save_context.
+        assert step_runners[0]._save_context is factory
+        assert step_runners[1]._save_context is factory
+        assert step_runners[2]._save_context is factory
+        # Indexing step runner does not use save_context at all.
+        assert not hasattr(step_runners[3], "_save_context")
 
 
 def test_patch_document_success_name_only(client, mock_project, mock_document):

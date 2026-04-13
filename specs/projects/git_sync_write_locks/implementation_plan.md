@@ -13,7 +13,7 @@ status: complete
   - Add `atomic_write` parametrization to integration tests
   - All existing tests must continue to pass
 
-- [ ] Phase 2: Save context type and runner refactoring
+- [x] Phase 2: Save context type and runner refactoring
   - Add `SaveContext` type, `default_save_context`, and `AtomicWriteCapable` Protocol to `libs/core`
   - Refactor `ExtractorRunner` to accept `save_context` and wrap `save_to_file()` inside the existing try/except in `run_job()`
   - Refactor `EvalRunner` the same way

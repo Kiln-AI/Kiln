@@ -75,6 +75,7 @@ from kiln_ai.utils import shared_async_lock_manager
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.filesystem_cache import TemporaryFilesystemCache
+from kiln_ai.utils.git_sync_protocols import SaveContext
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
 from pydantic import BaseModel, Field, PositiveInt, model_validator
@@ -807,6 +808,7 @@ class DocumentLibraryState(BaseModel):
 async def build_rag_workflow_runner(
     project: Project,
     rag_config_id: str,
+    save_context: SaveContext | None = None,
 ) -> RagWorkflowRunner:
     rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
     if rag_config is None:
@@ -889,6 +891,7 @@ async def build_rag_workflow_runner(
                     concurrency=extractor_concurrency,
                     rag_config=rag_config,
                     filesystem_cache=TemporaryFilesystemCache.shared(),
+                    save_context=save_context,
                 ),
                 RagChunkingStepRunner(
                     project,
@@ -896,6 +899,7 @@ async def build_rag_workflow_runner(
                     chunker_config,
                     concurrency=5,
                     rag_config=rag_config,
+                    save_context=save_context,
                 ),
                 RagEmbeddingStepRunner(
                     project,
@@ -904,6 +908,7 @@ async def build_rag_workflow_runner(
                     embedding_config,
                     concurrency=5,
                     rag_config=rag_config,
+                    save_context=save_context,
                 ),
                 RagIndexingStepRunner(
                     project,
