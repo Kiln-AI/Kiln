@@ -181,6 +181,7 @@ class ModelName(str, Enum):
     grok_2 = "grok_2"
     grok_3 = "grok_3"
     grok_3_mini = "grok_3_mini"
+    grok_4_20 = "grok_4_20"
     grok_4_1_fast = "grok_4_1_fast"
     grok_4 = "grok_4"
     qwen_3p5_flash = "qwen_3p5_flash"
@@ -4817,6 +4818,33 @@ built_in_models: List[KilnModel] = [
         ],
     ),
     # Grok 4.1 Fast
+    # Grok 4.20
+    KilnModel(
+        family=ModelFamily.grok,
+        name=ModelName.grok_4_20,
+        friendly_name="Grok 4.20",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="x-ai/grok-4.20",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                uncensored=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     KilnModel(
         family=ModelFamily.grok,
         name=ModelName.grok_4_1_fast,
