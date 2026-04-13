@@ -660,8 +660,10 @@ class LiteLlmAdapter(BaseAdapter):
         allowed_openai = self._allowed_openai_params_for_completion_kwargs(
             completion_kwargs
         )
-        if allowed_openai:
-            completion_kwargs["allowed_openai_params"] = allowed_openai
+        existing_allowed = completion_kwargs.get("allowed_openai_params", [])
+        merged_allowed = list(set(existing_allowed + allowed_openai))
+        if merged_allowed:
+            completion_kwargs["allowed_openai_params"] = merged_allowed
 
         return completion_kwargs
 

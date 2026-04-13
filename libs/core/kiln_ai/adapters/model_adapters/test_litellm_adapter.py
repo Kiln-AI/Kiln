@@ -973,6 +973,60 @@ async def test_build_completion_kwargs_omits_allowed_openai_params_without_tools
 
 
 @pytest.mark.asyncio
+async def test_build_completion_kwargs_merges_allowed_openai_params(
+    config, mock_task, mock_math_tools
+):
+    """Test that allowed_openai_params from additional_body_options are merged with internally computed ones."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    adapter._additional_body_options = {
+        "allowed_openai_params": ["tools", "custom_param"],
+    }
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=mock_math_tools),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    assert sorted(kwargs["allowed_openai_params"]) == [
+        "custom_param",
+        "tool_choice",
+        "tools",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_preserves_existing_allowed_openai_params_without_tools(
+    config, mock_task
+):
+    """Test that allowed_openai_params from additional_body_options are preserved even when no tools are present."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    adapter._additional_body_options = {
+        "allowed_openai_params": ["custom_param"],
+    }
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=[]),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    assert kwargs["allowed_openai_params"] == ["custom_param"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "structured_output_mode, expected_error_message",
     [
