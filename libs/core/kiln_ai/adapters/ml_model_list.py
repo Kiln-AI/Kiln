@@ -181,6 +181,7 @@ class ModelName(str, Enum):
     grok_2 = "grok_2"
     grok_3 = "grok_3"
     grok_3_mini = "grok_3_mini"
+    grok_4_20 = "grok_4_20"
     grok_4_1_fast = "grok_4_1_fast"
     grok_4 = "grok_4"
     qwen_3p5_flash = "qwen_3p5_flash"
@@ -4815,6 +4816,36 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Grok 4.20
+    KilnModel(
+        family=ModelFamily.grok,
+        name=ModelName.grok_4_20,
+        friendly_name="Grok 4.20",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="x-ai/grok-4.20",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                uncensored=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                reasoning_capable=True,
+                reasoning_optional_for_structured_output=True,
+                require_openrouter_reasoning=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # Grok 4.1 Fast
     KilnModel(
         family=ModelFamily.grok,
@@ -7003,6 +7034,14 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 r1_openrouter_options=True,
                 require_openrouter_reasoning=True,
+                parser=ModelParserID.r1_thinking,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="MiniMaxAI/MiniMax-M2.7",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                reasoning_capable=True,
+                supports_data_gen=True,
                 parser=ModelParserID.r1_thinking,
             ),
         ],
