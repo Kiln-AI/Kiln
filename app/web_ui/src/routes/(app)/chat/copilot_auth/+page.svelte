@@ -14,5 +14,4 @@
   docs_link="https://docs.kiln.tech"
   breadcrumbs={[{ label: "Chat", href: "/chat" }]}
   success_redirect_url="/chat"
-  cancel_redirect_url="/chat"
 />
