@@ -4661,8 +4661,8 @@ export interface components {
             output: string;
             /** Fails Specification */
             fails_specification: boolean;
-            /** Feedback */
-            feedback?: string | null;
+            /** User Feedback */
+            user_feedback?: string | null;
         };
         /**
          * ExternalToolApiDescription

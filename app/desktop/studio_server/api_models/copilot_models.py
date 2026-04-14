@@ -79,7 +79,7 @@ class ExampleWithFeedbackApi(BaseModel):
     input: str = Field(alias="input")
     output: str
     fails_specification: bool
-    feedback: str | None = None
+    user_feedback: str | None = None
 
 
 class ClarifySpecApiInput(BaseModel):

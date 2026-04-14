@@ -18,14 +18,14 @@ class ExamplesWithFeedbackItem:
         input_ (str):
         output (str):
         fails_specification (bool): Judge's verdict - whether the output fails the Target Specification
-        feedback (None | str | Unset): Optional text feedback from the user
+        user_feedback (None | str | Unset): Optional text user_feedback from the user
     """
 
     user_agrees_with_judge: bool
     input_: str
     output: str
     fails_specification: bool
-    feedback: None | str | Unset = UNSET
+    user_feedback: None | str | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         user_agrees_with_judge = self.user_agrees_with_judge
@@ -36,11 +36,11 @@ class ExamplesWithFeedbackItem:
 
         fails_specification = self.fails_specification
 
-        feedback: None | str | Unset
-        if isinstance(self.feedback, Unset):
-            feedback = UNSET
+        user_feedback: None | str | Unset
+        if isinstance(self.user_feedback, Unset):
+            user_feedback = UNSET
         else:
-            feedback = self.feedback
+            user_feedback = self.user_feedback
 
         field_dict: dict[str, Any] = {}
 
@@ -52,8 +52,8 @@ class ExamplesWithFeedbackItem:
                 "fails_specification": fails_specification,
             }
         )
-        if feedback is not UNSET:
-            field_dict["feedback"] = feedback
+        if user_feedback is not UNSET:
+            field_dict["user_feedback"] = user_feedback
 
         return field_dict
 
@@ -68,21 +68,21 @@ class ExamplesWithFeedbackItem:
 
         fails_specification = d.pop("fails_specification")
 
-        def _parse_feedback(data: object) -> None | str | Unset:
+        def _parse_user_feedback(data: object) -> None | str | Unset:
             if data is None:
                 return data
             if isinstance(data, Unset):
                 return data
             return cast(None | str | Unset, data)
 
-        feedback = _parse_feedback(d.pop("feedback", UNSET))
+        user_feedback = _parse_user_feedback(d.pop("user_feedback", UNSET))
 
-        examples_with_feedback_item = cls(
+        examples_with_user_feedback_item = cls(
             user_agrees_with_judge=user_agrees_with_judge,
             input_=input_,
             output=output,
             fails_specification=fails_specification,
-            feedback=feedback,
+            user_feedback=user_feedback,
         )
 
-        return examples_with_feedback_item
+        return examples_with_user_feedback_item

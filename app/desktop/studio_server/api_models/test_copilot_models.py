@@ -153,24 +153,24 @@ class TestExampleWithFeedbackApi:
         assert example.output == "test output"
         assert example.fails_specification is False
 
-    def test_feedback_optional(self):
+    def test_user_feedback_optional(self):
         example = ExampleWithFeedbackApi(
             user_agrees_with_judge=True,
             input="test input",
             output="test output",
             fails_specification=False,
         )
-        assert example.feedback is None
+        assert example.user_feedback is None
 
-    def test_feedback_can_be_set(self):
+    def test_user_feedback_can_be_set(self):
         example = ExampleWithFeedbackApi(
             user_agrees_with_judge=False,
             input="test input",
             output="test output",
             fails_specification=True,
-            feedback="This is wrong because...",
+            user_feedback="This is wrong because...",
         )
-        assert example.feedback == "This is wrong because..."
+        assert example.user_feedback == "This is wrong because..."
 
 
 class TestClarifySpecApiInput:

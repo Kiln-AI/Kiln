@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/prompt_optimization_jobs/{job_id}/status",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}
