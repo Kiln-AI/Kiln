@@ -1020,3 +1020,70 @@ async def test_run_job_save_context_sees_save_exception(
     assert recorder.enter_count == 1
     assert recorder.exit_count == 1
     assert recorder.last_exit_exc_type is RuntimeError
+
+
+@pytest.mark.asyncio
+async def test_other_jobs_unaffected_by_save_context_rollback(
+    mock_task, data_source, mock_eval_config, mock_run_config
+):
+    recorder = _RecordingSaveContext()
+    runner = EvalRunner(
+        eval_configs=[mock_eval_config],
+        run_configs=[mock_run_config],
+        eval_run_type="task_run_eval",
+        save_context=recorder,
+    )
+
+    task_run = TaskRun(
+        parent=mock_task,
+        input="test input",
+        input_source=data_source,
+        output=TaskOutput(output="test output"),
+    )
+    task_run.save_to_file()
+
+    def make_job():
+        return EvalJob(
+            item=task_run,
+            task_run_config=mock_run_config,
+            type="task_run_eval",
+            eval_config=mock_eval_config,
+        )
+
+    class MockEvaluator(BaseEval):
+        async def run_task_and_eval(self, eval_job_item):
+            return (
+                TaskRun(
+                    input=eval_job_item.input,
+                    input_source=data_source,
+                    output=TaskOutput(output="evaluated output"),
+                ),
+                {"accuracy": 1.0},
+                {},
+            )
+
+    call_count = {"n": 0}
+    real_save_to_file = EvalRun.save_to_file
+
+    def fail_first_save(self, *args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise RuntimeError("disk full")
+        return real_save_to_file(self, *args, **kwargs)
+
+    with (
+        patch(
+            "kiln_ai.adapters.eval.eval_runner.eval_adapter_from_type",
+            return_value=lambda *args, **kwargs: MockEvaluator(*args, **kwargs),
+        ),
+        patch.object(EvalRun, "save_to_file", fail_first_save),
+    ):
+        with pytest.raises(RuntimeError, match="disk full"):
+            await runner.run_job(make_job())
+        success = await runner.run_job(make_job())
+
+    assert success is True
+    # Two fresh contexts were opened and both closed; the second job's success
+    # proves rollback from the first did not leak into the second's context.
+    assert recorder.enter_count == 2
+    assert recorder.exit_count == 2

@@ -2551,6 +2551,52 @@ class TestExecuteExtractorJobSaveContext:
 
         assert recorder.last_exit_exc_type is RuntimeError
 
+    @pytest.mark.asyncio
+    async def test_other_jobs_unaffected_by_rollback(
+        self, mock_document, mock_extractor_config
+    ):
+        recorder = _RecordingSaveContext()
+
+        mock_extractor = MagicMock(spec=BaseExtractor)
+        mock_extractor.extract = AsyncMock(
+            return_value=ExtractionOutput(
+                content="extracted", content_format=OutputFormat.TEXT
+            )
+        )
+
+        call_count = {"n": 0}
+
+        def fail_first_save(*args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise RuntimeError("disk full")
+
+        with patch(
+            "kiln_ai.adapters.rag.rag_runners.Extraction"
+        ) as mock_extraction_class:
+            mock_extraction = MagicMock()
+            mock_extraction.save_to_file.side_effect = fail_first_save
+            mock_extraction_class.return_value = mock_extraction
+
+            job1 = ExtractorJob(
+                doc=mock_document, extractor_config=mock_extractor_config
+            )
+            job2 = ExtractorJob(
+                doc=mock_document, extractor_config=mock_extractor_config
+            )
+
+            with pytest.raises(RuntimeError, match="disk full"):
+                await execute_extractor_job(job1, mock_extractor, save_context=recorder)
+            result2 = await execute_extractor_job(
+                job2, mock_extractor, save_context=recorder
+            )
+
+        assert result2 is True
+        # Two fresh contexts were opened and both closed; job2's success proves
+        # rollback from job1 did not leak into job2's context.
+        assert recorder.enter_count == 2
+        assert recorder.exit_count == 2
+
 
 class TestExecuteChunkerJobSaveContext:
     @pytest.mark.asyncio

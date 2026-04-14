@@ -360,3 +360,56 @@ async def test_run_job_save_context_sees_save_exception(
     assert recorder.enter_count == 1
     assert recorder.exit_count == 1
     assert recorder.last_exit_exc_type is RuntimeError
+
+
+@pytest.mark.asyncio
+async def test_other_jobs_unaffected_by_save_context_rollback(
+    mock_extractor_config, mock_document
+):
+    recorder = _RecordingSaveContext()
+    runner = ExtractorRunner(
+        documents=[mock_document],
+        extractor_configs=[mock_extractor_config],
+        save_context=recorder,
+    )
+
+    fake_extractor = MagicMock(spec=BaseExtractor)
+    fake_extractor.extract = AsyncMock(
+        return_value=ExtractionOutput(
+            content="hello world",
+            content_format=OutputFormat.TEXT,
+            is_passthrough=False,
+        )
+    )
+
+    call_count = {"n": 0}
+
+    def fail_first_save(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise RuntimeError("disk full")
+
+    with (
+        patch(
+            "kiln_ai.adapters.extractors.extractor_runner.extractor_adapter_from_type",
+            return_value=fake_extractor,
+        ),
+        patch(
+            "kiln_ai.adapters.extractors.extractor_runner.Extraction"
+        ) as mock_extraction_class,
+    ):
+        mock_extraction = MagicMock()
+        mock_extraction.save_to_file.side_effect = fail_first_save
+        mock_extraction_class.return_value = mock_extraction
+
+        job1 = _make_extractor_job(mock_document, mock_extractor_config)
+        job2 = _make_extractor_job(mock_document, mock_extractor_config)
+        result1 = await runner.run_job(job1)
+        result2 = await runner.run_job(job2)
+
+    assert result1 is False
+    assert result2 is True
+    # Two fresh contexts were opened and both closed; the second job's success
+    # proves rollback from the first did not leak into the second's context.
+    assert recorder.enter_count == 2
+    assert recorder.exit_count == 2

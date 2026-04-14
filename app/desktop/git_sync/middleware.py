@@ -199,7 +199,9 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
         if await manager.has_dirty_files():
             dirty = await manager.get_dirty_file_paths()
             logger.error(
-                "DEV MODE: Request left repo dirty without write lock!\n"
+                "DEV MODE: Request left repo dirty without write lock! "
+                "(May also be caused by a parallel request with @no_write_lock "
+                "mid-atomic_write — check all recent logs before blaming this request.)\n"
                 "  API: %s %s\n  Project: %s\n  Dirty files: %s",
                 request.method,
                 request.url.path,
@@ -210,7 +212,8 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
                 content=json.dumps(
                     {
                         "detail": "Dev mode: this endpoint wrote files without "
-                        "holding a write lock. See server logs for details."
+                        "holding a write lock, or a parallel request is "
+                        "mid-write. See server logs for details."
                     },
                     ensure_ascii=False,
                 ),

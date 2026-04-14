@@ -368,17 +368,29 @@ def test_error_mapping(git_repos, error_class, expected_status, expected_detail)
 
 
 def test_write_lock_timeout_from_lock_acquisition(git_repos):
-    """WriteLockTimeoutError raised by atomic_write() acquisition (not the
-    handler) must be caught and mapped to 503, not bubble as a 500."""
+    """WriteLockTimeoutError raised inside atomic_write() __aenter__ (lock
+    acquisition) must be caught and mapped to 503, not bubble as a 500.
+
+    The real timeout originates from threading.Lock.acquire(timeout=30) inside
+    atomic_write's body, so the exception surfaces via __aenter__. Mocking
+    atomic_write itself as a sync MagicMock with side_effect would fire on
+    .call rather than __aenter__, exercising the wrong boundary. Instead we
+    return a real async context manager whose __aenter__ raises.
+    """
     local_path, _ = git_repos
     config = _auto_config(str(local_path))
 
     app = _build_app()
 
+    class _TimingOutAtomicWrite:
+        async def __aenter__(self):
+            raise WriteLockTimeoutError("lock timed out")
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
     mock_manager = MagicMock(repo_path=local_path)
-    mock_manager.atomic_write = MagicMock(
-        side_effect=WriteLockTimeoutError("lock timed out")
-    )
+    mock_manager.atomic_write = MagicMock(return_value=_TimingOutAtomicWrite())
 
     with (
         mock_git_sync_config(config),
