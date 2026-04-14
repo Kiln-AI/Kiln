@@ -200,6 +200,14 @@
     return JSON.stringify(output, null, 2)
   }
 
+  function getToolInputString(input: unknown, key: string): string {
+    if (typeof input === "object" && input !== null && key in input) {
+      const val = (input as Record<string, unknown>)[key]
+      return typeof val === "string" ? val : ""
+    }
+    return ""
+  }
+
   function getToolOutputError(part: ChatMessagePart): string {
     if (
       !("output" in part) ||
@@ -480,6 +488,14 @@
                             <ToolApprovalBox
                               description={approvalItem?.approvalDescription ??
                                 ""}
+                              method={getToolInputString(
+                                approvalItem?.input,
+                                "method",
+                              )}
+                              url={getToolInputString(
+                                approvalItem?.input,
+                                "url_path",
+                              )}
                               onRun={() => applyToolApprovalRun(tcId)}
                               onSkip={() => applyToolApprovalSkip(tcId)}
                             />
@@ -554,6 +570,14 @@
                                         <ToolApprovalBox
                                           description={approvalItem?.approvalDescription ??
                                             ""}
+                                          method={getToolInputString(
+                                            approvalItem?.input,
+                                            "method",
+                                          )}
+                                          url={getToolInputString(
+                                            approvalItem?.input,
+                                            "url_path",
+                                          )}
                                           onRun={() =>
                                             applyToolApprovalRun(tcId)}
                                           onSkip={() =>
