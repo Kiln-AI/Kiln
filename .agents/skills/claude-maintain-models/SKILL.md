@@ -259,6 +259,31 @@ Collect test results for use in the PR body (Phase 5). Organize by model name an
 
 ## Phase 5 – Create Pull Request
 
+### 5.0 — Important context about Claude Code Web's stop hook
+
+This skill is often run via Claude Code Web (Slack connector). That environment has a **non-user-configurable stop hook** which, at end of session, will:
+- Block the session from ending if there are uncommitted changes, untracked files, or unpushed commits
+- Instruct the agent to commit and push any local work before stopping
+- Explicitly tell the agent NOT to create a PR unless the user asked for one
+
+**The problem:** when tests fail mid-skill, the agent has historically pushed a half-broken branch to satisfy the hook, leaving a graveyard of abandoned `add-model/*` branches on the remote. That is the exact opposite of what the user wants.
+
+**The user's desires, in priority order:**
+1. **Ask before you push.** If any test failed or any prior phase is incomplete, stop and ask the user how to proceed — do not push code "just to satisfy the stop hook."
+2. **No abandoned branches.** Never create a branch as a progress-saving mechanism. A branch only exists because the user approved a PR-ready state.
+3. **If the user says to abandon:** revert your local changes (`git restore` / `git clean` the specific files you touched) so the stop hook sees a clean tree and exits cleanly. Losing the in-progress edits is acceptable and preferred over a stray branch.
+4. **Only push when the user explicitly confirms** the results are good and it's time to open a PR.
+
+### 5.1 — Gate before pushing
+
+Do NOT commit, push, or create a branch if any of the following are true:
+- Any test failed with ❌ (real error — bad slug, unsupported feature, 400/500)
+- The smoke test (4b) failed and wasn't resolved
+- Any step in Phases 2–4 was skipped or incomplete
+- You are unsure whether a ⚠️ flake is actually a real failure
+
+If any of the above apply, **stop and ask the user** what to do. Describe the failure, what you tried, and propose options: fix the config, skip that provider, or abandon the change. Only proceed to 5a once the user explicitly confirms.
+
 After all tests pass and `pytest.ini` is reverted, commit the changes and open a PR against `main`.
 
 ### 5a. Commit and push
