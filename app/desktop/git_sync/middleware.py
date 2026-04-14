@@ -135,7 +135,6 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
                 async for chunk in response.body_iterator:  # type: ignore[union-attr]
                     body += chunk
 
-                # TODO: gate on dev_mode when that mechanism exists
                 held = time.monotonic() - lock_start
                 if held > LONG_LOCK_HOLD_THRESHOLD:
                     logger.warning(
@@ -196,8 +195,8 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
             )
             return response
 
-        if await manager.has_dirty_files():
-            dirty = await manager.get_dirty_file_paths()
+        dirty = await manager.get_dirty_file_paths()
+        if dirty:
             logger.error(
                 "DEV MODE: Request left repo dirty without write lock! "
                 "(May also be caused by a parallel request with @no_write_lock "

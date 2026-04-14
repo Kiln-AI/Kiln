@@ -94,6 +94,13 @@ class GitSyncManager:
         made within the block are rolled back to the pre-yield HEAD and the
         exception re-raises.
 
+        Not re-entrant. The underlying write lock wraps a non-reentrant
+        threading.Lock, so nested atomic_write calls on the same manager
+        will block on acquisition and raise WriteLockTimeoutError. Runner
+        save_context callables are invoked from the regular read path or
+        @no_write_lock endpoints -- never from inside an outer atomic_write
+        -- so nesting should not occur in practice.
+
         Args:
             context: Descriptive string used in the commit message. Examples:
                 "POST /api/projects/123/tasks", "extraction job for doc 456".

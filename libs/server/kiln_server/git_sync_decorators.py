@@ -1,7 +1,7 @@
 from typing import Callable, TypeVar
 
+from fastapi import Request
 from kiln_ai.utils.git_sync_protocols import AtomicWriteCapable, SaveContext
-from starlette.requests import Request
 
 F = TypeVar("F", bound=Callable)
 
