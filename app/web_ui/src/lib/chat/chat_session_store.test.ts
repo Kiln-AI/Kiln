@@ -182,6 +182,42 @@ describe("createChatSessionStore", () => {
       expect(get(store).abortController).toBeNull()
     })
 
+    it("resets activity indicator and toolExecuting on finish", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      await store.sendMessage("hi")
+      capture.options!.onShowActivityIndicator!(true)
+      capture.options!.onToolExecutionStart!(1)
+      expect(get(store).showActivityIndicator).toBe(true)
+      expect(get(store).toolExecuting).toBe(true)
+
+      capture.options!.onFinish()
+
+      expect(get(store).showActivityIndicator).toBe(false)
+      expect(get(store).toolExecuting).toBe(false)
+    })
+
+    it("resets activity indicator and toolExecuting on error", async () => {
+      const { createChatSessionStore, streamChatMock } =
+        await importFreshWithMock()
+      const capture: { options: StreamChatOptions | null } = { options: null }
+      streamChatMock.mockImplementation(capturingStreamChat(capture))
+      const store = createChatSessionStore()
+
+      await store.sendMessage("hi")
+      capture.options!.onShowActivityIndicator!(true)
+      capture.options!.onToolExecutionStart!(1)
+
+      capture.options!.onError(new Error("boom"))
+
+      expect(get(store).showActivityIndicator).toBe(false)
+      expect(get(store).toolExecuting).toBe(false)
+    })
+
     it("adds error message on error callback", async () => {
       const { createChatSessionStore, streamChatMock } =
         await importFreshWithMock()

@@ -239,10 +239,20 @@ export function createChatSessionStore(
       },
       onFinish: () => {
         if (isStale()) return
+        combined.update((s) => ({
+          ...s,
+          toolExecuting: false,
+          showActivityIndicator: false,
+        }))
         setRuntimeState("ready", null)
       },
       onError: (err) => {
         if (isStale()) return
+        combined.update((s) => ({
+          ...s,
+          toolExecuting: false,
+          showActivityIndicator: false,
+        }))
         const errorMsg: ChatMessage = {
           id: chatGenerateId(),
           role: "error",
