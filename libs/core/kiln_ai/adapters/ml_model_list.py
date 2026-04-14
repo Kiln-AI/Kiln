@@ -4833,9 +4833,6 @@ built_in_models: List[KilnModel] = [
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_requires_pdf_as_image=True,
-                reasoning_capable=True,
-                reasoning_optional_for_structured_output=True,
-                require_openrouter_reasoning=True,
                 multimodal_mime_types=[
                     KilnMimeType.PDF,
                     KilnMimeType.TXT,
