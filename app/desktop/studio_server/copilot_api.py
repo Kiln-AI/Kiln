@@ -370,7 +370,7 @@ def connect_copilot_api(app: FastAPI):
         )
 
         # 4. Create TaskRuns for eval, train, and golden datasets
-        task_runs = create_dataset_task_runs(
+        dataset_runs = create_dataset_task_runs(
             all_examples=all_examples,
             reviewed_examples=request.reviewed_examples,
             eval_tag=eval_tag,
@@ -378,6 +378,7 @@ def connect_copilot_api(app: FastAPI):
             golden_tag=golden_tag,
             spec_name=request.name,
         )
+        task_runs = dataset_runs.task_runs
         for run in task_runs:
             run.parent = task
         models_to_save.extend(task_runs)
@@ -430,6 +431,7 @@ def connect_copilot_api(app: FastAPI):
             for run in task_runs:
                 run.save_to_file()
                 saved_models.append(run)
+                dataset_runs.save_pending_feedback(run)
 
             spec.save_to_file()
             saved_models.append(spec)
