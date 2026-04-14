@@ -196,7 +196,7 @@
 
       <li class="menu-sm">
         <a href="/chat" class={section == Section.Chat ? "active" : ""}>
-          <div class="h-6 w-6 mr-2">
+          <div class="h-6 w-6">
             <ChatIcon />
           </div>
           Chat</a
