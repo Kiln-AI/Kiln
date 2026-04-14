@@ -1,8 +1,0 @@
-{
-  "method": "post",
-  "path": "/api/projects/{project_id}/create_reranker_config",
-  "agent_policy": {
-    "permission": "allow",
-    "requires_approval": false
-  }
-}

@@ -1,9 +1,0 @@
-{
-  "method": "post",
-  "path": "/api/projects/{project_id}/tasks/{task_id}/generate_categories",
-  "agent_policy": {
-    "permission": "allow",
-    "requires_approval": true,
-    "approval_description": "Generate categories using LLM?"
-  }
-}

@@ -1,9 +1,0 @@
-{
-  "method": "post",
-  "path": "/api/projects/{project_id}/extractor_configs/{extractor_config_id}/documents/{document_id}/ephemeral_split",
-  "agent_policy": {
-    "permission": "allow",
-    "requires_approval": true,
-    "approval_description": "Run ephemeral document split? This triggers backend processing."
-  }
-}

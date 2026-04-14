@@ -1,8 +1,0 @@
-{
-  "method": "get",
-  "path": "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/score_summary",
-  "agent_policy": {
-    "permission": "allow",
-    "requires_approval": false
-  }
-}

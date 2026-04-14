@@ -1,9 +1,0 @@
-{
-  "method": "get",
-  "path": "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/run_calibration",
-  "agent_policy": {
-    "permission": "allow",
-    "requires_approval": true,
-    "approval_description": "Run eval calibration? This runs LLM calls across all eval configs and uses AI credits."
-  }
-}

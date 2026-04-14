@@ -1,9 +1,0 @@
-{
-  "method": "post",
-  "path": "/api/copilot/refine_spec_with_question_answers",
-  "agent_policy": {
-    "permission": "allow",
-    "requires_approval": true,
-    "approval_description": "Run Copilot spec refinement with question answers?"
-  }
-}

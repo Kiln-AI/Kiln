@@ -1,8 +1,0 @@
-{
-  "method": "delete",
-  "path": "/api/projects/{project_id}/tool_servers/{tool_server_id}",
-  "agent_policy": {
-    "permission": "deny",
-    "requires_approval": false
-  }
-}

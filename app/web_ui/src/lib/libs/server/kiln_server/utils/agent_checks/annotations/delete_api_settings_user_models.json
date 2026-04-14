@@ -1,8 +1,0 @@
-{
-  "method": "delete",
-  "path": "/api/settings/user_models",
-  "agent_policy": {
-    "permission": "deny",
-    "requires_approval": false
-  }
-}

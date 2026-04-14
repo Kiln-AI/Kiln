@@ -1,9 +1,0 @@
-{
-  "method": "post",
-  "path": "/api/projects/{project_id}/documents/{document_id}/extract",
-  "agent_policy": {
-    "permission": "allow",
-    "requires_approval": true,
-    "approval_description": "Run document extraction? This processes the document and may take time."
-  }
-}
