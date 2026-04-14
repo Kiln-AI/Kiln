@@ -214,23 +214,35 @@
   }
 
   let suppressAutoScroll = false
+  let userNearBottom = true
+  let isAutoScrolling = false
+  const SCROLL_THRESHOLD = 150
+
+  function handleScroll() {
+    if (isAutoScrolling || !messagesContainer) return
+    const { scrollTop, scrollHeight, clientHeight } = messagesContainer
+    userNearBottom = scrollTop + clientHeight >= scrollHeight - SCROLL_THRESHOLD
+  }
 
   onMount(() => {
     const container = messagesContainer
     const end = messagesEndRef
     if (container && end) {
+      container.addEventListener("scroll", handleScroll, { passive: true })
       if (messages.length > 0) {
         end.scrollIntoView({ block: "end", behavior: "auto" })
       }
-      // trick here to avoid forcing a scroll on every character update
-      // as that is expensive
       let rafPending = false
       scrollObserver = new MutationObserver(() => {
-        if (!suppressAutoScroll && !rafPending) {
+        if (!suppressAutoScroll && userNearBottom && !rafPending) {
           rafPending = true
           requestAnimationFrame(() => {
             rafPending = false
+            isAutoScrolling = true
             end.scrollIntoView({ block: "end", behavior: "auto" })
+            requestAnimationFrame(() => {
+              isAutoScrolling = false
+            })
           })
         }
       })
@@ -244,6 +256,7 @@
   })
 
   onDestroy(() => {
+    messagesContainer?.removeEventListener("scroll", handleScroll)
     scrollObserver?.disconnect()
     scrollObserver = null
   })
@@ -285,6 +298,7 @@
     }>,
   ) {
     store.loadSession(e.detail.messages, e.detail.continuationTraceId)
+    userNearBottom = true
     tick().then(() => {
       messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })
       textareaRef?.focus({ preventScroll: true })
@@ -306,6 +320,7 @@
     const sent = await store.sendMessage(text)
     if (!sent) return
     input = ""
+    userNearBottom = true
     setTimeout(() => {
       adjustTextareaHeight()
       messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })
