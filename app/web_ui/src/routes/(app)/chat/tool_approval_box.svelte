@@ -1,4 +1,6 @@
 <script lang="ts">
+  import BrailleSpinner from "./braille_spinner.svelte"
+
   export let description: string = ""
   export let method: string = ""
   export let url: string = ""
@@ -13,6 +15,7 @@
     <div
       class="flex items-center gap-1.5 text-xs font-mono text-base-content/70"
     >
+      <BrailleSpinner />
       {#if method}
         <span class="font-semibold text-base-content/90 uppercase"
           >{method}</span

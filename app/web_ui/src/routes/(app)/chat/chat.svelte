@@ -15,6 +15,8 @@
   import ChatHistory from "./chat_history.svelte"
   import ToolApprovalBox from "./tool_approval_box.svelte"
   import ChatLoading from "./chat_loading.svelte"
+  import ChatStatusSteps from "./chat_status_steps.svelte"
+  import BrailleSpinner from "./braille_spinner.svelte"
   import { env } from "$env/dynamic/public"
 
   export let store: ChatSessionStore = chatSessionStore
@@ -32,7 +34,6 @@
 
   $: toolApprovalWaiter = $store.toolApprovalWaiter
   $: toolApprovalPicks = $store.toolApprovalPicks
-  $: showActivityIndicator = $store.showActivityIndicator
 
   export let hasMessages = false
   $: messages = $store.messages
@@ -64,21 +65,6 @@
     if (isLoading && message.id === lastMessage?.id) return true
     const parts = message.parts ?? []
     if (parts.length === 0 && !message.content) return false
-    if (!showToolCallDetails && !message.content) {
-      const hasNonToolPart = parts.some(
-        (p) => p.type === "text" || p.type === "reasoning",
-      )
-      if (!hasNonToolPart) {
-        const allComplete = parts.every(
-          (p) =>
-            typeof p.type === "string" &&
-            p.type.startsWith("tool-") &&
-            "output" in p &&
-            p.output !== undefined,
-        )
-        if (allComplete) return false
-      }
-    }
     return true
   }
 
@@ -232,11 +218,38 @@
     userNearBottom = scrollTop + clientHeight >= scrollHeight - SCROLL_THRESHOLD
   }
 
+  function handleWheel(e: WheelEvent) {
+    if (e.deltaY < 0) {
+      userNearBottom = false
+    }
+  }
+
+  function handleTouchStart(e: TouchEvent) {
+    lastTouchY = e.touches[0]?.clientY ?? 0
+  }
+
+  function handleTouchMove(e: TouchEvent) {
+    const currentY = e.touches[0]?.clientY ?? 0
+    if (currentY > lastTouchY) {
+      userNearBottom = false
+    }
+    lastTouchY = currentY
+  }
+
+  let lastTouchY = 0
+
   onMount(() => {
     const container = messagesContainer
     const end = messagesEndRef
     if (container && end) {
       container.addEventListener("scroll", handleScroll, { passive: true })
+      container.addEventListener("wheel", handleWheel, { passive: true })
+      container.addEventListener("touchstart", handleTouchStart, {
+        passive: true,
+      })
+      container.addEventListener("touchmove", handleTouchMove, {
+        passive: true,
+      })
       if (messages.length > 0) {
         end.scrollIntoView({ block: "end", behavior: "auto" })
       }
@@ -265,6 +278,9 @@
 
   onDestroy(() => {
     messagesContainer?.removeEventListener("scroll", handleScroll)
+    messagesContainer?.removeEventListener("wheel", handleWheel)
+    messagesContainer?.removeEventListener("touchstart", handleTouchStart)
+    messagesContainer?.removeEventListener("touchmove", handleTouchMove)
     scrollObserver?.disconnect()
     scrollObserver = null
   })
@@ -399,6 +415,25 @@
                 {#if message.parts && message.parts.length > 0}
                   {#each message.parts as part, partIndex (partKey(message, part, partIndex))}
                     {#if part.type === "text"}
+                      {@const isFirstText =
+                        (message.parts ?? []).findIndex(
+                          (p) => p.type === "text",
+                        ) === partIndex}
+                      {#if isFirstText && !showToolCallDetails}
+                        {@const msgToolParts = (message.parts ?? []).filter(
+                          (p) =>
+                            typeof p.type === "string" &&
+                            p.type.startsWith("tool-"),
+                        )}
+                        {#if msgToolParts.length === 0}
+                          <div
+                            class="flex items-center gap-1.5 text-sm text-base-content/50 py-0.5"
+                          >
+                            <span class="inline-block w-3 text-center">✓</span>
+                            <span>Thought</span>
+                          </div>
+                        {/if}
+                      {/if}
                       <ChatMarkdown text={part.text ?? ""} />
                     {:else if part.type === "reasoning"}
                       {@const collapsed = isPartCollapsed(
@@ -483,6 +518,38 @@
                         part.output !== null &&
                         "error" in part.output}
                       {#if !showToolCallDetails}
+                        {@const method = getToolInputString(
+                          part.input,
+                          "method",
+                        )}
+                        {@const urlPath = getToolInputString(
+                          part.input,
+                          "url_path",
+                        )}
+                        {@const isGet = !method || method === "GET"}
+                        {@const detail =
+                          method && urlPath ? `(${method} ${urlPath})` : ""}
+                        {@const isFirstTool =
+                          (message.parts ?? []).findIndex(
+                            (p) =>
+                              typeof p.type === "string" &&
+                              p.type.startsWith("tool-"),
+                          ) === partIndex}
+                        {@const hasReasoning = (message.parts ?? []).some(
+                          (p) => p.type === "reasoning",
+                        )}
+                        {@const isActiveMessage =
+                          isLoading && message.id === lastMessage?.id}
+                        {@const effectivelyComplete =
+                          hasOutput || !isActiveMessage}
+                        {#if isFirstTool && !hasReasoning}
+                          <div
+                            class="flex items-center gap-1.5 text-sm text-base-content/50 py-0.5"
+                          >
+                            <span class="inline-block w-3 text-center">✓</span>
+                            <span>Thought</span>
+                          </div>
+                        {/if}
                         {#if pendingInlineApproval && toolApprovalPicks[tcId] === undefined}
                           <div class="mt-2 text-sm">
                             <ToolApprovalBox
@@ -499,6 +566,45 @@
                               onRun={() => applyToolApprovalRun(tcId)}
                               onSkip={() => applyToolApprovalSkip(tcId)}
                             />
+                          </div>
+                        {:else}
+                          <div
+                            class="flex items-center gap-1.5 text-sm text-base-content/50 py-0.5"
+                          >
+                            {#if effectivelyComplete}
+                              <span class="inline-block w-3 text-center">✓</span
+                              >
+                              <span>
+                                {isGet ? "Fetched data" : "Saved data"}
+                                {#if detail}
+                                  <span class="text-base-content/35"
+                                    >{detail}</span
+                                  >
+                                {/if}
+                              </span>
+                            {:else}
+                              <BrailleSpinner />
+                              <span>
+                                {isGet ? "Fetching data" : "Saving data"}<span
+                                  class="inline-flex items-baseline gap-px"
+                                  ><span
+                                    class="thinking-dot"
+                                    style="animation-delay: 0ms">.</span
+                                  ><span
+                                    class="thinking-dot"
+                                    style="animation-delay: 160ms">.</span
+                                  ><span
+                                    class="thinking-dot"
+                                    style="animation-delay: 320ms">.</span
+                                  ></span
+                                >
+                                {#if detail}
+                                  <span class="text-base-content/35"
+                                    >{detail}</span
+                                  >
+                                {/if}
+                              </span>
+                            {/if}
                           </div>
                         {/if}
                       {:else}
@@ -615,20 +721,33 @@
                       {/if}
                     {/if}
                   {/each}
-                  {#if !showToolCallDetails && showActivityIndicator && message.role === "assistant" && message.id === lastMessage?.id}
+                  {#if !showToolCallDetails && message.role === "assistant"}
                     {@const hasVisibleApproval =
                       toolApprovalWaiter !== null &&
+                      message.id === lastMessage?.id &&
                       toolApprovalWaiter.payload.items.some(
                         (i) => toolApprovalPicks[i.toolCallId] === undefined,
                       )}
                     {#if !hasVisibleApproval}
-                      <ChatLoading />
+                      <ChatStatusSteps
+                        parts={message.parts ?? []}
+                        isLoading={isLoading && message.id === lastMessage?.id}
+                        isLastMessage={message.id === lastMessage?.id}
+                      />
                     {/if}
                   {/if}
                 {:else if message.role === "assistant" && showStreamingCursor && message.id === lastMessage?.id}
-                  <div class="flex items-center py-0.5" aria-hidden="true">
-                    <ChatLoading />
-                  </div>
+                  {#if !showToolCallDetails}
+                    <ChatStatusSteps
+                      parts={[]}
+                      isLoading={true}
+                      isLastMessage={true}
+                    />
+                  {:else}
+                    <div class="flex items-center py-0.5" aria-hidden="true">
+                      <ChatLoading />
+                    </div>
+                  {/if}
                 {:else if message.content}
                   <div class="whitespace-pre-wrap">{message.content}</div>
                 {/if}
