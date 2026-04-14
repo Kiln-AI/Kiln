@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 import time
 from pathlib import Path
@@ -28,6 +29,10 @@ MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 PROJECT_ID_PATTERN = re.compile(r"^/api/projects/([^/]+)")
 
 LONG_LOCK_HOLD_THRESHOLD = 5.0
+
+
+def _is_dev_mode() -> bool:
+    return os.environ.get("KILN_DEV_MODE", "false") == "true"
 
 
 class _StreamingUnderWriteLock(Exception):
@@ -92,7 +97,20 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
                     media_type="application/json",
                 )
             self._notify_background_sync(manager)
-            return await call_next(request)
+
+            # @no_write_lock endpoints manage their own atomic_write blocks
+            # per job, so a dirty check here would race in-flight commits.
+            # Skip them entirely, per the functional spec.
+            is_self_managed = getattr(endpoint, "_git_sync_no_write_lock", False)
+            if is_self_managed:
+                return await call_next(request)
+
+            response = await call_next(request)
+
+            if _is_dev_mode():
+                return await self._dev_mode_dirty_check(request, response, manager)
+
+            return response
 
         self._notify_background_sync(manager)
         lock_start = time.monotonic()
@@ -156,6 +174,51 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
                 status_code=status,
                 media_type="application/json",
             )
+
+    async def _dev_mode_dirty_check(
+        self,
+        request: Request,
+        response: Response,
+        manager: GitSyncManager,
+    ) -> Response:
+        """In dev mode, surface missing write locks immediately.
+
+        Runs only on the regular read path (not write-locked, not
+        @no_write_lock). If the response is SSE, log the missing decorator.
+        If the repo is dirty, log the offending request and return 500.
+        """
+        content_type = response.headers.get("content-type", "")
+        if "text/event-stream" in content_type:
+            logger.error(
+                "DEV MODE: SSE endpoint missing @no_write_lock: %s %s",
+                request.method,
+                request.url.path,
+            )
+            return response
+
+        if await manager.has_dirty_files():
+            dirty = await manager.get_dirty_file_paths()
+            logger.error(
+                "DEV MODE: Request left repo dirty without write lock!\n"
+                "  API: %s %s\n  Project: %s\n  Dirty files: %s",
+                request.method,
+                request.url.path,
+                manager.repo_path,
+                dirty,
+            )
+            return Response(
+                content=json.dumps(
+                    {
+                        "detail": "Dev mode: this endpoint wrote files without "
+                        "holding a write lock. See server logs for details."
+                    },
+                    ensure_ascii=False,
+                ),
+                status_code=500,
+                media_type="application/json",
+            )
+
+        return response
 
     def _resolve_endpoint(self, request: Request) -> Callable[..., Any] | None:
         """Resolve the endpoint function for this request by matching routes.

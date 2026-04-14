@@ -62,6 +62,41 @@ async def test_has_dirty_files_untracked(manager, git_repos):
     assert await manager.has_dirty_files() is True
 
 
+# --- get_dirty_file_paths ---
+
+
+@pytest.mark.asyncio
+async def test_get_dirty_file_paths_clean_repo(manager):
+    assert await manager.get_dirty_file_paths() == []
+
+
+@pytest.mark.asyncio
+async def test_get_dirty_file_paths_modified_file(manager, git_repos):
+    local_path, _ = git_repos
+    _write_file(local_path, "README.md", "modified content")
+
+    assert await manager.get_dirty_file_paths() == ["README.md"]
+
+
+@pytest.mark.asyncio
+async def test_get_dirty_file_paths_untracked_file(manager, git_repos):
+    local_path, _ = git_repos
+    _write_file(local_path, "brand_new.txt", "fresh")
+
+    assert await manager.get_dirty_file_paths() == ["brand_new.txt"]
+
+
+@pytest.mark.asyncio
+async def test_get_dirty_file_paths_multiple_files(manager, git_repos):
+    local_path, _ = git_repos
+    _write_file(local_path, "README.md", "modified")
+    _write_file(local_path, "untracked_a.txt", "a")
+    _write_file(local_path, "untracked_b.txt", "b")
+
+    paths = await manager.get_dirty_file_paths()
+    assert set(paths) == {"README.md", "untracked_a.txt", "untracked_b.txt"}
+
+
 # --- get_head ---
 
 

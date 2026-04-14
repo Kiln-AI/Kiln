@@ -193,6 +193,9 @@ class GitSyncManager:
     async def has_dirty_files(self) -> bool:
         return await self._run_git(self._has_dirty_files_sync)
 
+    async def get_dirty_file_paths(self) -> list[str]:
+        return await self._run_git(self._get_dirty_file_paths_sync)
+
     async def commit_and_push(self, context: str, pre_request_head: str) -> None:
         commit_oid = await self._run_git(self._create_commit, context)
         try:
@@ -292,6 +295,18 @@ class GitSyncManager:
                 continue
             return True
         return False
+
+    def _get_dirty_file_paths_sync(self) -> list[str]:
+        repo = self._get_repo()
+        status = repo.status()
+        paths: list[str] = []
+        for path, flags in status.items():
+            if flags == pygit2.enums.FileStatus.IGNORED:
+                continue
+            if flags == pygit2.enums.FileStatus.CURRENT:
+                continue
+            paths.append(path)
+        return paths
 
     def _get_repo_state(self) -> pygit2.enums.RepositoryState:
         repo = self._get_repo()

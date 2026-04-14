@@ -29,7 +29,7 @@ status: complete
   - Apply `@no_write_lock` and wire `save_context` to all 5 SSE endpoints
   - Add `KILN_DEV_MODE` env var to `dev_server.py`
 
-- [ ] Phase 4: Dev-mode dirty state detection
+- [x] Phase 4: Dev-mode dirty state detection
   - Add `get_dirty_file_paths()` to `GitSyncManager`
   - Add `_is_dev_mode()` helper and post-request dirty check in middleware read path
   - Unit tests for dirty check (dev on/off, SSE detection, `@no_write_lock` skip, clean repo)
