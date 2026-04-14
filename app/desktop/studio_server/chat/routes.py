@@ -132,7 +132,7 @@ def connect_chat_api(app: FastAPI) -> None:
         """
         api_key = get_copilot_api_key()
         tool_results = await execute_tool_batch(body.tool_calls, body.decisions)
-        continuation_body: dict = {
+        continuation_body: dict[str, Any] = {
             "trace_id": body.trace_id,
             "messages": [
                 {

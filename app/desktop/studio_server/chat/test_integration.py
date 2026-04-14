@@ -209,6 +209,28 @@ def _assert_sse_events_match_frontend_expected_shapes(
                 assert isinstance(meta.get("finishReason"), str)
 
 
+def _assert_event_ordering(events: list[dict[str, Any]]) -> None:
+    """Verify key SSE event ordering invariants."""
+    type_list = [e.get("type") for e in events]
+    for i, ev in enumerate(events):
+        if ev.get("type") == "tool-output-available":
+            tc_id = ev.get("toolCallId")
+            input_indices = [
+                j
+                for j, e in enumerate(events)
+                if e.get("type") == "tool-input-available"
+                and e.get("toolCallId") == tc_id
+            ]
+            assert input_indices and input_indices[0] < i, (
+                f"tool-output-available for {tc_id} at index {i} has no preceding tool-input-available"
+            )
+    if "finish" in type_list:
+        finish_idx = type_list.index("finish")
+        text_indices = [j for j, t in enumerate(type_list) if t == "text-delta"]
+        for ti in text_indices:
+            assert ti < finish_idx, "text-delta must come before finish"
+
+
 def _execute_math_tool_for_integration(
     tool_name: str, arguments: dict[str, Any]
 ) -> str:
@@ -429,6 +451,7 @@ def test_proxy_auto_executes_math_tools(app):
     )
     assert len(r.raw_bytes) > 0
     assert "16" in r.text or b"16" in r.raw_bytes
+    _assert_event_ordering(r.events)
     if r.tool_outputs:
         outputs_by_id = {o.get("toolCallId"): o.get("output") for o in r.tool_outputs}
         assert any(
@@ -508,6 +531,7 @@ def test_execute_tools_with_approved_tool(app):
         },
         api_key,
     )
+    _assert_event_ordering(exec_r.events)
     by_call = {o.get("toolCallId"): o.get("output") for o in exec_r.tool_outputs}
     assert by_call.get(tc_id) == "3"
     assert any(ev.get("type") == "finish" for ev in exec_r.events), (
@@ -614,6 +638,7 @@ def test_sse_events_match_frontend_expected_shapes(app):
         api_key,
     )
     _assert_sse_events_match_frontend_expected_shapes(exec_r.events)
+    _assert_event_ordering(exec_r.events)
     assert any(ev.get("type") == "tool-output-available" for ev in exec_r.events)
     by_call = {o.get("toolCallId"): o.get("output") for o in exec_r.tool_outputs}
     assert _tool_output_matches_expected_number(by_call.get(tc_id), 12.0)

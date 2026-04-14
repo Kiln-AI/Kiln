@@ -56,7 +56,7 @@ def kiln_unmanaged_tool_slug_from_id(id: str) -> str:
         raise ValueError(
             f"Invalid kiln_unmanaged tool ID: {id}. Expected format: 'kiln_unmanaged::<slug>'."
         )
-    return slug
+    return slug.strip()
 
 
 def build_kiln_unmanaged_tool_id(unique_id: str) -> str:

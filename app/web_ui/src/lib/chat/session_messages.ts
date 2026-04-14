@@ -102,7 +102,11 @@ export function hydrateSessionFromSnapshot(snapshot: ChatSessionSnapshot): {
               "toolCallId" in p && p.toolCallId === msg.tool_call_id,
           )
           if (toolPart) {
-            toolPart.output = output
+            prev.parts = prev.parts!.map((p) =>
+              "toolCallId" in p && p.toolCallId === msg.tool_call_id
+                ? { ...p, output }
+                : p,
+            )
             break
           }
         }

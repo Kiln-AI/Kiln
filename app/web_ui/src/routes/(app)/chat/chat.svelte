@@ -27,9 +27,6 @@
   let messagesEndRef: HTMLDivElement | null = null
   let scrollObserver: MutationObserver | null = null
   let textareaRef: HTMLTextAreaElement | null = null
-  let reasoningPartStartTimes: Record<string, number> = {}
-  let reasoningPartEndTimes: Record<string, number> = {}
-  let lastSeenLastPartKey: string | null = null
 
   const showToolCallDetails = env.PUBLIC_SHOW_TOOL_CALL_DETAILS === "true"
 
@@ -58,68 +55,6 @@
 
   $: lastMessage = messages[messages.length - 1]
   $: lastParts = lastMessage?.parts ?? []
-  $: lastPartKey =
-    lastParts.length > 0 && lastMessage
-      ? partKey(
-          lastMessage,
-          lastParts[lastParts.length - 1],
-          lastParts.length - 1,
-        )
-      : null
-
-  $: if (lastPartKey !== lastSeenLastPartKey && lastSeenLastPartKey != null) {
-    reasoningPartEndTimes = {
-      ...reasoningPartEndTimes,
-      [lastSeenLastPartKey]: Date.now(),
-    }
-  }
-  $: lastSeenLastPartKey = lastPartKey
-
-  $: if (
-    status === "ready" &&
-    lastPartKey != null &&
-    !(lastPartKey in reasoningPartEndTimes)
-  ) {
-    reasoningPartEndTimes = {
-      ...reasoningPartEndTimes,
-      [lastPartKey]: Date.now(),
-    }
-  }
-
-  $: {
-    let updated = false
-    const next = { ...reasoningPartStartTimes }
-    for (const message of messages) {
-      const parts = message.parts ?? []
-      for (let i = 0; i < parts.length; i++) {
-        const part = parts[i]
-        if (part.type === "reasoning") {
-          const key = partKey(message, part, i)
-          if (!(key in next)) {
-            next[key] = Date.now()
-            updated = true
-          }
-        }
-      }
-    }
-    if (updated) reasoningPartStartTimes = next
-  }
-
-  function reasoningDurationSeconds(
-    key: string,
-    isStreaming: boolean,
-  ): number | null {
-    const start = reasoningPartStartTimes[key]
-    const end = reasoningPartEndTimes[key]
-    if (start == null) return null
-    if (end == null && !isStreaming) return null
-    const endMs = end ?? Date.now()
-    return Math.max(0, Math.round((endMs - start) / 1000))
-  }
-
-  function durationLabel(seconds: number): string {
-    return seconds === 1 ? "1 second" : `${seconds} seconds`
-  }
 
   $: showStreamingCursor =
     isLoading && lastMessage?.role === "assistant" && lastParts.length === 0
@@ -287,9 +222,16 @@
       if (messages.length > 0) {
         end.scrollIntoView({ block: "end", behavior: "auto" })
       }
+      // trick here to avoid forcing a scroll on every character update
+      // as that is expensive
+      let rafPending = false
       scrollObserver = new MutationObserver(() => {
-        if (!suppressAutoScroll) {
-          end.scrollIntoView({ block: "end", behavior: "auto" })
+        if (!suppressAutoScroll && !rafPending) {
+          rafPending = true
+          requestAnimationFrame(() => {
+            rafPending = false
+            end.scrollIntoView({ block: "end", behavior: "auto" })
+          })
         }
       })
       scrollObserver.observe(container, {
@@ -342,7 +284,6 @@
       continuationTraceId: string
     }>,
   ) {
-    clearReasoningTimers()
     store.loadSession(e.detail.messages, e.detail.continuationTraceId)
     tick().then(() => {
       messagesEndRef?.scrollIntoView({ block: "end", behavior: "auto" })
@@ -350,15 +291,8 @@
     })
   }
 
-  function clearReasoningTimers() {
-    reasoningPartStartTimes = {}
-    reasoningPartEndTimes = {}
-    lastSeenLastPartKey = null
-  }
-
   export function newChat() {
     store.reset()
-    clearReasoningTimers()
   }
 
   export function openHistory() {
@@ -451,15 +385,10 @@
                         partIndex,
                         message.parts ?? [],
                       )}
-                      {@const key = partKey(message, part, partIndex)}
                       {@const streaming = isReasoningStreaming(
                         message,
                         partIndex,
                         message.parts ?? [],
-                      )}
-                      {@const duration = reasoningDurationSeconds(
-                        key,
-                        streaming,
                       )}
                       <div
                         class="mt-2 overflow-hidden text-sm text-base-content/60"
@@ -486,14 +415,7 @@
                                 >
                               </span>
                             {:else}
-                              <span
-                                ><span class="font-semibold">Thought</span>
-                                {#if duration != null}
-                                  for {durationLabel(duration)}
-                                {:else}
-                                  …
-                                {/if}</span
-                              >
+                              <span class="font-semibold">Thought</span>
                             {/if}
                             {#if collapsed}
                               <span

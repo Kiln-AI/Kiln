@@ -65,9 +65,10 @@ logger = logging.getLogger(__name__)
 
 def _validate_external_tools(tools: list[KilnToolInterface]) -> None:
     for i, tool in enumerate(tools):
-        assert isinstance(tool, KilnToolInterface), (
-            f"external_tools[{i}] must be a KilnToolInterface instance, got {type(tool).__name__}"
-        )
+        if not isinstance(tool, KilnToolInterface):
+            raise TypeError(
+                f"external_tools[{i}] must be a KilnToolInterface instance, got {type(tool).__name__}"
+            )
 
 
 @dataclass

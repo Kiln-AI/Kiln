@@ -54,7 +54,11 @@ def _parse_kiln_tool_metadata(raw: dict[str, Any]) -> KilnToolInputMetadata:
             if k in narrowed or k == "requires_approval":
                 continue
             narrowed[k] = v
-        return KilnToolInputMetadata.model_validate(narrowed)
+        try:
+            return KilnToolInputMetadata.model_validate(narrowed)
+        except ValidationError:
+            logger.warning("kiln_metadata fallback also failed: %s", raw)
+            return KilnToolInputMetadata()
 
 
 def tool_input_executor_is_server(event: ToolInputAvailableEvent) -> bool:

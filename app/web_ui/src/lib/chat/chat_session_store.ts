@@ -82,6 +82,9 @@ export function createChatSessionStore(
     showActivityIndicator: false,
   })
 
+  // Intentionally never unsubscribed — this store is a module-level singleton
+  // that lives for the lifetime of the app. Do not use createChatSessionStore
+  // for short-lived contexts.
   persisted.subscribe(($persisted) => {
     combined.update((s) => ({
       ...s,

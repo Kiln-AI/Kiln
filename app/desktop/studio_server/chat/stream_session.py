@@ -52,7 +52,7 @@ def _pending_item_from_event(event: ToolInputAvailableEvent) -> dict[str, Any]:
         "toolCallId": event.toolCallId,
         "toolName": event.toolName,
         "input": event.input,
-        "requiresApproval": tool_requires_user_approval(event),
+        "requiresApproval": meta.requires_approval is True,
     }
     if meta.permission is not None:
         item["permission"] = meta.permission
@@ -99,12 +99,12 @@ class ChatStreamSession:
 
     async def stream(self):
         """AsyncGenerator yielding SSE bytes to the client."""
-        for _ in range(MAX_TOOL_ROUNDS):
-            round_state = RoundState()
-            parser = EventParser()
-            trace_id_for_error: str | None = self._initial_trace_id
+        trace_id_for_error: str | None = self._initial_trace_id
+        async with httpx.AsyncClient(timeout=CHAT_TIMEOUT) as client:
+            for _ in range(MAX_TOOL_ROUNDS):
+                round_state = RoundState()
+                parser = EventParser()
 
-            async with httpx.AsyncClient(timeout=CHAT_TIMEOUT) as client:
                 async with client.stream(
                     "POST",
                     self._upstream_url,
@@ -146,7 +146,7 @@ class ChatStreamSession:
                                 round_state.trace_id = result.chat_trace_id
                                 trace_id_for_error = result.chat_trace_id
                             forward_bytes = b"\n".join(result.lines_to_forward)
-                            if forward_bytes.strip():
+                            if result.lines_to_forward:
                                 yield forward_bytes + b"\n"
                     except httpx.RemoteProtocolError:
                         if round_state.finish_tool_calls:
@@ -168,47 +168,54 @@ class ChatStreamSession:
                             )
                             return
 
-            if round_state.trace_id:
-                self._body = {
-                    **self._body,
-                    "trace_id": round_state.trace_id,
-                    "messages": [],
-                }
+                if round_state.trace_id:
+                    self._body = {
+                        **self._body,
+                        "trace_id": round_state.trace_id,
+                        "messages": [],
+                    }
 
-            if round_state.finish_tool_calls:
-                client_events = [
-                    e
-                    for e in round_state.tool_input_events
-                    if not tool_input_executor_is_server(e)
-                ]
-                needs_approval = [
-                    e for e in client_events if tool_requires_user_approval(e)
-                ]
-                if needs_approval:
-                    # some toolcalls in the batch require approval, so stream them to the client for approval
-                    # and client will send the decisions through /api/chat/execute-tools endpoint to continue
-                    yield _format_tool_calls_pending_sse(client_events)
-                    return
+                if round_state.finish_tool_calls:
+                    client_events = [
+                        e
+                        for e in round_state.tool_input_events
+                        if not tool_input_executor_is_server(e)
+                    ]
+                    needs_approval = [
+                        e for e in client_events if tool_requires_user_approval(e)
+                    ]
+                    if needs_approval:
+                        yield _format_tool_calls_pending_sse(client_events)
+                        return
 
-                expected_tool_count = len(client_events)
-                yield self._format_tool_exec_start(expected_tool_count)
-                tool_results = await self._execute_client_tools(round_state, None)
-                for tc_id, output in tool_results.items():
-                    yield self._format_tool_output(tc_id, output)
-                yield self._format_tool_exec_end(len(tool_results))
+                    expected_tool_count = len(client_events)
+                    yield self._format_tool_exec_start(expected_tool_count)
+                    tool_results = await self._execute_client_tools(round_state, None)
+                    for tc_id, output in tool_results.items():
+                        yield self._format_tool_output(tc_id, output)
+                    yield self._format_tool_exec_end(len(tool_results))
 
-                if not tool_results:
-                    return
+                    if not tool_results:
+                        return
 
-                self._body = _build_openai_tool_continuation(
-                    self._body,
-                    round_state.assistant_text,
-                    round_state.tool_input_events,
-                    tool_results,
-                )
-                continue
+                    self._body = _build_openai_tool_continuation(
+                        self._body,
+                        round_state.assistant_text,
+                        round_state.tool_input_events,
+                        tool_results,
+                    )
+                    continue
 
-            return
+                return
+
+        # Loop exhausted all MAX_TOOL_ROUNDS without a natural exit
+        error_payload = {
+            "type": "error",
+            "message": "Maximum tool rounds exceeded. Please start a new message.",
+        }
+        if trace_id_for_error:
+            error_payload["trace_id"] = trace_id_for_error
+        yield f"data: {json.dumps(error_payload, ensure_ascii=False)}\n\n".encode()
 
     async def _execute_client_tools(
         self,
@@ -252,11 +259,8 @@ class ChatStreamSession:
 async def execute_tool(tool_name: str, args: dict[str, Any]) -> str:
     """Run a Kiln built-in tool by OpenAI function name; return its output string."""
     logger.info("Executing server tool %s", tool_name)
-    logger.debug(
-        "Tool %s args: %s",
-        tool_name,
-        json.dumps(args, default=str, ensure_ascii=False),
-    )
+    args_str = json.dumps(args, default=str, ensure_ascii=False)
+    logger.debug("Tool %s args: %.500s", tool_name, args_str)
     tool_id = FUNCTION_NAME_TO_TOOL_ID.get(tool_name)
     if tool_id is None:
         return json.dumps(
