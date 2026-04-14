@@ -207,7 +207,6 @@ def create_task_run_from_reviewed(
                 },
             ),
         ),
-        user_feedback=example.feedback if example.feedback else None,
         tags=tags,
     )
 

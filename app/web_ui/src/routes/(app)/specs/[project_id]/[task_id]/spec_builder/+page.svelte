@@ -547,7 +547,7 @@
       const examples_with_feedback = currentExamples.map((example) => ({
         user_agrees_with_judge:
           example.model_says_meets_spec === example.user_says_meets_spec,
-        user_feedback: example.feedback,
+        feedback: example.feedback,
         input: example.input,
         output: example.output,
         fails_specification: !example.user_says_meets_spec,

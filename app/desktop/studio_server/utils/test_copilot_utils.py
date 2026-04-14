@@ -225,28 +225,6 @@ class TestCreateTaskRunFromReviewed:
             == TaskOutputRatingType.pass_fail
         )
 
-    def test_creates_task_run_with_user_feedback(self):
-        example = ReviewedExample(
-            input="test input",
-            output="test output",
-            model_says_meets_spec=True,
-            user_says_meets_spec=False,
-            feedback="This fails because the output is too vague",
-        )
-        task_run = create_task_run_from_reviewed(example, "golden_tag", "My Spec")
-        assert task_run.user_feedback == "This fails because the output is too vague"
-
-    def test_creates_task_run_with_no_user_feedback_when_empty(self):
-        example = ReviewedExample(
-            input="test input",
-            output="test output",
-            model_says_meets_spec=True,
-            user_says_meets_spec=True,
-            feedback="",
-        )
-        task_run = create_task_run_from_reviewed(example, "golden_tag", "My Spec")
-        assert task_run.user_feedback is None
-
 
 class TestCreateDatasetTaskRuns:
     def test_creates_correct_number_of_task_runs(self):
