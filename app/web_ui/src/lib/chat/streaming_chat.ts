@@ -203,7 +203,10 @@ class StreamEventProcessor {
         this.handleTextStart(e)
       },
       "text-delta": (e) => this.handleTextDelta(e),
-      "text-end": () => this.handleTextEnd(),
+      "text-end": () => {
+        this.onShowActivityIndicator?.(true)
+        this.handleTextEnd()
+      },
       "reasoning-start": () => {
         this.onShowActivityIndicator?.(true)
         this.handleReasoningStart()

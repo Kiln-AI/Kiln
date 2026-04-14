@@ -5,6 +5,7 @@
   export let parts: ChatMessagePart[] = []
   export let isLoading: boolean = false
   export let isLastMessage: boolean = false
+  export let showActivityIndicator: boolean = false
 
   function isToolPart(p: ChatMessagePart): boolean {
     return typeof p.type === "string" && p.type.startsWith("tool-")
@@ -16,7 +17,12 @@
       (!("output" in p) || (p as { output?: unknown }).output === undefined),
   )
 
-  $: showThinking = isLoading && isLastMessage && !hasActiveTools
+  $: hasParts = parts.length > 0
+  $: showThinking =
+    isLoading &&
+    isLastMessage &&
+    !hasActiveTools &&
+    (!hasParts || showActivityIndicator)
 </script>
 
 {#if showThinking}

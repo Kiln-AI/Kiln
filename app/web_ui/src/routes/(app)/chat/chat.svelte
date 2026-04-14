@@ -34,6 +34,7 @@
 
   $: toolApprovalWaiter = $store.toolApprovalWaiter
   $: toolApprovalPicks = $store.toolApprovalPicks
+  $: showActivityIndicator = $store.showActivityIndicator
 
   export let hasMessages = false
   $: messages = $store.messages
@@ -733,6 +734,7 @@
                         parts={message.parts ?? []}
                         isLoading={isLoading && message.id === lastMessage?.id}
                         isLastMessage={message.id === lastMessage?.id}
+                        {showActivityIndicator}
                       />
                     {/if}
                   {/if}
@@ -742,6 +744,7 @@
                       parts={[]}
                       isLoading={true}
                       isLastMessage={true}
+                      {showActivityIndicator}
                     />
                   {:else}
                     <div class="flex items-center py-0.5" aria-hidden="true">
