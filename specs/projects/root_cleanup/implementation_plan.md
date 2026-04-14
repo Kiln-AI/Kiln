@@ -42,7 +42,7 @@ Phases are ordered by risk (low → high) and by what unblocks later phases (e.g
   - `git rm -r --cached .cursor/skills`; add `.cursor/skills/` to `.gitignore`.
   - **Manual validation:** deferred to Phase 7 (which adds the setup scripts that regenerate `.cursor/skills/`).
 
-- [ ] **Phase 7: Agent setup scripts under `.agents/`**
+- [x] **Phase 7: Agent setup scripts under `.agents/`**
   - `git mv .config/utils/setup_claude.sh .agents/claude/setup.sh` (from Phase 3's output).
   - Create `.agents/cursor/setup.sh` that copies `.agents/skills/*` → `.cursor/skills/*`.
   - Update `.agents/claude/setup.sh` to copy from `.agents/skills/` instead of `.cursor/skills/`.
