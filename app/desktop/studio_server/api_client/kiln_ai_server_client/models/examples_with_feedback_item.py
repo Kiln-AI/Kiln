@@ -18,7 +18,7 @@ class ExamplesWithFeedbackItem:
         input_ (str):
         output (str):
         fails_specification (bool): Judge's verdict - whether the output fails the Target Specification
-        user_feedback (None | str | Unset): Optional text user_feedback from the user
+        user_feedback (None | str | Unset): Optional text feedback from the user
     """
 
     user_agrees_with_judge: bool
@@ -77,7 +77,7 @@ class ExamplesWithFeedbackItem:
 
         user_feedback = _parse_user_feedback(d.pop("user_feedback", UNSET))
 
-        examples_with_user_feedback_item = cls(
+        examples_with_feedback_item = cls(
             user_agrees_with_judge=user_agrees_with_judge,
             input_=input_,
             output=output,
@@ -85,4 +85,4 @@ class ExamplesWithFeedbackItem:
             user_feedback=user_feedback,
         )
 
-        return examples_with_user_feedback_item
+        return examples_with_feedback_item
