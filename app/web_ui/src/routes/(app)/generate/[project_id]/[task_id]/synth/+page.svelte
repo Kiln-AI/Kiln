@@ -27,6 +27,7 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import { split_tool_and_skill_ids } from "$lib/stores/tools_store"
+  import Intro from "$lib/ui/intro.svelte"
 
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
@@ -37,6 +38,29 @@
   const loading_error = guidance_data.loading_error
   const splits = guidance_data.splits
   const selected_template = guidance_data.selected_template
+
+  type DataGuide = {
+    requirements: string
+    examples: string | null
+    guide_run_ids: string[]
+  }
+  let data_guide: DataGuide | null = null
+  let guide_loading = true
+
+  async function fetch_data_guide() {
+    if (!project_id || !task_id) return
+    try {
+      const { data } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
+        { params: { path: { project_id, task_id } } },
+      )
+      data_guide = (data as DataGuide) ?? null
+    } catch {
+      // Non-critical — guide is optional
+    } finally {
+      guide_loading = false
+    }
+  }
 
   let task: Task | null = null
   let task_error: KilnError | null = null
@@ -150,7 +174,7 @@
   }
 
   onMount(async () => {
-    await get_task()
+    await Promise.all([get_task(), fetch_data_guide()])
     if (!task) {
       task_error = new KilnError(
         "Could not load task. It may belong to a project you don't have access to.",
@@ -813,7 +837,66 @@
       </div>
     {:else if task}
       <DataGenDescription bind:guidance_data />
-      {#if is_empty}
+      {#if data_guide && is_setup}
+        <div class="card flex-row border px-6 py-3 mt-2 mb-2 shadow-sm text-sm">
+          <div class="flex flex-row items-center gap-3 flex-grow">
+            <div>
+              <svg
+                class="h-6 w-6 text-gray-500"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25"
+                  stroke="currentColor"
+                  stroke-width="1.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </div>
+            <div class="flex flex-col flex-grow min-w-0">
+              <div class="text-xs text-gray-500 uppercase font-medium">
+                Task Data Guide
+              </div>
+              <div class="truncate">
+                {data_guide.requirements.slice(0, 80)}{data_guide.requirements
+                  .length > 80
+                  ? "..."
+                  : ""}
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center ml-4">
+            <a
+              href={`/generate/${project_id}/${task_id}/data_guide`}
+              class="btn btn-xs btn-outline"
+            >
+              Edit
+            </a>
+          </div>
+        </div>
+      {/if}
+      {#if is_empty && is_setup && !data_guide && !guide_loading}
+        <div
+          class="flex flex-col items-center justify-center min-h-[50vh] mt-12"
+        >
+          <Intro
+            title="Create a Task Data Guide"
+            description_paragraphs={[
+              "Define the structure, rules, and examples for generated task inputs.",
+            ]}
+            action_buttons={[
+              {
+                label: "Create Data Guide",
+                is_primary: true,
+                href: `/generate/${project_id}/${task_id}/data_guide`,
+              },
+            ]}
+          />
+        </div>
+      {:else if is_empty}
         <div>
           <DataGenIntro
             generate_subtopics={() => {

@@ -185,9 +185,12 @@ class DataGenSampleTask(Task, parent_of={}):
         gen_type: Literal["training", "eval"],
         parent_project: Project,
         guidance: str | None,
+        guide_examples: list[tuple[str, str | None]] | None = None,
     ):
         instruction = generate_sample_generation_prompt(
-            gen_type=gen_type, guidance=guidance
+            gen_type=gen_type,
+            guidance=guidance,
+            guide_examples=guide_examples,
         )
 
         super().__init__(

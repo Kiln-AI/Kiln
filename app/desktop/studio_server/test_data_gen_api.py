@@ -677,3 +677,118 @@ def test_save_qna_pair_persists_task_run(
         run.trace[2]["role"] == "assistant"
         and run.trace[2]["content"] == "Kiln is an app for building AI systems."
     )
+
+
+def test_get_data_gen_guide_none(
+    mock_task_from_id,
+    client,
+):
+    response = client.get("/api/projects/test_project/tasks/test_task/data_gen_guide")
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+def test_save_and_get_data_gen_guide(
+    mock_task_from_id,
+    test_task,
+    client,
+):
+    response = client.put(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide",
+        json={
+            "requirements": "If cholesterol is high, never have low LDL",
+            "examples": "Typical patient record example",
+            "guide_run_ids": ["run1", "run2"],
+        },
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["requirements"] == "If cholesterol is high, never have low LDL"
+    assert result["examples"] == "Typical patient record example"
+    assert result["guide_run_ids"] == ["run1", "run2"]
+
+    # Verify it's persisted via GET
+    get_response = client.get(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide"
+    )
+    assert get_response.status_code == 200
+    get_result = get_response.json()
+    assert get_result["requirements"] == "If cholesterol is high, never have low LDL"
+    assert get_result["examples"] == "Typical patient record example"
+
+    # Verify task was actually saved to disk
+    reloaded_task = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
+    assert reloaded_task is not None
+    assert reloaded_task.data_guide is not None
+    assert (
+        reloaded_task.data_guide.requirements
+        == "If cholesterol is high, never have low LDL"
+    )
+
+
+def test_save_data_gen_guide_minimal(
+    mock_task_from_id,
+    test_task,
+    client,
+):
+    response = client.put(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide",
+        json={
+            "requirements": "Some requirements",
+        },
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["requirements"] == "Some requirements"
+    assert result["examples"] is None
+    assert result["guide_run_ids"] == []
+
+
+def test_delete_data_gen_guide(
+    mock_task_from_id,
+    test_task,
+    client,
+):
+    # First save a guide
+    client.put(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide",
+        json={"requirements": "Some rules"},
+    )
+
+    # Delete it
+    response = client.delete(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide"
+    )
+    assert response.status_code == 200
+
+    # Verify it's gone
+    get_response = client.get(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide"
+    )
+    assert get_response.json() is None
+
+
+def test_save_data_gen_guide_overwrites_previous(
+    mock_task_from_id,
+    test_task,
+    client,
+):
+    # Save first guide
+    client.put(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide",
+        json={"requirements": "First version"},
+    )
+
+    # Overwrite with second
+    response = client.put(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide",
+        json={"requirements": "Second version", "examples": "New examples"},
+    )
+    assert response.status_code == 200
+
+    get_response = client.get(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide"
+    )
+    result = get_response.json()
+    assert result["requirements"] == "Second version"
+    assert result["examples"] == "New examples"

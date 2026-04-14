@@ -40,7 +40,7 @@ from kiln_ai.datamodel.prompt_id import (
 )
 from kiln_ai.datamodel.prompt_optimization_job import PromptOptimizationJob
 from kiln_ai.datamodel.skill import Skill
-from kiln_ai.datamodel.task import Task, TaskRequirement
+from kiln_ai.datamodel.task import Task, TaskDataGuide, TaskRequirement
 from kiln_ai.datamodel.task_output import (
     DataSource,
     DataSourceProperty,
@@ -71,6 +71,7 @@ __all__ = [
     "Skill",
     "StructuredOutputMode",
     "Task",
+    "TaskDataGuide",
     "TaskOutput",
     "TaskOutputRating",
     "TaskOutputRatingType",

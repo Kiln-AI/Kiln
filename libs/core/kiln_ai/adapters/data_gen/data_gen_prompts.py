@@ -94,7 +94,9 @@ The user message will contain the following:
 
 
 def generate_sample_generation_prompt(
-    gen_type: Literal["training", "eval"], guidance: str | None = None
+    gen_type: Literal["training", "eval"],
+    guidance: str | None = None,
+    guide_examples: list[tuple[str, str | None]] | None = None,
 ) -> str:
     """
     Generate a prompt for generating samples.
@@ -126,6 +128,27 @@ Example generated inputs: {"generated_samples": ["New iPhone looks amazing! I ne
 
 Note how the output of this task is data to input into the system prompt, not the expected output of the system prompt.
 
+"""
+
+    if guide_examples:
+        prompt += """
+## Guide Examples
+
+Below are examples of high-quality input/output pairs for this task. Use these to understand the expected format, style, and content. Your generated inputs should be similar in structure but diverse in content.
+
+"""
+        for i, (example_input, example_output) in enumerate(guide_examples, 1):
+            prompt += f"""<guide_example_{i}>
+<input>
+{example_input}
+</input>
+"""
+            if example_output:
+                prompt += f"""<output>
+{example_output}
+</output>
+"""
+            prompt += f"""</guide_example_{i}>
 """
 
     if guidance:
@@ -268,5 +291,73 @@ The custom guidance is:
 
 When generating Q&A pairs, focus on generating queries and answers that are relevant to the document content.
 """
+
+    return prompt
+
+
+def generate_guidance_refinement_prompt(
+    task_instruction: str,
+    current_requirements: str,
+    current_examples: str | None,
+    preview_samples: list[tuple[str, str]],
+    feedback: str,
+) -> str:
+    """Generate a prompt for refining Task Data Guide requirements based on user feedback."""
+
+    prompt = f"""You are an expert at writing guidance for synthetic data generation. Your job is to refine guidance that controls the structure, format, and content of generated **task inputs**. The outputs are handled separately by the task itself — you should only focus on improving input generation.
+
+## Context
+
+A user is generating synthetic inputs for the following task:
+<task_instruction>
+{task_instruction}
+</task_instruction>
+
+They wrote the following requirements to describe what generated inputs should look like — their structure, format, domain rules, and constraints:
+<current_requirements>
+{current_requirements}
+</current_requirements>
+"""
+
+    if current_examples:
+        prompt += f"""
+They also provided these descriptions of what good inputs look like:
+<current_examples>
+{current_examples}
+</current_examples>
+"""
+
+    prompt += """
+## Generated Samples
+
+The following samples were generated using the current requirements. The output column is shown for context only — the user's feedback is about the inputs, not the outputs:
+
+"""
+    for i, (sample_input, sample_output) in enumerate(preview_samples, 1):
+        prompt += f"""<sample_{i}>
+<input>{sample_input}</input>
+<output>{sample_output}</output>
+</sample_{i}>
+"""
+
+    prompt += f"""
+## User Feedback
+
+The user's feedback on what's wrong with the generated inputs:
+<feedback>
+{feedback}
+</feedback>
+
+## Your Task
+
+Rewrite the requirements so that future generated inputs address the user's feedback. Focus on:
+1. The structure and format of task inputs (e.g. JSON fields, required properties, value ranges)
+2. Domain-specific rules and constraints about the input data (e.g. "cholesterol and LDL must correlate")
+3. Input quality issues (e.g. "values should be realistic", "include edge cases")
+4. Keep existing rules that are still valid
+
+The requirements should be clear, specific instructions that guide an LLM generating synthetic task inputs — not instructions about the task's output behavior.
+
+Only refine the examples if they exist and need changes based on the feedback. If the examples are fine as-is, return them unchanged. If no examples were provided, leave examples as null."""
 
     return prompt

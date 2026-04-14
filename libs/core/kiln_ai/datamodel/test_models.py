@@ -504,6 +504,44 @@ def test_task_output_source_validation(tmp_path):
         assert task_run.output.source is None
 
 
+def test_task_data_guide():
+    from kiln_ai.datamodel.task import TaskDataGuide
+
+    guide = TaskDataGuide(
+        requirements="If cholesterol is high, never have low LDL",
+        examples="A typical patient record includes age, weight, cholesterol levels",
+        guide_run_ids=["run1", "run2"],
+    )
+    assert guide.requirements == "If cholesterol is high, never have low LDL"
+    assert (
+        guide.examples
+        == "A typical patient record includes age, weight, cholesterol levels"
+    )
+    assert guide.guide_run_ids == ["run1", "run2"]
+
+    # Defaults
+    guide_minimal = TaskDataGuide(requirements="Some rules")
+    assert guide_minimal.examples is None
+    assert guide_minimal.guide_run_ids == []
+
+    # Serializes correctly
+    data = guide.model_dump()
+    assert data["requirements"] == "If cholesterol is high, never have low LDL"
+    assert data["guide_run_ids"] == ["run1", "run2"]
+
+    # Deserializes correctly
+    restored = TaskDataGuide.model_validate(data)
+    assert restored.requirements == guide.requirements
+    assert restored.examples == guide.examples
+    assert restored.guide_run_ids == guide.guide_run_ids
+
+    # Requirements is required and must be non-empty
+    import pytest
+
+    with pytest.raises(Exception):
+        TaskDataGuide(requirements="")
+
+
 def test_task_run_tags_validation():
     # Setup basic output for TaskRun creation
     output = TaskOutput(

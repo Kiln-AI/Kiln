@@ -15,7 +15,7 @@ from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun, generate_mode
 from kiln_ai.datamodel.extraction import Document
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.task import RunConfigProperties, Task, TaskDataGuide
 from kiln_ai.datamodel.task_output import TaskOutput
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
@@ -67,6 +67,74 @@ class DataGenSampleApiInput(BaseModel):
     )
     run_config_properties: KilnAgentRunConfigProperties = Field(
         description="The run config properties to use for input generation"
+    )
+
+
+class SaveTaskDataGuideInput(BaseModel):
+    requirements: str = Field(
+        description="Rules, constraints, and structure for generated task inputs"
+    )
+    examples: str | None = Field(
+        description="Optional freeform text describing what good task inputs look like",
+        default=None,
+    )
+    guide_run_ids: list[str] = Field(
+        description="IDs of existing TaskRuns to use as guide examples", default=[]
+    )
+    approved_samples: list["GuidePreviewSample"] = Field(
+        description="Approved preview samples to save as TaskRuns and add to guide_run_ids",
+        default=[],
+    )
+
+
+class GuidePreviewSample(BaseModel):
+    input: str = Field(description="Generated sample input")
+    output: str = Field(description="Generated sample output")
+
+
+class GuidePreviewInput(BaseModel):
+    requirements: str = Field(description="Domain rules and constraints for generation")
+    examples: str | None = Field(
+        description="Optional freeform text describing data examples", default=None
+    )
+    run_config_properties: KilnAgentRunConfigProperties = Field(
+        description="The model config to use for preview generation"
+    )
+    num_samples: int = Field(
+        description="Number of preview samples to generate", default=5
+    )
+
+
+class GuideRefineInput(BaseModel):
+    current_requirements: str = Field(description="The current requirements text")
+    current_examples: str | None = Field(
+        description="The current examples text", default=None
+    )
+    feedback: str = Field(
+        description="User feedback on what's wrong with preview samples"
+    )
+    preview_samples: list[GuidePreviewSample] = Field(
+        description="The previewed samples the user is giving feedback on"
+    )
+    run_config_properties: KilnAgentRunConfigProperties = Field(
+        description="The model config to use for refinement"
+    )
+
+
+class GuideRefineOutput(BaseModel):
+    """Structured output schema for the LLM refinement task."""
+
+    requirements: str = Field(description="The refined input requirements text")
+    examples: str | None = Field(
+        description="The refined input examples text, or null if not needed",
+        default=None,
+    )
+
+
+class GuideRefineResponse(BaseModel):
+    refined_requirements: str = Field(description="The refined requirements text")
+    refined_examples: str | None = Field(
+        description="The refined examples text", default=None
     )
 
 
@@ -189,11 +257,15 @@ def connect_data_gen_api(app: FastAPI):
     ) -> TaskRun:
         project = project_from_id(project_id)
         task = task_from_id(project_id, task_id)
+
+        guide_examples = _load_guide_examples(task)
+        combined_guidance = _combine_guidance(task, input.guidance)
         sample_task = DataGenSampleTask(
             target_task=task,
             gen_type=input.gen_type,
             parent_project=project,
-            guidance=input.guidance,
+            guidance=combined_guidance,
+            guide_examples=guide_examples,
         )
 
         task_input = DataGenSampleTaskInput.from_task(
@@ -449,6 +521,286 @@ The topic path for this sample is:
         task_run.parent = task
         task_run.save_to_file()
         return task_run
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
+        summary="Get Task Data Guide",
+        tags=["Synthetic Data"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_data_gen_guide(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> TaskDataGuide | None:
+        task = task_from_id(project_id, task_id)
+        return task.data_guide
+
+    @app.put(
+        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
+        summary="Save Task Data Guide",
+        tags=["Synthetic Data"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def save_data_gen_guide(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        input: SaveTaskDataGuideInput,
+    ) -> TaskDataGuide:
+        task = task_from_id(project_id, task_id)
+
+        # Save approved preview samples as TaskRuns and collect their IDs
+        saved_run_ids = list(input.guide_run_ids)
+        for sample in input.approved_samples:
+            task_run = TaskRun(
+                input=sample.input,
+                input_source=DataSource(
+                    type=DataSourceType.synthetic,
+                    properties={
+                        "model_name": "data_gen_guide",
+                        "model_provider": "data_gen_guide",
+                        "adapter_name": "data_gen_guide_preview",
+                    },
+                ),
+                output=TaskOutput(
+                    output=sample.output,
+                    source=DataSource(
+                        type=DataSourceType.synthetic,
+                        properties={
+                            "model_name": "data_gen_guide",
+                            "model_provider": "data_gen_guide",
+                            "adapter_name": "data_gen_guide_preview",
+                        },
+                    ),
+                ),
+                tags=["data_guide_example"],
+            )
+            task_run.parent = task
+            task_run.save_to_file()
+            saved_run_ids.append(task_run.id)
+
+        guide = TaskDataGuide(
+            requirements=input.requirements,
+            examples=input.examples,
+            guide_run_ids=saved_run_ids,
+        )
+        task.data_guide = guide
+        task.save_to_file()
+        return guide
+
+    @app.delete(
+        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
+        summary="Delete Task Data Guide",
+        tags=["Synthetic Data"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def delete_data_gen_guide(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> None:
+        task = task_from_id(project_id, task_id)
+        task.data_guide = None
+        task.save_to_file()
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_preview",
+        summary="Preview Task Data Guide",
+        tags=["Synthetic Data"],
+        openapi_extra=agent_policy_require_approval(
+            "Generate preview samples using LLM?"
+        ),
+    )
+    async def preview_data_gen_guide(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        input: GuidePreviewInput,
+    ) -> list[GuidePreviewSample]:
+        project = project_from_id(project_id)
+        task = task_from_id(project_id, task_id)
+
+        guidance = _build_guidance_text(input.requirements, input.examples)
+
+        sample_task = DataGenSampleTask(
+            target_task=task,
+            gen_type="eval",
+            parent_project=project,
+            guidance=guidance,
+        )
+
+        task_input = DataGenSampleTaskInput.from_task(
+            task=task,
+            topic=[],
+            num_samples=input.num_samples,
+        )
+
+        import json
+
+        run_config_properties = input.run_config_properties.model_copy()
+        run_config_properties.prompt_id = PromptGenerators.SIMPLE
+        skills = load_skills_for_task(sample_task, run_config_properties)
+        adapter = adapter_for_task(
+            sample_task,
+            run_config_properties=run_config_properties,
+            base_adapter_config=AdapterConfig(skills=skills),
+        )
+
+        samples_run = await adapter.invoke(task_input.model_dump())
+
+        if not samples_run.output or not samples_run.output.output:
+            raise HTTPException(
+                status_code=500, detail="Failed to generate preview samples"
+            )
+
+        try:
+            parsed = json.loads(samples_run.output.output)
+            generated_samples = parsed.get("generated_samples", [])
+        except (json.JSONDecodeError, AttributeError):
+            raise HTTPException(
+                status_code=500, detail="Failed to parse generated samples"
+            )
+
+        preview_samples: list[GuidePreviewSample] = []
+        output_run_config = input.run_config_properties.model_copy()
+        output_run_config.prompt_id = PromptGenerators.SIMPLE
+        for sample_input in generated_samples[: input.num_samples]:
+            sample_input_str = (
+                json.dumps(sample_input)
+                if isinstance(sample_input, dict)
+                else str(sample_input)
+            )
+
+            task_copy = task.model_copy(deep=True)
+
+            skills = load_skills_for_task(task_copy, output_run_config)
+            output_adapter = adapter_for_task(
+                task_copy,
+                run_config_properties=output_run_config,
+                base_adapter_config=AdapterConfig(
+                    allow_saving=False, skills=skills
+                ),
+            )
+            output_run = await output_adapter.invoke(input=sample_input_str)
+            output_text = (
+                output_run.output.output
+                if output_run.output and output_run.output.output
+                else ""
+            )
+            preview_samples.append(
+                GuidePreviewSample(input=sample_input_str, output=output_text)
+            )
+
+        return preview_samples
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_refine",
+        summary="Refine Task Data Guide",
+        tags=["Synthetic Data"],
+        openapi_extra=agent_policy_require_approval("Refine guidance using LLM?"),
+    )
+    async def refine_data_gen_guide(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        input: GuideRefineInput,
+    ) -> GuideRefineResponse:
+        import json
+
+        from kiln_ai.adapters.data_gen.data_gen_prompts import (
+            generate_guidance_refinement_prompt,
+        )
+
+        task = task_from_id(project_id, task_id)
+
+        system_prompt = generate_guidance_refinement_prompt(
+            task_instruction=task.instruction,
+            current_requirements=input.current_requirements,
+            current_examples=input.current_examples,
+            preview_samples=[(s.input, s.output) for s in input.preview_samples],
+            feedback=input.feedback,
+        )
+
+        run_config = input.run_config_properties.model_copy()
+        run_config.prompt_id = PromptGenerators.SIMPLE
+
+        refine_task = Task(
+            name="guidance_refinement",
+            instruction=system_prompt,
+            output_json_schema=json.dumps(
+                GuideRefineOutput.model_json_schema()
+            ),
+        )
+
+        adapter = adapter_for_task(
+            refine_task,
+            run_config_properties=run_config,
+            base_adapter_config=AdapterConfig(allow_saving=False),
+        )
+
+        refine_run = await adapter.invoke(
+            input="Please refine the input guidance based on the feedback provided in your instructions."
+        )
+
+        if not refine_run.output or not refine_run.output.output:
+            raise HTTPException(status_code=500, detail="Failed to refine guidance")
+
+        parsed = json.loads(refine_run.output.output)
+        return GuideRefineResponse(
+            refined_requirements=parsed.get("requirements", input.current_requirements),
+            refined_examples=parsed.get("examples"),
+        )
+
+
+def _build_guidance_text(requirements: str, examples: str | None) -> str:
+    parts = [requirements]
+    if examples:
+        parts.append(f"\n## Data Examples\n{examples}")
+    return "\n".join(parts)
+
+
+def _combine_guidance(task: Task, session_guidance: str | None) -> str | None:
+    parts: list[str] = []
+    if task.data_guide:
+        parts.append(
+            _build_guidance_text(task.data_guide.requirements, task.data_guide.examples)
+        )
+    if session_guidance:
+        parts.append(session_guidance)
+    return "\n\n".join(parts) if parts else None
+
+
+def _load_guide_examples(task: Task) -> list[tuple[str, str | None]] | None:
+    if not task.data_guide or not task.data_guide.guide_run_ids:
+        return None
+    examples: list[tuple[str, str | None]] = []
+    for run_id in task.data_guide.guide_run_ids:
+        run = TaskRun.from_id_and_parent_path(run_id, task.path)
+        if run:
+            output = run.output.output if run.output else None
+            examples.append((run.input, output))
+    return examples if examples else None
 
 
 def topic_path_to_string(topic_path: list[str]) -> str | None:

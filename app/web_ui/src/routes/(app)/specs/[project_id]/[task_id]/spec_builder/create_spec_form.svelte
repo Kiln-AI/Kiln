@@ -105,7 +105,7 @@
     />
   {/each}
 
-  {#if copilot_enabled}
+  {#if !copilot_enabled}
     <FewShotSelector
       {project_id}
       {task_id}

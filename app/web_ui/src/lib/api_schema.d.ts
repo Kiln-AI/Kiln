@@ -1519,6 +1519,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Task Data Guide */
+        get: operations["get_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_get"];
+        /** Save Task Data Guide */
+        put: operations["save_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_put"];
+        post?: never;
+        /** Delete Task Data Guide */
+        delete: operations["delete_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Task Data Guide */
+        post: operations["preview_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_refine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refine Task Data Guide */
+        post: operations["refine_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_refine_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/dataset_splits": {
         parameters: {
             query?: never;
@@ -5382,6 +5435,78 @@ export interface components {
              */
             rag_config_ids?: string[] | null;
         };
+        /** GuidePreviewInput */
+        GuidePreviewInput: {
+            /**
+             * Requirements
+             * @description Domain rules and constraints for generation
+             */
+            requirements: string;
+            /**
+             * Examples
+             * @description Optional freeform text describing data examples
+             */
+            examples?: string | null;
+            /** @description The model config to use for preview generation */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
+            /**
+             * Num Samples
+             * @description Number of preview samples to generate
+             * @default 5
+             */
+            num_samples: number;
+        };
+        /** GuidePreviewSample */
+        GuidePreviewSample: {
+            /**
+             * Input
+             * @description Generated sample input
+             */
+            input: string;
+            /**
+             * Output
+             * @description Generated sample output
+             */
+            output: string;
+        };
+        /** GuideRefineInput */
+        GuideRefineInput: {
+            /**
+             * Current Requirements
+             * @description The current requirements text
+             */
+            current_requirements: string;
+            /**
+             * Current Examples
+             * @description The current examples text
+             */
+            current_examples?: string | null;
+            /**
+             * Feedback
+             * @description User feedback on what's wrong with preview samples
+             */
+            feedback: string;
+            /**
+             * Preview Samples
+             * @description The previewed samples the user is giving feedback on
+             */
+            preview_samples: components["schemas"]["GuidePreviewSample"][];
+            /** @description The model config to use for refinement */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
+        };
+        /** GuideRefineResponse */
+        GuideRefineResponse: {
+            /**
+             * Refined Requirements
+             * @description The refined requirements text
+             */
+            refined_requirements: string;
+            /**
+             * Refined Examples
+             * @description The refined examples text
+             */
+            refined_examples?: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -7152,6 +7277,31 @@ export interface components {
              */
             tags?: string[] | null;
         };
+        /** SaveTaskDataGuideInput */
+        SaveTaskDataGuideInput: {
+            /**
+             * Requirements
+             * @description Rules, constraints, and structure for generated task inputs
+             */
+            requirements: string;
+            /**
+             * Examples
+             * @description Optional freeform text describing what good task inputs look like
+             */
+            examples?: string | null;
+            /**
+             * Guide Run Ids
+             * @description IDs of existing TaskRuns to use as guide examples
+             * @default []
+             */
+            guide_run_ids: string[];
+            /**
+             * Approved Samples
+             * @description Approved preview samples to save as TaskRuns and add to guide_run_ids
+             * @default []
+             */
+            approved_samples: components["schemas"]["GuidePreviewSample"][];
+        };
         /**
          * ScoreSummary
          * @description Summary of scores for an eval run.
@@ -7702,6 +7852,8 @@ export interface components {
              * @description Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting.
              */
             thinking_instruction?: string | null;
+            /** @description Persistent Task Data Guide for synthetic data generation. Describes domain rules, constraints, and examples. */
+            data_guide?: components["schemas"]["TaskDataGuide"] | null;
             /**
              * Default Run Config Id
              * @description ID of the run config to use for this task by default. Must exist in saved run configs for this task.
@@ -7709,6 +7861,28 @@ export interface components {
             default_run_config_id?: string | null;
             /** Model Type */
             readonly model_type: string;
+        };
+        /**
+         * TaskDataGuide
+         * @description Persistent guidance for synthetic data generation, stored on a Task.
+         */
+        TaskDataGuide: {
+            /**
+             * Requirements
+             * @description Rules, constraints, and structure for generated task inputs.
+             */
+            requirements: string;
+            /**
+             * Examples
+             * @description Optional freeform text describing what good task inputs look like.
+             */
+            examples?: string | null;
+            /**
+             * Guide Run Ids
+             * @description IDs of TaskRuns saved as guide examples from the builder loop.
+             * @default []
+             */
+            guide_run_ids: string[];
         };
         /**
          * TaskInfoApi
@@ -12189,6 +12363,188 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDataGuide"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveTaskDataGuideInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDataGuide"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuidePreviewInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuidePreviewSample"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refine_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_refine_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuideRefineInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuideRefineResponse"];
                 };
             };
             /** @description Validation Error */

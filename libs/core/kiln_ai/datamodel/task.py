@@ -59,6 +59,23 @@ class TaskRequirement(BaseModel):
     )
 
 
+class TaskDataGuide(BaseModel):
+    """Persistent guidance for synthetic data generation, stored on a Task."""
+
+    requirements: str = Field(
+        min_length=1,
+        description="Rules, constraints, and structure for generated task inputs.",
+    )
+    examples: str | None = Field(
+        default=None,
+        description="Optional freeform text describing what good task inputs look like.",
+    )
+    guide_run_ids: list[str] = Field(
+        default=[],
+        description="IDs of TaskRuns saved as guide examples from the builder loop.",
+    )
+
+
 class TaskRunConfig(KilnParentedModel):
     """
     A Kiln model for persisting a run config in a Kiln Project, nested under a task.
@@ -167,6 +184,11 @@ class Task(
     thinking_instruction: str | None = Field(
         default=None,
         description="Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting.",
+    )
+
+    data_guide: TaskDataGuide | None = Field(
+        default=None,
+        description="Persistent Task Data Guide for synthetic data generation. Describes domain rules, constraints, and examples.",
     )
 
     default_run_config_id: ID_TYPE | None = Field(
