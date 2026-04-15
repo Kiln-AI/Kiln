@@ -76,13 +76,16 @@ class _FakeClient:
 class _FakeOkStreamThenDisconnect:
     """200 response whose byte stream raises RemoteProtocolError (e.g. server dropped connection)."""
 
-    def __init__(self) -> None:
+    def __init__(self, prefix_chunks: list[bytes] | None = None) -> None:
         self.status_code = 200
+        self._prefix_chunks = prefix_chunks or []
 
     async def aread(self) -> bytes:
         return b""
 
     async def aiter_bytes(self):
+        for chunk in self._prefix_chunks:
+            yield chunk
         raise httpx.RemoteProtocolError("Server disconnected")
         yield b""  # pragma: no cover — makes this an async generator; raise runs first
 
@@ -111,6 +114,24 @@ async def test_stream_remote_protocol_error_yields_generic_message():
     assert "trace_id" in payload
     assert isinstance(payload["trace_id"], str)
     assert len(payload["trace_id"]) > 0
+
+
+@pytest.mark.asyncio
+async def test_stream_remote_protocol_error_suppressed_when_upstream_error_already_sent():
+    upstream_error = b'data: {"type":"error","errorText":"An internal error occurred.","kiln_metadata":{}}\n\n'
+    fake_resp = _FakeOkStreamThenDisconnect(prefix_chunks=[upstream_error])
+    fake_client = _FakeClient(fake_resp)
+    session = _make_session()
+
+    with patch.object(httpx, "AsyncClient", return_value=fake_client):
+        chunks = []
+        async for chunk in session.stream():
+            chunks.append(chunk)
+
+    assert len(chunks) == 1
+    raw = chunks[0].decode()
+    assert "An internal error occurred." in raw
+    assert "Something went wrong." not in raw
 
 
 @pytest.mark.asyncio

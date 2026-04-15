@@ -100,6 +100,7 @@ class ChatStreamSession:
     async def stream(self):
         """AsyncGenerator yielding SSE bytes to the client."""
         trace_id_for_error: str | None = self._initial_trace_id
+        seen_upstream_error = False
         async with httpx.AsyncClient(timeout=CHAT_TIMEOUT) as client:
             for _ in range(MAX_TOOL_ROUNDS):
                 round_state = RoundState()
@@ -136,6 +137,8 @@ class ChatStreamSession:
                     try:
                         async for chunk in upstream.aiter_bytes():
                             result = parser.parse(chunk)
+                            if result.has_error_event:
+                                seen_upstream_error = True
                             if result.finish_tool_calls:
                                 round_state.finish_tool_calls = True
                             round_state.tool_input_events.extend(
@@ -154,6 +157,14 @@ class ChatStreamSession:
                                 "Connection closed after streamed tool boundary "
                                 "(AI SDK tool-calls finish; expected)"
                             )
+                        elif seen_upstream_error:
+                            # we already passed on an error coming out of upstream server, the UI should be rendering it
+                            # we don't need to also tell it the stream was closed by the upstream server
+                            logger.debug(
+                                "Connection closed after upstream error event; "
+                                "suppressing duplicate error"
+                            )
+                            return
                         else:
                             trace_id = trace_id_for_error or str(uuid.uuid4())
                             error_payload = {

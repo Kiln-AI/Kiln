@@ -33,6 +33,7 @@ class ParseResult:
     tool_input_events: list[ToolInputAvailableEvent] = field(default_factory=list)
     text_delta: str = ""
     chat_trace_id: str | None = None
+    has_error_event: bool = False
 
 
 class EventParser:
@@ -73,6 +74,10 @@ class EventParser:
             return
 
         event_type = event.get("type")
+
+        if event_type == "error":
+            result.has_error_event = True
+            return
 
         if event_type == KILN_SSE_CHAT_TRACE:
             tid = event.get("trace_id")
