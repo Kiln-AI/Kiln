@@ -1,7 +1,7 @@
 <script lang="ts">
   import { current_task, current_project } from "$lib/stores"
   import { createEventDispatcher } from "svelte"
-  import Float from "$lib/ui/float.svelte"
+  import SidebarRailTooltip from "./sidebar_rail_tooltip.svelte"
 
   const dispatch = createEventDispatcher<{ open: void }>()
 
@@ -13,6 +13,11 @@
   let hovered = false
   let focused = false
   $: show_tooltip = hasTooltip && (hovered || focused)
+
+  // Unique id so we can wire aria-describedby on the trigger. The tooltip
+  // content includes the project name, which is not part of the aria-label,
+  // so assistive tech needs a way to reach it from the focused button.
+  const tooltipId = `sidebar-rail-task-chip-tooltip-${crypto.randomUUID()}`
 </script>
 
 <div class="flex justify-center my-1">
@@ -24,24 +29,22 @@
     on:focus={() => (focused = true)}
     on:blur={() => (focused = false)}
     aria-label={taskName || "Select task"}
+    aria-describedby={show_tooltip ? tooltipId : undefined}
   >
     {letter}
-    {#if show_tooltip}
-      <Float placement="right" offset_px={8} role="tooltip" portal>
-        <span
-          class="pointer-events-none px-3 py-1.5 rounded bg-neutral text-neutral-content text-xs whitespace-nowrap flex flex-col items-start text-left shadow-md gap-[1px] leading-tight"
-        >
-          <span class="text-[9px] font-semibold tracking-wider text-gray-500"
-            >CURRENT TASK</span
-          >
-          {#if taskName}
-            <span class="font-medium">{taskName}</span>
-          {/if}
-          {#if projectName}
-            <span class="text-gray-500">{projectName}</span>
-          {/if}
-        </span>
-      </Float>
-    {/if}
+    <SidebarRailTooltip
+      show={show_tooltip}
+      variant="multi"
+      role="tooltip"
+      aria_hidden={false}
+      id={tooltipId}
+    >
+      {#if taskName}
+        <span class="font-medium">{taskName}</span>
+      {/if}
+      {#if projectName}
+        <span class="text-gray-500">{projectName}</span>
+      {/if}
+    </SidebarRailTooltip>
   </button>
 </div>

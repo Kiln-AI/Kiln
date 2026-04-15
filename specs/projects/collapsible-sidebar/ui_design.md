@@ -36,9 +36,8 @@ All items centered horizontally within the 56px column.
 │  🎯  │    Skills
 │  📄  │    Docs & Search
 │  🎛  │    Fine Tune
+│  ✨  │    Synthetic Data
 │ ──── │  hr
-│      │
-│  ✨  │  Synthetic Data
 │      │
 │ ↕flex↕│  (spacer, pushes items below to bottom)
 │      │
@@ -72,7 +71,7 @@ All items centered horizontally within the 56px column.
 - **No chevron** in rail.
 - **Click:** opens `taskDialog` (existing `SelectTasksMenu`).
 - **Blank state** (no task): empty chip, same container rendered; no letter. (Redirect expected — not a designed-for state.)
-- **Tooltip:** two lines via DaisyUI `tooltip-right`. Line 1 (task name, medium weight); line 2 (project name, lighter / `text-gray-500`). Tooltip content is structured (not plain-text) — achieved via custom tooltip content (DaisyUI tooltip accepts text via `data-tip`; for the multi-line case we use a sibling absolute-positioned element styled similarly if needed, or `whitespace-pre-line` with `\n`. Final implementation detail lands in architecture.)
+- **Tooltip:** two lines via `SidebarRailTooltip variant="multi"`. Line 1 = task name (medium weight); line 2 = project name (`text-gray-500`). When both are empty the tooltip is not rendered.
 
 ## OPTIMIZE Divider Group
 
@@ -81,17 +80,17 @@ All items centered horizontally within the 56px column.
   - **Option A (preferred):** full word `OPTIMIZE` at `text-[9px]` tracking-wide — fits comfortably.
   - **Option B:** abbreviate to `OPT` if readability of the full word is poor at that size after visual review.
 - **Clickable:** the label is an `<a>` pointing to `/optimize/$project_id/$task_id`; hover shows `bg-base-300/50`; tooltip "Optimize" on hover.
-- **Children:** Prompts, Models, Tools, Skills, Docs & Search, Fine Tune — rendered flat (no indent), same icon styling as other nav items.
+- **Children:** Prompts, Models, Tools, Skills, Docs & Search, Fine Tune, Synthetic Data — rendered flat (no indent), same icon styling as other nav items. (Synthetic Data lives in the OPTIMIZE group in the rail even though the full sidebar renders it separately.)
 - **Bottom rule:** same as top rule, below Fine Tune.
 - Active state of the children: same `bg-base-300` rule as other nav items. If the current section is one of these children, the OPTIMIZE **label** is not independently highlighted.
 
 ## Tooltips
 
-- **Library:** DaisyUI `tooltip` + `tooltip-right`.
-- **Delay:** 0ms (native DaisyUI tooltip is CSS-only and appears on hover without delay — acceptable for now).
-- **Content:** `data-tip="Run"`, `data-tip="Chat"`, etc.
-- **Task chip tooltip:** multi-line — use `whitespace-pre-line` and `data-tip="{{task_name}}\n{{project_name}}"` as a starting point; revisit in visual review.
-- **Tooltip color:** DaisyUI default (dark bubble, light text). No custom theming.
+- **Implementation:** shared `sidebar_rail_tooltip.svelte` built on `$lib/ui/float.svelte` (portaled, so it escapes any overflow clipping). DaisyUI tooltip proved too rigid for the multi-line task-chip case, so all rail tooltips use the same Float-based primitive.
+- **Trigger:** on hover or focus of the rail item (owner tracks the boolean).
+- **Content:** single-line label for nav items, settings, and the OPTIMIZE label. Multi-line for the task chip.
+- **Task chip tooltip:** two lines — task name in `font-medium`, project name in `text-gray-500`. Uses `variant="multi"` on the shared tooltip.
+- **Tooltip color:** `bg-neutral` / `text-neutral-content`.
 
 ## Progress Indicator (Rail)
 
@@ -130,9 +129,9 @@ Per functional spec: **container snaps, content animates on expand only.**
 ## Responsive Behavior
 
 - **`< lg` (1024px):** sidebar behavior unchanged — off-canvas drawer with full layout. Rail not used.
-- **`lg` and ≥ 2000px:** full sidebar always (even if chat open).
-- **`lg` and < 2000px + chat open:** rail.
-- **`lg` and < 2000px + chat closed:** full sidebar.
+- **`lg` and ≥ 1550px:** full sidebar always (even if chat open).
+- **`lg` and < 1550px + chat open:** rail (except on the `/chat` page, where the chat bar is hidden and there is no width pressure).
+- **`lg` and < 1550px + chat closed:** full sidebar.
 
 ## Accessibility
 
@@ -143,7 +142,7 @@ Per functional spec: **container snaps, content animates on expand only.**
 ## Open Visual Questions (parked for implementation / visual review)
 
 - Final OPTIMIZE label rendering (full word vs. `OPT`) — decide after seeing it in situ at 9px.
-- Whether the multi-line task chip tooltip looks acceptable with DaisyUI's built-in tooltip; may require a custom tooltip.
+- ~~Whether the multi-line task chip tooltip looks acceptable with DaisyUI's built-in tooltip; may require a custom tooltip.~~ **Resolved:** DaisyUI was rejected during implementation; all rail tooltips use the shared Float-based `sidebar_rail_tooltip.svelte`.
 - Final rail width may nudge ±4px based on icon alignment.
 
 These are resolved during implementation / the "tooltip cleanup" follow-up phase, not now.

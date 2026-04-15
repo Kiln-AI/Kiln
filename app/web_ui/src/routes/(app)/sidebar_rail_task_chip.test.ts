@@ -1,8 +1,21 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, fireEvent } from "@testing-library/svelte"
+import { render, fireEvent, waitFor, cleanup } from "@testing-library/svelte"
 import { current_task, current_project } from "$lib/stores"
 import SidebarRailTaskChip from "./sidebar_rail_task_chip.svelte"
+
+// Tooltip is portaled to document.body via <Float portal>, not inside the
+// render container. Clean up portaled nodes between tests to avoid leaks.
+afterEach(() => {
+  cleanup()
+  document.body
+    .querySelectorAll('[role="tooltip"]')
+    .forEach((el) => el.remove())
+})
+
+function findTooltip(): HTMLElement | null {
+  return document.body.querySelector('[role="tooltip"]')
+}
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyTask = any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -34,10 +47,9 @@ describe("SidebarRailTaskChip", () => {
 
   it("dispatches an open event when clicked", async () => {
     const handler = vi.fn()
-    const { container, component } = render(SidebarRailTaskChip)
+    const { component, getByRole } = render(SidebarRailTaskChip)
     component.$on("open", handler)
-    const button = container.querySelector("button") as HTMLElement
-    await fireEvent.click(button)
+    await fireEvent.click(getByRole("button"))
     expect(handler).toHaveBeenCalledOnce()
   })
 
@@ -47,17 +59,43 @@ describe("SidebarRailTaskChip", () => {
     const { container } = render(SidebarRailTaskChip)
     const button = container.querySelector("button") as HTMLElement
     await fireEvent.mouseEnter(button)
-    const tooltip = container.querySelector('[role="tooltip"]')
-    expect(tooltip).not.toBeNull()
+    await waitFor(() => expect(findTooltip()).not.toBeNull())
+    const tooltip = findTooltip()
     expect(tooltip?.textContent).toContain("Apollo")
     expect(tooltip?.textContent).toContain("Moon Shot")
+  })
+
+  it("wires aria-describedby from the button to the visible tooltip", async () => {
+    current_task.set({ name: "Apollo" } as AnyTask)
+    current_project.set({ name: "Moon Shot" } as AnyProject)
+    const { container } = render(SidebarRailTaskChip)
+    const button = container.querySelector("button") as HTMLElement
+    expect(button.getAttribute("aria-describedby")).toBeNull()
+    await fireEvent.mouseEnter(button)
+    await waitFor(() => expect(findTooltip()).not.toBeNull())
+    const describedBy = button.getAttribute("aria-describedby")
+    expect(describedBy).not.toBeNull()
+    const described = document.getElementById(describedBy!)
+    expect(described).not.toBeNull()
+    expect(described?.textContent).toContain("Apollo")
+    expect(described?.textContent).toContain("Moon Shot")
   })
 
   it("omits the tooltip when neither task nor project name is set", async () => {
     const { container } = render(SidebarRailTaskChip)
     const button = container.querySelector("button") as HTMLElement
     await fireEvent.mouseEnter(button)
-    expect(container.querySelector('[role="tooltip"]')).toBeNull()
+    expect(findTooltip()).toBeNull()
+  })
+
+  it("does not render a 'CURRENT TASK' header in the tooltip", async () => {
+    current_task.set({ name: "Apollo" } as AnyTask)
+    current_project.set({ name: "Moon Shot" } as AnyProject)
+    const { container } = render(SidebarRailTaskChip)
+    const button = container.querySelector("button") as HTMLElement
+    await fireEvent.mouseEnter(button)
+    await waitFor(() => expect(findTooltip()).not.toBeNull())
+    expect(findTooltip()?.textContent).not.toContain("CURRENT TASK")
   })
 
   it("uses the task name as the aria-label when a task is selected", () => {

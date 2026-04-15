@@ -14,5 +14,5 @@ Design:
 - Task selector: reduce down to a single letter representation in a box “Joke Generator” task becomes “J”. Keep with chevron. Hover shows 2 line tooltip with project/name
 
 Condition:
-- only collapse if chat bar is open and screen width < 2000px. Otherwise keep current design. 
+- only collapse if chat bar is open and screen width < 1550px. Otherwise keep current design. 
 - Can’t manually toggle, except to close chat which will bring it back

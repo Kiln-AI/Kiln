@@ -5,7 +5,7 @@
   import { page } from "$app/stores"
   import { ui_state } from "$lib/stores"
   import { update_update_store, update_info } from "$lib/utils/update"
-  import { onMount } from "svelte"
+  import { onMount, onDestroy } from "svelte"
   import ProgressWidget from "$lib/ui/progress_widget.svelte"
   import { beforeNavigate } from "$app/navigation"
   import { setContext } from "svelte"
@@ -25,13 +25,19 @@
   import { chatBarExpanded } from "$lib/stores/chat_ui_state"
   import { derived } from "svelte/store"
 
-  const chatBarVisible = derived(
+  // Rail-eligibility predicate: lg breakpoint, narrow viewport (< 1550px),
+  // and chat bar expanded. See functional_spec.md "Trigger".
+  const isRailEligible = derived(
     [isLg, isNarrowViewport, chatBarExpanded],
     ([$lg, $narrow, $chatOpen]) => $lg && $narrow && $chatOpen,
   )
 
+  // The chat bar hides itself on the /chat page (chat_bar.svelte early-returns
+  // when section === Chat). When the chat bar isn't visible there is no width
+  // pressure on the main column, so we keep the full sidebar on the chat page
+  // even when the other rail-eligibility conditions are true.
   let showRail = false
-  $: showRail = $chatBarVisible && section !== Section.Chat
+  $: showRail = $isRailEligible && section !== Section.Chat
 
   let justExitedRail = false
   let prevRailActive = false
@@ -50,6 +56,13 @@
 
   onMount(async () => {
     update_update_store()
+  })
+
+  onDestroy(() => {
+    if (slideInTimeout) {
+      clearTimeout(slideInTimeout)
+      slideInTimeout = null
+    }
   })
 
   const lastPageUrlStore = writable<URL | undefined>(undefined)
@@ -146,11 +159,7 @@
     ></label>
 
     {#if showRail}
-      <SidebarRail
-        {section}
-        openTaskDialog={() => taskDialog?.show()}
-        hasUpdate={!!$update_info.update_result?.has_update}
-      />
+      <SidebarRail {section} openTaskDialog={() => taskDialog?.show()} />
     {:else}
       <ul
         class="sidebar-menu menu bg-base-200 text-base-content w-72 md:w-52 2xl:w-56 p-3 pt-1 lg:pt-3 min-h-full text-xs"

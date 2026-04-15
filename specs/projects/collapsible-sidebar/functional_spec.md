@@ -14,7 +14,8 @@ The rail is shown iff **all** of the following are true:
 
 - Viewport is large (`lg` breakpoint and above — `min-width: 1024px`). Below `lg`, sidebar behavior is unchanged (off-canvas drawer).
 - Chat pane is open (`expanded === true` in `chat_bar.svelte`).
-- Viewport width is **< 2000px**.
+- Viewport width is **< 1550px**. (Threshold tuned during implementation — above ~1550px the main column has enough room alongside the full sidebar + chat pane that collapsing to a rail feels premature.)
+- Current section is not `/chat` (on the chat page the chat bar is already hidden by `chat_bar.svelte`, so there is no width pressure; full sidebar stays).
 
 Otherwise the full sidebar is shown (existing design, no changes).
 
@@ -26,7 +27,7 @@ The **sidebar container width** always **snaps** (instant). The main content are
 
 - **Collapse** (full → rail): container width snaps to rail width. Interior content snaps to rail layout (instant — no animation).
 - **Expand** (rail → full): container width snaps to full width. Interior content **animates in from the left** (slide) with the same timing as the chat pane expand (**250ms linear**, matching `chat_bar.svelte` `.chat-expand-x`). Because the container is already at full width when the animation starts, the main content does not re-layout during the animation.
-- **Resize across the 2000px threshold** while chat is open: snap in both directions (no animation).
+- **Resize across the 1550px threshold** while chat is open: snap in both directions (no animation).
 
 ## Rail Layout (top to bottom)
 
@@ -39,11 +40,10 @@ All items are **vertically stacked**, centered in a narrow column. Rail width is
    - Chat
    - Dataset
    - Specs & Evals
-4. **"OPTIMIZE" divider group** — horizontal rule above, small uppercase "OPTIMIZE" label (tap target acts as the old Optimize parent link — i.e. navigates to `/optimize/...`). Below the label, the six former children are shown flat (no indent): Prompts, Models, Tools, Skills, Docs & Search, Fine Tune. A matching horizontal rule closes the group below Fine Tune.
-5. **Synthetic Data** — single icon (below the OPTIMIZE group).
-6. **(spacer — pushes the below items to the bottom)**
-7. **Progress indicator** (when `progress_ui_state` is active) — see "Progress indicator in rail" below.
-8. **Settings** — single icon. When an app update is available, a small badge dot is overlaid on the Settings icon (see "App update in rail" below).
+4. **"OPTIMIZE" divider group** — horizontal rule above, small uppercase "OPTIMIZE" label (tap target acts as the old Optimize parent link — i.e. navigates to `/optimize/...`). Below the label, the seven former children are shown flat (no indent): Prompts, Models, Tools, Skills, Docs & Search, Fine Tune, Synthetic Data. A matching horizontal rule closes the group below Synthetic Data.
+5. **(spacer — pushes the below items to the bottom)**
+6. **Progress indicator** (when `progress_ui_state` is active) — see "Progress indicator in rail" below.
+7. **Settings** — single icon. When an app update is available, a small badge dot is overlaid on the Settings icon (see "App update in rail" below).
 
 ## Tooltips
 
@@ -51,13 +51,13 @@ Every icon / chip in the rail shows a tooltip on hover. Used to replace the text
 
 - **Position:** right side of the icon, vertically centered.
 - **Delay:** 0ms enter, 0ms leave (can be tuned later).
-- **Implementation:** start with DaisyUI `tooltip tooltip-right` utility classes.
+- **Implementation:** a shared `sidebar_rail_tooltip.svelte` component built on top of `$lib/ui/float.svelte` (DaisyUI `tooltip` proved too inflexible for the multi-line task-chip case, so all rail tooltips use the Float-based component).
 - **Content:**
   - Nav items: the same label used today ("Run", "Chat", "Dataset", "Specs & Evals", "Prompts", "Models", "Tools", "Skills", "Docs & Search", "Fine Tune", "Synthetic Data", "Settings").
   - OPTIMIZE label: "Optimize" (tooltip on hover of the text label).
   - Task chip: a two-line tooltip showing the task name and project name, matching the visual weight of the current in-sidebar component (task name in medium weight, project name in lighter/gray). If no task is selected the chip is blank (a redirect is expected in that state, so tooltip content is unspecified).
 
-> **Refactor follow-up (later phase):** if after visual review we keep DaisyUI tooltip, refactor `info_tooltip.svelte` so its logic is shared with the rail tooltips. If we swap to a custom tooltip, leave `info_tooltip.svelte` untouched.
+> The rail tooltips all route through `sidebar_rail_tooltip.svelte` (Float-based). `info_tooltip.svelte` is unchanged and out of scope.
 
 ## Task Chip
 
@@ -98,7 +98,7 @@ Same styling as today: `bg-base-300` on the active item. No additional accent ba
 
 - **Scope:** this divider-group layout (horizontal rule + small label + flat children) is **only** used in the rail. The full sidebar retains its current nested-parent design.
 - **Label** ("OPTIMIZE") is clickable and acts as the old "Optimize" parent link — navigates to `/optimize/$project_id/$task_id`.
-- **Children** in the rail are flat (no indent): Prompts, Models, Tools, Skills, Docs & Search, Fine Tune.
+- **Children** in the rail are flat (no indent): Prompts, Models, Tools, Skills, Docs & Search, Fine Tune, Synthetic Data. (Synthetic Data lives inside the OPTIMIZE group in the rail even though the full sidebar currently renders it separately — grouping it keeps the rail visually tight.)
 
 ## Mobile / Small Screens
 
@@ -106,7 +106,7 @@ Below the `lg` breakpoint: behavior is unchanged. The sidebar is an off-canvas d
 
 ## Configuration / Constants
 
-- **Collapse threshold:** 2000px viewport width (hard-coded constant, named for reuse).
+- **Collapse threshold:** 1550px viewport width (hard-coded constant, named for reuse).
 - **Rail width:** TBD in UI design step, target ≈ 56px.
 - **Expand animation:** 250ms linear, matching `chat_bar.svelte` expand.
 
@@ -123,10 +123,10 @@ Below the `lg` breakpoint: behavior is unchanged. The sidebar is an off-canvas d
 
 ## Edge Cases
 
-- **Chat open, viewport resizes from ≥2000px to <2000px:** sidebar snaps from full → rail.
-- **Chat open, viewport resizes from <2000px to ≥2000px:** sidebar snaps rail → full (no animation).
-- **Viewport <2000px, user closes chat:** rail → full with 250ms slide-in-from-left animation.
-- **Viewport <2000px, user opens chat (from closed):** sidebar snaps full → rail instantly.
+- **Chat open, viewport resizes from ≥1550px to <1550px:** sidebar snaps from full → rail.
+- **Chat open, viewport resizes from <1550px to ≥1550px:** sidebar snaps rail → full (no animation).
+- **Viewport <1550px, user closes chat:** rail → full with 250ms slide-in-from-left animation.
+- **Viewport <1550px, user opens chat (from closed):** sidebar snaps full → rail instantly.
 - **Viewport crosses `lg` breakpoint** (to mobile): rail disappears, drawer behavior takes over (current behavior).
 - **No task selected:** task chip is blank; redirect is expected to resolve this before the user sees the state.
 - **App update flag toggles on while rail is active:** dot badge appears on Settings icon immediately; settings tooltip updates.

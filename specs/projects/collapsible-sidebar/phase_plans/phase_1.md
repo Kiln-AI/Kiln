@@ -15,6 +15,8 @@ Then migrate `app/web_ui/src/routes/(app)/chat_bar.svelte` from its local `expan
 
 This phase is foundation-only. No visual changes, no rail rendering yet. Unit tests cover both stores and the migrated persistence flow.
 
+> **Note:** In Phase 2 the narrow-viewport threshold was tuned to `< 1550px` and the derived store was renamed `isBelow2000 → isNarrowViewport`. Occurrences of `isBelow2000` / `2000` below are preserved as the original Phase 1 plan; the live code reflects the updated names/threshold.
+
 ## Steps
 
 1. **Create `app/web_ui/src/lib/stores/viewport.ts`**

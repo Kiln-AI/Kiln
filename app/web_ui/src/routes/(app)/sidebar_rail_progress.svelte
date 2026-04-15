@@ -11,7 +11,12 @@
       aria-label="In progress"
       role="img"
     ></div>
-    <Float placement="right-start" offset_px={12} role="presentation">
+    <Float
+      placement="right-start"
+      offset_px={12}
+      role="region"
+      aria_label="Progress"
+    >
       <ProgressWidget />
     </Float>
   </div>

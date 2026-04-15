@@ -6,7 +6,7 @@
   import FinetuneIcon from "$lib/ui/icons/finetune_icon.svelte"
   import SkillsIcon from "$lib/ui/icons/skills_icon.svelte"
   import ToolsIcon from "$lib/ui/icons/tools_icon.svelte"
-  import Float from "$lib/ui/float.svelte"
+  import SidebarRailTooltip from "./sidebar_rail_tooltip.svelte"
 
   export let section: Section
 
@@ -22,8 +22,7 @@
 <div class="flex">
   <a
     href={`/optimize/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
-    class="relative flex-1 h-5 flex items-center justify-center text-[9px] font-semibold tracking-tight text-gray-500 hover:bg-base-300/50"
-    data-tip="Optimize"
+    class="relative flex-1 h-5 flex items-center justify-center text-[9px] font-semibold tracking-wider text-gray-500 hover:bg-base-300/50"
     aria-label="Optimize"
     on:mouseenter={() => (hovered = true)}
     on:mouseleave={() => (hovered = false)}
@@ -31,15 +30,7 @@
     on:blur={() => (focused = false)}
   >
     OPTIMIZE
-    {#if show_tooltip}
-      <Float placement="right" offset_px={8} role="tooltip" portal>
-        <span
-          class="pointer-events-none px-2 py-1 rounded bg-neutral text-neutral-content text-sm font-medium whitespace-nowrap shadow-md"
-        >
-          Optimize
-        </span>
-      </Float>
-    {/if}
+    <SidebarRailTooltip show={show_tooltip}>Optimize</SidebarRailTooltip>
   </a>
 </div>
 

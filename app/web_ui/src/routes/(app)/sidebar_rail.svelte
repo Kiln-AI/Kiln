@@ -11,7 +11,6 @@
 
   export let section: Section = Section.None
   export let openTaskDialog: () => void
-  export let hasUpdate: boolean = false
 </script>
 
 <nav
@@ -112,5 +111,5 @@
 
   <SidebarRailProgress />
 
-  <SidebarRailSettings active={section === Section.Settings} {hasUpdate} />
+  <SidebarRailSettings active={section === Section.Settings} />
 </nav>

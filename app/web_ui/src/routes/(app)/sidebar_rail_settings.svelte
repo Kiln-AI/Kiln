@@ -1,9 +1,10 @@
 <script lang="ts">
-  import Float from "$lib/ui/float.svelte"
+  import { update_info } from "$lib/utils/update"
+  import SidebarRailTooltip from "./sidebar_rail_tooltip.svelte"
 
   export let active: boolean = false
-  export let hasUpdate: boolean = false
 
+  $: hasUpdate = !!$update_info.update_result?.has_update
   $: label = hasUpdate ? "Settings — Update Available" : "Settings"
   $: ariaLabel = hasUpdate ? "Settings, update available" : "Settings"
 
@@ -18,7 +19,6 @@
     class="flex items-center justify-center w-10 h-9 rounded-md relative {active
       ? 'bg-base-300'
       : 'hover:bg-base-300/50'}"
-    data-tip={label}
     aria-label={ariaLabel}
     aria-current={active ? "page" : undefined}
     on:mouseenter={() => (hovered = true)}
@@ -41,18 +41,10 @@
     </svg>
     {#if hasUpdate}
       <span
-        class="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-primary"
+        class="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary"
         data-testid="update-dot"
       ></span>
     {/if}
-    {#if show_tooltip}
-      <Float placement="right" offset_px={8} role="tooltip" portal>
-        <span
-          class="pointer-events-none px-2 py-1 rounded bg-neutral text-neutral-content text-sm font-medium whitespace-nowrap shadow-md"
-        >
-          {label}
-        </span>
-      </Float>
-    {/if}
+    <SidebarRailTooltip show={show_tooltip}>{label}</SidebarRailTooltip>
   </a>
 </div>

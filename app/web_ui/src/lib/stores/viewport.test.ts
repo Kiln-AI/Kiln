@@ -52,15 +52,36 @@ describe("viewport store (browser)", () => {
     unsub()
   })
 
-  it("isNarrowViewport is true when width < 2000", async () => {
+  it("isNarrowViewport is true when width < 1550", async () => {
     const mod = await importFreshWithWidth(1500)
     const unsub = mod.viewportWidth.subscribe(() => {})
     expect(get(mod.isNarrowViewport)).toBe(true)
     unsub()
   })
 
-  it("isNarrowViewport is false when width >= 2000", async () => {
+  it("isNarrowViewport is false when width >= 1550", async () => {
     const mod = await importFreshWithWidth(2100)
+    const unsub = mod.viewportWidth.subscribe(() => {})
+    expect(get(mod.isNarrowViewport)).toBe(false)
+    unsub()
+  })
+
+  it("isNarrowViewport is true at the 1549 boundary (just below threshold)", async () => {
+    const mod = await importFreshWithWidth(1549)
+    const unsub = mod.viewportWidth.subscribe(() => {})
+    expect(get(mod.isNarrowViewport)).toBe(true)
+    unsub()
+  })
+
+  it("isNarrowViewport is false at exactly 1550 (threshold)", async () => {
+    const mod = await importFreshWithWidth(1550)
+    const unsub = mod.viewportWidth.subscribe(() => {})
+    expect(get(mod.isNarrowViewport)).toBe(false)
+    unsub()
+  })
+
+  it("isNarrowViewport is false at 1551 (just above threshold)", async () => {
+    const mod = await importFreshWithWidth(1551)
     const unsub = mod.viewportWidth.subscribe(() => {})
     expect(get(mod.isNarrowViewport)).toBe(false)
     unsub()

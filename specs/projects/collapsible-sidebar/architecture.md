@@ -12,14 +12,15 @@ This is a frontend-only change in `app/web_ui`. No backend / API changes. Small 
 
 | Path | Purpose |
 |---|---|
-| `app/web_ui/src/lib/stores/viewport.ts` | Reactive viewport width store + `isLg` / `isBelow2000` derived stores. |
+| `app/web_ui/src/lib/stores/viewport.ts` | Reactive viewport width store + `isLg` / `isNarrowViewport` derived stores (narrow = `< 1550px`). |
 | `app/web_ui/src/lib/stores/chat_ui_state.ts` | Shared `chatBarExpanded` writable, init from existing storage, setter persists. |
 | `app/web_ui/src/routes/(app)/sidebar_rail.svelte` | Icon-rail presentation of the left nav. |
 | `app/web_ui/src/routes/(app)/sidebar_rail_item.svelte` | Single icon row (icon slot, href, label, active state, tooltip). |
 | `app/web_ui/src/routes/(app)/sidebar_rail_task_chip.svelte` | Task letter chip with two-line tooltip. |
 | `app/web_ui/src/routes/(app)/sidebar_rail_optimize_group.svelte` | Divider + `OPTIMIZE` clickable label + flat children. |
 | `app/web_ui/src/routes/(app)/sidebar_rail_progress.svelte` | Rail progress trigger + `<Float>`-wrapped `ProgressWidget`. |
-| `app/web_ui/src/routes/(app)/sidebar_rail_settings.svelte` | Settings icon with update-dot overlay. |
+| `app/web_ui/src/routes/(app)/sidebar_rail_settings.svelte` | Settings icon with update-dot overlay (subscribes to `update_info` directly). |
+| `app/web_ui/src/routes/(app)/sidebar_rail_tooltip.svelte` | Shared tooltip primitive used by every rail item (wraps `$lib/ui/float.svelte`). |
 
 ### Modified files
 
@@ -33,10 +34,10 @@ This is a frontend-only change in `app/web_ui`. No backend / API changes. Small 
 ## State / Data Flow
 
 ```
-viewport.ts        ─ width, isLg, isBelow2000 ─┐
-chat_ui_state.ts   ─ chatBarExpanded ──────────┤─► derived isRailActive ──► +layout.svelte
-                                               │                            (chooses rail vs full)
-+layout.svelte     ─ section (from pathname) ──┘
+viewport.ts        ─ width, isLg, isNarrowViewport ─┐
+chat_ui_state.ts   ─ chatBarExpanded ───────────────┤─► derived isRailEligible ──► showRail ──► +layout.svelte
+                                                    │    (lg && narrow && chat)      (&& section !== Chat)   (chooses rail vs full)
++layout.svelte     ─ section (from pathname) ───────┘
 ```
 
 ### `viewport.ts`
@@ -48,7 +49,7 @@ import { browser } from "$app/environment"
 export const viewportWidth = readable(
   browser ? window.innerWidth : 0,
   (set) => {
-    if (!browser) return () => {}
+    if (!browser) return
     const onResize = () => set(window.innerWidth)
     window.addEventListener("resize", onResize)
     return () => window.removeEventListener("resize", onResize)
@@ -56,7 +57,7 @@ export const viewportWidth = readable(
 )
 
 export const isLg = derived(viewportWidth, (w) => w >= 1024)
-export const isBelow2000 = derived(viewportWidth, (w) => w < 2000)
+export const isNarrowViewport = derived(viewportWidth, (w) => w < 1550)
 ```
 
 ### `chat_ui_state.ts`
@@ -80,24 +81,29 @@ export function setChatBarExpanded(expanded: boolean): void {
 
 `chat_bar.svelte` then imports `chatBarExpanded` and `setChatBarExpanded` from this module. The local `expanded` variable is replaced by subscribing to the store (`$chatBarExpanded`). All writes go through `setChatBarExpanded`.
 
-### `isRailActive` (in +layout.svelte)
+### `isRailEligible` + `showRail` (in +layout.svelte)
 
 ```ts
 import { derived } from "svelte/store"
-import { isLg, isBelow2000 } from "$lib/stores/viewport"
+import { isLg, isNarrowViewport } from "$lib/stores/viewport"
 import { chatBarExpanded } from "$lib/stores/chat_ui_state"
 
-const isRailActive = derived(
-  [isLg, isBelow2000, chatBarExpanded],
+const isRailEligible = derived(
+  [isLg, isNarrowViewport, chatBarExpanded],
   ([$lg, $narrow, $chatOpen]) => $lg && $narrow && $chatOpen,
 )
+
+// chat_bar hides itself on /chat, so there's no width pressure there — keep
+// the full sidebar regardless of eligibility.
+let showRail = false
+$: showRail = $isRailEligible && section !== Section.Chat
 ```
 
 Rendered in +layout.svelte:
 
 ```svelte
-{#if $isRailActive}
-  <SidebarRail {section} />
+{#if showRail}
+  <SidebarRail {section} openTaskDialog={...} />
 {:else}
   <ul class="sidebar-menu ..." class:sidebar-slide-in={justExitedRail}>
     ... (existing full sidebar contents)
@@ -113,11 +119,11 @@ The container width snaps (one `if/else` branch vs the other — no width transi
 let justExitedRail = false
 let prevRailActive = false
 $: {
-  if (prevRailActive && !$isRailActive) {
+  if (prevRailActive && !showRail) {
     justExitedRail = true
     setTimeout(() => (justExitedRail = false), 250)
   }
-  prevRailActive = $isRailActive
+  prevRailActive = showRail
 }
 ```
 
@@ -159,11 +165,14 @@ Rail does **not** get a slide-in / slide-out animation — it appears/disappears
   export let openTaskDialog: () => void
 </script>
 
-<ul class="sidebar-menu menu bg-base-200 w-[56px] p-0 pt-3 min-h-full">
+<nav
+  class="bg-base-200 text-base-content w-[56px] min-h-full flex flex-col items-stretch pt-3 pb-3 gap-1"
+  aria-label="Primary"
+>
   <!-- Logo -->
-  <li class="flex justify-center mb-3">
-    <img src="/images/animated_logo.svg" alt="Kiln" class="w-7 h-7" />
-  </li>
+  <div class="flex justify-center mb-2">
+    <img src="/images/animated_logo.svg" alt="Kiln" class="w-7 h-7" aria-hidden="true" />
+  </div>
 
   <SidebarRailTaskChip on:open={openTaskDialog} />
 
@@ -175,109 +184,74 @@ Rail does **not** get a slide-in / slide-out animation — it appears/disappears
   </SidebarRailItem>
   <!-- Dataset, Specs & Evals -->
 
+  <!-- OPTIMIZE divider group: Prompts, Models, Tools, Skills, Docs, Fine Tune, Synthetic Data -->
   <SidebarRailOptimizeGroup {section} />
 
-  <!-- Synthetic Data -->
-
-  <li class="flex-1"></li>  <!-- spacer -->
+  <div class="flex-1"></div>  <!-- spacer -->
   <SidebarRailProgress />
-  <SidebarRailSettings active={section === Section.Settings} hasUpdate={$update_info.update_result?.has_update} />
-</ul>
+  <SidebarRailSettings active={section === Section.Settings} />
+</nav>
 ```
 
 Props:
 - `section: Section` — current section (from +layout.svelte URL matching).
 - `openTaskDialog: () => void` — callback passed down to task chip.
 
+`SidebarRailSettings` subscribes to `update_info` directly (same pattern as `SidebarRailProgress` subscribing to `progress_ui_state`) instead of taking a `hasUpdate` prop — keeps a single source of truth for update state.
+
+Top-level element is `<nav aria-label="Primary">` rather than `<ul class="sidebar-menu menu ...">`. Semantic nav is better than a `<ul>` when the items aren't a plain list.
+
 ### `sidebar_rail_item.svelte`
 
 ```svelte
 <script lang="ts">
+  import SidebarRailTooltip from "./sidebar_rail_tooltip.svelte"
   export let href: string
   export let active: boolean = false
   export let label: string
+
+  let hovered = false
+  let focused = false
+  $: show_tooltip = hovered || focused
 </script>
 
-<li class="flex justify-center">
+<div class="flex justify-center">
   <a
     {href}
-    class="tooltip tooltip-right flex items-center justify-center w-10 h-9 rounded-md {active ? 'bg-base-300' : 'hover:bg-base-300/50'}"
-    data-tip={label}
+    class="relative flex items-center justify-center w-10 h-9 rounded-md {active ? 'bg-base-300' : 'hover:bg-base-300/50'}"
     aria-label={label}
     aria-current={active ? 'page' : undefined}
+    on:mouseenter={() => (hovered = true)}
+    on:mouseleave={() => (hovered = false)}
+    on:focus={() => (focused = true)}
+    on:blur={() => (focused = false)}
   >
     <span class="w-5 h-5 block">
       <slot name="icon" />
     </span>
+    <SidebarRailTooltip show={show_tooltip}>{label}</SidebarRailTooltip>
   </a>
-</li>
+</div>
 ```
 
 ### `sidebar_rail_task_chip.svelte`
 
-```svelte
-<script lang="ts">
-  import { current_task, current_project } from "$lib/stores"
-  import { createEventDispatcher } from "svelte"
-  const dispatch = createEventDispatcher<{ open: void }>()
-  $: letter = $current_task?.name?.[0]?.toUpperCase() ?? ""
-  $: tip = `${$current_task?.name ?? ""}\n${$current_project?.name ?? ""}`
-</script>
+Renders the uppercase first letter of `$current_task?.name` inside a 32×32 rounded chip. On hover/focus, a multi-line tooltip (via `SidebarRailTooltip variant="multi" role="tooltip"`) shows task name (medium) over project name (gray). No tooltip is shown when both are empty.
 
-<li class="flex justify-center my-2">
-  <button
-    class="tooltip tooltip-right rail-chip-tooltip w-8 h-8 rounded-md border border-base-300 bg-base-100 text-sm font-medium flex items-center justify-center"
-    data-tip={tip}
-    on:click={() => dispatch("open")}
-    aria-label={$current_task?.name ?? "Select task"}
-  >
-    {letter}
-  </button>
-</li>
+### `sidebar_rail_tooltip.svelte`
 
-<style>
-  /* multi-line tooltip for task chip */
-  :global(.rail-chip-tooltip.tooltip::before) {
-    white-space: pre-line;
-    text-align: left;
-  }
-</style>
-```
+Shared tooltip primitive used by `sidebar_rail_item`, `sidebar_rail_settings`, `sidebar_rail_optimize_group`, and `sidebar_rail_task_chip`. Props:
 
-The `:global(...)` selector reaches the pseudo-element generated by DaisyUI's tooltip. If DaisyUI's selector structure differs, the fallback is a custom absolute-positioned `<span>` tooltip (decided during implementation). This is the main "key algorithm" to validate early — if DaisyUI can't render multi-line tooltips cleanly, swap this one component to a hand-rolled tooltip.
+- `show: boolean` — whether the tooltip is visible (owner tracks hover/focus).
+- `variant: "single" | "multi"` — `"single"` is a one-line label bubble (default), `"multi"` is a left-aligned column for richer content (task chip).
+- `role: string` — defaults to `"none"` (the tooltip content duplicates the anchor's `aria-label`, so it is purely visual). Task chip passes `"tooltip"` because its content includes the project name which is not in the `aria-label`.
+- `aria_hidden: boolean` — defaults to `true`; task chip passes `false` to let AT read the tooltip.
+
+Wraps `$lib/ui/float.svelte` with `placement="right"` and `portal` so the tooltip escapes any clipping by the narrow rail column.
 
 ### `sidebar_rail_optimize_group.svelte`
 
-```svelte
-<script lang="ts">
-  import { Section } from "$lib/ui/section"
-  import { ui_state } from "$lib/stores"
-  import SidebarRailItem from "./sidebar_rail_item.svelte"
-  export let section: Section
-</script>
-
-<div class="h-px bg-base-300 mx-2 my-2"></div>
-
-<li class="flex justify-center">
-  <a
-    href="/optimize/{$ui_state.current_project_id}/{$ui_state.current_task_id}"
-    class="tooltip tooltip-right w-10 h-5 flex items-center justify-center text-[9px] font-semibold tracking-wider text-gray-500 rounded hover:bg-base-300/50"
-    data-tip="Optimize"
-    aria-label="Optimize"
-  >
-    OPTIMIZE
-  </a>
-</li>
-
-<SidebarRailItem ...Prompts.../>
-<SidebarRailItem ...Models.../>
-<SidebarRailItem ...Tools.../>
-<SidebarRailItem ...Skills.../>
-<SidebarRailItem ...Docs.../>
-<SidebarRailItem ...FineTune.../>
-
-<div class="h-px bg-base-300 mx-2 my-2"></div>
-```
+Renders: top 1px divider, the `OPTIMIZE` label-link (small text `text-[9px] font-semibold tracking-wider text-gray-500`, tooltip "Optimize" via `SidebarRailTooltip`), then seven child `SidebarRailItem`s (Prompts, Models, Tools, Skills, Docs & Search, Fine Tune, Synthetic Data), then a closing 1px divider. Synthetic Data lives inside this group even though the full sidebar renders it separately — grouping it keeps the rail visually compact.
 
 ### `sidebar_rail_progress.svelte`
 
@@ -289,40 +263,29 @@ The `:global(...)` selector reaches the pseudo-element generated by DaisyUI's to
 </script>
 
 {#if $progress_ui_state}
-  <li class="flex justify-center relative">
-    <div class="w-3 h-3 rounded-full bg-primary" aria-label="In progress"></div>
-    <Float placement="right-start" offset_px={12}>
+  <div class="flex justify-center relative py-2">
+    <div
+      class="w-3 h-3 rounded-full bg-primary"
+      aria-label="In progress"
+      role="img"
+    ></div>
+    <Float
+      placement="right-start"
+      offset_px={12}
+      role="region"
+      aria_label="Progress"
+    >
       <ProgressWidget />
     </Float>
-  </li>
+  </div>
 {/if}
 ```
 
-Float anchors to parent element (per float.svelte `referenceElement = contentElement.parentElement`). The `<li>` is therefore the reference. The full `ProgressWidget` is rendered unchanged.
+Float anchors to parent element (per float.svelte `referenceElement = contentElement.parentElement`). The wrapping `<div>` is therefore the reference. The full `ProgressWidget` is rendered unchanged. The pip carries `role="img"` with `aria-label="In progress"` and the Float wrapper is exposed as `role="region"` with `aria-label="Progress"` so assistive tech can reach the widget.
 
 ### `sidebar_rail_settings.svelte`
 
-```svelte
-<script lang="ts">
-  export let active: boolean
-  export let hasUpdate: boolean
-</script>
-
-<li class="flex justify-center">
-  <a
-    href="/settings"
-    class="tooltip tooltip-right flex items-center justify-center w-10 h-9 rounded-md relative {active ? 'bg-base-300' : 'hover:bg-base-300/50'}"
-    data-tip={hasUpdate ? "Settings — Update Available" : "Settings"}
-    aria-label={hasUpdate ? "Settings, update available" : "Settings"}
-    aria-current={active ? 'page' : undefined}
-  >
-    <SettingsIcon class="w-5 h-5" />
-    {#if hasUpdate}
-      <span class="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-primary"></span>
-    {/if}
-  </a>
-</li>
-```
+Settings link with optional dot overlay. Subscribes to `$update_info` directly (no `hasUpdate` prop). When `$update_info.update_result?.has_update` is true: render a primary dot at top-right and switch `aria-label` to "Settings, update available" and tooltip to "Settings — Update Available". Uses `SidebarRailTooltip` for hover feedback.
 
 ### Settings page — "Update Available" section
 
@@ -357,17 +320,13 @@ The "Check for Update" item in Help & Resources stays (it lets users force a che
 | Stores for viewport + chat state | Multiple components need them; Svelte stores are the idiomatic cross-component pattern; keeps `+layout.svelte` simple. |
 | Component extraction for rail | Keeps `+layout.svelte` readable; rail subcomponents are independently testable. |
 | Instant width snap + slide-in animation only | Matches user decision: avoids reflowing main content during animation; matches chat_bar expand timing. |
-| DaisyUI `tooltip-right` first | Lowest-cost start. Refactor if visual review rejects; cleanup phase scheduled. |
+| Shared `sidebar_rail_tooltip.svelte` primitive (Float-based, portaled) | All four rail components need hover/focus-driven tooltips; the multi-line task-chip content pushed us off DaisyUI's `::before`/`data-tip` pattern to a single Float-based primitive shipped in this phase. |
 | `<Float>` for ProgressWidget | User-directed; keeps widget unchanged while freeing it from the 56px column. |
 | Settings "Update Available" as a KilnSection | Matches existing page patterns; no new component needed. |
 
 ## Technical Challenges
 
-1. **Multi-line task-chip tooltip with DaisyUI**
-   - DaisyUI tooltip renders via `::before` pseudo-element with content from `data-tip`. By default `white-space: normal`.
-   - Plan: add `white-space: pre-line; text-align: left;` to `.rail-chip-tooltip.tooltip::before` globally (scoped to this component). Use `\n` in `data-tip`.
-   - Fallback: if DaisyUI's selector or layout prevents clean multi-line rendering, drop in a small hand-rolled tooltip for this one component (conditional flag during implementation; note in PR description).
-   - **Action:** implement the CSS-override path first; verify visually in browser before proceeding.
+1. **Multi-line task-chip tooltip** — shipped as `sidebar_rail_tooltip.svelte` (Float-based, portaled) with `variant="multi"` for the two-line task name + project layout; all four rail components use the same primitive.
 
 2. **SSR / hydration of viewport store**
    - `window` is unavailable during SSR. `readable` initializer uses `browser ? window.innerWidth : 0`. Derived `isLg` returns `false` during SSR, so server-rendered markup = full sidebar (same as today), and hydration switches to rail if needed. This causes a brief flash of full sidebar on first paint. Acceptable — same trade-off as the existing chat_bar which already uses `browser ? getChatBarExpanded() : true`.
@@ -393,7 +352,7 @@ Run with `npm run test_run` from `app/web_ui`.
 
 - `viewport.ts`:
   - `isLg` false when width < 1024; true when ≥.
-  - `isBelow2000` true when < 2000; false when ≥.
+  - `isNarrowViewport` true when < 1550; false when ≥.
   - `viewportWidth` updates on `resize` event (dispatch event, assert store value).
   - Subscribe/unsubscribe releases listener.
 
@@ -407,7 +366,7 @@ Run with `npm run test_run` from `app/web_ui`.
   - Renders uppercase first letter when task is set.
   - Blank when no task.
   - Emits `open` event on click.
-  - `data-tip` contains name + project joined by `\n`.
+  - On hover, a `[role="tooltip"]` element appears (in `document.body` via portal) whose content contains both the task name and project name. No tooltip is rendered when both are empty.
 
 - `sidebar_rail_settings.svelte`:
   - Renders dot when `hasUpdate=true`.
@@ -416,10 +375,10 @@ Run with `npm run test_run` from `app/web_ui`.
 
 - `sidebar_rail_item.svelte`:
   - `aria-current="page"` when active.
-  - `data-tip` set to label.
+  - On hover, the shared tooltip element (`data-testid="rail-tooltip"`) appears with text equal to `label`; disappears on mouseleave.
 
 - `+layout.svelte` rail selection:
-  - Full sidebar when `isLg=true, narrow=false, chatOpen=true` (width ≥ 2000).
+  - Full sidebar when `isLg=true, narrow=false, chatOpen=true` (width ≥ 1550).
   - Rail when `isLg=true, narrow=true, chatOpen=true`.
   - Full sidebar when `isLg=true, narrow=true, chatOpen=false`.
   - Not rail when `isLg=false`.
@@ -433,7 +392,7 @@ Run with `npm run test_run` from `app/web_ui`.
 
 - Visual check of tooltip multi-line rendering.
 - Animation timing & absence of main-content reflow on expand.
-- Viewport resize across both breakpoints (lg, 2000px) with chat open + closed.
+- Viewport resize across both breakpoints (lg, 1550px) with chat open + closed.
 - `<Float>` progress widget positioning under scroll + with small/large viewport.
 
 ## Out of Scope (explicit)
