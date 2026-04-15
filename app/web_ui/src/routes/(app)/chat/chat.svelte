@@ -42,6 +42,20 @@
   $: status = $store.status
   $: collapsedPartKeys = $store.collapsedPartKeys
 
+  let expandedStepGroups: Record<string, boolean> = {}
+  const MAX_VISIBLE_STEPS = 5
+
+  function toggleStepGroupExpanded(key: string): void {
+    suppressAutoScroll = true
+    expandedStepGroups = {
+      ...expandedStepGroups,
+      [key]: !expandedStepGroups[key],
+    }
+    setTimeout(() => {
+      suppressAutoScroll = false
+    }, 50)
+  }
+
   $: isLoading = status === "submitted" || status === "streaming"
   $: inputDisabled = isLoading
 
@@ -537,6 +551,17 @@
                             typeof i.part.type === "string" &&
                             i.part.type.startsWith("tool-"),
                         )}
+                        {@const stepGroupKey = `${message.id}-sg-${segIdx}`}
+                        {@const isStepGroupExpanded =
+                          expandedStepGroups[stepGroupKey] === true}
+                        {@const totalSteps = segment.items.length}
+                        {@const shouldCompress =
+                          totalSteps > MAX_VISIBLE_STEPS &&
+                          !isStepGroupExpanded}
+                        {@const hiddenCount = totalSteps - MAX_VISIBLE_STEPS}
+                        {@const visibleItems = shouldCompress
+                          ? segment.items.slice(-MAX_VISIBLE_STEPS)
+                          : segment.items}
                         <div class="flex items-start gap-3">
                           {#if groupLoading}
                             <img
@@ -556,7 +581,21 @@
                                 <span>Thought</span>
                               </div>
                             {/if}
-                            {#each segment.items as item (partKey(message, item.part, item.partIndex))}
+                            {#if totalSteps > MAX_VISIBLE_STEPS}
+                              <button
+                                type="button"
+                                class="flex items-center gap-1.5 text-sm text-base-content/40 hover:text-base-content/60 transition-colors cursor-pointer py-0.5"
+                                on:click={() =>
+                                  toggleStepGroupExpanded(stepGroupKey)}
+                              >
+                                {#if isStepGroupExpanded}
+                                  <span>▼ {totalSteps} steps</span>
+                                {:else}
+                                  <span>… {hiddenCount} more steps ▶</span>
+                                {/if}
+                              </button>
+                            {/if}
+                            {#each visibleItems as item (partKey(message, item.part, item.partIndex))}
                               {#if item.part.type === "reasoning"}
                                 {@const collapsed = isPartCollapsed(
                                   collapsedPartKeys,
