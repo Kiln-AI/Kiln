@@ -52,12 +52,15 @@
 <div class="welcome-container w-full">
   <div class="max-w-lg mx-auto px-4 py-2">
     <!-- Header -->
-    <div class="text-center mb-4">
+    <div class="text-center">
       <img
         src="/images/chat_icon.svg"
         alt="Chat Icon"
-        class="welcome-icon w-[72px] h-[42px] mx-auto mb-2"
+        class="welcome-icon w-[72px] h-[42px] mx-auto"
       />
+      <div class="badge badge-outline badge-primary badge-sm mb-2 font-medium">
+        BETA
+      </div>
       <h1 class="welcome-title text-lg font-medium mb-4">
         What are you optimizing?
       </h1>
