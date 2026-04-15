@@ -1,6 +1,7 @@
 import json
 from typing import Tuple
 
+from kiln_ai.adapters.errors import KilnRunError, format_user_message
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, BaseAdapter
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.run_output import RunOutput
@@ -45,8 +46,13 @@ class MCPAdapter(BaseAdapter):
     async def _run(
         self,
         input: InputType,
+        messages: list[ChatCompletionMessageParam],
         prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> Tuple[RunOutput, Usage | None]:
+        # MCP adapter is single-turn and does not build a conversation trace;
+        # `messages` is unused. Kept for signature compatibility with the
+        # base adapter's exception-wrapping contract.
+        _ = messages
         if prior_trace is not None:
             raise NotImplementedError(
                 "Session continuation is not supported for MCP adapter. "
@@ -143,7 +149,15 @@ class MCPAdapter(BaseAdapter):
     ) -> Tuple[TaskRun, RunOutput]:
         """
         Run the MCP task and validate the output.
+
+        Runtime failures (tool invocation, JSON parsing, schema validation)
+        are wrapped in `KilnRunError` so callers get a consistent error shape.
+        MCP runs are single-turn, so there is no partial trace to preserve —
+        `partial_trace` is always `None`.
         """
+        # Pre-run input validation stays outside the wrap: these errors
+        # happen before the tool is invoked and should surface as plain
+        # exceptions (the API layer returns them as 4xx, not 500).
         if self.input_schema is not None:
             validate_schema_with_value_error(
                 input,
@@ -152,46 +166,58 @@ class MCPAdapter(BaseAdapter):
                 require_object=False,
             )
 
-        run_output, usage = await self._run(input)
+        try:
+            # MCP adapter doesn't build a multi-message trace; pass an unused
+            # `messages` list to satisfy the shared `_run` signature.
+            run_output, usage = await self._run(input, [])
 
-        if self.output_schema is not None:
-            if isinstance(run_output.output, str):
-                parsed_output = parse_json_string(run_output.output)
+            if self.output_schema is not None:
+                if isinstance(run_output.output, str):
+                    parsed_output = parse_json_string(run_output.output)
+                else:
+                    parsed_output = run_output.output
+                if not isinstance(parsed_output, dict):
+                    raise RuntimeError(
+                        f"structured response is not a dict: {parsed_output}"
+                    )
+                validate_schema_with_value_error(
+                    parsed_output,
+                    self.output_schema,
+                    "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+                )
+                run_output.output = parsed_output
             else:
-                parsed_output = run_output.output
-            if not isinstance(parsed_output, dict):
-                raise RuntimeError(
-                    f"structured response is not a dict: {parsed_output}"
-                )
-            validate_schema_with_value_error(
-                parsed_output,
-                self.output_schema,
-                "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+                if not isinstance(run_output.output, str):
+                    raise RuntimeError(
+                        f"response is not a string for non-structured task: {run_output.output}"
+                    )
+
+            # Build single turn trace
+            trace = self._build_single_turn_trace(input, run_output.output)
+
+            run = self.generate_run(
+                input, input_source, run_output, usage, trace, parent_task_run
             )
-            run_output.output = parsed_output
-        else:
-            if not isinstance(run_output.output, str):
-                raise RuntimeError(
-                    f"response is not a string for non-structured task: {run_output.output}"
-                )
 
-        # Build single turn trace
-        trace = self._build_single_turn_trace(input, run_output.output)
+            if (
+                self.base_adapter_config.allow_saving
+                and Config.shared().autosave_runs
+                and self.task.path is not None
+            ):
+                run.save_to_file()
+            else:
+                run.id = None
 
-        run = self.generate_run(
-            input, input_source, run_output, usage, trace, parent_task_run
-        )
-
-        if (
-            self.base_adapter_config.allow_saving
-            and Config.shared().autosave_runs
-            and self.task.path is not None
-        ):
-            run.save_to_file()
-        else:
-            run.id = None
-
-        return run, run_output
+            return run, run_output
+        except KilnRunError:
+            # Already wrapped — pass through so we don't double-wrap.
+            raise
+        except Exception as e:
+            raise KilnRunError(
+                message=format_user_message(e),
+                partial_trace=None,
+                original=e,
+            ) from e
 
     # Helpers
 

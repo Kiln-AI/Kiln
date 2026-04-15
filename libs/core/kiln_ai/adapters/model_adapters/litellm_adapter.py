@@ -98,7 +98,7 @@ class LiteLlmAdapter(BaseAdapter):
     async def _run_model_turn(
         self,
         provider: KilnModelProvider,
-        prior_messages: list[ChatCompletionMessageIncludingLiteLLM],
+        messages: list[ChatCompletionMessageIncludingLiteLLM],
         top_logprobs: int | None,
         skip_response_format: bool,
     ) -> ModelTurnResult:
@@ -106,10 +106,13 @@ class LiteLlmAdapter(BaseAdapter):
         Call the model for a single top level turn: from user message to agent message.
 
         It may make handle iterations of tool calls between the user/agent message if needed.
+
+        `messages` is the caller-owned list and is mutated in place (append/extend
+        only — never rebound) so the partial trace survives any exception
+        escaping this method.
         """
 
         usage = Usage()
-        messages = list(prior_messages)
         tool_calls_count = 0
 
         while tool_calls_count < MAX_TOOL_CALLS_PER_TURN:
@@ -211,6 +214,7 @@ class LiteLlmAdapter(BaseAdapter):
     async def _run(
         self,
         input: InputType,
+        messages: list[ChatCompletionMessageParam],
         prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> tuple[RunOutput, Usage | None]:
         usage = Usage()
@@ -221,9 +225,15 @@ class LiteLlmAdapter(BaseAdapter):
 
         # build_chat_formatter returns MultiturnFormatter when prior_trace is set, else prompt-based formatter
         chat_formatter = self.build_chat_formatter(input, prior_trace)
-        messages: list[ChatCompletionMessageIncludingLiteLLM] = copy.deepcopy(
-            chat_formatter.initial_messages()
-        )
+        # The caller owns `messages`. Mutate it in place (never rebind) so
+        # the partial trace survives any exception escaping this method. The
+        # list is typed as `ChatCompletionMessageParam` for the caller's API
+        # surface, but internally we need to store LiteLLM `Message` objects
+        # transiently (they are converted by `_messages_to_trace` before
+        # export). We widen the type alias once here so the internal
+        # mutations don't each need their own suppression.
+        messages_internal: list[ChatCompletionMessageIncludingLiteLLM] = messages  # type: ignore[assignment]
+        messages_internal.extend(copy.deepcopy(chat_formatter.initial_messages()))
 
         prior_output: str | None = None
         final_choice: Choices | None = None
@@ -251,12 +261,12 @@ class LiteLlmAdapter(BaseAdapter):
                 msg_dict: dict = {"role": message.role, "content": message.content}
                 if isinstance(message, ToolResponseMessage):
                     msg_dict["tool_call_id"] = message.tool_call_id
-                messages.append(msg_dict)  # type: ignore
+                messages_internal.append(msg_dict)  # type: ignore[arg-type]
 
             skip_response_format = not turn.final_call
             turn_result = await self._run_model_turn(
                 provider,
-                messages,
+                messages_internal,
                 self.base_adapter_config.top_logprobs if turn.final_call else None,
                 skip_response_format,
             )
@@ -264,12 +274,15 @@ class LiteLlmAdapter(BaseAdapter):
             usage += turn_result.usage
 
             prior_output = turn_result.assistant_message
-            messages = turn_result.all_messages
+            # `_run_model_turn` mutates `messages_internal` in place, so no
+            # reassignment is needed here. `turn_result.all_messages` is the
+            # same list object and is retained for external callers that
+            # still rely on it.
             final_choice = turn_result.model_choice
 
             # Check if we were interrupted by tool calls
             if turn_result.interrupted_by_tool_calls:
-                trace = self.all_messages_to_trace(messages)
+                trace = self.all_messages_to_trace(messages_internal)
                 intermediate_outputs = chat_formatter.intermediate_outputs()
                 output = RunOutput(
                     output=prior_output or "",
@@ -293,7 +306,7 @@ class LiteLlmAdapter(BaseAdapter):
         if not isinstance(prior_output, str):
             raise RuntimeError(f"assistant message is not a string: {prior_output}")
 
-        trace = self.all_messages_to_trace(messages)
+        trace = self.all_messages_to_trace(messages_internal)
         output = RunOutput(
             output=prior_output,
             intermediate_outputs=intermediate_outputs,
@@ -829,3 +842,12 @@ class LiteLlmAdapter(BaseAdapter):
             else:
                 trace.append(message)
         return trace
+
+    def _messages_to_trace(
+        self,
+        messages: list[ChatCompletionMessageParam],
+    ) -> list[ChatCompletionMessageParam]:
+        """Override: the `messages` list may transiently contain LiteLLM
+        Message objects. Normalize to API-safe shapes for export on error.
+        """
+        return self.all_messages_to_trace(messages)  # type: ignore[arg-type]
