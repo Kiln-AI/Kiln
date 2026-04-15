@@ -8,6 +8,10 @@
     chatBarExpanded,
     setChatBarExpanded,
   } from "$lib/stores/chat_ui_state"
+  import {
+    clampChatBarWidth,
+    getChatBarDefaultWidth,
+  } from "$lib/chat/chat_bar_sizing"
   import { onDestroy, onMount } from "svelte"
   import { Section } from "$lib/ui/section"
   import { browser } from "$app/environment"
@@ -19,11 +23,6 @@
 
   export let section: Section = Section.None
 
-  const MIN_WIDTH = 280
-  const MAX_WIDTH_VW = 30
-  const DEFAULT_WIDTH_LG = 320
-  const DEFAULT_WIDTH_2XL = 380
-  const BREAKPOINT_2XL = 1536
   const RIGHT_MARGIN = 16
 
   $: expanded = $chatBarExpanded
@@ -31,6 +30,16 @@
   let dialogOpen = false
   let customWidth: number | null = browser ? getChatBarWidth() : null
   let dragging = false
+  let viewportWidth = browser ? window.innerWidth : 0
+  let resizeFrame: number | null = null
+
+  if (browser && customWidth !== null) {
+    const clamped = clampChatBarWidth(customWidth, viewportWidth)
+    if (clamped !== customWidth) {
+      customWidth = clamped
+      setChatBarWidth(clamped)
+    }
+  }
 
   type AnimState = "idle" | "collapsing" | "expanding"
   let animState: AnimState = "idle"
@@ -39,14 +48,7 @@
     return browser && window.matchMedia("(min-width: 1024px)").matches
   }
 
-  function getDefaultWidth(): number {
-    if (browser && window.innerWidth >= BREAKPOINT_2XL) {
-      return DEFAULT_WIDTH_2XL
-    }
-    return DEFAULT_WIDTH_LG
-  }
-
-  $: sidebarWidth = customWidth ?? getDefaultWidth()
+  $: sidebarWidth = customWidth ?? getChatBarDefaultWidth(viewportWidth)
 
   function toggle() {
     if (isLargeScreen() && animState === "idle") {
@@ -81,12 +83,8 @@
   $: iconHidden =
     expanded || animState === "collapsing" || animState === "expanding"
 
-  function getMaxWidth(): number {
-    return Math.floor(window.innerWidth * (MAX_WIDTH_VW / 100))
-  }
-
   function clampWidth(width: number): number {
-    return Math.round(Math.max(MIN_WIDTH, Math.min(width, getMaxWidth())))
+    return clampChatBarWidth(width, window.innerWidth)
   }
 
   function onDragStart(e: MouseEvent) {
@@ -117,9 +115,35 @@
     }
   }
 
+  function applyViewportResize() {
+    resizeFrame = null
+    if (dragging) return
+    viewportWidth = window.innerWidth
+    if (customWidth !== null) {
+      const clamped = clampChatBarWidth(customWidth, viewportWidth)
+      if (clamped !== customWidth) {
+        customWidth = clamped
+        setChatBarWidth(clamped)
+      }
+    }
+  }
+
+  function onWindowResize() {
+    if (resizeFrame !== null) return
+    resizeFrame = requestAnimationFrame(applyViewportResize)
+  }
+
   onDestroy(() => {
     if (dragging) {
       onDragEnd()
+    }
+    // onDestroy is called in SSR, while onMount isn't, so needs extra check
+    if (browser) {
+      window.removeEventListener("resize", onWindowResize)
+      if (resizeFrame !== null) {
+        cancelAnimationFrame(resizeFrame)
+        resizeFrame = null
+      }
     }
   })
 
@@ -135,6 +159,7 @@
 
   onMount(() => {
     initCopilotConnectionStore()
+    window.addEventListener("resize", onWindowResize)
   })
 
   $: copilot_chat_ready = $kilnCopilotConnected === true
