@@ -11,16 +11,15 @@
   import type { TaskRun, KilnAgentRunConfigProperties } from "$lib/types"
   import { isKilnAgentRunConfig } from "$lib/types"
   import {
-    fetch_few_shot_candidates,
+    fetch_task_sample_candidates,
     task_run_to_example,
-  } from "$lib/utils/few_shot_example"
+  } from "$lib/utils/task_sample_example"
   import Dialog from "$lib/ui/dialog.svelte"
-  import TableButton from "../table_button.svelte"
+  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import TaskRunPicker from "$lib/utils/task_run_picker.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
 
   export let error: KilnError | null = null
-  export let submitting: boolean = false
   export let project_id: string
   export let task_id: string
 
@@ -95,7 +94,7 @@
 
   onMount(async () => {
     try {
-      const result = await fetch_few_shot_candidates(project_id, task_id)
+      const result = await fetch_task_sample_candidates(project_id, task_id)
       available_runs = result.available_runs.filter(
         (r) => r.input_source?.type !== "synthetic",
       )
@@ -202,10 +201,6 @@
     expanded_examples[index] = !expanded_examples[index]
     expanded_examples = expanded_examples
   }
-
-  $: has_any_content =
-    guide_examples.some((e) => e.input.trim() || e.output.trim()) ||
-    guide_rules.length > 0
 </script>
 
 <FormContainer
@@ -265,28 +260,15 @@
                 </td>
                 <td class="py-2 p-0">
                   <div class="dropdown dropdown-end dropdown-hover">
-                    <TableButton />
-                    <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-                    <ul
-                      tabindex="0"
-                      class="dropdown-content menu bg-base-100 rounded-box z-[1] w-40 p-2 shadow"
-                    >
-                      <li>
-                        <button
-                          on:click|stopPropagation={() =>
-                            open_edit_example_dialog(i)}
-                        >
-                          Edit
-                        </button>
-                      </li>
-                      <li>
-                        <button
-                          on:click|stopPropagation={() => remove_example(i)}
-                        >
-                          Remove
-                        </button>
-                      </li>
-                    </ul>
+                    <TableActionMenu
+                      items={[
+                        {
+                          label: "Edit",
+                          onclick: () => open_edit_example_dialog(i),
+                        },
+                        { label: "Remove", onclick: () => remove_example(i) },
+                      ]}
+                    />
                   </div>
                 </td>
               </tr>

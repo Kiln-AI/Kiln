@@ -1,7 +1,6 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
   import { client } from "$lib/api_client"
-  import { current_task } from "$lib/stores"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
@@ -40,8 +39,6 @@
   // Captured from the generate modal event, reused for refine
   let captured_run_config: KilnAgentRunConfigProperties | null = null
 
-  let task: Task | null = null
-
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
   onDestroy(() => {
@@ -71,8 +68,6 @@
   }
 
   onMount(async () => {
-    task = $current_task
-
     try {
       const { data } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
@@ -125,8 +120,7 @@
     if (selected_examples.length > 0) {
       const example_text = selected_examples
         .map(
-          (e, i) =>
-            `Example ${i + 1}:\nInput: ${e.input}\nOutput: ${e.output}`,
+          (e, i) => `Example ${i + 1}:\nInput: ${e.input}\nOutput: ${e.output}`,
         )
         .join("\n\n")
       guidance = guidance
@@ -213,10 +207,7 @@
         examples = data.refined_examples ?? null
       }
 
-      const {
-        data: preview_data,
-        error: preview_error,
-      } = await client.POST(
+      const { data: preview_data, error: preview_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_preview",
         {
           params: { path: { project_id, task_id } },
@@ -295,7 +286,6 @@
         bind:guide_examples
         bind:guide_rules
         bind:error
-        bind:submitting
         {project_id}
         {task_id}
         on:generate_preview={handle_generate_preview}
