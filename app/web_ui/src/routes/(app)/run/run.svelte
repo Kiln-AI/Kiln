@@ -675,7 +675,7 @@
               }
             }}
           >
-            {#each feedbacks.slice(0, MAX_VISIBLE_FEEDBACKS) as fb}
+            {#each feedbacks.slice(-MAX_VISIBLE_FEEDBACKS).reverse() as fb}
               <div class="mb-2 last:mb-0">
                 <div class="text-xs text-gray-500">
                   {fb.created_by || "Unknown"}
