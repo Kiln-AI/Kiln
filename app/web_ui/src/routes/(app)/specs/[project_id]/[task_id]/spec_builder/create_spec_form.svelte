@@ -31,7 +31,7 @@
   let form_container: FormContainer
 
   const dispatch = createEventDispatcher<{
-    analyze_with_copilot: void
+    create_with_copilot: void
     create_without_copilot: void
   }>()
 
@@ -60,7 +60,7 @@
 
   function handle_submit() {
     if (copilot_allowed) {
-      dispatch("analyze_with_copilot")
+      dispatch("create_with_copilot")
     } else {
       dispatch("create_without_copilot")
     }
@@ -75,7 +75,7 @@
 
 <FormContainer
   bind:this={form_container}
-  submit_label={copilot_allowed ? "Analyze with Copilot" : "Create Spec"}
+  submit_label={copilot_allowed ? "Create with Copilot" : "Create Spec"}
   on:submit={handle_submit}
   bind:error
   bind:submitting
@@ -160,7 +160,7 @@
       disabled={submitting}
       on:click={handle_secondary_click}
     >
-      Create without Copilot
+      Create manually
     </button>
   </div>
 {/if}

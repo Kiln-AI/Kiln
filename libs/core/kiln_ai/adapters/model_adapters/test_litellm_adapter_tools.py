@@ -109,7 +109,7 @@ async def run_simple_task_with_tools(
             assert trace[1]["role"] == "user"
             assert trace[2]["role"] == "assistant"
             assert trace[3]["role"] == "tool"
-            assert trace[3]["content"] == "4"
+            assert trace[3]["content"] in ["4", "4.0"]
             assert trace[3]["tool_call_id"] is not None
             assert trace[4]["role"] == "assistant"
             assert "[4]" in trace[4]["content"]  # type: ignore
@@ -969,6 +969,8 @@ async def test_process_tool_calls_normal_tool_success(tmp_path):
         "tool_call_id": "call_1",
         "content": "5",
         "kiln_task_tool_data": None,
+        "is_error": None,
+        "error_message": None,
     }
 
 

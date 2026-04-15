@@ -145,7 +145,7 @@ class TestCreateTaskRunFromReviewed:
             user_says_meets_spec=True,
             feedback="Good example",
         )
-        task_run = create_task_run_from_reviewed(example, "golden_tag", "My Spec")
+        task_run, _ = create_task_run_from_reviewed(example, "golden_tag", "My Spec")
         assert task_run.input == "test input"
 
     def test_creates_task_run_with_correct_output(self):
@@ -156,7 +156,7 @@ class TestCreateTaskRunFromReviewed:
             user_says_meets_spec=True,
             feedback="",
         )
-        task_run = create_task_run_from_reviewed(example, "golden_tag", "My Spec")
+        task_run, _ = create_task_run_from_reviewed(example, "golden_tag", "My Spec")
         assert task_run.output.output == "test output"
 
     def test_creates_task_run_with_pass_rating_when_meets_spec(self):
@@ -167,7 +167,7 @@ class TestCreateTaskRunFromReviewed:
             user_says_meets_spec=True,
             feedback="",
         )
-        task_run = create_task_run_from_reviewed(example, "golden_tag", "My Spec")
+        task_run, _ = create_task_run_from_reviewed(example, "golden_tag", "My Spec")
         rating_key = "named::My Spec"
         assert rating_key in task_run.output.rating.requirement_ratings
         assert task_run.output.rating.requirement_ratings[rating_key].value == 1.0
@@ -180,7 +180,7 @@ class TestCreateTaskRunFromReviewed:
             user_says_meets_spec=False,
             feedback="Bad example",
         )
-        task_run = create_task_run_from_reviewed(example, "golden_tag", "My Spec")
+        task_run, _ = create_task_run_from_reviewed(example, "golden_tag", "My Spec")
         rating_key = "named::My Spec"
         assert rating_key in task_run.output.rating.requirement_ratings
         assert task_run.output.rating.requirement_ratings[rating_key].value == 0.0
@@ -193,7 +193,7 @@ class TestCreateTaskRunFromReviewed:
             user_says_meets_spec=True,
             feedback="",
         )
-        task_run = create_task_run_from_reviewed(example, "golden_tag", "My Spec")
+        task_run, _ = create_task_run_from_reviewed(example, "golden_tag", "My Spec")
         assert "golden_tag" in task_run.tags
 
     def test_creates_task_run_with_extra_tags(self):
@@ -204,7 +204,7 @@ class TestCreateTaskRunFromReviewed:
             user_says_meets_spec=True,
             feedback="",
         )
-        task_run = create_task_run_from_reviewed(
+        task_run, _ = create_task_run_from_reviewed(
             example, "golden_tag", "My Spec", extra_tags=["session_456"]
         )
         assert "golden_tag" in task_run.tags
@@ -218,14 +218,14 @@ class TestCreateTaskRunFromReviewed:
             user_says_meets_spec=True,
             feedback="",
         )
-        task_run = create_task_run_from_reviewed(example, "golden_tag", "My Spec")
+        task_run, _ = create_task_run_from_reviewed(example, "golden_tag", "My Spec")
         rating_key = "named::My Spec"
         assert (
             task_run.output.rating.requirement_ratings[rating_key].type
             == TaskOutputRatingType.pass_fail
         )
 
-    def test_creates_task_run_with_user_feedback(self):
+    def test_returns_feedback_text_when_present(self):
         example = ReviewedExample(
             input="test input",
             output="test output",
@@ -233,10 +233,12 @@ class TestCreateTaskRunFromReviewed:
             user_says_meets_spec=False,
             feedback="This fails because the output is too vague",
         )
-        task_run = create_task_run_from_reviewed(example, "golden_tag", "My Spec")
-        assert task_run.user_feedback == "This fails because the output is too vague"
+        _, feedback_text = create_task_run_from_reviewed(
+            example, "golden_tag", "My Spec"
+        )
+        assert feedback_text == "This fails because the output is too vague"
 
-    def test_creates_task_run_with_no_user_feedback_when_empty(self):
+    def test_returns_none_feedback_when_empty(self):
         example = ReviewedExample(
             input="test input",
             output="test output",
@@ -244,8 +246,10 @@ class TestCreateTaskRunFromReviewed:
             user_says_meets_spec=True,
             feedback="",
         )
-        task_run = create_task_run_from_reviewed(example, "golden_tag", "My Spec")
-        assert task_run.user_feedback is None
+        _, feedback_text = create_task_run_from_reviewed(
+            example, "golden_tag", "My Spec"
+        )
+        assert feedback_text is None
 
 
 class TestCreateDatasetTaskRuns:
@@ -263,7 +267,7 @@ class TestCreateDatasetTaskRuns:
             "train_tag",
             "golden_tag",
             "Test Spec",
-        )
+        ).task_runs
 
         # Should have NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
         expected_count = NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
@@ -291,7 +295,7 @@ class TestCreateDatasetTaskRuns:
             "train_tag",
             "golden_tag",
             "Test Spec",
-        )
+        ).task_runs
 
         # Find the reviewed example in task runs
         reviewed_run = next(
@@ -314,7 +318,7 @@ class TestCreateDatasetTaskRuns:
             "train_tag",
             "golden_tag",
             "Test Spec",
-        )
+        ).task_runs
 
         # All task runs should have a session tag
         for task_run in task_runs:
@@ -337,7 +341,7 @@ class TestCreateDatasetTaskRuns:
             "train_tag",
             "golden_tag",
             "Test Spec",
-        )
+        ).task_runs
 
         # All task runs should have the same session tag
         session_tags = set()
@@ -362,7 +366,7 @@ class TestCreateDatasetTaskRuns:
             "train_tag",
             "golden_tag",
             "Test Spec",
-        )
+        ).task_runs
 
         eval_runs = [tr for tr in task_runs if "eval_tag" in tr.tags]
         num_runs = NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
@@ -383,7 +387,7 @@ class TestCreateDatasetTaskRuns:
             "train_tag",
             "golden_tag",
             "Test Spec",
-        )
+        ).task_runs
 
         train_runs = [tr for tr in task_runs if "train_tag" in tr.tags]
         num_runs = NUM_SAMPLES_PER_TOPIC * NUM_TOPICS
@@ -405,7 +409,7 @@ class TestCreateDatasetTaskRuns:
             "train_tag",
             "golden_tag",
             "Test Spec",
-        )
+        ).task_runs
 
         # Should use all available examples
         assert len(task_runs) == 5
