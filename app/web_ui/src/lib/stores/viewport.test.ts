@@ -52,17 +52,17 @@ describe("viewport store (browser)", () => {
     unsub()
   })
 
-  it("isBelow2000 is true when width < 2000", async () => {
+  it("isNarrowViewport is true when width < 2000", async () => {
     const mod = await importFreshWithWidth(1500)
     const unsub = mod.viewportWidth.subscribe(() => {})
-    expect(get(mod.isBelow2000)).toBe(true)
+    expect(get(mod.isNarrowViewport)).toBe(true)
     unsub()
   })
 
-  it("isBelow2000 is false when width >= 2000", async () => {
+  it("isNarrowViewport is false when width >= 2000", async () => {
     const mod = await importFreshWithWidth(2100)
     const unsub = mod.viewportWidth.subscribe(() => {})
-    expect(get(mod.isBelow2000)).toBe(false)
+    expect(get(mod.isNarrowViewport)).toBe(false)
     unsub()
   })
 
@@ -127,7 +127,7 @@ describe("viewport store (SSR / non-browser)", () => {
     const unsub = mod.viewportWidth.subscribe(() => {})
     expect(get(mod.viewportWidth)).toBe(0)
     expect(get(mod.isLg)).toBe(false)
-    expect(get(mod.isBelow2000)).toBe(true)
+    expect(get(mod.isNarrowViewport)).toBe(true)
     unsub()
   })
 })

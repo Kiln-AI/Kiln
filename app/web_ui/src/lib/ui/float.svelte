@@ -68,6 +68,9 @@
 
   onDestroy(() => {
     stopAutoUpdate()
+    if (portal) {
+      contentElement?.remove()
+    }
   })
 </script>
 

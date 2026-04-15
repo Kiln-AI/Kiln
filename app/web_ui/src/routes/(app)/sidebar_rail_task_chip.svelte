@@ -29,13 +29,16 @@
     {#if show_tooltip}
       <Float placement="right" offset_px={8} role="tooltip" portal>
         <span
-          class="pointer-events-none px-3 py-1.5 rounded bg-neutral text-neutral-content text-xs whitespace-nowrap flex flex-col items-start text-left shadow-md"
+          class="pointer-events-none px-3 py-1.5 rounded bg-neutral text-neutral-content text-xs whitespace-nowrap flex flex-col items-start text-left shadow-md gap-[1px] leading-tight"
         >
+          <span class="text-[9px] font-semibold tracking-wider text-gray-500"
+            >CURRENT TASK</span
+          >
           {#if taskName}
             <span class="font-medium">{taskName}</span>
           {/if}
           {#if projectName}
-            <span class="text-gray-400">{projectName}</span>
+            <span class="text-gray-500">{projectName}</span>
           {/if}
         </span>
       </Float>

@@ -13,7 +13,7 @@ export const viewportWidth: Readable<number> = readable(
 
 export const isLg: Readable<boolean> = derived(viewportWidth, (w) => w >= 1024)
 
-export const isBelow2000: Readable<boolean> = derived(
+export const isNarrowViewport: Readable<boolean> = derived(
   viewportWidth,
-  (w) => w < 2000,
+  (w) => w < 1550,
 )
