@@ -755,14 +755,33 @@
                             (i) =>
                               toolApprovalPicks[i.toolCallId] === undefined,
                           )}
+                        {@const isActiveMessage =
+                          isLoading && message.id === lastMessage?.id}
                         {#if !hasVisibleApproval}
-                          <ChatStatusSteps
-                            parts={message.parts ?? []}
-                            isLoading={isLoading &&
-                              message.id === lastMessage?.id}
-                            isLastMessage={message.id === lastMessage?.id}
-                            {showActivityIndicator}
-                          />
+                          {#if isActiveMessage && showActivityIndicator}
+                            <div class="flex items-start gap-3">
+                              <img
+                                src="/images/chat_icon_animated.svg"
+                                alt=""
+                                class="w-7 h-7 shrink-0 mt-0.5"
+                              />
+                              <div class="flex flex-col">
+                                <ChatStatusSteps
+                                  parts={message.parts ?? []}
+                                  isLoading={true}
+                                  isLastMessage={true}
+                                  {showActivityIndicator}
+                                />
+                              </div>
+                            </div>
+                          {:else}
+                            <ChatStatusSteps
+                              parts={message.parts ?? []}
+                              isLoading={isActiveMessage}
+                              isLastMessage={message.id === lastMessage?.id}
+                              {showActivityIndicator}
+                            />
+                          {/if}
                         {/if}
                       {/if}
                     {/if}
@@ -967,12 +986,21 @@
                   {/if}
                 {:else if message.role === "assistant" && showStreamingCursor && message.id === lastMessage?.id}
                   {#if !showToolCallDetails}
-                    <ChatStatusSteps
-                      parts={[]}
-                      isLoading={true}
-                      isLastMessage={true}
-                      {showActivityIndicator}
-                    />
+                    <div class="flex items-start gap-3">
+                      <img
+                        src="/images/chat_icon_animated.svg"
+                        alt=""
+                        class="w-7 h-7 shrink-0 mt-0.5"
+                      />
+                      <div class="flex flex-col">
+                        <ChatStatusSteps
+                          parts={[]}
+                          isLoading={true}
+                          isLastMessage={true}
+                          {showActivityIndicator}
+                        />
+                      </div>
+                    </div>
                   {:else}
                     <div class="flex items-center py-0.5" aria-hidden="true">
                       <ChatLoading />
