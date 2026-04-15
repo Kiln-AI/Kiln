@@ -141,6 +141,7 @@
     if (dragging) {
       onDragEnd()
     }
+    // onDestroy is called in SSR, while onMount isn't, so needs extra check
     if (browser) {
       window.removeEventListener("resize", onWindowResize)
       if (resizeFrame !== null) {
