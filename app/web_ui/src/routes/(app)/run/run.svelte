@@ -660,7 +660,7 @@
           <div
             tabindex="0"
             role="button"
-            class="-mt-3 text-left cursor-pointer hover:bg-base-200 focus-visible:bg-base-200 rounded-lg p-2 -ml-2 transition-colors outline-none"
+            class="-mt-3 text-left cursor-pointer hover:outline hover:outline-1 hover:outline-base-300 focus-visible:outline focus-visible:outline-1 focus-visible:outline-base-300 rounded-lg p-2 -ml-2 transition-all outline-none"
             on:click={(e) => {
               const el = e.currentTarget
               if (el instanceof HTMLElement) el.blur()
