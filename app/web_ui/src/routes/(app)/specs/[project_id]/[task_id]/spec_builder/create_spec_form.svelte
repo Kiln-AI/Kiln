@@ -112,9 +112,12 @@
   {/each}
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
   {#if copilot_allowed}
     <TaskSampleSelector
 =======
+=======
+>>>>>>> Stashed changes
   {#if copilot_enabled}
     <FewShotSelector
 >>>>>>> Stashed changes
