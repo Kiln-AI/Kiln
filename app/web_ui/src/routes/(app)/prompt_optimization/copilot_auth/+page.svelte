@@ -21,5 +21,4 @@
     { label: "Prompts", href: `/prompts/${project_id}/${task_id}` },
   ]}
   success_redirect_url={`/prompt_optimization/${project_id}/${task_id}/create_prompt_optimization_job`}
-  cancel_redirect_url={`/prompt_optimization/${project_id}/${task_id}/create_prompt_optimization_job`}
 />

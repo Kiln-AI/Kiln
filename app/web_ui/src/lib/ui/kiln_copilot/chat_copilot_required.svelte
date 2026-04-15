@@ -5,9 +5,10 @@
 </script>
 
 <CopilotRequiredCard
-  description_markdown="Get AI assistance for your tasks and projects.\n**Kiln Chat requires a Kiln Copilot paid plan.**"
+  title="Kiln Chat"
+  description_markdown="Chat with Kiln to build, evaluate, and optimize your AI systems."
   auth_href="/chat/copilot_auth"
-  learn_more_label="Learn More"
-  learn_more_href="https://docs.kiln.tech"
   {compact}
+  connect_button_label="Log in"
+  icon="chat"
 />
