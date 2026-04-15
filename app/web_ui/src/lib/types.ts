@@ -129,6 +129,7 @@ export type TraceMessage =
   | components["schemas"]["ChatCompletionToolMessageParamWrapper"]
   | components["schemas"]["ChatCompletionFunctionMessageParam"]
 export type Trace = TraceMessage[]
+export type ErrorWithTrace = components["schemas"]["ErrorWithTrace"]
 export type ToolCallMessageParam =
   components["schemas"]["ChatCompletionMessageFunctionToolCallParam"]
 export type SearchToolApiDescription =
