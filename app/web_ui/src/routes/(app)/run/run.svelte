@@ -413,9 +413,21 @@
     return dir * (a.created_at ?? "").localeCompare(b.created_at ?? "")
   })
 
+  let feedback_request_id = 0
+  let last_loaded_run_id: string | null = null
+
   async function load_feedback() {
-    if (!task.id || !run?.id) return
+    if (!task.id || !run?.id) {
+      feedbacks = []
+      last_loaded_run_id = null
+      return
+    }
+    if (run.id === last_loaded_run_id) return
+    last_loaded_run_id = run.id
+
+    const request_id = ++feedback_request_id
     feedback_loading = true
+    feedbacks = []
     try {
       const { data, error: fetch_error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/feedback",
@@ -429,13 +441,17 @@
           },
         },
       )
+      if (request_id !== feedback_request_id) return
       if (fetch_error) throw fetch_error
       feedbacks = data
       feedback_error = null
     } catch (err) {
+      if (request_id !== feedback_request_id) return
       feedback_error = createKilnError(err)
     } finally {
-      feedback_loading = false
+      if (request_id === feedback_request_id) {
+        feedback_loading = false
+      }
     }
   }
 
@@ -443,6 +459,7 @@
 
   async function submit_feedback() {
     if (!task.id || !run?.id || !new_feedback_text.trim()) return
+    add_feedback_submitting = true
     try {
       const { data, error: fetch_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/feedback",
