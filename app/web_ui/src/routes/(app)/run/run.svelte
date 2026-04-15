@@ -11,6 +11,7 @@
   import { client } from "$lib/api_client"
   import Output from "$lib/ui/output.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import { formatDate } from "$lib/utils/formatters"
   import { bounceOut } from "svelte/easing"
   import { fly } from "svelte/transition"
   import { onMount } from "svelte"
@@ -26,6 +27,7 @@
   import posthog from "posthog-js"
   import TraceComponent from "$lib/ui/trace/trace.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
+  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
 
   type SubtaskReference = {
     project_id: string
@@ -423,7 +425,6 @@
       return
     }
     if (run.id === last_loaded_run_id) return
-    last_loaded_run_id = run.id
 
     const request_id = ++feedback_request_id
     feedback_loading = true
@@ -445,6 +446,7 @@
       if (fetch_error) throw fetch_error
       feedbacks = data
       feedback_error = null
+      last_loaded_run_id = run.id
     } catch (err) {
       if (request_id !== feedback_request_id) return
       feedback_error = createKilnError(err)
@@ -478,6 +480,7 @@
         },
       )
       if (fetch_error) throw fetch_error
+      ++feedback_request_id
       feedbacks = [...feedbacks, data]
       new_feedback_text = ""
       add_feedback_dialog.close()
@@ -489,15 +492,27 @@
     }
   }
 
-  function format_date(date_str: string | undefined): string {
-    if (!date_str) return ""
-    return new Date(date_str).toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    })
+  async function delete_feedback(fb: Feedback) {
+    if (!task.id || !run?.id || !fb.id) return
+    try {
+      const { error: fetch_error } = await client.DELETE(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/feedback/{feedback_id}",
+        {
+          params: {
+            path: {
+              project_id,
+              task_id: task.id,
+              run_id: run.id,
+              feedback_id: fb.id,
+            },
+          },
+        },
+      )
+      if (fetch_error) throw fetch_error
+      feedbacks = feedbacks.filter((f) => f.id !== fb.id)
+    } catch (err) {
+      feedback_error = createKilnError(err)
+    }
   }
 
   $: if (run?.id && task.id) load_feedback()
@@ -616,9 +631,7 @@
             </div>
           {/each}
         {/if}
-        <div
-          class="flex items-center flex items-center text-nowrap 2xl:min-w-32"
-        >
+        <div class="flex items-center text-nowrap 2xl:min-w-32">
           <div class="font-medium">Overall Rating:</div>
           <div class="text-gray-500">
             <InfoTooltip tooltip_text="The overall rating of the output." />
@@ -636,7 +649,7 @@
         <div class="flex items-center">
           <button
             type="button"
-            class="link text-sm text-gray-500"
+            class="btn btn-outline btn-primary btn-xs"
             on:click={() => {
               new_feedback_text = ""
               add_feedback_error = null
@@ -655,12 +668,12 @@
             <span class="loading loading-spinner loading-xs"></span>
           </div>
         {:else if feedbacks.length > 0}
-          <div class="-mb-3"></div>
+          <div></div>
           <!-- svelte-ignore a11y-no-static-element-interactions -->
           <div
             tabindex="0"
             role="button"
-            class="-mt-3 text-left cursor-pointer hover:outline hover:outline-1 hover:outline-base-300 focus-visible:outline focus-visible:outline-1 focus-visible:outline-base-300 rounded-lg p-2 -ml-2 transition-all outline-none"
+            class="text-left cursor-pointer hover:outline hover:outline-1 hover:outline-base-300 focus-visible:outline focus-visible:outline-1 focus-visible:outline-base-300 rounded px-1.5 py-1 -ml-1.5 transition-all outline-none"
             on:click={(e) => {
               const el = e.currentTarget
               if (el instanceof HTMLElement) el.blur()
@@ -680,7 +693,7 @@
                 <div class="text-xs text-gray-500">
                   {fb.created_by || "Unknown"}
                 </div>
-                <div class="text-sm line-clamp-2">
+                <div class="text-sm line-clamp-2 whitespace-pre-line">
                   {fb.feedback}
                 </div>
               </div>
@@ -725,12 +738,13 @@
 <Dialog
   bind:this={add_feedback_dialog}
   title="Add Feedback"
-  sub_subtitle="Comment on the model's output."
+  width="wide"
+  sub_subtitle="What worked well or fell short — the more specific, the more useful for improving results."
   on:close={() => (add_feedback_open = false)}
 >
   {#if add_feedback_open}
     <FormContainer
-      submit_label="Save Feedback"
+      submit_label="Save"
       on:submit={submit_feedback}
       bind:submitting={add_feedback_submitting}
       bind:error={add_feedback_error}
@@ -740,6 +754,8 @@
         hide_label={true}
         label="Feedback"
         inputType="textarea"
+        height="medium"
+        placeholder="e.g., Tone was off — too casual; the second paragraph contradicts the first; factually wrong — it confused X with Y"
         bind:value={new_feedback_text}
       />
     </FormContainer>
@@ -781,6 +797,7 @@
                   : "\u200B"}
               </span>
             </th>
+            <th class="w-14"></th>
           </tr>
         </thead>
         <tbody>
@@ -792,9 +809,17 @@
               <td class="whitespace-pre-wrap break-words align-top"
                 >{fb.feedback}</td
               >
-              <td class="whitespace-nowrap align-top"
-                >{format_date(fb.created_at)}</td
-              >
+              <td class="align-top">{formatDate(fb.created_at)}</td>
+              <td class="align-top pr-3">
+                <TableActionMenu
+                  items={[
+                    {
+                      label: "Delete",
+                      onclick: () => delete_feedback(fb),
+                    },
+                  ]}
+                />
+              </td>
             </tr>
           {/each}
         </tbody>

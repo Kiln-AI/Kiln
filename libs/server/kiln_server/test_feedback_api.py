@@ -147,3 +147,36 @@ class TestCreateFeedback:
                 json={"feedback": "test", "source": "run-page"},
             )
         assert resp.status_code == 404
+
+
+class TestDeleteFeedback:
+    def test_delete(self, client, task_run_setup):
+        project, task, run = task_run_setup
+        fb = Feedback(
+            feedback="To be deleted", source=FeedbackSource.run_page, parent=run
+        )
+        fb.save_to_file()
+        assert len(run.feedback(readonly=True)) == 1
+
+        with patch("kiln_server.feedback_api.task_from_id", return_value=task):
+            resp = client.delete(
+                f"/api/projects/{project.id}/tasks/{task.id}/runs/{run.id}/feedback/{fb.id}"
+            )
+        assert resp.status_code == 200
+        assert len(run.feedback(readonly=True)) == 0
+
+    def test_delete_feedback_not_found(self, client, task_run_setup):
+        project, task, run = task_run_setup
+        with patch("kiln_server.feedback_api.task_from_id", return_value=task):
+            resp = client.delete(
+                f"/api/projects/{project.id}/tasks/{task.id}/runs/{run.id}/feedback/nonexistent"
+            )
+        assert resp.status_code == 404
+
+    def test_delete_run_not_found(self, client, task_run_setup):
+        _, task, _ = task_run_setup
+        with patch("kiln_server.feedback_api.task_from_id", return_value=task):
+            resp = client.delete(
+                f"/api/projects/p/tasks/{task.id}/runs/nonexistent/feedback/someid"
+            )
+        assert resp.status_code == 404

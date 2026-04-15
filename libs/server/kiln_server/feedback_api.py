@@ -81,3 +81,33 @@ def connect_feedback_api(app: FastAPI):
         )
         fb.save_to_file()
         return fb
+
+    @app.delete(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/feedback/{feedback_id}",
+        summary="Delete Feedback",
+        tags=["Feedback"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def delete_feedback(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_id: Annotated[
+            str, Path(description="The unique identifier of the task run.")
+        ],
+        feedback_id: Annotated[
+            str, Path(description="The unique identifier of the feedback.")
+        ],
+    ) -> None:
+        run = _run_from_ids(project_id, task_id, run_id)
+        fb = Feedback.from_id_and_parent_path(feedback_id, run.path)
+        if fb is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Feedback not found. ID: {feedback_id}",
+            )
+        fb.delete()
