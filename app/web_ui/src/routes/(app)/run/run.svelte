@@ -725,19 +725,20 @@
 <Dialog
   bind:this={add_feedback_dialog}
   title="Add Feedback"
+  sub_subtitle="Comment on the model's output."
   on:close={() => (add_feedback_open = false)}
 >
   {#if add_feedback_open}
     <FormContainer
-      submit_label="Add"
+      submit_label="Save Feedback"
       on:submit={submit_feedback}
       bind:submitting={add_feedback_submitting}
       bind:error={add_feedback_error}
     >
       <FormElement
         id="new_feedback_input"
+        hide_label={true}
         label="Feedback"
-        info_description="Feedback you have on the output."
         inputType="textarea"
         bind:value={new_feedback_text}
       />
