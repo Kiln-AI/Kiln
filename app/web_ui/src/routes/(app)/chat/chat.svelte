@@ -571,6 +571,20 @@
                             />
                           {/if}
                           <div class="flex flex-col">
+                            {#if totalSteps > MAX_VISIBLE_STEPS}
+                              <button
+                                type="button"
+                                class="flex items-center gap-1.5 text-sm text-base-content/40 hover:text-base-content/60 transition-colors cursor-pointer py-0.5"
+                                on:click={() =>
+                                  toggleStepGroupExpanded(stepGroupKey)}
+                              >
+                                {#if isStepGroupExpanded}
+                                  <span>{totalSteps} steps ▼</span>
+                                {:else}
+                                  <span>… {hiddenCount} more steps ▶</span>
+                                {/if}
+                              </button>
+                            {/if}
                             {#if !hasReasoningInGroup && hasToolsInGroup}
                               <div
                                 class="flex items-center gap-1.5 text-sm text-base-content/50 py-0.5"
@@ -580,20 +594,6 @@
                                 >
                                 <span>Thought</span>
                               </div>
-                            {/if}
-                            {#if totalSteps > MAX_VISIBLE_STEPS}
-                              <button
-                                type="button"
-                                class="flex items-center gap-1.5 text-sm text-base-content/40 hover:text-base-content/60 transition-colors cursor-pointer py-0.5"
-                                on:click={() =>
-                                  toggleStepGroupExpanded(stepGroupKey)}
-                              >
-                                {#if isStepGroupExpanded}
-                                  <span>▼ {totalSteps} steps</span>
-                                {:else}
-                                  <span>… {hiddenCount} more steps ▶</span>
-                                {/if}
-                              </button>
                             {/if}
                             {#each visibleItems as item (partKey(message, item.part, item.partIndex))}
                               {#if item.part.type === "reasoning"}
