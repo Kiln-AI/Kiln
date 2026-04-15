@@ -296,7 +296,9 @@
   function handleScroll() {
     if (isAutoScrolling || !messagesContainer) return
     const { scrollTop, scrollHeight, clientHeight } = messagesContainer
-    userNearBottom = scrollTop + clientHeight >= scrollHeight - SCROLL_THRESHOLD
+    if (scrollTop + clientHeight >= scrollHeight - SCROLL_THRESHOLD) {
+      userNearBottom = true
+    }
   }
 
   function handleWheel(e: WheelEvent) {
