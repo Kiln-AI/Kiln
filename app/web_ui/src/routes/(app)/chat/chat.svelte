@@ -1071,7 +1071,7 @@
     >
       <textarea
         bind:this={textareaRef}
-        class="input input-bordered w-full min-h-[80px] max-h-[40vh] resize-none overflow-y-auto py-3 pr-12"
+        class="input input-bordered w-full min-h-[80px] max-h-[40vh] resize-none overflow-y-auto py-3 pr-12 text-sm"
         aria-label="Chat message"
         placeholder="Type a message…"
         bind:value={input}
