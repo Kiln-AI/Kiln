@@ -6,7 +6,7 @@ from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from pydantic import TypeAdapter
 
 CHAT_TIMEOUT = httpx.Timeout(timeout=300.0, connect=30.0)
-MAX_TOOL_ROUNDS = 25
+MAX_TOOL_ROUNDS = 100
 
 SSE_TYPE_TOOL_CALLS_PENDING = "tool-calls-pending"
 SSE_TYPE_TOOL_EXEC_START = "kiln-tool-execution-start"
