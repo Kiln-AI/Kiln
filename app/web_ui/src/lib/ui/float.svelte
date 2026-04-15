@@ -15,6 +15,7 @@
   export let offset_px = 0
   export let shift_padding = 8
   export let role = "menu"
+  export let portal = false
 
   let referenceElement: HTMLElement | null = null
   let contentElement: HTMLElement
@@ -58,6 +59,9 @@
     await tick()
     referenceElement = contentElement.parentElement
     if (!referenceElement) return
+    if (portal) {
+      document.body.appendChild(contentElement)
+    }
     updatePosition()
     startAutoUpdate()
   })

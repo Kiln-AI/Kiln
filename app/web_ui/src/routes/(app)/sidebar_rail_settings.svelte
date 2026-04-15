@@ -46,7 +46,7 @@
       ></span>
     {/if}
     {#if show_tooltip}
-      <Float placement="right" offset_px={8} role="tooltip">
+      <Float placement="right" offset_px={8} role="tooltip" portal>
         <span
           class="pointer-events-none px-2 py-1 rounded bg-neutral text-neutral-content text-xs whitespace-nowrap shadow-md"
         >
