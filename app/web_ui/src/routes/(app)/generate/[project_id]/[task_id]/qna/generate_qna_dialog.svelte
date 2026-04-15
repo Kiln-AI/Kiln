@@ -114,6 +114,7 @@
         requires_structured_output={true}
         hide_prompt_selector={true}
         hide_tools_selector={true}
+        show_name_field={false}
         model_dropdown_settings={{
           requires_structured_output: true,
           requires_data_gen: true,

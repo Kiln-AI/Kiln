@@ -606,7 +606,7 @@ provider_warnings: Dict[ModelProviderName, ModelProviderWarning] = {
 class LiteLlmCoreConfig(BaseModel):
     base_url: str | None = None
     default_headers: Dict[str, str] | None = None
-    additional_body_options: Dict[str, str] | None = None
+    additional_body_options: Dict[str, Any] | None = None
 
 
 def lite_llm_core_config_for_provider(

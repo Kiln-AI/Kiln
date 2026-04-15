@@ -62,7 +62,9 @@ class MCPServerTool(KilnToolInterface):
                 or "Unknown error"
             )
             return ToolCallResult(
-                output=json.dumps({"isError": True, "error": error_text})
+                output=error_text,
+                is_error=True,
+                error_message=error_text,
             )
 
         # If the tool returns structured content, return it as a JSON string

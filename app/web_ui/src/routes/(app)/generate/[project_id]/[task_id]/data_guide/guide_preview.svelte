@@ -4,11 +4,13 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
   import type { KilnError } from "$lib/utils/error_handlers"
+  import type { GuideSample, GuideRule } from "./guide_setup_form.svelte"
 
   type GuidePreviewSample = { input: string; output: string }
 
   export let preview_samples: GuidePreviewSample[] = []
-  export let requirements: string = ""
+  export let guide_rules: GuideRule[] = []
+  export let guide_examples: GuideSample[] = []
   export let error: KilnError | null = null
   export let submitting: boolean = false
 
@@ -16,7 +18,6 @@
     input: string
     output: string
     looks_good: boolean | undefined
-    feedback: string
   }
 
   let reviewed_samples: ReviewedSample[] = []
@@ -24,7 +25,6 @@
     input: s.input,
     output: s.output,
     looks_good: reviewed_samples[i]?.looks_good,
-    feedback: reviewed_samples[i]?.feedback ?? "",
   }))
 
   let general_feedback: string = ""
@@ -34,7 +34,6 @@
     reviewed_samples[index] = {
       ...reviewed_samples[index],
       looks_good: value,
-      feedback: value ? "" : reviewed_samples[index].feedback,
     }
     reviewed_samples = reviewed_samples
   }
@@ -46,11 +45,9 @@
     (s) => s.looks_good === false,
   )
 
-  // Feedback is sufficient if there's general feedback OR every failed example has per-example feedback
   $: has_sufficient_feedback =
     needs_improvement_samples.length === 0 ||
-    general_feedback.trim().length > 0 ||
-    needs_improvement_samples.every((s) => s.feedback.trim().length > 0)
+    general_feedback.trim().length > 0
 
   $: submit_label = all_look_good ? "Looks Good, Save" : "Refine with Feedback"
   $: submit_disabled =
@@ -65,17 +62,7 @@
     if (all_look_good) {
       dispatch("save")
     } else {
-      const parts: string[] = []
-      if (general_feedback.trim()) {
-        parts.push(`General: ${general_feedback.trim()}`)
-      }
-      for (const sample of needs_improvement_samples) {
-        if (sample.feedback.trim()) {
-          const idx = reviewed_samples.indexOf(sample) + 1
-          parts.push(`Example ${idx}: ${sample.feedback.trim()}`)
-        }
-      }
-      dispatch("refine", { feedback: parts.join("\n") })
+      dispatch("refine", { feedback: general_feedback.trim() })
     }
   }
 </script>
@@ -86,7 +73,7 @@
   submit_data_tip={!all_reviewed
     ? "Review all examples before continuing."
     : !has_sufficient_feedback
-      ? "Provide general feedback or per-example feedback for failed inputs."
+      ? "Provide feedback for failed inputs."
       : undefined}
   on:submit={handle_submit}
   bind:error
@@ -96,11 +83,10 @@
   compact_button={true}
 >
   <div class="flex flex-col">
-    <div class="font-medium">Review Synthetic Inputs</div>
+    <div class="font-medium">Review Example Data</div>
     <div class="font-light text-gray-500 text-sm">
-      Review the generated inputs below. The output column shows what the task
-      produces for reference. Mark each input as "Pass" or "Fail". For any that
-      fail, describe what's wrong and we'll refine the guidance.
+      Is synthetic data working as expected? Mark each input as "Pass" or
+      "Fail". If any fail, provide feedback below and we'll refine the guide.
     </div>
   </div>
   <div class="flex flex-col gap-6">
@@ -145,22 +131,6 @@
                 </div>
               </td>
             </tr>
-            {#if sample.looks_good === false}
-              <tr on:click={(e) => e.stopPropagation()}>
-                <td colspan="3" class="bg-base-200 py-4">
-                  <FormElement
-                    label="What's wrong with this input?"
-                    description="Optional per-example feedback. You can also use the general feedback field below if multiple inputs are failing for the same reason."
-                    id="feedback-{i}"
-                    inputType="textarea"
-                    height="base"
-                    bind:value={sample.feedback}
-                    optional={true}
-                    placeholder="e.g. Input structure is wrong, missing required fields..."
-                  />
-                </td>
-              </tr>
-            {/if}
           {/each}
         </tbody>
       </table>
@@ -169,8 +139,8 @@
 
   {#if has_any_failed}
     <FormElement
-      label="General Feedback"
-      description="Describe issues that apply to multiple or all failed inputs. This will be combined with any per-example feedback above."
+      label="Feedback"
+      description="Describe what's wrong with the failed inputs so we can refine the guide."
       id="general_feedback"
       inputType="textarea"
       height="base"
@@ -190,9 +160,38 @@
     </div>
   {/if}
 
-  {#if requirements}
-    <Collapse title="Generation Guidance" description="Advanced" small={true}>
-      <pre class="whitespace-pre-wrap break-words text-sm text-gray-600">{requirements}</pre>
+  {#if guide_rules.length > 0 || guide_examples.length > 0}
+    <Collapse title="Current Data Guide" small={true}>
+      {#if guide_examples.length > 0}
+        <div class="mb-3">
+          <div class="text-xs text-gray-500 uppercase font-medium mb-1">
+            Examples ({guide_examples.length})
+          </div>
+          {#each guide_examples as example, i}
+            <div class="text-sm text-gray-600 mb-1">
+              <span class="font-medium">Example {i + 1}:</span>
+              {example.input.slice(0, 80)}{example.input.length > 80
+                ? "..."
+                : ""}
+            </div>
+          {/each}
+        </div>
+      {/if}
+      {#if guide_rules.length > 0}
+        <div>
+          <div class="text-xs text-gray-500 uppercase font-medium mb-1">
+            Rules ({guide_rules.length})
+          </div>
+          {#each guide_rules as rule}
+            <div class="text-sm text-gray-600 mb-1">
+              <span class="font-medium">{rule.name}:</span>
+              {rule.content.slice(0, 100)}{rule.content.length > 100
+                ? "..."
+                : ""}
+            </div>
+          {/each}
+        </div>
+      {/if}
     </Collapse>
   {/if}
 </FormContainer>

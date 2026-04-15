@@ -10,6 +10,7 @@
   - Missing comments: comments should document the "why" not the what. If code does something unexpected, and the "why" is non obvious, the why should be documented.
 - Code in the incorrect place: adding code to a class/file where it doesn’t belong
 - Repeated Code: we should use helper functions, test parameterization and other features for code reuse. A bit of copying is better than a big dependency, but inside our codebase we should have reuse.
+- `TODO` comments: before the final PR, all `TODO` comments must be resolved. Any code or comment that must be changed before merging to main must include the exact string `TODO` in the comment — `FIXME`, `HACK`, `XXX`, and other alternatives do not count, as only `TODO` is enforced by CI. `TODO` comments are acceptable in intermediate commits but must be cleaned up before the final PR/phase.
 - Editing globals: rarely a good idea. When done it should be thoughtful and clear: singletons clearly designed to be singletons and labeled as such. Never set globals on external libs (structlog) unless this project is an “application” (server always run at top level) and not a library (potentially called from many apps).
 
 ### Python specific guide
@@ -24,6 +25,13 @@ The SDK in `/libs/core` is a SDK/library we expose to third parties. We code rev
 - Changing existing APIs that break current users should be avoided. Call out breaking API changes, and confirm with user that we're okay with this break.
 - All visible classes/vars should have docstrings explaining their purpose. These will be pulled into 3rd party docs automatically. The doc strings should be written for 3rd party devs learning the SDK.
 - Performance: the base_adapter and litellm_adapter are performance critical. They are the core run-loop of our agent system. We should avoid anything that would slow them down (file reads should be done once and passed in, etc). It's critical to avoid blocking IO - a process may be executing hundreds of these in parallel.
+
+### UI-Specific Review Guides
+
+If the change contains UI changes read:
+
+ - `./frontend_design_guide.md`
+ - `./frontend_controls.md`
 
 ### FastAPI / OpenAPI Standards
 

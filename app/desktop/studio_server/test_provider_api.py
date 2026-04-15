@@ -1,12 +1,16 @@
 import json
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from http import HTTPStatus
 from unittest.mock import MagicMock, Mock, patch
 
 import httpx
 import litellm
 import openai
 import pytest
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.create_api_key_response import (
+    CreateApiKeyResponse,
+)
 from app.desktop.studio_server.provider_api import (
     AvailableModels,
     ModelDetails,
@@ -222,6 +226,76 @@ def test_connect_api_key_kiln_copilot_network_error(mock_httpx_get, client):
 
     assert response.status_code == 400
     assert "Failed to connect" in response.json()["message"]
+
+
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+@patch(
+    "app.desktop.studio_server.provider_api.create_api_key_v1_create_api_key_post.asyncio_detailed"
+)
+def test_create_kiln_copilot_api_key_success(
+    mock_create_api_key, mock_config_shared, client
+):
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    mock_response = MagicMock()
+    mock_response.status_code = HTTPStatus.CREATED
+    mock_response.parsed = CreateApiKeyResponse(api_key="new_test_key")
+    mock_create_api_key.return_value = mock_response
+
+    response = client.post(
+        "/api/provider/create_kiln_copilot_api_key",
+        json={"access_token": "kinde_oauth_token"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Connected to Kiln Copilot"}
+    assert mock_config.kiln_copilot_api_key == "new_test_key"
+    mock_create_api_key.assert_called_once()
+
+
+def test_create_kiln_copilot_api_key_empty_token(client):
+    response = client.post(
+        "/api/provider/create_kiln_copilot_api_key",
+        json={"access_token": ""},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"message": "Access token is required"}
+
+
+@patch(
+    "app.desktop.studio_server.provider_api.create_api_key_v1_create_api_key_post.asyncio_detailed"
+)
+def test_create_kiln_copilot_api_key_server_error(mock_create_api_key, client):
+    mock_response = MagicMock()
+    mock_response.status_code = HTTPStatus.UNAUTHORIZED
+    mock_response.parsed = None
+    mock_response.content = b'{"detail": "Invalid token"}'
+    mock_create_api_key.return_value = mock_response
+
+    response = client.post(
+        "/api/provider/create_kiln_copilot_api_key",
+        json={"access_token": "bad_token"},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"message": "Invalid token"}
+
+
+@patch(
+    "app.desktop.studio_server.provider_api.create_api_key_v1_create_api_key_post.asyncio_detailed"
+)
+def test_create_kiln_copilot_api_key_network_error(mock_create_api_key, client):
+    mock_create_api_key.side_effect = httpx.RequestError("Connection refused")
+
+    response = client.post(
+        "/api/provider/create_kiln_copilot_api_key",
+        json={"access_token": "kinde_oauth_token"},
+    )
+
+    assert response.status_code == 502
+    assert "Failed to connect to Kiln server" in response.json()["message"]
 
 
 @patch("app.desktop.studio_server.provider_api.requests.get")

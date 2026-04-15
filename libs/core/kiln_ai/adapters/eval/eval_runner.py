@@ -3,6 +3,8 @@ import logging
 from dataclasses import dataclass
 from typing import AsyncGenerator, Dict, List, Literal, Set
 
+import litellm
+
 from kiln_ai.adapters.adapter_registry import load_skills_for_task
 from kiln_ai.adapters.eval.base_eval import BaseEval
 from kiln_ai.adapters.eval.registry import eval_adapter_from_type
@@ -12,7 +14,7 @@ from kiln_ai.datamodel.dataset_filters import DatasetFilterId, dataset_filter_fr
 from kiln_ai.datamodel.eval import EvalConfig, EvalDataType, EvalRun, EvalScores
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
-from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress
+from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
 
 logger = logging.getLogger(__name__)
 
@@ -188,6 +190,7 @@ class EvalRunner:
             concurrency=concurrency,
             jobs=jobs,
             run_job_fn=self.run_job,
+            max_retries=2,
         )
         async for progress in runner.run():
             yield progress
@@ -261,8 +264,37 @@ class EvalRunner:
 
             return True
         except Exception as e:
+            if _is_retryable_error(e):
+                logger.error(
+                    f"Transient error running eval job for dataset item {job.item.id}: {e}",
+                    exc_info=True,
+                )
+                raise RetryableError(str(e)) from e
             logger.error(
                 f"Error running eval job for dataset item {job.item.id}: {e}",
                 exc_info=True,
             )
-            return False
+            raise
+
+
+def _is_retryable_error(e: BaseException) -> bool:
+    if isinstance(
+        e,
+        (
+            litellm.RateLimitError,
+            litellm.APIConnectionError,
+            litellm.InternalServerError,
+            litellm.ServiceUnavailableError,
+            litellm.BadGatewayError,
+            litellm.JSONSchemaValidationError,
+        ),
+    ):
+        return True
+
+    # ValueError thrown by Kiln's adapter when structured output doesn't match schema
+    if isinstance(
+        e, ValueError
+    ) and "This task requires a specific output schema" in str(e):
+        return True
+
+    return False

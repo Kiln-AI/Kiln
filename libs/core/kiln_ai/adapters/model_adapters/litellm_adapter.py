@@ -577,6 +577,41 @@ class LiteLlmAdapter(BaseAdapter):
         self._litellm_model_id = litellm_provider_info.litellm_model_id
         return self._litellm_model_id
 
+    def _allowed_openai_params_for_completion_kwargs(
+        self, completion_kwargs: dict[str, Any]
+    ) -> list[str]:
+        """
+        LiteLLM drops params it thinks are not supported by the model when drop_params is True. Sometimes it is wrong
+        and we know it is supported, so we whitelist them here and pass that as an allowed_openai_params parameter.
+        """
+        # callers could have set allowed_openai_params in the additional_body_options, so we need to check for that
+        explicit_allowed_params: Any | list = completion_kwargs.get(
+            "allowed_openai_params", []
+        )
+        if not isinstance(explicit_allowed_params, list):
+            raise ValueError(
+                f"Unexpected allowed_openai_params format: {explicit_allowed_params} - expected list, got {type(explicit_allowed_params)}"
+            )
+        explicit_allowed_params_validated = [
+            param for param in explicit_allowed_params if isinstance(param, str)
+        ]
+        invalid_count = len(explicit_allowed_params) - len(
+            explicit_allowed_params_validated
+        )
+        if invalid_count > 0:
+            raise ValueError(
+                f"Unexpected allowed_openai_params format: {explicit_allowed_params} - {invalid_count} items are not strings"
+            )
+
+        # these are our own logic
+        automatic_allowed_params: list[str] = []
+        if "tools" in completion_kwargs:
+            automatic_allowed_params.append("tools")
+        if "tool_choice" in completion_kwargs:
+            automatic_allowed_params.append("tool_choice")
+
+        return list(set(explicit_allowed_params_validated + automatic_allowed_params))
+
     async def build_completion_kwargs(
         self,
         provider: KilnModelProvider,
@@ -641,6 +676,13 @@ class LiteLlmAdapter(BaseAdapter):
         if top_logprobs is not None:
             completion_kwargs["logprobs"] = True
             completion_kwargs["top_logprobs"] = top_logprobs
+
+        # any params listed in this list will be passed to the model regardless of LiteLLM's own validation
+        allowed_openai_params = self._allowed_openai_params_for_completion_kwargs(
+            completion_kwargs
+        )
+        if len(allowed_openai_params) > 0:
+            completion_kwargs["allowed_openai_params"] = allowed_openai_params
 
         return completion_kwargs
 
@@ -747,6 +789,10 @@ class LiteLlmAdapter(BaseAdapter):
                     content=result.output,
                     kiln_task_tool_data=result.kiln_task_tool_data
                     if isinstance(result, KilnTaskToolResult)
+                    else None,
+                    is_error=result.is_error if result.is_error else None,
+                    error_message=result.error_message
+                    if result.error_message
                     else None,
                 )
 

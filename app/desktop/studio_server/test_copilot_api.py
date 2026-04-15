@@ -11,6 +11,7 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_sp
     RefineSpecApiOutput,
 )
 from app.desktop.studio_server.copilot_api import connect_copilot_api
+from app.desktop.studio_server.utils.copilot_utils import DatasetTaskRuns
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task
@@ -417,7 +418,7 @@ class TestCreateSpecWithCopilot:
             ),
             patch(
                 "app.desktop.studio_server.copilot_api.create_dataset_task_runs",
-                return_value=[],
+                return_value=DatasetTaskRuns(),
             ),
             patch(
                 "app.desktop.studio_server.copilot_api.generate_memorable_name",

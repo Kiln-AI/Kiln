@@ -36,6 +36,9 @@
 
     // Tool result
     if (message.role === "tool" && content) {
+      if (is_tool_error(message)) {
+        return "Tool error: " + truncated_content
+      }
       return "Tool result: " + truncated_content
     }
 
@@ -84,6 +87,27 @@
     return undefined
   }
 
+  function is_tool_error(message: TraceMessage): boolean {
+    if (message.role === "tool" && "is_error" in message && message.is_error) {
+      return true
+    }
+    if (
+      message.role === "tool" &&
+      "content" in message &&
+      typeof message.content === "string"
+    ) {
+      try {
+        const parsed = JSON.parse(message.content)
+        if (parsed && typeof parsed === "object" && parsed.isError === true) {
+          return true
+        }
+      } catch (_) {
+        // Not JSON
+      }
+    }
+    return false
+  }
+
   function content_from_message(message: TraceMessage) {
     if (
       "content" in message &&
@@ -96,6 +120,14 @@
           const parsed = JSON.parse(message.content)
           if (parsed && typeof parsed === "object" && "output" in parsed) {
             return parsed.output
+          }
+          if (
+            parsed &&
+            typeof parsed === "object" &&
+            parsed.isError === true &&
+            "error" in parsed
+          ) {
+            return parsed.error
           }
         } catch (_) {
           // Content is not JSON, return as-is
@@ -231,6 +263,7 @@
                 )}
                 {@const kiln_task_tool_data =
                   kiln_task_tool_data_from_message(message)}
+                {@const tool_error = is_tool_error(message)}
                 {#if origin_tool_call}
                   <div>
                     <div class="text-xs text-gray-500 font-bold mb-1">
@@ -244,10 +277,20 @@
                   </div>
                 {/if}
                 <div>
-                  <div class="text-xs text-gray-500 font-bold mb-1">
-                    Tool Result
+                  <div
+                    class="text-xs font-bold mb-1 {tool_error
+                      ? 'text-error'
+                      : 'text-gray-500'}"
+                  >
+                    {tool_error ? "Tool Error" : "Tool Result"}
                   </div>
-                  <Output raw_output={content} no_padding={true} />
+                  <div
+                    class={tool_error
+                      ? "border border-error/20 rounded-lg p-2"
+                      : ""}
+                  >
+                    <Output raw_output={content} no_padding={true} />
+                  </div>
                 </div>
                 {#if kiln_task_tool_data}
                   <div>

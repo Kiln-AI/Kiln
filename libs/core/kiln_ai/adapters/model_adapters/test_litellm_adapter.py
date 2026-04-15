@@ -902,6 +902,44 @@ async def test_litellm_tools_returns_empty_list_without_tools(config, mock_task)
     assert tools == []
 
 
+@pytest.mark.parametrize(
+    "kwargs_in,expected",
+    [
+        ({}, []),
+        ({"tools": []}, ["tools"]),
+        ({"tool_choice": "auto"}, ["tool_choice"]),
+        ({"tools": [], "tool_choice": "auto"}, ["tools", "tool_choice"]),
+        ({"allowed_openai_params": ["custom_param"]}, ["custom_param"]),
+        (
+            {"tools": [], "allowed_openai_params": ["custom_param"]},
+            ["custom_param", "tools"],
+        ),
+    ],
+)
+def test_allowed_openai_params_for_completion_kwargs_independent_keys(
+    config, mock_task, kwargs_in, expected
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    result = adapter._allowed_openai_params_for_completion_kwargs(kwargs_in)
+    assert sorted(result) == sorted(expected)
+
+
+def test_allowed_openai_params_raises_for_non_list(config, mock_task):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    with pytest.raises(ValueError, match="expected list"):
+        adapter._allowed_openai_params_for_completion_kwargs(
+            {"allowed_openai_params": "not_a_list"}
+        )
+
+
+def test_allowed_openai_params_raises_for_non_string_items(config, mock_task):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    with pytest.raises(ValueError, match="items are not strings"):
+        adapter._allowed_openai_params_for_completion_kwargs(
+            {"allowed_openai_params": ["valid", 123]}
+        )
+
+
 @pytest.mark.asyncio
 async def test_build_completion_kwargs_includes_tools(
     config, mock_task, mock_math_tools
@@ -926,12 +964,89 @@ async def test_build_completion_kwargs_includes_tools(
     assert len(kwargs["tools"]) == 4
     assert "tool_choice" in kwargs
     assert kwargs["tool_choice"] == "auto"
+    assert isinstance(kwargs["allowed_openai_params"], list)
+    assert sorted(kwargs["allowed_openai_params"]) == sorted(["tool_choice", "tools"])
 
     # Verify tools are properly formatted
     for tool in kwargs["tools"]:
         assert "type" in tool
         assert tool["type"] == "function"
         assert "function" in tool
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_omits_allowed_openai_params_without_tools(
+    config, mock_task
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=[]),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    assert "allowed_openai_params" not in kwargs
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_merges_allowed_openai_params(
+    config, mock_task, mock_math_tools
+):
+    """Test that allowed_openai_params from additional_body_options are merged with internally computed ones."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    adapter._additional_body_options = {
+        "allowed_openai_params": ["tools", "custom_param"],
+    }
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=mock_math_tools),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    assert sorted(kwargs["allowed_openai_params"]) == [
+        "custom_param",
+        "tool_choice",
+        "tools",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_preserves_existing_allowed_openai_params_without_tools(
+    config, mock_task
+):
+    """Test that allowed_openai_params from additional_body_options are preserved even when no tools are present."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    adapter._additional_body_options = {
+        "allowed_openai_params": ["custom_param"],
+    }
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=[]),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    assert kwargs["allowed_openai_params"] == ["custom_param"]
 
 
 @pytest.mark.asyncio
@@ -1789,3 +1904,103 @@ async def test_structured_output_with_return_on_tool_call_and_resume(
         "Final message must not have pending tool_calls"
     )
     assert final_msg.get("content"), "Final message must have non-empty content"
+
+
+@pytest.mark.asyncio
+async def test_process_tool_calls_propagates_error_fields(config, mock_task):
+    """Test that is_error and error_message from ToolCallResult propagate to the tool message wrapper."""
+    from kiln_ai.datamodel.tool_id import ToolId
+    from kiln_ai.tools.base_tool import (
+        KilnToolInterface,
+        ToolCallContext,
+        ToolCallDefinition,
+        ToolCallResult,
+    )
+
+    class FakeErrorTool(KilnToolInterface):
+        async def run(
+            self, context: ToolCallContext | None = None, **kwargs
+        ) -> ToolCallResult:
+            return ToolCallResult(
+                output="something went wrong",
+                is_error=True,
+                error_message="something went wrong",
+            )
+
+        async def toolcall_definition(self) -> ToolCallDefinition:
+            return {
+                "type": "function",
+                "function": {
+                    "name": "error_tool",
+                    "description": "A tool that errors",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+
+        async def id(self) -> ToolId:
+            return "error_tool"
+
+        async def name(self) -> str:
+            return "error_tool"
+
+        async def description(self) -> str:
+            return "A tool that errors"
+
+    class FakeSuccessTool(KilnToolInterface):
+        async def run(
+            self, context: ToolCallContext | None = None, **kwargs
+        ) -> ToolCallResult:
+            return ToolCallResult(output="all good")
+
+        async def toolcall_definition(self) -> ToolCallDefinition:
+            return {
+                "type": "function",
+                "function": {
+                    "name": "success_tool",
+                    "description": "A tool that succeeds",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }
+
+        async def id(self) -> ToolId:
+            return "success_tool"
+
+        async def name(self) -> str:
+            return "success_tool"
+
+        async def description(self) -> str:
+            return "A tool that succeeds"
+
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    error_tool_call = ChatCompletionMessageToolCall(
+        id="call_err",
+        type="function",
+        function=Function(name="error_tool", arguments="{}"),
+    )
+    success_tool_call = ChatCompletionMessageToolCall(
+        id="call_ok",
+        type="function",
+        function=Function(name="success_tool", arguments="{}"),
+    )
+
+    with patch.object(
+        adapter,
+        "available_tools",
+        return_value=[FakeErrorTool(), FakeSuccessTool()],
+    ):
+        _, messages = await adapter.process_tool_calls(
+            [error_tool_call, success_tool_call]
+        )
+
+    assert len(messages) == 2
+
+    error_msg = next(m for m in messages if m["tool_call_id"] == "call_err")
+    assert error_msg["content"] == "something went wrong"
+    assert error_msg["is_error"] is True
+    assert error_msg["error_message"] == "something went wrong"
+
+    success_msg = next(m for m in messages if m["tool_call_id"] == "call_ok")
+    assert success_msg["content"] == "all good"
+    assert success_msg.get("is_error") is None
+    assert success_msg.get("error_message") is None

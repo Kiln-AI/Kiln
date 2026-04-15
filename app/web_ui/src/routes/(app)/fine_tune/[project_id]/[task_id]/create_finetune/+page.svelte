@@ -738,6 +738,7 @@
         on:submit={create_finetune}
         bind:error={create_finetune_error}
         bind:submitting={create_finetune_loading}
+        gap={4}
       >
         <div class="text-xl font-bold">
           Step 1: Select Base Model to Fine-Tune

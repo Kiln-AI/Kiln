@@ -4,13 +4,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from app.desktop.desktop_server import make_app
+from app.desktop.studio_server.webhost import HTMLStaticFiles
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_server.server import tags_metadata
-
-from app.desktop.desktop_server import make_app
-from app.desktop.studio_server.webhost import HTMLStaticFiles
 
 
 @pytest.fixture
@@ -99,15 +98,17 @@ def test_connect_ollama_no_models(client):
 
 
 @pytest.mark.parametrize(
-    "origin",
+    "origin_template",
     [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "https://localhost:5173",
-        "https://127.0.0.1:5173",
+        "http://localhost:PORT",
+        "http://127.0.0.1:PORT",
+        "https://localhost:PORT",
+        "https://127.0.0.1:PORT",
     ],
 )
-def test_cors_allowed_origins(client, origin):
+def test_cors_allowed_origins(client, origin_template):
+    port = os.environ.get("KILN_FRONTEND_PORT", "5173")
+    origin = origin_template.replace("PORT", port)
     response = client.get("/ping", headers={"Origin": origin})
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == origin

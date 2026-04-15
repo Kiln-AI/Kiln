@@ -1,6 +1,6 @@
 <script lang="ts">
   import AppPage from "../app_page.svelte"
-  import { current_task, current_project } from "$lib/stores"
+  import { current_task, current_project, ui_state } from "$lib/stores"
   import { createKilnError } from "$lib/utils/error_handlers"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { KilnError } from "$lib/utils/error_handlers"
@@ -26,7 +26,7 @@
   let selected_run_config_id: string | null = null
   // Some models have a model-specific suggested run config, such as fine-tuned models. If a model like that is selected, this will be set to the run config ID.
   let selected_model_specific_run_config_id: string | null = null
-  let model: string = ""
+  let model: string = $ui_state.selected_model || ""
 
   let run_config_component: RunConfigComponent
   let save_config_error: KilnError | null = null
@@ -238,10 +238,7 @@
           initial_run={response}
           task={$current_task}
           {project_id}
-          bind:model_name
-          bind:provider
           bind:run_complete
-          focus_repair_on_appear={true}
         />
       </div>
     {/if}

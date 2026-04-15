@@ -25,7 +25,7 @@ from app.desktop.studio_server.api_models.copilot_models import (
 )
 from app.desktop.studio_server.utils.response_utils import unwrap_response
 from fastapi import HTTPException
-from kiln_ai.datamodel import TaskRun
+from kiln_ai.datamodel import Feedback, FeedbackSource, TaskRun
 from kiln_ai.datamodel.datamodel_enums import TaskOutputRatingType
 from kiln_ai.datamodel.task_output import (
     DataSource,
@@ -172,8 +172,12 @@ def create_task_run_from_reviewed(
     tag: str,
     spec_name: str,
     extra_tags: list[str] | None = None,
-) -> TaskRun:
-    """Create a TaskRun from a reviewed example with rating (without parent set)."""
+) -> tuple[TaskRun, str | None]:
+    """Create a TaskRun from a reviewed example with rating (without parent set).
+
+    Returns a (TaskRun, feedback_text) tuple. The caller should create a Feedback
+    child on the TaskRun after saving it, if feedback_text is not None.
+    """
     data_source = DataSource(
         type=DataSourceType.synthetic,
         properties={
@@ -190,7 +194,7 @@ def create_task_run_from_reviewed(
     rating_key = f"named::{spec_name}"
     rating_value = 1.0 if example.user_says_meets_spec else 0.0
 
-    return TaskRun(
+    task_run = TaskRun(
         input=example.input,
         input_source=data_source,
         output=TaskOutput(
@@ -209,6 +213,34 @@ def create_task_run_from_reviewed(
         ),
         tags=tags,
     )
+    feedback_text = example.feedback if example.feedback else None
+    return task_run, feedback_text
+
+
+class DatasetTaskRuns:
+    """Result of creating dataset task runs, with pending feedback to attach after saving."""
+
+    def __init__(self) -> None:
+        self.task_runs: list[TaskRun] = []
+        self._pending_feedback: dict[str, str] = {}
+
+    def add_run(self, task_run: TaskRun, feedback_text: str | None = None) -> None:
+        self.task_runs.append(task_run)
+        if feedback_text and task_run.id:
+            self._pending_feedback[task_run.id] = feedback_text
+
+    def save_pending_feedback(self, task_run: TaskRun) -> None:
+        """Create Feedback children for a saved TaskRun if it has pending feedback."""
+        if not task_run.id:
+            return
+        feedback_text = self._pending_feedback.get(task_run.id)
+        if feedback_text:
+            fb = Feedback(
+                feedback=feedback_text,
+                source=FeedbackSource.spec_feedback,
+                parent=task_run,
+            )
+            fb.save_to_file()
 
 
 def create_dataset_task_runs(
@@ -218,7 +250,7 @@ def create_dataset_task_runs(
     train_tag: str,
     golden_tag: str,
     spec_name: str,
-) -> list[TaskRun]:
+) -> DatasetTaskRuns:
     """Create TaskRuns for eval, train, and golden datasets.
 
     Samples from all_examples (mutating it) and creates TaskRuns for:
@@ -226,9 +258,10 @@ def create_dataset_task_runs(
     - Train dataset
     - Golden dataset (reviewed examples + unrated examples to reach MIN_GOLDEN_EXAMPLES)
 
-    Returns TaskRuns without parent set - caller must set parent.
+    Returns DatasetTaskRuns without parent set - caller must set parent and call
+    save_pending_feedback after saving each run.
     """
-    task_runs: list[TaskRun] = []
+    result = DatasetTaskRuns()
 
     # Generate a session tag for all task runs in this batch
     session_id = random.randint(0, 999999999999)
@@ -237,18 +270,17 @@ def create_dataset_task_runs(
 
     # Create TaskRuns for reviewed examples with ratings
     for reviewed in reviewed_examples:
-        task_runs.append(
-            create_task_run_from_reviewed(reviewed, golden_tag, spec_name, extra_tags)
+        task_run, feedback_text = create_task_run_from_reviewed(
+            reviewed, golden_tag, spec_name, extra_tags
         )
+        result.add_run(task_run, feedback_text)
 
     # Create more unrated golden examples from remaining pool if needed
     unrated_golden_count = max(0, MIN_GOLDEN_EXAMPLES - len(reviewed_examples))
     if unrated_golden_count > 0:
         unrated_golden_examples = sample_and_remove(all_examples, unrated_golden_count)
         for example in unrated_golden_examples:
-            task_runs.append(
-                create_task_run_from_sample(example, golden_tag, extra_tags)
-            )
+            result.add_run(create_task_run_from_sample(example, golden_tag, extra_tags))
 
     # Sample half the remaining examples for eval vs train datasets
     example_count = len(all_examples)
@@ -259,10 +291,10 @@ def create_dataset_task_runs(
 
     # Create TaskRuns for eval examples
     for example in eval_examples:
-        task_runs.append(create_task_run_from_sample(example, eval_tag, extra_tags))
+        result.add_run(create_task_run_from_sample(example, eval_tag, extra_tags))
 
     # Create TaskRuns for train examples
     for example in train_examples:
-        task_runs.append(create_task_run_from_sample(example, train_tag, extra_tags))
+        result.add_run(create_task_run_from_sample(example, train_tag, extra_tags))
 
-    return task_runs
+    return result

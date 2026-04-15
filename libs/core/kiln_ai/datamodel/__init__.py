@@ -23,6 +23,7 @@ from kiln_ai.datamodel import (
 )
 from kiln_ai.datamodel.basemodel import generate_model_id
 from kiln_ai.datamodel.datamodel_enums import (
+    FeedbackSource,
     FineTuneStatusType,
     Priority,
     StructuredOutputMode,
@@ -30,6 +31,7 @@ from kiln_ai.datamodel.datamodel_enums import (
 )
 from kiln_ai.datamodel.dataset_split import DatasetSplit, DatasetSplitDefinition
 from kiln_ai.datamodel.external_tool_server import ExternalToolServer
+from kiln_ai.datamodel.feedback import Feedback
 from kiln_ai.datamodel.finetune import Finetune
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt import BasePrompt, Prompt
@@ -59,6 +61,8 @@ __all__ = [
     "DatasetSplit",
     "DatasetSplitDefinition",
     "ExternalToolServer",
+    "Feedback",
+    "FeedbackSource",
     "FineTuneStatusType",
     "Finetune",
     "Priority",

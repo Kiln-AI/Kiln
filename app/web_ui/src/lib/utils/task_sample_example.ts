@@ -2,9 +2,9 @@ import { client } from "$lib/api_client"
 import type { TaskRun } from "$lib/types"
 
 /**
- * A few-shot example consisting of an input/output pair.
+ * A task sample example consisting of an input/output pair.
  */
-export type FewShotExample = {
+export type TaskSampleExample = {
   input: string
   output: string
 }
@@ -15,11 +15,11 @@ export type FewShotExample = {
 export type AutoSelectType = "highly_rated" | "most_recent"
 
 /**
- * Result of fetching few-shot examples from the dataset.
+ * Result of fetching task sample examples from the dataset.
  */
-export type FewShotFetchResult = {
+export type TaskSampleFetchResult = {
   auto_select_type: AutoSelectType | null
-  selected_example: FewShotExample | null
+  selected_example: TaskSampleExample | null
   available_runs: TaskRun[]
 }
 
@@ -43,9 +43,9 @@ function get_output_string(run: TaskRun): string {
 }
 
 /**
- * Converts a TaskRun to a FewShotExample.
+ * Converts a TaskRun to a TaskSampleExample.
  */
-export function task_run_to_example(run: TaskRun): FewShotExample {
+export function task_run_to_example(run: TaskRun): TaskSampleExample {
   return {
     input: run.input ?? "",
     output: get_output_string(run),
@@ -53,7 +53,7 @@ export function task_run_to_example(run: TaskRun): FewShotExample {
 }
 
 /**
- * Fetches task runs and determines the few-shot selection status.
+ * Fetches task runs and determines the task sample selection status.
  *
  * Priority:
  * 1. If a 5-star rated sample exists, auto-select it (confident)
@@ -62,10 +62,10 @@ export function task_run_to_example(run: TaskRun): FewShotExample {
  *
  * @throws Error if fetching fails
  */
-export async function fetch_few_shot_candidates(
+export async function fetch_task_sample_candidates(
   project_id: string,
   task_id: string,
-): Promise<FewShotFetchResult> {
+): Promise<TaskSampleFetchResult> {
   const { data: runs, error } = await client.GET(
     "/api/projects/{project_id}/tasks/{task_id}/runs",
     {
@@ -119,13 +119,13 @@ export async function fetch_few_shot_candidates(
 }
 
 /**
- * Builds a task prompt with instruction, requirements, and optional few-shot examples.
+ * Builds a task prompt with instruction, requirements, and optional task sample examples.
  * Uses the backend prompt builder for consistent formatting.
  */
-export async function build_prompt_with_few_shot(
+export async function build_prompt_with_task_sample(
   project_id: string,
   task_id: string,
-  examples: FewShotExample[],
+  examples: TaskSampleExample[],
 ): Promise<string> {
   const { data, error } = await client.POST(
     "/api/projects/{project_id}/tasks/{task_id}/build_prompt_with_examples",

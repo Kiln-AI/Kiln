@@ -5,6 +5,7 @@ import {
   tool_name_validator,
   skill_name_validator,
   normalize_skill_name,
+  normalize_filename_string,
   filename_string_short_validator,
 } from "./input_validators"
 
@@ -757,14 +758,14 @@ describe("input_validators", () => {
         expect(result).toBeNull()
       })
 
-      it("should return error for trailing whitespace", () => {
+      it("should allow trailing whitespace (normalized on submit)", () => {
         const result = filename_string_short_validator("Correctness ")
-        expect(result).toBe("Cannot have leading or trailing whitespace")
+        expect(result).toBeNull()
       })
 
-      it("should return error for leading whitespace", () => {
+      it("should allow leading whitespace (normalized on submit)", () => {
         const result = filename_string_short_validator(" Leading Space")
-        expect(result).toBe("Cannot have leading or trailing whitespace")
+        expect(result).toBeNull()
       })
 
       it("should return error for consecutive underscores", () => {
@@ -812,9 +813,9 @@ describe("input_validators", () => {
         expect(result).toBe("Cannot start or end with an underscore")
       })
 
-      it("should return error for consecutive whitespace", () => {
+      it("should allow consecutive whitespace (normalized on submit)", () => {
         const result = filename_string_short_validator("consecutive  spaces")
-        expect(result).toBe("Cannot contain consecutive whitespace")
+        expect(result).toBeNull()
       })
 
       it("should return error for colon", () => {
@@ -828,6 +829,24 @@ describe("input_validators", () => {
         expect(result).not.toBeNull()
         expect(result).toContain("Cannot contain any of these characters")
       })
+    })
+  })
+
+  describe("normalize_filename_string", () => {
+    it("should trim leading and trailing whitespace", () => {
+      expect(normalize_filename_string("  hello  ")).toBe("hello")
+    })
+
+    it("should collapse consecutive whitespace", () => {
+      expect(normalize_filename_string("hello   world")).toBe("hello world")
+    })
+
+    it("should handle combined leading, trailing, and consecutive whitespace", () => {
+      expect(normalize_filename_string("  hello   world  ")).toBe("hello world")
+    })
+
+    it("should not modify a clean string", () => {
+      expect(normalize_filename_string("hello world")).toBe("hello world")
     })
   })
 })

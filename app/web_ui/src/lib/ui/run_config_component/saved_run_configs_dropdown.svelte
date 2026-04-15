@@ -63,11 +63,30 @@
   }
 
   // Initialization of selected_run_config_id
+  // Start with "custom" immediately (avoids showing "Select an option" while configs load),
+  // then upgrade to the default config once it's available in the loaded options.
+  // Uses a one-shot guard so intentional later "Custom" selections aren't overridden.
+  let pending_default_upgrade = false
   $: if (auto_select_default && selected_run_config_id === null) {
-    if (default_run_config_id) {
+    selected_run_config_id = run_page ? "custom" : null
+    pending_default_upgrade = run_page
+  }
+  $: if (
+    pending_default_upgrade &&
+    auto_select_default &&
+    run_page &&
+    selected_run_config_id === "custom" &&
+    default_run_config_id
+  ) {
+    const composite_key = get_task_composite_id(
+      project_id,
+      current_task.id ?? "",
+    )
+    const loaded_configs =
+      $run_configs_by_task_composite_id[composite_key] ?? []
+    if (loaded_configs.some((c) => c.id === default_run_config_id)) {
       selected_run_config_id = default_run_config_id
-    } else {
-      selected_run_config_id = run_page ? "custom" : null
+      pending_default_upgrade = false
     }
   }
 

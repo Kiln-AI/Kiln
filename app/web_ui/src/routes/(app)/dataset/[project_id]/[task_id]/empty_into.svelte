@@ -46,7 +46,12 @@
     <div>Adding data will allow the model to improve at it's task.</div>
     <div>To get started, generate some synthetic data or add data manually</div>
 
-    <a href="/run" class="btn btn-primary"> Manually Add Data </a>
+    <a
+      href={`/dataset/${project_id}/${task_id}/add_data`}
+      class="btn btn-primary"
+    >
+      Manually Add Data
+    </a>
     <a href={`/generate/${project_id}/${task_id}`} class="btn">
       Generate Synthetic Data
     </a>

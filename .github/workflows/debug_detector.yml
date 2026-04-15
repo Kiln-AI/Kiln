@@ -24,7 +24,7 @@ jobs:
           fi
 
           echo "Checking for TODO or FIXME"
-          notes=$(grep -nR --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=.git --exclude-dir=.github --exclude-dir=build --exclude-dir=dist --exclude-dir=.svelte-kit -e 'TODO' -e 'FIXME' . || true)
+          notes=$(grep -nR --exclude-dir=node_modules --exclude-dir=.venv --exclude-dir=.git --exclude-dir=.github --exclude-dir=build --exclude-dir=dist --exclude-dir=.svelte-kit --exclude=AGENTS.md --exclude=code_review_guidelines.md -e 'TODO' -e 'FIXME' . || true)
           if [ -n "$notes" ]; then
             echo "$notes"
             found=1

@@ -1,71 +1,101 @@
+<script lang="ts" context="module">
+  export type GuideSample = { input: string; output: string }
+  export type GuideRule = { name: string; content: string }
+</script>
+
 <script lang="ts">
   import { createEventDispatcher, onMount } from "svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
-  import Collapse from "$lib/ui/collapse.svelte"
-  import type { KilnError } from "$lib/utils/error_handlers"
-  import type { TaskRun } from "$lib/types"
+  import { KilnError } from "$lib/utils/error_handlers"
+  import type { TaskRun, KilnAgentRunConfigProperties } from "$lib/types"
+  import { isKilnAgentRunConfig } from "$lib/types"
   import {
     fetch_few_shot_candidates,
     task_run_to_example,
   } from "$lib/utils/few_shot_example"
   import Dialog from "$lib/ui/dialog.svelte"
+  import TableButton from "../table_button.svelte"
+  import TaskRunPicker from "$lib/utils/task_run_picker.svelte"
+  import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
 
-  type GuideSample = { input: string; output: string }
-
-  export let requirements: string = ""
-  export let examples: string | null = null
   export let error: KilnError | null = null
   export let submitting: boolean = false
-  export let existing_samples: GuideSample[] = []
   export let project_id: string
   export let task_id: string
 
-  // Manual examples list
-  let manual_examples: GuideSample[] = []
+  // Local state for dialog FormContainers so they don't interfere with each other
+  let dialog_error: KilnError | null = null
+  let dialog_submitting: boolean = false
 
-  function add_manual_example() {
-    manual_examples = [...manual_examples, { input: "", output: "" }]
+  // Unified examples list (manual + existing + saved golden)
+  export let guide_examples: GuideSample[] = []
+  // Rules list
+  export let guide_rules: GuideRule[] = []
+
+  // Build requirements markdown from rules
+  export function build_requirements_markdown(): string {
+    if (guide_rules.length === 0) return ""
+    return guide_rules.map((r) => `## ${r.name}\n${r.content}`).join("\n\n")
   }
 
-  function remove_manual_example(index: number) {
-    manual_examples = manual_examples.filter((_, i) => i !== index)
+  // --- Example management ---
+  let example_dialog: Dialog
+  let example_mode: "add" | "edit" = "add"
+  let example_add_method: "manual" | "existing" | null = null
+  let editing_example_index: number = -1
+  let editing_example_input: string = ""
+  let editing_example_output: string = ""
+
+  function open_add_example_dialog() {
+    example_mode = "add"
+    example_add_method = null
+    editing_example_input = ""
+    editing_example_output = ""
+    editing_example_index = -1
+    example_dialog?.show()
   }
 
-  // Few-shot selector
+  function open_edit_example_dialog(index: number) {
+    example_mode = "edit"
+    example_add_method = "manual"
+    editing_example_index = index
+    editing_example_input = guide_examples[index].input
+    editing_example_output = guide_examples[index].output
+    example_dialog?.show()
+  }
+
+  function save_example() {
+    const sample: GuideSample = {
+      input: editing_example_input,
+      output: editing_example_output,
+    }
+    if (example_mode === "edit" && editing_example_index >= 0) {
+      guide_examples[editing_example_index] = sample
+      guide_examples = guide_examples
+    } else {
+      guide_examples = [...guide_examples, sample]
+    }
+    example_dialog?.close()
+  }
+
+  function remove_example(index: number) {
+    guide_examples = guide_examples.filter((_, i) => i !== index)
+  }
+
+  // Few-shot selector for "Choose from Existing"
   let available_runs: TaskRun[] = []
   let loading_runs = true
-  let selected_run: TaskRun | null = null
 
-  // Preview dialog
-  let preview_dialog: Dialog
-  let previewing_run: TaskRun | null = null
-  const PAGE_SIZE = 5
-  let current_page = 0
-  $: total_pages = Math.ceil(available_runs.length / PAGE_SIZE)
-  $: paged_runs = available_runs.slice(
-    current_page * PAGE_SIZE,
-    (current_page + 1) * PAGE_SIZE,
-  )
-
-  function show_preview(run: TaskRun, event: MouseEvent) {
-    if ((event.target as HTMLElement).closest("button")) return
-    previewing_run = run
-    preview_dialog?.show()
-  }
-
-  function select_run(run: TaskRun) {
-    selected_run = run
-  }
-
-  function clear_selection() {
-    selected_run = null
+  function select_existing_run(run: TaskRun) {
+    const ex = task_run_to_example(run)
+    guide_examples = [...guide_examples, { input: ex.input, output: ex.output }]
+    example_dialog?.close()
   }
 
   onMount(async () => {
     try {
       const result = await fetch_few_shot_candidates(project_id, task_id)
-      // Filter out synthetic runs
       available_runs = result.available_runs.filter(
         (r) => r.input_source?.type !== "synthetic",
       )
@@ -74,284 +104,398 @@
     } finally {
       loading_runs = false
     }
+    open_add_example_dialog()
   })
 
+  // --- Rule management ---
+  let rule_dialog: Dialog
+  let rule_mode: "add" | "edit" = "add"
+  let editing_rule_index: number = -1
+  let editing_rule_name: string = ""
+  let editing_rule_content: string = ""
+
+  function open_add_rule_dialog() {
+    rule_mode = "add"
+    editing_rule_index = -1
+    editing_rule_name = ""
+    editing_rule_content = ""
+    rule_dialog?.show()
+  }
+
+  function open_edit_rule_dialog(index: number) {
+    rule_mode = "edit"
+    editing_rule_index = index
+    editing_rule_name = guide_rules[index].name
+    editing_rule_content = guide_rules[index].content
+    rule_dialog?.show()
+  }
+
+  function save_rule() {
+    const rule: GuideRule = {
+      name: editing_rule_name,
+      content: editing_rule_content,
+    }
+    if (rule_mode === "edit" && editing_rule_index >= 0) {
+      guide_rules[editing_rule_index] = rule
+      guide_rules = guide_rules
+    } else {
+      guide_rules = [...guide_rules, rule]
+    }
+    rule_dialog?.close()
+  }
+
+  function remove_rule(index: number) {
+    guide_rules = guide_rules.filter((_, i) => i !== index)
+  }
+
+  // --- Generate modal ---
+  let generate_dialog: Dialog
+  let run_config_component: RunConfigComponent | null = null
+
+  function open_generate_dialog() {
+    generate_dialog?.show()
+  }
+
+  function handle_generate_submit() {
+    const run_config =
+      run_config_component?.run_options_as_run_config_properties()
+    if (!run_config) {
+      error = new KilnError("Please select a model", null)
+      return
+    }
+    if (!isKilnAgentRunConfig(run_config)) {
+      error = new KilnError(
+        "Task Data Guide requires a kiln_agent run config",
+        null,
+      )
+      return
+    }
+    generate_dialog?.close()
+    const all_examples = get_all_examples()
+    dispatch("generate_preview", {
+      selected_examples: all_examples,
+      run_config,
+    })
+  }
+
+  // --- Events ---
   const dispatch = createEventDispatcher<{
     generate_preview: {
       selected_examples: GuideSample[]
+      run_config: KilnAgentRunConfigProperties
     }
-    generate_without_samples: void
   }>()
 
-  function get_all_examples(): GuideSample[] {
-    const examples: GuideSample[] = []
-
-    // Add selected run
-    if (selected_run) {
-      const ex = task_run_to_example(selected_run)
-      examples.push(ex)
-    }
-
-    // Add manual examples (only non-empty ones)
-    for (const m of manual_examples) {
-      if (m.input.trim() || m.output.trim()) {
-        examples.push({ input: m.input, output: m.output })
-      }
-    }
-
-    // Add existing saved samples
-    examples.push(...existing_samples)
-
-    return examples
+  export function get_all_examples(): GuideSample[] {
+    return guide_examples.filter((e) => e.input.trim() || e.output.trim())
   }
 
-  $: has_any_example =
-    selected_run !== null ||
-    manual_examples.some((m) => m.input.trim() || m.output.trim()) ||
-    existing_samples.length > 0
+  // --- Expandable rows ---
+  let expanded_examples: boolean[] = []
+  let prev_examples_len = 0
+  $: if (guide_examples.length !== prev_examples_len) {
+    prev_examples_len = guide_examples.length
+    expanded_examples = new Array(guide_examples.length).fill(false)
+  }
+
+  function toggle_example_expand(index: number) {
+    expanded_examples[index] = !expanded_examples[index]
+    expanded_examples = expanded_examples
+  }
+
+  $: has_any_content =
+    guide_examples.some((e) => e.input.trim() || e.output.trim()) ||
+    guide_rules.length > 0
 </script>
 
 <FormContainer
-  submit_label="Generate synthetic examples"
-  on:submit={() =>
-    dispatch("generate_preview", { selected_examples: get_all_examples() })}
-  bind:error
-  bind:submitting
-  warn_before_unload={true}
+  submit_label="Continue"
+  on:submit={open_generate_dialog}
+  bind:error={dialog_error}
+  bind:submitting={dialog_submitting}
+  compact_button={true}
 >
-  <div class="flex flex-col gap-6">
-    <!-- Example Data Section -->
-    <div class="flex flex-col gap-2">
-      <div class="font-medium">Example Data</div>
-      <div class="text-sm text-gray-500">
-        Provide examples of real task data to guide synthetic generation.
-        Examples help produce higher quality, more realistic inputs.
-      </div>
-    </div>
-
-    <!-- Existing saved samples -->
-    {#if existing_samples.length > 0}
-      <div class="flex flex-col gap-2">
-        <div class="text-sm font-medium">
-          Saved Golden Examples
-          <span class="font-normal text-gray-500"
-            >({existing_samples.length})</span
-          >
-        </div>
-        <div class="rounded-lg border">
-          <table class="table table-fixed">
-            <thead>
-              <tr>
-                <th>Input</th>
-                <th>Output</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each existing_samples as sample}
-                <tr>
-                  <td class="py-2">
-                    <pre
-                      class="whitespace-pre-wrap break-words">{sample.input}</pre>
-                  </td>
-                  <td class="py-2">
-                    <pre
-                      class="whitespace-pre-wrap break-words">{sample.output}</pre>
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    {/if}
-
-    <!-- Select from existing data -->
-    {#if loading_runs}
-      <div class="text-sm text-gray-400">Loading existing samples...</div>
-    {:else if available_runs.length > 0}
-      <div class="flex flex-col gap-2">
-        <div class="text-sm font-medium">Select from Existing Data</div>
-        {#if selected_run}
-          <div class="rounded-lg border p-3 flex items-start gap-3">
-            <div class="flex-grow min-w-0">
-              <div class="text-xs text-gray-500 mb-1">Selected example</div>
-              <div class="truncate text-sm">{selected_run.input ?? ""}</div>
-            </div>
-            <button
-              class="btn btn-xs btn-ghost"
-              on:click={clear_selection}
-              type="button">Change</button
-            >
-          </div>
-        {:else}
-          <div class="rounded-lg border">
-            <table class="table table-fixed">
-              <thead>
-                <tr>
-                  <th>Input</th>
-                  <th>Output</th>
-                  <th style="width: 80px"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each paged_runs as run}
-                  <tr
-                    class="cursor-pointer hover:bg-base-200"
-                    on:click={(e) => show_preview(run, e)}
-                  >
-                    <td class="py-2">
-                      <div class="truncate">{run.input ?? ""}</div>
-                    </td>
-                    <td class="py-2">
-                      <div class="truncate">
-                        {run.output?.output ?? ""}
-                      </div>
-                    </td>
-                    <td class="py-2">
-                      <button
-                        class="btn btn-xs btn-outline"
-                        on:click|stopPropagation={() => select_run(run)}
-                        type="button">Select</button
-                      >
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-            {#if total_pages > 1}
-              <div class="flex justify-center gap-2 py-2">
-                <button
-                  class="btn btn-xs"
-                  disabled={current_page === 0}
-                  on:click={() => (current_page = current_page - 1)}
-                  type="button">Prev</button
-                >
-                <span class="text-xs text-gray-500 self-center"
-                  >{current_page + 1} / {total_pages}</span
-                >
-                <button
-                  class="btn btn-xs"
-                  disabled={current_page >= total_pages - 1}
-                  on:click={() => (current_page = current_page + 1)}
-                  type="button">Next</button
-                >
-              </div>
-            {/if}
-          </div>
-        {/if}
-      </div>
-    {/if}
-
-    <!-- Manual examples -->
-    <div class="flex flex-col gap-2">
-      <div class="text-sm font-medium">Manual Examples</div>
-      {#each manual_examples as example, i}
-        <div class="rounded-lg border p-3 flex flex-col gap-2">
-          <div class="flex justify-between items-center">
-            <div class="text-xs text-gray-500">Example {i + 1}</div>
-            <button
-              class="btn btn-xs btn-ghost text-error"
-              on:click={() => remove_manual_example(i)}
-              type="button">Remove</button
-            >
-          </div>
-          <FormElement
-            label="Input"
-            id="manual_input_{i}"
-            inputType="textarea"
-            height="base"
-            bind:value={example.input}
-            optional={true}
-            hide_optional_badge={true}
-          />
-          <FormElement
-            label="Output"
-            id="manual_output_{i}"
-            inputType="textarea"
-            height="base"
-            bind:value={example.output}
-            optional={true}
-            hide_optional_badge={true}
-          />
-        </div>
-      {/each}
+  <!-- Example Data Section -->
+  <div class="flex flex-col gap-2">
+    <div class="flex items-center justify-between">
       <div>
-        <button
-          class="btn btn-sm btn-outline"
-          on:click={add_manual_example}
-          type="button">+ Add Example</button
-        >
+        <div class="font-medium">Example Data</div>
+        <div class="text-sm text-gray-500">
+          Provide examples of real task data to guide synthetic generation.
+        </div>
       </div>
+      <button
+        class="btn btn-sm btn-outline"
+        on:click={open_add_example_dialog}
+        type="button">+ Add Example</button
+      >
     </div>
 
-    <!-- Optional rules (de-emphasized) -->
-    <Collapse title="Rules & Constraints" description="Optional">
-      <FormElement
-        label="Input Requirements"
-        description="Optional rules, constraints, and structure for generated task inputs."
-        id="requirements"
-        inputType="textarea"
-        height="medium"
-        bind:value={requirements}
-        optional={true}
-        hide_optional_badge={true}
-      />
-
-      <FormElement
-        label="Input Examples (text)"
-        description="Optional freeform text describing what good inputs look like."
-        id="examples"
-        inputType="textarea"
-        height="base"
-        bind:value={examples}
-        optional={true}
-        hide_optional_badge={true}
-      />
-    </Collapse>
+    {#if guide_examples.length > 0}
+      <div class="rounded-lg border">
+        <table class="table table-fixed">
+          <thead>
+            <tr>
+              <th>Input</th>
+              <th>Output</th>
+              <th style="width: 50px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each guide_examples as example, i}
+              <tr
+                on:click={() => toggle_example_expand(i)}
+                class="cursor-pointer"
+              >
+                <td class="py-2">
+                  {#if expanded_examples[i]}
+                    <pre
+                      class="whitespace-pre-wrap break-words">{example.input}</pre>
+                  {:else}
+                    <div class="truncate">{example.input}</div>
+                  {/if}
+                </td>
+                <td class="py-2">
+                  {#if expanded_examples[i]}
+                    <pre
+                      class="whitespace-pre-wrap break-words">{example.output}</pre>
+                  {:else}
+                    <div class="truncate">{example.output}</div>
+                  {/if}
+                </td>
+                <td class="py-2 p-0">
+                  <div class="dropdown dropdown-end dropdown-hover">
+                    <TableButton />
+                    <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+                    <ul
+                      tabindex="0"
+                      class="dropdown-content menu bg-base-100 rounded-box z-[1] w-40 p-2 shadow"
+                    >
+                      <li>
+                        <button
+                          on:click|stopPropagation={() =>
+                            open_edit_example_dialog(i)}
+                        >
+                          Edit
+                        </button>
+                      </li>
+                      <li>
+                        <button
+                          on:click|stopPropagation={() => remove_example(i)}
+                        >
+                          Remove
+                        </button>
+                      </li>
+                    </ul>
+                  </div>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {:else}
+      <div
+        class="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-400"
+      >
+        No examples added yet.
+      </div>
+    {/if}
   </div>
 
-  <slot name="model_selector" />
+  <!-- Rules & Descriptions Section -->
+  <div class="flex flex-col gap-2">
+    <div class="flex items-center justify-between">
+      <div>
+        <div class="font-medium">Rules & Descriptions</div>
+        <div class="text-sm text-gray-500">
+          Define rules, constraints, and structure for generated task inputs.
+        </div>
+      </div>
+      <button
+        class="btn btn-sm btn-outline"
+        on:click={open_add_rule_dialog}
+        type="button">+ Add Rule</button
+      >
+    </div>
+
+    {#if guide_rules.length > 0}
+      <div class="rounded-lg border">
+        <table class="table table-fixed">
+          <thead>
+            <tr>
+              <th style="width: 200px">Name</th>
+              <th>Content</th>
+              <th style="width: 50px"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each guide_rules as rule, i}
+              <tr>
+                <td class="py-2">
+                  <div class="truncate font-medium">{rule.name}</div>
+                </td>
+                <td class="py-2">
+                  <div class="truncate">{rule.content}</div>
+                </td>
+                <td class="py-2 p-0">
+                  <div class="dropdown dropdown-end dropdown-hover">
+                    <TableButton />
+                    <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+                    <ul
+                      tabindex="0"
+                      class="dropdown-content menu bg-base-100 rounded-box z-[1] w-40 p-2 shadow"
+                    >
+                      <li>
+                        <button
+                          on:click|stopPropagation={() =>
+                            open_edit_rule_dialog(i)}
+                        >
+                          Edit
+                        </button>
+                      </li>
+                      <li>
+                        <button on:click|stopPropagation={() => remove_rule(i)}>
+                          Remove
+                        </button>
+                      </li>
+                    </ul>
+                  </div>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {:else}
+      <div
+        class="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-400"
+      >
+        No rules added yet.
+      </div>
+    {/if}
+  </div>
 </FormContainer>
 
-{#if !has_any_example && !requirements.trim()}
-  <div class="flex flex-row gap-1 mt-4 justify-end">
-    <button
-      class="link text-sm text-gray-500"
-      disabled={submitting}
-      on:click={() => dispatch("generate_without_samples")}
-      type="button"
-    >
-      Generate without examples
-    </button>
-  </div>
-{/if}
-
+<!-- Add/Edit Example Dialog -->
 <Dialog
-  bind:this={preview_dialog}
-  title="Preview Example"
-  action_buttons={[
-    {
-      label: "Select",
-      isPrimary: true,
-      action: () => {
-        if (previewing_run) select_run(previewing_run)
-        preview_dialog?.close()
-        return true
-      },
-    },
-    { label: "Close", isCancel: true },
-  ]}
+  bind:this={example_dialog}
+  width="wide"
+  title={example_mode === "edit" ? "Edit Example" : "Add Example"}
 >
-  {#if previewing_run}
-    <div class="flex flex-col gap-4">
-      <div>
-        <div class="text-sm font-medium mb-1">Input</div>
-        <pre class="whitespace-pre-wrap break-words bg-base-200 p-3 rounded-lg text-sm">{previewing_run.input ?? ""}</pre>
-      </div>
-      <div>
-        <div class="text-sm font-medium mb-1">Output</div>
-        <pre class="whitespace-pre-wrap break-words bg-base-200 p-3 rounded-lg text-sm">{previewing_run.output?.output ?? ""}</pre>
-      </div>
+  {#if example_mode === "add" && example_add_method === null}
+    <!-- Method selection -->
+    <div class="flex flex-col gap-4 mt-4">
+      {#if available_runs.length > 0}
+        <button
+          class="btn btn-outline"
+          on:click={() => (example_add_method = "manual")}
+          type="button"
+        >
+          Add Manually
+        </button>
+      {/if}
+
+      {#if !loading_runs && available_runs.length > 0}
+        <div class="flex items-center gap-2">
+          <div class="flex-1 border-t border-base-300"></div>
+          <span class="text-sm text-gray-400">or</span>
+          <div class="flex-1 border-t border-base-300"></div>
+        </div>
+
+        <!-- Select from existing runs -->
+        <div class="mt-4">
+          {#if loading_runs}
+            <div class="text-sm text-gray-400">Loading existing samples...</div>
+          {:else}
+            <TaskRunPicker
+              {available_runs}
+              on:select={(e) => select_existing_run(e.detail)}
+            />
+          {/if}
+        </div>
+      {/if}
     </div>
   {/if}
+  {#if available_runs.length === 0 || example_add_method === "manual"}
+    <!-- Manual input/output form -->
+    <FormContainer
+      submit_label={example_mode === "edit" ? "Save" : "Add"}
+      on:submit={save_example}
+      bind:error={dialog_error}
+      bind:submitting={dialog_submitting}
+      compact_button={true}
+    >
+      <FormElement
+        label="Input"
+        id="example_input"
+        inputType="textarea"
+        height="medium"
+        bind:value={editing_example_input}
+        optional={true}
+        hide_optional_badge={true}
+      />
+      <FormElement
+        label="Output"
+        id="example_output"
+        inputType="textarea"
+        height="medium"
+        bind:value={editing_example_output}
+        optional={true}
+        hide_optional_badge={true}
+      />
+    </FormContainer>
+  {/if}
+</Dialog>
+
+<!-- Add/Edit Rule Dialog -->
+<Dialog
+  bind:this={rule_dialog}
+  width="wide"
+  title={rule_mode === "edit" ? "Edit Rule" : "Add Rule / Description"}
+>
+  <FormContainer
+    submit_label={rule_mode === "edit" ? "Save" : "Add"}
+    on:submit={save_rule}
+    bind:error={dialog_error}
+    bind:submitting={dialog_submitting}
+    compact_button={true}
+  >
+    <FormElement label="Name" id="rule_name" bind:value={editing_rule_name} />
+    <FormElement
+      label="Content"
+      id="rule_content"
+      inputType="textarea"
+      height="medium"
+      bind:value={editing_rule_content}
+    />
+  </FormContainer>
+</Dialog>
+
+<!-- Generate Preview Modal -->
+<Dialog
+  bind:this={generate_dialog}
+  title="Test Guide"
+  sub_subtitle="Generate synthetic examples to preview how your guide performs."
+>
+  <FormContainer
+    submit_label="Generate"
+    on:submit={handle_generate_submit}
+    bind:error={dialog_error}
+    bind:submitting={dialog_submitting}
+    compact_button={true}
+  >
+    <RunConfigComponent
+      bind:this={run_config_component}
+      {project_id}
+      requires_structured_output={true}
+      show_name_field={false}
+      hide_prompt_selector={true}
+      show_tools_selector_in_advanced={true}
+      model_dropdown_settings={{
+        requires_data_gen: true,
+        suggested_mode: "data_gen",
+      }}
+    />
+  </FormContainer>
 </Dialog>
