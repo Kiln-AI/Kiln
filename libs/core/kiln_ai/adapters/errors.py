@@ -1,0 +1,122 @@
+"""Shared error types for adapter runs.
+
+Provides:
+- `ErrorWithTrace`: the API response body for run failures.
+- `KilnRunError`: the exception thrown by the adapter that carries the partial
+  conversation trace across the exception boundary so the API layer can return
+  it to the client.
+- `format_user_message`: maps known exceptions to user-friendly text.
+"""
+
+from __future__ import annotations
+
+import litellm
+from pydantic import BaseModel
+
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+
+_GENERIC_FALLBACK_MESSAGE = "An unexpected error occurred."
+
+
+class ErrorWithTrace(BaseModel):
+    """Structured error response pairing a user-friendly message with the
+    partial conversation trace built up before the failure.
+
+    Returned by endpoints that run a task adapter when the adapter throws
+    after starting a run (LLM calls made, tools invoked, etc.).
+    """
+
+    message: str
+    error_type: str
+    trace: list[ChatCompletionMessageParam] | None = None
+
+
+class KilnRunError(Exception):
+    """Raised when an adapter run fails after the trace has started being built.
+
+    Carries the partial trace so the API layer can return it to the client.
+    The original exception chain is preserved via `__cause__`.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        partial_trace: list[ChatCompletionMessageParam] | None,
+        original: Exception,
+    ) -> None:
+        super().__init__(message)
+        self.partial_trace = partial_trace
+        self.original = original
+        self.error_type = type(original).__name__
+
+
+def _safe_str(exc: Exception) -> str:
+    """Return str(exc); fall back to the exception class name if the string
+    is empty, and to a generic message only if str() itself misbehaves."""
+    try:
+        result = str(exc)
+    except Exception:
+        return _GENERIC_FALLBACK_MESSAGE
+    if not isinstance(result, str):
+        return _GENERIC_FALLBACK_MESSAGE
+    if not result:
+        # An exception with an empty __str__ (e.g., RuntimeError("")) is more
+        # useful to the user as the class name than a generic fallback.
+        return type(exc).__name__
+    return result
+
+
+def format_user_message(exc: Exception) -> str:
+    """Map an exception to a user-friendly message.
+
+    Known exception types get custom messages. Unknown types fall back to
+    str(exc). Never returns a stack trace or internal details.
+    """
+    try:
+        # Order matters: several litellm error classes inherit from each
+        # other (e.g., RateLimitError is a subclass of InternalServerError in
+        # some litellm versions), so we match the most specific types first
+        # and fall through to the broader "provider unavailable" bucket last.
+        if isinstance(exc, litellm.RateLimitError):
+            return "Rate limit exceeded. Wait a moment and try again."
+        if isinstance(exc, litellm.AuthenticationError):
+            return "Authentication with the model provider failed. Check your API key."
+        if isinstance(exc, litellm.APIConnectionError):
+            return "Could not connect to the model provider. Check your network connection."
+        if isinstance(
+            exc,
+            (
+                litellm.ServiceUnavailableError,
+                litellm.BadGatewayError,
+                litellm.InternalServerError,
+            ),
+        ):
+            return "The model provider is currently unavailable. Try again in a moment."
+        if isinstance(exc, litellm.JSONSchemaValidationError):
+            return "The model's output didn't match the expected format."
+
+        if isinstance(exc, RuntimeError):
+            msg = _safe_str(exc)
+            if msg.startswith("Too many turns"):
+                return "The run exceeded the maximum number of turns."
+            if msg.startswith("Too many tool calls"):
+                return "The run exceeded the maximum number of tool calls in one turn."
+            if "was invoked by a model, but was not available" in msg:
+                return (
+                    "The model tried to call a tool that isn't available on this task."
+                )
+            if msg.startswith("Failed to parse arguments"):
+                return "The model produced invalid arguments for a tool call."
+            if msg.startswith("Failed to validate arguments"):
+                return "The model's tool call arguments didn't match the tool's schema."
+            if msg.startswith("Reasoning is required"):
+                return "The model should have returned reasoning but didn't."
+
+        if isinstance(exc, ValueError):
+            msg = _safe_str(exc)
+            if "specific output schema" in msg or "didn't meet the schema" in msg:
+                return "The model's output didn't match the task's output schema."
+
+        return _safe_str(exc)
+    except Exception:
+        return _GENERIC_FALLBACK_MESSAGE

@@ -13,6 +13,7 @@ from kiln_ai.adapters.chat.chat_formatter import (
     MultiturnFormatter,
     get_chat_formatter,
 )
+from kiln_ai.adapters.errors import KilnRunError, format_user_message
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     StructuredOutputMode,
@@ -217,10 +218,14 @@ class BaseAdapter(metaclass=ABCMeta):
         prior_trace: list[ChatCompletionMessageParam] | None = None,
         parent_task_run: TaskRun | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
+        # Pre-run validation happens outside the exception-wrapping block:
+        # these errors occur before the adapter makes any model call, so
+        # there is no trace to preserve and they should surface as plain
+        # exceptions (the API layer returns them as 4xx, not as an
+        # ErrorWithTrace 500).
         prior_trace = self._normalize_prior_trace(prior_trace)
         self._reject_multiturn_with_structured_input(prior_trace)
 
-        # validate input, allowing arrays
         if self.input_schema is not None:
             validate_schema_with_value_error(
                 input,
@@ -229,83 +234,119 @@ class BaseAdapter(metaclass=ABCMeta):
                 require_object=False,
             )
 
-        # Format model input for model call (we save the original input in the task without formatting)
+        # Format model input for model call (we save the original input in the
+        # task without formatting). This runs in the adapter but before any
+        # trace is built, so it also stays outside the wrapped region.
         formatted_input = input
         formatter_id = self.model_provider().formatter
         if formatter_id is not None:
             formatter = request_formatter_from_id(formatter_id)
             formatted_input = formatter.format_input(input)
 
-        # Run
-        run_output, usage = await self._run(formatted_input, prior_trace=prior_trace)
-
-        if not run_output.is_toolcall_pending:
-            # Normal completion: parse and validate output
-            provider = self.model_provider()
-            parser = model_parser_from_id(provider.parser)
-            parsed_output = parser.parse_output(original_output=run_output)
-
-            # validate output
-            if self.output_schema is not None:
-                # Parse json to dict if we have structured output
-                if isinstance(parsed_output.output, str):
-                    parsed_output.output = parse_json_string(parsed_output.output)
-
-                if not isinstance(parsed_output.output, dict):
-                    raise RuntimeError(
-                        f"structured response is not a dict: {parsed_output.output}"
-                    )
-                validate_schema_with_value_error(
-                    parsed_output.output,
-                    self.output_schema,
-                    "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
-                )
-            else:
-                if not isinstance(parsed_output.output, str):
-                    raise RuntimeError(
-                        f"response is not a string for non-structured task: {parsed_output.output}"
-                    )
-
-            trace_has_toolcalls = parsed_output.trace is not None and any(
-                message.get("role", None) == "tool" for message in parsed_output.trace
+        # Allocate the trace-so-far list here so the reference survives any
+        # exception thrown from inside `_run` (or the post-processing that
+        # follows). `_run` must mutate this list in place (extend/append,
+        # or `list[:] = ...`) and never rebind the local name.
+        messages: list[ChatCompletionMessageParam] = []
+        try:
+            # Run. `messages` is mutated in place by `_run` so we keep a live
+            # reference to the partial trace if an exception escapes.
+            run_output, usage = await self._run(
+                formatted_input, messages, prior_trace=prior_trace
             )
 
-            # Validate reasoning content is present and required
-            # We don't require reasoning when using tools as models tend not to return any on the final turn (both Sonnet and Gemini).
+            if not run_output.is_toolcall_pending:
+                # Normal completion: parse and validate output
+                provider = self.model_provider()
+                parser = model_parser_from_id(provider.parser)
+                parsed_output = parser.parse_output(original_output=run_output)
+
+                # validate output
+                if self.output_schema is not None:
+                    # Parse json to dict if we have structured output
+                    if isinstance(parsed_output.output, str):
+                        parsed_output.output = parse_json_string(parsed_output.output)
+
+                    if not isinstance(parsed_output.output, dict):
+                        raise RuntimeError(
+                            f"structured response is not a dict: {parsed_output.output}"
+                        )
+                    validate_schema_with_value_error(
+                        parsed_output.output,
+                        self.output_schema,
+                        "This task requires a specific output schema. While the model produced JSON, that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information.",
+                    )
+                else:
+                    if not isinstance(parsed_output.output, str):
+                        raise RuntimeError(
+                            f"response is not a string for non-structured task: {parsed_output.output}"
+                        )
+
+                trace_has_toolcalls = parsed_output.trace is not None and any(
+                    message.get("role", None) == "tool"
+                    for message in parsed_output.trace
+                )
+
+                # Validate reasoning content is present and required
+                # We don't require reasoning when using tools as models tend not to return any on the final turn (both Sonnet and Gemini).
+                if (
+                    provider.reasoning_capable
+                    and (
+                        not parsed_output.intermediate_outputs
+                        or "reasoning" not in parsed_output.intermediate_outputs
+                    )
+                    and not (
+                        provider.reasoning_optional_for_structured_output
+                        and self.has_structured_output()
+                    )
+                    and not trace_has_toolcalls
+                ):
+                    raise RuntimeError(
+                        "Reasoning is required for this model, but no reasoning was returned."
+                    )
+
+                run_output = parsed_output
+
+            run = self.generate_run(
+                input,
+                input_source,
+                run_output,
+                usage,
+                run_output.trace,
+                parent_task_run,
+            )
+
+            # Save the run if configured to do so, and we have a path to save to
             if (
-                provider.reasoning_capable
-                and (
-                    not parsed_output.intermediate_outputs
-                    or "reasoning" not in parsed_output.intermediate_outputs
-                )
-                and not (
-                    provider.reasoning_optional_for_structured_output
-                    and self.has_structured_output()
-                )
-                and not trace_has_toolcalls
+                self.base_adapter_config.allow_saving
+                and Config.shared().autosave_runs
+                and self.task.path is not None
             ):
-                raise RuntimeError(
-                    "Reasoning is required for this model, but no reasoning was returned."
-                )
+                run.save_to_file()
+            else:
+                # Clear the ID to indicate it's not persisted
+                run.id = None
 
-            run_output = parsed_output
-
-        run = self.generate_run(
-            input, input_source, run_output, usage, run_output.trace, parent_task_run
-        )
-
-        # Save the run if configured to do so, and we have a path to save to
-        if (
-            self.base_adapter_config.allow_saving
-            and Config.shared().autosave_runs
-            and self.task.path is not None
-        ):
-            run.save_to_file()
-        else:
-            # Clear the ID to indicate it's not persisted
-            run.id = None
-
-        return run, run_output
+            return run, run_output
+        except KilnRunError:
+            # Already wrapped — pass through so we don't double-wrap.
+            raise
+        except Exception as e:
+            # Trace conversion can itself throw (e.g., a malformed partial
+            # assistant message was appended to `messages` just before the
+            # real failure). Never let that swallow the original exception —
+            # fall back to no trace so the user still sees the real error.
+            partial_trace: list[ChatCompletionMessageParam] | None = None
+            if messages:
+                try:
+                    partial_trace = self._messages_to_trace(messages)
+                except Exception:
+                    partial_trace = None
+            raise KilnRunError(
+                message=format_user_message(e),
+                partial_trace=partial_trace,
+                original=e,
+            ) from e
 
     async def invoke_returning_run_output(
         self,
@@ -484,9 +525,27 @@ class BaseAdapter(metaclass=ABCMeta):
     async def _run(
         self,
         input: InputType,
+        messages: list[ChatCompletionMessageParam],
         prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> Tuple[RunOutput, Usage | None]:
+        """Run the model. Implementations MUST mutate `messages` in place
+        (extend/append, or `messages[:] = ...`) — never rebind it — so the
+        caller keeps a live reference to the partial trace if an exception
+        escapes.
+        """
         pass
+
+    def _messages_to_trace(
+        self,
+        messages: list[ChatCompletionMessageParam],
+    ) -> list[ChatCompletionMessageParam]:
+        """Convert the adapter's internal `messages` list to an API-safe trace.
+
+        Default implementation returns the list as-is. Adapters that store
+        internal message objects (e.g. LiteLLM's `Message`) should override
+        this to normalize to `ChatCompletionMessageParam` shapes.
+        """
+        return messages
 
     def _create_run_stream(
         self,

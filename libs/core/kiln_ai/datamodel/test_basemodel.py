@@ -897,7 +897,7 @@ def test_from_ids_and_parent_path_benchmark(
 class MockAdapter(BaseAdapter):
     """Implementation of BaseAdapter for testing"""
 
-    async def _run(self, input, **kwargs):
+    async def _run(self, input, messages=None, **kwargs):
         return RunOutput(output="test output", intermediate_outputs=None), None
 
     def adapter_name(self) -> str:
@@ -961,13 +961,19 @@ async def test_invoke_parsing_flow(adapter):
         assert result.intermediate_outputs == {"key": "value"}
         assert result.input == "test input"
 
-        # Test with reasoning required, that we error if no reasoning is returned
+        # Test with reasoning required, that we error if no reasoning is returned.
+        # The underlying RuntimeError is wrapped in KilnRunError; check via
+        # `.original` to confirm the original exception propagated.
+        from kiln_ai.adapters.errors import KilnRunError
+
         mock_provider.reasoning_capable = True
-        with pytest.raises(
-            RuntimeError,
-            match=r"^Reasoning is required for this model, but no reasoning was returned.$",
-        ):
+        with pytest.raises(KilnRunError) as ei:
             await adapter.invoke("test input")
+        assert isinstance(ei.value.original, RuntimeError)
+        assert (
+            str(ei.value.original)
+            == "Reasoning is required for this model, but no reasoning was returned."
+        )
 
 
 async def test_invoke_parsing_flow_basic_no_reasoning(adapter):
