@@ -1,7 +1,16 @@
+from unittest.mock import patch
+
 import httpx
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from kiln_ai.adapters.errors import KilnRunError
+from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
+from openai.types.chat import (
+    ChatCompletionAssistantMessageParam,
+    ChatCompletionSystemMessageParam,
+    ChatCompletionUserMessageParam,
+)
 from pydantic import BaseModel, Field
 
 from kiln_server.custom_errors import connect_custom_errors, format_error_loc
@@ -41,6 +50,29 @@ def app():
                 "message": "Update required",
                 "code": CHAT_CLIENT_VERSION_TOO_OLD,
             },
+        )
+
+    @app.get("/kiln-run-error-no-trace")
+    async def raise_kiln_run_error_no_trace():
+        raise KilnRunError(
+            message="Rate limit exceeded. Wait a moment and try again.",
+            partial_trace=None,
+            original=RuntimeError("original failure"),
+        )
+
+    @app.get("/kiln-run-error-with-trace")
+    async def raise_kiln_run_error_with_trace():
+        trace: list[ChatCompletionMessageParam] = [
+            ChatCompletionSystemMessageParam(
+                role="system", content="You are a helpful assistant."
+            ),
+            ChatCompletionUserMessageParam(role="user", content="Hi"),
+            ChatCompletionAssistantMessageParam(role="assistant", content="Hello!"),
+        ]
+        raise KilnRunError(
+            message="The model's output didn't match the expected format.",
+            partial_trace=trace,
+            original=ValueError("schema mismatch"),
         )
 
     return app
@@ -161,3 +193,53 @@ class TestHTTPExceptionHandler:
     def test_dict_detail_has_cors_header(self, client_no_raise):
         response = client_no_raise.get("/http-error-dict")
         assert response.headers.get("access-control-allow-origin") == "*"
+
+
+class TestKilnRunErrorHandler:
+    def test_kiln_run_error_handler_returns_500(self, client_no_raise):
+        response = client_no_raise.get("/kiln-run-error-no-trace")
+        assert response.status_code == 500
+
+    def test_kiln_run_error_handler_body_shape(self, client_no_raise):
+        response = client_no_raise.get("/kiln-run-error-with-trace")
+        body = response.json()
+        assert set(body.keys()) == {"message", "error_type", "trace"}
+        assert body["message"] == "The model's output didn't match the expected format."
+        assert body["error_type"] == "ValueError"
+        # No legacy HTTPException keys should leak in.
+        assert "detail" not in body
+        assert "raw_error" not in body
+
+    def test_kiln_run_error_handler_trace_none(self, client_no_raise):
+        response = client_no_raise.get("/kiln-run-error-no-trace")
+        body = response.json()
+        assert body["trace"] is None
+        assert body["error_type"] == "RuntimeError"
+
+    def test_kiln_run_error_handler_trace_populated(self, client_no_raise):
+        response = client_no_raise.get("/kiln-run-error-with-trace")
+        body = response.json()
+        assert isinstance(body["trace"], list)
+        assert len(body["trace"]) == 3
+        assert body["trace"][0]["role"] == "system"
+        assert body["trace"][1]["content"] == "Hi"
+        assert body["trace"][2]["role"] == "assistant"
+
+    def test_kiln_run_error_handler_cors_header(self, client_no_raise):
+        response = client_no_raise.get("/kiln-run-error-no-trace")
+        assert response.headers.get("access-control-allow-origin") == "*"
+
+    def test_kiln_run_error_handler_uses_logger_exception(self, client_no_raise):
+        # Guard against future refactors that might switch to logger.error() or
+        # drop exc_info. We verify the handler specifically invokes
+        # logger.exception with exc_info=exc.original — i.e., the ORIGINAL
+        # exception, not the KilnRunError wrapper.
+        with patch("kiln_server.custom_errors.logger") as mock_logger:
+            response = client_no_raise.get("/kiln-run-error-no-trace")
+        assert response.status_code == 500
+        mock_logger.exception.assert_called_once()
+        _args, kwargs = mock_logger.exception.call_args
+        passed_exc = kwargs["exc_info"]
+        assert isinstance(passed_exc, RuntimeError)
+        assert not isinstance(passed_exc, KilnRunError)
+        assert str(passed_exc) == "original failure"

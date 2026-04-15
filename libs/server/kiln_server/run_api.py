@@ -9,6 +9,7 @@ from typing import Annotated, Any, Dict
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, Path, UploadFile
 from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
+from kiln_ai.adapters.errors import ErrorWithTrace
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import Task, TaskOutputRating, TaskOutputRatingType, TaskRun
@@ -378,6 +379,14 @@ def connect_run_api(app: FastAPI):
         summary="Execute Run",
         tags=["Runs"],
         openapi_extra=agent_policy_require_approval("Run task with LLM?"),
+        responses={
+            # Only KilnRunError produces this ErrorWithTrace body so the client
+            # can render the partial conversation trace alongside the error.
+            # Un-wrapped exceptions fall through to the generic handler with
+            # the {message, raw_error} shape. Pre-run errors (400/404/422) keep
+            # the plain HTTPException shape.
+            500: {"model": ErrorWithTrace},
+        },
     )
     async def run_task(
         project_id: Annotated[

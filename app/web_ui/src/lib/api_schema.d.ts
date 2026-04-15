@@ -5067,6 +5067,22 @@ export interface components {
             chunks: components["schemas"]["EphemeralSplitChunk"][];
         };
         /**
+         * ErrorWithTrace
+         * @description Structured error response pairing a user-friendly message with the
+         *     partial conversation trace built up before the failure.
+         *
+         *     Returned by endpoints that run a task adapter when the adapter throws
+         *     after starting a run (LLM calls made, tools invoked, etc.).
+         */
+        ErrorWithTrace: {
+            /** Message */
+            message: string;
+            /** Error Type */
+            error_type: string;
+            /** Trace */
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Output"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Output"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+        };
+        /**
          * Eval
          * @description An evaluator definition that specifies what to evaluate and how scores should be produced.
          */
@@ -11164,6 +11180,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorWithTrace"];
                 };
             };
         };
