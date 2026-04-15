@@ -111,16 +111,8 @@
     />
   {/each}
 
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
   {#if copilot_allowed}
     <TaskSampleSelector
-=======
-=======
->>>>>>> Stashed changes
-  {#if copilot_enabled}
-    <FewShotSelector
->>>>>>> Stashed changes
       {project_id}
       {task_id}
       bind:selected_example={task_sample_example}
