@@ -101,7 +101,7 @@
     <img
       src="/images/chat_icon_animated.svg"
       alt=""
-      class="w-7 h-7 shrink-0 mt-0.5"
+      class="w-9 h-9 shrink-0 -mt-1.5"
     />
   {/if}
   <div class="flex flex-col">
