@@ -1,11 +1,9 @@
 <script lang="ts">
-  import FormContainer from "$lib/utils/form_container.svelte"
-  import FormElement from "$lib/utils/form_element.svelte"
   import Rating from "./rating.svelte"
-  let repair_instructions: string | null = null
   import type {
     TaskRun,
     Task,
+    Feedback,
     RequirementRating,
     TaskRequirement,
     Trace,
@@ -18,9 +16,9 @@
   import { onMount } from "svelte"
   import TagPicker from "../../../lib/ui/tag_picker.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import type { components } from "../../../lib/api_schema"
-  import Warning from "../../../lib/ui/warning.svelte"
-  import OutputRepairEditForm from "./output_repair_edit_form.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
+  import FormContainer from "$lib/utils/form_container.svelte"
+  import FormElement from "$lib/utils/form_element.svelte"
   import {
     rating_options_for_sample,
     current_task_rating_options,
@@ -147,19 +145,12 @@
     }
   }
 
-  const REPAIR_ENABLED_FOR_SOURCES: Array<
-    components["schemas"]["DataSourceType"]
-  > = ["human", "synthetic"]
-
   export let project_id: string
   export let task: Task
   export let initial_run: TaskRun
   let updated_run: TaskRun | null = null
   $: run = updated_run || initial_run
-  export let model_name: string | null = null
-  export let provider: string | null = null
   export let run_complete: boolean = false
-  export let focus_repair_on_appear: boolean = false
 
   // Dynamic rating requirements based on tags
   $: rating_requirements = rating_options_for_sample(
@@ -167,12 +158,8 @@
     run?.tags || [],
   )
 
-  // note: this run is NOT the main run, but a repair run TaskRun
-  let repair_run: TaskRun | null = null
-
   $: rate_focus = run && overall_rating === null
-  // True if this "Run" has everything we want: a rating and a repaired output (or 5-star rating and no repair is needed)
-  $: run_complete = overall_rating === 5 || !!run?.repaired_output?.output
+  $: run_complete = overall_rating !== null
 
   let show_raw_data = false
   let save_rating_error: KilnError | null = null
@@ -180,26 +167,6 @@
   type RatingValue = number | null
   let overall_rating: RatingValue = null
   let requirement_ratings: RatingValue[] = []
-
-  // Repair is available if the run has an overall rating but it's not 5 stars, and it doesn't yet have a repaired output
-  $: should_offer_repair =
-    run &&
-    overall_rating !== null &&
-    overall_rating !== 5 &&
-    !run?.repaired_output?.output && // model already repaired
-    !repair_run // repair generated, should show repair evaluation instead
-  $: repair_review_available = !!repair_run && !run?.repaired_output
-  $: repair_complete = !!run?.repaired_output?.output
-  $: repair_enabled_for_source = REPAIR_ENABLED_FOR_SOURCES.some(
-    (s) => s === run?.output?.source?.type,
-  )
-
-  $: repair_source =
-    run?.repaired_output?.source?.type === "human"
-      ? { type: "user", name: run.repaired_output.source.properties.created_by }
-      : run?.repaired_output?.source?.type === "synthetic"
-        ? { type: "synthetic" }
-        : null
 
   // Use for some animations on first mount
   let mounted = false
@@ -314,57 +281,6 @@
     }
   }
 
-  let repair_submitting = false
-  let repair_error: KilnError | null = null
-  async function attempt_repair() {
-    try {
-      repair_submitting = true
-      if (!repair_instructions) {
-        throw new KilnError("Repair instructions are required", null)
-      }
-      if (!task.id || !run?.id) {
-        throw new KilnError(
-          "This task run isn't saved. Enable Auto-save. You can't repair unsaved runs.",
-          null,
-        )
-      }
-      const {
-        data: repair_data, // only present if 2XX response
-        error: fetch_error, // only present if 4XX or 5XX response
-      } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/generate_repair",
-        {
-          params: {
-            path: {
-              project_id: project_id,
-              task_id: task.id,
-              run_id: run?.id,
-            },
-          },
-          body:
-            model_name && provider
-              ? {
-                  evaluator_feedback: repair_instructions,
-                  model_name: model_name,
-                  provider: provider,
-                }
-              : {
-                  evaluator_feedback: repair_instructions,
-                },
-        },
-      )
-      if (fetch_error) {
-        throw fetch_error
-      }
-      repair_run = repair_data
-      repair_error = null
-    } catch (err) {
-      repair_error = createKilnError(err)
-    } finally {
-      repair_submitting = false
-    }
-  }
-
   function toggle_raw_data() {
     show_raw_data = !show_raw_data
     if (show_raw_data) {
@@ -378,84 +294,6 @@
     }
   }
 
-  let accept_repair_error: KilnError | null = null
-  let accept_repair_submitting = false
-  async function accept_repair() {
-    try {
-      accept_repair_error = null
-      accept_repair_submitting = true
-      if (!repair_run) {
-        throw new KilnError("No repair to accept", null)
-      }
-      if (!task.id || !run?.id) {
-        throw new KilnError(
-          "This task run isn't saved. Enable Auto-save. You can't accept repairs for unsaved runs.",
-          null,
-        )
-      }
-      const {
-        data, // only present if 2XX response
-        error: fetch_error, // only present if 4XX or 5XX response
-      } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/save_repair",
-        {
-          params: {
-            path: {
-              project_id: project_id,
-              task_id: task.id,
-              run_id: run?.id,
-            },
-          },
-          body: {
-            repair_run: repair_run,
-            evaluator_feedback: repair_instructions || "",
-          },
-        },
-      )
-      if (fetch_error) {
-        throw fetch_error
-      }
-      updated_run = data
-      repair_run = null
-    } catch (err) {
-      accept_repair_error = createKilnError(err)
-    } finally {
-      accept_repair_submitting = false
-    }
-  }
-
-  let delete_repair_error: KilnError | null = null
-  let delete_repair_submitting = false
-  async function delete_repair() {
-    if (
-      !confirm(
-        "Are you sure you want to delete this repair?\n\nThis action cannot be undone.",
-      )
-    ) {
-      return
-    }
-    try {
-      repair_run = null
-      delete_repair_error = null
-      delete_repair_submitting = true
-      let original_repair_instructions = run?.repair_instructions
-      let patch_body = {
-        repair_instructions: null,
-        repaired_output: null,
-      }
-      updated_run = await patch_run(patch_body)
-
-      // Pull in the instructions from the original repair, so they can edit them if wanted
-      if (!repair_instructions && original_repair_instructions) {
-        repair_instructions = original_repair_instructions
-      }
-    } catch (err) {
-      delete_repair_error = createKilnError(err)
-    } finally {
-      delete_repair_submitting = false
-    }
-  }
-
   function get_intermediate_output_title(name: string): string {
     return (
       {
@@ -463,27 +301,6 @@
         chain_of_thought: "Chain of Thought Output",
       }[name] || name
     )
-  }
-
-  function retry_repair() {
-    repair_run = null
-    accept_repair_error = null
-  }
-
-  let repair_edit_mode = false
-  function show_repair_edit() {
-    repair_edit_mode = true
-  }
-
-  function handle_manual_edit_cancel() {
-    repair_edit_mode = false
-  }
-
-  function handle_manual_edit_submit(repair_run_edited: TaskRun) {
-    repair_run = repair_run_edited
-    repair_edit_mode = false
-    updated_run = repair_run_edited
-    repair_run = null
   }
 
   function get_usage_properties(
@@ -561,6 +378,112 @@
     subtask_usage_loading,
     subtask_tokens,
   )
+
+  // Feedback
+  let feedbacks: Feedback[] = []
+  let feedback_loading = false
+  let feedback_error: KilnError | null = null
+  let add_feedback_dialog: Dialog
+  let add_feedback_open = false
+  let view_feedback_dialog: Dialog
+  let new_feedback_text = ""
+  let add_feedback_submitting = false
+
+  const MAX_VISIBLE_FEEDBACKS = 3
+
+  type FeedbackSortColumn = "created_by" | "created_at"
+  let feedback_sort_column: FeedbackSortColumn = "created_at"
+  let feedback_sort_direction: "asc" | "desc" = "desc"
+
+  function handle_feedback_sort(column: FeedbackSortColumn) {
+    if (feedback_sort_column === column) {
+      feedback_sort_direction =
+        feedback_sort_direction === "asc" ? "desc" : "asc"
+    } else {
+      feedback_sort_column = column
+      feedback_sort_direction = column === "created_at" ? "desc" : "asc"
+    }
+  }
+
+  $: sorted_feedbacks = [...feedbacks].sort((a, b) => {
+    const dir = feedback_sort_direction === "asc" ? 1 : -1
+    if (feedback_sort_column === "created_by") {
+      return dir * (a.created_by ?? "").localeCompare(b.created_by ?? "")
+    }
+    return dir * (a.created_at ?? "").localeCompare(b.created_at ?? "")
+  })
+
+  async function load_feedback() {
+    if (!task.id || !run?.id) return
+    feedback_loading = true
+    try {
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/feedback",
+        {
+          params: {
+            path: {
+              project_id,
+              task_id: task.id,
+              run_id: run.id,
+            },
+          },
+        },
+      )
+      if (fetch_error) throw fetch_error
+      feedbacks = data
+      feedback_error = null
+    } catch (err) {
+      feedback_error = createKilnError(err)
+    } finally {
+      feedback_loading = false
+    }
+  }
+
+  let add_feedback_error: KilnError | null = null
+
+  async function submit_feedback() {
+    if (!task.id || !run?.id || !new_feedback_text.trim()) return
+    try {
+      const { data, error: fetch_error } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/feedback",
+        {
+          params: {
+            path: {
+              project_id,
+              task_id: task.id,
+              run_id: run.id,
+            },
+          },
+          body: {
+            feedback: new_feedback_text.trim(),
+            source: "run-page",
+          },
+        },
+      )
+      if (fetch_error) throw fetch_error
+      feedbacks = [...feedbacks, data]
+      new_feedback_text = ""
+      add_feedback_dialog.close()
+      add_feedback_error = null
+    } catch (err) {
+      add_feedback_error = createKilnError(err)
+    } finally {
+      add_feedback_submitting = false
+    }
+  }
+
+  function format_date(date_str: string | undefined): string {
+    if (!date_str) return ""
+    return new Date(date_str).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    })
+  }
+
+  $: if (run?.id && task.id) load_feedback()
 </script>
 
 <div>
@@ -618,130 +541,11 @@
           </div>
         </div>
       </div>
-
-      {#if !repair_enabled_for_source && (should_offer_repair || repair_review_available || repair_complete)}
-        <div class="grow mt-10">
-          <Warning
-            warning_message="Repair is not available for runs from {run.output
-              .source?.type || 'unknown'} sources."
-            warning_color="warning"
-            tight={true}
-          />
-        </div>
-      {/if}
-
-      {#if repair_enabled_for_source && (should_offer_repair || repair_review_available || repair_complete)}
-        <div class="grow mt-10">
-          <div class="text-xl font-bold mb-2">Repair Output</div>
-          {#if should_offer_repair}
-            <p class="text-sm text-gray-500 mb-4">
-              Since the output isn't 5-star, provide instructions for the model
-              on how to fix it.
-            </p>
-            <FormContainer
-              submit_label="Attempt Repair"
-              on:submit={attempt_repair}
-              bind:submitting={repair_submitting}
-              bind:error={repair_error}
-              focus_on_mount={focus_repair_on_appear}
-            >
-              <FormElement
-                id="repair_instructions"
-                label="Repair Instructions"
-                inputType="textarea"
-                bind:value={repair_instructions}
-              />
-            </FormContainer>
-          {:else if repair_edit_mode && repair_run}
-            <p class="text-sm text-gray-500 mb-4">
-              Manually improve or correct the response.
-            </p>
-            <OutputRepairEditForm
-              {task}
-              {run}
-              {repair_run}
-              {project_id}
-              repair_instructions={repair_instructions || ""}
-              on_submit={handle_manual_edit_submit}
-              on_cancel={handle_manual_edit_cancel}
-            />
-          {:else if repair_review_available}
-            <p class="text-sm text-gray-500 mb-4">
-              The model has attempted to fix the output given <span
-                class="tooltip link"
-                data-tip="The instructions you provided to the model: {repair_instructions ||
-                  'No instruction provided'}">your instructions</span
-              >. Review the result.
-            </p>
-            <Output raw_output={repair_run?.output.output || ""} />
-          {:else if repair_complete}
-            {#if repair_source?.type === "user"}
-              <p class="text-sm text-gray-500 mb-4">
-                This repaired output was provided by {repair_source.name}.
-              </p>
-            {:else}
-              <p class="text-sm text-gray-500 mb-4">
-                The model has fixed the output given <span
-                  class="tooltip link"
-                  data-tip="The instructions you provided to the model: {repair_instructions ||
-                    'No instruction provided'}">your instructions</span
-                >.
-              </p>
-            {/if}
-            <Output raw_output={run?.repaired_output?.output || ""} />
-            <div class="mt-2 text-xs text-gray-500 text-right">
-              {#if delete_repair_submitting}
-                <span class="loading loading-spinner loading-sm"></span>
-              {:else if delete_repair_error}
-                <p class="text-error">
-                  Error Deleting Repair:
-                  {delete_repair_error.getMessage()}
-                </p>
-              {:else}
-                <button class="link" on:click={delete_repair}
-                  >Delete Repair</button
-                >
-              {/if}
-            </div>
-          {/if}
-        </div>
-        {#if repair_review_available && !repair_edit_mode}
-          <div class="mt-4">
-            <div class="flex flex-row gap-4 justify-between">
-              <button class="btn" on:click={show_repair_edit}>Edit</button>
-              <div class="flex flex-row gap-4">
-                <button class="btn" on:click={retry_repair}>Retry Repair</button
-                >
-                <button
-                  class="btn btn-primary"
-                  on:click={accept_repair}
-                  disabled={accept_repair_submitting}
-                >
-                  {#if accept_repair_submitting}
-                    <span class="loading loading-spinner loading-sm"></span>
-                  {:else}
-                    Accept Repair (5 Stars)
-                  {/if}
-                </button>
-              </div>
-            </div>
-
-            {#if accept_repair_error}
-              <p class="mt-2 text-error font-medium text-sm">
-                Error Accepting Repair<br />
-                <span class="text-error text-xs font-normal">
-                  {accept_repair_error.getMessage()}</span
-                >
-              </p>
-            {/if}
-          </div>
-        {/if}
-      {/if}
     </div>
 
     <div class="w-72 2xl:w-96 flex-none">
       <div class="text-xl font-bold mt-10 lg:mt-0 mb-6">
-        Output Rating
+        Rating and Feedback
         {#if save_rating_error}
           <button class="tooltip" data-tip={save_rating_error.getMessage()}>
             <svg
@@ -795,8 +599,13 @@
             </div>
           {/each}
         {/if}
-        <div class="font-medium flex items-center text-nowrap 2xl:min-w-32">
-          Overall Rating:
+        <div
+          class="flex items-center flex items-center text-nowrap 2xl:min-w-32"
+        >
+          <div class="font-medium">Overall Rating:</div>
+          <div class="text-gray-500">
+            <InfoTooltip tooltip_text="The overall rating of the output." />
+          </div>
         </div>
         <div class="flex items-center">
           <Rating
@@ -806,6 +615,66 @@
             on:rating_changed={save_ratings}
           />
         </div>
+        <div class="font-medium flex items-center text-nowrap">Feedback:</div>
+        <div class="flex items-center">
+          <button
+            type="button"
+            class="link text-sm text-gray-500"
+            on:click={() => {
+              new_feedback_text = ""
+              add_feedback_error = null
+              add_feedback_open = true
+              add_feedback_dialog.show()
+            }}>Add Feedback</button
+          >
+        </div>
+        {#if feedback_error}
+          <div></div>
+          <p class="text-error text-xs">{feedback_error.getMessage()}</p>
+        {/if}
+        {#if feedback_loading}
+          <div></div>
+          <div>
+            <span class="loading loading-spinner loading-xs"></span>
+          </div>
+        {:else if feedbacks.length > 0}
+          <div class="-mb-3"></div>
+          <!-- svelte-ignore a11y-no-static-element-interactions -->
+          <div
+            tabindex="0"
+            role="button"
+            class="-mt-3 text-left cursor-pointer hover:bg-base-200 focus-visible:bg-base-200 rounded-lg p-2 -ml-2 transition-colors outline-none"
+            on:click={(e) => {
+              const el = e.currentTarget
+              if (el instanceof HTMLElement) el.blur()
+              view_feedback_dialog.show()
+            }}
+            on:keydown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                const el = e.currentTarget
+                if (el instanceof HTMLElement) el.blur()
+                view_feedback_dialog.show()
+              }
+            }}
+          >
+            {#each feedbacks.slice(0, MAX_VISIBLE_FEEDBACKS) as fb}
+              <div class="mb-2 last:mb-0">
+                <div class="text-xs text-gray-500">
+                  {fb.created_by || "Unknown"}
+                </div>
+                <div class="text-sm line-clamp-2">
+                  {fb.feedback}
+                </div>
+              </div>
+            {/each}
+            {#if feedbacks.length > MAX_VISIBLE_FEEDBACKS}
+              <div class="text-xs text-gray-400 mt-1">
+                {feedbacks.length - MAX_VISIBLE_FEEDBACKS} more…
+              </div>
+            {/if}
+          </div>
+        {/if}
       </div>
       <div class="mt-8 mb-4">
         <div class="text-xl font-bold">Tags</div>
@@ -835,3 +704,83 @@
     </div>
   </div>
 </div>
+
+<Dialog
+  bind:this={add_feedback_dialog}
+  title="Add Feedback"
+  on:close={() => (add_feedback_open = false)}
+>
+  {#if add_feedback_open}
+    <FormContainer
+      submit_label="Add"
+      on:submit={submit_feedback}
+      bind:submitting={add_feedback_submitting}
+      bind:error={add_feedback_error}
+    >
+      <FormElement
+        id="new_feedback_input"
+        label="Feedback"
+        info_description="Feedback you have on the output."
+        inputType="textarea"
+        bind:value={new_feedback_text}
+      />
+    </FormContainer>
+  {/if}
+</Dialog>
+
+<Dialog bind:this={view_feedback_dialog} title="All Feedback" width="wide">
+  {#if feedbacks.length === 0}
+    <p class="text-sm text-gray-500">No feedback yet.</p>
+  {:else}
+    <div class="rounded-lg border overflow-hidden">
+      <table class="table table-sm w-full table-fixed">
+        <thead>
+          <tr>
+            <th
+              class="w-[15%] hover:bg-base-200 cursor-pointer"
+              on:click={() => handle_feedback_sort("created_by")}
+            >
+              Created By
+              <span class="inline-block w-3 text-center">
+                {feedback_sort_column === "created_by"
+                  ? feedback_sort_direction === "asc"
+                    ? "▲"
+                    : "▼"
+                  : "\u200B"}
+              </span>
+            </th>
+            <th>Feedback</th>
+            <th
+              class="w-[25%] hover:bg-base-200 cursor-pointer"
+              on:click={() => handle_feedback_sort("created_at")}
+            >
+              Created At
+              <span class="inline-block w-3 text-center">
+                {feedback_sort_column === "created_at"
+                  ? feedback_sort_direction === "asc"
+                    ? "▲"
+                    : "▼"
+                  : "\u200B"}
+              </span>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each sorted_feedbacks as fb}
+            <tr>
+              <td class="whitespace-nowrap align-top"
+                >{fb.created_by || "Unknown"}</td
+              >
+              <td class="whitespace-pre-wrap break-words align-top"
+                >{fb.feedback}</td
+              >
+              <td class="whitespace-nowrap align-top"
+                >{format_date(fb.created_at)}</td
+              >
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  {/if}
+</Dialog>
