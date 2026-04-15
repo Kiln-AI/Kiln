@@ -15,7 +15,7 @@
   $: show_tooltip = hovered || focused
 </script>
 
-<div class="px-2 my-2">
+<div class="px-2 my-1 xl:my-2">
   <div class="h-px bg-base-300"></div>
 </div>
 
@@ -163,6 +163,6 @@
   </svg>
 </SidebarRailItem>
 
-<div class="px-2 my-2">
+<div class="px-2 my-1 xl:my-2">
   <div class="h-px bg-base-300"></div>
 </div>

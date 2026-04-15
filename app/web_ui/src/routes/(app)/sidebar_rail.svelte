@@ -14,10 +14,10 @@
 </script>
 
 <nav
-  class="bg-base-200 text-base-content w-[56px] min-h-full flex flex-col items-stretch pt-3 pb-3 gap-1"
+  class="bg-base-200 text-base-content w-[56px] min-h-full flex flex-col items-stretch pt-1 pb-1 gap-px xl:pt-3 xl:pb-3 xl:gap-1"
   aria-label="Primary"
 >
-  <div class="flex justify-center mb-2">
+  <div class="flex justify-center mb-3 xl:mb-2">
     <img
       src="/images/animated_logo.svg"
       alt="Kiln"

@@ -5,7 +5,7 @@
 </script>
 
 {#if $progress_ui_state}
-  <div class="flex justify-center relative py-2">
+  <div class="flex justify-center relative py-1 xl:py-2">
     <div
       class="w-3 h-3 rounded-full bg-primary"
       aria-label="In progress"

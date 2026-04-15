@@ -20,7 +20,7 @@
   const tooltipId = `sidebar-rail-task-chip-tooltip-${crypto.randomUUID()}`
 </script>
 
-<div class="flex justify-center my-1">
+<div class="flex justify-center mb-2 xl:my-1">
   <button
     class="relative w-8 h-8 rounded-md border border-base-300 bg-base-100 text-sm font-medium flex items-center justify-center"
     on:click={() => dispatch("open")}

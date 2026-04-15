@@ -16,7 +16,7 @@
 <div class="flex justify-center">
   <a
     href="/settings"
-    class="flex items-center justify-center w-10 h-9 rounded-md relative {active
+    class="flex items-center justify-center w-10 h-8 xl:h-9 rounded-md relative {active
       ? 'bg-base-300'
       : 'hover:bg-base-300/50'}"
     aria-label={ariaLabel}
