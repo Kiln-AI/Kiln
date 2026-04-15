@@ -22,7 +22,7 @@
 <div class="flex">
   <a
     href={`/optimize/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
-    class="relative flex-1 h-5 flex items-center justify-center text-[9px] font-semibold tracking-wider text-gray-500 hover:bg-base-300/50"
+    class="relative flex-1 h-5 flex items-center justify-center text-[9px] font-semibold tracking-tighter text-gray-500 hover:bg-base-300/50"
     aria-label="Optimize"
     on:mouseenter={() => (hovered = true)}
     on:mouseleave={() => (hovered = false)}
