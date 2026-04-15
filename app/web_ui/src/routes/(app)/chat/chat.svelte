@@ -355,6 +355,9 @@
         characterData: true,
       })
     }
+    tick().then(() => {
+      textareaRef?.focus({ preventScroll: true })
+    })
   })
 
   onDestroy(() => {
