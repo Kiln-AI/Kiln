@@ -585,7 +585,7 @@
                                 {/if}
                               </button>
                             {/if}
-                            {#if !hasReasoningInGroup && hasToolsInGroup}
+                            {#if !shouldCompress && !hasReasoningInGroup && hasToolsInGroup}
                               <div
                                 class="flex items-center gap-1.5 text-sm text-base-content/50 py-0.5"
                               >
