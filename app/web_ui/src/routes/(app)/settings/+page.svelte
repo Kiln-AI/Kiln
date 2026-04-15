@@ -110,7 +110,7 @@
   ]
 </script>
 
-<AppPage title="Settings">
+<AppPage title="Settings" no_y_padding>
   <div class="max-w-4xl mt-12 space-y-12">
     {#each sections as section}
       <KilnSection title={section.category} items={section.items} />
