@@ -106,12 +106,13 @@ All items centered horizontally within the 56px column.
 - **Tooltip when dot shown:** `Settings — Update Available`.
 - **Tooltip when no update:** `Settings`.
 
-### Settings page — "Update Available" header
+### Settings page — "Update Available" callout
 
 - Rendered at the **top** of `/settings` (above existing sections), only when `$update_info.update_result?.has_update` is true.
-- Styling: matches the pattern used by other section headers on the settings page (same heading typography).
-- Layout: header text `Update Available` with a subordinate link/button `View update →` routing to `/settings/check_for_update`.
-- Visual emphasis: a subtle primary-tinted border/background on the section to draw attention without being alarming. Final visual decided during implementation; lean on existing DaisyUI `alert alert-info` or a bordered card with `border-primary/30`.
+- **Final design (per UI signoff):** compact blue-tinted callout card — not a `KilnSection`. A `KilnSection`-style rendering was tried and rejected because the update item blended in with the other settings sections instead of standing out.
+- Styling: `card card-bordered border-primary/30 bg-primary/5 shadow-sm rounded-md`.
+- Layout: circular primary-tinted icon bubble (`ArrowUpIcon`) on the left, title "Update Available" and a one-line description ("A new version of Kiln is ready to install.") in the middle, primary button "View Update" linking to `/settings/check_for_update` on the right.
+- Built inline in `settings/+page.svelte` (outside the `sections` array).
 
 ## Logo (Top of Rail)
 

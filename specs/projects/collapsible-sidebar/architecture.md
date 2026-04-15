@@ -29,7 +29,7 @@ This is a frontend-only change in `app/web_ui`. No backend / API changes. Small 
 | `app/web_ui/src/routes/(app)/+layout.svelte` | Conditionally render `sidebar_rail.svelte` in place of the full `<ul>` when rail is active. Track `isRailActive` via derived store. Apply one-shot slide-in animation class on rail→full transition. |
 | `app/web_ui/src/routes/(app)/chat_bar.svelte` | Read/write via shared `chatBarExpanded` store instead of local state + direct storage calls. |
 | `app/web_ui/src/lib/chat/chat_ui_storage.ts` | Unchanged — still the persistence layer used by the new store. |
-| `app/web_ui/src/routes/(app)/settings/+page.svelte` | Prepend an "Update Available" section when `$update_info.update_result?.has_update`. |
+| `app/web_ui/src/routes/(app)/settings/+page.svelte` | Prepend an inline "Update Available" callout card (not a `KilnSection`) when `$update_info.update_result?.has_update`. |
 
 ## State / Data Flow
 
@@ -287,31 +287,26 @@ Float anchors to parent element (per float.svelte `referenceElement = contentEle
 
 Settings link with optional dot overlay. Subscribes to `$update_info` directly (no `hasUpdate` prop). When `$update_info.update_result?.has_update` is true: render a primary dot at top-right and switch `aria-label` to "Settings, update available" and tooltip to "Settings — Update Available". Uses `SidebarRailTooltip` for hover feedback.
 
-### Settings page — "Update Available" section
+### Settings page — "Update Available" callout
 
-Modify `app/web_ui/src/routes/(app)/settings/+page.svelte`:
+Modify `app/web_ui/src/routes/(app)/settings/+page.svelte`. Per UI signoff the `KilnSection`-based approach (originally planned below) was rejected — it made the update item look like just another section. The final design is a compact blue-tinted callout card rendered inline in the template **above** the `{#each sections}` loop, outside the `sections` array:
 
-```ts
-import { update_info } from "$lib/utils/update"
-// ...
-$: sections = [
-  ...($update_info.update_result?.has_update
-    ? [{
-        category: "Update Available",
-        items: [{
-          type: "settings",
-          name: "New version available",
-          description: "A new version of Kiln is ready to install.",
-          button_text: "View Update",
-          href: "/settings/check_for_update",
-        } as KilnSectionItem],
-      }]
-    : []),
-  // ...existing sections unchanged
-]
+```svelte
+{#if $update_info.update_result?.has_update}
+  <div
+    class="card card-bordered border-primary/30 bg-primary/5 shadow-sm rounded-md"
+    data-testid="update-available-callout"
+  >
+    <!-- icon bubble + title/description + "View Update" primary button
+         linking to /settings/check_for_update -->
+  </div>
+{/if}
+{#each sections as section}
+  <KilnSection ... />
+{/each}
 ```
 
-The "Check for Update" item in Help & Resources stays (it lets users force a check even when `has_update` is false).
+The `sections` array itself is unchanged. The "Check for Update" item in Help & Resources stays (it lets users force a check even when `has_update` is false).
 
 ## Design Patterns & Rationale
 
@@ -322,7 +317,7 @@ The "Check for Update" item in Help & Resources stays (it lets users force a che
 | Instant width snap + slide-in animation only | Matches user decision: avoids reflowing main content during animation; matches chat_bar expand timing. |
 | Shared `sidebar_rail_tooltip.svelte` primitive (Float-based, portaled) | All four rail components need hover/focus-driven tooltips; the multi-line task-chip content pushed us off DaisyUI's `::before`/`data-tip` pattern to a single Float-based primitive shipped in this phase. |
 | `<Float>` for ProgressWidget | User-directed; keeps widget unchanged while freeing it from the 56px column. |
-| Settings "Update Available" as a KilnSection | Matches existing page patterns; no new component needed. |
+| Settings "Update Available" as an inline callout card (not a `KilnSection`) | Per UI signoff: a `KilnSection` rendering made the update item blend in with the other sections. A compact blue-tinted callout above the sections stands out without introducing a new reusable component. |
 
 ## Technical Challenges
 

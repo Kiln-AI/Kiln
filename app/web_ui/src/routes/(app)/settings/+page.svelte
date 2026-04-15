@@ -5,6 +5,8 @@
   import { view_logs } from "$lib/utils/logs"
   import type { KilnSectionItem } from "$lib/ui/kiln_section_types"
   import { agentInfo } from "$lib/agent"
+  import { update_info } from "$lib/utils/update"
+  import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
 
   agentInfo.set({
     name: "Settings",
@@ -12,7 +14,12 @@
       "Main settings page with options for editing current workspace, managing AI providers and custom models, managing projects, viewing logs, and checking for updates.",
   })
 
-  let sections: Array<{ category: string; items: Array<KilnSectionItem> }> = [
+  type SettingsSection = {
+    category: string
+    items: Array<KilnSectionItem>
+  }
+
+  const sections: Array<SettingsSection> = [
     {
       category: "Current Workspace",
       items: [
@@ -112,6 +119,34 @@
 
 <AppPage title="Settings" no_y_padding>
   <div class="max-w-4xl mt-12 space-y-12">
+    {#if $update_info.update_result?.has_update}
+      <div
+        class="card card-bordered border-primary/30 bg-primary/5 shadow-sm rounded-md"
+        data-testid="update-available-callout"
+      >
+        <div class="flex flex-row items-center gap-4 p-4">
+          <div
+            class="flex-shrink-0 w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center"
+          >
+            <div class="w-5 h-5">
+              <ArrowUpIcon />
+            </div>
+          </div>
+          <div class="flex-grow min-w-0">
+            <div class="font-medium text-primary">Update Available</div>
+            <div class="text-sm font-light text-gray-500">
+              A new version of Kiln is ready to install.
+            </div>
+          </div>
+          <a
+            href="/settings/check_for_update"
+            class="btn btn-primary btn-sm flex-shrink-0"
+          >
+            View Update
+          </a>
+        </div>
+      </div>
+    {/if}
     {#each sections as section}
       <KilnSection title={section.category} items={section.items} />
     {/each}
