@@ -34,6 +34,14 @@
   let viewportWidth = browser ? window.innerWidth : 0
   let resizeFrame: number | null = null
 
+  if (browser && customWidth !== null) {
+    const clamped = clampChatBarWidth(customWidth, viewportWidth)
+    if (clamped !== customWidth) {
+      customWidth = clamped
+      setChatBarWidth(clamped)
+    }
+  }
+
   type AnimState = "idle" | "collapsing" | "expanding"
   let animState: AnimState = "idle"
 
