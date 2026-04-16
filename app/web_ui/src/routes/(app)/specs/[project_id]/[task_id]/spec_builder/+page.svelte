@@ -3,6 +3,7 @@
   import { page } from "$app/stores"
   import { onMount, onDestroy, tick } from "svelte"
   import { autofillSpecName } from "$lib/utils/formatters"
+  import { normalize_filename_string } from "$lib/utils/input_validators"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type {
     SpecType,
@@ -15,6 +16,7 @@
     SyntheticDataGenerationStepConfigApi,
     SyntheticDataGenerationSessionConfigApi,
     ReviewedExample,
+    Priority,
   } from "$lib/types"
   import { goto } from "$app/navigation"
   import { spec_field_configs } from "../select_template/spec_templates"
@@ -37,8 +39,8 @@
   import SpecAnalyzingAnimation from "./animations/spec_analyzing_animation.svelte"
   import QuestioningAnimation from "./animations/questioning_animation.svelte"
   import RefiningAnimation from "./animations/refining_animation.svelte"
-  import type { FewShotExample } from "$lib/utils/few_shot_example"
-  import { build_prompt_with_few_shot } from "$lib/utils/few_shot_example"
+  import type { TaskSampleExample } from "$lib/utils/task_sample_example"
+  import { build_prompt_with_task_sample } from "$lib/utils/task_sample_example"
   import Questions from "./questions.svelte"
   import posthog from "posthog-js"
   import SavingAnimation from "./animations/saving_animation.svelte"
@@ -77,6 +79,7 @@
   let property_values: Record<string, string | null> = {}
   let initial_property_values: Record<string, string | null> = {}
   let evaluate_full_trace = false
+  let priority: Priority = 1
 
   // Tool use spec: tool_id is not a form field but is required in the saved properties
   let selected_tool_id: string | null = null
@@ -91,12 +94,12 @@
   $: task_output_schema = task?.output_json_schema ?? ""
 
   // Few-shot example for improving API calls
-  let few_shot_example: FewShotExample | null = null
+  let task_sample_example: TaskSampleExample | null = null
   let has_unsaved_manual_entry: boolean = false
   let task_prompt_with_example: string = ""
   let is_prompt_building: boolean = false
 
-  // Update the prompt when few_shot_example or task changes
+  // Update the prompt when task_sample_example or task changes
   async function update_task_prompt_with_example() {
     if (!task) {
       task_prompt_with_example = ""
@@ -104,8 +107,8 @@
     }
     is_prompt_building = true
     try {
-      const examples = few_shot_example ? [few_shot_example] : []
-      task_prompt_with_example = await build_prompt_with_few_shot(
+      const examples = task_sample_example ? [task_sample_example] : []
+      task_prompt_with_example = await build_prompt_with_task_sample(
         project_id,
         task_id,
         examples,
@@ -119,10 +122,12 @@
   }
 
   // Reactively update when example or task changes
-  $: void (few_shot_example, task, update_task_prompt_with_example())
+  $: void (task_sample_example, task, update_task_prompt_with_example())
 
   // Question state
   let question_set: QuestionSet | null = null
+  let question_selections: (number | "other" | null)[] = []
+  let question_other_texts: string[] = []
 
   // Review state
   let review_rows: ReviewRow[] = []
@@ -371,6 +376,9 @@
     reviewed_examples: ReviewedExample[],
     signal?: AbortSignal,
   ) {
+    // Normalize the spec name before saving
+    name = normalize_filename_string(name)
+
     // Build definition and properties on the client side
     const definition = buildSpecDefinition(spec_type, values)
 
@@ -409,10 +417,10 @@
             sdg_session_config,
             task_description: task?.instruction || "",
             task_prompt_with_example,
-            task_sample: few_shot_example
+            task_sample: task_sample_example
               ? {
-                  input: few_shot_example.input,
-                  output: few_shot_example.output,
+                  input: task_sample_example.input,
+                  output: task_sample_example.output,
                 }
               : null,
           },
@@ -428,9 +436,12 @@
     } else {
       // If there's an unsaved manual entry, don't include it - just pass null
       const task_sample =
-        has_unsaved_manual_entry || !few_shot_example
+        has_unsaved_manual_entry || !task_sample_example
           ? null
-          : { input: few_shot_example.input, output: few_shot_example.output }
+          : {
+              input: task_sample_example.input,
+              output: task_sample_example.output,
+            }
 
       const { data, error: api_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/specs",
@@ -441,7 +452,7 @@
             definition,
             properties,
             evaluate_full_trace,
-            priority: 1,
+            priority: Number(priority) as 0 | 1 | 2 | 3,
             status: "active",
             task_sample,
           },
@@ -673,6 +684,8 @@
       await analyzeSpecForReview()
     } else {
       question_set = data
+      question_selections = data.questions.map(() => null)
+      question_other_texts = data.questions.map(() => "")
       current_state = "questions"
     }
   }
@@ -864,6 +877,7 @@
         bind:property_values
         {initial_property_values}
         bind:evaluate_full_trace
+        bind:priority
         {field_configs}
         {copilot_enabled}
         {hide_full_trace_option}
@@ -874,7 +888,7 @@
         {warn_before_unload}
         {project_id}
         {task_id}
-        bind:few_shot_example
+        bind:task_sample_example
         bind:has_unsaved_manual_entry
         on:create_with_copilot={handle_create_with_copilot}
         on:create_without_copilot={handle_create_spec_without_copilot}
@@ -922,6 +936,8 @@
         {spec_type}
         {property_values}
         {question_set}
+        bind:selections={question_selections}
+        bind:other_texts={question_other_texts}
         on_submit={handle_submit_question_answers}
         bind:error
         bind:submitting

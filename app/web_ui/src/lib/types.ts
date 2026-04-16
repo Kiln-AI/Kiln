@@ -138,6 +138,8 @@ export type DocumentLibraryState = components["schemas"]["DocumentLibraryState"]
 export type Spec = components["schemas"]["Spec"]
 export type SpecStatus = components["schemas"]["SpecStatus"]
 export type Priority = components["schemas"]["Priority"]
+export type Feedback = components["schemas"]["Feedback"]
+export type FeedbackSource = components["schemas"]["FeedbackSource"]
 
 // Copilot API types
 export type SyntheticDataGenerationStepConfigApi =
