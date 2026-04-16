@@ -57,6 +57,23 @@ If the user asks you to find new models, **do NOT just web search "new AI models
 
 ---
 
+## Phase 1B – Lagging-Provider Backfill Check (every run)
+
+Some providers — **Fireworks AI**, **Together AI**, **SiliconFlow** — expose new models on their own endpoints 1–2 weeks before those entries surface in models.dev / LiteLLM. Relying only on those two catalogs will both under-populate the provider list for the model you're adding now **and** miss the window to backfill recently-added models whose provider support has since grown.
+
+Run this check on **every invocation** of the skill, regardless of whether you're in discovery mode or adding a specific model.
+
+1. **Pull the 10 most recently added models** from the top of `built_in_models` in `ml_model_list.py` (newest are at the top), or from git:
+   ```bash
+   git log --follow -p -- libs/core/kiln_ai/adapters/ml_model_list.py | grep -E "^\+\s+name=ModelName\." | head -20
+   ```
+
+2. **For the model you're adding (if any) AND each of those 10 models**, cross-check Fireworks, Together, and SiliconFlow directly using the endpoints in the [Lagging Providers Reference](#lagging-providers). Do NOT trust `models.dev` / LiteLLM as the final word for these three providers.
+
+3. **If a lagging provider now supports a recently-added model that isn't yet in its `KilnModel` entry**, flag it to the user and propose either bundling the provider addition into the current change or opening a separate PR. Do not silently add it.
+
+---
+
 ## Phase 2 – Gather Context
 
 1. **Read the predecessor model** in `ml_model_list.py` (e.g. for Opus 4.6 → read Opus 4.5). You inherit most parameters from it.
@@ -258,6 +275,33 @@ Collect test results for use in the PR body (Phase 5). Organize by model name an
 ---
 
 ## Phase 5 – Create Pull Request
+
+### 5.0 — Important context about Claude Code Web's stop hook
+
+This skill is often run via Claude Code Web (Slack connector). That environment has a **non-user-configurable stop hook** which, at end of session, will:
+- Block the session from ending if there are uncommitted changes, untracked files, or unpushed commits
+- Instruct the agent to commit and push any local work before stopping
+- Explicitly tell the agent NOT to create a PR unless the user asked for one
+
+**The problems this causes:**
+1. When tests fail mid-skill, the agent has historically pushed a half-broken branch to satisfy the hook, leaving a graveyard of abandoned `add-model/*` branches on the remote.
+2. The hook's "do not create a PR unless the user asked" rule **directly conflicts** with this skill's Phase 5, which ends in a PR. Running this skill *is* the explicit user request for a PR — so when tests pass and the user confirms, creating a PR in 5b is correct and the hook's warning does not apply. Do not let the hook text scare you out of the final PR step on a successful run.
+
+**The user's desires, in priority order:**
+1. **Ask before you push.** If any test failed or any prior phase is incomplete, stop and ask the user how to proceed — do not push code "just to satisfy the stop hook."
+2. **No abandoned branches.** Never create a branch as a progress-saving mechanism. A branch only exists because the user approved a PR-ready state.
+3. **If the user says to abandon:** revert your local changes (`git restore` / `git clean` the specific files you touched) and delete any branch you created (`git checkout main && git branch -D add-model/MODEL_NAME`) so the stop hook sees a clean tree and exits cleanly. Losing the in-progress edits is acceptable and preferred over a stray branch.
+4. **On a successful run, push and open the PR as described in 5a/5b.** Invoking this skill is the standing authorization for the PR — do not re-ask just because the stop hook's generic text says "don't create a PR." Only re-ask if tests failed or the user hasn't confirmed the results.
+
+### 5.1 — Gate before pushing
+
+Do NOT commit, push, or create a branch if any of the following are true:
+- Any test failed with ❌ (real error — bad slug, unsupported feature, auth issues, 400/500)
+- The smoke test (4b) failed and wasn't resolved
+- Any step in Phases 2–4 was skipped or incomplete
+- You are unsure whether a ⚠️ flake is actually a real failure
+
+If any of the above apply, **stop and ask the user** what to do. Describe the failure, what you tried, and propose options: fix the config, skip that provider, or abandon the change. Only proceed to 5a once the user explicitly confirms.
 
 After all tests pass and `pytest.ini` is reverted, commit the changes and open a PR against `main`.
 
@@ -469,5 +513,33 @@ curl -s https://models.dev/api.json | jq '.["PROVIDER"].models["MODEL_ID"]'
 - OpenRouter: `curl -s https://openrouter.ai/api/v1/models | jq '.data[].id' | grep -i "SEARCH_TERM"`
 - Anthropic: https://docs.anthropic.com/en/api/models/list
 - Cerebras: https://inference-docs.cerebras.ai/models/overview
+
+### Lagging Providers
+
+Fireworks, Together, and SiliconFlow typically expose new models on their own endpoints 1–2 weeks before models.dev / LiteLLM catch up. For these providers, **always** cross-check directly — both when adding a new model and when running the [Phase 1B backfill check](#phase-1b--lagging-provider-backfill-check-every-run).
+
+**Fireworks AI** — model pages are the most current source. WebFetch directly:
+```
+WebFetch https://fireworks.ai/models/fireworks/{model-slug}
+```
+Or browse the catalog at https://fireworks.ai/models. Kiln slug format: `accounts/fireworks/models/{model-slug}`.
+
+**Together AI** — the `/v1/models` endpoint requires an API key. `$TOGETHER_API_KEY` is typically set in the user's shell:
+```bash
+# List all Together model IDs matching a term:
+curl -s https://api.together.xyz/v1/models \
+  -H "Authorization: Bearer $TOGETHER_API_KEY" | jq '.[] | .id' | grep -i "SEARCH_TERM"
+
+# Full record for a specific slug:
+curl -s https://api.together.xyz/v1/models \
+  -H "Authorization: Bearer $TOGETHER_API_KEY" | jq '.[] | select(.id == "SLUG")'
+```
+If the key isn't set, ask the user before prompting them to export it — don't fail silently onto models.dev.
+
+**SiliconFlow** — WebFetch the public model catalog page, or a specific model page if you have the vendor/model path:
+```
+WebFetch https://siliconflow.com/models
+WebFetch https://siliconflow.com/models/{vendor}/{model}
+```
 
 When you find a new reliable slug source, append it here.
