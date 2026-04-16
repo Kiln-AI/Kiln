@@ -55,7 +55,10 @@ class BackgroundSync:
                     "Background sync pausing -- no requests for %.0fs", idle_time
                 )
                 self._wake_event.clear()
-                await self._wake_event.wait()
+                # Re-check after clear: notify_request() sets _last_request_time
+                # before set(), so this catches requests arriving during the race window.
+                if time.monotonic() - self._last_request_time > self._idle_pause_after:
+                    await self._wake_event.wait()
                 continue
 
             try:

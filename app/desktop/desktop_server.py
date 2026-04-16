@@ -104,14 +104,14 @@ async def lifespan(app: FastAPI):
     original_strict_mode = datamodel_strict_mode.strict_mode()
     datamodel_strict_mode.set_strict_mode(True)
 
-    await _start_background_syncs()
-
-    yield
-
-    await _stop_background_syncs()
-
-    # Reset datamodel strict mode on shutdown
-    datamodel_strict_mode.set_strict_mode(original_strict_mode)
+    try:
+        await _start_background_syncs()
+        yield
+    finally:
+        try:
+            await _stop_background_syncs()
+        finally:
+            datamodel_strict_mode.set_strict_mode(original_strict_mode)
 
 
 def make_app(tk_root: tk.Tk | None = None):

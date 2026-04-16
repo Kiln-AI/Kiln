@@ -227,20 +227,18 @@ class DeleteConfigResponse(BaseModel):
 
 
 def _validate_clone_path(clone_path: str) -> Path:
-    """Validate that a clone_path is within an OS temp directory.
+    """Validate that a clone_path is within the default project directory.
 
     Setup wizard clone paths are created by compute_temp_clone_path() which
-    uses tempfile.mkdtemp(), so legitimate paths always reside under the
-    system temp directory.
+    uses tempfile.mkdtemp(dir=base_dir), so legitimate paths always reside
+    under the default project directory.
     """
-    import tempfile
-
     resolved = Path(clone_path).resolve()
-    tmp_root = Path(tempfile.gettempdir()).resolve()
-    if not str(resolved).startswith(str(tmp_root) + os.sep):
+    project_root = Path(default_project_path()).resolve()
+    if not str(resolved).startswith(str(project_root) + os.sep):
         raise HTTPException(
             status_code=400,
-            detail="clone_path must be within the system temp directory",
+            detail="clone_path must be within the project directory",
         )
     return resolved
 
@@ -294,7 +292,7 @@ def connect_git_sync_api(app: FastAPI):
     )
     async def api_clone(request: CloneRequest) -> CloneResponse:
         try:
-            clone_path = compute_temp_clone_path()
+            clone_path = compute_temp_clone_path(Path(default_project_path()))
 
             await asyncio.to_thread(
                 clone_repo,
@@ -366,7 +364,7 @@ def connect_git_sync_api(app: FastAPI):
     )
     async def api_rename_clone(request: RenameCloneRequest) -> RenameCloneResponse:
         base_dir = Path(default_project_path())
-        current_path = Path(request.clone_path).resolve()
+        current_path = _validate_clone_path(request.clone_path)
 
         if not current_path.is_dir():
             raise HTTPException(
@@ -413,7 +411,14 @@ def connect_git_sync_api(app: FastAPI):
                 status_code=400,
                 detail="project_path must be a relative path within the clone",
             )
-        full_project_path = str(Path(request.clone_path) / request.project_path)
+        clone_root = Path(request.clone_path).resolve()
+        resolved_project = (clone_root / request.project_path).resolve()
+        if not str(resolved_project).startswith(str(clone_root) + os.sep):
+            raise HTTPException(
+                status_code=400,
+                detail="project_path must not escape the clone directory",
+            )
+        full_project_path = str(resolved_project)
 
         try:
             check_duplicate_project_id(request.project_id, full_project_path)

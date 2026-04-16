@@ -128,12 +128,13 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
                     )
                     raise _StreamingUnderWriteLock()
 
-                body = b""
+                body_chunks: list[bytes] = []
                 # body_iterator is always present on StreamingResponse from
                 # call_next; the union type includes None only because the
                 # base Response class doesn't guarantee it.
                 async for chunk in response.body_iterator:  # type: ignore[union-attr]
-                    body += chunk
+                    body_chunks.append(chunk)
+                body = b"".join(body_chunks)
 
                 held = time.monotonic() - lock_start
                 if held > LONG_LOCK_HOLD_THRESHOLD:
@@ -144,16 +145,16 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
                         request.url.path,
                     )
 
-                status_code = response.status_code
-                headers = dict(response.headers)
-                media_type = response.media_type
-
-            return Response(
-                content=body,
-                status_code=status_code,
-                headers=headers,
-                media_type=media_type,
-            )
+                proxy = Response(
+                    content=body,
+                    status_code=response.status_code,
+                    media_type=response.media_type,
+                    background=response.background,
+                )
+                # Use raw_headers to preserve duplicate headers (e.g. Set-Cookie)
+                # that dict(response.headers) would collapse.
+                proxy.raw_headers = response.raw_headers
+                return proxy
 
         except _StreamingUnderWriteLock:
             return Response(

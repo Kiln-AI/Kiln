@@ -23,7 +23,7 @@ Kiln's git auto-sync system automatically commits and pushes changes to a remote
 1. **No data loss:** Every file write is either committed+pushed to remote, or preserved in git stash. Arbitrary disk writes in the project folder are captured — nothing is silently dropped.
 2. **Self-healing:** The system can always recover to a "clean, in sync with remote" state without manual intervention, no matter what local state it finds.
 3. **Conflict safety:** Git conflicts (push races, rebase failures) are handled automatically. The system never leaves the repo in a state requiring manual conflict resolution.
-4. **Atomicity:** Each API request's changes are committed as a single atomic batch. Partial commits never occur.
+4. **Atomicity:** writes are committed as atomic batches (typically at API level, sometimes self-managed). Partial commits never occur.
 
 ## Test Infrastructure
 

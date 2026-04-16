@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 
 from app.desktop.git_sync.config import GitSyncProjectConfig
 from app.desktop.git_sync.conftest import (
-    SIG,
+    _test_sig,
     commit_in_repo,
     delete_in_repo,
     git_repos,
@@ -32,7 +32,7 @@ from app.desktop.git_sync.git_sync_manager import GitSyncManager
 from app.desktop.git_sync.middleware import GitSyncMiddleware
 
 __all__ = [
-    "SIG",
+    "_test_sig",
     "commit_in_repo",
     "delete_in_repo",
     "git_repos",
@@ -502,9 +502,9 @@ def write_ctx(request, git_repos):
         write_fn_slot: list = []
         app = build_test_app(local_path, write_fn_slot)
         with mock_git_sync_config(config):
-            client = TestClient(app, raise_server_exceptions=False)
-            ctx = APIWriteContext(client, local_path, remote_path, write_fn_slot)
-            yield ctx
+            with TestClient(app, raise_server_exceptions=False) as client:
+                ctx = APIWriteContext(client, local_path, remote_path, write_fn_slot)
+                yield ctx
 
 
 @pytest.fixture
@@ -525,8 +525,8 @@ def api_ctx(git_repos):
     write_fn_slot: list = []
     app = build_test_app(local_path, write_fn_slot)
     with mock_git_sync_config(config):
-        client = TestClient(app, raise_server_exceptions=False)
-        yield APIWriteContext(client, local_path, remote_path, write_fn_slot)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            yield APIWriteContext(client, local_path, remote_path, write_fn_slot)
 
 
 @pytest.fixture
@@ -536,5 +536,5 @@ def api_client(git_repos):
     write_fn_slot: list = []
     app = build_test_app(local_path, write_fn_slot)
     with mock_git_sync_config(config):
-        client = TestClient(app, raise_server_exceptions=False)
-        yield client, local_path, remote_path, write_fn_slot
+        with TestClient(app, raise_server_exceptions=False) as client:
+            yield client, local_path, remote_path, write_fn_slot

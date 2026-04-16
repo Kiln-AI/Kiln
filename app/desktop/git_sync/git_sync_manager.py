@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -22,11 +23,64 @@ from app.desktop.git_sync.errors import (
 
 logger = logging.getLogger(__name__)
 
+# Configure global libgit2 network timeouts (process-wide, not per-repo).
+_settings = pygit2.Settings()
+_settings.server_connect_timeout = 30
+_settings.server_timeout = 30
+
 T = TypeVar("T")
 
 FRESHNESS_THRESHOLD = 15.0
-KILN_COMMITTER_NAME = "Kiln AI"
-KILN_COMMITTER_EMAIL = "sync@kiln.ai"
+
+_cached_committer_name: str | None = None
+_cached_committer_email: str | None = None
+
+
+def _git_config_value(key: str) -> str | None:
+    """Try to read a value from git config (local then global)."""
+    for cmd in (
+        ["git", "config", key],
+        ["git", "config", "--global", key],
+    ):
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        except Exception:
+            pass
+    return None
+
+
+def get_committer_name() -> str:
+    global _cached_committer_name
+    if _cached_committer_name is None:
+        username = _git_config_value("user.name")
+        if not username:
+            from kiln_ai.utils.config import Config
+
+            username = Config.shared().user_id
+        _cached_committer_name = f"Kiln AI for {username}"
+    return _cached_committer_name
+
+
+def get_committer_email() -> str:
+    global _cached_committer_email
+    if _cached_committer_email is None:
+        email = _git_config_value("user.email")
+        _cached_committer_email = email or "kiln@localhost"
+    return _cached_committer_email
+
+
+def reset_committer_cache() -> None:
+    """Reset the cached committer name and email. Used for testing."""
+    global _cached_committer_name, _cached_committer_email
+    _cached_committer_name = None
+    _cached_committer_email = None
 
 
 class GitSyncManager:
@@ -330,7 +384,7 @@ class GitSyncManager:
 
     def _stash_all(self, message: str) -> None:
         repo = self._get_repo()
-        sig = pygit2.Signature(KILN_COMMITTER_NAME, KILN_COMMITTER_EMAIL)
+        sig = pygit2.Signature(get_committer_name(), get_committer_email())
         repo.stash(sig, message, include_untracked=True)
 
     def _hard_reset(self, oid: pygit2.Oid) -> None:
@@ -362,7 +416,7 @@ class GitSyncManager:
         tree = index.write_tree()
 
         message = generate_commit_message(file_count, context)
-        sig = pygit2.Signature(KILN_COMMITTER_NAME, KILN_COMMITTER_EMAIL)
+        sig = pygit2.Signature(get_committer_name(), get_committer_email())
 
         parents = [repo.head.target]
         return repo.create_commit(repo.head.name, sig, sig, message, tree, parents)
@@ -525,7 +579,7 @@ class GitSyncManager:
                 return False
 
             tree = repo.index.write_tree()
-            sig = pygit2.Signature(KILN_COMMITTER_NAME, KILN_COMMITTER_EMAIL)
+            sig = pygit2.Signature(get_committer_name(), get_committer_email())
             repo.create_commit(
                 f"refs/heads/{branch_name}",
                 sig,

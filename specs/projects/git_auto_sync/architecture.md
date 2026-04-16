@@ -466,8 +466,8 @@ class GitSyncProjectConfig(TypedDict):
 # New ConfigProperty on Config class — stores as plain dict (YAML-safe)
 git_sync_projects: ConfigProperty(dict, default_lambda=lambda: {})
 
-def get_git_sync_config(project_id: str) -> GitSyncProjectConfig | None:
-    raw = config.git_sync_projects.get(project_id)
+def get_git_sync_config(project_path: str) -> GitSyncProjectConfig | None:
+    raw = config.git_sync_projects.get(project_path)
     if raw is None:
         return None
     return GitSyncProjectConfig(

@@ -312,6 +312,8 @@ class Config:
                             if isinstance(item, dict) and sensitive_key in item:
                                 item[sensitive_key] = "[hidden]"
                     elif isinstance(value, dict):
+                        if sensitive_key in value:
+                            value[sensitive_key] = "[hidden]"
                         for item in value.values():
                             if isinstance(item, dict) and sensitive_key in item:
                                 item[sensitive_key] = "[hidden]"

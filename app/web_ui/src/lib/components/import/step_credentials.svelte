@@ -10,6 +10,7 @@
     gitHubPatDeepLink,
     gitLabPatDeepLink,
     gitOwnerFromUrl,
+    gitRepoNameFromUrl,
   } from "$lib/git_sync/api"
 
   export let git_url: string
@@ -49,14 +50,26 @@
   }
 
   function hint_text(is_error: boolean): string {
-    const prefix = is_error ? "**Authentication failed.**\n" : ""
+    let prefix = is_error ? "**Authentication failed.**\n" : ""
 
     if (is_github) {
+      if (is_error) {
+        prefix =
+          "**Authentication Failed - Create a New Token Following These Instructions**\n"
+      }
       const owner = gitOwnerFromUrl(git_url)
+      const repo_name = gitRepoNameFromUrl(git_url)
+      const explainer =
+        "The token must have read/write access to the selected repository:"
       const owner_hint = owner
-        ? `Be sure to set Resource Owner to "${owner}".`
-        : "Be sure to set Resource Owner to the owner of this repository."
-      return `${prefix}${owner_hint}\nThe token must have read/write access to the repo. Select "Contents"=write in Permissions.`
+        ? ` • Set "Resource Owner" to "${owner}"`
+        : " • Set Resource Owner to the owner of this repository"
+      const repo_hint = repo_name
+        ? ` • "Repository access" must include "${repo_name}"`
+        : ` • "Repository access" must include the name of this repository`
+      const permissions_hint = ` • In Permissions add "Contents" permission set to "Read and write"`
+      const expiration_hint = ` • Set "Expiration" to an appropriate value for your project`
+      return `${prefix}${explainer}\n${owner_hint}\n${repo_hint}\n${permissions_hint}\n${expiration_hint}`
     }
 
     if (is_gitlab) {

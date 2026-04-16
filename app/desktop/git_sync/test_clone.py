@@ -57,24 +57,29 @@ class TestComputeClonePath:
 
 
 class TestComputeTempClonePath:
-    def test_uses_os_temp_dir(self):
-        import tempfile
-
-        result = compute_temp_clone_path()
+    def test_creates_temp_dir_under_base_dir(self, tmp_path: Path):
+        result = compute_temp_clone_path(tmp_path)
         assert result.exists()
         assert result.is_dir()
-        assert str(result).startswith(tempfile.gettempdir())
+        assert result.parent == tmp_path
         result.rmdir()
 
-    def test_unique_paths(self):
-        path1 = compute_temp_clone_path()
-        path2 = compute_temp_clone_path()
+    def test_creates_base_dir_if_missing(self, tmp_path: Path):
+        base = tmp_path / "nested" / "dir"
+        result = compute_temp_clone_path(base)
+        assert base.exists()
+        assert result.parent == base
+        result.rmdir()
+
+    def test_unique_paths(self, tmp_path: Path):
+        path1 = compute_temp_clone_path(tmp_path)
+        path2 = compute_temp_clone_path(tmp_path)
         assert path1 != path2
         path1.rmdir()
         path2.rmdir()
 
-    def test_path_starts_with_kiln_clone_prefix(self):
-        result = compute_temp_clone_path()
+    def test_path_starts_with_kiln_clone_prefix(self, tmp_path: Path):
+        result = compute_temp_clone_path(tmp_path)
         assert result.name.startswith("kiln_clone_")
         result.rmdir()
 

@@ -191,12 +191,12 @@
       </div>
     {/if}
   </div>
+{/if}
 
-  {#if error}
-    <div class="mt-2">
-      <Warning warning_message={error.getMessage()} warning_color="error" />
-    </div>
-  {/if}
+{#if error}
+  <div class="mt-2">
+    <Warning warning_message={error.getMessage()} warning_color="error" />
+  </div>
 {/if}
 
 <Dialog

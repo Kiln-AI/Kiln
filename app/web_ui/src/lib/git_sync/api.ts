@@ -163,7 +163,7 @@ export async function updateConfig(
   project_id: string,
   updates: {
     sync_mode?: string
-    pat_token?: string
+    pat_token?: string | null
     auth_mode?: string
   },
 ): Promise<GitSyncConfigResponse> {
@@ -184,13 +184,19 @@ export async function deleteConfig(
 }
 
 export function isGitHubUrl(url: string): boolean {
-  return url.includes("github.com")
+  const hostname = gitHostname(url)
+  if (!hostname) return false
+  return hostname === "github.com" || hostname === "www.github.com"
 }
 
 export function isGitLabUrl(url: string): boolean {
   const hostname = gitHostname(url)
   if (!hostname) return false
-  return hostname === "gitlab.com" || hostname.startsWith("gitlab.")
+  if (hostname === "gitlab.com") return true
+  // Self-hosted GitLab instances typically use gitlab.company.tld format.
+  // Reject spoofing attempts like gitlab.com.evil.example.
+  if (hostname.startsWith("gitlab.com.")) return false
+  return hostname.startsWith("gitlab.")
 }
 
 export function gitHostname(url: string): string | null {

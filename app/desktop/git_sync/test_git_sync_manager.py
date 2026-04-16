@@ -6,12 +6,17 @@ import pygit2
 import pygit2.enums
 import pytest
 
-from app.desktop.git_sync.conftest import SIG, commit_in_repo, push_from
+from app.desktop.git_sync.conftest import _test_sig, commit_in_repo, push_from
 from app.desktop.git_sync.errors import (
     SyncConflictError,
     WriteLockTimeoutError,
 )
-from app.desktop.git_sync.git_sync_manager import GitSyncManager
+from app.desktop.git_sync.git_sync_manager import (
+    GitSyncManager,
+    get_committer_email,
+    get_committer_name,
+    reset_committer_cache,
+)
 
 
 @pytest.fixture
@@ -204,7 +209,12 @@ async def test_rollback_committed_not_pushed(manager, git_repos):
     index.write()
     tree = index.write_tree()
     repo.create_commit(
-        repo.head.name, SIG, SIG, "local commit", tree, [repo.head.target]
+        repo.head.name,
+        _test_sig(),
+        _test_sig(),
+        "local commit",
+        tree,
+        [repo.head.target],
     )
 
     assert await manager.get_head() != pre_head
@@ -511,3 +521,76 @@ async def test_close(manager):
     assert manager._repo is None
     with pytest.raises(RuntimeError):
         manager._git_executor.submit(lambda: None)
+
+
+# --- committer attribution ---
+
+
+def test_committer_name_from_git_config(monkeypatch):
+    reset_committer_cache()
+    monkeypatch.setattr(
+        "app.desktop.git_sync.git_sync_manager._git_config_value",
+        lambda key: "Alice Smith" if key == "user.name" else None,
+    )
+    assert get_committer_name() == "Kiln AI for Alice Smith"
+    reset_committer_cache()
+
+
+def test_committer_name_falls_back_to_user_id(monkeypatch):
+    reset_committer_cache()
+    monkeypatch.setattr(
+        "app.desktop.git_sync.git_sync_manager._git_config_value",
+        lambda key: None,
+    )
+    mock_config = type("C", (), {"user_id": "alice"})()
+    monkeypatch.setattr(
+        "kiln_ai.utils.config.Config.shared", staticmethod(lambda: mock_config)
+    )
+    assert get_committer_name() == "Kiln AI for alice"
+    reset_committer_cache()
+
+
+def test_committer_email_from_git_config(monkeypatch):
+    reset_committer_cache()
+    monkeypatch.setattr(
+        "app.desktop.git_sync.git_sync_manager._git_config_value",
+        lambda key: "custom@example.com" if key == "user.email" else None,
+    )
+    assert get_committer_email() == "custom@example.com"
+    reset_committer_cache()
+
+
+def test_committer_email_fallback_when_git_unavailable(monkeypatch):
+    reset_committer_cache()
+    monkeypatch.setattr(
+        "app.desktop.git_sync.git_sync_manager._git_config_value",
+        lambda key: None,
+    )
+    assert get_committer_email() == "kiln@localhost"
+    reset_committer_cache()
+
+
+def test_committer_caching(monkeypatch):
+    reset_committer_cache()
+    call_count = 0
+
+    def mock_git_config(key):
+        nonlocal call_count
+        call_count += 1
+        if key == "user.name":
+            return "Cached User"
+        return "cached@example.com"
+
+    monkeypatch.setattr(
+        "app.desktop.git_sync.git_sync_manager._git_config_value",
+        mock_git_config,
+    )
+    get_committer_name()
+    get_committer_name()
+    get_committer_name()
+    assert call_count == 1
+
+    get_committer_email()
+    get_committer_email()
+    assert call_count == 2
+    reset_committer_cache()

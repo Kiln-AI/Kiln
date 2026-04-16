@@ -3,6 +3,8 @@
 Scenarios 30-31: non-project routes pass through, manual mode unaffected.
 """
 
+from unittest.mock import patch
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -16,6 +18,7 @@ from app.desktop.git_sync.integration_tests.conftest import (
 )
 from app.desktop.git_sync.config import GitSyncProjectConfig
 from app.desktop.git_sync.middleware import GitSyncMiddleware
+from app.desktop.git_sync.registry import GitSyncRegistry
 
 
 class TestNonProjectRoutes:
@@ -37,20 +40,22 @@ class TestNonProjectRoutes:
             return {"saved": True}
 
         with mock_git_sync_config(config):
-            client = TestClient(app, raise_server_exceptions=False)
-            pre_head = get_head_sync(local_path)
-            pre_count = get_commit_count(local_path)
+            with TestClient(app, raise_server_exceptions=False) as client:
+                pre_head = get_head_sync(local_path)
+                pre_count = get_commit_count(local_path)
 
-            get_resp = client.get("/api/settings")
-            assert get_resp.status_code == 200
-            assert get_resp.json() == {"theme": "dark"}
+                with patch.object(GitSyncRegistry, "get_or_create") as registry_spy:
+                    get_resp = client.get("/api/settings")
+                    post_resp = client.post("/api/settings")
+                    registry_spy.assert_not_called()
 
-            post_resp = client.post("/api/settings")
-            assert post_resp.status_code == 200
-            assert post_resp.json() == {"saved": True}
+                assert get_resp.status_code == 200
+                assert get_resp.json() == {"theme": "dark"}
+                assert post_resp.status_code == 200
+                assert post_resp.json() == {"saved": True}
 
-            assert get_head_sync(local_path) == pre_head
-            assert get_commit_count(local_path) == pre_count
+                assert get_head_sync(local_path) == pre_head
+                assert get_commit_count(local_path) == pre_count
 
 
 class TestManualModeUnaffected:
@@ -73,22 +78,24 @@ class TestManualModeUnaffected:
         app = build_test_app(local_path, write_fn_slot)
 
         with mock_git_sync_config(manual_config):
-            client = TestClient(app, raise_server_exceptions=False)
+            with TestClient(app, raise_server_exceptions=False) as client:
+                pre_head = get_head_sync(local_path)
+                pre_count = get_commit_count(local_path)
 
-            pre_head = get_head_sync(local_path)
-            pre_count = get_commit_count(local_path)
+                write_fn_slot.clear()
+                write_fn_slot.append(
+                    lambda p: (p / "manual_write.txt").write_text("should not commit")
+                )
 
-            write_fn_slot.clear()
-            write_fn_slot.append(
-                lambda p: (p / "manual_write.txt").write_text("should not commit")
-            )
+                with patch.object(GitSyncRegistry, "get_or_create") as registry_spy:
+                    resp = client.post(
+                        f"/api/projects/{PROJECT_ID}/test_write",
+                        json={},
+                    )
+                    registry_spy.assert_not_called()
 
-            resp = client.post(
-                f"/api/projects/{PROJECT_ID}/test_write",
-                json={},
-            )
-            assert resp.status_code == 200
+                assert resp.status_code == 200
 
-            assert get_head_sync(local_path) == pre_head
-            assert get_commit_count(local_path) == pre_count
-            assert (local_path / "manual_write.txt").exists()
+                assert get_head_sync(local_path) == pre_head
+                assert get_commit_count(local_path) == pre_count
+                assert (local_path / "manual_write.txt").exists()

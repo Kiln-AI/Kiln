@@ -31,6 +31,7 @@
       )
       if (rename_result.success) {
         final_clone_path = rename_result.new_clone_path
+        clone_path = final_clone_path
       } else {
         throw new Error(
           rename_result.message || "Failed to rename clone directory",
@@ -48,7 +49,11 @@
         sync_mode: "auto",
       })
 
-      await load_projects()
+      try {
+        await load_projects()
+      } catch {
+        // Non-fatal: config is already saved, project list will refresh on next navigation
+      }
       done = true
     } catch (e) {
       error = createKilnError(e)

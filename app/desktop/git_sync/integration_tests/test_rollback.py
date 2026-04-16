@@ -59,6 +59,13 @@ class TestRollbackOnHandlerError:
         assert_stash_contains(local_path, "Kiln")
         assert_clean_working_tree(local_path)
 
+        repo = pygit2.Repository(str(local_path))
+        stash_commit = repo.get(repo.listall_stashes()[0].commit_id)
+        assert isinstance(stash_commit, pygit2.Commit)
+        untracked_tree = stash_commit.parents[2].tree
+        blob = repo[untracked_tree["important_data.txt"].id]
+        assert blob.data == b"must not be lost"
+
     @pytest.mark.asyncio
     async def test_handler_error_api_returns_error(self, api_ctx, git_repos):
         """API mode: error response returned to client."""
