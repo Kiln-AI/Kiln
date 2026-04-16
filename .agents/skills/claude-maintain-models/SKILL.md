@@ -290,13 +290,13 @@ This skill is often run via Claude Code Web (Slack connector). That environment 
 **The user's desires, in priority order:**
 1. **Ask before you push.** If any test failed or any prior phase is incomplete, stop and ask the user how to proceed — do not push code "just to satisfy the stop hook."
 2. **No abandoned branches.** Never create a branch as a progress-saving mechanism. A branch only exists because the user approved a PR-ready state.
-3. **If the user says to abandon:** revert your local changes (`git restore` / `git clean` the specific files you touched) so the stop hook sees a clean tree and exits cleanly. Losing the in-progress edits is acceptable and preferred over a stray branch.
+3. **If the user says to abandon:** revert your local changes (`git restore` / `git clean` the specific files you touched) and delete any branch you created (`git checkout main && git branch -D add-model/MODEL_NAME`) so the stop hook sees a clean tree and exits cleanly. Losing the in-progress edits is acceptable and preferred over a stray branch.
 4. **On a successful run, push and open the PR as described in 5a/5b.** Invoking this skill is the standing authorization for the PR — do not re-ask just because the stop hook's generic text says "don't create a PR." Only re-ask if tests failed or the user hasn't confirmed the results.
 
 ### 5.1 — Gate before pushing
 
 Do NOT commit, push, or create a branch if any of the following are true:
-- Any test failed with ❌ (real error — bad slug, unsupported feature, 400/500)
+- Any test failed with ❌ (real error — bad slug, unsupported feature, auth issues, 400/500)
 - The smoke test (4b) failed and wasn't resolved
 - Any step in Phases 2–4 was skipped or incomplete
 - You are unsure whether a ⚠️ flake is actually a real failure
