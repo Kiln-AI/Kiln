@@ -1,5 +1,6 @@
 <script lang="ts">
   import "../../app.css"
+  import { t } from "$lib/i18n"
   import { current_project, current_task } from "$lib/stores"
   import SelectTasksMenu from "./select_tasks_menu.svelte"
   import { page } from "$app/stores"
@@ -193,7 +194,7 @@
               stroke-width="1.5"
             />
           </svg>
-          Run</a
+          {$t('nav.run')}</a
         >
       </li>
       <li class="menu-sm">
@@ -236,7 +237,7 @@
               stroke-width="1.5"
             />
           </svg>
-          Dataset</a
+          {$t('nav.dataset')}</a
         >
       </li>
 
@@ -249,7 +250,7 @@
             <EvalIcon />
           </div>
 
-          Specs &amp; Evals</a
+          {$t('nav.specs_evals')}</a
         >
       </li>
 
@@ -261,7 +262,7 @@
           <div class="sidebar-icon">
             <OptimizeIcon />
           </div>
-          Optimize
+          {$t('nav.optimize')}
         </a>
         <ul class="pl-1">
           <li class="menu-sm menu-nested">
@@ -285,7 +286,7 @@
                   stroke-width="1.5"
                 />
               </svg>
-              Prompts
+              {$t('nav.prompts')}
             </a>
           </li>
           <li class="menu-sm menu-nested">
@@ -318,7 +319,7 @@
                   stroke-width="1.5"
                 />
               </svg>
-              Models
+              {$t('nav.models')}
             </a>
           </li>
           <li class="menu-sm menu-nested">
@@ -329,7 +330,7 @@
               <div class="sidebar-icon">
                 <ToolsIcon />
               </div>
-              Tools
+              {$t('nav.tools')}
             </a>
           </li>
           <li class="menu-sm menu-nested">
@@ -340,7 +341,7 @@
               <div class="sidebar-icon">
                 <SkillsIcon />
               </div>
-              Skills
+              {$t('nav.skills')}
             </a>
           </li>
           <li class="menu-sm menu-nested">
@@ -351,7 +352,7 @@
               <div class="sidebar-icon">
                 <FileIcon kind="document" />
               </div>
-              Docs &amp; Search
+              {$t('nav.docs_search')}
             </a>
           </li>
           <li class="menu-sm menu-nested">
@@ -362,7 +363,7 @@
               <div class="sidebar-icon">
                 <FinetuneIcon />
               </div>
-              Fine Tune
+              {$t('nav.fine_tune')}
             </a>
           </li>
         </ul>
@@ -392,7 +393,7 @@
               stroke-width="1.5"
             />
           </svg>
-          Synthetic Data</a
+          {$t('nav.synthetic_data')}</a
         >
       </li>
 
@@ -430,7 +431,7 @@
             />
           </svg>
 
-          Settings</a
+          {$t('nav.settings')}</a
         >
       </li>
     </ul>
