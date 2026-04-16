@@ -106,4 +106,4 @@ The dirty check runs only for requests on the middleware's **regular read path**
 
 - Changing SSE endpoints from GET to POST (or vice versa) — the `@no_write_lock` pattern handles both correctly
 - Modifying the `ensure_clean()` crash recovery behavior — it remains as a production safety net
-- Adding dev-mode gating to the existing long-lock-hold warning (the TODO at middleware.py:122) — orthogonal improvement, not blocking
+- Adding dev-mode gating to the existing long-lock-hold warning — orthogonal improvement, not blocking
