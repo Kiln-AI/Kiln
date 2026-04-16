@@ -241,6 +241,12 @@ uv run pytest --runpaid --ollama -k "MODEL_ENUM" -v 2>&1 | grep -E "PASSED|FAILE
 3. Re-run that single test to verify
 4. Only re-run the full suite once the single test passes
 
+**Anthropic API key gotcha:** if an Anthropic-direct test fails with an auth/API key error, check whether the user's environment exports the key as `KILN_ANTHROPIC_API_KEY` instead of `ANTHROPIC_API_KEY` (the Kiln app uses the prefixed name; the Anthropic SDK used by tests expects the unprefixed name). Prepend the test command with a one-shot alias — don't `export` it globally:
+
+```bash
+ANTHROPIC_API_KEY="$KILN_ANTHROPIC_API_KEY" uv run pytest --runpaid ...
+```
+
 ### 4d. Extraction tests (if `supports_doc_extraction=True`)
 
 Tests are in `libs/core/kiln_ai/adapters/extractors/test_litellm_extractor.py`.
