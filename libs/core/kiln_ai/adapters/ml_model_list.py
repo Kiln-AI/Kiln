@@ -140,6 +140,7 @@ class ModelName(str, Enum):
     claude_opus_4_1 = "claude_opus_4_1"
     claude_opus_4_5 = "claude_opus_4_5"
     claude_opus_4_6 = "claude_opus_4_6"
+    claude_opus_4_7 = "claude_opus_4_7"
     gemini_1_5_flash = "gemini_1_5_flash"
     gemini_1_5_flash_8b = "gemini_1_5_flash_8b"
     gemini_1_5_pro = "gemini_1_5_pro"
@@ -1907,17 +1908,17 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
-    # Claude Opus 4.6
+    # Claude Opus 4.7
     KilnModel(
         family=ModelFamily.claude,
-        name=ModelName.claude_opus_4_6,
-        friendly_name="Claude Opus 4.6",
+        name=ModelName.claude_opus_4_7,
+        friendly_name="Claude Opus 4.7",
         featured_rank=2,
         editorial_notes="Anthropic's best Claude model. Expensive, but often the best.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
-                model_id="anthropic/claude-opus-4.6",
+                model_id="anthropic/claude-opus-4.7",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 openrouter_reasoning_object=True,
                 available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
@@ -1936,13 +1937,56 @@ built_in_models: List[KilnModel] = [
             ),
             KilnModelProvider(
                 name=ModelProviderName.anthropic,
-                model_id="claude-opus-4-6",
+                model_id="claude-opus-4-7",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 temp_top_p_exclusive=True,
                 available_thinking_levels=CLAUDE_ANTHROPIC_EFFORT_THINKING_LEVELS,
                 default_thinking_level="high",
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
+    # Claude Opus 4.6
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_opus_4_6,
+        friendly_name="Claude Opus 4.6",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-opus-4.6",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                openrouter_reasoning_object=True,
+                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="none",
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-opus-4-6",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                available_thinking_levels=CLAUDE_ANTHROPIC_EFFORT_THINKING_LEVELS,
+                default_thinking_level="high",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
