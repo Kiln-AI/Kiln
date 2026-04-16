@@ -4,7 +4,8 @@ from typing import TYPE_CHECKING, Dict, List, Union
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
 from typing_extensions import Self
 
-from kiln_ai.datamodel.basemodel import KilnParentedModel
+from kiln_ai.datamodel.basemodel import KilnParentedModel, KilnParentModel
+from kiln_ai.datamodel.feedback import Feedback
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_ai.datamodel.task_output import DataSource, TaskOutput
@@ -84,7 +85,13 @@ class Usage(BaseModel):
         )
 
 
-class TaskRun(KilnParentedModel):
+class TaskRun(
+    KilnParentedModel,
+    KilnParentModel,
+    parent_of={
+        "feedback": Feedback,
+    },
+):
     """
     Represents a single execution of a Task.
 
@@ -103,10 +110,6 @@ class TaskRun(KilnParentedModel):
     repair_instructions: str | None = Field(
         default=None,
         description="Instructions for fixing the output. Should define what is wrong, and how to fix it. Will be used by models for both generating a fixed output, and evaluating future models.",
-    )
-    user_feedback: str | None = Field(
-        default=None,
-        description="User feedback from the spec review process explaining why the output passes or fails a requirement.",
     )
     repaired_output: TaskOutput | None = Field(
         default=None,
@@ -153,6 +156,9 @@ class TaskRun(KilnParentedModel):
         Does this run have thinking data that we can use to train a thinking model?
         """
         return self.thinking_training_data() is not None
+
+    def feedback(self, readonly: bool = False) -> list[Feedback]:
+        return super().feedback(readonly=readonly)  # type: ignore
 
     # Workaround to return typed parent without importing Task
     def parent_task(self) -> Union["Task", None]:

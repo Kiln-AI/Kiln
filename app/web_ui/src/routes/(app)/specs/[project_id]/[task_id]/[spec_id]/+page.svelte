@@ -21,6 +21,7 @@
   import TagPicker from "$lib/ui/tag_picker.svelte"
   import {
     capitalize,
+    formatDate,
     formatPriority,
     formatSpecType,
     formatEvalConfigName,
@@ -160,6 +161,13 @@
     } finally {
       updating_priorities = false
     }
+  }
+
+  async function toggleArchive() {
+    if (!spec) return
+    const newStatus: SpecStatus =
+      spec.status === "archived" ? "active" : "archived"
+    await updateSpecStatus(newStatus)
   }
 
   async function updateSpecStatus(newStatus: SpecStatus) {
@@ -421,6 +429,13 @@
     ]}
     action_buttons={[
       {
+        label: spec?.status === "archived" ? "Unarchive" : "Archive",
+        disabled: loading || error !== null,
+        handler: () => {
+          toggleArchive()
+        },
+      },
+      {
         label: "Edit",
         disabled: loading || error !== null,
         handler: () => {
@@ -521,6 +536,12 @@
                       evaluator?.eval_set_filter_id,
                     )
                   : undefined,
+              },
+              {
+                name: "Created At",
+                value: spec.created_at
+                  ? formatDate(spec.created_at)
+                  : "Unknown",
               },
             ]}
           >

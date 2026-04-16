@@ -85,79 +85,81 @@
   }
 </script>
 
-<AppPage
-  title="Fine Tunes"
-  subtitle="Fine-tune models for the current task."
-  sub_subtitle="Read the Docs"
-  sub_subtitle_link="https://docs.kiln.tech/docs/fine-tuning-guide"
-  breadcrumbs={[
-    {
-      label: "Optimize",
-      href: `/optimize/${project_id}/${task_id}`,
-    },
-  ]}
-  action_buttons={is_empty
-    ? []
-    : [
-        {
-          label: "Create Fine Tune",
-          href: `/fine_tune/${project_id}/${task_id}/create_finetune`,
-          primary: true,
-        },
-      ]}
->
-  {#if finetunes_loading}
-    <div class="w-full min-h-[50vh] flex justify-center items-center">
-      <div class="loading loading-spinner loading-lg"></div>
-    </div>
-  {:else if is_empty}
-    <div class="flex flex-col items-center justify-center min-h-[60vh]">
-      <EmptyFinetune {project_id} {task_id} />
-    </div>
-  {:else if finetunes}
-    <div class="overflow-x-auto rounded-lg border">
-      <table class="table">
-        <thead>
-          <tr>
-            <th> Name </th>
-            <th> Type </th>
-            <th> Provider</th>
-            <th> Base Model</th>
-            <th> Status </th>
-            <th> Created At </th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each finetunes as finetune}
-            <tr
-              class="hover cursor-pointer"
-              on:click={() => {
-                goto(
-                  `/fine_tune/${project_id}/${task_id}/fine_tune/${finetune.id}`,
-                )
-              }}
-            >
-              <td> {finetune.name} </td>
-              <td>
-                {data_strategy_name(finetune.data_strategy)}
-              </td>
-              <td> {provider_name_from_id(finetune.provider)} </td>
-              <td> {finetune.base_model_id} </td>
-              <td> {format_status(finetune.latest_status)} </td>
-              <td> {formatDate(finetune.created_at)} </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
-  {:else if finetunes_error}
-    <div
-      class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
-    >
-      <div class="font-medium">Error Loading Fine Tunes</div>
-      <div class="text-error text-sm">
-        {finetunes_error.getMessage() || "An unknown error occurred"}
+<div class="max-w-[1400px]">
+  <AppPage
+    title="Fine Tunes"
+    subtitle="Fine-tune models for the current task."
+    sub_subtitle="Read the Docs"
+    sub_subtitle_link="https://docs.kiln.tech/docs/fine-tuning-guide"
+    breadcrumbs={[
+      {
+        label: "Optimize",
+        href: `/optimize/${project_id}/${task_id}`,
+      },
+    ]}
+    action_buttons={is_empty
+      ? []
+      : [
+          {
+            label: "Create Fine Tune",
+            href: `/fine_tune/${project_id}/${task_id}/create_finetune`,
+            primary: true,
+          },
+        ]}
+  >
+    {#if finetunes_loading}
+      <div class="w-full min-h-[50vh] flex justify-center items-center">
+        <div class="loading loading-spinner loading-lg"></div>
       </div>
-    </div>
-  {/if}
-</AppPage>
+    {:else if is_empty}
+      <div class="flex flex-col items-center justify-center min-h-[60vh]">
+        <EmptyFinetune {project_id} {task_id} />
+      </div>
+    {:else if finetunes}
+      <div class="overflow-x-auto rounded-lg border">
+        <table class="table">
+          <thead>
+            <tr>
+              <th> Name </th>
+              <th> Type </th>
+              <th> Provider</th>
+              <th> Base Model</th>
+              <th> Status </th>
+              <th> Created At </th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each finetunes as finetune}
+              <tr
+                class="hover cursor-pointer"
+                on:click={() => {
+                  goto(
+                    `/fine_tune/${project_id}/${task_id}/fine_tune/${finetune.id}`,
+                  )
+                }}
+              >
+                <td> {finetune.name} </td>
+                <td>
+                  {data_strategy_name(finetune.data_strategy)}
+                </td>
+                <td> {provider_name_from_id(finetune.provider)} </td>
+                <td> {finetune.base_model_id} </td>
+                <td> {format_status(finetune.latest_status)} </td>
+                <td> {formatDate(finetune.created_at)} </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {:else if finetunes_error}
+      <div
+        class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+      >
+        <div class="font-medium">Error Loading Fine Tunes</div>
+        <div class="text-error text-sm">
+          {finetunes_error.getMessage() || "An unknown error occurred"}
+        </div>
+      </div>
+    {/if}
+  </AppPage>
+</div>

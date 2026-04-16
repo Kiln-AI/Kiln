@@ -2,11 +2,11 @@
   import { onMount } from "svelte"
   import type { TaskRun } from "$lib/types"
   import {
-    type FewShotExample,
+    type TaskSampleExample,
     type AutoSelectType,
-    fetch_few_shot_candidates,
+    fetch_task_sample_candidates,
     task_run_to_example,
-  } from "./few_shot_example"
+  } from "./task_sample_example"
   import FormElement from "$lib/utils/form_element.svelte"
   import Output from "$lib/ui/output.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
@@ -14,7 +14,7 @@
 
   export let project_id: string
   export let task_id: string
-  export let selected_example: FewShotExample | null = null
+  export let selected_example: TaskSampleExample | null = null
   export let is_prompt_building: boolean = false
   export let has_unsaved_manual_entry: boolean = false
 
@@ -53,6 +53,7 @@
   // Handle run selection
   function select_run(run: TaskRun) {
     selected_example = task_run_to_example(run)
+    auto_select_type = null
     show_manual_entry = false
     is_changing_selection = false
   }
@@ -85,6 +86,7 @@
         input: manual_input.trim(),
         output: manual_output.trim(),
       }
+      auto_select_type = null
       is_changing_selection = false
       show_manual_entry = true // keep this true so we know it was manual entry
     }
@@ -92,7 +94,7 @@
 
   onMount(async () => {
     try {
-      const result = await fetch_few_shot_candidates(project_id, task_id)
+      const result = await fetch_task_sample_candidates(project_id, task_id)
       auto_select_type = result.auto_select_type
       available_runs = result.available_runs
 
@@ -152,7 +154,7 @@
   description="An example of the task running properly. It's used to help understand expected behaviour."
   open={user_verification_desired}
 >
-  <div class="few-shot-selector">
+  <div class="task-sample-selector">
     {#if loading}
       <div class="flex items-center gap-2 py-4">
         <div class="loading loading-spinner loading-sm"></div>
