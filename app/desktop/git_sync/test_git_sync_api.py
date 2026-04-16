@@ -150,11 +150,19 @@ class TestClone:
 
 class TestTestWriteAccess:
     def test_success(self, api_client, tmp_path):
-        with patch("app.desktop.git_sync.git_sync_api.test_write_access") as mock:
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.default_project_path",
+                return_value=str(tmp_path),
+            ),
+            patch("app.desktop.git_sync.git_sync_api.test_write_access") as mock,
+        ):
             mock.return_value = (True, "Write access confirmed")
             resp = api_client.post(
                 "/api/git_sync/test_write_access",
-                json={"clone_path": str(tmp_path)},
+                json={"clone_path": str(clone_dir)},
             )
         data = resp.json()
         assert data["success"] is True
@@ -162,30 +170,47 @@ class TestTestWriteAccess:
 
 class TestScanProjects:
     def test_finds_projects(self, api_client, tmp_path):
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
         project_data = {"name": "Test", "description": "desc", "id": "proj_abc"}
-        (tmp_path / "project.kiln").write_text(json.dumps(project_data))
+        (clone_dir / "project.kiln").write_text(json.dumps(project_data))
 
-        resp = api_client.post(
-            "/api/git_sync/scan_projects",
-            json={"clone_path": str(tmp_path)},
-        )
+        with patch(
+            "app.desktop.git_sync.git_sync_api.default_project_path",
+            return_value=str(tmp_path),
+        ):
+            resp = api_client.post(
+                "/api/git_sync/scan_projects",
+                json={"clone_path": str(clone_dir)},
+            )
         data = resp.json()
         assert len(data["projects"]) == 1
         assert data["projects"][0]["name"] == "Test"
         assert data["projects"][0]["id"] == "proj_abc"
 
     def test_no_projects(self, api_client, tmp_path):
-        resp = api_client.post(
-            "/api/git_sync/scan_projects",
-            json={"clone_path": str(tmp_path)},
-        )
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
+
+        with patch(
+            "app.desktop.git_sync.git_sync_api.default_project_path",
+            return_value=str(tmp_path),
+        ):
+            resp = api_client.post(
+                "/api/git_sync/scan_projects",
+                json={"clone_path": str(clone_dir)},
+            )
         assert resp.json()["projects"] == []
 
-    def test_invalid_path(self, api_client):
-        resp = api_client.post(
-            "/api/git_sync/scan_projects",
-            json={"clone_path": "/nonexistent/path"},
-        )
+    def test_invalid_path(self, api_client, tmp_path):
+        with patch(
+            "app.desktop.git_sync.git_sync_api.default_project_path",
+            return_value=str(tmp_path),
+        ):
+            resp = api_client.post(
+                "/api/git_sync/scan_projects",
+                json={"clone_path": "/nonexistent/path"},
+            )
         assert resp.status_code == 400
 
 
@@ -274,8 +299,9 @@ class TestSaveAndGetConfig:
         assert resp.status_code == 200
         mock_save.assert_called_once()
         saved_key = mock_save.call_args[0][0]
-        assert saved_key == "/tmp/clone/subdir/project.kiln"
-        mock_add.assert_called_once_with("/tmp/clone/subdir/project.kiln")
+        expected = str(Path("/tmp/clone/subdir/project.kiln").resolve())
+        assert saved_key == expected
+        mock_add.assert_called_once_with(expected)
 
     def test_get_config_exists(self, api_client):
         with (
@@ -409,9 +435,8 @@ class TestUpdateConfig:
 
 class TestRenameClone:
     def test_success(self, api_client, tmp_path):
-        import tempfile
-
-        clone_dir = Path(tempfile.mkdtemp(prefix="kiln_clone_"))
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
         (clone_dir / "project.kiln").write_text("{}")
 
         with patch(
@@ -432,9 +457,8 @@ class TestRenameClone:
         assert not clone_dir.exists()
 
     def test_path_traversal_project_id_returns_400(self, api_client, tmp_path):
-        import tempfile
-
-        clone_dir = Path(tempfile.mkdtemp(prefix="kiln_clone_"))
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
         (clone_dir / "project.kiln").write_text("{}")
 
         with patch(

@@ -23,6 +23,11 @@ from app.desktop.git_sync.errors import (
 
 logger = logging.getLogger(__name__)
 
+# Configure global libgit2 network timeouts (process-wide, not per-repo).
+_settings = pygit2.Settings()
+_settings.server_connect_timeout = 30
+_settings.server_timeout = 30
+
 T = TypeVar("T")
 
 FRESHNESS_THRESHOLD = 15.0

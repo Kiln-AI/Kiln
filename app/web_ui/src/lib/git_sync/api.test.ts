@@ -39,11 +39,23 @@ describe("isGitHubUrl", () => {
   it("returns true for GitHub URLs", () => {
     expect(isGitHubUrl("https://github.com/org/repo.git")).toBe(true)
     expect(isGitHubUrl("https://github.com/org/repo")).toBe(true)
+    expect(isGitHubUrl("https://www.github.com/org/repo")).toBe(true)
+    expect(isGitHubUrl("git@github.com:org/repo.git")).toBe(true)
   })
 
   it("returns false for non-GitHub URLs", () => {
     expect(isGitHubUrl("https://gitlab.com/org/repo.git")).toBe(false)
     expect(isGitHubUrl("https://bitbucket.org/org/repo")).toBe(false)
+  })
+
+  it("returns false for spoofed GitHub-like hostnames", () => {
+    expect(isGitHubUrl("https://github.com.evil.example/org/repo")).toBe(false)
+    expect(isGitHubUrl("https://notgithub.com/org/repo")).toBe(false)
+  })
+
+  it("returns false for invalid URLs", () => {
+    expect(isGitHubUrl("not-a-url")).toBe(false)
+    expect(isGitHubUrl("")).toBe(false)
   })
 })
 
@@ -59,6 +71,16 @@ describe("isGitLabUrl", () => {
     expect(isGitLabUrl("https://bitbucket.org/org/repo")).toBe(false)
     expect(isGitLabUrl("https://notgitlab.com/org/repo")).toBe(false)
     expect(isGitLabUrl("https://example.com/gitlab.backup/repo")).toBe(false)
+  })
+
+  it("rejects hostname spoofing attempts", () => {
+    expect(isGitLabUrl("https://gitlab.com.evil.example/org/repo")).toBe(false)
+    expect(isGitLabUrl("https://fakegitlab.com/org/repo")).toBe(false)
+  })
+
+  it("handles invalid input", () => {
+    expect(isGitLabUrl("not-a-url")).toBe(false)
+    expect(isGitLabUrl("")).toBe(false)
   })
 })
 

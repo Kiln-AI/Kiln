@@ -58,6 +58,7 @@
   })()
 
   async function clone_and_test() {
+    let clone_path = ""
     try {
       error = null
       submitting = true
@@ -74,31 +75,32 @@
         error = new KilnError(clone_result.message)
         return
       }
+      clone_path = clone_result.clone_path
 
       status_message = "Testing write access..."
       const write_result = await testWriteAccess(
-        clone_result.clone_path,
+        clone_path,
         pat_token,
         auth_mode,
       )
 
       if (!write_result.success) {
         if (write_result.auth_required) {
-          on_selected(selected_branch, clone_result.clone_path, true)
+          on_selected(selected_branch, clone_path, true)
           return
         }
         error = new KilnError(write_result.message)
         return
       }
 
-      on_selected(selected_branch, clone_result.clone_path, false)
+      on_selected(selected_branch, clone_path, false)
     } catch (e) {
       const err = createKilnError(e)
       if (
         err.getMessage().includes("401") ||
         err.getMessage().includes("auth")
       ) {
-        on_selected(selected_branch, "", true)
+        on_selected(selected_branch, clone_path, true)
         return
       }
       error = err

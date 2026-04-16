@@ -210,7 +210,7 @@ Stored in the existing Kiln config system. Not in git-tracked files (sync settin
 | Remote unreachable on write | Rollback, fail request | 503: "Cannot sync with remote. Check your connection." |
 | Remote unreachable on read | Fail request | 503: "Cannot sync with remote. Check your connection." |
 | Push conflict | Rollback, fetch, rebase, retry once | 409: "There was a problem saving. Please try again." |
-| Rebase conflict (unresolvable) | Abort rebase, rollback | 500: "There was a problem saving. Please try again." |
+| Rebase conflict (unresolvable) | Abort rebase, rollback | 409: "There was a problem saving. Please try again." |
 | Write lock timeout (HTTP) | Fail request | 503: "Another save is in progress. Please wait a moment and try again." |
 | Dirty repo on write request | Auto-recovery via stash | Transparent — recovered automatically. Error only if recovery fails. |
 | Corrupt repo state (unrecoverable) | Refuse to operate, surface error | 500: "Git repository is in an unexpected state." |

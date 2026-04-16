@@ -92,17 +92,17 @@ class TestNoWriteLockPartialFailure:
         )
 
         with mock_git_sync_config(config):
-            client = TestClient(app, raise_server_exceptions=False)
-            resp = client.post(endpoint_url)
+            with TestClient(app, raise_server_exceptions=False) as client:
+                resp = client.post(endpoint_url)
 
-            assert resp.status_code == 500
+                assert resp.status_code == 500
 
-            assert len(iteration_commits) == 2
-            for commit_hex in iteration_commits:
-                assert remote_has_commit(remote_path, commit_hex)
+                assert len(iteration_commits) == 2
+                for commit_hex in iteration_commits:
+                    assert remote_has_commit(remote_path, commit_hex)
 
-            assert (local_path / "batch_0.kiln").exists()
-            assert (local_path / "batch_1.kiln").exists()
+                assert (local_path / "batch_0.kiln").exists()
+                assert (local_path / "batch_1.kiln").exists()
 
     @pytest.mark.asyncio
     async def test_partial_failure_iteration3_rolled_back(self, git_repos):
@@ -113,8 +113,8 @@ class TestNoWriteLockPartialFailure:
         app, endpoint_url = _build_batch_app(local_path, "batch2", "batch_op2")
 
         with mock_git_sync_config(config):
-            client = TestClient(app, raise_server_exceptions=False)
-            client.post(endpoint_url)
+            with TestClient(app, raise_server_exceptions=False) as client:
+                client.post(endpoint_url)
 
-            assert not (local_path / "batch2_2.kiln").exists()
-            assert_clean_working_tree(local_path)
+                assert not (local_path / "batch2_2.kiln").exists()
+                assert_clean_working_tree(local_path)

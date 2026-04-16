@@ -463,9 +463,9 @@ def write_ctx(request, git_repos):
         write_fn_slot: list = []
         app = build_test_app(local_path, write_fn_slot)
         with mock_git_sync_config(config):
-            client = TestClient(app, raise_server_exceptions=False)
-            ctx = APIWriteContext(client, local_path, remote_path, write_fn_slot)
-            yield ctx
+            with TestClient(app, raise_server_exceptions=False) as client:
+                ctx = APIWriteContext(client, local_path, remote_path, write_fn_slot)
+                yield ctx
 
 
 @pytest.fixture
@@ -486,8 +486,8 @@ def api_ctx(git_repos):
     write_fn_slot: list = []
     app = build_test_app(local_path, write_fn_slot)
     with mock_git_sync_config(config):
-        client = TestClient(app, raise_server_exceptions=False)
-        yield APIWriteContext(client, local_path, remote_path, write_fn_slot)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            yield APIWriteContext(client, local_path, remote_path, write_fn_slot)
 
 
 @pytest.fixture
@@ -497,5 +497,5 @@ def api_client(git_repos):
     write_fn_slot: list = []
     app = build_test_app(local_path, write_fn_slot)
     with mock_git_sync_config(config):
-        client = TestClient(app, raise_server_exceptions=False)
-        yield client, local_path, remote_path, write_fn_slot
+        with TestClient(app, raise_server_exceptions=False) as client:
+            yield client, local_path, remote_path, write_fn_slot
