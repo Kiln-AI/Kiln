@@ -140,6 +140,7 @@ class ModelName(str, Enum):
     claude_opus_4_1 = "claude_opus_4_1"
     claude_opus_4_5 = "claude_opus_4_5"
     claude_opus_4_6 = "claude_opus_4_6"
+    claude_opus_4_7 = "claude_opus_4_7"
     gemini_1_5_flash = "gemini_1_5_flash"
     gemini_1_5_flash_8b = "gemini_1_5_flash_8b"
     gemini_1_5_pro = "gemini_1_5_pro"
@@ -503,6 +504,14 @@ CLAUDE_ANTHROPIC_EFFORT_THINKING_LEVELS = {
     "Low": "low",
     "Medium": "medium",
     "High": "high",
+}
+
+CLAUDE_OPUS_4_7_ANTHROPIC_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
 }
 
 
@@ -1907,13 +1916,62 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Claude Opus 4.7
+    KilnModel(
+        family=ModelFamily.claude,
+        name=ModelName.claude_opus_4_7,
+        friendly_name="Claude Opus 4.7",
+        featured_rank=2,
+        editorial_notes="Anthropic's best Claude model. Expensive, but often the best.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="anthropic/claude-opus-4.7",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                openrouter_reasoning_object=True,
+                available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="none",
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.anthropic,
+                model_id="claude-opus-4-7",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                temp_top_p_exclusive=True,
+                available_thinking_levels=CLAUDE_OPUS_4_7_ANTHROPIC_THINKING_LEVELS,
+                default_thinking_level="high",
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # Claude Opus 4.6
     KilnModel(
         family=ModelFamily.claude,
         name=ModelName.claude_opus_4_6,
         friendly_name="Claude Opus 4.6",
-        featured_rank=2,
-        editorial_notes="Anthropic's best Claude model. Expensive, but often the best.",
         providers=[
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
@@ -1922,8 +1980,6 @@ built_in_models: List[KilnModel] = [
                 openrouter_reasoning_object=True,
                 available_thinking_levels=CLAUDE_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="none",
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1941,8 +1997,6 @@ built_in_models: List[KilnModel] = [
                 temp_top_p_exclusive=True,
                 available_thinking_levels=CLAUDE_ANTHROPIC_EFFORT_THINKING_LEVELS,
                 default_thinking_level="high",
-                suggested_for_evals=True,
-                suggested_for_data_gen=True,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
