@@ -181,6 +181,7 @@ class ModelName(str, Enum):
     grok_2 = "grok_2"
     grok_3 = "grok_3"
     grok_3_mini = "grok_3_mini"
+    grok_4_20 = "grok_4_20"
     grok_4_1_fast = "grok_4_1_fast"
     grok_4 = "grok_4"
     qwen_3p5_flash = "qwen_3p5_flash"
@@ -2170,7 +2171,6 @@ built_in_models: List[KilnModel] = [
                 name=ModelProviderName.vertex,
                 model_id="gemini-3.1-flash-lite-preview",
                 structured_output_mode=StructuredOutputMode.json_schema,
-                supports_function_calling=False,
                 gemini_reasoning_enabled=True,
                 available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
                 default_thinking_level="high",
@@ -4816,6 +4816,33 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Grok 4.20
+    KilnModel(
+        family=ModelFamily.grok,
+        name=ModelName.grok_4_20,
+        friendly_name="Grok 4.20",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="x-ai/grok-4.20",
+                supports_structured_output=True,
+                supports_data_gen=True,
+                structured_output_mode=StructuredOutputMode.json_schema,
+                uncensored=True,
+                multimodal_capable=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # Grok 4.1 Fast
     KilnModel(
         family=ModelFamily.grok,
@@ -4930,7 +4957,6 @@ built_in_models: List[KilnModel] = [
                 model_id="Qwen/Qwen3-Next-80B-A3B-Instruct",
                 deprecated=True,
                 supports_data_gen=True,
-                supports_function_calling=False,
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
             ),
             KilnModelProvider(
@@ -5082,6 +5108,24 @@ built_in_models: List[KilnModel] = [
         friendly_name="Qwen 3.6 Plus",
         providers=[
             KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="qwen/qwen3.6-plus",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+                supports_function_calling=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                ],
+                multimodal_requires_pdf_as_image=True,
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
                 model_id="accounts/fireworks/models/qwen3p6-plus",
                 structured_output_mode=StructuredOutputMode.json_instruction_and_object,
@@ -5147,7 +5191,6 @@ built_in_models: List[KilnModel] = [
                 model_id="Qwen/Qwen3.5-397B-A17B",
                 supports_data_gen=False,
                 structured_output_mode=StructuredOutputMode.json_instructions,
-                supports_function_calling=False,
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -6187,7 +6230,6 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 parser=ModelParserID.r1_thinking,
-                supports_function_calling=False,
             ),
         ],
     ),
@@ -6275,7 +6317,6 @@ built_in_models: List[KilnModel] = [
                 model_id="Qwen/Qwen3-235B-A22B-Instruct-2507-tput",
                 supports_data_gen=True,
                 structured_output_mode=StructuredOutputMode.json_instructions,
-                supports_function_calling=False,
             ),
         ],
     ),
@@ -6360,6 +6401,25 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/glm-5p1",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="zai-org/GLM-5.1",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.siliconflow_cn,
+                model_id="Pro/zai-org/GLM-5.1",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+                reasoning_optional_for_structured_output=True,
+            ),
         ],
     ),
     # GLM 5V Turbo
@@ -6426,7 +6486,6 @@ built_in_models: List[KilnModel] = [
                 model_id="zai-org/GLM-5",
                 structured_output_mode=StructuredOutputMode.json_instructions,
                 reasoning_capable=True,
-                supports_function_calling=False,
             ),
             KilnModelProvider(
                 name=ModelProviderName.siliconflow_cn,
@@ -6980,6 +7039,15 @@ built_in_models: List[KilnModel] = [
                 require_openrouter_reasoning=True,
                 parser=ModelParserID.r1_thinking,
             ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="MiniMaxAI/MiniMax-M2.7",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                reasoning_capable=True,
+                supports_data_gen=True,
+                reasoning_optional_for_structured_output=True,
+                parser=ModelParserID.optional_r1_thinking,
+            ),
         ],
     ),
     # Minimax M2.5
@@ -7018,7 +7086,6 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 reasoning_optional_for_structured_output=True,
                 parser=ModelParserID.optional_r1_thinking,
-                supports_function_calling=False,
             ),
         ],
     ),

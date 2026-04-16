@@ -20,16 +20,15 @@
   export let submitting: boolean
   export let warn_before_unload: boolean
 
-  // Track the selected option for each question
+  // Track the selected option for each question (bound to parent to survive remounts)
   // "other" means the user selected the "Other" option
   // number means the index of the selected predefined option
   // null means no selection
-  let selections: (number | "other" | null)[] = question_set.questions.map(
-    () => null,
-  )
+  export let selections: (number | "other" | null)[] =
+    question_set.questions.map(() => null)
 
-  // Track the "Other" text for each question
-  let other_texts: string[] = question_set.questions.map(() => "")
+  // Track the "Other" text for each question (bound to parent to survive remounts)
+  export let other_texts: string[] = question_set.questions.map(() => "")
 
   function validate(): string | null {
     for (let i = 0; i < question_set.questions.length; i++) {

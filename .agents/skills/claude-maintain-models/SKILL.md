@@ -1,6 +1,7 @@
 ---
-name: kiln-add-model
+name: claude-maintain-models
 description: Add new AI models to Kiln's ml_model_list.py and produce a Discord announcement. Use when the user wants to add, integrate, or register a new LLM model (e.g. Claude, GPT, DeepSeek, Gemini, Kimi, Qwen, Grok) into the Kiln model list, mentions adding a model to ml_model_list.py, or asks to discover/find new models that are available but not yet in Kiln.
+allowed-tools: Read Edit Write Bash Grep Glob Agent WebSearch WebFetch
 ---
 
 # Add a New AI Model to Kiln
@@ -19,7 +20,6 @@ After code changes, run paid integration tests, then draft a Discord post.
 
 These apply throughout the entire workflow.
 
-- **Sandbox:** All `curl` and `uv run` commands MUST use `required_permissions: ["all"]`. The sandbox breaks `uv run` (Rust panics) and blocks network access for `curl`.
 - **Slug verification:** NEVER guess or infer model slugs from naming patterns. Every `model_id` must come from an authoritative source (LiteLLM catalog, official docs, API reference, or changelog). If you can't verify a slug, tell the user and ask them to provide it.
 - **Date awareness:** These models are often released very recently. Web search for current info before assuming you know the details.
 
@@ -54,6 +54,23 @@ If the user asks you to find new models, **do NOT just web search "new AI models
    - `"[family] release [current month] [current year]"`
 
 6. **Present findings** as a summary. Let the user decide which to add.
+
+---
+
+## Phase 1B – Lagging-Provider Backfill Check (every run)
+
+Some providers — **Fireworks AI**, **Together AI**, **SiliconFlow** — expose new models on their own endpoints 1–2 weeks before those entries surface in models.dev / LiteLLM. Relying only on those two catalogs will both under-populate the provider list for the model you're adding now **and** miss the window to backfill recently-added models whose provider support has since grown.
+
+Run this check on **every invocation** of the skill, regardless of whether you're in discovery mode or adding a specific model.
+
+1. **Pull the 10 most recently added models** from the top of `built_in_models` in `ml_model_list.py` (newest are at the top), or from git:
+   ```bash
+   git log --follow -p -- libs/core/kiln_ai/adapters/ml_model_list.py | grep -E "^\+\s+name=ModelName\." | head -20
+   ```
+
+2. **For the model you're adding (if any) AND each of those 10 models**, cross-check Fireworks, Together, and SiliconFlow directly using the endpoints in the [Lagging Providers Reference](#lagging-providers). Do NOT trust `models.dev` / LiteLLM as the final word for these three providers.
+
+3. **If a lagging provider now supports a recently-added model that isn't yet in its `KilnModel` entry**, flag it to the user and propose either bundling the provider addition into the current change or opening a separate PR. Do not silently add it.
 
 ---
 
@@ -224,6 +241,12 @@ uv run pytest --runpaid --ollama -k "MODEL_ENUM" -v 2>&1 | grep -E "PASSED|FAILE
 3. Re-run that single test to verify
 4. Only re-run the full suite once the single test passes
 
+**Anthropic API key gotcha:** if an Anthropic-direct test fails with an auth/API key error, check whether the user's environment exports the key as `KILN_ANTHROPIC_API_KEY` instead of `ANTHROPIC_API_KEY` (the Kiln app uses the prefixed name; the Anthropic SDK used by tests expects the unprefixed name). Prepend the test command with a one-shot alias — don't `export` it globally:
+
+```bash
+ANTHROPIC_API_KEY="$KILN_ANTHROPIC_API_KEY" uv run pytest --runpaid ...
+```
+
 ### 4d. Extraction tests (if `supports_doc_extraction=True`)
 
 Tests are in `libs/core/kiln_ai/adapters/extractors/test_litellm_extractor.py`.
@@ -248,73 +271,98 @@ After all tests complete, **revert `pytest.ini`** back to the commented-out stat
 
 ### 4f. Test output format
 
-After all tests finish, present results to the user as:
-
-1. **Two paragraphs of nuance** – describe any unusual findings, things you tried and reverted, known pre-existing failures vs new failures, API quirks discovered, and any config adjustments made during testing.
-
-2. **Per-model per-test dump** – organized by model name and provider, using this format:
-
-```text
-Model Name (provider):
-✅ test_name[model_enum-provider]
-❌ test_name[model_enum-provider] -- brief failure reason
-⏭️ test_name[model_enum-provider]
-```
-
-Use ✅ for PASSED, ❌ for FAILED (with brief reason), ⏭️ for SKIPPED.
-
----
-
-## Phase 5 – Discord Announcement
-
-**Do NOT draft the Discord announcement automatically.** After presenting test results, ask the user if they want a Discord announcement drafted. Only proceed if they confirm.
-
-When requested, use this format:
-
-```
-New Model: [Model Name] 🚀
-[One-liner about the model and that it's now in Kiln]
-
-Kiln Test Pass Results
-[Model Name]:
-✅ Tool Calling
-✅ Structured Data ([mode used])
-✅ Synthetic Data Generation
-✅ Evals (only if suggested_for_evals=True)
-✅ Document extraction: [formats] (only if supports_doc_extraction=True)
-✅ Vision: [formats] (only if supports_vision=True)
-
-Model Variants, Hosts and Quirks
-[Model Name]:
-Available on: [list providers]
-[Any quirks or notes]
-
-How to Use These Models in Kiln
-Simply restart Kiln, and all these models will appear in your model dropdown if you have the appropriate API configured.
-```
-
-Use ⚠️ for flaky features, ❌ for unsupported.
-
-### Test Summary
-
-After the Discord announcement, print a per-test summary listing every test that ran for the model. Use the full pytest parametrize ID so the user can see exactly which test+provider combos passed, failed, or were flaky.
-
-Format:
-```
-Test Summary: [Model Name]
-✅ test_data_gen_all_models_providers[model_enum-provider]
-✅ test_data_gen_sample_all_models_providers[model_enum-provider]
-✅ test_tools_all_built_in_models[model_enum-provider]
-⚠️ test_structured_input_cot_prompt_builder[model_enum-provider] — assert 3 == 5 (content quality flake)
-❌ test_all_built_in_models_structured_output[model_enum-provider] — 400 Bad Request (unsupported feature)
-```
-
-Rules:
+Collect test results for use in the PR body (Phase 5). Organize by model name and provider using these symbols:
 - ✅ for passed tests
 - ⚠️ for tests that failed due to content quality flakes (e.g. model returned fewer items than expected, weak assertion mismatches) — include a brief reason
 - ❌ for tests that failed due to real errors (bad slug, unsupported feature, 400/500 errors) — include a brief reason
-- List every test, grouped by provider if the model has multiple providers
-- Include extraction tests (Phase 4c) if they were run
+- List every test using the full pytest parametrize ID, grouped by provider
+- Include extraction tests (Phase 4d) if they were run
+
+---
+
+## Phase 5 – Create Pull Request
+
+### 5.0 — Important context about Claude Code Web's stop hook
+
+This skill is often run via Claude Code Web (Slack connector). That environment has a **non-user-configurable stop hook** which, at end of session, will:
+- Block the session from ending if there are uncommitted changes, untracked files, or unpushed commits
+- Instruct the agent to commit and push any local work before stopping
+- Explicitly tell the agent NOT to create a PR unless the user asked for one
+
+**The problems this causes:**
+1. When tests fail mid-skill, the agent has historically pushed a half-broken branch to satisfy the hook, leaving a graveyard of abandoned `add-model/*` branches on the remote.
+2. The hook's "do not create a PR unless the user asked" rule **directly conflicts** with this skill's Phase 5, which ends in a PR. Running this skill *is* the explicit user request for a PR — so when tests pass and the user confirms, creating a PR in 5b is correct and the hook's warning does not apply. Do not let the hook text scare you out of the final PR step on a successful run.
+
+**The user's desires, in priority order:**
+1. **Ask before you push.** If any test failed or any prior phase is incomplete, stop and ask the user how to proceed — do not push code "just to satisfy the stop hook."
+2. **No abandoned branches.** Never create a branch as a progress-saving mechanism. A branch only exists because the user approved a PR-ready state.
+3. **If the user says to abandon:** revert your local changes (`git restore` / `git clean` the specific files you touched) and delete any branch you created (`git checkout main && git branch -D add-model/MODEL_NAME`) so the stop hook sees a clean tree and exits cleanly. Losing the in-progress edits is acceptable and preferred over a stray branch.
+4. **On a successful run, push and open the PR as described in 5a/5b.** Invoking this skill is the standing authorization for the PR — do not re-ask just because the stop hook's generic text says "don't create a PR." Only re-ask if tests failed or the user hasn't confirmed the results.
+
+### 5.1 — Gate before pushing
+
+Do NOT commit, push, or create a branch if any of the following are true:
+- Any test failed with ❌ (real error — bad slug, unsupported feature, auth issues, 400/500)
+- The smoke test (4b) failed and wasn't resolved
+- Any step in Phases 2–4 was skipped or incomplete
+- You are unsure whether a ⚠️ flake is actually a real failure
+
+If any of the above apply, **stop and ask the user** what to do. Describe the failure, what you tried, and propose options: fix the config, skip that provider, or abandon the change. Only proceed to 5a once the user explicitly confirms.
+
+After all tests pass and `pytest.ini` is reverted, commit the changes and open a PR against `main`.
+
+### 5a. Commit and push
+
+1. Create a new branch named `add-model/MODEL_NAME` (e.g. `add-model/glm-5-1`)
+2. Stage only the changed files (typically just `ml_model_list.py`)
+3. Commit with a concise message (e.g. "Add GLM 5.1 to model list (together_ai, siliconflow_cn)")
+4. Push the branch
+
+### 5b. Create the PR
+
+Use `gh pr create` against `main`. The PR body must follow this exact format:
+
+```
+## What does this PR do?
+
+ Test Results
+
+[Two paragraphs of nuance — describe any unusual findings, things you tried and reverted, known pre-existing failures vs new failures, API quirks discovered, and any config adjustments made during testing.]
+
+[Model Name] ([provider]):
+- [N] passed, [N] skipped[, [N] failed]
+- [Any notable failures or flakes]
+
+[Repeat for each model+provider combo]
+
+---
+[Model Name] ([provider]):
+✅ test_data_gen_all_models_providers[model_enum-provider]
+✅ test_data_gen_sample_all_models_providers[model_enum-provider]
+✅ test_data_gen_sample_all_models_providers_with_structured_output[model_enum-provider]
+✅ test_all_built_in_models_llm_as_judge[model_enum-provider]
+✅ test_all_built_in_models_structured_output[model_enum-provider]
+✅ test_all_built_in_models_structured_input[model_enum-provider]
+✅ test_structured_output_cot_prompt_builder[model_enum-provider]
+✅ test_all_models_providers_plaintext[model_enum-provider]
+✅ test_cot_prompt_builder[model_enum-provider]
+⚠️ test_structured_input_cot_prompt_builder[model_enum-provider] — brief reason
+❌ test_name[model_enum-provider] — brief reason
+
+[Repeat for each model+provider combo]
+
+## Checklists
+
+- [X] Tests have been run locally and passed
+- [X] New tests have been added to any work in /lib
+```
+
+**Rules for the PR body:**
+- Every test that ran must appear in the per-test dump, using the full pytest parametrize ID
+- Group tests by `[Model Name] ([provider]):` headers
+- The summary section at the top gives a quick pass/skip/fail count per model+provider
+- The detailed section below the `---` lists every individual test result
+- Use ⚠️ for content quality flakes (not real failures), ❌ for real errors
 
 ---
 
@@ -333,9 +381,8 @@ Rules:
 - [ ] Parallel testing enabled in `pytest.ini` (`addopts = -n 8`)
 - [ ] Smoke test passed
 - [ ] Full test suite passed
-- [ ] Per-model per-test result dump presented with nuance paragraphs
 - [ ] Parallel testing reverted in `pytest.ini` (re-commented)
-- [ ] Discord announcement drafted (only if user requests it)
+- [ ] PR created against `main` with test results in the body
 
 ---
 
@@ -472,5 +519,33 @@ curl -s https://models.dev/api.json | jq '.["PROVIDER"].models["MODEL_ID"]'
 - OpenRouter: `curl -s https://openrouter.ai/api/v1/models | jq '.data[].id' | grep -i "SEARCH_TERM"`
 - Anthropic: https://docs.anthropic.com/en/api/models/list
 - Cerebras: https://inference-docs.cerebras.ai/models/overview
+
+### Lagging Providers
+
+Fireworks, Together, and SiliconFlow typically expose new models on their own endpoints 1–2 weeks before models.dev / LiteLLM catch up. For these providers, **always** cross-check directly — both when adding a new model and when running the [Phase 1B backfill check](#phase-1b--lagging-provider-backfill-check-every-run).
+
+**Fireworks AI** — model pages are the most current source. WebFetch directly:
+```
+WebFetch https://fireworks.ai/models/fireworks/{model-slug}
+```
+Or browse the catalog at https://fireworks.ai/models. Kiln slug format: `accounts/fireworks/models/{model-slug}`.
+
+**Together AI** — the `/v1/models` endpoint requires an API key. `$TOGETHER_API_KEY` is typically set in the user's shell:
+```bash
+# List all Together model IDs matching a term:
+curl -s https://api.together.xyz/v1/models \
+  -H "Authorization: Bearer $TOGETHER_API_KEY" | jq '.[] | .id' | grep -i "SEARCH_TERM"
+
+# Full record for a specific slug:
+curl -s https://api.together.xyz/v1/models \
+  -H "Authorization: Bearer $TOGETHER_API_KEY" | jq '.[] | select(.id == "SLUG")'
+```
+If the key isn't set, ask the user before prompting them to export it — don't fail silently onto models.dev.
+
+**SiliconFlow** — WebFetch the public model catalog page, or a specific model page if you have the vendor/model path:
+```
+WebFetch https://siliconflow.com/models
+WebFetch https://siliconflow.com/models/{vendor}/{model}
+```
 
 When you find a new reliable slug source, append it here.

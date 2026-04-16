@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .custom_errors import connect_custom_errors
 from .document_api import connect_document_api
+from .feedback_api import connect_feedback_api
 from .project_api import connect_project_api
 from .prompt_api import connect_prompt_api
 from .run_api import connect_run_api
@@ -45,6 +46,10 @@ tags_metadata = [
     {
         "name": "Runs",
         "description": "Execute tasks. View and manage the task run datastore.",
+    },
+    {
+        "name": "Feedback",
+        "description": "Create and list feedback on task runs.",
     },
     {
         "name": "Run Configs",
@@ -122,6 +127,7 @@ def make_app(lifespan=None):
     connect_prompt_api(app)
     connect_spec_api(app)
     connect_run_api(app)
+    connect_feedback_api(app)
     connect_document_api(app)
     connect_custom_errors(app)
 

@@ -378,6 +378,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Feedback */
+        get: operations["list_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback_get"];
+        put?: never;
+        /** Create Feedback */
+        post: operations["create_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/feedback/{feedback_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Feedback */
+        delete: operations["delete_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback__feedback_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/documents/bulk": {
         parameters: {
             query?: never;
@@ -1248,6 +1283,23 @@ export interface paths {
         put?: never;
         /** Disconnect Provider API Key */
         post: operations["disconnect_api_key_api_provider_disconnect_api_key_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/provider/create_kiln_copilot_api_key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Kiln Copilot API Key */
+        post: operations["create_kiln_copilot_api_key_api_provider_create_kiln_copilot_api_key_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3589,6 +3641,19 @@ export interface components {
             properties: components["schemas"]["LitellmExtractorConfigProperties"];
         };
         /**
+         * CreateFeedbackRequest
+         * @description Request body for creating feedback on a task run.
+         */
+        CreateFeedbackRequest: {
+            /**
+             * Feedback
+             * @description Free-form text feedback on the task run.
+             */
+            feedback: string;
+            /** @description Where this feedback originated. */
+            source: components["schemas"]["FeedbackSource"];
+        };
+        /**
          * CreateFinetuneRequest
          * @description Request to create a finetune
          */
@@ -3619,6 +3684,14 @@ export interface components {
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
             run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
+        };
+        /** CreateKilnCopilotApiKeyRequest */
+        CreateKilnCopilotApiKeyRequest: {
+            /**
+             * Access Token
+             * @description Kinde OAuth access token.
+             */
+            access_token: string;
         };
         /**
          * CreateMcpRunConfigRequest
@@ -5164,6 +5237,62 @@ export interface components {
             /** Factually Inaccurate Examples */
             factually_inaccurate_examples: string;
         };
+        /**
+         * Feedback
+         * @description Feedback on a task run.
+         *
+         *     Supports multi-source feedback: different users, automated systems, and
+         *     different locations in the UI can each contribute independent feedback
+         *     entries on the same task run.
+         */
+        Feedback: {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /**
+             * Feedback
+             * @description Free-form text feedback on the task run.
+             */
+            feedback: string;
+            /** @description Where this feedback originated, e.g. 'run-page' or 'spec-feedback'. */
+            source: components["schemas"]["FeedbackSource"];
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * FeedbackSource
+         * @description Where a piece of feedback originated.
+         *
+         *     This is an append-only enum: new sources can be added freely, but existing
+         *     values must never be removed or renamed so that older persisted data
+         *     continues to load.
+         * @enum {string}
+         */
+        FeedbackSource: "run-page" | "spec-feedback";
         /**
          * FewShotExample
          * @description An input/output example for few-shot prompting.
@@ -8500,11 +8629,6 @@ export interface components {
              * @description Instructions for fixing the output. Should define what is wrong, and how to fix it. Will be used by models for both generating a fixed output, and evaluating future models.
              */
             repair_instructions?: string | null;
-            /**
-             * User Feedback
-             * @description User feedback from the spec review process explaining why the output passes or fails a requirement.
-             */
-            user_feedback?: string | null;
             /** @description An version of the output with issues fixed. This must be a 'fixed' version of the existing output, and not an entirely new output. If you wish to generate an ideal curatorial output for this task unrelated to this output, generate a new TaskOutput with type 'human' instead of using this field. */
             repaired_output?: components["schemas"]["TaskOutput-Input"] | null;
             /**
@@ -8582,11 +8706,6 @@ export interface components {
              * @description Instructions for fixing the output. Should define what is wrong, and how to fix it. Will be used by models for both generating a fixed output, and evaluating future models.
              */
             repair_instructions?: string | null;
-            /**
-             * User Feedback
-             * @description User feedback from the spec review process explaining why the output passes or fails a requirement.
-             */
-            user_feedback?: string | null;
             /** @description An version of the output with issues fixed. This must be a 'fixed' version of the existing output, and not an entirely new output. If you wish to generate an ideal curatorial output for this task unrelated to this output, generate a new TaskOutput with type 'human' instead of using this field. */
             repaired_output?: components["schemas"]["TaskOutput-Output"] | null;
             /**
@@ -10332,6 +10451,120 @@ export interface operations {
                     "application/json": {
                         [key: string]: number;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the task run. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Feedback"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the task run. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Feedback"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback__feedback_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the task run. */
+                run_id: string;
+                /** @description The unique identifier of the feedback. */
+                feedback_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -12199,6 +12432,39 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_kiln_copilot_api_key_api_provider_create_kiln_copilot_api_key_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateKilnCopilotApiKeyRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

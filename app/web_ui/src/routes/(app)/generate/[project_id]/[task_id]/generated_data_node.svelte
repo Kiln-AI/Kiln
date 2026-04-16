@@ -12,7 +12,7 @@
   import { get } from "svelte/store"
   import posthog from "posthog-js"
   import { isKilnAgentRunConfig } from "$lib/types"
-  import TableButton from "./table_button.svelte"
+  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
@@ -509,42 +509,30 @@
       </div>
     </td>
     <td class="p-0">
-      <div class="dropdown dropdown-end dropdown-hover">
-        <TableButton />
-        <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-        <ul
-          tabindex="0"
-          class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
-        >
-          <li>
-            <button on:click={delete_topic}>Delete Topic</button>
-          </li>
-          <li>
-            <button on:click={() => open_generate_subtopics_modal()}>
-              Add Subtopics
-            </button>
-          </li>
-
-          {#if data.sub_topics.length > 0}
-            <li>
-              <button on:click={() => open_generate_samples_modal()}>
-                Generate Inputs (Only This Topic)
-              </button>
-            </li>
-            <li>
-              <button on:click={() => open_generate_samples_modal(true)}>
-                Generate Inputs (All Subtopics)
-              </button>
-            </li>
-          {:else}
-            <li>
-              <button on:click={() => open_generate_samples_modal()}>
-                Generate Inputs
-              </button>
-            </li>
-          {/if}
-        </ul>
-      </div>
+      <TableActionMenu
+        items={[
+          { label: "Delete Topic", onclick: delete_topic },
+          {
+            label: "Add Subtopics",
+            onclick: () => open_generate_subtopics_modal(),
+          },
+          {
+            label: "Generate Inputs (Only This Topic)",
+            onclick: () => open_generate_samples_modal(),
+            hidden: data.sub_topics.length === 0,
+          },
+          {
+            label: "Generate Inputs (All Subtopics)",
+            onclick: () => open_generate_samples_modal(true),
+            hidden: data.sub_topics.length === 0,
+          },
+          {
+            label: "Generate Inputs",
+            onclick: () => open_generate_samples_modal(),
+            hidden: data.sub_topics.length > 0,
+          },
+        ]}
+      />
     </td>
   </tr>
 {/if}
@@ -585,38 +573,25 @@
       {/if}
     </td>
     <td class="p-0">
-      <div class="dropdown dropdown-end dropdown-hover">
-        <TableButton />
-        <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-        <ul
-          tabindex="0"
-          class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
-        >
-          {#if !sample.saved_id}
-            <li>
-              <button on:click|stopPropagation={() => delete_sample(sample)}>
-                Remove Sample
-              </button>
-            </li>
-          {/if}
-          {#if !sample.saved_id && sample.output}
-            <li>
-              <button
-                on:click|stopPropagation={() => remove_sample_output(sample)}
-              >
-                Remove Output
-              </button>
-            </li>
-          {/if}
-          {#if sample.saved_id}
-            <li>
-              <button on:click|stopPropagation={() => open_sample(sample)}>
-                View in Dataset
-              </button>
-            </li>
-          {/if}
-        </ul>
-      </div>
+      <TableActionMenu
+        items={[
+          {
+            label: "Remove Sample",
+            onclick: () => delete_sample(sample),
+            hidden: !!sample.saved_id,
+          },
+          {
+            label: "Remove Output",
+            onclick: () => remove_sample_output(sample),
+            hidden: !!sample.saved_id || !sample.output,
+          },
+          {
+            label: "View in Dataset",
+            onclick: () => open_sample(sample),
+            hidden: !sample.saved_id,
+          },
+        ]}
+      />
     </td>
   </tr>
 {/each}

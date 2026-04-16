@@ -902,6 +902,44 @@ async def test_litellm_tools_returns_empty_list_without_tools(config, mock_task)
     assert tools == []
 
 
+@pytest.mark.parametrize(
+    "kwargs_in,expected",
+    [
+        ({}, []),
+        ({"tools": []}, ["tools"]),
+        ({"tool_choice": "auto"}, ["tool_choice"]),
+        ({"tools": [], "tool_choice": "auto"}, ["tools", "tool_choice"]),
+        ({"allowed_openai_params": ["custom_param"]}, ["custom_param"]),
+        (
+            {"tools": [], "allowed_openai_params": ["custom_param"]},
+            ["custom_param", "tools"],
+        ),
+    ],
+)
+def test_allowed_openai_params_for_completion_kwargs_independent_keys(
+    config, mock_task, kwargs_in, expected
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    result = adapter._allowed_openai_params_for_completion_kwargs(kwargs_in)
+    assert sorted(result) == sorted(expected)
+
+
+def test_allowed_openai_params_raises_for_non_list(config, mock_task):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    with pytest.raises(ValueError, match="expected list"):
+        adapter._allowed_openai_params_for_completion_kwargs(
+            {"allowed_openai_params": "not_a_list"}
+        )
+
+
+def test_allowed_openai_params_raises_for_non_string_items(config, mock_task):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    with pytest.raises(ValueError, match="items are not strings"):
+        adapter._allowed_openai_params_for_completion_kwargs(
+            {"allowed_openai_params": ["valid", 123]}
+        )
+
+
 @pytest.mark.asyncio
 async def test_build_completion_kwargs_includes_tools(
     config, mock_task, mock_math_tools
@@ -926,12 +964,89 @@ async def test_build_completion_kwargs_includes_tools(
     assert len(kwargs["tools"]) == 4
     assert "tool_choice" in kwargs
     assert kwargs["tool_choice"] == "auto"
+    assert isinstance(kwargs["allowed_openai_params"], list)
+    assert sorted(kwargs["allowed_openai_params"]) == sorted(["tool_choice", "tools"])
 
     # Verify tools are properly formatted
     for tool in kwargs["tools"]:
         assert "type" in tool
         assert tool["type"] == "function"
         assert "function" in tool
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_omits_allowed_openai_params_without_tools(
+    config, mock_task
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=[]),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    assert "allowed_openai_params" not in kwargs
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_merges_allowed_openai_params(
+    config, mock_task, mock_math_tools
+):
+    """Test that allowed_openai_params from additional_body_options are merged with internally computed ones."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    adapter._additional_body_options = {
+        "allowed_openai_params": ["tools", "custom_param"],
+    }
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=mock_math_tools),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    assert sorted(kwargs["allowed_openai_params"]) == [
+        "custom_param",
+        "tool_choice",
+        "tools",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_preserves_existing_allowed_openai_params_without_tools(
+    config, mock_task
+):
+    """Test that allowed_openai_params from additional_body_options are preserved even when no tools are present."""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    adapter._additional_body_options = {
+        "allowed_openai_params": ["custom_param"],
+    }
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=[]),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    assert kwargs["allowed_openai_params"] == ["custom_param"]
 
 
 @pytest.mark.asyncio
