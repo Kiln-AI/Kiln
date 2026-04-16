@@ -57,6 +57,23 @@ If the user asks you to find new models, **do NOT just web search "new AI models
 
 ---
 
+## Phase 1B – Lagging-Provider Backfill Check (every run)
+
+Some providers — **Fireworks AI**, **Together AI**, **SiliconFlow** — expose new models on their own endpoints 1–2 weeks before those entries surface in models.dev / LiteLLM. Relying only on those two catalogs will both under-populate the provider list for the model you're adding now **and** miss the window to backfill recently-added models whose provider support has since grown.
+
+Run this check on **every invocation** of the skill, regardless of whether you're in discovery mode or adding a specific model.
+
+1. **Pull the 10 most recently added models** from the top of `built_in_models` in `ml_model_list.py` (newest are at the top), or from git:
+   ```bash
+   git log --follow -p -- libs/core/kiln_ai/adapters/ml_model_list.py | grep -E "^\+\s+name=ModelName\." | head -20
+   ```
+
+2. **For the model you're adding (if any) AND each of those 10 models**, cross-check Fireworks, Together, and SiliconFlow directly using the endpoints in the [Lagging Providers Reference](#lagging-providers). Do NOT trust `models.dev` / LiteLLM as the final word for these three providers.
+
+3. **If a lagging provider now supports a recently-added model that isn't yet in its `KilnModel` entry**, flag it to the user and propose either bundling the provider addition into the current change or opening a separate PR. Do not silently add it.
+
+---
+
 ## Phase 2 – Gather Context
 
 1. **Read the predecessor model** in `ml_model_list.py` (e.g. for Opus 4.6 → read Opus 4.5). You inherit most parameters from it.
@@ -496,5 +513,33 @@ curl -s https://models.dev/api.json | jq '.["PROVIDER"].models["MODEL_ID"]'
 - OpenRouter: `curl -s https://openrouter.ai/api/v1/models | jq '.data[].id' | grep -i "SEARCH_TERM"`
 - Anthropic: https://docs.anthropic.com/en/api/models/list
 - Cerebras: https://inference-docs.cerebras.ai/models/overview
+
+### Lagging Providers
+
+Fireworks, Together, and SiliconFlow typically expose new models on their own endpoints 1–2 weeks before models.dev / LiteLLM catch up. For these providers, **always** cross-check directly — both when adding a new model and when running the [Phase 1B backfill check](#phase-1b--lagging-provider-backfill-check-every-run).
+
+**Fireworks AI** — model pages are the most current source. WebFetch directly:
+```
+WebFetch https://fireworks.ai/models/fireworks/{model-slug}
+```
+Or browse the catalog at https://fireworks.ai/models. Kiln slug format: `accounts/fireworks/models/{model-slug}`.
+
+**Together AI** — the `/v1/models` endpoint requires an API key. `$TOGETHER_API_KEY` is typically set in the user's shell:
+```bash
+# List all Together model IDs matching a term:
+curl -s https://api.together.xyz/v1/models \
+  -H "Authorization: Bearer $TOGETHER_API_KEY" | jq '.[] | .id' | grep -i "SEARCH_TERM"
+
+# Full record for a specific slug:
+curl -s https://api.together.xyz/v1/models \
+  -H "Authorization: Bearer $TOGETHER_API_KEY" | jq '.[] | select(.id == "SLUG")'
+```
+If the key isn't set, ask the user before prompting them to export it — don't fail silently onto models.dev.
+
+**SiliconFlow** — WebFetch the public model catalog page, or a specific model page if you have the vendor/model path:
+```
+WebFetch https://siliconflow.com/models
+WebFetch https://siliconflow.com/models/{vendor}/{model}
+```
 
 When you find a new reliable slug source, append it here.
