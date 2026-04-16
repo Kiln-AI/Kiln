@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Path
@@ -6,6 +7,9 @@ from kiln_ai.datamodel import PromptId
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
 from pydantic import BaseModel
+
+
+logger = logging.getLogger(__name__)
 
 
 class PromptApiResponse(BaseModel):
@@ -36,8 +40,9 @@ def connect_prompt_api(app: FastAPI):
         try:
             prompt_builder = prompt_builder_from_id(prompt_id, task)
             prompt = prompt_builder.build_prompt_for_ui()
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=str(e))
+        except Exception:
+            logger.exception("Failed to generate prompt")
+            raise HTTPException(status_code=400, detail="Failed to generate prompt.")
 
         return PromptApiResponse(
             prompt=prompt,
