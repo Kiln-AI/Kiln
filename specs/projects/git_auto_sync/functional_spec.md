@@ -232,7 +232,7 @@ Accessed via the Import Project UI with a new "Sync from Git" option. Wizard ste
 
 **Step 2: Credentials (shown on demand)**
 - PAT token entry.
-- For GitHub URLs, show a deeplink: [Get Token from GitHub](https://github.com/settings/tokens/new?scopes=repo&description=Kiln+AI&default_expires_at=none)
+- For GitHub URLs, show a deeplink to create a classic PAT: [Get Token from GitHub](https://github.com/settings/tokens/new?description=Kiln+AI&scopes=repo). Also show a secondary note that fine-grained access tokens are available but harder to setup and may require org admin approval.
 - For non-GitHub URLs, show a brief explainer of what a PAT is and where to find it.
 - On save: test access with the provided token. Don't leave this screen unless the test succeeds.
 - Token saved in memory during wizard, persisted to project-specific git config on final step.

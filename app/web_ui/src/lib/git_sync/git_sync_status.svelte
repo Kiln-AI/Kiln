@@ -10,7 +10,8 @@
     testAccess,
     isGitHubUrl,
     isGitLabUrl,
-    gitHubPatDeepLink,
+    gitHubClassicPatDeepLink,
+    gitHubFineGrainedPatDeepLink,
     gitLabPatDeepLink,
     type GitSyncConfigResponse,
   } from "$lib/git_sync/api"
@@ -159,13 +160,22 @@
           {#if is_github}
             <div class="text-xs text-gray-500 mt-1">
               <a
-                href={gitHubPatDeepLink(config?.git_url || "")}
+                href={gitHubClassicPatDeepLink(config?.git_url || "")}
                 target="_blank"
                 rel="noopener noreferrer"
                 class="link text-primary"
               >
                 Generate a GitHub token</a
               >. It must have read/write access to the selected repo.
+              <span class="text-gray-400"
+                >You can also use <a
+                  href={gitHubFineGrainedPatDeepLink(config?.git_url || "")}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="link">fine-grained access tokens</a
+                >, however they are harder to setup and may require approval by
+                an org administrator.</span
+              >
             </div>
           {:else if is_gitlab && config?.git_url}
             <div class="text-xs text-gray-500 mt-1">

@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import {
   isGitHubUrl,
   isGitLabUrl,
-  gitHubPatDeepLink,
+  gitHubClassicPatDeepLink,
+  gitHubFineGrainedPatDeepLink,
   gitLabPatDeepLink,
   gitHostname,
   gitOwnerFromUrl,
@@ -180,9 +181,26 @@ describe("gitRepoNameFromUrl", () => {
   })
 })
 
-describe("gitHubPatDeepLink", () => {
+describe("gitHubClassicPatDeepLink", () => {
+  it("returns GitHub classic token creation URL with repo name", () => {
+    const link = gitHubClassicPatDeepLink("https://github.com/Kiln-AI/kiln.git")
+    expect(link).toContain("github.com/settings/tokens/new")
+    expect(link).toContain("scopes=repo")
+    expect(link).toContain("Kiln%20AI%20for%20kiln")
+  })
+
+  it("falls back when repo name unavailable", () => {
+    const link = gitHubClassicPatDeepLink("")
+    expect(link).toContain("description=Kiln%20AI")
+    expect(link).not.toContain("for%20")
+  })
+})
+
+describe("gitHubFineGrainedPatDeepLink", () => {
   it("returns GitHub fine-grained token creation URL with repo name", () => {
-    const link = gitHubPatDeepLink("https://github.com/Kiln-AI/kiln.git")
+    const link = gitHubFineGrainedPatDeepLink(
+      "https://github.com/Kiln-AI/kiln.git",
+    )
     expect(link).toContain("github.com/settings/personal-access-tokens/new")
     expect(link).toContain("contents=write")
     expect(link).toContain("Kiln%20AI%20for%20kiln")
@@ -190,7 +208,7 @@ describe("gitHubPatDeepLink", () => {
   })
 
   it("falls back when repo name unavailable", () => {
-    const link = gitHubPatDeepLink("")
+    const link = gitHubFineGrainedPatDeepLink("")
     expect(link).toContain("name=Kiln%20AI")
     expect(link).not.toContain("for%20")
   })

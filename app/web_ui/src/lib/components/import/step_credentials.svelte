@@ -7,7 +7,8 @@
     testAccess,
     isGitHubUrl,
     isGitLabUrl,
-    gitHubPatDeepLink,
+    gitHubClassicPatDeepLink,
+    gitHubFineGrainedPatDeepLink,
     gitLabPatDeepLink,
     gitOwnerFromUrl,
     gitRepoNameFromUrl,
@@ -80,10 +81,14 @@
   }
 
   $: token_link = is_github
-    ? gitHubPatDeepLink(git_url)
+    ? gitHubClassicPatDeepLink(git_url)
     : is_gitlab
       ? gitLabPatDeepLink(git_url)
       : null
+
+  $: fine_grained_link = is_github
+    ? gitHubFineGrainedPatDeepLink(git_url)
+    : null
 
   $: token_link_label = is_github
     ? "Generate token on GitHub"
@@ -96,8 +101,7 @@
 
 {#if is_github}
   <p class="text-sm text-gray-500 mb-6">
-    Generate a fine-grained personal access token on GitHub, then paste it
-    below.
+    Generate a classic personal access token on GitHub, then paste it below.
   </p>
 {:else if is_gitlab}
   <p class="text-sm text-gray-500 mb-6">
@@ -146,6 +150,17 @@
         >
           {error ? `Generate a new token →` : `${token_link_label} →`}
         </a>
+      {/if}
+      {#if fine_grained_link}
+        <p class="text-xs text-gray-400">
+          You can also use <a
+            href={fine_grained_link}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="link">fine-grained access tokens</a
+          >, however they are harder to setup and may require approval by an org
+          administrator.
+        </p>
       {/if}
     </div>
   </div>

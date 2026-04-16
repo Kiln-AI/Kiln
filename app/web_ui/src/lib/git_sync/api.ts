@@ -240,7 +240,16 @@ export function gitRepoNameFromUrl(url: string): string | null {
   }
 }
 
-export function gitHubPatDeepLink(git_url: string): string {
+export function gitHubClassicPatDeepLink(git_url: string): string {
+  const repo = gitRepoNameFromUrl(git_url)
+  const description = repo ? `Kiln AI for ${repo}` : "Kiln AI"
+  return (
+    `https://github.com/settings/tokens/new` +
+    `?description=${encodeURIComponent(description)}&scopes=repo`
+  )
+}
+
+export function gitHubFineGrainedPatDeepLink(git_url: string): string {
   const repo = gitRepoNameFromUrl(git_url)
   const name = repo ? `Kiln AI for ${repo}` : "Kiln AI"
   const description = repo
