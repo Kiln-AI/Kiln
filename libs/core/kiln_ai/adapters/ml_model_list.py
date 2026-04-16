@@ -6374,6 +6374,12 @@ built_in_models: List[KilnModel] = [
                 reasoning_capable=True,
             ),
             KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/glm-5p1",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                reasoning_capable=True,
+            ),
+            KilnModelProvider(
                 name=ModelProviderName.together_ai,
                 model_id="zai-org/GLM-5.1",
                 structured_output_mode=StructuredOutputMode.json_instructions,
