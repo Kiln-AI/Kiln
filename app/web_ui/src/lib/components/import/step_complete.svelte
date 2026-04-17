@@ -1,7 +1,11 @@
 <script lang="ts">
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import Warning from "$lib/ui/warning.svelte"
-  import { renameClone, saveConfig } from "$lib/git_sync/api"
+  import {
+    renameClone,
+    saveConfig,
+    is_stale_clone_error,
+  } from "$lib/git_sync/api"
   import { load_projects } from "$lib/stores"
   import { onMount } from "svelte"
 
@@ -16,6 +20,7 @@
   export let project_name: string
   export let on_complete: (project_id: string) => void
   export let on_back: () => void
+  export let on_stale_clone: (() => void) | null = null
 
   let saving = true
   let error: KilnError | null = null
@@ -58,6 +63,10 @@
       }
       done = true
     } catch (e) {
+      if (is_stale_clone_error(e) && on_stale_clone) {
+        on_stale_clone()
+        return
+      }
       error = createKilnError(e)
     } finally {
       saving = false
@@ -95,7 +104,7 @@
       </svg>
     </div>
 
-    <h2 class="text-xl font-medium">Git Sync Enabled</h2>
+    <h2 class="text-xl font-medium">Git Auto Sync Enabled</h2>
 
     <p class="text-sm text-gray-500 text-center max-w-md">
       Auto-sync is now active for "{project_name || project_path}". Changes will
@@ -104,7 +113,10 @@
     </p>
 
     <div class="flex flex-row gap-4 mt-4">
-      <button class="btn btn-primary" on:click={() => on_complete(project_id)}>
+      <button
+        class="btn btn-primary btn-wide"
+        on:click={() => on_complete(project_id)}
+      >
         Done
       </button>
     </div>

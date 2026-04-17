@@ -59,7 +59,7 @@
   export let run_config_name: string = generate_memorable_name()
   export let show_name_field: boolean = true
 
-  export let model: string = $ui_state.selected_model
+  export let model: string | null = $ui_state.selected_model
   export let prompt_method: string = "simple_prompt_builder"
   export let tools: string[] = []
   export let skills: string[] = []

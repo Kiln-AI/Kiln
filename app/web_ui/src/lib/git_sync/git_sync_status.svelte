@@ -239,7 +239,7 @@
   <div class="border rounded-lg p-4">
     <div class="flex items-center justify-between gap-4">
       <div class="min-w-0">
-        <h3 class="text-sm font-medium">Git Sync</h3>
+        <h3 class="text-sm font-medium">Git Auto Sync</h3>
         <p class="text-xs text-gray-500 mt-1">
           Syncing with <span class="font-medium">{config.branch}</span> branch
         </p>

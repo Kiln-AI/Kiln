@@ -1,6 +1,12 @@
 <script lang="ts">
   import EditProject from "./edit_project.svelte"
   import { type Project } from "$lib/types"
+  import { agentInfo } from "$lib/agent"
+
+  agentInfo.set({
+    name: "Setup: Create Project",
+    description: "Onboarding step to create the first project.",
+  })
 
   let project: Project = {
     v: 1,

@@ -2,6 +2,12 @@
   import AppPage from "../../app_page.svelte"
   import ImportProject from "$lib/components/import/import_project.svelte"
   import { goto } from "$app/navigation"
+  import { agentInfo } from "$lib/agent"
+  agentInfo.set({
+    name: "Import Project",
+    description:
+      "Import an existing Kiln project, either from a local folder or a remote Git repository.",
+  })
 </script>
 
 <AppPage

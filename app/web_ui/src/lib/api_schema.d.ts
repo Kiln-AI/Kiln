@@ -2866,6 +2866,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/execute-tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Execute approved client tools and continue chat stream
+         * @description Tool calls that require user approval are streamed to the client for approval, along with the
+         *     other toolcalls part of the same turn. The user must approve / reject all the approval-requiring
+         *     toolcalls in the UI, then send back the decisions through this endpoint, which will execute
+         *     the toolcalls and continue the chat stream.
+         */
+        post: operations["post_execute_tools_api_chat_execute_tools_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List chat sessions
+         * @description Proxy to Kiln Copilot ``GET /v1/chat/sessions``.
+         */
+        get: operations["list_chat_sessions_api_chat_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get chat session
+         * @description Proxy to Kiln Copilot ``GET /v1/chat/sessions/{session_id}``.
+         */
+        get: operations["get_chat_session_api_chat_sessions__session_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete chat session
+         * @description Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{session_id}``.
+         */
+        delete: operations["delete_chat_session_api_chat_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stream Chat
+         * @description Forward chat to Kiln Copilot and stream AI SDK events as Server-Sent Events.
+         */
+        post: operations["chat_api_chat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3361,6 +3448,41 @@ export interface components {
             role: "user";
             /** Name */
             name?: string;
+        };
+        /** ChatRequest */
+        ChatRequest: {
+            /** Messages */
+            messages: components["schemas"]["ChatRequestMessage"][];
+            /** Trace Id */
+            trace_id?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ChatRequestMessage */
+        ChatRequestMessage: {
+            /** Role */
+            role: string;
+            /** Content */
+            content?: string | {
+                [key: string]: unknown;
+            }[] | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ChatSessionListItem */
+        ChatSessionListItem: {
+            /** Id */
+            id: string;
+            /** Title */
+            title?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** ChatSessionSnapshot */
+        ChatSessionSnapshot: {
+            /** Id */
+            id: string;
+            task_run: components["schemas"]["TaskRunSnapshot"];
         };
         /**
          * ChatStrategy
@@ -5008,6 +5130,17 @@ export interface components {
             fails_specification: boolean;
             /** User Feedback */
             user_feedback?: string | null;
+        };
+        /** ExecuteToolsRequest */
+        ExecuteToolsRequest: {
+            /** Trace Id */
+            trace_id: string;
+            /** Tool Calls */
+            tool_calls: components["schemas"]["ToolCallInfo"][];
+            /** Decisions */
+            decisions: {
+                [key: string]: boolean;
+            };
         };
         /**
          * ExternalToolApiDescription
@@ -8976,6 +9109,13 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
+        /** TaskRunSnapshot */
+        TaskRunSnapshot: {
+            /** Trace */
+            trace?: components["schemas"]["TraceMessage"][] | null;
+        } & {
+            [key: string]: unknown;
+        };
         /**
          * TaskSample
          * @description An example task input/output pair used to demonstrate expected behavior.
@@ -9126,6 +9266,19 @@ export interface components {
             /** Description */
             description: string | null;
         };
+        /** ToolCallInfo */
+        ToolCallInfo: {
+            /** Toolcallid */
+            toolCallId: string;
+            /** Toolname */
+            toolName: string;
+            /** Input */
+            input: {
+                [key: string]: unknown;
+            };
+            /** Requiresapproval */
+            requiresApproval: boolean;
+        };
         /**
          * ToolDefinitionResponse
          * @description Response model for tool definition endpoint.
@@ -9166,7 +9319,7 @@ export interface components {
          * ToolSetType
          * @enum {string}
          */
-        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill";
+        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin";
         /**
          * ToolsRunConfig
          * @description A config describing which tools are available to a task.
@@ -9189,6 +9342,41 @@ export interface components {
             core_requirement: string;
             /** Toxicity Examples */
             toxicity_examples: string;
+        };
+        /** TraceMessage */
+        TraceMessage: {
+            /** Role */
+            role: string;
+            /** Content */
+            content?: string | {
+                [key: string]: unknown;
+            }[] | null;
+            /** Tool Calls */
+            tool_calls?: components["schemas"]["TraceToolCall"][] | null;
+            /** Tool Call Id */
+            tool_call_id?: string | null;
+            /** Reasoning Content */
+            reasoning_content?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** TraceToolCall */
+        TraceToolCall: {
+            /** Id */
+            id: string;
+            /**
+             * Type
+             * @default function
+             */
+            type: string;
+            function: components["schemas"]["TraceToolCallFunction"];
+        };
+        /** TraceToolCallFunction */
+        TraceToolCallFunction: {
+            /** Name */
+            name: string;
+            /** Arguments */
+            arguments: string;
         };
         /**
          * UpdateConfigRequest
@@ -9350,6 +9538,11 @@ export interface components {
              * @description The cost of the task run in US dollars, saved at runtime (prices can change over time).
              */
             cost?: number | null;
+            /**
+             * Cached Tokens
+             * @description Number of tokens served from prompt cache. None if not reported.
+             */
+            cached_tokens?: number | null;
         };
         /**
          * UserModelEntry
@@ -16075,6 +16268,168 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OAuthStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_execute_tools_api_chat_execute_tools_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecuteToolsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_chat_sessions_api_chat_sessions_get: {
+        parameters: {
+            query?: {
+                /** @description Maximum number of sessions to return */
+                limit?: number;
+                /** @description Number of sessions to skip */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSessionListItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chat_session_api_chat_sessions__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Chat session id (same as trace id for continuation). */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSessionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_chat_session_api_chat_sessions__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Chat session id to delete. */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chat_api_chat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

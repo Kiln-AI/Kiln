@@ -7,9 +7,14 @@
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import { getPromptType } from "../../prompt_generators/prompt_generators"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: prompt_id = $page.params.prompt_id!
+  $: agentInfo.set({
+    name: "Saved Prompt Detail",
+    description: `Saved prompt detail for prompt ID ${prompt_id} in project ID ${project_id}, task ID ${task_id}. Prompt name: ${prompt_model?.name ?? "[loading]"}. Shows prompt content, version history, and options to clone or edit.`,
+  })
 
   $: prompt_model = $current_task_prompts?.prompts.find(
     (prompt) => prompt.id === prompt_id,

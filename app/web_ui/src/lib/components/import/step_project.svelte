@@ -1,7 +1,11 @@
 <script lang="ts">
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import Warning from "$lib/ui/warning.svelte"
-  import { scanProjects, type ProjectInfo } from "$lib/git_sync/api"
+  import {
+    scanProjects,
+    is_stale_clone_error,
+    type ProjectInfo,
+  } from "$lib/git_sync/api"
   import { onMount } from "svelte"
 
   export let clone_path: string
@@ -10,6 +14,7 @@
     project_id: string,
     project_name: string,
   ) => void
+  export let on_stale_clone: (() => void) | null = null
 
   let projects: ProjectInfo[] = []
   let loading = true
@@ -24,6 +29,10 @@
         select_project(projects[0])
       }
     } catch (e) {
+      if (is_stale_clone_error(e) && on_stale_clone) {
+        on_stale_clone()
+        return
+      }
       error = createKilnError(e)
     } finally {
       loading = false

@@ -2,6 +2,12 @@
   import ImportProject from "$lib/components/import/import_project.svelte"
   import { goto } from "$app/navigation"
   import { client } from "$lib/api_client"
+  import { agentInfo } from "$lib/agent"
+  agentInfo.set({
+    name: "Import Project",
+    description:
+      "Import an existing Kiln project, either from a local folder or a remote Git repository.",
+  })
 
   async function handle_complete(project_id: string) {
     const has_tasks = await project_has_tasks(project_id)

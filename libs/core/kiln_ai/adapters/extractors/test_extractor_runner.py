@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from conftest import MockFileFactoryMimeType
 from kiln_ai.adapters.extractors.base_extractor import BaseExtractor, ExtractionOutput
 from kiln_ai.adapters.extractors.extractor_runner import ExtractorJob, ExtractorRunner
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
@@ -19,6 +18,7 @@ from kiln_ai.datamodel.extraction import (
     OutputFormat,
 )
 from kiln_ai.datamodel.project import Project
+from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
 from kiln_ai.utils.git_sync_protocols import default_save_context
 
 

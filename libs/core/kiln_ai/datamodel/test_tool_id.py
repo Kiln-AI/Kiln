@@ -8,7 +8,9 @@ from kiln_ai.datamodel.tool_id import (
     KilnBuiltInToolId,
     ToolId,
     _check_tool_id,
+    build_kiln_unmanaged_tool_id,
     kiln_task_server_id_from_tool_id,
+    kiln_unmanaged_tool_slug_from_id,
     mcp_server_and_tool_name_from_id,
     rag_config_id_from_id,
 )
@@ -23,12 +25,14 @@ class TestKilnBuiltInToolId:
         assert KilnBuiltInToolId.SUBTRACT_NUMBERS == "kiln_tool::subtract_numbers"
         assert KilnBuiltInToolId.MULTIPLY_NUMBERS == "kiln_tool::multiply_numbers"
         assert KilnBuiltInToolId.DIVIDE_NUMBERS == "kiln_tool::divide_numbers"
+        assert KilnBuiltInToolId.CALL_KILN_API == "kiln_tool::call_kiln_api"
         for enum_value in KilnBuiltInToolId.__members__.values():
             assert _check_tool_id(enum_value) == enum_value
 
     def test_enum_membership(self):
         """Test enum membership checks."""
         assert "kiln_tool::add_numbers" in KilnBuiltInToolId.__members__.values()
+        assert "kiln_tool::call_kiln_api" in KilnBuiltInToolId.__members__.values()
         assert "invalid_tool" not in KilnBuiltInToolId.__members__.values()
 
 
@@ -180,6 +184,45 @@ class TestCheckToolId:
             _check_tool_id("kiln_task::")
 
 
+class TestKilnUnmanagedToolIds:
+    """kiln_unmanaged::<slug> for AdapterConfig.unmanaged_tools / UnmanagedKilnTool."""
+
+    def test_valid_kiln_unmanaged_tools(self):
+        valid_ids = [
+            "kiln_unmanaged::model_info",
+            "kiln_unmanaged::lookup_weather",
+            "kiln_unmanaged::myapp_get_user",
+        ]
+        for tool_id in valid_ids:
+            assert _check_tool_id(tool_id) == tool_id
+
+    def test_invalid_kiln_unmanaged_format(self):
+        invalid_ids = [
+            "kiln_unmanaged::",
+            "kiln_unmanaged::a::b",
+            "kiln_unmanaged::a::b::c",
+            "kiln_unmanaged::::",
+        ]
+        for invalid_id in invalid_ids:
+            with pytest.raises(ValueError, match="kiln_unmanaged"):
+                _check_tool_id(invalid_id)
+
+    def test_build_kiln_unmanaged_tool_id(self):
+        assert (
+            build_kiln_unmanaged_tool_id("model_info") == "kiln_unmanaged::model_info"
+        )
+        with pytest.raises(ValueError, match="non-empty"):
+            build_kiln_unmanaged_tool_id("")
+        with pytest.raises(ValueError, match="must not contain"):
+            build_kiln_unmanaged_tool_id("bad::id")
+
+    def test_kiln_unmanaged_tool_slug_from_id(self):
+        assert (
+            kiln_unmanaged_tool_slug_from_id("kiln_unmanaged::model_info")
+            == "model_info"
+        )
+
+
 class TestMcpServerAndToolNameFromId:
     """Test the mcp_server_and_tool_name_from_id function."""
 
@@ -268,6 +311,9 @@ class TestToolIdPydanticType:
             "kiln_tool::rag::my_rag_config",
             # Kiln task tools
             "kiln_task::server1",
+            # Unmanaged (SDK / AdapterConfig.unmanaged_tools)
+            "kiln_unmanaged::model_info",
+            "kiln_unmanaged::lookup_weather",
             "kiln_task::my_server",
         ]
 

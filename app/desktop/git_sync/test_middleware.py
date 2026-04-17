@@ -748,6 +748,48 @@ def test_dev_mode_catchall_dirty_non_project_url_returns_500(
     assert any("leaked_admin_write.txt" in m for m in rendered)
 
 
+def test_dev_mode_catchall_dirty_non_project_url_get_returns_500(
+    git_repos, monkeypatch, caplog
+):
+    """Dev mode + GET to a non-project URL that writes into a synced repo -> 500.
+
+    GETs are now caught too, matching the dev-mode dirty check on matched URLs.
+    """
+    monkeypatch.setenv("KILN_DEV_MODE", "true")
+    local_path, _ = git_repos
+
+    GitSyncRegistry.get_or_create(local_path, auth_mode="system_keys")
+
+    app = FastAPI()
+    app.add_middleware(GitSyncMiddleware)
+
+    @app.get("/api/admin/sneaky")
+    def admin_get_endpoint():
+        (local_path / "leaked_admin_get.txt").write_text("oops via GET")
+        return {"ok": True}
+
+    with (
+        patch(
+            "app.desktop.git_sync.middleware.project_path_from_id",
+            return_value=None,
+        ),
+        patch(
+            "app.desktop.git_sync.middleware.get_git_sync_config",
+            return_value=None,
+        ),
+        caplog.at_level(logging.ERROR),
+    ):
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get("/api/admin/sneaky")
+
+    assert resp.status_code == 500
+    body = resp.json()
+    assert "non-project-scoped endpoint" in body["detail"]
+    rendered = [r.getMessage() for r in caplog.records]
+    assert any("DEV MODE: Non-project-scoped endpoint" in m for m in rendered)
+    assert any("leaked_admin_get.txt" in m for m in rendered)
+
+
 def test_dev_mode_catchall_non_project_url_clean_passes(git_repos, monkeypatch):
     """Dev mode + POST to a non-project URL that writes to a tmp path (not inside
     a synced repo) does NOT false-positive."""

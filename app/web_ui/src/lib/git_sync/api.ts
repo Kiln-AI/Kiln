@@ -27,6 +27,15 @@ async function patch<T>(path: string, body: unknown): Promise<T> {
   return request("PATCH", path, body)
 }
 
+export function is_stale_clone_error(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : typeof e === "string" ? e : ""
+  const lower = msg.toLowerCase()
+  return (
+    lower.includes("clone path does not exist") ||
+    lower.includes("not a directory")
+  )
+}
+
 export type TestAccessResponse = {
   success: boolean
   message: string

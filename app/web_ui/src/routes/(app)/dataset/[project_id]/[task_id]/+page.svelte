@@ -13,6 +13,7 @@
   import TagPicker from "$lib/ui/tag_picker.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import FilterTagsDialog from "$lib/ui/filter_tags_dialog.svelte"
+  import { agentInfo } from "$lib/agent"
 
   let runs: RunSummary[] | null = null
   let filtered_runs: RunSummary[] | null = null
@@ -50,6 +51,20 @@
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+
+  $: {
+    let desc = `Dataset listing page for project ID ${project_id}, task ID ${task_id}.`
+    if (filter_tags.length > 0) {
+      desc += ` Filtered by tags: ${filter_tags.join(", ")}.`
+    }
+    if (sortColumn !== "created_at" || sortDirection !== "desc") {
+      desc += ` Sorted by ${sortColumn} ${sortDirection}.`
+    }
+    agentInfo.set({
+      name: "Dataset",
+      description: desc,
+    })
+  }
 
   const columns = [
     { key: "rating", label: "Rating" },

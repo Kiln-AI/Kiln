@@ -39,10 +39,16 @@
     get_tool_server_name,
     split_tool_and_skill_ids,
   } from "$lib/stores/tools_store"
+  import { agentInfo } from "$lib/agent"
 
   $: run_id = $page.params.run_id!
   $: task_id = $page.params.task_id!
   $: project_id = $page.params.project_id!
+
+  $: agentInfo.set({
+    name: "Dataset Run Detail",
+    description: `Detail view for run ID ${run_id} in project ID ${project_id}, task ID ${task_id}. Shows run input, output, rating, model info, and repair options.`,
+  })
   // @ts-expect-error list_page is not a property of PageState
   $: list_page = ($page.state.list_page || []) as string[]
 
