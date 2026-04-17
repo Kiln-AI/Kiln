@@ -13,8 +13,13 @@
   import type { UiProperty } from "$lib/ui/property_list"
   import SkillPropertiesDisplay from "../../skill_properties_display.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: skill_id = $page.params.skill_id!
+  $: agentInfo.set({
+    name: "Skill Detail",
+    description: `Skill detail page for skill ID ${skill_id} in project ID ${project_id}.${skill?.name ? ` Skill name: '${skill.name}'.` : ""} Shows skill description, body, and properties.`,
+  })
 
   let skill: Skill | null = null
   let skill_description: string | null = null

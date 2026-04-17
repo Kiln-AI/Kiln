@@ -6,6 +6,7 @@ from typing import Sequence
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from kiln_ai.utils.config import Config
 
 from .custom_errors import connect_custom_errors
 from .document_api import connect_document_api
@@ -149,11 +150,9 @@ def make_app(lifespan=None):
 
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the Kiln AI  REST Server.")
+    parser.add_argument("--host", default=None, help="Host for network transports.")
     parser.add_argument(
-        "--host", default="127.0.0.1", help="Host for network transports."
-    )
-    parser.add_argument(
-        "--port", type=int, default=8757, help="Port for network transports."
+        "--port", type=int, default=None, help="Port for network transports."
     )
     parser.add_argument(
         "--log-level",
@@ -172,12 +171,22 @@ app = make_app()
 
 
 def main(argv: Sequence[str] | None = None) -> None:
+
     parser = build_argument_parser()
     args = parser.parse_args(argv)
+
+    # --host/--port override the default from config.
+    # Set as env vars so the config env_var lookup picks them up
+    # in reloaded worker processes (in-memory config doesn't survive reload).
+    if args.host is not None:
+        os.environ["KILN_LOCAL_API_HOST"] = args.host
+    if args.port is not None:
+        os.environ["KILN_LOCAL_API_PORT"] = str(args.port)
+
     uvicorn.run(
         "kiln_server.server:app",
-        host=args.host,
-        port=args.port,
+        host=Config.shared().kiln_local_api_host,
+        port=Config.shared().kiln_local_api_port,
         reload=args.auto_reload,
         log_level=args.log_level,
     )

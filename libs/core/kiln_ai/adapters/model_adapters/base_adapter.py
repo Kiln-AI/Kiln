@@ -20,9 +20,13 @@ from kiln_ai.adapters.ml_model_list import (
 )
 from kiln_ai.adapters.model_adapters.adapter_stream import AdapterStreamResult
 from kiln_ai.adapters.model_adapters.stream_events import (
-    AiSdkEventType,
     AiSdkStreamConverter,
     AiSdkStreamEvent,
+    FinishEvent,
+    FinishMessageMetadata,
+    FinishStepEvent,
+    StartEvent,
+    StartStepEvent,
     ToolCallEvent,
 )
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
@@ -102,6 +106,24 @@ class AdapterConfig:
     tool calls internally).
     """
     return_on_tool_call: bool = False
+
+    """
+    Extra tools provided directly by the caller, in addition to tools resolved from the
+    task's tool registry. These are sent to the model together with registry tools, and
+    their names must not collide with registry tool names.
+
+    If ``return_on_tool_call`` is False (the default), the adapter executes these tools
+    itself just like registry tools. If True, the adapter returns as soon as the model
+    requests a tool call and the caller is responsible for running the tool and passing
+    results back via ``prior_trace``.
+    """
+    unmanaged_tools: list[KilnToolInterface] | None = None
+
+    """
+    When True, automatically inject prompt caching hints into completion
+    requests. This is a cost optimization and does not affect model output.
+    """
+    automatic_prompt_caching: bool = False
 
 
 class BaseAdapter(metaclass=ABCMeta):
@@ -850,8 +872,8 @@ class AiSdkStreamResult:
             message_id = f"msg-{uuid.uuid4().hex}"
             converter = AiSdkStreamConverter()
 
-            yield AiSdkStreamEvent(AiSdkEventType.START, {"messageId": message_id})
-            yield AiSdkStreamEvent(AiSdkEventType.START_STEP)
+            yield StartEvent(messageId=message_id)
+            yield StartStepEvent()
 
             last_event_was_tool_call = False
             async for event in adapter_stream:
@@ -869,16 +891,15 @@ class AiSdkStreamResult:
             for ai_event in converter.close_open_blocks():
                 yield ai_event
 
-            yield AiSdkStreamEvent(AiSdkEventType.FINISH_STEP)
+            yield FinishStepEvent()
 
             self._task_run = self._adapter._finalize_stream(
                 adapter_stream, self._input, self._input_source, self._parent_task_run
             )
 
             if self._task_run.is_toolcall_pending:
-                yield AiSdkStreamEvent(
-                    AiSdkEventType.FINISH,
-                    {"messageMetadata": {"finishReason": "tool-calls"}},
+                yield FinishEvent(
+                    messageMetadata=FinishMessageMetadata(finishReason="tool-calls"),
                 )
             else:
                 for ai_event in converter.finalize():

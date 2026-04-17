@@ -17,6 +17,7 @@ from kiln_ai.adapters.remote_config import (
 from kiln_ai.utils.logging import setup_litellm_logging
 
 from app.desktop.log_config import log_config
+from app.desktop.studio_server.chat import connect_chat_api
 from app.desktop.studio_server.copilot_api import connect_copilot_api
 from app.desktop.studio_server.data_gen_api import connect_data_gen_api
 from app.desktop.studio_server.dev_tools import connect_dev_tools
@@ -73,16 +74,16 @@ def make_app(tk_root: tk.Tk | None = None):
     connect_prompt_optimization_job_api(app)
     connect_copilot_api(app)
     connect_dev_tools(app)
-
+    connect_chat_api(app)
     # Important: webhost must be last, it handles all other URLs
     connect_webhost(app)
     return app
 
 
-def server_config(port=8757, tk_root: tk.Tk | None = None):
+def server_config(port: int, host: str, tk_root: tk.Tk | None = None):
     return uvicorn.Config(
         make_app(tk_root=tk_root),
-        host="127.0.0.1",
+        host=host,
         port=port,
         use_colors=False,
         log_config=log_config(),
@@ -117,7 +118,14 @@ class ThreadedServer(uvicorn.Server):
 
 
 def run_studio():
-    uvicorn.run(kiln_server.app, host="127.0.0.1", port=8757, log_level="warning")
+    from kiln_ai.utils.config import Config
+
+    uvicorn.run(
+        kiln_server.app,
+        host=Config.shared().kiln_local_api_host,
+        port=Config.shared().kiln_local_api_port,
+        log_level="warning",
+    )
 
 
 def run_studio_thread():

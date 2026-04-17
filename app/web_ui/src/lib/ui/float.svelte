@@ -14,7 +14,11 @@
   export let strategy: Strategy = "fixed"
   export let offset_px = 0
   export let shift_padding = 8
-  export let role = "menu"
+  // Pass "none" to omit the role attribute entirely (let the slotted content
+  // carry its own semantics).
+  export let role: string = "menu"
+  export let portal = false
+  export let aria_label: string | undefined = undefined
 
   let referenceElement: HTMLElement | null = null
   let contentElement: HTMLElement
@@ -58,19 +62,26 @@
     await tick()
     referenceElement = contentElement.parentElement
     if (!referenceElement) return
+    if (portal) {
+      document.body.appendChild(contentElement)
+    }
     updatePosition()
     startAutoUpdate()
   })
 
   onDestroy(() => {
     stopAutoUpdate()
+    if (portal) {
+      contentElement?.remove()
+    }
   })
 </script>
 
 <div
   bind:this={contentElement}
   class="z-50 {strategy === 'fixed' ? 'fixed' : 'absolute'}"
-  {role}
+  role={role === "none" ? undefined : role}
+  aria-label={aria_label}
 >
   <slot />
 </div>

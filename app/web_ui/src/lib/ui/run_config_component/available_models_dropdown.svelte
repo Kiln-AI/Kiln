@@ -26,7 +26,7 @@
     "This model does not support logprobs. It will likely fail when running a G-eval or other logprob queries."
 
   export let task_id: string | null = null
-  export let model: string = $ui_state.selected_model
+  export let model: string | null = $ui_state.selected_model
   export let label: string = "Model"
   export let description: string | undefined = undefined
   export let info_description: string | undefined = undefined
@@ -47,10 +47,6 @@
     ...default_model_dropdown_settings,
     ...settings,
   }
-  let pending_model: string = model
-  let tracked_model: string = model
-  $: on_pending_model_change(pending_model)
-  $: sync_parent_model(model)
   $: $ui_state.selected_model = model
   $: model_options = format_model_options(
     $available_models || [],
@@ -70,13 +66,17 @@
   $: get_model_provider(model, model_value_to_provider_name)
 
   function get_model_provider(
-    model_provider: string,
+    model_provider: string | null,
     model_value_to_provider_name_map: Map<string, string>,
   ) {
-    model_name = model_provider
-      ? model_provider.split("/").slice(1).join("/")
-      : null
-    provider_name = model_provider ? model_provider.split("/")[0] : null
+    if (!model_provider) {
+      model_name = null
+      provider_name = null
+      provider_display_name = null
+      return
+    }
+    model_name = model_provider.split("/").slice(1).join("/")
+    provider_name = model_provider.split("/")[0]
     // Use the map to get the provider display name (for custom providers)
     provider_display_name =
       model_value_to_provider_name_map.get(model_provider) || null
@@ -92,6 +92,7 @@
   let unsupported_models: Option[] = []
   let untested_models: Option[] = []
   let deprecated_models: Option[] = []
+  let previous_model: string | null = model
 
   function get_model_warning(selected: string): string | null {
     if (
@@ -105,22 +106,16 @@
     return null
   }
 
-  function sync_parent_model(m: string) {
-    if (m !== tracked_model) {
-      tracked_model = m
-      pending_model = m
-    }
-  }
-
-  function on_pending_model_change(selected: string) {
-    if (selected === model) return
+  function confirm_model_select(event: Event) {
+    const select = event.target as HTMLSelectElement
+    const selected = select.value
     const warning = get_model_warning(selected)
     if (warning && !confirm(warning)) {
-      pending_model = model
+      select.value = previous_model ?? ""
+      model = previous_model
       return
     }
-    model = selected
-    tracked_model = selected
+    previous_model = selected
   }
 
   function format_model_options(
@@ -361,9 +356,10 @@
     {label}
     {description}
     {info_description}
-    bind:value={pending_model}
+    bind:value={model}
     id="model"
     inputType="fancy_select"
+    on_select={confirm_model_select}
     bind:error_message
     fancy_select_options={model_options}
     placeholder="Select a model"

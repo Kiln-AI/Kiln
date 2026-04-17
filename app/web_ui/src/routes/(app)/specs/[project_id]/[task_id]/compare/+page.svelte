@@ -38,8 +38,10 @@
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  // agentInfo.set is below, after validSelectedModels is defined
   $: fromOptimize = $page.url.searchParams.get("from") === "optimize"
   $: breadcrumbs = fromOptimize
     ? [{ label: "Optimize", href: `/optimize/${project_id}/${task_id}` }]
@@ -566,6 +568,11 @@
   $: validSelectedModels = selectedModels.filter(
     (m): m is string => m !== null && m !== "__create_new_run_config__",
   )
+
+  $: agentInfo.set({
+    name: "Compare Specs",
+    description: `Compare specs for project ID ${project_id}, task ID ${task_id}. Side-by-side comparison of spec results. ${validSelectedModels.length > 0 ? `The following run configs are selected: ${validSelectedModels.join(", ")}.` : "No run configs are selected."}`,
+  })
 
   $: allSelectedLoading = validSelectedModels.every(
     (modelId) =>

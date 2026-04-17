@@ -20,6 +20,10 @@ cd app/web_ui
 npm install
 ```
 
+### Environment Variables
+
+The web UI has optional dev-only environment variables. See [`app/web_ui/.env.example`](app/web_ui/.env.example) for details.
+
 ### Running Development Servers
 
 Running the web-UI and Python servers separately is useful for development, as both can hot-reload.

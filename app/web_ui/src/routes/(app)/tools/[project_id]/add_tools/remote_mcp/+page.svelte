@@ -3,6 +3,12 @@
   import EditRemoteTool from "./edit_remote_tool.svelte"
   import { page } from "$app/stores"
   import { ui_state } from "$lib/stores"
+  import { agentInfo } from "$lib/agent"
+
+  $: agentInfo.set({
+    name: "Connect Remote MCP Server",
+    description: `Connect a remote MCP server to project ID ${$page.params.project_id}. Add external tools via Model Context Protocol.`,
+  })
 </script>
 
 <AppPage

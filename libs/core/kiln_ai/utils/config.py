@@ -177,6 +177,18 @@ class Config:
                 env_var="ENABLE_DEMO_TOOLS",
                 default=False,
             ),
+            "kiln_local_api_host": ConfigProperty(
+                str,
+                env_var="KILN_LOCAL_API_HOST",
+                default="127.0.0.1",
+                in_memory=True,
+            ),
+            "kiln_local_api_port": ConfigProperty(
+                int,
+                env_var="KILN_LOCAL_API_PORT",
+                default=8757,
+                in_memory=True,
+            ),
             # Allow the user to set the path to lookup MCP server commands, like npx.
             "custom_mcp_path": ConfigProperty(
                 str,
@@ -216,6 +228,9 @@ class Config:
             return self.__getattr__(name)
         except AttributeError:
             return None
+
+    def kiln_local_api_base_url(self) -> str:
+        return f"http://{self.kiln_local_api_host}:{self.kiln_local_api_port}"
 
     def __getattr__(self, name: str) -> Any:
         if name == "_properties":

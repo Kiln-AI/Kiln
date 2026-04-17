@@ -4,7 +4,12 @@
   import { page } from "$app/stores"
   import { ui_state } from "$lib/stores"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
+  $: agentInfo.set({
+    name: "Create Skill",
+    description: `Create a new skill for project ID ${project_id}. Add reusable instructions for agents.`,
+  })
 </script>
 
 <div class="max-w-2xl">

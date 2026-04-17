@@ -525,7 +525,7 @@ def test_get_tool_server_config_not_found(client, test_project):
 
 
 def test_get_available_tools_empty(client, test_project):
-    """Test get_available_tools with no tool servers returns empty list"""
+    """Test get_available_tools with no tool servers returns only built-in tools"""
     with patch(
         "app.desktop.studio_server.tool_api.project_from_id"
     ) as mock_project_from_id:
@@ -535,7 +535,9 @@ def test_get_available_tools_empty(client, test_project):
 
         assert response.status_code == 200
         result = response.json()
-        assert result == []
+        assert len(result) == 1
+        assert result[0]["type"] == "builtin"
+        assert result[0]["tools"][0]["id"] == "kiln_tool::call_kiln_api"
 
 
 async def test_get_available_tools_success_single_server(client, test_project):
@@ -579,9 +581,14 @@ async def test_get_available_tools_success_single_server(client, test_project):
 
             assert response.status_code == 200
             set_result = response.json()
-            assert len(set_result) == 1
-            assert set_result[0]["set_name"] == "MCP Server: test_available_tools"
-            result = set_result[0]["tools"]
+            assert len(set_result) == 2
+            mcp_set = next(
+                s
+                for s in set_result
+                if s["set_name"] == "MCP Server: test_available_tools"
+            )
+            assert mcp_set["type"] == "mcp"
+            result = mcp_set["tools"]
             assert len(result) == 3
 
             # Verify tool details
@@ -714,7 +721,7 @@ async def test_get_available_tools_multiple_servers(client, test_project):
 
             assert response.status_code == 200
             set_result = response.json()
-            assert len(set_result) == 3  # 2 MCP servers + 1 kiln task set
+            assert len(set_result) == 4  # builtin + 2 MCP servers + 1 kiln task set
 
             # Find sets by name instead of assuming order
             server1_set = next(
@@ -807,8 +814,8 @@ async def test_get_available_tools_mcp_error_handling(client, test_project):
             assert response.status_code == 200
             result = response.json()
 
-            # Should return an empty list since the MCP server failed
-            assert len(result) == 0
+            assert len(result) == 1
+            assert result[0]["type"] == "builtin"
 
 
 def test_get_available_tools_demo_tools_enabled(client, test_project):
@@ -832,9 +839,14 @@ def test_get_available_tools_demo_tools_enabled(client, test_project):
         assert response.status_code == 200
         result = response.json()
 
-        # Should have one tool set for demo tools
-        assert len(result) == 1
-        demo_set = result[0]
+        assert len(result) == 2
+        builtin_set = result[0]
+        assert builtin_set["type"] == "builtin"
+        assert builtin_set["set_name"] == "Kiln built-in tools"
+        assert len(builtin_set["tools"]) == 1
+        assert builtin_set["tools"][0]["id"] == "kiln_tool::call_kiln_api"
+
+        demo_set = result[1]
         assert demo_set["set_name"] == "Kiln Demo Tools"
         assert len(demo_set["tools"]) == 4
 
@@ -886,8 +898,11 @@ def test_get_available_tools_demo_tools_disabled(client, test_project):
         assert response.status_code == 200
         result = response.json()
 
-        # Should have no tool sets when demo tools are disabled and no MCP servers
-        assert len(result) == 0
+        assert len(result) == 1
+        assert result[0]["type"] == "builtin"
+        assert result[0]["set_name"] == "Kiln built-in tools"
+        assert len(result[0]["tools"]) == 1
+        assert result[0]["tools"][0]["id"] == "kiln_tool::call_kiln_api"
 
 
 async def test_create_tool_server_whitespace_handling(
@@ -3509,10 +3524,8 @@ async def test_get_available_tools_with_rag_configs(client, test_project):
             assert response.status_code == 200
             result = response.json()
 
-            # Should have one tool set for RAG (since MCP server has no tools, only RAG set is added)
-            assert len(result) == 1
-            rag_set = result[0]
-            assert rag_set["set_name"] == "Search Tools (RAG)"
+            assert len(result) == 2
+            rag_set = next(s for s in result if s["set_name"] == "Search Tools (RAG)")
             assert len(rag_set["tools"]) == 2
 
             # Verify RAG tool details
@@ -3596,8 +3609,7 @@ async def test_get_available_tools_with_rag_and_mcp(client, test_project):
             assert response.status_code == 200
             result = response.json()
 
-            # Should have two tool sets: MCP Server and RAG
-            assert len(result) == 2
+            assert len(result) == 3
 
             # Find both sets
             mcp_set = next(
@@ -3733,8 +3745,7 @@ async def test_available_tools_excludes_archived_rag_and_kiln_task_tools(
         assert response.status_code == 200
         result = response.json()
 
-        # Should have two tool sets: RAG and Kiln Task
-        assert len(result) == 2
+        assert len(result) == 3
 
         rag_set = next(
             (s for s in result if s["set_name"] == "Search Tools (RAG)"), None
