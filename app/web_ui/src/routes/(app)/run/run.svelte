@@ -28,9 +28,9 @@
   import TraceComponent from "$lib/ui/trace/trace.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
-  import Warning from "../../../lib/ui/warning.svelte"
+  import Warning from "$lib/ui/warning.svelte"
   import OutputRepairEditForm from "./output_repair_edit_form.svelte"
-  import type { components } from "../../../lib/api_schema"
+  import type { components } from "$lib/api_schema"
 
   type SubtaskReference = {
     project_id: string
@@ -330,7 +330,8 @@
   async function attempt_repair() {
     try {
       repair_submitting = true
-      if (!repair_instructions) {
+      const trimmed_instructions = repair_instructions?.trim()
+      if (!trimmed_instructions) {
         throw new KilnError("Repair instructions are required", null)
       }
       if (!task.id || !run?.id) {
@@ -355,12 +356,12 @@
           body:
             model_name && provider
               ? {
-                  evaluator_feedback: repair_instructions,
+                  evaluator_feedback: trimmed_instructions,
                   model_name: model_name,
                   provider: provider,
                 }
               : {
-                  evaluator_feedback: repair_instructions,
+                  evaluator_feedback: trimmed_instructions,
                 },
         },
       )
@@ -433,7 +434,6 @@
       return
     }
     try {
-      repair_run = null
       delete_repair_error = null
       delete_repair_submitting = true
       let original_repair_instructions = run?.repair_instructions
@@ -442,6 +442,7 @@
         repaired_output: null,
       }
       updated_run = await patch_run(patch_body)
+      repair_run = null
 
       // Pull in the instructions from the original repair, so they can edit them if wanted
       if (!repair_instructions && original_repair_instructions) {
