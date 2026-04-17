@@ -12,4 +12,4 @@ status: complete
 
 - [x] **Phase 3: Consumer audit fixes.** Apply Phase 1 audit to non-datamodel code: fix every `datetime.now()` / `datetime.utcnow()` comparison against now-aware stored timestamps (notably `app/desktop/studio_server/provider_api.py:2050,2157`, `libs/core/kiln_ai/utils/logging.py:48`, plus anything else surfaced). Update test fixtures (`test_provider_api.py`, `test_tool_api.py`) that assign naive datetimes. Run full Python suite; resolve any TypeErrors.
 
-- [ ] **Phase 4: Frontend formatter tests.** Add tests for `formatDate` (`app/web_ui/src/lib/utils/formatters.ts`) covering UTC `Z`, explicit positive/negative offsets, and legacy naive ISO. Mock `Date.now()` for determinism; assert outputs are computed relative to viewer's local TZ. No production code change unless tests reveal one.
+- [x] **Phase 4: Frontend formatter tests.** Add tests for `formatDate` (`app/web_ui/src/lib/utils/formatters.ts`) covering UTC `Z`, explicit positive/negative offsets, and legacy naive ISO. Mock `Date.now()` for determinism; assert outputs are computed relative to viewer's local TZ. No production code change unless tests reveal one.
