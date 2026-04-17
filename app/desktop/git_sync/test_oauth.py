@@ -2,15 +2,20 @@ import base64
 import hashlib
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
 
 from app.desktop.git_sync.oauth import (
+    CALLBACK_URL,
     GITHUB_APP_NAME,
+    GITHUB_CLIENT_ID,
     OAUTH_TIMEOUT_SECONDS,
     OAuthError,
     OAuthFlowManager,
+    OAuthFlowState,
+    build_authorize_url,
     build_install_url,
     exchange_code_for_token,
     generate_pkce,
@@ -110,6 +115,47 @@ class TestBuildInstallUrl:
         assert "?" not in url
 
 
+class TestBuildAuthorizeUrl:
+    def _make_flow(self, state="test_state_42", code_challenge="ch4ll3ng3"):
+        return OAuthFlowState(
+            state=state,
+            code_verifier="unused_verifier",
+            code_challenge=code_challenge,
+            git_url="https://github.com/owner/repo.git",
+        )
+
+    def test_contains_required_params(self):
+        flow = self._make_flow()
+        url = build_authorize_url(flow)
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        assert params["client_id"] == [GITHUB_CLIENT_ID]
+        assert params["redirect_uri"] == [CALLBACK_URL]
+        assert params["state"] == [flow.state]
+        assert params["code_challenge"] == [flow.code_challenge]
+        assert params["code_challenge_method"] == ["S256"]
+
+    def test_state_and_challenge_passed_verbatim(self):
+        flow = self._make_flow(state="abc+def/ghi", code_challenge="x=y&z")
+        url = build_authorize_url(flow)
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        assert params["state"] == ["abc+def/ghi"]
+        assert params["code_challenge"] == ["x=y&z"]
+
+    def test_redirect_uri_matches_callback_url(self):
+        flow = self._make_flow()
+        url = build_authorize_url(flow)
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query)
+        assert params["redirect_uri"] == [CALLBACK_URL]
+
+    def test_url_base(self):
+        flow = self._make_flow()
+        url = build_authorize_url(flow)
+        assert url.startswith("https://github.com/login/oauth/authorize?")
+
+
 class TestOAuthFlowManager:
     def test_start_flow(self):
         mgr = OAuthFlowManager()
@@ -197,14 +243,21 @@ class TestOAuthFlowManager:
 
 
 def _mock_httpx_client(method="get", response=None, side_effect=None):
-    """Create a mock httpx.AsyncClient context manager."""
+    """Create a mock that replaces ``httpx.AsyncClient`` as a context manager.
+
+    All production call sites use ``async with httpx.AsyncClient(...) as client``,
+    so this mock is returned by patching the class itself (``cls.return_value``).
+    The mock supports ``__aenter__`` / ``__aexit__`` and exposes the requested
+    *method* (``"get"`` or ``"post"``) with *response* or *side_effect*.
+    """
     mock_client = AsyncMock()
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
-    if side_effect is not None:
-        setattr(mock_client, method, AsyncMock(side_effect=side_effect))
-    else:
-        setattr(mock_client, method, AsyncMock(return_value=response))
+    method_mock = AsyncMock(
+        side_effect=side_effect if side_effect is not None else None,
+        return_value=response if side_effect is None else None,
+    )
+    setattr(mock_client, method, method_mock)
     return mock_client
 
 
@@ -254,6 +307,14 @@ class TestResolveGithubRepoId:
         with patch("app.desktop.git_sync.oauth.httpx.AsyncClient") as cls:
             cls.return_value = _mock_httpx_client("get", response=resp)
             assert await resolve_github_repo_id("owner", "private-repo") is None
+
+    @pytest.mark.asyncio
+    async def test_network_error(self):
+        with patch("app.desktop.git_sync.oauth.httpx.AsyncClient") as cls:
+            cls.return_value = _mock_httpx_client(
+                "get", side_effect=httpx.ConnectError("Connection refused")
+            )
+            assert await resolve_github_repo_id("owner", "repo") is None
 
 
 class TestExchangeCodeForToken:

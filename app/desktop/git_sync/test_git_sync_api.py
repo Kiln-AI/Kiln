@@ -647,6 +647,31 @@ class TestOAuthCallback:
         assert "Authorization Failed" in resp.text
         assert "User denied" in resp.text
 
+    def test_missing_code_renders_error_page(self, api_client):
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_owner_id",
+                return_value=None,
+            ),
+            patch(
+                "app.desktop.git_sync.git_sync_api.resolve_github_repo_id",
+                return_value=None,
+            ),
+        ):
+            start_resp = api_client.post(
+                "/api/git_sync/oauth/start",
+                json={"git_url": "https://github.com/owner/repo.git"},
+            )
+        state = start_resp.json()["state"]
+
+        resp = api_client.get(
+            f"/api/git_sync/oauth/callback?state={state}&code=",
+        )
+        assert resp.status_code == 400
+        assert "text/html" in resp.headers["content-type"]
+        assert "Authorization Failed" in resp.text
+        assert "Missing authorization code" in resp.text
+
     def test_token_exchange_failure(self, api_client):
         from app.desktop.git_sync.oauth import OAuthError
 

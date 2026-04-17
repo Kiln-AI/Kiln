@@ -137,6 +137,34 @@ describe("startOAuthFlow", () => {
     expect(cbs.calls.onError[0]).toBe("access_denied")
   })
 
+  it("calls onError when polling returns complete with error and no token", async () => {
+    mockOauthStart.mockResolvedValue(MOCK_START_RESPONSE)
+    mockOauthStatus
+      .mockResolvedValueOnce({
+        complete: false,
+        oauth_token: null,
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        complete: true,
+        oauth_token: null,
+        error: "Token exchange failed",
+      })
+
+    const cbs = makeCallbacks()
+    startOAuthFlow("https://github.com/Kiln-AI/kiln.git", cbs)
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mockOauthStatus).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(mockOauthStatus).toHaveBeenCalledTimes(2)
+
+    expect(cbs.calls.onError).toHaveLength(1)
+    expect(cbs.calls.onError[0]).toBe("Token exchange failed")
+    expect(cbs.calls.onSuccess).toHaveLength(0)
+  })
+
   it("calls onError on start failure", async () => {
     mockOauthStart.mockRejectedValue(new Error("Network error"))
 
