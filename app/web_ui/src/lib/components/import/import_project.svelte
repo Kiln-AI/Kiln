@@ -61,18 +61,15 @@
 
   const progress_steps: WizardStep[] = ["url", "branch", "project", "complete"]
 
-  function progress_index_of(step: WizardStep): number {
-    return progress_steps.indexOf(step)
+  const step_progress_index: Partial<Record<WizardStep, number>> = {
+    url: 0,
+    credentials: 0,
+    branch: 1,
+    project: 2,
+    complete: 3,
   }
 
-  let max_progress = 0
-
-  $: {
-    const idx = progress_index_of(current_step)
-    if (idx > max_progress) {
-      max_progress = idx
-    }
-  }
+  $: progress_index = step_progress_index[current_step] ?? -1
 
   $: show_progress =
     current_step !== "method" &&
@@ -293,7 +290,7 @@
     <div class="flex flex-row gap-2 mb-8">
       {#each progress_steps as _, i}
         <div
-          class="h-1 flex-1 rounded-full {i <= max_progress
+          class="h-1 flex-1 rounded-full {i <= progress_index
             ? 'bg-primary'
             : 'bg-base-200'}"
         ></div>
