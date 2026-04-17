@@ -25,6 +25,7 @@
 
   export let create_link: string
   export let on_complete: (project_id: string) => void
+  export let import_mode: "method" | "local" | "git" = "method"
 
   const hash_to_step: Record<string, WizardStep> = {
     "#local": "local_file",
@@ -45,6 +46,13 @@
   }
 
   let current_step: WizardStep = "method"
+
+  $: import_mode =
+    current_step === "method"
+      ? "method"
+      : current_step === "local_file"
+        ? "local"
+        : "git"
 
   $: git_url = $git_import_wizard_store.git_url
   $: pat_token = $git_import_wizard_store.pat_token
