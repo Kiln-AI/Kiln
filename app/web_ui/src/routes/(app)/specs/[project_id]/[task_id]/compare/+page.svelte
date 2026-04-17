@@ -904,6 +904,12 @@
                               <!-- Error state -->
                               <span class="text-error text-sm">Error</span>
                             {:else if percentComplete < 1.0}
+                              {@const runConfigId = selectedModels[i]}
+                              {@const defaultEvalConfigId =
+                                getModelDefaultEvalConfigID(
+                                  runConfigId,
+                                  section.eval_id,
+                                )}
                               <div class="flex flex-col items-center gap-1">
                                 <div class="text-warning text-sm font-medium">
                                   Eval Incomplete
@@ -917,24 +923,17 @@
                                     >
                                       Add Eval Data
                                     </button>
-                                  {:else if getModelDefaultEvalConfigID(selectedModels[i], section.eval_id)}
+                                  {:else if defaultEvalConfigId && runConfigId}
                                     <RunEval
                                       eval_id={section.eval_id}
-                                      run_config_ids={[
-                                        getSelectedRunConfig(selectedModels[i])
-                                          ?.id || "",
-                                      ]}
+                                      run_config_ids={[runConfigId]}
                                       {project_id}
                                       {task_id}
-                                      current_eval_config_id={getModelDefaultEvalConfigID(
-                                        selectedModels[i],
-                                        section.eval_id,
-                                      )}
+                                      current_eval_config_id={defaultEvalConfigId}
                                       eval_type="run_config"
                                       btn_size="xs"
                                       btn_primary={false}
                                       on_run_complete={() => {
-                                        const runConfigId = selectedModels[i]
                                         if (runConfigId) {
                                           delete eval_scores_cache[runConfigId]
                                           delete eval_scores_errors[runConfigId]
