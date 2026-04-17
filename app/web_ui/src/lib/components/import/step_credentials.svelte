@@ -16,6 +16,7 @@
     gitRepoNameFromUrl,
   } from "$lib/git_sync/api"
   import { createOAuthWithInstall } from "$lib/git_sync/oauth_with_install"
+  import OAuthInstallStep from "$lib/git_sync/oauth_install_step.svelte"
   import { onDestroy } from "svelte"
 
   export let git_url: string
@@ -128,67 +129,12 @@
       to grant access.
     </p>
 
-    <div class="flex flex-col items-center py-4 gap-4">
-      <div
-        class="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center"
-      >
-        <svg
-          class="w-6 h-6 text-success"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke-width="2"
-          stroke="currentColor"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            d="M4.5 12.75l6 6 9-13.5"
-          />
-        </svg>
-      </div>
-      <p class="text-sm font-medium">Step 1: Authorized</p>
-
-      <div class="w-full border-t border-base-200 my-2"></div>
-
-      <p class="text-sm font-medium">Step 2: Install App on Repository</p>
-      <p class="text-sm text-gray-500 text-center max-w-sm">
-        The Kiln Sync GitHub App needs to be installed on the repository to
-        enable syncing. Click below to install it, then come back and verify.
-      </p>
-      <button
-        class="btn w-full max-w-sm {oauth.install_clicked
-          ? 'btn-sm btn-ghost'
-          : 'btn-primary'}"
-        on:click={oauth_flow.open_install}
-      >
-        {oauth.install_clicked
-          ? "Retry Install on GitHub"
-          : "Install Kiln Sync on GitHub"}
-      </button>
-      <button
-        class="btn w-full max-w-sm {oauth.install_clicked
-          ? 'btn-primary'
-          : 'btn-sm btn-ghost'}"
-        on:click={oauth_flow.verify_access}
-        disabled={oauth.checking_access}
-      >
-        {#if oauth.checking_access}
-          <span class="loading loading-spinner loading-xs"></span>
-        {/if}
-        Verify Access
-      </button>
-      {#if oauth.oauth_error}
-        <div class="w-full max-w-sm">
-          <Warning warning_message={oauth.oauth_error} warning_color="error" />
-        </div>
-      {/if}
-      <button
-        class="btn btn-link btn-xs text-gray-500 no-underline hover:text-gray-700 hover:underline focus-visible:underline"
-        on:click={oauth_flow.reset}
-      >
-        Start over
-      </button>
-    </div>
+    <OAuthInstallStep
+      state={oauth}
+      open_install={oauth_flow.open_install}
+      verify_access={oauth_flow.verify_access}
+      reset={oauth_flow.reset}
+    />
   {:else}
     <p class="text-sm text-gray-500 mb-6">
       Connect your GitHub account to grant Kiln access to this repository.

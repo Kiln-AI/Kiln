@@ -20,6 +20,7 @@
     INITIAL_STATE,
     type OAuthWithInstallFlow,
   } from "$lib/git_sync/oauth_with_install"
+  import OAuthInstallStep from "$lib/git_sync/oauth_install_step.svelte"
   import {
     initialAuthFormMode,
     buildOAuthUpdatePayload,
@@ -205,70 +206,13 @@
           />
         {:else if is_github && mode === "oauth" && oauth_flow}
           {#if oauth.needs_install}
-            <div class="flex flex-col items-center py-4 gap-3">
-              <div
-                class="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center"
-              >
-                <svg
-                  class="w-5 h-5 text-success"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke-width="2"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M4.5 12.75l6 6 9-13.5"
-                  />
-                </svg>
-              </div>
-              <p class="text-xs font-medium">Authorized</p>
-
-              <div class="w-full border-t border-base-200 my-1"></div>
-
-              <p class="text-sm font-medium">Install App on Repository</p>
-              <p class="text-xs text-gray-500 text-center">
-                Install the Kiln Sync GitHub App on the repository, then verify
-                access.
-              </p>
-              <button
-                class="btn w-full {oauth.install_clicked
-                  ? 'btn-xs btn-ghost'
-                  : 'btn-primary btn-sm'}"
-                on:click={oauth_flow.open_install}
-              >
-                {oauth.install_clicked
-                  ? "Retry Install on GitHub"
-                  : "Install Kiln Sync on GitHub"}
-              </button>
-              <button
-                class="btn w-full {oauth.install_clicked
-                  ? 'btn-primary btn-sm'
-                  : 'btn-xs btn-ghost'}"
-                on:click={oauth_flow.verify_access}
-                disabled={oauth.checking_access}
-              >
-                {#if oauth.checking_access}
-                  <span class="loading loading-spinner loading-xs"></span>
-                {/if}
-                Verify Access
-              </button>
-              {#if oauth.oauth_error}
-                <div class="w-full">
-                  <Warning
-                    warning_message={oauth.oauth_error}
-                    warning_color="error"
-                  />
-                </div>
-              {/if}
-              <button
-                class="btn btn-link btn-xs text-gray-500 no-underline hover:text-gray-700 hover:underline focus-visible:underline"
-                on:click={oauth_flow.reset}
-              >
-                Start over
-              </button>
-            </div>
+            <OAuthInstallStep
+              state={oauth}
+              open_install={oauth_flow.open_install}
+              verify_access={oauth_flow.verify_access}
+              reset={oauth_flow.reset}
+              compact
+            />
           {:else}
             {#if oauth.oauth_error}
               <div class="mb-3">
