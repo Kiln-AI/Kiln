@@ -48,6 +48,7 @@
 
   $: git_url = $git_import_wizard_store.git_url
   $: pat_token = $git_import_wizard_store.pat_token
+  $: oauth_token = $git_import_wizard_store.oauth_token
   $: auth_mode = $git_import_wizard_store.auth_mode
   $: clone_path = $git_import_wizard_store.clone_path
   $: selected_branch = $git_import_wizard_store.selected_branch
@@ -167,7 +168,19 @@
   }
 
   function on_credentials_success(token: string, detected_auth_method: string) {
-    update_store({ pat_token: token, auth_mode: detected_auth_method })
+    if (detected_auth_method === "github_oauth") {
+      update_store({
+        oauth_token: token,
+        pat_token: null,
+        auth_mode: detected_auth_method,
+      })
+    } else {
+      update_store({
+        oauth_token: null,
+        pat_token: token,
+        auth_mode: detected_auth_method,
+      })
+    }
     set_step("branch")
   }
 
@@ -386,6 +399,7 @@
     <StepBranch
       {git_url}
       {pat_token}
+      {oauth_token}
       {auth_mode}
       on_selected={on_branch_selected}
     />
@@ -399,6 +413,7 @@
     <StepComplete
       {git_url}
       {pat_token}
+      {oauth_token}
       {auth_mode}
       {clone_path}
       branch={selected_branch}

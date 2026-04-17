@@ -94,10 +94,12 @@ class GitSyncManager:
         auth_mode: AuthMode,
         remote_name: str = "origin",
         pat_token: str | None = None,
+        oauth_token: str | None = None,
     ):
         self._repo_path = repo_path
         self._remote_name = remote_name
         self._pat_token = pat_token
+        self._oauth_token = oauth_token
         self._auth_mode = auth_mode
         self._git_executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="pygit2"
@@ -339,7 +341,9 @@ class GitSyncManager:
         """
         from app.desktop.git_sync.clone import make_credentials
 
-        return make_credentials(self._pat_token, self._auth_mode)
+        return make_credentials(
+            self._pat_token, self._auth_mode, oauth_token=self._oauth_token
+        )
 
     # --- Synchronous helpers (run inside _git_executor) ---
 

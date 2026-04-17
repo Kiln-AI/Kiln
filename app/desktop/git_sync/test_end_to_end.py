@@ -46,6 +46,9 @@ def _auto_config(clone_path: str) -> GitSyncProjectConfig:
         remote_name="origin",
         branch="main",
         clone_path=clone_path,
+        git_url=None,
+        pat_token=None,
+        oauth_token=None,
     )
 
 

@@ -1,11 +1,13 @@
 import asyncio
+import html
 import logging
 import os
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi import Path as FastAPIPath
+from fastapi.responses import HTMLResponse
 from kiln_ai.utils.project_utils import (
     DuplicateProjectError,
     check_duplicate_project_id,
@@ -31,8 +33,103 @@ from app.desktop.git_sync.config import (
     project_path_from_id,
     save_git_sync_config,
 )
+from app.desktop.git_sync.oauth import (
+    OAuthError,
+    OAuthFlowManager,
+    build_authorize_url,
+    build_install_url,
+    exchange_code_for_token,
+    parse_github_owner_repo,
+    resolve_github_owner_id,
+    resolve_github_repo_id,
+)
 
 logger = logging.getLogger(__name__)
+
+
+_OAUTH_PAGE_STYLES = """
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #f8fafc;
+    color: #0f172a;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    max-width: 420px;
+    width: 100%;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  .icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .icon.success { background: #dcfce7; color: #15803d; }
+  .icon.error { background: #fee2e2; color: #b91c1c; }
+  .icon svg { width: 28px; height: 28px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0; }
+  p { font-size: 14px; color: #64748b; margin: 0; line-height: 1.5; }
+  .detail { color: #475569; word-break: break-word; }
+"""
+
+_SUCCESS_ICON_PATH = "M4.5 12.75l6 6 9-13.5"
+_ERROR_ICON_PATH = "M6 18L18 6M6 6l12 12"
+
+
+def _render_oauth_page(title: str, body: str, *, is_error: bool = False) -> str:
+    """Render a styled OAuth result page.
+
+    ``body`` is injected as raw HTML and must be pre-escaped by the caller.
+    """
+    icon_class = "error" if is_error else "success"
+    icon_path = _ERROR_ICON_PATH if is_error else _SUCCESS_ICON_PATH
+    escaped_title = html.escape(title)
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{escaped_title}</title>
+<style>{_OAUTH_PAGE_STYLES}</style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon {icon_class}">
+      <svg fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="{icon_path}" />
+      </svg>
+    </div>
+    <h1>{escaped_title}</h1>
+    {body}
+  </div>
+</body>
+</html>
+"""
+
+
+_RETURN_TO_KILN = "<p>Return to Kiln to continue setup</p>"
+OAUTH_SUCCESS_HTML = _render_oauth_page("Authorization Complete", _RETURN_TO_KILN)
+INSTALL_COMPLETE_HTML = _render_oauth_page("Install Complete", _RETURN_TO_KILN)
+
+
+def render_oauth_error_page(message: str) -> str:
+    body = (
+        f'<p class="detail">{html.escape(message)}</p>'
+        "<p>You can close this tab and try again in Kiln.</p>"
+    )
+    return _render_oauth_page("Authorization Failed", body, is_error=True)
 
 
 class TestAccessRequest(BaseModel):
@@ -41,6 +138,13 @@ class TestAccessRequest(BaseModel):
     git_url: str = Field(description="The git remote URL to test access against.")
     pat_token: str | None = Field(
         default=None, description="Optional personal access token for authentication."
+    )
+    oauth_token: str | None = Field(
+        default=None, description="Optional OAuth token for authentication."
+    )
+    auth_mode: Literal["system_keys", "pat_token", "github_oauth"] = Field(
+        default="system_keys",
+        description="Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.",
     )
 
 
@@ -55,7 +159,7 @@ class TestAccessResponse(BaseModel):
     )
     auth_method: str | None = Field(
         default=None,
-        description="Auth method that succeeded: 'system_keys' or 'pat_token'. Null on failure.",
+        description="Auth method that succeeded: 'system_keys', 'pat_token', or 'github_oauth'. Null on failure.",
     )
 
 
@@ -66,9 +170,12 @@ class ListBranchesRequest(BaseModel):
     pat_token: str | None = Field(
         default=None, description="Optional personal access token for authentication."
     )
-    auth_mode: Literal["system_keys", "pat_token"] = Field(
+    oauth_token: str | None = Field(
+        default=None, description="Optional OAuth token for authentication."
+    )
+    auth_mode: Literal["system_keys", "pat_token", "github_oauth"] = Field(
         default="system_keys",
-        description="Auth mode: 'system_keys' (SSH agent) or 'pat_token' (HTTPS PAT).",
+        description="Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.",
     )
 
 
@@ -89,9 +196,12 @@ class CloneRequest(BaseModel):
     pat_token: str | None = Field(
         default=None, description="Optional personal access token for authentication."
     )
-    auth_mode: Literal["system_keys", "pat_token"] = Field(
+    oauth_token: str | None = Field(
+        default=None, description="Optional OAuth token for authentication."
+    )
+    auth_mode: Literal["system_keys", "pat_token", "github_oauth"] = Field(
         default="system_keys",
-        description="Auth mode: 'system_keys' (SSH agent) or 'pat_token' (HTTPS PAT).",
+        description="Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.",
     )
 
 
@@ -110,9 +220,12 @@ class TestWriteAccessRequest(BaseModel):
     pat_token: str | None = Field(
         default=None, description="Optional personal access token for authentication."
     )
-    auth_mode: Literal["system_keys", "pat_token"] = Field(
+    oauth_token: str | None = Field(
+        default=None, description="Optional OAuth token for authentication."
+    )
+    auth_mode: Literal["system_keys", "pat_token", "github_oauth"] = Field(
         default="system_keys",
-        description="Auth mode: 'system_keys' (SSH agent) or 'pat_token' (HTTPS PAT).",
+        description="Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.",
     )
 
 
@@ -175,9 +288,12 @@ class SaveConfigRequest(BaseModel):
     pat_token: str | None = Field(
         default=None, description="Optional personal access token for authentication."
     )
-    auth_mode: Literal["system_keys", "pat_token"] = Field(
+    oauth_token: str | None = Field(
+        default=None, description="Optional OAuth token for authentication."
+    )
+    auth_mode: Literal["system_keys", "pat_token", "github_oauth"] = Field(
         default="system_keys",
-        description="Auth mode detected during setup: 'system_keys' or 'pat_token'.",
+        description="Auth mode detected during setup: 'system_keys', 'pat_token', or 'github_oauth'.",
     )
     sync_mode: Literal["auto", "manual"] = Field(
         default="auto", description="Sync mode: 'auto' or 'manual'."
@@ -190,9 +306,9 @@ class GitSyncConfigResponse(BaseModel):
     sync_mode: Literal["auto", "manual"] = Field(
         description="Sync mode: 'auto' or 'manual'."
     )
-    auth_mode: Literal["system_keys", "pat_token"] = Field(
+    auth_mode: Literal["system_keys", "pat_token", "github_oauth"] = Field(
         default="system_keys",
-        description="Auth mode: 'system_keys' (SSH agent) or 'pat_token' (HTTPS PAT).",
+        description="Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.",
     )
     remote_name: str = Field(description="Git remote name.")
     branch: str = Field(description="Branch name being synced.")
@@ -203,6 +319,10 @@ class GitSyncConfigResponse(BaseModel):
     has_pat_token: bool = Field(
         default=False,
         description="Whether a PAT token is configured (token not shown).",
+    )
+    has_oauth_token: bool = Field(
+        default=False,
+        description="Whether an OAuth token is configured (token not shown).",
     )
 
 
@@ -215,7 +335,10 @@ class UpdateConfigRequest(BaseModel):
     pat_token: str | None = Field(
         default=None, description="New personal access token, if changing."
     )
-    auth_mode: Literal["system_keys", "pat_token"] | None = Field(
+    oauth_token: str | None = Field(
+        default=None, description="New OAuth token, if changing."
+    )
+    auth_mode: Literal["system_keys", "pat_token", "github_oauth"] | None = Field(
         default=None, description="New auth mode, if changing."
     )
 
@@ -224,6 +347,44 @@ class DeleteConfigResponse(BaseModel):
     """Confirmation that a git sync configuration was deleted."""
 
     message: str = Field(description="Human-readable confirmation message.")
+
+
+class OAuthStartRequest(BaseModel):
+    """Request to start a GitHub OAuth flow."""
+
+    git_url: str = Field(description="The git remote URL to authenticate against.")
+
+
+class OAuthStartResponse(BaseModel):
+    """Response from starting a GitHub OAuth flow."""
+
+    authorize_url: str = Field(
+        description="GitHub OAuth authorization URL to open in the browser."
+    )
+    install_url: str = Field(
+        description="GitHub App installation URL (used if app not yet installed on repo)."
+    )
+    state: str = Field(description="OAuth state parameter for polling.")
+    owner_name: str = Field(description="Parsed owner name from git URL.")
+    repo_name: str = Field(description="Parsed repo name from git URL.")
+    owner_pre_selected: bool = Field(
+        description="Whether the owner was pre-selected in the install URL."
+    )
+    repo_pre_selected: bool = Field(
+        description="Whether the repo was pre-selected in the install URL."
+    )
+
+
+class OAuthStatusResponse(BaseModel):
+    """Status of an in-progress OAuth flow."""
+
+    complete: bool = Field(description="Whether the OAuth flow has completed.")
+    oauth_token: str | None = Field(
+        default=None, description="The OAuth token, if flow completed successfully."
+    )
+    error: str | None = Field(
+        default=None, description="Error message, if flow failed."
+    )
 
 
 def _validate_clone_path(clone_path: str) -> Path:
@@ -252,7 +413,11 @@ def connect_git_sync_api(app: FastAPI):
     )
     async def api_test_access(request: TestAccessRequest) -> TestAccessResponse:
         success, message, detected_mode = await asyncio.to_thread(
-            test_remote_access, request.git_url, request.pat_token
+            test_remote_access,
+            request.git_url,
+            request.pat_token,
+            auth_mode=request.auth_mode,
+            oauth_token=request.oauth_token,
         )
         auth_required = not success and "auth" in message.lower()
         return TestAccessResponse(
@@ -277,6 +442,7 @@ def connect_git_sync_api(app: FastAPI):
                 request.git_url,
                 request.pat_token,
                 request.auth_mode,
+                request.oauth_token,
             )
             return ListBranchesResponse(
                 branches=branches, default_branch=default_branch
@@ -301,6 +467,7 @@ def connect_git_sync_api(app: FastAPI):
                 request.branch,
                 request.pat_token,
                 request.auth_mode,
+                request.oauth_token,
             )
 
             return CloneResponse(
@@ -332,6 +499,7 @@ def connect_git_sync_api(app: FastAPI):
             Path(request.clone_path),
             request.pat_token,
             request.auth_mode,
+            request.oauth_token,
         )
         auth_required = not success and "auth" in message.lower()
         return TestAccessResponse(
@@ -433,6 +601,7 @@ def connect_git_sync_api(app: FastAPI):
             clone_path=request.clone_path,
             git_url=request.git_url,
             pat_token=request.pat_token,
+            oauth_token=request.oauth_token,
         )
         save_git_sync_config(full_project_path, project_config)
         add_project_to_config(full_project_path)
@@ -445,6 +614,7 @@ def connect_git_sync_api(app: FastAPI):
             clone_path=request.clone_path,
             git_url=request.git_url,
             has_pat_token=request.pat_token is not None,
+            has_oauth_token=request.oauth_token is not None,
         )
 
     @app.get(
@@ -475,6 +645,7 @@ def connect_git_sync_api(app: FastAPI):
             clone_path=config.get("clone_path"),
             git_url=config.get("git_url"),
             has_pat_token=config.get("pat_token") is not None,
+            has_oauth_token=config.get("oauth_token") is not None,
         )
 
     @app.patch(
@@ -502,8 +673,20 @@ def connect_git_sync_api(app: FastAPI):
             config["sync_mode"] = request.sync_mode
         if request.pat_token is not None:
             config["pat_token"] = request.pat_token
+        if request.oauth_token is not None:
+            config["oauth_token"] = request.oauth_token
         if request.auth_mode is not None:
             config["auth_mode"] = request.auth_mode
+            # Clearing tokens that belong to other auth modes is the only way
+            # to remove stored credentials through this endpoint -- `None` in
+            # the request body means "don't change" rather than "clear".
+            if request.auth_mode == "pat_token":
+                config["oauth_token"] = None
+            elif request.auth_mode == "github_oauth":
+                config["pat_token"] = None
+            elif request.auth_mode == "system_keys":
+                config["pat_token"] = None
+                config["oauth_token"] = None
 
         save_git_sync_config(project_path, config)
 
@@ -515,7 +698,143 @@ def connect_git_sync_api(app: FastAPI):
             clone_path=config.get("clone_path"),
             git_url=config.get("git_url"),
             has_pat_token=config.get("pat_token") is not None,
+            has_oauth_token=config.get("oauth_token") is not None,
         )
+
+    # OAuth endpoints
+
+    oauth_manager = OAuthFlowManager()
+
+    @app.post(
+        "/api/git_sync/oauth/start",
+        summary="Start GitHub OAuth Flow",
+        tags=["Git Sync"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def api_oauth_start(request: OAuthStartRequest) -> OAuthStartResponse:
+        parsed = parse_github_owner_repo(request.git_url)
+        if parsed is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not parse GitHub owner/repo from the provided URL",
+            )
+        owner, repo = parsed
+
+        owner_id, repo_id = await asyncio.gather(
+            resolve_github_owner_id(owner),
+            resolve_github_repo_id(owner, repo),
+        )
+
+        flow = oauth_manager.start_flow(request.git_url)
+        install_url = build_install_url(owner_id, repo_id)
+        authorize_url = build_authorize_url(flow)
+
+        return OAuthStartResponse(
+            authorize_url=authorize_url,
+            install_url=install_url,
+            state=flow.state,
+            owner_name=owner,
+            repo_name=repo,
+            owner_pre_selected=owner_id is not None,
+            repo_pre_selected=repo_id is not None,
+        )
+
+    @app.get(
+        "/api/git_sync/oauth/callback",
+        summary="OAuth Callback",
+        tags=["Git Sync"],
+        response_model=None,
+        openapi_extra=DENY_AGENT,
+    )
+    async def api_oauth_callback(
+        state: str = Query(
+            default="",
+            description="OAuth state parameter linking the callback to a pending flow.",
+        ),
+        code: str = Query(
+            default="",
+            description="Authorization code from GitHub to exchange for an access token.",
+        ),
+        error: str = Query(
+            default="",
+            description="Error code returned by GitHub if authorization was denied.",
+        ),
+        error_description: str = Query(
+            default="",
+            description="Human-readable description of the error from GitHub.",
+        ),
+    ) -> HTMLResponse:
+        def error_page(msg: str) -> HTMLResponse:
+            return HTMLResponse(render_oauth_error_page(msg), status_code=400)
+
+        if not state:
+            return error_page("Missing state parameter.")
+
+        flow = oauth_manager.get_flow(state)
+        if flow is None:
+            return error_page(
+                "Authorization session expired or invalid. Please start over in Kiln."
+            )
+
+        if error:
+            desc = error_description or error
+            oauth_manager.fail_flow(state, desc)
+            return error_page(desc)
+
+        if not code:
+            oauth_manager.fail_flow(state, "Missing authorization code.")
+            return error_page("Missing authorization code.")
+
+        try:
+            token = await exchange_code_for_token(code, flow.code_verifier)
+            oauth_manager.complete_flow(state, token)
+            return HTMLResponse(OAUTH_SUCCESS_HTML)
+        except OAuthError as e:
+            oauth_manager.fail_flow(state, str(e))
+            return error_page(str(e))
+
+    # GitHub App "Setup URL" — GitHub redirects here after the user installs
+    # the app on a repository. Returning plain HTML (rather than an app route)
+    # avoids the app's setup-redirect logic hijacking the install tab.
+    @app.get(
+        "/api/git_sync/oauth/authorize",
+        summary="GitHub App Install Complete",
+        tags=["Git Sync"],
+        response_model=None,
+        openapi_extra=DENY_AGENT,
+    )
+    async def api_oauth_installed() -> HTMLResponse:
+        return HTMLResponse(INSTALL_COMPLETE_HTML)
+
+    @app.get(
+        "/api/git_sync/oauth/status/{state}",
+        summary="OAuth Flow Status",
+        tags=["Git Sync"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def api_oauth_status(
+        state: str = FastAPIPath(description="The OAuth state parameter to check."),
+    ) -> OAuthStatusResponse:
+        flow = oauth_manager.get_flow(state)
+        if flow is None:
+            return OAuthStatusResponse(
+                complete=False, error="Session expired or not found."
+            )
+
+        if flow.complete:
+            consumed = oauth_manager.consume_flow(state)
+            if consumed is not None:
+                return OAuthStatusResponse(
+                    complete=True,
+                    oauth_token=consumed.oauth_token,
+                    error=consumed.error,
+                )
+            return OAuthStatusResponse(
+                complete=True,
+                error="Flow already consumed by another request.",
+            )
+
+        return OAuthStatusResponse(complete=False)
 
     @app.delete(
         "/api/git_sync/config/{project_id}",

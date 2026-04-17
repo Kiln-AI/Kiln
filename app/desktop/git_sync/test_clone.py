@@ -237,7 +237,10 @@ class TestTestRemoteAccess:
             assert success is True
             assert mode == "pat_token"
             mock.assert_called_once_with(
-                "https://github.com/org/repo.git", "ghp_token", "pat_token"
+                "https://github.com/org/repo.git",
+                "ghp_token",
+                "pat_token",
+                oauth_token=None,
             )
 
 

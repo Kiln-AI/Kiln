@@ -37,6 +37,28 @@ def test_reset_clears_all(git_repos):
     assert GitSyncRegistry.get_manager(local_path) is None
 
 
+def test_get_or_create_clears_stale_tokens_on_subsequent_call(git_repos):
+    local_path, _ = git_repos
+    GitSyncRegistry.reset()
+    m1 = GitSyncRegistry.get_or_create(
+        local_path, auth_mode="pat_token", pat_token="ghp_stale"
+    )
+    assert m1._pat_token == "ghp_stale"
+    assert m1._oauth_token is None
+    assert m1._auth_mode == "pat_token"
+
+    m2 = GitSyncRegistry.get_or_create(
+        local_path,
+        auth_mode="github_oauth",
+        pat_token=None,
+        oauth_token="ghu_fresh",
+    )
+    assert m1 is m2
+    assert m2._pat_token is None
+    assert m2._oauth_token == "ghu_fresh"
+    assert m2._auth_mode == "github_oauth"
+
+
 def test_thread_safety(git_repos):
     local_path, _ = git_repos
     results: list[GitSyncManager] = []

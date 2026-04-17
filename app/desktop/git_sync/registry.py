@@ -41,6 +41,7 @@ class GitSyncRegistry:
         auth_mode: AuthMode,
         remote_name: str = "origin",
         pat_token: str | None = None,
+        oauth_token: str | None = None,
     ) -> GitSyncManager:
         """Return existing manager or create a new one. Thread-safe."""
         resolved = repo_path.resolve()
@@ -50,6 +51,7 @@ class GitSyncRegistry:
                     repo_path=resolved,
                     remote_name=remote_name,
                     pat_token=pat_token,
+                    oauth_token=oauth_token,
                     auth_mode=auth_mode,
                 )
                 cls._managers[resolved] = manager
@@ -63,10 +65,12 @@ class GitSyncRegistry:
                         existing._remote_name,
                         resolved,
                     )
-                if pat_token is not None and existing._pat_token != pat_token:
-                    existing._pat_token = pat_token
-                if existing._auth_mode != auth_mode:
-                    existing._auth_mode = auth_mode
+                # Config is the source of truth. Unconditionally overwrite so a
+                # token cleared in persistent config (e.g. on auth_mode switch)
+                # doesn't linger in the in-memory manager.
+                existing._pat_token = pat_token
+                existing._oauth_token = oauth_token
+                existing._auth_mode = auth_mode
             return cls._managers[resolved]
 
     @classmethod

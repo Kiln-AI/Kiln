@@ -462,6 +462,7 @@ def auto_config(clone_path: str) -> GitSyncProjectConfig:
         clone_path=clone_path,
         git_url=None,
         pat_token=None,
+        oauth_token=None,
     )
 
 

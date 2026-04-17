@@ -1,0 +1,342 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import { startOAuthFlow, type OAuthFlowCallbacks } from "./oauth_flow"
+import type { OAuthStartResponse } from "./api"
+
+vi.mock("$lib/git_sync/api", () => ({
+  oauthStart: vi.fn(),
+  oauthStatus: vi.fn(),
+}))
+
+import { oauthStart, oauthStatus } from "$lib/git_sync/api"
+
+const mockOauthStart = vi.mocked(oauthStart)
+const mockOauthStatus = vi.mocked(oauthStatus)
+
+function makeCallbacks(): OAuthFlowCallbacks & {
+  calls: Record<string, unknown[]>
+} {
+  const calls: Record<string, unknown[]> = {
+    onStarted: [],
+    onPolling: [],
+    onSuccess: [],
+    onError: [],
+  }
+  return {
+    calls,
+    onStarted: (response) => calls.onStarted.push(response),
+    onPolling: () => calls.onPolling.push(true),
+    onSuccess: (token) => calls.onSuccess.push(token),
+    onError: (error) => calls.onError.push(error),
+  }
+}
+
+const MOCK_START_RESPONSE: OAuthStartResponse = {
+  authorize_url:
+    "https://github.com/login/oauth/authorize?client_id=test&state=test_state_123",
+  install_url: "https://github.com/apps/kiln-ai/installations/new",
+  state: "test_state_123",
+  owner_name: "Kiln-AI",
+  repo_name: "kiln",
+  owner_pre_selected: true,
+  repo_pre_selected: true,
+}
+
+function makeMockPopup() {
+  return {
+    location: { href: "" },
+    close: vi.fn(),
+  }
+}
+
+beforeEach(() => {
+  vi.useFakeTimers()
+  mockOauthStart.mockReset()
+  mockOauthStatus.mockReset()
+  const mockWindow = { open: vi.fn(() => makeMockPopup()) }
+  vi.stubGlobal("window", mockWindow)
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
+
+describe("startOAuthFlow", () => {
+  it("calls oauthStart and opens authorize URL in popup", async () => {
+    mockOauthStart.mockResolvedValue(MOCK_START_RESPONSE)
+    mockOauthStatus.mockResolvedValue({
+      complete: false,
+      oauth_token: null,
+      error: null,
+    })
+
+    const cbs = makeCallbacks()
+    startOAuthFlow("https://github.com/Kiln-AI/kiln.git", cbs)
+
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(mockOauthStart).toHaveBeenCalledWith(
+      "https://github.com/Kiln-AI/kiln.git",
+    )
+    expect(cbs.calls.onStarted).toHaveLength(1)
+    expect(cbs.calls.onStarted[0]).toEqual({
+      install_url: MOCK_START_RESPONSE.install_url,
+    })
+    expect(cbs.calls.onPolling).toHaveLength(1)
+    expect(window.open).toHaveBeenCalledWith("about:blank", "_blank")
+  })
+
+  it("calls onSuccess when polling returns a token", async () => {
+    mockOauthStart.mockResolvedValue(MOCK_START_RESPONSE)
+    mockOauthStatus
+      .mockResolvedValueOnce({
+        complete: false,
+        oauth_token: null,
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        complete: true,
+        oauth_token: "ghu_abc123",
+        error: null,
+      })
+
+    const cbs = makeCallbacks()
+    startOAuthFlow("https://github.com/Kiln-AI/kiln.git", cbs)
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mockOauthStatus).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(mockOauthStatus).toHaveBeenCalledTimes(2)
+
+    expect(cbs.calls.onSuccess).toHaveLength(1)
+    expect(cbs.calls.onSuccess[0]).toBe("ghu_abc123")
+  })
+
+  it("calls onError when polling returns an error", async () => {
+    mockOauthStart.mockResolvedValue(MOCK_START_RESPONSE)
+    mockOauthStatus
+      .mockResolvedValueOnce({
+        complete: false,
+        oauth_token: null,
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        complete: false,
+        oauth_token: null,
+        error: "access_denied",
+      })
+
+    const cbs = makeCallbacks()
+    startOAuthFlow("https://github.com/Kiln-AI/kiln.git", cbs)
+
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(2000)
+
+    expect(cbs.calls.onError).toHaveLength(1)
+    expect(cbs.calls.onError[0]).toBe("access_denied")
+  })
+
+  it("calls onError when polling returns complete with error and no token", async () => {
+    mockOauthStart.mockResolvedValue(MOCK_START_RESPONSE)
+    mockOauthStatus
+      .mockResolvedValueOnce({
+        complete: false,
+        oauth_token: null,
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        complete: true,
+        oauth_token: null,
+        error: "Token exchange failed",
+      })
+
+    const cbs = makeCallbacks()
+    startOAuthFlow("https://github.com/Kiln-AI/kiln.git", cbs)
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mockOauthStatus).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(mockOauthStatus).toHaveBeenCalledTimes(2)
+
+    expect(cbs.calls.onError).toHaveLength(1)
+    expect(cbs.calls.onError[0]).toBe("Token exchange failed")
+    expect(cbs.calls.onSuccess).toHaveLength(0)
+  })
+
+  it("calls onError on start failure", async () => {
+    mockOauthStart.mockRejectedValue(new Error("Network error"))
+
+    const cbs = makeCallbacks()
+    startOAuthFlow("https://github.com/Kiln-AI/kiln.git", cbs)
+
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(cbs.calls.onError).toHaveLength(1)
+    expect(cbs.calls.onError[0]).toBe("Network error")
+  })
+
+  it("stops polling and closes popup on cancel", async () => {
+    const popup = makeMockPopup()
+    const mockWindow = { open: vi.fn(() => popup) }
+    vi.stubGlobal("window", mockWindow)
+
+    mockOauthStart.mockResolvedValue(MOCK_START_RESPONSE)
+    mockOauthStatus.mockResolvedValue({
+      complete: false,
+      oauth_token: null,
+      error: null,
+    })
+
+    const cbs = makeCallbacks()
+    const handle = startOAuthFlow("https://github.com/Kiln-AI/kiln.git", cbs)
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mockOauthStatus).toHaveBeenCalledTimes(1)
+
+    handle.cancel()
+
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(mockOauthStatus).toHaveBeenCalledTimes(1)
+    expect(popup.close).toHaveBeenCalled()
+  })
+
+  it("times out and closes popup after 5 minutes", async () => {
+    const popup = makeMockPopup()
+    const mockWindow = { open: vi.fn(() => popup) }
+    vi.stubGlobal("window", mockWindow)
+
+    mockOauthStart.mockResolvedValue(MOCK_START_RESPONSE)
+    mockOauthStatus.mockResolvedValue({
+      complete: false,
+      oauth_token: null,
+      error: null,
+    })
+
+    const cbs = makeCallbacks()
+    startOAuthFlow("https://github.com/Kiln-AI/kiln.git", cbs)
+
+    await vi.advanceTimersByTimeAsync(0)
+
+    await vi.advanceTimersByTimeAsync(300_000)
+
+    expect(cbs.calls.onError).toHaveLength(1)
+    expect(cbs.calls.onError[0]).toContain("timed out")
+    expect(popup.close).toHaveBeenCalled()
+  })
+
+  it("calls onError when popup is blocked", async () => {
+    const mockWindow = { open: vi.fn(() => null) }
+    vi.stubGlobal("window", mockWindow)
+    mockOauthStart.mockResolvedValue(MOCK_START_RESPONSE)
+
+    const cbs = makeCallbacks()
+    startOAuthFlow("https://github.com/Kiln-AI/kiln.git", cbs)
+
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(cbs.calls.onError).toHaveLength(1)
+    expect(cbs.calls.onError[0]).toContain("Popup blocked")
+    expect(mockOauthStart).not.toHaveBeenCalled()
+  })
+
+  it("retries polling on network error during status check", async () => {
+    mockOauthStart.mockResolvedValue(MOCK_START_RESPONSE)
+    mockOauthStatus
+      .mockRejectedValueOnce(new Error("Network error"))
+      .mockResolvedValueOnce({
+        complete: true,
+        oauth_token: "ghu_recovered",
+        error: null,
+      })
+
+    const cbs = makeCallbacks()
+    startOAuthFlow("https://github.com/Kiln-AI/kiln.git", cbs)
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mockOauthStatus).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(mockOauthStatus).toHaveBeenCalledTimes(2)
+    expect(cbs.calls.onSuccess).toHaveLength(1)
+    expect(cbs.calls.onSuccess[0]).toBe("ghu_recovered")
+  })
+
+  it("uses pre-opened popup and navigates to authorize URL", async () => {
+    const preOpenedPopup = makeMockPopup()
+    const mockOpen = vi.fn()
+    const mockWindow = { open: mockOpen }
+    vi.stubGlobal("window", mockWindow)
+
+    mockOauthStart.mockResolvedValue(MOCK_START_RESPONSE)
+    mockOauthStatus.mockResolvedValue({
+      complete: false,
+      oauth_token: null,
+      error: null,
+    })
+
+    const cbs = makeCallbacks()
+    startOAuthFlow(
+      "https://github.com/Kiln-AI/kiln.git",
+      cbs,
+      preOpenedPopup as unknown as Window,
+    )
+
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(mockOpen).not.toHaveBeenCalled()
+    expect(preOpenedPopup.location.href).toBe(MOCK_START_RESPONSE.authorize_url)
+  })
+
+  it("gives up polling after repeated consecutive network errors", async () => {
+    const popup = makeMockPopup()
+    const mockWindow = { open: vi.fn(() => popup) }
+    vi.stubGlobal("window", mockWindow)
+
+    mockOauthStart.mockResolvedValue(MOCK_START_RESPONSE)
+    mockOauthStatus.mockRejectedValue(new Error("backend down"))
+
+    const cbs = makeCallbacks()
+    startOAuthFlow("https://github.com/Kiln-AI/kiln.git", cbs)
+
+    // 5 attempts at 2s each: drain all of them.
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(2000)
+    await vi.advanceTimersByTimeAsync(2000)
+    await vi.advanceTimersByTimeAsync(2000)
+    await vi.advanceTimersByTimeAsync(2000)
+
+    expect(mockOauthStatus).toHaveBeenCalledTimes(5)
+    expect(cbs.calls.onError).toHaveLength(1)
+    expect(cbs.calls.onError[0]).toContain("backend down")
+    expect(popup.close).toHaveBeenCalled()
+  })
+
+  it("closes the pre-opened popup on cancel", async () => {
+    const preOpenedPopup = makeMockPopup()
+    const mockOpen = vi.fn()
+    const mockWindow = { open: mockOpen }
+    vi.stubGlobal("window", mockWindow)
+
+    mockOauthStart.mockResolvedValue(MOCK_START_RESPONSE)
+    mockOauthStatus.mockResolvedValue({
+      complete: false,
+      oauth_token: null,
+      error: null,
+    })
+
+    const cbs = makeCallbacks()
+    const handle = startOAuthFlow(
+      "https://github.com/Kiln-AI/kiln.git",
+      cbs,
+      preOpenedPopup as unknown as Window,
+    )
+
+    await vi.advanceTimersByTimeAsync(0)
+    handle.cancel()
+
+    expect(preOpenedPopup.close).toHaveBeenCalled()
+    expect(mockOpen).not.toHaveBeenCalled()
+  })
+})

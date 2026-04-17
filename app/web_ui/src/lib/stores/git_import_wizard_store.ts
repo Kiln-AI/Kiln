@@ -4,6 +4,7 @@ import { sessionStorageStore } from "./local_storage_store"
 export interface GitImportWizardState {
   git_url: string
   pat_token: string | null
+  oauth_token: string | null
   auth_mode: string
   clone_path: string
   selected_branch: string
@@ -15,6 +16,7 @@ export interface GitImportWizardState {
 const INITIAL_STATE: GitImportWizardState = {
   git_url: "",
   pat_token: null,
+  oauth_token: null,
   auth_mode: "system_keys",
   clone_path: "",
   selected_branch: "",
@@ -52,6 +54,7 @@ export function validate_step_requirements(step: WizardStep): boolean {
     case "branch":
       if (!state.git_url) return false
       if (state.auth_mode === "pat_token" && !state.pat_token) return false
+      if (state.auth_mode === "github_oauth" && !state.oauth_token) return false
       return true
     case "project":
       return !!state.clone_path

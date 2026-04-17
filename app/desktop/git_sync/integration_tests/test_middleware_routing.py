@@ -72,6 +72,7 @@ class TestManualModeUnaffected:
             clone_path=str(local_path),
             git_url=None,
             pat_token=None,
+            oauth_token=None,
         )
 
         write_fn_slot: list = []
