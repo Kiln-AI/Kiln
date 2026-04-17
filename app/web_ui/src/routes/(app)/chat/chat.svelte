@@ -528,7 +528,7 @@
                           )}
                           {#if !hasStepGroup}
                             <div
-                              class="flex items-center gap-1.5 text-sm text-base-content/60 py-0.5"
+                              class="flex items-center gap-1.5 text-sm text-base-content/50 py-0.5"
                             >
                               <span class="inline-block w-3 text-center">✓</span
                               >
