@@ -2718,7 +2718,7 @@ async def test_get_tool_server_with_missing_secrets(client, test_project):
             mock_tool_server.name = "test_missing_secrets_tool"
             mock_tool_server.type = ToolServerType.remote_mcp
             mock_tool_server.description = "Tool with missing secrets"
-            mock_tool_server.created_at = datetime.now()
+            mock_tool_server.created_at = datetime.now().astimezone()
             mock_tool_server.created_by = None
             mock_tool_server.properties = {
                 "server_url": "https://example.com/api",
@@ -2794,7 +2794,7 @@ async def test_get_tool_server_with_some_missing_secrets(client, test_project):
             mock_tool_server.name = "test_partial_missing_secrets_tool"
             mock_tool_server.type = ToolServerType.remote_mcp
             mock_tool_server.description = "Tool with some missing secrets"
-            mock_tool_server.created_at = datetime.now()
+            mock_tool_server.created_at = datetime.now().astimezone()
             mock_tool_server.created_by = None
             mock_tool_server.properties = {
                 "server_url": "https://example.com/api",
@@ -2865,7 +2865,7 @@ async def test_get_tool_server_no_missing_secrets(client, test_project):
             mock_tool_server.name = "test_no_missing_secrets_tool"
             mock_tool_server.type = ToolServerType.remote_mcp
             mock_tool_server.description = "Tool with no missing secrets"
-            mock_tool_server.created_at = datetime.now()
+            mock_tool_server.created_at = datetime.now().astimezone()
             mock_tool_server.created_by = None
             mock_tool_server.properties = {
                 "server_url": "https://example.com/api",
@@ -2947,7 +2947,7 @@ async def test_get_tool_server_local_mcp_with_missing_secrets(client, test_proje
             mock_tool_server.name = "test_local_missing_secrets"
             mock_tool_server.type = ToolServerType.local_mcp
             mock_tool_server.description = "Local MCP tool with missing secrets"
-            mock_tool_server.created_at = datetime.now()
+            mock_tool_server.created_at = datetime.now().astimezone()
             mock_tool_server.created_by = None
             mock_tool_server.properties = {
                 "command": "python",
