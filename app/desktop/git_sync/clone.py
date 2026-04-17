@@ -94,24 +94,19 @@ def make_credentials(
             if allowed_types & pygit2.enums.CredentialType.USERNAME:
                 return pygit2.Username("git")
 
-        if auth_mode == "pat_token" and pat_token is not None:
+        token = (
+            pat_token
+            if auth_mode == "pat_token"
+            else oauth_token
+            if auth_mode == "github_oauth"
+            else None
+        )
+        if token is not None:
             if allowed_types & pygit2.enums.CredentialType.USERPASS_PLAINTEXT:
-                return pygit2.UserPass(username="x-token", password=pat_token)  # type: ignore[attr-defined]
+                return pygit2.UserPass(username="x-token", password=token)  # type: ignore[attr-defined]
             if allowed_types & pygit2.enums.CredentialType.USERNAME:
                 return pygit2.Username("x-token")
 
-        if auth_mode == "github_oauth" and oauth_token is not None:
-            if allowed_types & pygit2.enums.CredentialType.USERPASS_PLAINTEXT:
-                return pygit2.UserPass(username="x-token", password=oauth_token)  # type: ignore[attr-defined]
-            if allowed_types & pygit2.enums.CredentialType.USERNAME:
-                return pygit2.Username("x-token")
-
-        if auth_mode == "github_oauth":
-            raise pygit2.GitError(
-                "Authentication failed: no credentials available. "
-                f"auth_mode={auth_mode}. "
-                "Try re-authenticating via GitHub OAuth, or use a Personal Access Token (PAT)."
-            )
         raise pygit2.GitError(
             "Authentication failed: no credentials available. "
             f"auth_mode={auth_mode}. "
@@ -155,8 +150,9 @@ def test_remote_access(
     """Test access to a remote by listing references via pygit2.
 
     If auth_mode is provided, tests with that specific mode.
-    If auth_mode is None, infers mode from pat_token: uses "pat_token"
-    when a PAT is provided, "system_keys" otherwise.
+    If auth_mode is None, infers mode from the provided token: uses
+    "pat_token" when pat_token is set, "github_oauth" when oauth_token
+    is set, or "system_keys" otherwise.
 
     Returns (success, message, auth_mode_used).
     auth_mode_used is set on success to indicate which mode worked.
@@ -165,6 +161,8 @@ def test_remote_access(
         mode = auth_mode
     elif pat_token is not None:
         mode = "pat_token"
+    elif oauth_token is not None:
+        mode = "github_oauth"
     else:
         mode = "system_keys"
 
