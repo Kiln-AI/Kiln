@@ -59,13 +59,18 @@
     git_import_wizard_store.update((s) => ({ ...s, ...fields }))
   }
 
-  const progress_steps: WizardStep[] = ["url", "branch", "project", "complete"]
+  const progress_steps: WizardStep[] = [
+    "url",
+    "credentials",
+    "branch",
+    "project",
+  ]
 
   const step_progress_index: Partial<Record<WizardStep, number>> = {
     url: 0,
-    credentials: 0,
-    branch: 1,
-    project: 2,
+    credentials: 1,
+    branch: 2,
+    project: 3,
     complete: 3,
   }
 
