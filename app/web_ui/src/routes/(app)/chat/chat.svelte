@@ -305,7 +305,7 @@
   let suppressAutoScroll = false
   let userNearBottom = true
   let isAutoScrolling = false
-  const SCROLL_THRESHOLD = 150
+  const SCROLL_THRESHOLD = 0.5
 
   function handleScroll() {
     if (isAutoScrolling || !messagesContainer) return
