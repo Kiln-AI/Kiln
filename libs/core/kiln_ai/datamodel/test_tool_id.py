@@ -185,7 +185,7 @@ class TestCheckToolId:
 
 
 class TestKilnUnmanagedToolIds:
-    """kiln_unmanaged::<slug> for AdapterConfig.external_tools / UnmanagedKilnTool."""
+    """kiln_unmanaged::<slug> for AdapterConfig.unmanaged_tools / UnmanagedKilnTool."""
 
     def test_valid_kiln_unmanaged_tools(self):
         valid_ids = [
@@ -311,7 +311,7 @@ class TestToolIdPydanticType:
             "kiln_tool::rag::my_rag_config",
             # Kiln task tools
             "kiln_task::server1",
-            # Unmanaged (SDK / AdapterConfig.external_tools)
+            # Unmanaged (SDK / AdapterConfig.unmanaged_tools)
             "kiln_unmanaged::model_info",
             "kiln_unmanaged::lookup_weather",
             "kiln_task::my_server",

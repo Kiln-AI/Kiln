@@ -79,7 +79,7 @@ class KilnToolInterface(ABC):
 
 class UnmanagedKilnTool(KilnToolInterface):
     """
-    Helper for tools passed via ``AdapterConfig.external_tools`` (SDK-injected, not from the
+    Helper for tools passed via ``AdapterConfig.unmanaged_tools`` (SDK-injected, not from the
     Kiln tool registry). Use a :class:`~kiln_ai.datamodel.tool_id.ToolId` with prefix
     ``kiln_unmanaged::<id>`` (see :func:`~kiln_ai.datamodel.tool_id.build_kiln_unmanaged_tool_id`).
     Subclass and override :meth:`run` for in-adapter execution when ``return_on_tool_call`` is

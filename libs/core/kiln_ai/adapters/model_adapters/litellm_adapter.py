@@ -63,11 +63,11 @@ MAX_TOOL_CALLS_PER_TURN = 30
 logger = logging.getLogger(__name__)
 
 
-def _validate_external_tools(tools: list[KilnToolInterface]) -> None:
+def _validate_unmanaged_tools(tools: list[KilnToolInterface]) -> None:
     for i, tool in enumerate(tools):
         if not isinstance(tool, KilnToolInterface):
             raise TypeError(
-                f"external_tools[{i}] must be a KilnToolInterface instance, got {type(tool).__name__}"
+                f"unmanaged_tools[{i}] must be a KilnToolInterface instance, got {type(tool).__name__}"
             )
 
 
@@ -103,9 +103,9 @@ class LiteLlmAdapter(BaseAdapter):
             config=base_adapter_config,
         )
 
-        external_tools = self.base_adapter_config.external_tools
-        if external_tools:
-            _validate_external_tools(external_tools)
+        unmanaged_tools = self.base_adapter_config.unmanaged_tools
+        if unmanaged_tools:
+            _validate_unmanaged_tools(unmanaged_tools)
 
     async def _run_model_turn(
         self,
@@ -750,27 +750,27 @@ class LiteLlmAdapter(BaseAdapter):
         return self._cached_available_tools
 
     async def _tools_for_execution(self) -> list[KilnToolInterface]:
-        """Registry-resolved tools plus :attr:`AdapterConfig.external_tools` (same order as ``litellm_tools``)."""
+        """Registry-resolved tools plus :attr:`AdapterConfig.unmanaged_tools` (same order as ``litellm_tools``)."""
         registry = await self.cached_available_tools()
-        external = self.base_adapter_config.external_tools or []
-        return registry + external
+        unmanaged = self.base_adapter_config.unmanaged_tools or []
+        return registry + unmanaged
 
     async def litellm_tools(self) -> list[ToolCallDefinition]:
         available_tools = await self.cached_available_tools()
 
         registry_defs = [await tool.toolcall_definition() for tool in available_tools]
-        external = self.base_adapter_config.external_tools
-        external_defs = (
-            [await t.toolcall_definition() for t in external] if external else []
+        unmanaged = self.base_adapter_config.unmanaged_tools
+        unmanaged_defs = (
+            [await t.toolcall_definition() for t in unmanaged] if unmanaged else []
         )
 
-        merged = registry_defs + external_defs
+        merged = registry_defs + unmanaged_defs
         seen_names: set[str] = set()
         for d in merged:
             name = d["function"]["name"]
             if name in seen_names:
                 raise ValueError(
-                    f"Duplicate tool name {name!r}: external and registry tools must have unique names."
+                    f"Duplicate tool name {name!r}: unmanaged and registry tools must have unique names."
                 )
             seen_names.add(name)
 

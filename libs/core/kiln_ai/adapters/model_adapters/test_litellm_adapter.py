@@ -2004,20 +2004,20 @@ def _sdk_unmanaged_multiply_tool() -> UnmanagedKilnTool:
     )
 
 
-def test_external_tools_invalid_type_raises(mock_task, config):
+def test_unmanaged_tools_invalid_type_raises(mock_task, config):
     with pytest.raises(TypeError, match="must be a KilnToolInterface instance"):
         LiteLlmAdapter(
             config=config,
             kiln_task=mock_task,
             base_adapter_config=AdapterConfig(
                 return_on_tool_call=True,
-                external_tools=[object()],  # type: ignore[list-item]
+                unmanaged_tools=[object()],  # type: ignore[list-item]
             ),
         )
 
 
 @pytest.mark.asyncio
-async def test_litellm_tools_raises_when_duplicate_external_tool_names(
+async def test_litellm_tools_raises_when_duplicate_unmanaged_tool_names(
     mock_task, config
 ):
     adapter = LiteLlmAdapter(
@@ -2025,7 +2025,7 @@ async def test_litellm_tools_raises_when_duplicate_external_tool_names(
         kiln_task=mock_task,
         base_adapter_config=AdapterConfig(
             return_on_tool_call=True,
-            external_tools=[
+            unmanaged_tools=[
                 _lookup_weather_unmanaged_tool("dup"),
                 UnmanagedKilnTool(
                     tool_id="kiln_unmanaged::lookup_weather_2",
@@ -2045,13 +2045,13 @@ async def test_litellm_tools_raises_when_duplicate_external_tool_names(
 
 
 @pytest.mark.asyncio
-async def test_litellm_tools_merges_external_definitions(mock_task, config):
+async def test_litellm_tools_merges_unmanaged_definitions(mock_task, config):
     adapter = LiteLlmAdapter(
         config=config,
         kiln_task=mock_task,
         base_adapter_config=AdapterConfig(
             return_on_tool_call=True,
-            external_tools=[_lookup_weather_unmanaged_tool()],
+            unmanaged_tools=[_lookup_weather_unmanaged_tool()],
         ),
     )
     with patch.object(adapter, "available_tools", return_value=[]):
@@ -2061,7 +2061,7 @@ async def test_litellm_tools_merges_external_definitions(mock_task, config):
 
 
 @pytest.mark.asyncio
-async def test_litellm_tools_raises_when_external_collides_with_registry(
+async def test_litellm_tools_raises_when_unmanaged_collides_with_registry(
     mock_task, config
 ):
     config.run_config_properties = KilnAgentRunConfigProperties(
@@ -2076,7 +2076,7 @@ async def test_litellm_tools_raises_when_external_collides_with_registry(
         kiln_task=mock_task,
         base_adapter_config=AdapterConfig(
             return_on_tool_call=True,
-            external_tools=[_lookup_weather_unmanaged_tool("add")],
+            unmanaged_tools=[_lookup_weather_unmanaged_tool("add")],
         ),
     )
     with pytest.raises(ValueError, match="Duplicate tool name"):
@@ -2084,13 +2084,13 @@ async def test_litellm_tools_raises_when_external_collides_with_registry(
 
 
 @pytest.mark.asyncio
-async def test_build_completion_kwargs_includes_external_tools(mock_task, config):
+async def test_build_completion_kwargs_includes_unmanaged_tools(mock_task, config):
     adapter = LiteLlmAdapter(
         config=config,
         kiln_task=mock_task,
         base_adapter_config=AdapterConfig(
             return_on_tool_call=True,
-            external_tools=[_lookup_weather_unmanaged_tool()],
+            unmanaged_tools=[_lookup_weather_unmanaged_tool()],
         ),
     )
     mock_provider = Mock()
@@ -2113,7 +2113,7 @@ async def test_build_completion_kwargs_includes_external_tools(mock_task, config
 
 
 @pytest.mark.asyncio
-async def test_litellm_tools_merges_registry_then_external_order(
+async def test_litellm_tools_merges_registry_then_unmanaged_order(
     mock_task, config, mock_math_tools
 ):
     adapter = LiteLlmAdapter(
@@ -2121,7 +2121,7 @@ async def test_litellm_tools_merges_registry_then_external_order(
         kiln_task=mock_task,
         base_adapter_config=AdapterConfig(
             return_on_tool_call=True,
-            external_tools=[_lookup_weather_unmanaged_tool("extra_client_tool")],
+            unmanaged_tools=[_lookup_weather_unmanaged_tool("extra_client_tool")],
         ),
     )
     with patch.object(adapter, "available_tools", return_value=mock_math_tools):
@@ -2131,7 +2131,7 @@ async def test_litellm_tools_merges_registry_then_external_order(
 
 
 @pytest.mark.asyncio
-async def test_litellm_tools_external_toolcall_definitions_are_fresh_each_call(
+async def test_litellm_tools_unmanaged_toolcall_definitions_are_fresh_each_call(
     mock_task, config
 ):
     ext = _lookup_weather_unmanaged_tool()
@@ -2140,7 +2140,7 @@ async def test_litellm_tools_external_toolcall_definitions_are_fresh_each_call(
         kiln_task=mock_task,
         base_adapter_config=AdapterConfig(
             return_on_tool_call=True,
-            external_tools=[ext],
+            unmanaged_tools=[ext],
         ),
     )
     with patch.object(adapter, "available_tools", return_value=[]):
@@ -2152,7 +2152,7 @@ async def test_litellm_tools_external_toolcall_definitions_are_fresh_each_call(
 
 
 @pytest.mark.asyncio
-async def test_build_completion_kwargs_json_schema_allows_external_with_registry_tools(
+async def test_build_completion_kwargs_json_schema_allows_unmanaged_with_registry_tools(
     mock_task, config, mock_math_tools
 ):
     config.run_config_properties.structured_output_mode = (
@@ -2163,7 +2163,7 @@ async def test_build_completion_kwargs_json_schema_allows_external_with_registry
         kiln_task=mock_task,
         base_adapter_config=AdapterConfig(
             return_on_tool_call=True,
-            external_tools=[_lookup_weather_unmanaged_tool("client_only_tool")],
+            unmanaged_tools=[_lookup_weather_unmanaged_tool("client_only_tool")],
         ),
     )
     mock_provider = Mock()
@@ -2190,7 +2190,7 @@ async def test_build_completion_kwargs_json_schema_allows_external_with_registry
 
 
 @pytest.mark.asyncio
-async def test_external_tools_only_return_on_tool_call_and_resume_mocked(
+async def test_unmanaged_tools_only_return_on_tool_call_and_resume_mocked(
     mock_task,
 ):
     """Unmanaged-only KilnTool instances (no registry tools): interrupt then resume, fully mocked."""
@@ -2209,7 +2209,7 @@ async def test_external_tools_only_return_on_tool_call_and_resume_mocked(
         kiln_task=mock_task,
         base_adapter_config=AdapterConfig(
             return_on_tool_call=True,
-            external_tools=[_sdk_unmanaged_multiply_tool()],
+            unmanaged_tools=[_sdk_unmanaged_multiply_tool()],
         ),
     )
 

@@ -978,16 +978,16 @@ class _RunnableUnmanagedKilnToolForTest(UnmanagedKilnTool):
     async def run(
         self, context: ToolCallContext | None = None, **kwargs
     ) -> ToolCallResult:
-        return ToolCallResult(output="from_external")
+        return ToolCallResult(output="from_unmanaged")
 
 
-async def test_process_tool_calls_external_tool_success(tmp_path):
-    """process_tool_calls resolves and runs tools from AdapterConfig.external_tools."""
+async def test_process_tool_calls_unmanaged_tool_success(tmp_path):
+    """process_tool_calls resolves and runs tools from AdapterConfig.unmanaged_tools."""
     task = build_test_task(tmp_path)
     ext = _RunnableUnmanagedKilnToolForTest(
         tool_id="kiln_unmanaged::proc_test",
-        name="external_do",
-        description="test external",
+        name="unmanaged_do",
+        description="test unmanaged",
         parameters_schema={
             "type": "object",
             "properties": {"x": {"type": "number"}},
@@ -1005,9 +1005,9 @@ async def test_process_tool_calls_external_tool_success(tmp_path):
     litellm_adapter = LiteLlmAdapter(
         config=config,
         kiln_task=task,
-        base_adapter_config=AdapterConfig(external_tools=[ext]),
+        base_adapter_config=AdapterConfig(unmanaged_tools=[ext]),
     )
-    tool_calls = [MockToolCall("call_1", "external_do", '{"x": 1}')]
+    tool_calls = [MockToolCall("call_1", "unmanaged_do", '{"x": 1}')]
 
     with patch.object(litellm_adapter, "cached_available_tools", return_value=[]):
         assistant_output, tool_messages = await litellm_adapter.process_tool_calls(
@@ -1016,7 +1016,7 @@ async def test_process_tool_calls_external_tool_success(tmp_path):
 
     assert assistant_output is None
     assert len(tool_messages) == 1
-    assert tool_messages[0]["content"] == "from_external"
+    assert tool_messages[0]["content"] == "from_unmanaged"
     assert tool_messages[0]["tool_call_id"] == "call_1"
 
 

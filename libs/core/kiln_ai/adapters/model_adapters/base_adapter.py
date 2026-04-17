@@ -108,14 +108,16 @@ class AdapterConfig:
     return_on_tool_call: bool = False
 
     """
-    Additional :class:`KilnToolInterface` instances merged into completion ``tools`` alongside
-    registry tools, and included in internal tool execution when ``return_on_tool_call`` is
-    False. When ``return_on_tool_call`` is True, the adapter returns before running any tool
-    (including external); supply results via ``prior_trace``. Tool names must not duplicate
-    registry-resolved tools. Combining with structured_output_mode that injects its own
-    ``tools`` (e.g. function_calling) may hit the same limitations as registry-only tools.
+    Extra tools provided directly by the caller, in addition to tools resolved from the
+    task's tool registry. These are sent to the model together with registry tools, and
+    their names must not collide with registry tool names.
+
+    If ``return_on_tool_call`` is False (the default), the adapter executes these tools
+    itself just like registry tools. If True, the adapter returns as soon as the model
+    requests a tool call and the caller is responsible for running the tool and passing
+    results back via ``prior_trace``.
     """
-    external_tools: list[KilnToolInterface] | None = None
+    unmanaged_tools: list[KilnToolInterface] | None = None
 
     """
     When True, automatically inject prompt caching hints into completion

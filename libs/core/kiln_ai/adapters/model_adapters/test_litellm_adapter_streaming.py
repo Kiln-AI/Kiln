@@ -98,8 +98,8 @@ def task(tmp_path):
 
 
 @pytest.fixture
-def task_external_sdk_only(tmp_path):
-    """Task that instructs the model to use only the SDK external multiply tool (no registry tools)."""
+def task_unmanaged_sdk_only(tmp_path):
+    """Task that instructs the model to use only the SDK unmanaged multiply tool (no registry tools)."""
     project_path: Path = tmp_path / "test_project_ext_sdk" / "project.kiln"
     project_path.parent.mkdir()
 
@@ -107,7 +107,7 @@ def task_external_sdk_only(tmp_path):
     project.save_to_file()
 
     task = Task(
-        name="External SDK Tool Task",
+        name="Unmanaged SDK Tool Task",
         instruction=(
             "You must use the sdk_unmanaged_multiply tool to compute 3 times 7. "
             "Do not compute the product yourself. After you receive the tool result, "
@@ -569,7 +569,7 @@ def _make_external_only_return_on_tool_call_adapter(
         ),
         base_adapter_config=AdapterConfig(
             return_on_tool_call=True,
-            external_tools=[_sdk_unmanaged_multiply_tool()],
+            unmanaged_tools=[_sdk_unmanaged_multiply_tool()],
         ),
     )
 
@@ -623,16 +623,16 @@ async def test_invoke_with_return_on_tool_call_and_resume(
 @pytest.mark.parametrize(
     "model_id,provider_name,thinking_level", RETURN_ON_TOOL_CALL_MODELS
 )
-async def test_invoke_external_tools_only_return_on_tool_call_and_resume(
+async def test_invoke_unmanaged_tools_only_return_on_tool_call_and_resume(
     request: pytest.FixtureRequest,
     model_id: str,
     provider_name: ModelProviderName,
     thinking_level: str | None,
-    task_external_sdk_only: Task,
+    task_unmanaged_sdk_only: Task,
 ):
-    """invoke() with only external SDK tool definitions (no registry tools): model calls sdk_unmanaged_multiply; caller resumes."""
+    """invoke() with only unmanaged SDK tool definitions (no registry tools): model calls sdk_unmanaged_multiply; caller resumes."""
     adapter = _make_external_only_return_on_tool_call_adapter(
-        task_external_sdk_only, model_id, provider_name, thinking_level
+        task_unmanaged_sdk_only, model_id, provider_name, thinking_level
     )
 
     task_run = await adapter.invoke(input="Begin.")
