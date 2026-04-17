@@ -118,6 +118,7 @@
     {/if}
 
     <button
+      type="button"
       class="link text-gray-500 text-sm text-right"
       on:click={handle_cancel}>Cancel</button
     >

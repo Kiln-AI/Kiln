@@ -173,6 +173,10 @@
   // note: this run is NOT the main run, but a repair run TaskRun
   let repair_run: TaskRun | null = null
   let repair_instructions: string | null = null
+  // Seed repair_instructions from the persisted run so tooltips/UI on historical repairs show the original feedback
+  $: if (run?.repair_instructions && repair_instructions === null) {
+    repair_instructions = run.repair_instructions
+  }
 
   $: rate_focus = run && overall_rating === null
   // True if this "Run" has everything we want: a rating and a repaired output (or 5-star rating and no repair is needed)
@@ -462,7 +466,6 @@
   }
 
   function handle_manual_edit_submit(repair_run_edited: TaskRun) {
-    repair_run = repair_run_edited
     repair_edit_mode = false
     updated_run = repair_run_edited
     repair_run = null
