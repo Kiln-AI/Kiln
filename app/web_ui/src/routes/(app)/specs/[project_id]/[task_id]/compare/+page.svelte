@@ -5,7 +5,7 @@
   import { goto } from "$app/navigation"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import type { Task, TaskRunConfig } from "$lib/types"
+  import type { Task, TaskRunConfig, Eval } from "$lib/types"
   import type { components } from "$lib/api_schema"
   import CompareChart from "$lib/components/compare_chart.svelte"
   import CompareRadarChart from "$lib/components/compare_radar_chart.svelte"
@@ -35,6 +35,7 @@
   import { isMcpRunConfig } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { prompt_link } from "$lib/utils/link_builder"
+  import { tagFromFilterId } from "../spec_utils"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import RunEval from "$lib/components/run_eval.svelte"
@@ -67,8 +68,8 @@
   let eval_scores_loading: Record<string, boolean> = {}
   let eval_scores_errors: Record<string, string> = {}
 
-  // Eval template cache
-  let eval_templates_cache: Record<string, string | null> = {}
+  // Eval data cache (full eval objects, keyed by eval_id)
+  let eval_data_cache: Record<string, Eval> = {}
   let eval_templates_loading: Record<string, boolean> = {}
   let eval_templates_errors: Record<string, string> = {}
 
@@ -267,9 +268,9 @@
         !eval_scores_errors[config.id],
     )
 
-  async function fetch_eval_template(eval_id: string) {
+  async function fetch_eval_data(eval_id: string) {
     if (
-      eval_templates_cache[eval_id] !== undefined ||
+      eval_data_cache[eval_id] !== undefined ||
       eval_templates_loading[eval_id] ||
       eval_templates_errors[eval_id]
     ) {
@@ -293,7 +294,7 @@
       if (fetch_error) {
         throw fetch_error
       }
-      eval_templates_cache[eval_id] = data.template || null
+      eval_data_cache[eval_id] = data
       delete eval_templates_errors[eval_id]
     } catch (err) {
       const kilnError = createKilnError(err)
@@ -323,7 +324,7 @@
   $: {
     comparisonFeatures.forEach((section) => {
       if (section.eval_id !== "kiln_cost_section") {
-        fetch_eval_template(section.eval_id)
+        fetch_eval_data(section.eval_id)
       }
     })
   }
@@ -535,6 +536,60 @@
     return evalResult.eval_config_result?.eval_config_id
   }
 
+  function getEvalDatasetSize(evalID: string | null): number {
+    if (!evalID) return 0
+    for (const modelKey of selectedModels) {
+      if (!modelKey || !eval_scores_cache[modelKey]) continue
+      const evalResult = eval_scores_cache[modelKey].eval_results.find(
+        (e) => e.eval_id === evalID,
+      )
+      if (evalResult) return evalResult.dataset_size
+    }
+    return 0
+  }
+
+  function navigateToAddData(eval_id: string) {
+    const evalData = eval_data_cache[eval_id]
+    if (!evalData) return
+
+    const params = new URLSearchParams()
+    params.set("reason", "eval")
+    if (evalData.template) {
+      params.set("template_id", evalData.template)
+    }
+    params.set("eval_id", `${project_id}::${task_id}::${eval_id}`)
+
+    const spec_id =
+      comparisonFeatures.find((s) => s.eval_id === eval_id)?.spec_id ?? "legacy"
+    params.set(
+      "eval_link",
+      `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}`,
+    )
+
+    const eval_tag = tagFromFilterId(evalData.eval_set_filter_id)
+    if (evalData.template === "rag") {
+      if (eval_tag) {
+        params.set("splits", `${eval_tag}:1.0`)
+      }
+    } else {
+      const golden_tag = evalData.eval_configs_filter_id
+        ? tagFromFilterId(evalData.eval_configs_filter_id)
+        : undefined
+      if (eval_tag && golden_tag) {
+        params.set("splits", `${eval_tag}:0.8,${golden_tag}:0.2`)
+      }
+    }
+
+    if (evalData.template === "tool_call") {
+      const tool_id = evalData.template_properties?.tool_id
+      if (tool_id) {
+        params.set("tool_id", String(tool_id))
+      }
+    }
+
+    goto(`/dataset/${project_id}/${task_id}/add_data?${params.toString()}`)
+  }
+
   function getPercentageDifference(
     baseValue: string,
     compareValue: string,
@@ -593,12 +648,9 @@
     (modelId) => eval_scores_cache[modelId],
   )
 
-  function navigateToEvalPage(
-    spec_id: string | null,
-    eval_id: string,
-    template: string | null,
-  ) {
+  function navigateToEvalPage(spec_id: string | null, eval_id: string) {
     if (!spec_id) return
+    const template = eval_data_cache[eval_id]?.template ?? null
     if (template === "rag") {
       goto(
         `/specs/${project_id}/${task_id}/${spec_id}/${eval_id}/compare_run_configs`,
@@ -788,13 +840,12 @@
                         <div class="mt-2 text-error text-xs">
                           {eval_templates_errors[section.eval_id]}
                         </div>
-                      {:else if eval_templates_cache[section.eval_id] !== undefined}
+                      {:else if eval_data_cache[section.eval_id] !== undefined}
                         <button
                           on:click={() =>
                             navigateToEvalPage(
                               section.spec_id ?? "legacy",
                               section.eval_id,
-                              eval_templates_cache[section.eval_id],
                             )}
                           class="btn btn-xs rounded-full mt-2"
                         >
@@ -858,7 +909,15 @@
                                   Eval Incomplete
                                 </div>
                                 <div class="text-left">
-                                  {#if getModelDefaultEvalConfigID(selectedModels[i], section.eval_id)}
+                                  {#if getEvalDatasetSize(section.eval_id) === 0}
+                                    <button
+                                      class="btn btn-xs mt-1"
+                                      on:click={() =>
+                                        navigateToAddData(section.eval_id)}
+                                    >
+                                      Add Eval Data
+                                    </button>
+                                  {:else if getModelDefaultEvalConfigID(selectedModels[i], section.eval_id)}
                                     <RunEval
                                       eval_id={section.eval_id}
                                       run_config_ids={[
@@ -894,9 +953,6 @@
                                           navigateToEvalPage(
                                             section.spec_id,
                                             section.eval_id,
-                                            eval_templates_cache[
-                                              section.eval_id
-                                            ],
                                           )}
                                       >
                                         Select Judge
