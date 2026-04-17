@@ -6,7 +6,12 @@
   import EditRagConfigForm from "./edit_rag_config_form.svelte"
   import { ui_state } from "$lib/stores"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
+  $: agentInfo.set({
+    name: "Create RAG Config",
+    description: `Create a new RAG search tool configuration for project ID ${project_id}.`,
+  })
   const template_id = $page.url.searchParams.get("template_id")
   const template = template_id ? rag_config_templates[template_id] : null
 

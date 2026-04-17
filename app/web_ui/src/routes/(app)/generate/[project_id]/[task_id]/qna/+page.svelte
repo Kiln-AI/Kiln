@@ -31,6 +31,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import type { KilnDocument, RunConfigProperties } from "$lib/types"
   import posthog from "posthog-js"
+  import { agentInfo } from "$lib/agent"
 
   let session_id = Math.floor(Math.random() * 1000000000000).toString()
   let ui_show_errors = false
@@ -38,6 +39,10 @@
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Q&A Data Generation",
+    description: `Q&A data generation for project ID ${project_id}, task ID ${task_id}. Generate question-answer pairs from documents.`,
+  })
 
   let qna: QnaStore
   $: qnaCurrentStep = qna?.currentStep

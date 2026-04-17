@@ -3,6 +3,12 @@
   import EditLocalTool from "./edit_local_tool.svelte"
   import { page } from "$app/stores"
   import { ui_state } from "$lib/stores"
+  import { agentInfo } from "$lib/agent"
+
+  $: agentInfo.set({
+    name: "Connect Local MCP Server",
+    description: `Connect a local MCP server to project ID ${$page.params.project_id}. Add external tools via Model Context Protocol.`,
+  })
 </script>
 
 <AppPage

@@ -45,12 +45,17 @@
   import { goto } from "$app/navigation"
   import SpecPropertiesDisplay from "../spec_properties_display.svelte"
   import posthog from "posthog-js"
+  import { agentInfo } from "$lib/agent"
 
   // ### Spec Details Page ###
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: spec_id = $page.params.spec_id!
+  $: agentInfo.set({
+    name: "Spec Detail",
+    description: `Spec detail for spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Spec name: ${spec?.name ?? "[loading]"}. Shows spec requirements, evals, and test cases.`,
+  })
 
   let spec: Spec | null = null
   let spec_error: KilnError | null = null

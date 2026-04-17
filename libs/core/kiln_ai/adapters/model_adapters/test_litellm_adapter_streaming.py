@@ -1,7 +1,5 @@
 import json
 import logging
-import re
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 from unittest.mock import AsyncMock, patch
@@ -17,6 +15,7 @@ from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.adapters.model_adapters.stream_events import (
     AiSdkEventType,
     AiSdkStreamEvent,
+    FinishEvent,
 )
 from kiln_ai.adapters.model_adapters.test_adapter_stream import (
     FakeStreamingCompletion,
@@ -27,6 +26,8 @@ from kiln_ai.adapters.model_adapters.test_adapter_stream import (
 from kiln_ai.datamodel import Project, PromptGenerators, Task
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties, ToolsRunConfig
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
+from kiln_ai.pytest_test_output import make_test_output_dir
+from kiln_ai.tools.base_tool import UnmanagedKilnTool
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +52,6 @@ STREAMING_MODELS = [
     ("claude_4_5_haiku", ModelProviderName.anthropic, "medium"),
 ]
 
-PAID_TEST_OUTPUT_DIR = Path(__file__).resolve().parents[5] / "test_output"
-
 
 def _serialize_for_dump(obj: Any) -> Any:
     if hasattr(obj, "model_dump"):
@@ -61,8 +60,6 @@ def _serialize_for_dump(obj: Any) -> Any:
         if not obj:
             return []
         first = obj[0]
-        if hasattr(first, "type") and hasattr(first, "payload"):
-            return [{"type": e.type.value, "payload": e.payload} for e in obj]
         if hasattr(first, "model_dump"):
             return [item.model_dump(mode="json") for item in obj]
         return [_serialize_for_dump(x) for x in obj]
@@ -70,15 +67,7 @@ def _serialize_for_dump(obj: Any) -> Any:
 
 
 def _dump_paid_test_output(request: pytest.FixtureRequest, **payloads: Any) -> Path:
-    test_name = re.sub(r"[^\w\-]", "_", request.node.name)
-    param_id = "default"
-    if hasattr(request.node, "callspec") and request.node.callspec is not None:
-        id_attr = getattr(request.node.callspec, "id", None)
-        if id_attr is not None:
-            param_id = re.sub(r"[^\w\-]", "_", str(id_attr))
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
-    out_dir = PAID_TEST_OUTPUT_DIR / test_name / param_id / timestamp
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = make_test_output_dir(request)
     for filename, data in payloads.items():
         if data is None:
             continue
@@ -102,6 +91,28 @@ def task(tmp_path):
     task = Task(
         name="Streaming Test Task",
         instruction="Think about it hard! Solve the math problem provided by the user, in a step by step manner. Use the tools provided to solve the math problem. Then use the result in a short sentence about a cat going to the mall. Remember to use the tools for math even if the operation looks easy.",
+        parent=project,
+    )
+    task.save_to_file()
+    return task
+
+
+@pytest.fixture
+def task_unmanaged_sdk_only(tmp_path):
+    """Task that instructs the model to use only the SDK unmanaged multiply tool (no registry tools)."""
+    project_path: Path = tmp_path / "test_project_ext_sdk" / "project.kiln"
+    project_path.parent.mkdir()
+
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+
+    task = Task(
+        name="Unmanaged SDK Tool Task",
+        instruction=(
+            "You must use the sdk_unmanaged_multiply tool to compute 3 times 7. "
+            "Do not compute the product yourself. After you receive the tool result, "
+            "write one short sentence about a cat that includes the numeric result."
+        ),
         parent=project,
     )
     task.save_to_file()
@@ -246,7 +257,7 @@ async def test_invoke_ai_sdk_stream(
     events: list[AiSdkStreamEvent] = []
     async for event in adapter.invoke_ai_sdk_stream(input="123 + 321 = ?"):
         events.append(event)
-        logger.info(f"AI SDK event: {event.type.value} {event.payload}")
+        logger.info(f"AI SDK event: {event.type} {event.model_dump()}")
 
     _dump_paid_test_output(request, events=events)
     assert len(events) > 0, "No events collected"
@@ -283,11 +294,7 @@ async def test_invoke_ai_sdk_stream(
         "Should have TOOL_OUTPUT_AVAILABLE"
     )
 
-    text_deltas = [
-        e.payload.get("delta", "")
-        for e in events
-        if e.type == AiSdkEventType.TEXT_DELTA
-    ]
+    text_deltas = [e.delta for e in events if e.type == AiSdkEventType.TEXT_DELTA]
     full_text = "".join(text_deltas)
     assert len(full_text) > 0, "Text content is empty"
 
@@ -297,7 +304,7 @@ async def test_invoke_ai_sdk_stream(
     assert len(tool_input_available) >= 1, (
         "Should have at least one tool-input-available"
     )
-    tool_input = tool_input_available[0].payload.get("input", {})
+    tool_input = tool_input_available[0].input
     assert "a" in tool_input and "b" in tool_input, (
         f"Tool input should have a and b keys: {tool_input}"
     )
@@ -308,9 +315,7 @@ async def test_invoke_ai_sdk_stream(
     assert len(tool_output_available) >= 1, (
         "Should have at least one tool-output-available"
     )
-    assert tool_output_available[0].payload.get("output") is not None, (
-        "Tool output should not be None"
-    )
+    assert tool_output_available[0].output is not None, "Tool output should not be None"
 
 
 @pytest.mark.paid
@@ -347,7 +352,7 @@ async def test_ai_sdk_stream_text_ends_before_tool_calls(
                 "text-start emitted while a text block was already open"
             )
             text_open = True
-            text_ids_seen.append(event.payload["id"])
+            text_ids_seen.append(event.id)
 
         elif event.type == AiSdkEventType.TEXT_END:
             assert text_open, "text-end emitted without a preceding text-start"
@@ -355,7 +360,7 @@ async def test_ai_sdk_stream_text_ends_before_tool_calls(
 
         elif event.type == AiSdkEventType.TEXT_DELTA:
             assert text_open, (
-                f"text-delta emitted outside an open text block: {event.payload}"
+                f"text-delta emitted outside an open text block: {event.model_dump()}"
             )
 
         elif event.type == AiSdkEventType.TOOL_INPUT_START:
@@ -491,9 +496,27 @@ def _execute_tool_call(tool_call: dict) -> str:
         result = a * b
     elif name == "divide":
         result = a / b
+    elif name == "sdk_unmanaged_multiply":
+        result = a * b
     else:
         raise ValueError(f"Unknown tool: {name}")
     return str(int(result)) if result == int(result) else str(result)
+
+
+def _sdk_unmanaged_multiply_tool() -> UnmanagedKilnTool:
+    return UnmanagedKilnTool(
+        tool_id="kiln_unmanaged::sdk_unmanaged_multiply",
+        name="sdk_unmanaged_multiply",
+        description="Multiply two numbers. Use this tool for all arithmetic.",
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "a": {"type": "number"},
+                "b": {"type": "number"},
+            },
+            "required": ["a", "b"],
+        },
+    )
 
 
 def _make_return_on_tool_call_adapter(
@@ -522,6 +545,32 @@ def _make_return_on_tool_call_adapter(
             )
         ),
         base_adapter_config=AdapterConfig(return_on_tool_call=True),
+    )
+
+
+def _make_external_only_return_on_tool_call_adapter(
+    task: Task,
+    model_id: str,
+    provider_name: ModelProviderName,
+    thinking_level: str | None,
+) -> LiteLlmAdapter:
+    """Adapter with no Kiln registry tools; only external tool definitions in the request."""
+    return LiteLlmAdapter(
+        kiln_task=task,
+        config=LiteLlmConfig(
+            run_config_properties=KilnAgentRunConfigProperties(
+                model_name=model_id,
+                model_provider_name=provider_name,
+                prompt_id=PromptGenerators.SIMPLE,
+                structured_output_mode=StructuredOutputMode.unknown,
+                tools_config=None,
+                thinking_level=thinking_level,
+            )
+        ),
+        base_adapter_config=AdapterConfig(
+            return_on_tool_call=True,
+            unmanaged_tools=[_sdk_unmanaged_multiply_tool()],
+        ),
     )
 
 
@@ -574,6 +623,56 @@ async def test_invoke_with_return_on_tool_call_and_resume(
 @pytest.mark.parametrize(
     "model_id,provider_name,thinking_level", RETURN_ON_TOOL_CALL_MODELS
 )
+async def test_invoke_unmanaged_tools_only_return_on_tool_call_and_resume(
+    request: pytest.FixtureRequest,
+    model_id: str,
+    provider_name: ModelProviderName,
+    thinking_level: str | None,
+    task_unmanaged_sdk_only: Task,
+):
+    """invoke() with only unmanaged SDK tool definitions (no registry tools): model calls sdk_unmanaged_multiply; caller resumes."""
+    adapter = _make_external_only_return_on_tool_call_adapter(
+        task_unmanaged_sdk_only, model_id, provider_name, thinking_level
+    )
+
+    task_run = await adapter.invoke(input="Begin.")
+    _dump_paid_test_output(request, task_run_1=task_run)
+
+    assert task_run.is_toolcall_pending, "Expected task_run to have pending tool calls"
+    assert task_run.trace is not None
+
+    last_msg = task_run.trace[-1]
+    assert last_msg.get("role") == "assistant"
+    pending_tool_calls = last_msg.get("tool_calls", [])
+    assert len(pending_tool_calls) > 0, "Expected at least one pending tool call"
+
+    tool_names = [tc["function"]["name"] for tc in pending_tool_calls]
+    assert "sdk_unmanaged_multiply" in tool_names, (
+        f"Expected sdk_unmanaged_multiply in {tool_names!r}"
+    )
+
+    tool_results = [
+        {"tool_call_id": tc["id"], "content": _execute_tool_call(tc)}
+        for tc in pending_tool_calls
+    ]
+
+    task_run2 = await adapter.invoke(input=tool_results, prior_trace=task_run.trace)
+    _dump_paid_test_output(request, task_run_2=task_run2)
+
+    assert not task_run2.is_toolcall_pending, "Expected task_run2 to be complete"
+    assert "21" in task_run2.output.output, (
+        f"Expected '21' in output: {task_run2.output.output}"
+    )
+
+    assert task_run2.trace is not None
+    expected_ids = [tr["tool_call_id"] for tr in tool_results]
+    _assert_completed_tool_trace(task_run2.trace, expected_ids)
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize(
+    "model_id,provider_name,thinking_level", RETURN_ON_TOOL_CALL_MODELS
+)
 async def test_ai_sdk_stream_with_return_on_tool_call_and_resume(
     request: pytest.FixtureRequest,
     model_id: str,
@@ -595,8 +694,10 @@ async def test_ai_sdk_stream_with_return_on_tool_call_and_resume(
 
     finish_events_1 = [e for e in events_1 if e.type == AiSdkEventType.FINISH]
     assert len(finish_events_1) == 1, "Should have exactly one FINISH event"
+    finish_1 = finish_events_1[0]
+    assert isinstance(finish_1, FinishEvent)
     finish_reason_1 = (
-        finish_events_1[0].payload.get("messageMetadata", {}).get("finishReason")
+        finish_1.messageMetadata.finishReason if finish_1.messageMetadata else None
     )
     assert finish_reason_1 == "tool-calls", (
         f"Expected finishReason 'tool-calls', got {finish_reason_1!r}"
@@ -628,8 +729,10 @@ async def test_ai_sdk_stream_with_return_on_tool_call_and_resume(
     assert len(finish_events_2) == 1, (
         "Should have exactly one FINISH event in second stream"
     )
+    finish_2 = finish_events_2[0]
+    assert isinstance(finish_2, FinishEvent)
     finish_reason_2 = (
-        finish_events_2[0].payload.get("messageMetadata", {}).get("finishReason")
+        finish_2.messageMetadata.finishReason if finish_2.messageMetadata else None
     )
     assert finish_reason_2 == "stop", (
         f"Expected finishReason 'stop', got {finish_reason_2!r}"
@@ -833,10 +936,10 @@ async def test_mocked_ai_sdk_stream_return_on_tool_call_and_resume(task: Task):
 
     finish_events_1 = [e for e in events_1 if e.type == AiSdkEventType.FINISH]
     assert len(finish_events_1) == 1
-    assert (
-        finish_events_1[0].payload.get("messageMetadata", {}).get("finishReason")
-        == "tool-calls"
-    )
+    fe1 = finish_events_1[0]
+    assert isinstance(fe1, FinishEvent)
+    assert fe1.messageMetadata is not None
+    assert fe1.messageMetadata.finishReason == "tool-calls"
 
     task_run_1 = first_stream.task_run
     assert task_run_1.is_toolcall_pending
@@ -859,10 +962,10 @@ async def test_mocked_ai_sdk_stream_return_on_tool_call_and_resume(task: Task):
 
     finish_events_2 = [e for e in events_2 if e.type == AiSdkEventType.FINISH]
     assert len(finish_events_2) == 1
-    assert (
-        finish_events_2[0].payload.get("messageMetadata", {}).get("finishReason")
-        == "stop"
-    )
+    fe2 = finish_events_2[0]
+    assert isinstance(fe2, FinishEvent)
+    assert fe2.messageMetadata is not None
+    assert fe2.messageMetadata.finishReason == "stop"
 
     task_run_2 = second_stream.task_run
     assert not task_run_2.is_toolcall_pending

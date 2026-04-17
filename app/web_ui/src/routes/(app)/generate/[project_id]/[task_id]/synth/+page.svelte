@@ -27,6 +27,7 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import { split_tool_and_skill_ids } from "$lib/stores/tools_store"
+  import { agentInfo } from "$lib/agent"
 
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
@@ -48,6 +49,10 @@
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Synthetic Data Generation",
+    description: `Synthetic data generation for project ID ${project_id}, task ID ${task_id}. Generate synthetic training data using AI models.`,
+  })
   let is_setup = false
 
   let run_config_component: RunConfigComponent | null = null

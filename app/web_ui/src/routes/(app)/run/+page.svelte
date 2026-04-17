@@ -1,5 +1,6 @@
 <script lang="ts">
   import AppPage from "../app_page.svelte"
+  import { agentInfo } from "$lib/agent"
   import { current_task, current_project, ui_state } from "$lib/stores"
   import { createKilnError } from "$lib/utils/error_handlers"
   import FormContainer from "$lib/utils/form_container.svelte"
@@ -14,6 +15,11 @@
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import { isMcpRunConfig } from "$lib/types"
   import { page } from "$app/stores"
+
+  $: agentInfo.set({
+    name: "Run",
+    description: `Run a task with a selected model and configuration.${$current_task ? ` Current task: ${$current_task.name}.` : ""}`,
+  })
 
   let run_error: KilnError | null = null
   let submitting = false

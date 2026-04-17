@@ -44,6 +44,7 @@
   import Questions from "./questions.svelte"
   import posthog from "posthog-js"
   import SavingAnimation from "./animations/saving_animation.svelte"
+  import { agentInfo } from "$lib/agent"
 
   const CLARIFY_SPEC_NUM_SAMPLES_PER_TOPIC = 10
   const CLARIFY_SPEC_NUM_TOPICS = 10
@@ -51,6 +52,10 @@
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Spec Builder",
+    description: `Guided spec builder for project ID ${project_id}, task ID ${task_id}. Step-by-step creation of specs with requirements and test cases.`,
+  })
 
   // State machine for the spec builder flow
   //  create - Initial form for spec creation

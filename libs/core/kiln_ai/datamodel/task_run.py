@@ -41,6 +41,11 @@ class Usage(BaseModel):
         description="The cost of the task run in US dollars, saved at runtime (prices can change over time).",
         ge=0,
     )
+    cached_tokens: int | None = Field(
+        default=None,
+        description="Number of tokens served from prompt cache. None if not reported.",
+        ge=0,
+    )
 
     def __add__(self, other: "Usage") -> "Usage":
         """Add two Usage objects together, handling None values gracefully.
@@ -76,6 +81,7 @@ class Usage(BaseModel):
             output_tokens=_add_optional_int(self.output_tokens, other.output_tokens),
             total_tokens=_add_optional_int(self.total_tokens, other.total_tokens),
             cost=_add_optional_float(self.cost, other.cost),
+            cached_tokens=_add_optional_int(self.cached_tokens, other.cached_tokens),
         )
 
 

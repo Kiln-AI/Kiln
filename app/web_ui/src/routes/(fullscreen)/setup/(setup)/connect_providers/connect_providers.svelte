@@ -15,6 +15,7 @@
   import { get_provider_image } from "$lib/ui/provider_image"
   import posthog from "posthog-js"
   import { goto } from "$app/navigation"
+  import { setCopilotConnected } from "$lib/stores/copilot_connection_store"
 
   export let onboarding = false
   export let highlight_finetune = false
@@ -417,6 +418,10 @@
       })
 
       status[provider.id].connected = false
+
+      if (provider.id === "kiln_copilot") {
+        setCopilotConnected(false)
+      }
 
       // Clear the available models list
       available_tuning_models.set(null)

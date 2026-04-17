@@ -1,11 +1,18 @@
 <script lang="ts">
   import AppPage from "../../app_page.svelte"
   import { projects, load_projects } from "$lib/stores"
+  import { agentInfo } from "$lib/agent"
   import type { Project } from "$lib/types"
   import { client } from "$lib/api_client"
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import { goto } from "$app/navigation"
   import { formatDate } from "$lib/utils/formatters"
+
+  agentInfo.set({
+    name: "Manage Projects",
+    description:
+      "Manage all projects. Create new projects, edit existing ones, or remove projects.",
+  })
 
   async function remove_project(project: Project) {
     try {
