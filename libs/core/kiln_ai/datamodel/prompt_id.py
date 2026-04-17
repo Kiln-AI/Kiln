@@ -6,6 +6,8 @@ from pydantic import AfterValidator
 
 # Generators that can take any task and build a prompt
 class PromptGenerators(str, Enum):
+    """Built-in prompt generators that can construct a prompt from a task definition."""
+
     SIMPLE = "simple_prompt_builder"
     MULTI_SHOT = "multi_shot_prompt_builder"
     FEW_SHOT = "few_shot_prompt_builder"

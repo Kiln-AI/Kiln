@@ -11,8 +11,11 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models.refine_sp
     RefineSpecApiOutput,
 )
 from app.desktop.studio_server.copilot_api import connect_copilot_api
+from app.desktop.studio_server.utils.copilot_utils import DatasetTaskRuns
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from kiln_ai.datamodel import Project, Task
+from kiln_ai.datamodel.spec_properties import SpecType
 from kiln_server.custom_errors import connect_custom_errors
 
 
@@ -349,3 +352,96 @@ class TestGenerateBatch:
             )
             assert response.status_code == 422
             assert "Validation error from server" in response.json()["message"]
+
+
+class TestCreateSpecWithCopilot:
+    @pytest.fixture
+    def project_and_task(self, tmp_path):
+        project_path = tmp_path / "test_project" / "project.kiln"
+        project_path.parent.mkdir()
+        project = Project(name="Test Project", path=project_path)
+        project.save_to_file()
+        task = Task(
+            name="Test Task",
+            instruction="Test instruction",
+            description="Test task",
+            parent=project,
+        )
+        task.save_to_file()
+        return project, task
+
+    @pytest.fixture
+    def copilot_request_data(self):
+        step_config = {
+            "task_metadata": {
+                "model_name": "gpt-4",
+                "model_provider_name": "openai",
+            },
+            "prompt": "Test prompt",
+        }
+        return {
+            "name": "Test Spec",
+            "definition": "The system should respond politely",
+            "properties": {
+                "spec_type": SpecType.tone.value,
+                "core_requirement": "Be polite",
+                "tone_description": "Professional and friendly",
+            },
+            "judge_info": step_config,
+            "sdg_session_config": {
+                "topic_generation_config": step_config,
+                "input_generation_config": step_config,
+                "output_generation_config": step_config,
+            },
+            "task_description": "Test task",
+            "task_prompt_with_example": "Test prompt",
+        }
+
+    def test_create_spec_with_copilot_success(
+        self, client, project_and_task, copilot_request_data
+    ):
+        project, task = project_and_task
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.task_from_id",
+                return_value=task,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.get_copilot_api_key",
+                return_value="test_key",
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_copilot_examples",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.create_dataset_task_runs",
+                return_value=DatasetTaskRuns(),
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_memorable_name",
+                return_value="test-config-name",
+            ),
+        ):
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/spec_with_copilot",
+                json=copilot_request_data,
+            )
+
+        assert response.status_code == 200
+        res = response.json()
+        assert res["name"] == "Test Spec"
+        assert res["definition"] == "The system should respond politely"
+        assert res["eval_id"] is not None
+
+        # Verify models were saved
+        evals = task.evals()
+        assert len(evals) == 1
+        assert evals[0].name == "Test Spec"
+        assert evals[0].current_config_id is not None
+
+        specs = task.specs()
+        assert len(specs) == 1
+        assert specs[0].eval_id == evals[0].id

@@ -43,10 +43,20 @@ class TaskRequirement(BaseModel):
 
     id: ID_TYPE = ID_FIELD
     name: FilenameStringShort = Field(description="The name of the task requirement.")
-    description: str | None = Field(default=None)
-    instruction: str = Field(min_length=1)
-    priority: Priority = Field(default=Priority.p2)
-    type: TaskOutputRatingType = Field(default=TaskOutputRatingType.five_star)
+    description: str | None = Field(
+        default=None,
+        description="Optional elaboration on the requirement's purpose.",
+    )
+    instruction: str = Field(
+        min_length=1, description="Instructions for meeting the requirement."
+    )
+    priority: Priority = Field(
+        default=Priority.p2, description="The priority level of the requirement."
+    )
+    type: TaskOutputRatingType = Field(
+        default=TaskOutputRatingType.five_star,
+        description="The rating type used to evaluate this requirement.",
+    )
 
 
 class TaskRunConfig(KilnParentedModel):
@@ -146,10 +156,14 @@ class Task(
         default=[],
         description="Deprecated: Use specs and prompts instead.",
     )
-    # Output must be an object schema, as things like tool calls only allow objects
-    output_json_schema: JsonObjectSchema | None = None
-    # Inputs are more flexible, allowing arrays
-    input_json_schema: JsonSchema | None = None
+    output_json_schema: JsonObjectSchema | None = Field(
+        default=None,
+        description="JSON schema for structured task output. Must be an object schema.",
+    )
+    input_json_schema: JsonSchema | None = Field(
+        default=None,
+        description="JSON schema for structured task input. Can be an object or array schema.",
+    )
     thinking_instruction: str | None = Field(
         default=None,
         description="Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting.",
@@ -203,21 +217,3 @@ class Task(
         if self.parent is None or self.parent.__class__.__name__ != "Project":
             return None
         return self.parent  # type: ignore
-
-    def find_task_run_by_id_dfs(
-        self, task_run_id: str, readonly: bool = False
-    ) -> TaskRun | None:
-        """
-        Find a task run by id in the entire task run tree. This is an expensive DFS
-        traversal of the file system so do not use too willy nilly.
-
-        If you already know the root task run, you can use the same method on
-        the root TaskRun instead - that will save a bunch of subtree traversals.
-        """
-        stack: List[TaskRun] = list(self.runs(readonly=readonly))
-        while stack:
-            run = stack.pop()
-            if run.id == task_run_id:
-                return run
-            stack.extend(run.runs(readonly=readonly))
-        return None

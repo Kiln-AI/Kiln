@@ -203,7 +203,7 @@
     try {
       eval_scores_loading[run_config_id] = true
       const { data, error: fetch_error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}/eval_scores",
+        "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}/eval_scores",
         {
           params: {
             path: {
@@ -279,7 +279,7 @@
     try {
       eval_templates_loading[eval_id] = true
       const { data, error: fetch_error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
         {
           params: {
             path: {
@@ -341,7 +341,7 @@
     }[] = []
     const evalCategories: Record<string, Set<string>> = {}
     const hasDefaultEvalConfig: Record<string, boolean> = {}
-    const evalIds: Record<string, string> = {}
+    const evalNames: Record<string, string> = {}
     const specIds: Record<string, string | null> = {}
 
     // Collect all evals and their scores from selected models
@@ -350,38 +350,38 @@
 
       const evalScores = scores_cache[modelId]
       evalScores.eval_results.forEach((evalResult) => {
-        hasDefaultEvalConfig[evalResult.eval_name] =
-          !evalResult.missing_default_eval_config
-        evalIds[evalResult.eval_name] = evalResult.eval_id || ""
-        specIds[evalResult.eval_name] = evalResult.spec_id || null
+        const evalId = evalResult.eval_id || ""
+        hasDefaultEvalConfig[evalId] = !evalResult.missing_default_eval_config
+        evalNames[evalId] = evalResult.eval_name
+        specIds[evalId] = evalResult.spec_id || null
 
-        if (!evalCategories[evalResult.eval_name]) {
-          evalCategories[evalResult.eval_name] = new Set()
+        if (!evalCategories[evalId]) {
+          evalCategories[evalId] = new Set()
         }
 
         Object.keys(evalResult.eval_config_result?.results || {}).forEach(
           (scoreKey) => {
-            evalCategories[evalResult.eval_name].add(scoreKey)
+            evalCategories[evalId].add(scoreKey)
           },
         )
       })
     })
 
     // Convert to comparison features format
-    Object.entries(evalCategories).forEach(([evalName, scoreKeys]) => {
+    Object.entries(evalCategories).forEach(([evalId, scoreKeys]) => {
       const items = Array.from(scoreKeys).map((scoreKey) => ({
         label: scoreKey
           .replace(/_/g, " ")
           .replace(/\b\w/g, (l) => l.toUpperCase()),
-        key: `${evalName}::${scoreKey}`,
+        key: `${evalId}::${scoreKey}`,
       }))
 
       features.push({
-        category: evalName,
+        category: evalNames[evalId] || evalId,
         items,
-        has_default_eval_config: hasDefaultEvalConfig[evalName],
-        eval_id: evalIds[evalName],
-        spec_id: specIds[evalName],
+        has_default_eval_config: hasDefaultEvalConfig[evalId],
+        eval_id: evalId,
+        spec_id: specIds[evalId],
       })
     })
 
@@ -464,9 +464,9 @@
       return null
     }
 
-    // Handle eval metrics
+    // Handle eval metrics (category is eval_id)
     const evalResult = evalScores.eval_results.find(
-      (e) => e.eval_name === category,
+      (e) => e.eval_id === category,
     )
     if (!evalResult) return null
 

@@ -1,11 +1,17 @@
 from datetime import datetime
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.adapters.prompt_builders import CustomExamplePromptBuilder, PromptExample
 from kiln_ai.datamodel import BasePrompt, Prompt, PromptId
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    DENY_AGENT,
+    agent_policy_require_approval,
+)
 
 
 def editable_prompt_from_id(project_id: str, task_id: str, prompt_id: str) -> Prompt:
@@ -27,54 +33,101 @@ def editable_prompt_from_id(project_id: str, task_id: str, prompt_id: str) -> Pr
 
 # This is a wrapper around the Prompt datamodel that adds an id field which represents the PromptID and not the data model ID.
 class ApiPrompt(BasePrompt):
-    id: PromptId
-    created_at: datetime | None = None
-    created_by: str | None = None
+    """A prompt with its PromptId and metadata."""
+
+    id: PromptId = Field(description="The prompt ID used to reference this prompt.")
+    created_at: datetime | None = Field(
+        default=None, description="When the prompt was created."
+    )
+    created_by: str | None = Field(
+        default=None, description="The user who created the prompt."
+    )
 
 
 class PromptCreateRequest(BaseModel):
-    generator_id: str | None = None
-    name: str
-    description: str | None = None
-    prompt: str
-    chain_of_thought_instructions: str | None = None
+    """Request to create a new prompt."""
+
+    generator_id: str | None = Field(
+        default=None, description="The generator ID if this prompt was auto-generated."
+    )
+    name: str = Field(description="The name of the prompt.")
+    description: str | None = Field(
+        default=None, description="A description of the prompt."
+    )
+    prompt: str = Field(description="The prompt text.")
+    chain_of_thought_instructions: str | None = Field(
+        default=None,
+        description="Chain of thought instructions to include in the prompt.",
+    )
 
 
 class PromptGenerator(BaseModel):
-    id: str
-    short_description: str
-    description: str
-    name: str
-    chain_of_thought: bool
+    """A built-in prompt generator that can construct prompts from a task."""
+
+    id: str = Field(description="The unique identifier of the generator.")
+    short_description: str = Field(description="A brief description of the generator.")
+    description: str = Field(description="A detailed description of the generator.")
+    name: str = Field(description="The display name of the generator.")
+    chain_of_thought: bool = Field(
+        description="Whether the generator includes chain of thought instructions."
+    )
 
 
 class PromptResponse(BaseModel):
-    generators: list[PromptGenerator]
-    prompts: list[ApiPrompt]
+    """The available prompt generators and saved prompts for a task."""
+
+    generators: list[PromptGenerator] = Field(
+        description="The available prompt generators."
+    )
+    prompts: list[ApiPrompt] = Field(description="The saved prompts for the task.")
 
 
 class PromptUpdateRequest(BaseModel):
-    name: str
-    description: str | None = None
+    """Request to update a prompt."""
+
+    name: str = Field(description="The updated name.")
+    description: str | None = Field(
+        default=None, description="The updated description."
+    )
 
 
 class FewShotExample(BaseModel):
-    input: str
-    output: str
+    """An input/output example for few-shot prompting."""
+
+    input: str = Field(description="The example input.")
+    output: str = Field(description="The example output.")
 
 
 class BuildPromptRequest(BaseModel):
-    examples: list[FewShotExample] = []
+    """Request to build a prompt from examples."""
+
+    examples: list[FewShotExample] = Field(
+        default=[], description="Few-shot examples to include in the prompt."
+    )
 
 
 class BuildPromptResponse(BaseModel):
-    prompt: str
+    """Response containing a fully constructed prompt with examples."""
+
+    prompt: str = Field(description="The generated prompt text.")
 
 
 def connect_prompt_api(app: FastAPI):
-    @app.post("/api/projects/{project_id}/task/{task_id}/prompt")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/prompts",
+        summary="Create Prompt",
+        tags=["Prompts"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def create_prompt(
-        project_id: str, task_id: str, prompt_data: PromptCreateRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        prompt_data: PromptCreateRequest,
     ) -> Prompt:
         parent_task = task_from_id(project_id, task_id)
         prompt = Prompt(
@@ -88,8 +141,21 @@ def connect_prompt_api(app: FastAPI):
         prompt.save_to_file()
         return prompt
 
-    @app.get("/api/projects/{project_id}/task/{task_id}/prompts")
-    async def get_prompts(project_id: str, task_id: str) -> PromptResponse:
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/prompts",
+        summary="List Prompts",
+        tags=["Prompts"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_prompts(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> PromptResponse:
         parent_task = task_from_id(project_id, task_id)
 
         prompts: list[ApiPrompt] = []
@@ -115,9 +181,26 @@ def connect_prompt_api(app: FastAPI):
             prompts=prompts,
         )
 
-    @app.patch("/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}")
+    @app.patch(
+        "/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}",
+        summary="Update Prompt",
+        tags=["Prompts"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit prompt? Ensure you backup your project before allowing agentic edits."
+        ),
+    )
     async def update_prompt(
-        project_id: str, task_id: str, prompt_id: str, prompt_data: PromptUpdateRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        prompt_id: Annotated[
+            str, Path(description="The unique identifier of the prompt.")
+        ],
+        prompt_data: PromptUpdateRequest,
     ) -> ApiPrompt:
         prompt = editable_prompt_from_id(project_id, task_id, prompt_id)
         prompt.name = prompt_data.name
@@ -126,14 +209,42 @@ def connect_prompt_api(app: FastAPI):
         properties = prompt.model_dump(exclude={"id"})
         return ApiPrompt(id=f"id::{prompt.id}", **properties)
 
-    @app.delete("/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}")
-    async def delete_prompt(project_id: str, task_id: str, prompt_id: str) -> None:
+    @app.delete(
+        "/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}",
+        summary="Delete Prompt",
+        tags=["Prompts"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def delete_prompt(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        prompt_id: Annotated[
+            str, Path(description="The unique identifier of the prompt.")
+        ],
+    ) -> None:
         prompt = editable_prompt_from_id(project_id, task_id, prompt_id)
         prompt.delete()
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/build_prompt_with_examples")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/build_prompt_with_examples",
+        summary="Build Prompt With Examples",
+        tags=["Prompts"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def build_prompt_with_examples(
-        project_id: str, task_id: str, request: BuildPromptRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        request: BuildPromptRequest,
     ) -> BuildPromptResponse:
         """Build a prompt with task instruction, requirements, and optional custom examples.
 

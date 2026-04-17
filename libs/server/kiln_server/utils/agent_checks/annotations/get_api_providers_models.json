@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/providers/models",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "method": "post",
+  "path": "/api/projects/{project_id}/create_vector_store_config",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

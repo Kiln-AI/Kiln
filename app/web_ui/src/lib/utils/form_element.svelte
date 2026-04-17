@@ -44,6 +44,7 @@
   export let empty_state_link: string | null = null
   export let inline_action: InlineAction | null = null
   export let aria_label: string | null = null
+  export let hide_label: boolean = false
 
   function is_empty(value: unknown): boolean {
     if (value === null || value === undefined) {
@@ -157,7 +158,7 @@
         {disabled}
       />
     {/if}
-    {#if label || inline_action || info_description || error_message || description}
+    {#if !hide_label && (label || inline_action || info_description || error_message || description)}
       <label
         for={id}
         class="text-sm font-medium text-left flex flex-col gap-1 w-full"

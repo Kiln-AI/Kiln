@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/projects/{project_id}/reranker_configs",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

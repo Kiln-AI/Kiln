@@ -190,6 +190,62 @@ def test_multiturn_formatter_preserves_tool_call_messages():
     assert first.final_call
 
 
+def test_multiturn_formatter_single_tool_result():
+    """Tool result dict with tool_call_id should produce a ToolResponseMessage."""
+    prior_trace = [
+        {"role": "assistant", "content": None, "tool_calls": [{"id": "call_1"}]},
+    ]
+    formatter = MultiturnFormatter(
+        prior_trace=prior_trace,
+        user_input={"tool_call_id": "call_1", "content": "42"},
+    )
+
+    first = formatter.next_turn()
+    assert first is not None
+    assert len(first.messages) == 1
+    msg = first.messages[0]
+    assert msg.role == "tool"
+    assert msg.content == "42"
+    assert msg.tool_call_id == "call_1"
+    assert first.final_call
+
+
+def test_multiturn_formatter_multiple_tool_results():
+    """List of tool result dicts should produce multiple ToolResponseMessages."""
+    prior_trace = [
+        {"role": "assistant", "content": None, "tool_calls": []},
+    ]
+    tool_results = [
+        {"tool_call_id": "call_1", "content": "15"},
+        {"tool_call_id": "call_2", "content": "36"},
+    ]
+    formatter = MultiturnFormatter(prior_trace=prior_trace, user_input=tool_results)
+
+    first = formatter.next_turn()
+    assert first is not None
+    assert len(first.messages) == 2
+    assert first.messages[0].role == "tool"
+    assert first.messages[0].tool_call_id == "call_1"
+    assert first.messages[0].content == "15"
+    assert first.messages[1].role == "tool"
+    assert first.messages[1].tool_call_id == "call_2"
+    assert first.messages[1].content == "36"
+    assert first.final_call
+
+
+def test_multiturn_formatter_user_input_not_confused_with_tool_result():
+    """A regular dict input (no tool_call_id) is treated as a user message."""
+    prior_trace = [{"role": "system", "content": "sys"}]
+    formatter = MultiturnFormatter(
+        prior_trace=prior_trace,
+        user_input={"question": "what is 2+2?"},
+    )
+    first = formatter.next_turn()
+    assert first is not None
+    assert len(first.messages) == 1
+    assert first.messages[0].role == "user"
+
+
 def test_format_user_message():
     # String
     assert format_user_message("test input") == "test input"

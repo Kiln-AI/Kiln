@@ -36,8 +36,7 @@
   export let project_id: string
   export let current_task: Task
   export let selected_run_config_id: string | null = null // This will be null until the default_run_config_id is set
-  export let save_new_run_config: (() => Promise<TaskRunConfig | null>) | null =
-    null
+  export let save_new_run_config: (() => Promise<TaskRunConfig>) | null = null
   export let save_config_error: KilnError | null = null
   export let set_default_error: KilnError | null = null
   export let info_description: string = ""
@@ -64,11 +63,30 @@
   }
 
   // Initialization of selected_run_config_id
+  // Start with "custom" immediately (avoids showing "Select an option" while configs load),
+  // then upgrade to the default config once it's available in the loaded options.
+  // Uses a one-shot guard so intentional later "Custom" selections aren't overridden.
+  let pending_default_upgrade = false
   $: if (auto_select_default && selected_run_config_id === null) {
-    if (default_run_config_id) {
+    selected_run_config_id = run_page ? "custom" : null
+    pending_default_upgrade = run_page
+  }
+  $: if (
+    pending_default_upgrade &&
+    auto_select_default &&
+    run_page &&
+    selected_run_config_id === "custom" &&
+    default_run_config_id
+  ) {
+    const composite_key = get_task_composite_id(
+      project_id,
+      current_task.id ?? "",
+    )
+    const loaded_configs =
+      $run_configs_by_task_composite_id[composite_key] ?? []
+    if (loaded_configs.some((c) => c.id === default_run_config_id)) {
       selected_run_config_id = default_run_config_id
-    } else {
-      selected_run_config_id = run_page ? "custom" : null
+      pending_default_upgrade = false
     }
   }
 
@@ -248,7 +266,7 @@
   async function handle_save() {
     if (save_new_run_config) {
       const saved_run_config = await save_new_run_config()
-      if (saved_run_config?.id) {
+      if (saved_run_config.id) {
         selected_run_config_id = saved_run_config.id
       }
     }

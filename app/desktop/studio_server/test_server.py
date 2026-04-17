@@ -4,12 +4,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from app.desktop.desktop_server import make_app
+from app.desktop.studio_server.webhost import HTMLStaticFiles
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel.strict_mode import strict_mode
-
-from app.desktop.desktop_server import make_app
-from app.desktop.studio_server.webhost import HTMLStaticFiles
+from kiln_server.server import tags_metadata
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ def test_connect_ollama_success(client):
             {"models": [{"model": "phi3.5:latest"}]},
             {"version": "0.5.0"},
         ]
-        response = client.get("/api/provider/ollama/connect")
+        response = client.post("/api/provider/ollama/connect")
         assert response.status_code == 200
         assert response.json() == {
             "message": "Ollama connected",
@@ -66,7 +66,7 @@ def test_connect_ollama_success(client):
 def test_connect_ollama_connection_error(client):
     with patch("requests.get") as mock_get:
         mock_get.side_effect = requests.exceptions.ConnectionError
-        response = client.get("/api/provider/ollama/connect")
+        response = client.post("/api/provider/ollama/connect")
         assert response.status_code == 417
         assert response.json() == {
             "message": "Failed to connect. Ensure Ollama app is running."
@@ -76,7 +76,7 @@ def test_connect_ollama_connection_error(client):
 def test_connect_ollama_general_exception(client):
     with patch("requests.get") as mock_get:
         mock_get.side_effect = Exception("Test exception")
-        response = client.get("/api/provider/ollama/connect")
+        response = client.post("/api/provider/ollama/connect")
         assert response.status_code == 500
         assert response.json() == {
             "message": "Failed to connect to Ollama: Test exception"
@@ -86,7 +86,7 @@ def test_connect_ollama_general_exception(client):
 def test_connect_ollama_no_models(client):
     with patch("requests.get") as mock_get:
         mock_get.return_value.json.return_value = {"models": []}
-        response = client.get("/api/provider/ollama/connect")
+        response = client.post("/api/provider/ollama/connect")
         assert response.status_code == 200
         r = response.json()
         assert (
@@ -98,15 +98,17 @@ def test_connect_ollama_no_models(client):
 
 
 @pytest.mark.parametrize(
-    "origin",
+    "origin_template",
     [
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "https://localhost:5173",
-        "https://127.0.0.1:5173",
+        "http://localhost:PORT",
+        "http://127.0.0.1:PORT",
+        "https://localhost:PORT",
+        "https://127.0.0.1:PORT",
     ],
 )
-def test_cors_allowed_origins(client, origin):
+def test_cors_allowed_origins(client, origin_template):
+    port = os.environ.get("KILN_FRONTEND_PORT", "5173")
+    origin = origin_template.replace("PORT", port)
     response = client.get("/ping", headers={"Origin": origin})
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == origin
@@ -226,3 +228,104 @@ async def test_setup_route(client):
         client.get("/non_existing_file")
     with pytest.raises(Exception):
         client.get("/nested/non_existing_file")
+
+
+def test_custom_string_types_have_openapi_constraints(client):
+    """Custom string types like FilenameString must surface minLength/maxLength in the OpenAPI schema.
+
+    These constraints come from StringConstraints in the Annotated type definition,
+    not from individual Field() calls. If this test fails, a custom string type is
+    missing StringConstraints (see FilenameString in basemodel.py for the pattern).
+    """
+    schema = client.app.openapi()
+    schemas = schema.get("components", {}).get("schemas", {})
+
+    # Task.name uses FilenameString (max=120)
+    task_name = schemas["Task"]["properties"]["name"]
+    assert task_name.get("maxLength") == 120, (
+        "FilenameString should surface maxLength=120 in OpenAPI schema"
+    )
+    assert task_name.get("minLength") == 1, (
+        "FilenameString should surface minLength=1 in OpenAPI schema"
+    )
+
+    # TaskRequirement.name uses FilenameStringShort (max=32)
+    req_name = schemas["TaskRequirement"]["properties"]["name"]
+    assert req_name.get("maxLength") == 32, (
+        "FilenameStringShort should surface maxLength=32 in OpenAPI schema"
+    )
+    assert req_name.get("minLength") == 1, (
+        "FilenameStringShort should surface minLength=1 in OpenAPI schema"
+    )
+
+    # SkillCreationRequest.name uses SkillNameString (max=64)
+    skill_name = schemas["SkillCreationRequest"]["properties"]["name"]
+    assert skill_name.get("maxLength") == 64, (
+        "SkillNameString should surface maxLength=64 in OpenAPI schema"
+    )
+    assert skill_name.get("minLength") == 1, (
+        "SkillNameString should surface minLength=1 in OpenAPI schema"
+    )
+
+
+def test_api_parameter_descriptions(client):
+    """Every API path and query parameter must have a description."""
+    schema = client.app.openapi()
+
+    missing = []
+    for path, methods in schema.get("paths", {}).items():
+        for method, op in methods.items():
+            if not isinstance(op, dict):
+                continue
+            for param in op.get("parameters", []):
+                if not param.get("description"):
+                    missing.append(
+                        f"{method.upper()} {path} param={param.get('name', '?')}"
+                    )
+
+    assert not missing, (
+        f"{len(missing)} parameters missing descriptions (use Path/Query with description=):\n"
+        + "\n".join(f"  {x}" for x in missing)
+    )
+
+
+def test_all_routes_have_tags(client):
+    """Every API route must have at least one tag assigned."""
+    app = client.app
+    untagged = []
+    for route in app.routes:
+        if not hasattr(route, "methods"):
+            continue
+        # Skip non-API routes (static files, scalar docs)
+        path = getattr(route, "path", "")
+        if not path.startswith("/api/") and path != "/ping":
+            continue
+        tags = getattr(route, "tags", None)
+        if not tags:
+            untagged.append(f"{','.join(route.methods)} {path}")
+    assert untagged == [], f"Routes missing tags: {untagged}"
+
+
+def test_all_tags_are_documented(client):
+    """Every tag used on a route must be documented in tags_metadata, and vice versa."""
+    documented_tags = {t["name"] for t in tags_metadata}
+
+    app = client.app
+    used_tags: set[str] = set()
+    for route in app.routes:
+        if not hasattr(route, "methods"):
+            continue
+        for tag in getattr(route, "tags", []):
+            used_tags.add(tag)
+
+    undocumented = used_tags - documented_tags
+    assert undocumented == set(), (
+        f"Tags used on routes but not documented in tags_metadata: {undocumented}. "
+        "Either use an existing documented tag, or add a new entry to tags_metadata in server.py."
+    )
+
+    unused = documented_tags - used_tags
+    assert unused == set(), (
+        f"Tags documented in tags_metadata but not used on any route: {unused}. "
+        "Remove unused tag entries from tags_metadata in server.py."
+    )

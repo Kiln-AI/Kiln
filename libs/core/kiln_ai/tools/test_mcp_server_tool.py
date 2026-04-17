@@ -1,4 +1,3 @@
-import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -209,9 +208,9 @@ class TestMCPServerTool:
 
         result = await tool.run()
 
-        # Should return structured error with "Unknown error"
-        expected_output = json.dumps({"isError": True, "error": "Unknown error"})
-        assert result.output == expected_output
+        assert result.output == "Unknown error"
+        assert result.is_error is True
+        assert result.error_message == "Unknown error"
 
     @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id")
@@ -243,9 +242,9 @@ class TestMCPServerTool:
 
         result = await tool.run()
 
-        # Should return structured error, not raise an exception
-        expected_output = json.dumps({"isError": True, "error": "Error occurred"})
-        assert result.output == expected_output
+        assert result.output == "Error occurred"
+        assert result.is_error is True
+        assert result.error_message == "Error occurred"
 
     @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id")

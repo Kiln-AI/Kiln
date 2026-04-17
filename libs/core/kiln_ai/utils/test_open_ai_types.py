@@ -15,6 +15,7 @@ from openai.types.chat import (
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionToolMessageParamWrapper,
+    trace_has_pending_client_tool_calls,
 )
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionMessageParam as KilnChatCompletionMessageParam,
@@ -64,11 +65,10 @@ def test_tool_message_param_properties_match():
     openai_properties = set(openai_annotations.keys())
     kiln_properties = set(kiln_annotations.keys())
 
-    # Kiln task tool data is an added property. Confirm it's there and remove it from the comparison.
-    assert "kiln_task_tool_data" in kiln_properties, (
-        "Kiln should have kiln_task_tool_data"
-    )
-    kiln_properties.remove("kiln_task_tool_data")
+    kiln_extra_properties = {"kiln_task_tool_data", "is_error", "error_message"}
+    for prop in kiln_extra_properties:
+        assert prop in kiln_properties, f"Kiln should have {prop}"
+        kiln_properties.remove(prop)
 
     assert openai_properties == kiln_properties, (
         f"Property names don't match. "
@@ -205,3 +205,75 @@ def test_tool_message_wrapper_can_be_instantiated():
     }
 
     assert sample_with_none_kiln_data.get("kiln_task_tool_data") is None
+
+
+def test_trace_has_pending_client_tool_calls_empty_trace():
+    assert trace_has_pending_client_tool_calls(None) is False
+    assert trace_has_pending_client_tool_calls([]) is False
+
+
+def test_trace_has_pending_client_tool_calls_last_not_assistant():
+    trace: list[KilnChatCompletionMessageParam] = [
+        {"role": "assistant", "content": "x"},
+        {"role": "user", "content": "y"},
+    ]
+    assert trace_has_pending_client_tool_calls(trace) is False
+
+
+def test_trace_has_pending_client_tool_calls_only_task_response():
+    trace: list[KilnChatCompletionMessageParam] = [
+        {"role": "user", "content": "hi"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "task_response", "arguments": "{}"},
+                }
+            ],
+        },
+    ]
+    assert trace_has_pending_client_tool_calls(trace) is False
+
+
+def test_trace_has_pending_client_tool_calls_external_only():
+    trace: list[KilnChatCompletionMessageParam] = [
+        {"role": "user", "content": "hi"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "add", "arguments": "{}"},
+                }
+            ],
+        },
+    ]
+    assert trace_has_pending_client_tool_calls(trace) is True
+
+
+def test_trace_has_pending_client_tool_calls_mixed_task_response_and_external():
+    trace: list[KilnChatCompletionMessageParam] = [
+        {"role": "user", "content": "hi"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {"name": "task_response", "arguments": "{}"},
+                },
+                {
+                    "id": "c2",
+                    "type": "function",
+                    "function": {"name": "add", "arguments": "{}"},
+                },
+            ],
+        },
+    ]
+    assert trace_has_pending_client_tool_calls(trace) is True

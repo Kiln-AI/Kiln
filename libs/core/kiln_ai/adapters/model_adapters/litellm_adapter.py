@@ -20,6 +20,7 @@ from openai.types.chat.chat_completion_message_tool_call_param import (
 
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
+from kiln_ai.adapters.chat.chat_formatter import ToolResponseMessage
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     ModelProviderName,
@@ -34,7 +35,10 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel.datamodel_enums import InputType
-from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
+from kiln_ai.datamodel.json_schema import (
+    close_object_schemas,
+    validate_schema_with_value_error,
+)
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     as_kiln_agent_run_config,
@@ -66,6 +70,7 @@ class ModelTurnResult:
     model_response: ModelResponse | None
     model_choice: Choices | None
     usage: Usage
+    interrupted_by_tool_calls: list[ChatCompletionMessageToolCall] | None = None
 
 
 class LiteLlmAdapter(BaseAdapter):
@@ -140,6 +145,27 @@ class LiteLlmAdapter(BaseAdapter):
 
             # Process tool calls if any
             if tool_calls and len(tool_calls) > 0:
+                # check if we should return control to caller
+                if self.base_adapter_config.return_on_tool_call:
+                    # filter out task_response tool (task_response tools are internal)
+                    standard_tool_calls = [
+                        tc for tc in tool_calls if tc.function.name != "task_response"
+                    ]
+                    has_task_response = any(
+                        tc.function.name == "task_response" for tc in tool_calls
+                    )
+                    if standard_tool_calls and not has_task_response:
+                        return ModelTurnResult(
+                            # we don't have any content, we are waiting for toolcall output to come back from client
+                            assistant_message="",
+                            all_messages=messages,
+                            model_response=model_response,
+                            model_choice=response_choice,
+                            usage=usage,
+                            interrupted_by_tool_calls=standard_tool_calls,
+                        )
+
+                # otherwise: process tool calls internally until final output
                 (
                     assistant_message_from_toolcall,
                     tool_call_messages,
@@ -222,7 +248,10 @@ class LiteLlmAdapter(BaseAdapter):
                 if message.content is None:
                     raise ValueError("Empty message content isn't allowed")
                 # pyright incorrectly warns about this, but it's valid so we can ignore. It can't handle the multi-value role.
-                messages.append({"role": message.role, "content": message.content})  # type: ignore
+                msg_dict: dict = {"role": message.role, "content": message.content}
+                if isinstance(message, ToolResponseMessage):
+                    msg_dict["tool_call_id"] = message.tool_call_id
+                messages.append(msg_dict)  # type: ignore
 
             skip_response_format = not turn.final_call
             turn_result = await self._run_model_turn(
@@ -237,6 +266,18 @@ class LiteLlmAdapter(BaseAdapter):
             prior_output = turn_result.assistant_message
             messages = turn_result.all_messages
             final_choice = turn_result.model_choice
+
+            # Check if we were interrupted by tool calls
+            if turn_result.interrupted_by_tool_calls:
+                trace = self.all_messages_to_trace(messages)
+                intermediate_outputs = chat_formatter.intermediate_outputs()
+                output = RunOutput(
+                    output=prior_output or "",
+                    intermediate_outputs=intermediate_outputs,
+                    output_logprobs=None,
+                    trace=trace,
+                )
+                return output, usage
 
             if not prior_output:
                 raise RuntimeError("No assistant message/output returned from model")
@@ -385,6 +426,11 @@ class LiteLlmAdapter(BaseAdapter):
 
     def json_schema_response_format(self) -> dict[str, Any]:
         output_schema = self.task.output_schema()
+        if output_schema is None:
+            raise ValueError(
+                "Invalid output schema for this task. Cannot use JSON schema response format."
+            )
+        output_schema = close_object_schemas(output_schema, strict=True)
         return {
             "response_format": {
                 "type": "json_schema",
@@ -402,7 +448,7 @@ class LiteLlmAdapter(BaseAdapter):
             raise ValueError(
                 "Invalid output schema for this task. Can not use tool calls."
             )
-        output_schema["additionalProperties"] = False
+        output_schema = close_object_schemas(output_schema, strict=strict)
 
         function_params = {
             "name": "task_response",
@@ -531,6 +577,41 @@ class LiteLlmAdapter(BaseAdapter):
         self._litellm_model_id = litellm_provider_info.litellm_model_id
         return self._litellm_model_id
 
+    def _allowed_openai_params_for_completion_kwargs(
+        self, completion_kwargs: dict[str, Any]
+    ) -> list[str]:
+        """
+        LiteLLM drops params it thinks are not supported by the model when drop_params is True. Sometimes it is wrong
+        and we know it is supported, so we whitelist them here and pass that as an allowed_openai_params parameter.
+        """
+        # callers could have set allowed_openai_params in the additional_body_options, so we need to check for that
+        explicit_allowed_params: Any | list = completion_kwargs.get(
+            "allowed_openai_params", []
+        )
+        if not isinstance(explicit_allowed_params, list):
+            raise ValueError(
+                f"Unexpected allowed_openai_params format: {explicit_allowed_params} - expected list, got {type(explicit_allowed_params)}"
+            )
+        explicit_allowed_params_validated = [
+            param for param in explicit_allowed_params if isinstance(param, str)
+        ]
+        invalid_count = len(explicit_allowed_params) - len(
+            explicit_allowed_params_validated
+        )
+        if invalid_count > 0:
+            raise ValueError(
+                f"Unexpected allowed_openai_params format: {explicit_allowed_params} - {invalid_count} items are not strings"
+            )
+
+        # these are our own logic
+        automatic_allowed_params: list[str] = []
+        if "tools" in completion_kwargs:
+            automatic_allowed_params.append("tools")
+        if "tool_choice" in completion_kwargs:
+            automatic_allowed_params.append("tool_choice")
+
+        return list(set(explicit_allowed_params_validated + automatic_allowed_params))
+
     async def build_completion_kwargs(
         self,
         provider: KilnModelProvider,
@@ -595,6 +676,13 @@ class LiteLlmAdapter(BaseAdapter):
         if top_logprobs is not None:
             completion_kwargs["logprobs"] = True
             completion_kwargs["top_logprobs"] = top_logprobs
+
+        # any params listed in this list will be passed to the model regardless of LiteLLM's own validation
+        allowed_openai_params = self._allowed_openai_params_for_completion_kwargs(
+            completion_kwargs
+        )
+        if len(allowed_openai_params) > 0:
+            completion_kwargs["allowed_openai_params"] = allowed_openai_params
 
         return completion_kwargs
 
@@ -701,6 +789,10 @@ class LiteLlmAdapter(BaseAdapter):
                     content=result.output,
                     kiln_task_tool_data=result.kiln_task_tool_data
                     if isinstance(result, KilnTaskToolResult)
+                    else None,
+                    is_error=result.is_error if result.is_error else None,
+                    error_message=result.error_message
+                    if result.error_message
                     else None,
                 )
 

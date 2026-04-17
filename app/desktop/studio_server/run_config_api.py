@@ -1,8 +1,8 @@
 import json
-from typing import Any, Dict
+from typing import Annotated, Any, Dict
 
 from app.desktop.studio_server.tool_api import tool_server_from_id
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path, Query
 from kiln_ai.datamodel.basemodel import string_to_valid_name
 from kiln_ai.datamodel.json_schema import single_string_field_name
 from kiln_ai.datamodel.run_config import McpRunConfigProperties, MCPToolReference
@@ -13,26 +13,41 @@ from kiln_ai.tools.tool_registry import is_mcp_tool_id, tool_from_id
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
 from pydantic import BaseModel, Field
 
 
 class CreateTaskFromToolRequest(BaseModel):
-    tool_id: str
-    task_name: str
-    instruction: str = Field(min_length=1)
+    """Request to create a new task from an MCP tool."""
+
+    tool_id: str = Field(description="The tool ID to create the task from.")
+    task_name: str = Field(description="The name for the new task.")
+    instruction: str = Field(
+        min_length=1, description="The instruction for the new task."
+    )
 
 
 class CreateMcpRunConfigRequest(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    tool_id: str
+    """Request to create a run config from an MCP tool."""
+
+    name: str | None = Field(default=None, description="The name of the run config.")
+    description: str | None = Field(
+        default=None, description="The description of the run config."
+    )
+    tool_id: str = Field(description="The MCP tool ID to use.")
 
 
 class TaskToolCompatibility(BaseModel):
-    task_id: str
-    task_name: str
-    compatible: bool
-    incompatibility_reason: str | None = None
+    """Whether a task is compatible with a specific tool."""
+
+    task_id: str = Field(description="The unique identifier of the task.")
+    task_name: str = Field(description="The human-readable name of the task.")
+    compatible: bool = Field(
+        description="Whether the task is compatible with the tool."
+    )
+    incompatibility_reason: str | None = Field(
+        default=None, description="Why the task is incompatible, if applicable."
+    )
 
 
 def _resolve_mcp_tool_from_id(project_id: str, tool_id: str) -> MCPServerTool:
@@ -176,9 +191,18 @@ def _create_mcp_run_config_properties(
 
 
 def connect_run_config_api(app: FastAPI):
-    @app.get("/api/projects/{project_id}/tasks_compatible_with_tool")
+    @app.get(
+        "/api/projects/{project_id}/tasks_compatible_with_tool",
+        tags=["Tasks"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def tasks_compatible_with_tool(
-        project_id: str, tool_id: str
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        tool_id: Annotated[
+            str, Query(description="The unique identifier of the tool.")
+        ],
     ) -> list[TaskToolCompatibility]:
         project = project_from_id(project_id)
 
@@ -213,10 +237,19 @@ def connect_run_config_api(app: FastAPI):
             )
         return results
 
-    @app.post("/api/projects/{project_id}/tasks/{task_id}/mcp_run_config")
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/mcp_run_config",
+        tags=["Run Configs"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def create_mcp_run_config(
-        project_id: str,
-        task_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
         request: CreateMcpRunConfigRequest,
     ) -> TaskRunConfig:
         task = task_from_id(project_id, task_id)
@@ -250,9 +283,16 @@ def connect_run_config_api(app: FastAPI):
         task_run_config.save_to_file()
         return task_run_config
 
-    @app.post("/api/projects/{project_id}/create_task_from_tool")
+    @app.post(
+        "/api/projects/{project_id}/create_task_from_tool",
+        tags=["Tasks"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def create_task_from_tool(
-        project_id: str, request: CreateTaskFromToolRequest
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        request: CreateTaskFromToolRequest,
     ) -> Task:
         project = project_from_id(project_id)
 

@@ -23,6 +23,8 @@
   import { beforeNavigate, afterNavigate } from "$app/navigation"
   import { client } from "$lib/api_client"
 
+  const pageTitle = import.meta.env.VITE_BRANCH_NAME || "Kiln"
+
   function sanitize_route_id(route_id: string | null | undefined) {
     if (!route_id) {
       return "/unknown"
@@ -121,7 +123,7 @@
 </script>
 
 <svelte:head>
-  <title>Kiln</title>
+  <title>{pageTitle}</title>
   <meta name="description" content="The easiest way to built AI products" />
 
   <link

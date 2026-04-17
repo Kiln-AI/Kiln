@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
-from kiln_ai.datamodel import DataSource, DataSourceType, Project, Task, TaskRun, Usage
+from kiln_ai.datamodel import DataSource, DataSourceType, Project, Task, Usage
 from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.utils.config import Config
@@ -427,8 +427,7 @@ def test_properties_for_task_output_custom_values(test_task):
     assert output.source.properties["top_p"] == 0.9
 
 
-def test_generate_run_with_parent_task_run_sets_parent(test_task, adapter):
-    """Test that generate_run with parent_task_run uses it as parent instead of the task."""
+def test_generate_run_with_parent_task_run_sets_parent_task_run_id(test_task, adapter):
     prior_run = adapter.generate_run(
         input="prior input",
         input_source=None,
@@ -436,6 +435,7 @@ def test_generate_run_with_parent_task_run_sets_parent(test_task, adapter):
     )
     prior_run.save_to_file()
     assert prior_run.id is not None
+    assert prior_run.parent_task_run_id is None
 
     new_run = adapter.generate_run(
         input="new input",
@@ -444,41 +444,55 @@ def test_generate_run_with_parent_task_run_sets_parent(test_task, adapter):
         parent_task_run=prior_run,
     )
 
-    assert new_run.parent == prior_run
-
+    assert new_run.parent_task_run_id == prior_run.id
     new_run.save_to_file()
 
-    reloaded_prior_run = TaskRun.load_from_file(prior_run.path)
-    child_runs = reloaded_prior_run.runs()
-    assert len(child_runs) == 1
-    assert child_runs[0].output.output == "new output"
-
-    # The task should only have the prior run as a direct child
     reloaded_task = Task.load_from_file(test_task.path)
     task_runs = reloaded_task.runs()
-    assert len(task_runs) == 1
-    assert task_runs[0].id == prior_run.id
+    assert len(task_runs) == 2
+    by_id = {r.id: r for r in task_runs}
+    assert by_id[prior_run.id].parent_task_run_id is None
+    assert by_id[new_run.id].parent_task_run_id == prior_run.id
+    assert by_id[new_run.id].output.output == "new output"
 
 
 def test_generate_run_without_parent_task_run_defaults_to_task(test_task, adapter):
-    """Test that generate_run without parent_task_run defaults to using the task as parent."""
+    """Test that generate_run without parent_task_run leaves parent_task_run_id unset."""
     run = adapter.generate_run(
         input="input",
         input_source=None,
         run_output=RunOutput(output="output", intermediate_outputs=None),
     )
+    assert run.parent_task_run_id is None
     assert run.parent == test_task
 
 
+def test_generate_run_with_unsaved_parent_task_run_raises(adapter):
+    prior_run = adapter.generate_run(
+        input="prior input",
+        input_source=None,
+        run_output=RunOutput(output="prior output", intermediate_outputs=None),
+    )
+    prior_run.id = None
+
+    with pytest.raises(ValueError, match="parent_task_run must be persisted"):
+        adapter.generate_run(
+            input="new input",
+            input_source=None,
+            run_output=RunOutput(output="new output", intermediate_outputs=None),
+            parent_task_run=prior_run,
+        )
+
+
 @pytest.mark.asyncio
-async def test_invoke_with_parent_task_run_saves_as_child(test_task, adapter):
-    """Test that invoke with parent_task_run saves the new run as a child of that run."""
+async def test_invoke_with_parent_task_run_saves_under_task_with_link(
+    test_task, adapter
+):
     trace = [
         {"role": "user", "content": "Hello"},
         {"role": "assistant", "content": "Hi there!"},
     ]
 
-    # Create and save a prior run to act as parent
     prior_run = adapter.generate_run(
         input="Hello",
         input_source=None,
@@ -531,16 +545,11 @@ async def test_invoke_with_parent_task_run_saves_as_child(test_task, adapter):
         )
 
     assert new_run.id is not None
-    assert new_run.parent == prior_run
+    assert new_run.parent_task_run_id == prior_run.id
 
-    # The prior run should have the new run as a child
-    reloaded_prior_run = TaskRun.load_from_file(prior_run.path)
-    child_runs = reloaded_prior_run.runs()
-    assert len(child_runs) == 1
-    assert child_runs[0].output.output == "More details!"
-
-    # The task should only have the prior run as a direct child
     reloaded_task = Task.load_from_file(test_task.path)
     task_runs = reloaded_task.runs()
-    assert len(task_runs) == 1
-    assert task_runs[0].id == prior_run.id
+    assert len(task_runs) == 2
+    by_id = {r.id: r for r in task_runs}
+    assert by_id[new_run.id].output.output == "More details!"
+    assert by_id[new_run.id].parent_task_run_id == prior_run.id

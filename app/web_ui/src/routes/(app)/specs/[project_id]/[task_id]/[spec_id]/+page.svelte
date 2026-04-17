@@ -21,6 +21,7 @@
   import TagPicker from "$lib/ui/tag_picker.svelte"
   import {
     capitalize,
+    formatDate,
     formatPriority,
     formatSpecType,
     formatEvalConfigName,
@@ -157,6 +158,13 @@
     }
   }
 
+  async function toggleArchive() {
+    if (!spec) return
+    const newStatus: SpecStatus =
+      spec.status === "archived" ? "active" : "archived"
+    await updateSpecStatus(newStatus)
+  }
+
   async function updateSpecStatus(newStatus: SpecStatus) {
     if (!spec?.id || spec.status === newStatus || updating_statuses) {
       return
@@ -231,7 +239,7 @@
       eval_loading = true
       eval_error = null
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
         {
           params: {
             path: {
@@ -282,7 +290,7 @@
     try {
       score_summary_error = null
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/score_summary",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/score_summary",
         {
           params: {
             path: {
@@ -379,7 +387,7 @@
       eval_progress_loading = true
       eval_progress = null
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/progress",
         {
           params: {
             path: {
@@ -415,6 +423,13 @@
       },
     ]}
     action_buttons={[
+      {
+        label: spec?.status === "archived" ? "Unarchive" : "Archive",
+        disabled: loading || error !== null,
+        handler: () => {
+          toggleArchive()
+        },
+      },
       {
         label: "Edit",
         disabled: loading || error !== null,
@@ -516,6 +531,12 @@
                       evaluator?.eval_set_filter_id,
                     )
                   : undefined,
+              },
+              {
+                name: "Created At",
+                value: spec.created_at
+                  ? formatDate(spec.created_at)
+                  : "Unknown",
               },
             ]}
           >
