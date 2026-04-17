@@ -75,7 +75,7 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
         manager = self._get_manager_for_request(request)
 
         if manager is None:
-            return await call_next(request)
+            return await self._unmatched_dispatch(request, call_next)
 
         endpoint = self._resolve_endpoint(request)
         needs_lock = (
@@ -220,6 +220,54 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
                 status_code=500,
                 media_type="application/json",
             )
+
+        return response
+
+    async def _unmatched_dispatch(self, request: Request, call_next) -> Response:
+        """Handle requests whose URL does not match /api/projects/{id}/...
+
+        In dev mode, after a mutating request completes, sweep all cached
+        managers for dirty repos. A dirty repo here means the endpoint wrote
+        project files but lives outside the middleware-matched URL prefix,
+        silently bypassing git commit/push.
+
+        Only detects projects whose manager is currently cached in the
+        registry (i.e. accessed at least once this session). Projects
+        configured for auto-sync but not yet opened would be missed.
+        """
+        response = await call_next(request)
+
+        if not _is_dev_mode() or request.method not in MUTATING_METHODS:
+            return response
+
+        for mgr in GitSyncRegistry.all_managers():
+            dirty = await mgr.get_dirty_file_paths()
+            if dirty:
+                logger.error(
+                    "DEV MODE: Non-project-scoped endpoint wrote to a synced repo! "
+                    "Endpoints that write project files MUST live under "
+                    "/api/projects/{project_id}/... so GitSyncMiddleware can "
+                    "commit and push changes.\n"
+                    "(May also be caused by a parallel request with @no_write_lock "
+                    "mid-atomic_write — check all recent logs before blaming this request.)\n"
+                    "  API: %s %s\n  Repo: %s\n  Dirty files: %s",
+                    request.method,
+                    request.url.path,
+                    mgr.repo_path,
+                    dirty,
+                )
+                return Response(
+                    content=json.dumps(
+                        {
+                            "detail": "Dev mode: a non-project-scoped endpoint wrote "
+                            "to a synced repo without going through "
+                            "GitSyncMiddleware. See server logs for details."
+                        },
+                        ensure_ascii=False,
+                    ),
+                    status_code=500,
+                    media_type="application/json",
+                )
 
         return response
 

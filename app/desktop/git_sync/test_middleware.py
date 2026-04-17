@@ -697,6 +697,113 @@ def test_dev_mode_dirty_check_skipped_for_write_lock_path(
     )
 
 
+# --- Dev-mode catch-all dirty sweep (non-project-scoped URLs) ---
+
+
+def test_dev_mode_catchall_dirty_non_project_url_returns_500(
+    git_repos, monkeypatch, caplog
+):
+    """Dev mode + POST to a non-project URL that writes into a synced repo -> 500."""
+    monkeypatch.setenv("KILN_DEV_MODE", "true")
+    local_path, _ = git_repos
+
+    GitSyncRegistry.get_or_create(local_path, auth_mode="system_keys")
+
+    app = FastAPI()
+    app.add_middleware(GitSyncMiddleware)
+
+    @app.post("/api/admin/dangerous")
+    def admin_endpoint():
+        (local_path / "leaked_admin_write.txt").write_text("oops")
+        return {"ok": True}
+
+    with (
+        patch(
+            "app.desktop.git_sync.middleware.project_path_from_id",
+            return_value=None,
+        ),
+        patch(
+            "app.desktop.git_sync.middleware.get_git_sync_config",
+            return_value=None,
+        ),
+        caplog.at_level(logging.ERROR),
+    ):
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post("/api/admin/dangerous", json={})
+
+    assert resp.status_code == 500
+    body = resp.json()
+    assert "non-project-scoped endpoint" in body["detail"]
+    rendered = [r.getMessage() for r in caplog.records]
+    assert any("DEV MODE: Non-project-scoped endpoint" in m for m in rendered)
+    assert any("leaked_admin_write.txt" in m for m in rendered)
+
+
+def test_dev_mode_catchall_non_project_url_clean_passes(git_repos, monkeypatch):
+    """Dev mode + POST to a non-project URL that writes to a tmp path (not inside
+    a synced repo) does NOT false-positive."""
+    monkeypatch.setenv("KILN_DEV_MODE", "true")
+    local_path, _ = git_repos
+
+    GitSyncRegistry.get_or_create(local_path, auth_mode="system_keys")
+
+    app = FastAPI()
+    app.add_middleware(GitSyncMiddleware)
+
+    @app.post("/api/admin/safe")
+    def safe_endpoint(tmp_path=None):
+        return {"ok": True}
+
+    with (
+        patch(
+            "app.desktop.git_sync.middleware.project_path_from_id",
+            return_value=None,
+        ),
+        patch(
+            "app.desktop.git_sync.middleware.get_git_sync_config",
+            return_value=None,
+        ),
+    ):
+        client = TestClient(app)
+        resp = client.post("/api/admin/safe", json={})
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+
+def test_prod_mode_catchall_dirty_non_project_url_passes(git_repos, monkeypatch):
+    """Dev mode off + POST to a non-project URL that writes into a synced repo
+    -> normal 200, no 500 (zero prod cost)."""
+    monkeypatch.delenv("KILN_DEV_MODE", raising=False)
+    local_path, _ = git_repos
+
+    GitSyncRegistry.get_or_create(local_path, auth_mode="system_keys")
+
+    app = FastAPI()
+    app.add_middleware(GitSyncMiddleware)
+
+    @app.post("/api/admin/dangerous")
+    def admin_endpoint():
+        (local_path / "leaked_in_prod.txt").write_text("no guard in prod")
+        return {"ok": True}
+
+    with (
+        patch(
+            "app.desktop.git_sync.middleware.project_path_from_id",
+            return_value=None,
+        ),
+        patch(
+            "app.desktop.git_sync.middleware.get_git_sync_config",
+            return_value=None,
+        ),
+    ):
+        client = TestClient(app)
+        resp = client.post("/api/admin/dangerous", json={})
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+
+
 # --- Delete project bypasses middleware ---
 
 

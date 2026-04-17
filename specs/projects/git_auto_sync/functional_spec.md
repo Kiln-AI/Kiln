@@ -68,6 +68,14 @@ These annotations are implemented as decorators that set attributes on the endpo
 - **Dirty state detection:** In development mode, check `git status` at the start and end of any request that did NOT hold the write lock. Dirty state at either point indicates a serious bug (likely a mutation in a GET endpoint). Raise a loud error.
 - **Long lock hold warning:** In development mode, warn if the write lock is held for more than 5 seconds. Flags endpoints that should use `@no_write_lock` with explicit commit management instead.
 
+## URL Contract
+
+Any endpoint that writes to project files (anything under a project's `.kiln` directory) **must** have its path under `/api/projects/{project_id}/...`. `GitSyncMiddleware` uses this prefix to identify which project a request belongs to and to wrap the request with git commit/push. Routes outside this prefix bypass the middleware entirely — writes will succeed but will never be committed or pushed, leaving the repo dirty.
+
+Legitimate exceptions exist for endpoints that write to non-project paths (e.g. the finetune download endpoint writes to a temporary directory, not into the synced repo). These do not need the `/api/projects/` prefix.
+
+In dev mode (`KILN_DEV_MODE=true`), the middleware includes a catch-all dirty sweep: after any mutating request to a non-project-scoped URL completes, it checks all cached sync managers for dirty files. If any are found, the request returns a 500 with diagnostic details so the violation is caught immediately during development.
+
 ## Request Lifecycle (Auto Mode)
 
 ### Standard Requests (reads)
