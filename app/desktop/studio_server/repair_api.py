@@ -112,7 +112,7 @@ def connect_repair_api(app: FastAPI):
             if top_p is not None and isinstance(top_p, float):
                 run_config_properties.top_p = top_p
 
-        except ValidationError as e:
+        except (ValidationError, ValueError) as e:
             raise HTTPException(
                 status_code=422,
                 detail=f"Invalid run config properties: {e}",

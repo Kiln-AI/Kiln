@@ -2,7 +2,11 @@ import json
 
 from pydantic import BaseModel, Field
 
-from kiln_ai.adapters.prompt_builders import BasePromptBuilder, prompt_builder_from_id
+from kiln_ai.adapters.prompt_builders import (
+    BasePromptBuilder,
+    SimplePromptBuilder,
+    prompt_builder_from_id,
+)
 from kiln_ai.datamodel import Priority, Project, Task, TaskRequirement, TaskRun
 
 
@@ -53,7 +57,9 @@ feedback describing what should be improved. Your job is to understand the evalu
             if isinstance(prompt_builder, BasePromptBuilder):
                 return prompt_builder.build_prompt(include_json_instructions=False)
 
-        raise ValueError(f"Prompt builder '{prompt_id}' is not a valid prompt builder")
+        # Fallback to simple prompt builder if prompt_id is missing (e.g. legacy runs)
+        fallback_builder = SimplePromptBuilder(task)
+        return fallback_builder.build_prompt(include_json_instructions=False)
 
     @classmethod
     def build_repair_task_input(
