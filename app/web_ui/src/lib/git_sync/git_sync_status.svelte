@@ -16,9 +16,10 @@
     type GitSyncConfigResponse,
   } from "$lib/git_sync/api"
   import {
-    startOAuthFlow,
-    type OAuthFlowCallbacks,
-  } from "$lib/git_sync/oauth_flow"
+    createOAuthWithInstall,
+    INITIAL_STATE,
+    type OAuthWithInstallFlow,
+  } from "$lib/git_sync/oauth_with_install"
   import {
     initialAuthFormMode,
     buildOAuthUpdatePayload,
@@ -39,27 +40,42 @@
   let disable_dialog: Dialog
   let mode: AuthFormMode = "pat"
 
-  // OAuth state
-  let oauth_starting = false
-  let oauth_error: string | null = null
-  let cancel_oauth: (() => void) | null = null
-  let oauth_generation = 0
+  let oauth_flow: OAuthWithInstallFlow | null = null
+  let oauth: typeof INITIAL_STATE = { ...INITIAL_STATE }
+  let unsubscribe_oauth: (() => void) | null = null
 
-  // Two-step state
-  let oauth_token: string | null = null
-  let install_url: string | null = null
-  let needs_install = false
-  let checking_access = false
-  let install_clicked = false
+  function init_oauth_flow() {
+    if (unsubscribe_oauth) {
+      unsubscribe_oauth()
+      unsubscribe_oauth = null
+    }
+    if (oauth_flow) {
+      oauth_flow.destroy()
+    }
+    if (!config?.git_url) return
+    oauth_flow = createOAuthWithInstall({
+      git_url: config.git_url,
+      on_success: async (token) => {
+        config = await updateConfig(project_id, buildOAuthUpdatePayload(token))
+        close_auth_form()
+      },
+    })
+    unsubscribe_oauth = oauth_flow.state.subscribe((s) => {
+      oauth = s
+    })
+  }
 
   onMount(async () => {
     await load_config()
   })
 
   onDestroy(() => {
-    if (cancel_oauth) {
-      cancel_oauth()
-      cancel_oauth = null
+    if (unsubscribe_oauth) {
+      unsubscribe_oauth()
+      unsubscribe_oauth = null
+    }
+    if (oauth_flow) {
+      oauth_flow.destroy()
     }
   })
 
@@ -75,111 +91,20 @@
     }
   }
 
-  function reset_oauth() {
-    if (cancel_oauth) {
-      cancel_oauth()
-      cancel_oauth = null
-    }
-    oauth_starting = false
-    oauth_error = null
-    oauth_token = null
-    install_url = null
-    needs_install = false
-    checking_access = false
-    install_clicked = false
-    oauth_generation++
-  }
-
-  function open_install() {
-    if (!install_url) return
-    window.open(install_url, "_blank", "noopener,noreferrer")
-    install_clicked = true
-  }
-
   function open_auth_form() {
     show_auth_form = true
     token_error = null
     new_pat_token = ""
     mode = initialAuthFormMode(config?.auth_mode, config?.git_url)
-    reset_oauth()
+    init_oauth_flow()
   }
 
   function close_auth_form() {
     show_auth_form = false
     token_error = null
-    reset_oauth()
-  }
-
-  async function check_access_and_save(token: string, generation: number) {
-    checking_access = true
-    const git_url = config!.git_url!
-    try {
-      const result = await testAccess(git_url, null, "github_oauth", token)
-      if (generation !== oauth_generation) return
-      if (result.success) {
-        config = await updateConfig(project_id, buildOAuthUpdatePayload(token))
-        close_auth_form()
-      } else {
-        oauth_token = token
-        needs_install = true
-      }
-    } catch (e) {
-      if (generation !== oauth_generation) return
-      oauth_error = e instanceof Error ? e.message : "Failed to verify access"
-    } finally {
-      if (generation === oauth_generation) {
-        checking_access = false
-      }
+    if (oauth_flow) {
+      oauth_flow.reset()
     }
-  }
-
-  function start_oauth() {
-    if (!config?.git_url) return
-
-    const popup = window.open("about:blank", "_blank")
-
-    if (cancel_oauth) {
-      cancel_oauth()
-    }
-
-    oauth_error = null
-    oauth_starting = true
-    needs_install = false
-    oauth_token = null
-    install_url = null
-    oauth_generation++
-    const this_generation = oauth_generation
-    const git_url = config.git_url
-
-    const callbacks: OAuthFlowCallbacks = {
-      onStarted: (response) => {
-        if (this_generation !== oauth_generation) return
-        install_url = response.install_url
-        oauth_starting = false
-      },
-      onPolling: () => {
-        if (this_generation !== oauth_generation) return
-      },
-      onSuccess: (token: string) => {
-        if (this_generation !== oauth_generation) return
-        check_access_and_save(token, this_generation)
-      },
-      onError: (err: string) => {
-        if (this_generation !== oauth_generation) return
-        oauth_starting = false
-        oauth_error = err
-      },
-    }
-
-    const handle = startOAuthFlow(git_url, callbacks, popup)
-    cancel_oauth = handle.cancel
-  }
-
-  async function retry_access_check() {
-    if (!oauth_token) return
-    oauth_error = null
-    oauth_generation++
-    await check_access_and_save(oauth_token, oauth_generation)
   }
 
   async function save_token() {
@@ -278,8 +203,8 @@
             warning_message="This repo was connected via system SSH keys. Either fix your SSH key connection to your git provider, or remove this project and re-add it with another auth mechanism like tokens."
             warning_color="warning"
           />
-        {:else if is_github && mode === "oauth"}
-          {#if needs_install && oauth_token}
+        {:else if is_github && mode === "oauth" && oauth_flow}
+          {#if oauth.needs_install}
             <div class="flex flex-col items-center py-4 gap-3">
               <div
                 class="w-10 h-10 rounded-full bg-success/10 flex items-center justify-center"
@@ -308,61 +233,64 @@
                 access.
               </p>
               <button
-                class="btn w-full {install_clicked
+                class="btn w-full {oauth.install_clicked
                   ? 'btn-xs btn-ghost'
                   : 'btn-primary btn-sm'}"
-                on:click={open_install}
+                on:click={oauth_flow.open_install}
               >
-                {install_clicked
+                {oauth.install_clicked
                   ? "Retry Install on GitHub"
                   : "Install Kiln Sync on GitHub"}
               </button>
               <button
-                class="btn w-full {install_clicked
+                class="btn w-full {oauth.install_clicked
                   ? 'btn-primary btn-sm'
                   : 'btn-xs btn-ghost'}"
-                on:click={retry_access_check}
-                disabled={checking_access}
+                on:click={oauth_flow.verify_access}
+                disabled={oauth.checking_access}
               >
-                {#if checking_access}
+                {#if oauth.checking_access}
                   <span class="loading loading-spinner loading-xs"></span>
                 {/if}
                 Verify Access
               </button>
-              {#if oauth_error}
+              {#if oauth.oauth_error}
                 <div class="w-full">
                   <Warning
-                    warning_message={oauth_error}
+                    warning_message={oauth.oauth_error}
                     warning_color="error"
                   />
                 </div>
               {/if}
               <button
                 class="btn btn-link btn-xs text-gray-500 no-underline hover:text-gray-700 hover:underline focus-visible:underline"
-                on:click={reset_oauth}
+                on:click={oauth_flow.reset}
               >
                 Start over
               </button>
             </div>
           {:else}
-            {#if oauth_error}
+            {#if oauth.oauth_error}
               <div class="mb-3">
-                <Warning warning_message={oauth_error} warning_color="error" />
+                <Warning
+                  warning_message={oauth.oauth_error}
+                  warning_color="error"
+                />
               </div>
             {/if}
 
-            {#if (oauth_starting || checking_access) && !oauth_error}
+            {#if (oauth.oauth_starting || oauth.checking_access) && !oauth.oauth_error}
               <div class="flex flex-col items-center py-6 gap-3">
                 <span class="loading loading-spinner loading-md text-primary"
                 ></span>
                 <p class="text-sm text-gray-500">
-                  {checking_access
+                  {oauth.checking_access
                     ? "Verifying access..."
                     : "Waiting for GitHub authorization..."}
                 </p>
                 <button
                   class="btn btn-sm btn-ghost mt-1"
-                  on:click={reset_oauth}
+                  on:click={oauth_flow.reset}
                 >
                   Cancel
                 </button>
@@ -370,13 +298,13 @@
             {:else}
               <button
                 class="btn btn-primary btn-sm w-full"
-                on:click={start_oauth}
-                disabled={oauth_starting}
+                on:click={oauth_flow.start}
+                disabled={oauth.oauth_starting}
               >
-                {#if oauth_starting}
+                {#if oauth.oauth_starting}
                   <span class="loading loading-spinner loading-xs"></span>
                 {/if}
-                {#if oauth_error}
+                {#if oauth.oauth_error}
                   Retry with GitHub
                 {:else if is_github_oauth}
                   Reconnect with GitHub
@@ -389,7 +317,7 @@
                   class="btn btn-link btn-xs text-gray-500 no-underline hover:text-gray-700 hover:underline focus-visible:underline"
                   on:click={() => {
                     mode = "pat"
-                    reset_oauth()
+                    if (oauth_flow) oauth_flow.reset()
                   }}
                 >
                   or use a Personal Access Token
