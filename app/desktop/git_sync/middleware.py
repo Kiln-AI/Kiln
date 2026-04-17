@@ -226,10 +226,12 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
     async def _unmatched_dispatch(self, request: Request, call_next) -> Response:
         """Handle requests whose URL does not match /api/projects/{id}/...
 
-        In dev mode, after a mutating request completes, sweep all cached
-        managers for dirty repos. A dirty repo here means the endpoint wrote
-        project files but lives outside the middleware-matched URL prefix,
-        silently bypassing git commit/push.
+        In dev mode, after any request completes, sweep all cached managers
+        for dirty repos. A dirty repo here means the endpoint wrote project
+        files but lives outside the middleware-matched URL prefix, silently
+        bypassing git commit/push. This runs on all methods (not just
+        mutating ones) to match the dev-mode dirty check on matched URLs,
+        since a GET that dirties a synced repo is also a bug worth surfacing.
 
         Only detects projects whose manager is currently cached in the
         registry (i.e. accessed at least once this session). Projects
@@ -237,7 +239,7 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
         """
         response = await call_next(request)
 
-        if not _is_dev_mode() or request.method not in MUTATING_METHODS:
+        if not _is_dev_mode():
             return response
 
         for mgr in GitSyncRegistry.all_managers():
