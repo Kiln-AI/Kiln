@@ -1,7 +1,11 @@
 <script lang="ts">
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import Warning from "$lib/ui/warning.svelte"
-  import { renameClone, saveConfig } from "$lib/git_sync/api"
+  import {
+    renameClone,
+    saveConfig,
+    is_stale_clone_error,
+  } from "$lib/git_sync/api"
   import { load_projects } from "$lib/stores"
   import { onMount } from "svelte"
 
@@ -15,6 +19,7 @@
   export let project_name: string
   export let on_complete: (project_id: string) => void
   export let on_back: () => void
+  export let on_stale_clone: (() => void) | null = null
 
   let saving = true
   let error: KilnError | null = null
@@ -56,6 +61,10 @@
       }
       done = true
     } catch (e) {
+      if (is_stale_clone_error(e) && on_stale_clone) {
+        on_stale_clone()
+        return
+      }
       error = createKilnError(e)
     } finally {
       saving = false

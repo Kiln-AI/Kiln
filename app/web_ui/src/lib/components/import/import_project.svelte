@@ -4,6 +4,7 @@
   import StepBranch from "./step_branch.svelte"
   import StepProject from "./step_project.svelte"
   import StepComplete from "./step_complete.svelte"
+  import Warning from "$lib/ui/warning.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
@@ -15,18 +16,15 @@
     sync_url_query_param,
     read_url_query_param,
   } from "$lib/git_sync/url_utils"
+  import {
+    git_import_wizard_store,
+    clear_wizard_store,
+    validate_step_requirements,
+    type WizardStep,
+  } from "$lib/stores/git_import_wizard_store"
 
   export let create_link: string
   export let on_complete: (project_id: string) => void
-
-  type WizardStep =
-    | "method"
-    | "local_file"
-    | "url"
-    | "credentials"
-    | "branch"
-    | "project"
-    | "complete"
 
   const hash_to_step: Record<string, WizardStep> = {
     "#local": "local_file",
@@ -47,20 +45,22 @@
   }
 
   let current_step: WizardStep = "method"
-  let git_url = ""
-  let pat_token: string | null = null
-  let auth_mode: string = "system_keys"
-  let clone_path = ""
-  let selected_branch = ""
-  let selected_project_path = ""
-  let selected_project_id = ""
-  let selected_project_name = ""
 
-  // Progress bar steps — credentials is excluded because it's a side-quest
-  // that can happen at multiple points (after URL or after branch)
+  $: git_url = $git_import_wizard_store.git_url
+  $: pat_token = $git_import_wizard_store.pat_token
+  $: auth_mode = $git_import_wizard_store.auth_mode
+  $: clone_path = $git_import_wizard_store.clone_path
+  $: selected_branch = $git_import_wizard_store.selected_branch
+  $: selected_project_path = $git_import_wizard_store.selected_project_path
+  $: selected_project_id = $git_import_wizard_store.selected_project_id
+  $: selected_project_name = $git_import_wizard_store.selected_project_name
+
+  function update_store(fields: Partial<typeof $git_import_wizard_store>) {
+    git_import_wizard_store.update((s) => ({ ...s, ...fields }))
+  }
+
   const progress_steps: WizardStep[] = ["url", "branch", "project", "complete"]
 
-  // Map each step to its progress index (-1 if not a progress step)
   function progress_index_of(step: WizardStep): number {
     return progress_steps.indexOf(step)
   }
@@ -84,12 +84,31 @@
     return hash_to_step[hash] || "method"
   }
 
+  function redirect_if_missing_state(step: WizardStep): boolean {
+    if (!validate_step_requirements(step)) {
+      clear_wizard_store()
+      history.replaceState(
+        null,
+        "",
+        window.location.pathname + window.location.search,
+      )
+      current_step = "method"
+      return true
+    }
+    return false
+  }
+
   function set_step(step: WizardStep) {
     if (step === "local_file") {
       import_project_path = ""
       import_error = null
       select_file_unavailable = false
       import_done = false
+    }
+    if (step === "method") {
+      clear_wizard_store()
+    } else {
+      stale_clone_message = null
     }
     if (step !== "url") {
       sync_url_query_param("url", null)
@@ -99,7 +118,6 @@
     if (hash) {
       window.location.hash = hash
     } else {
-      // "method" step — clear hash without pushing a new history entry
       history.replaceState(
         null,
         "",
@@ -109,20 +127,22 @@
   }
 
   function on_hash_change() {
-    current_step = step_from_hash()
+    const step = step_from_hash()
+    if (redirect_if_missing_state(step)) return
+    current_step = step
   }
 
   onMount(() => {
     const url_param = read_url_query_param("url")
     if (url_param) {
-      git_url = url_param
-      // Use window.location.hash directly instead of set_step("url") because
-      // set_step clears the "url" query param, which we just read above.
+      update_store({ git_url: url_param })
       if (window.location.hash !== "#git") {
         window.location.hash = "#git"
       }
     }
-    current_step = step_from_hash()
+    const step = step_from_hash()
+    if (redirect_if_missing_state(step)) return
+    current_step = step
     window.addEventListener("hashchange", on_hash_change)
   })
 
@@ -135,19 +155,17 @@
   }
 
   function on_url_success(url: string, detected_auth_method: string) {
-    git_url = url
-    auth_mode = detected_auth_method
+    update_store({ git_url: url, auth_mode: detected_auth_method })
     set_step("branch")
   }
 
   function on_url_auth_required(url: string) {
-    git_url = url
+    update_store({ git_url: url })
     go_to_credentials()
   }
 
   function on_credentials_success(token: string, detected_auth_method: string) {
-    pat_token = token
-    auth_mode = detected_auth_method
+    update_store({ pat_token: token, auth_mode: detected_auth_method })
     set_step("branch")
   }
 
@@ -156,8 +174,7 @@
     path: string,
     needs_credentials: boolean,
   ) {
-    selected_branch = branch
-    clone_path = path
+    update_store({ selected_branch: branch, clone_path: path })
     if (needs_credentials) {
       go_to_credentials()
     } else {
@@ -170,10 +187,35 @@
     project_id: string,
     project_name: string,
   ) {
-    selected_project_path = project_path
-    selected_project_id = project_id
-    selected_project_name = project_name
+    update_store({
+      selected_project_path: project_path,
+      selected_project_id: project_id,
+      selected_project_name: project_name,
+    })
     set_step("complete")
+  }
+
+  function on_wizard_complete(project_id: string) {
+    clear_wizard_store()
+    on_complete(project_id)
+  }
+
+  function on_wizard_back() {
+    set_step("method")
+  }
+
+  let stale_clone_message: string | null = null
+
+  function on_stale_clone() {
+    clear_wizard_store()
+    stale_clone_message =
+      "The cloned repository is no longer available (it may have been removed after a restart). Please start the import again."
+    history.replaceState(
+      null,
+      "",
+      window.location.pathname + window.location.search,
+    )
+    current_step = "method"
   }
 
   // Local file import logic
@@ -259,6 +301,12 @@
     </div>
   {/if}
 
+  {#if stale_clone_message && current_step === "method"}
+    <div class="mb-4">
+      <Warning warning_message={stale_clone_message} warning_color="warning" />
+    </div>
+  {/if}
+
   {#if current_step === "method"}
     <div class="flex flex-col gap-4">
       <button
@@ -340,7 +388,11 @@
       on_selected={on_branch_selected}
     />
   {:else if current_step === "project"}
-    <StepProject {clone_path} on_selected={on_project_selected} />
+    <StepProject
+      {clone_path}
+      on_selected={on_project_selected}
+      {on_stale_clone}
+    />
   {:else if current_step === "complete"}
     <StepComplete
       {git_url}
@@ -351,8 +403,9 @@
       project_path={selected_project_path}
       project_id={selected_project_id}
       project_name={selected_project_name}
-      {on_complete}
-      on_back={() => set_step("method")}
+      on_complete={on_wizard_complete}
+      on_back={on_wizard_back}
+      {on_stale_clone}
     />
   {/if}
 </div>
