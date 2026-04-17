@@ -19,7 +19,7 @@
       ) {
         const {
           error, // only present if 4XX or 5XX response
-        } = await client.DELETE("/api/projects/{project_id}", {
+        } = await client.DELETE("/api/delete_project/{project_id}", {
           params: {
             path: {
               project_id: project.id,

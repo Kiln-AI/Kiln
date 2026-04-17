@@ -695,3 +695,33 @@ def test_dev_mode_dirty_check_skipped_for_write_lock_path(
     assert not any("DEV MODE:" in m for m in rendered), (
         f"Dev-mode check should be skipped on write path, got logs: {rendered}"
     )
+
+
+# --- Delete project bypasses middleware ---
+
+
+def test_delete_project_bypasses_middleware_when_fetch_would_fail():
+    """DELETE /api/delete_project/{id} must not be intercepted by GitSyncMiddleware.
+
+    The delete endpoint lives outside /api/projects/* so the middleware's
+    PROJECT_ID_PATTERN never matches, allowing delete to succeed even when
+    git credentials are dead (fetch would raise RemoteUnreachableError).
+    """
+    app = FastAPI()
+    app.add_middleware(GitSyncMiddleware)
+
+    @app.delete(f"/api/delete_project/{PROJECT_ID}")
+    def delete_project():
+        return {"message": f"Project removed. ID: {PROJECT_ID}"}
+
+    with patch(
+        "app.desktop.git_sync.middleware.get_git_sync_config",
+        side_effect=AssertionError(
+            "middleware should not resolve config for this path"
+        ),
+    ):
+        client = TestClient(app)
+        resp = client.delete(f"/api/delete_project/{PROJECT_ID}")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"message": f"Project removed. ID: {PROJECT_ID}"}

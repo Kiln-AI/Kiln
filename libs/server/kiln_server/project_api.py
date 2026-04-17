@@ -126,8 +126,11 @@ def connect_project_api(app: FastAPI):
     ) -> Project:
         return project_from_id(project_id)
 
+    # Path intentionally outside /api/projects/* so GitSyncMiddleware does not
+    # intercept it. Delete only updates Kiln config (no git operations) and
+    # must succeed even when git credentials are dead.
     @app.delete(
-        "/api/projects/{project_id}",
+        "/api/delete_project/{project_id}",
         summary="Delete Project",
         tags=["Projects"],
         openapi_extra=DENY_AGENT,
