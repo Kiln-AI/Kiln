@@ -189,7 +189,7 @@
     overall_rating !== 5 &&
     !run?.repaired_output?.output && // model already repaired
     !repair_run // repair generated, should show repair evaluation instead
-  $: repair_review_available = !!repair_run && !run?.repaired_output
+  $: repair_review_available = !!repair_run && !run?.repaired_output?.output
   $: repair_complete = !!run?.repaired_output?.output
   $: repair_enabled_for_source = REPAIR_ENABLED_FOR_SOURCES.some(
     (s) => s === run?.output?.source?.type,
@@ -197,7 +197,10 @@
 
   $: repair_source =
     run?.repaired_output?.source?.type === "human"
-      ? { type: "user", name: run.repaired_output.source.properties.created_by }
+      ? {
+          type: "user",
+          name: run.repaired_output.source.properties?.created_by ?? "unknown",
+        }
       : run?.repaired_output?.source?.type === "synthetic"
         ? { type: "synthetic" }
         : null
