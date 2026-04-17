@@ -3174,7 +3174,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -3967,7 +3967,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -4083,7 +4083,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -4152,7 +4152,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -4281,7 +4281,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -4373,7 +4373,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -4604,7 +4604,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -4751,7 +4751,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -4921,7 +4921,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -5051,7 +5051,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -5201,7 +5201,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -5664,7 +5664,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -6245,7 +6245,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -6291,7 +6291,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -6361,7 +6361,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -6477,7 +6477,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -6687,7 +6687,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -7048,7 +7048,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -7480,7 +7480,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -7791,7 +7791,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -7904,7 +7904,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -7949,7 +7949,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -7998,7 +7998,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -8057,7 +8057,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -8161,7 +8161,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -8239,7 +8239,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -8319,7 +8319,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -8690,7 +8690,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**

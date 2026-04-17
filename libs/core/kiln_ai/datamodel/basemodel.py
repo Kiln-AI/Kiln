@@ -21,6 +21,7 @@ from pydantic import (
     ValidationError,
     ValidationInfo,
     computed_field,
+    field_validator,
     model_serializer,
     model_validator,
 )
@@ -308,9 +309,22 @@ class KilnBaseModel(BaseModel):
         default=None, description="File system path where the record is stored."
     )
     created_at: datetime = Field(
-        default_factory=datetime.now,
-        description="Timestamp when the model was created.",
+        default_factory=lambda: datetime.now().astimezone(),
+        description="Timestamp when the model was created. Timezone-aware; stores the writer's local offset.",
     )
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def _normalize_created_at_tz(cls, v: Any) -> Any:
+        if isinstance(v, datetime) and v.tzinfo is None:
+            return v.astimezone()
+        if isinstance(v, str):
+            parsed = datetime.fromisoformat(v)
+            if parsed.tzinfo is None:
+                return parsed.astimezone()
+            return parsed
+        return v
+
     created_by: str = Field(
         default_factory=lambda: Config.shared().user_id,
         description="User ID of the creator.",
