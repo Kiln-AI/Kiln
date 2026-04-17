@@ -12,20 +12,6 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-_github_api_client: httpx.AsyncClient | None = None
-
-
-def _get_github_api_client() -> httpx.AsyncClient:
-    """Return a shared httpx.AsyncClient for GitHub API calls."""
-    global _github_api_client
-    if _github_api_client is None or _github_api_client.is_closed:
-        _github_api_client = httpx.AsyncClient(
-            headers={"Accept": "application/vnd.github+json"},
-            timeout=10.0,
-        )
-    return _github_api_client
-
-
 # GitHub App credentials for Kiln AI.
 # This is a GitHub App using the user-access-token (OAuth) flow. Embedding
 # the client secret in a distributed desktop binary is standard for
@@ -100,18 +86,21 @@ async def resolve_github_owner_id(owner: str) -> int | None:
     Returns None on any failure (404, rate limit, network error).
     """
     try:
-        client = _get_github_api_client()
-        resp = await client.get(
-            f"https://api.github.com/users/{owner}",
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            return data.get("id")
-        logger.warning(
-            "GitHub API returned status %d when resolving owner ID for %s",
-            resp.status_code,
-            owner,
-        )
+        async with httpx.AsyncClient(
+            headers={"Accept": "application/vnd.github+json"},
+            timeout=10.0,
+        ) as client:
+            resp = await client.get(
+                f"https://api.github.com/users/{owner}",
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("id")
+            logger.warning(
+                "GitHub API returned status %d when resolving owner ID for %s",
+                resp.status_code,
+                owner,
+            )
     except Exception:
         logger.warning("Failed to resolve GitHub owner ID for %s", owner, exc_info=True)
     return None
@@ -123,19 +112,22 @@ async def resolve_github_repo_id(owner: str, repo: str) -> int | None:
     Returns None on any failure (404 for private repos, rate limit, network error).
     """
     try:
-        client = _get_github_api_client()
-        resp = await client.get(
-            f"https://api.github.com/repos/{owner}/{repo}",
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            return data.get("id")
-        logger.warning(
-            "GitHub API returned status %d when resolving repo ID for %s/%s",
-            resp.status_code,
-            owner,
-            repo,
-        )
+        async with httpx.AsyncClient(
+            headers={"Accept": "application/vnd.github+json"},
+            timeout=10.0,
+        ) as client:
+            resp = await client.get(
+                f"https://api.github.com/repos/{owner}/{repo}",
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("id")
+            logger.warning(
+                "GitHub API returned status %d when resolving repo ID for %s/%s",
+                resp.status_code,
+                owner,
+                repo,
+            )
     except Exception:
         logger.warning(
             "Failed to resolve GitHub repo ID for %s/%s", owner, repo, exc_info=True
