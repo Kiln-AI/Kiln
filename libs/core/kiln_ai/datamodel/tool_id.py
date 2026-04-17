@@ -124,7 +124,7 @@ def _check_tool_id(id: str) -> str:
             )
         return id
 
-    # SDK / AdapterConfig.external_tools — not resolved by tool_from_id
+    # SDK / AdapterConfig.unmanaged_tools — not resolved by tool_from_id
     if id.startswith(KILN_UNMANAGED_TOOL_ID_PREFIX):
         kiln_unmanaged_tool_slug_from_id(id)
         return id
