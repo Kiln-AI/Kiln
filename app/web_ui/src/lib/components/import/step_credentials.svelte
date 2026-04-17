@@ -8,9 +8,11 @@
     testAccess,
     isGitHubUrl,
     isGitLabUrl,
-    gitHubPatDeepLink,
+    gitHubClassicPatDeepLink,
+    gitHubFineGrainedPatDeepLink,
     gitLabPatDeepLink,
     gitOwnerFromUrl,
+    gitRepoNameFromUrl,
   } from "$lib/git_sync/api"
   import {
     startOAuthFlow,
@@ -165,14 +167,26 @@
   }
 
   function hint_text(is_error: boolean): string {
-    const prefix = is_error ? "**Authentication failed.**\n" : ""
+    let prefix = is_error ? "**Authentication failed.**\n" : ""
 
     if (is_github) {
+      if (is_error) {
+        prefix =
+          "**Authentication Failed - Create a New Token Following These Instructions**\n"
+      }
       const owner = gitOwnerFromUrl(git_url)
+      const repo_name = gitRepoNameFromUrl(git_url)
+      const explainer =
+        "The token must have read/write access to the selected repository:"
       const owner_hint = owner
-        ? `Be sure to set Resource Owner to "${owner}".`
-        : "Be sure to set Resource Owner to the owner of this repository."
-      return `${prefix}${owner_hint}\nThe token must have read/write access to the repo. Select "Contents"=write in Permissions.`
+        ? ` • Set "Resource Owner" to "${owner}"`
+        : " • Set Resource Owner to the owner of this repository"
+      const repo_hint = repo_name
+        ? ` • "Repository access" must include "${repo_name}"`
+        : ` • "Repository access" must include the name of this repository`
+      const permissions_hint = ` • In Permissions add "Contents" permission set to "Read and write"`
+      const expiration_hint = ` • Set "Expiration" to an appropriate value for your project`
+      return `${prefix}${explainer}\n${owner_hint}\n${repo_hint}\n${permissions_hint}\n${expiration_hint}`
     }
 
     if (is_gitlab) {
@@ -183,10 +197,14 @@
   }
 
   $: token_link = is_github
-    ? gitHubPatDeepLink()
+    ? gitHubClassicPatDeepLink(git_url)
     : is_gitlab
       ? gitLabPatDeepLink(git_url)
       : null
+
+  $: fine_grained_link = is_github
+    ? gitHubFineGrainedPatDeepLink(git_url)
+    : null
 
   $: token_link_label = is_github
     ? "Generate token on GitHub"
@@ -316,8 +334,7 @@
 {:else}
   {#if is_github}
     <p class="text-sm text-gray-500 mb-6">
-      Generate a fine-grained personal access token on GitHub, then paste it
-      below.
+      Generate a classic personal access token on GitHub, then paste it below.
     </p>
   {:else if is_gitlab}
     <p class="text-sm text-gray-500 mb-6">
@@ -367,6 +384,17 @@
           >
             {error ? `Generate a new token →` : `${token_link_label} →`}
           </a>
+        {/if}
+        {#if fine_grained_link}
+          <p class="text-xs text-gray-400">
+            You can also use <a
+              href={fine_grained_link}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="link">fine-grained access tokens</a
+            >, however they are harder to setup and may require approval by an
+            org administrator.
+          </p>
         {/if}
       </div>
     </div>

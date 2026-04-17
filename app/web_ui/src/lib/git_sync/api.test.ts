@@ -2,10 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import {
   isGitHubUrl,
   isGitLabUrl,
-  gitHubPatDeepLink,
+  gitHubClassicPatDeepLink,
+  gitHubFineGrainedPatDeepLink,
   gitLabPatDeepLink,
   gitHostname,
   gitOwnerFromUrl,
+  gitRepoNameFromUrl,
   testAccess,
   listBranches,
   cloneRepo,
@@ -40,11 +42,23 @@ describe("isGitHubUrl", () => {
   it("returns true for GitHub URLs", () => {
     expect(isGitHubUrl("https://github.com/org/repo.git")).toBe(true)
     expect(isGitHubUrl("https://github.com/org/repo")).toBe(true)
+    expect(isGitHubUrl("https://www.github.com/org/repo")).toBe(true)
+    expect(isGitHubUrl("git@github.com:org/repo.git")).toBe(true)
   })
 
   it("returns false for non-GitHub URLs", () => {
     expect(isGitHubUrl("https://gitlab.com/org/repo.git")).toBe(false)
     expect(isGitHubUrl("https://bitbucket.org/org/repo")).toBe(false)
+  })
+
+  it("returns false for spoofed GitHub-like hostnames", () => {
+    expect(isGitHubUrl("https://github.com.evil.example/org/repo")).toBe(false)
+    expect(isGitHubUrl("https://notgithub.com/org/repo")).toBe(false)
+  })
+
+  it("returns false for invalid URLs", () => {
+    expect(isGitHubUrl("not-a-url")).toBe(false)
+    expect(isGitHubUrl("")).toBe(false)
   })
 })
 
@@ -60,6 +74,16 @@ describe("isGitLabUrl", () => {
     expect(isGitLabUrl("https://bitbucket.org/org/repo")).toBe(false)
     expect(isGitLabUrl("https://notgitlab.com/org/repo")).toBe(false)
     expect(isGitLabUrl("https://example.com/gitlab.backup/repo")).toBe(false)
+  })
+
+  it("rejects hostname spoofing attempts", () => {
+    expect(isGitLabUrl("https://gitlab.com.evil.example/org/repo")).toBe(false)
+    expect(isGitLabUrl("https://fakegitlab.com/org/repo")).toBe(false)
+  })
+
+  it("handles invalid input", () => {
+    expect(isGitLabUrl("not-a-url")).toBe(false)
+    expect(isGitLabUrl("")).toBe(false)
   })
 })
 
@@ -109,27 +133,95 @@ describe("gitOwnerFromUrl", () => {
     expect(gitOwnerFromUrl("not-a-url")).toBeNull()
   })
 
+  it("handles owners with dots and dashes", () => {
+    expect(gitOwnerFromUrl("https://github.com/my.org-name/repo.git")).toBe(
+      "my.org-name",
+    )
+    expect(gitOwnerFromUrl("git@github.com:my.org-name/repo.git")).toBe(
+      "my.org-name",
+    )
+  })
+
   it("returns null for URLs with no path segments", () => {
     expect(gitOwnerFromUrl("https://github.com")).toBeNull()
     expect(gitOwnerFromUrl("https://github.com/")).toBeNull()
   })
 })
 
-describe("gitHubPatDeepLink", () => {
-  it("returns GitHub fine-grained token creation URL", () => {
-    const link = gitHubPatDeepLink()
+describe("gitRepoNameFromUrl", () => {
+  it("extracts repo name from HTTPS URL", () => {
+    expect(gitRepoNameFromUrl("https://github.com/Kiln-AI/kiln.git")).toBe(
+      "kiln",
+    )
+  })
+
+  it("extracts repo name from SSH URL", () => {
+    expect(gitRepoNameFromUrl("git@github.com:Kiln-AI/kiln.git")).toBe("kiln")
+  })
+
+  it("handles URL without .git suffix", () => {
+    expect(gitRepoNameFromUrl("https://github.com/Kiln-AI/kiln")).toBe("kiln")
+  })
+
+  it("handles repo names with dots and dashes", () => {
+    expect(gitRepoNameFromUrl("https://github.com/owner/my-repo.v2.git")).toBe(
+      "my-repo.v2",
+    )
+    expect(gitRepoNameFromUrl("https://github.com/owner/my-repo.v2")).toBe(
+      "my-repo.v2",
+    )
+    expect(gitRepoNameFromUrl("git@github.com:owner/my-repo.v2.git")).toBe(
+      "my-repo.v2",
+    )
+    expect(gitRepoNameFromUrl("git@github.com:owner/my-repo.v2")).toBe(
+      "my-repo.v2",
+    )
+  })
+
+  it("returns null for invalid URL", () => {
+    expect(gitRepoNameFromUrl("not-a-url")).toBeNull()
+  })
+})
+
+describe("gitHubClassicPatDeepLink", () => {
+  it("returns GitHub classic token creation URL with repo name", () => {
+    const link = gitHubClassicPatDeepLink("https://github.com/Kiln-AI/kiln.git")
+    expect(link).toContain("github.com/settings/tokens/new")
+    expect(link).toContain("scopes=repo")
+    expect(link).toContain("Kiln%20AI%20for%20kiln")
+  })
+
+  it("falls back when repo name unavailable", () => {
+    const link = gitHubClassicPatDeepLink("")
+    expect(link).toContain("description=Kiln%20AI")
+    expect(link).not.toContain("for%20")
+  })
+})
+
+describe("gitHubFineGrainedPatDeepLink", () => {
+  it("returns GitHub fine-grained token creation URL with repo name", () => {
+    const link = gitHubFineGrainedPatDeepLink(
+      "https://github.com/Kiln-AI/kiln.git",
+    )
     expect(link).toContain("github.com/settings/personal-access-tokens/new")
     expect(link).toContain("contents=write")
-    expect(link).toContain("Kiln")
+    expect(link).toContain("Kiln%20AI%20for%20kiln")
+    expect(link).toContain("auto%20sync%20for%20kiln")
+  })
+
+  it("falls back when repo name unavailable", () => {
+    const link = gitHubFineGrainedPatDeepLink("")
+    expect(link).toContain("name=Kiln%20AI")
+    expect(link).not.toContain("for%20")
   })
 })
 
 describe("gitLabPatDeepLink", () => {
-  it("returns GitLab token creation URL with correct scopes", () => {
+  it("returns GitLab token creation URL with correct scopes and repo name", () => {
     const link = gitLabPatDeepLink("https://gitlab.com/org/repo.git")
     expect(link).toContain("gitlab.com/-/user_settings/personal_access_tokens")
     expect(link).toContain("scopes=write_repository")
-    expect(link).toContain("Kiln")
+    expect(link).toContain("Kiln%20AI%20for%20repo")
   })
 
   it("uses self-hosted hostname", () => {

@@ -3,7 +3,7 @@
   import { projects, load_projects } from "$lib/stores"
   import type { Project } from "$lib/types"
   import { client } from "$lib/api_client"
-  import TableButton from "../../generate/[project_id]/[task_id]/table_button.svelte"
+  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import { goto } from "$app/navigation"
   import { formatDate } from "$lib/utils/formatters"
 
@@ -19,7 +19,7 @@
       ) {
         const {
           error, // only present if 4XX or 5XX response
-        } = await client.DELETE("/api/projects/{project_id}", {
+        } = await client.DELETE("/api/delete_project/{project_id}", {
           params: {
             path: {
               project_id: project.id,
@@ -118,41 +118,32 @@
                 {/if}
               </td>
               <td class="p-0">
-                <div class="dropdown dropdown-end dropdown-hover">
-                  <TableButton />
-                  <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-                  <ul
-                    tabindex="0"
-                    class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
-                  >
-                    <li>
-                      <button
-                        on:click={() =>
-                          goto(`/settings/create_task/${project.id}`)}
-                        >Add Task</button
-                      >
-                    </li>
-                    <li>
-                      <button
-                        on:click={() =>
-                          goto(`/settings/edit_project/${project.id}`)}
-                        >Edit Project</button
-                      >
-                    </li>
-                    <li>
-                      <button on:click={() => remove_project(project)}
-                        >Remove Project</button
-                      >
-                    </li>
-                    {#if !is_git_managed}
-                      <li>
-                        <button on:click={() => open_project_folder(project)}
-                          >Open Folder</button
-                        >
-                      </li>
-                    {/if}
-                  </ul>
-                </div>
+                <TableActionMenu
+                  items={[
+                    {
+                      label: "Add Task",
+                      onclick: () =>
+                        goto(`/settings/create_task/${project.id}`),
+                    },
+                    {
+                      label: "Edit Project",
+                      onclick: () =>
+                        goto(`/settings/edit_project/${project.id}`),
+                    },
+                    {
+                      label: "Remove Project",
+                      onclick: () => remove_project(project),
+                    },
+                    ...(!is_git_managed
+                      ? [
+                          {
+                            label: "Open Folder",
+                            onclick: () => open_project_folder(project),
+                          },
+                        ]
+                      : []),
+                  ]}
+                />
               </td>
             </tr>
           {/each}

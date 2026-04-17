@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 import time
 from pathlib import Path
@@ -28,6 +29,20 @@ MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 PROJECT_ID_PATTERN = re.compile(r"^/api/projects/([^/]+)")
 
 LONG_LOCK_HOLD_THRESHOLD = 5.0
+
+
+def _is_dev_mode() -> bool:
+    return os.environ.get("KILN_DEV_MODE", "false") == "true"
+
+
+class _StreamingUnderWriteLock(Exception):
+    """Sentinel raised when an SSE response is detected under the write lock.
+
+    Raising inside an atomic_write block triggers rollback of any dirty
+    changes. The middleware catches this sentinel just outside the block
+    and returns a 500 JSON response.
+    """
+
 
 ERROR_MAP: dict[type[GitSyncError], tuple[int, str]] = {
     RemoteUnreachableError: (
@@ -60,7 +75,7 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
         manager = self._get_manager_for_request(request)
 
         if manager is None:
-            return await call_next(request)
+            return await self._unmatched_dispatch(request, call_next)
 
         endpoint = self._resolve_endpoint(request)
         needs_lock = (
@@ -69,6 +84,9 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
         ) and not getattr(endpoint, "_git_sync_no_write_lock", False)
 
         if not needs_lock:
+            # Expose the manager so @no_write_lock endpoints can build a
+            # SaveContext without importing desktop-layer code.
+            request.state.git_sync_manager = manager
             try:
                 await manager.ensure_fresh_for_read()
             except GitSyncError as e:
@@ -79,17 +97,25 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
                     media_type="application/json",
                 )
             self._notify_background_sync(manager)
-            return await call_next(request)
+
+            # @no_write_lock endpoints manage their own atomic_write blocks
+            # per job, so a dirty check here would race in-flight commits.
+            # Skip them entirely, per the functional spec.
+            is_self_managed = getattr(endpoint, "_git_sync_no_write_lock", False)
+            if is_self_managed:
+                return await call_next(request)
+
+            response = await call_next(request)
+
+            if _is_dev_mode():
+                return await self._dev_mode_dirty_check(request, response, manager)
+
+            return response
 
         self._notify_background_sync(manager)
         lock_start = time.monotonic()
-        pre_request_head: str | None = None
         try:
-            async with manager.write_lock():
-                await manager.ensure_clean()
-                await manager.ensure_fresh()
-
-                pre_request_head = await manager.get_head()
+            async with manager.atomic_write(f"{request.method} {request.url.path}"):
                 response = await call_next(request)
 
                 content_type = response.headers.get("content-type", "")
@@ -100,26 +126,16 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
                         request.method,
                         request.url.path,
                     )
-                    await manager.rollback(pre_request_head)
-                    return Response(
-                        content=json.dumps(
-                            {
-                                "detail": "Internal error: streaming endpoint missing @no_write_lock decorator."
-                            },
-                            ensure_ascii=False,
-                        ),
-                        status_code=500,
-                        media_type="application/json",
-                    )
+                    raise _StreamingUnderWriteLock()
 
-                body = b""
+                body_chunks: list[bytes] = []
                 # body_iterator is always present on StreamingResponse from
                 # call_next; the union type includes None only because the
                 # base Response class doesn't guarantee it.
                 async for chunk in response.body_iterator:  # type: ignore[union-attr]
-                    body += chunk
+                    body_chunks.append(chunk)
+                body = b"".join(body_chunks)
 
-                # TODO: gate on dev_mode when that mechanism exists
                 held = time.monotonic() - lock_start
                 if held > LONG_LOCK_HOLD_THRESHOLD:
                     logger.warning(
@@ -129,31 +145,131 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
                         request.url.path,
                     )
 
-                has_changes = await manager.has_dirty_files()
-                if has_changes:
-                    await manager.commit_and_push(
-                        api_path=f"{request.method} {request.url.path}",
-                        pre_request_head=pre_request_head,
-                    )
-
-                return Response(
+                proxy = Response(
                     content=body,
                     status_code=response.status_code,
-                    headers=dict(response.headers),
                     media_type=response.media_type,
+                    background=response.background,
                 )
+                # Use raw_headers to preserve duplicate headers (e.g. Set-Cookie)
+                # that dict(response.headers) would collapse.
+                proxy.raw_headers = response.raw_headers
+                return proxy
 
-        except Exception as e:
-            if pre_request_head is not None:
-                await manager.rollback(pre_request_head)
-            if isinstance(e, GitSyncError):
-                status, message = self._map_error(e)
+        except _StreamingUnderWriteLock:
+            return Response(
+                content=json.dumps(
+                    {
+                        "detail": "Internal error: streaming endpoint missing @no_write_lock decorator."
+                    },
+                    ensure_ascii=False,
+                ),
+                status_code=500,
+                media_type="application/json",
+            )
+        except GitSyncError as e:
+            status, message = self._map_error(e)
+            return Response(
+                content=json.dumps({"detail": message}, ensure_ascii=False),
+                status_code=status,
+                media_type="application/json",
+            )
+
+    async def _dev_mode_dirty_check(
+        self,
+        request: Request,
+        response: Response,
+        manager: GitSyncManager,
+    ) -> Response:
+        """In dev mode, surface missing write locks immediately.
+
+        Runs only on the regular read path (not write-locked, not
+        @no_write_lock). If the response is SSE, log the missing decorator.
+        If the repo is dirty, log the offending request and return 500.
+        """
+        content_type = response.headers.get("content-type", "")
+        if "text/event-stream" in content_type:
+            logger.error(
+                "DEV MODE: SSE endpoint missing @no_write_lock: %s %s",
+                request.method,
+                request.url.path,
+            )
+            return response
+
+        dirty = await manager.get_dirty_file_paths()
+        if dirty:
+            logger.error(
+                "DEV MODE: Request left repo dirty without write lock! "
+                "(May also be caused by a parallel request with @no_write_lock "
+                "mid-atomic_write — check all recent logs before blaming this request.)\n"
+                "  API: %s %s\n  Project: %s\n  Dirty files: %s",
+                request.method,
+                request.url.path,
+                manager.repo_path,
+                dirty,
+            )
+            return Response(
+                content=json.dumps(
+                    {
+                        "detail": "Dev mode: this endpoint wrote files without "
+                        "holding a write lock, or a parallel request is "
+                        "mid-write. See server logs for details."
+                    },
+                    ensure_ascii=False,
+                ),
+                status_code=500,
+                media_type="application/json",
+            )
+
+        return response
+
+    async def _unmatched_dispatch(self, request: Request, call_next) -> Response:
+        """Handle requests whose URL does not match /api/projects/{id}/...
+
+        In dev mode, after a mutating request completes, sweep all cached
+        managers for dirty repos. A dirty repo here means the endpoint wrote
+        project files but lives outside the middleware-matched URL prefix,
+        silently bypassing git commit/push.
+
+        Only detects projects whose manager is currently cached in the
+        registry (i.e. accessed at least once this session). Projects
+        configured for auto-sync but not yet opened would be missed.
+        """
+        response = await call_next(request)
+
+        if not _is_dev_mode() or request.method not in MUTATING_METHODS:
+            return response
+
+        for mgr in GitSyncRegistry.all_managers():
+            dirty = await mgr.get_dirty_file_paths()
+            if dirty:
+                logger.error(
+                    "DEV MODE: Non-project-scoped endpoint wrote to a synced repo! "
+                    "Endpoints that write project files MUST live under "
+                    "/api/projects/{project_id}/... so GitSyncMiddleware can "
+                    "commit and push changes.\n"
+                    "(May also be caused by a parallel request with @no_write_lock "
+                    "mid-atomic_write — check all recent logs before blaming this request.)\n"
+                    "  API: %s %s\n  Repo: %s\n  Dirty files: %s",
+                    request.method,
+                    request.url.path,
+                    mgr.repo_path,
+                    dirty,
+                )
                 return Response(
-                    content=json.dumps({"detail": message}, ensure_ascii=False),
-                    status_code=status,
+                    content=json.dumps(
+                        {
+                            "detail": "Dev mode: a non-project-scoped endpoint wrote "
+                            "to a synced repo without going through "
+                            "GitSyncMiddleware. See server logs for details."
+                        },
+                        ensure_ascii=False,
+                    ),
+                    status_code=500,
                     media_type="application/json",
                 )
-            raise
+
+        return response
 
     def _resolve_endpoint(self, request: Request) -> Callable[..., Any] | None:
         """Resolve the endpoint function for this request by matching routes.

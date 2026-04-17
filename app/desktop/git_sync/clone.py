@@ -10,6 +10,10 @@ from typing import Any
 import pygit2
 
 from app.desktop.git_sync.config import AuthMode
+from app.desktop.git_sync.git_sync_manager import (
+    get_committer_email,
+    get_committer_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -251,14 +255,17 @@ def compute_clone_path(base_dir: Path, project_name: str, project_id: str) -> Pa
         counter += 1
 
 
-def compute_temp_clone_path() -> Path:
-    """Create a temporary directory for cloning using the OS temp directory.
+def compute_temp_clone_path(base_dir: Path) -> Path:
+    """Create a temporary directory for cloning on the same filesystem as the destination.
 
-    Uses tempfile.mkdtemp() so the OS can clean up abandoned clones
-    automatically. The clone only moves into .git-projects/ after
-    verification succeeds (via rename_clone_to_final_path).
+    The temp directory is created under *base_dir* so that the later
+    rename_clone_to_final_path() call (which uses os.rename) is always a
+    same-filesystem operation.  *base_dir* should be the project root
+    (e.g. default_project_path()) — the same directory that contains the
+    .git-projects/ folder where the clone will eventually live.
     """
-    return Path(tempfile.mkdtemp(prefix="kiln_clone_"))
+    base_dir.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix="kiln_clone_", dir=base_dir))
 
 
 def rename_clone_to_final_path(
@@ -278,7 +285,7 @@ def rename_clone_to_final_path(
         raise ValueError(f"Clone path does not exist: {current_path}")
 
     final_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(current_path), str(final_path))
+    os.rename(current_path, final_path)
 
     return final_path
 
@@ -344,7 +351,7 @@ def _ensure_gitignore(
     index.write()
 
     tree = index.write_tree()
-    sig = pygit2.Signature("Kiln AI", "sync@kiln.ai")
+    sig = pygit2.Signature(get_committer_name(), get_committer_email())
     parents = [repo.head.target]
     repo.create_commit(
         repo.head.name,
@@ -379,7 +386,7 @@ def test_write_access(
     """
     try:
         repo = pygit2.Repository(str(clone_path))
-        sig = pygit2.Signature("Kiln AI", "sync@kiln.ai")
+        sig = pygit2.Signature(get_committer_name(), get_committer_email())
 
         pre_commit_head = repo.head.target
         tree = repo.index.write_tree()

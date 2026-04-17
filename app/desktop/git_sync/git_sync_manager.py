@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -22,11 +23,65 @@ from app.desktop.git_sync.errors import (
 
 logger = logging.getLogger(__name__)
 
+# Configure global libgit2 network timeouts (process-wide, not per-repo).
+# Values are in milliseconds.
+_settings = pygit2.Settings()
+_settings.server_connect_timeout = 30_000
+_settings.server_timeout = 30_000
+
 T = TypeVar("T")
 
 FRESHNESS_THRESHOLD = 15.0
-KILN_COMMITTER_NAME = "Kiln AI"
-KILN_COMMITTER_EMAIL = "sync@kiln.ai"
+
+_cached_committer_name: str | None = None
+_cached_committer_email: str | None = None
+
+
+def _git_config_value(key: str) -> str | None:
+    """Try to read a value from git config (local then global)."""
+    for cmd in (
+        ["git", "config", key],
+        ["git", "config", "--global", key],
+    ):
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip()
+        except Exception:
+            pass
+    return None
+
+
+def get_committer_name() -> str:
+    global _cached_committer_name
+    if _cached_committer_name is None:
+        username = _git_config_value("user.name")
+        if not username:
+            from kiln_ai.utils.config import Config
+
+            username = Config.shared().user_id
+        _cached_committer_name = f"Kiln AI for {username}"
+    return _cached_committer_name
+
+
+def get_committer_email() -> str:
+    global _cached_committer_email
+    if _cached_committer_email is None:
+        email = _git_config_value("user.email")
+        _cached_committer_email = email or "kiln@localhost"
+    return _cached_committer_email
+
+
+def reset_committer_cache() -> None:
+    """Reset the cached committer name and email. Used for testing."""
+    global _cached_committer_name, _cached_committer_email
+    _cached_committer_name = None
+    _cached_committer_email = None
 
 
 class GitSyncManager:
@@ -85,6 +140,42 @@ class GitSyncManager:
             yield
         finally:
             self._write_lock.release()
+
+    @asynccontextmanager
+    async def atomic_write(self, context: str):
+        """Context manager for atomic file writes with git sync.
+
+        Acquires the write lock, ensures the repo is clean and fresh, then
+        yields for the caller to perform file writes. On clean exit, dirty
+        files (if any) are committed and pushed. On exception, all writes
+        made within the block are rolled back to the pre-yield HEAD and the
+        exception re-raises.
+
+        Not re-entrant. The underlying write lock wraps a non-reentrant
+        threading.Lock, so nested atomic_write calls on the same manager
+        will block on acquisition and raise WriteLockTimeoutError. Runner
+        save_context callables are invoked from the regular read path or
+        @no_write_lock endpoints -- never from inside an outer atomic_write
+        -- so nesting should not occur in practice.
+
+        Args:
+            context: Descriptive string used in the commit message. Examples:
+                "POST /api/projects/123/tasks", "extraction job for doc 456".
+        """
+        async with self.write_lock():
+            await self.ensure_clean()
+            await self.ensure_fresh()
+            pre_head = await self.get_head()
+            try:
+                yield
+                if await self.has_dirty_files():
+                    await self.commit_and_push(
+                        context=context,
+                        pre_request_head=pre_head,
+                    )
+            except Exception:
+                await self.rollback(pre_head)
+                raise
 
     async def ensure_clean(self) -> None:
         if await self._is_clean():
@@ -166,8 +257,11 @@ class GitSyncManager:
     async def has_dirty_files(self) -> bool:
         return await self._run_git(self._has_dirty_files_sync)
 
-    async def commit_and_push(self, api_path: str, pre_request_head: str) -> None:
-        commit_oid = await self._run_git(self._create_commit, api_path)
+    async def get_dirty_file_paths(self) -> list[str]:
+        return await self._run_git(self._get_dirty_file_paths_sync)
+
+    async def commit_and_push(self, context: str, pre_request_head: str) -> None:
+        commit_oid = await self._run_git(self._create_commit, context)
         try:
             await self._run_git(self._push_sync)
         except Exception as first_push_error:
@@ -268,6 +362,18 @@ class GitSyncManager:
             return True
         return False
 
+    def _get_dirty_file_paths_sync(self) -> list[str]:
+        repo = self._get_repo()
+        status = repo.status()
+        paths: list[str] = []
+        for path, flags in status.items():
+            if flags == pygit2.enums.FileStatus.IGNORED:
+                continue
+            if flags == pygit2.enums.FileStatus.CURRENT:
+                continue
+            paths.append(path)
+        return paths
+
     def _get_repo_state(self) -> pygit2.enums.RepositoryState:
         repo = self._get_repo()
         return repo.state()
@@ -283,7 +389,7 @@ class GitSyncManager:
 
     def _stash_all(self, message: str) -> None:
         repo = self._get_repo()
-        sig = pygit2.Signature(KILN_COMMITTER_NAME, KILN_COMMITTER_EMAIL)
+        sig = pygit2.Signature(get_committer_name(), get_committer_email())
         repo.stash(sig, message, include_untracked=True)
 
     def _hard_reset(self, oid: pygit2.Oid) -> None:
@@ -294,7 +400,7 @@ class GitSyncManager:
         oid = pygit2.Oid(hex=hex_str)
         self._hard_reset(oid)
 
-    def _create_commit(self, api_path: str) -> pygit2.Oid:
+    def _create_commit(self, context: str) -> pygit2.Oid:
         repo = self._get_repo()
 
         status = repo.status()
@@ -314,8 +420,8 @@ class GitSyncManager:
         index.write()
         tree = index.write_tree()
 
-        message = generate_commit_message(file_count, api_path)
-        sig = pygit2.Signature(KILN_COMMITTER_NAME, KILN_COMMITTER_EMAIL)
+        message = generate_commit_message(file_count, context)
+        sig = pygit2.Signature(get_committer_name(), get_committer_email())
 
         parents = [repo.head.target]
         return repo.create_commit(repo.head.name, sig, sig, message, tree, parents)
@@ -478,7 +584,7 @@ class GitSyncManager:
                 return False
 
             tree = repo.index.write_tree()
-            sig = pygit2.Signature(KILN_COMMITTER_NAME, KILN_COMMITTER_EMAIL)
+            sig = pygit2.Signature(get_committer_name(), get_committer_email())
             repo.create_commit(
                 f"refs/heads/{branch_name}",
                 sig,

@@ -4,16 +4,19 @@
   import { client } from "$lib/api_client"
 
   async function handle_complete(project_id: string) {
-    const should_skip_task_creation = await project_has_tasks(project_id)
+    const has_tasks = await project_has_tasks(project_id)
 
-    if (should_skip_task_creation) {
-      goto("/setup/select_task")
-    } else {
+    // On error (null), default to select_task since the imported project likely has data
+    if (has_tasks === false) {
       goto("/setup/create_task/" + project_id)
+    } else {
+      goto("/setup/select_task")
     }
   }
 
-  async function project_has_tasks(project_id: string): Promise<boolean> {
+  async function project_has_tasks(
+    project_id: string,
+  ): Promise<boolean | null> {
     try {
       const { data: tasks_data, error: tasks_error } = await client.GET(
         "/api/projects/{project_id}/tasks",
@@ -27,12 +30,12 @@
       )
 
       if (tasks_error) {
-        return false
+        return null
       }
 
       return tasks_data && tasks_data.length > 0
     } catch (_) {
-      return false
+      return null
     }
   }
 </script>

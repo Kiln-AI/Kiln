@@ -13,7 +13,6 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 
-from app.desktop.git_sync.decorators import no_write_lock, write_lock
 from app.desktop.git_sync.integration_tests.conftest import (
     PROJECT_ID,
     assert_clean_working_tree,
@@ -24,6 +23,7 @@ from app.desktop.git_sync.integration_tests.conftest import (
     mock_git_sync_config,
 )
 from app.desktop.git_sync.middleware import GitSyncMiddleware
+from kiln_server.git_sync_decorators import no_write_lock, write_lock
 
 
 class TestWriteLockDecoratorOnGet:
@@ -49,16 +49,16 @@ class TestWriteLockDecoratorOnGet:
             return {"status": "ok"}
 
         with mock_git_sync_config(config):
-            client = TestClient(app, raise_server_exceptions=False)
-            pre_head = get_head_sync(local_path)
+            with TestClient(app, raise_server_exceptions=False) as client:
+                pre_head = get_head_sync(local_path)
 
-            resp = client.get(f"/api/projects/{PROJECT_ID}/write_get")
+                resp = client.get(f"/api/projects/{PROJECT_ID}/write_get")
 
-            assert resp.status_code == 200
-            post_head = get_head_sync(local_path)
-            assert post_head != pre_head
-            assert_remote_has_commit(remote_path, post_head)
-            assert_clean_working_tree(local_path)
+                assert resp.status_code == 200
+                post_head = get_head_sync(local_path)
+                assert post_head != pre_head
+                assert_remote_has_commit(remote_path, post_head)
+                assert_clean_working_tree(local_path)
 
     @pytest.mark.asyncio
     async def test_write_lock_get_file_committed(self, git_repos):
@@ -80,14 +80,14 @@ class TestWriteLockDecoratorOnGet:
             return {"status": "ok"}
 
         with mock_git_sync_config(config):
-            client = TestClient(app, raise_server_exceptions=False)
-            client.get(f"/api/projects/{PROJECT_ID}/write_get2")
+            with TestClient(app, raise_server_exceptions=False) as client:
+                client.get(f"/api/projects/{PROJECT_ID}/write_get2")
 
-            repo = pygit2.Repository(str(local_path))
-            head = repo.revparse_single("HEAD")
-            assert isinstance(head, pygit2.Commit)
-            tree = head.peel(pygit2.Tree)
-            assert "get_file.kiln" in [e.name for e in tree]
+                repo = pygit2.Repository(str(local_path))
+                head = repo.revparse_single("HEAD")
+                assert isinstance(head, pygit2.Commit)
+                tree = head.peel(pygit2.Tree)
+                assert "get_file.kiln" in [e.name for e in tree]
 
 
 class TestNoWriteLockDecoratorOnPost:
@@ -113,15 +113,15 @@ class TestNoWriteLockDecoratorOnPost:
             return {"status": "ok"}
 
         with mock_git_sync_config(config):
-            client = TestClient(app, raise_server_exceptions=False)
-            pre_head = get_head_sync(local_path)
-            pre_count = get_commit_count(local_path)
+            with TestClient(app, raise_server_exceptions=False) as client:
+                pre_head = get_head_sync(local_path)
+                pre_count = get_commit_count(local_path)
 
-            resp = client.post(f"/api/projects/{PROJECT_ID}/no_lock_post")
+                resp = client.post(f"/api/projects/{PROJECT_ID}/no_lock_post")
 
-            assert resp.status_code == 200
-            assert get_head_sync(local_path) == pre_head
-            assert get_commit_count(local_path) == pre_count
+                assert resp.status_code == 200
+                assert get_head_sync(local_path) == pre_head
+                assert get_commit_count(local_path) == pre_count
 
 
 class TestStreamingResponseUnderLock:
@@ -149,12 +149,11 @@ class TestStreamingResponseUnderLock:
             return {"status": "ok"}
 
         with mock_git_sync_config(config):
-            client = TestClient(app, raise_server_exceptions=False)
+            with TestClient(app, raise_server_exceptions=False) as client:
+                resp = client.post(f"/api/projects/{PROJECT_ID}/test_stream")
 
-            resp = client.post(f"/api/projects/{PROJECT_ID}/test_stream")
-
-            assert resp.status_code == 500
-            assert "no_write_lock" in resp.json().get("detail", "").lower()
+                assert resp.status_code == 500
+                assert "no_write_lock" in resp.json().get("detail", "").lower()
 
 
 class TestLongLockHoldWarning:
@@ -179,35 +178,35 @@ class TestLongLockHoldWarning:
             return {"status": "ok"}
 
         with mock_git_sync_config(config):
-            client = TestClient(app, raise_server_exceptions=False)
+            with TestClient(app, raise_server_exceptions=False) as client:
+                with patch("app.desktop.git_sync.middleware.time") as mock_time:
+                    call_count = 0
+                    base_time = 1000.0
 
-            with patch("app.desktop.git_sync.middleware.time") as mock_time:
-                call_count = 0
-                base_time = 1000.0
+                    def fake_monotonic():
+                        nonlocal call_count
+                        call_count += 1
+                        if call_count == 1:
+                            return base_time
+                        return base_time + 6.0
 
-                def fake_monotonic():
-                    nonlocal call_count
-                    call_count += 1
-                    if call_count == 1:
-                        return base_time
-                    return base_time + 6.0
+                    mock_time.monotonic = fake_monotonic
 
-                mock_time.monotonic = fake_monotonic
+                    with caplog.at_level(
+                        logging.WARNING,
+                        logger="app.desktop.git_sync.middleware",
+                    ):
+                        resp = client.post(f"/api/projects/{PROJECT_ID}/slow_post")
 
-                with caplog.at_level(
-                    logging.WARNING, logger="app.desktop.git_sync.middleware"
-                ):
-                    resp = client.post(f"/api/projects/{PROJECT_ID}/slow_post")
-
-            assert resp.status_code == 200
-            warning_messages = [
-                r.message for r in caplog.records if r.levelno >= logging.WARNING
-            ]
-            lock_warnings = [
-                m
-                for m in warning_messages
-                if "no_write_lock" in m.lower() or "lock held" in m.lower()
-            ]
-            assert len(lock_warnings) > 0, (
-                f"Expected a warning about long lock hold. Got warnings: {warning_messages}"
-            )
+                assert resp.status_code == 200
+                warning_messages = [
+                    r.message for r in caplog.records if r.levelno >= logging.WARNING
+                ]
+                lock_warnings = [
+                    m
+                    for m in warning_messages
+                    if "no_write_lock" in m.lower() or "lock held" in m.lower()
+                ]
+                assert len(lock_warnings) > 0, (
+                    f"Expected a warning about long lock hold. Got warnings: {warning_messages}"
+                )

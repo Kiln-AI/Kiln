@@ -198,8 +198,8 @@ export async function updateConfig(
   project_id: string,
   updates: {
     sync_mode?: string
-    pat_token?: string
-    oauth_token?: string
+    pat_token?: string | null
+    oauth_token?: string | null
     auth_mode?: string
   },
 ): Promise<GitSyncConfigResponse> {
@@ -237,13 +237,19 @@ export async function oauthStatus(state: string): Promise<OAuthStatusResponse> {
 }
 
 export function isGitHubUrl(url: string): boolean {
-  return url.includes("github.com")
+  const hostname = gitHostname(url)
+  if (!hostname) return false
+  return hostname === "github.com" || hostname === "www.github.com"
 }
 
 export function isGitLabUrl(url: string): boolean {
   const hostname = gitHostname(url)
   if (!hostname) return false
-  return hostname === "gitlab.com" || hostname.startsWith("gitlab.")
+  if (hostname === "gitlab.com") return true
+  // Self-hosted GitLab instances typically use gitlab.company.tld format.
+  // Reject spoofing attempts like gitlab.com.evil.example.
+  if (hostname.startsWith("gitlab.com.")) return false
+  return hostname.startsWith("gitlab.")
 }
 
 export function gitHostname(url: string): string | null {
@@ -272,11 +278,45 @@ export function gitOwnerFromUrl(url: string): string | null {
   }
 }
 
-export function gitHubPatDeepLink(): string {
-  return "https://github.com/settings/personal-access-tokens/new?name=Kiln+AI&description=Kiln+AI+auto+sync&contents=write&metadata=read&expires_in=none"
+export function gitRepoNameFromUrl(url: string): string | null {
+  try {
+    const sshMatch = url.match(/^[\w-]+@[\w.-]+:[\w.-]+\/([\w.-]+?)(?:\.git)?$/)
+    if (sshMatch) return sshMatch[1]
+    const pathname = new URL(url).pathname
+    const segments = pathname.split("/").filter(Boolean)
+    if (segments.length >= 2) {
+      return segments[1].replace(/\.git$/, "")
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+export function gitHubClassicPatDeepLink(git_url: string): string {
+  const repo = gitRepoNameFromUrl(git_url)
+  const description = repo ? `Kiln AI for ${repo}` : "Kiln AI"
+  return (
+    `https://github.com/settings/tokens/new` +
+    `?description=${encodeURIComponent(description)}&scopes=repo`
+  )
+}
+
+export function gitHubFineGrainedPatDeepLink(git_url: string): string {
+  const repo = gitRepoNameFromUrl(git_url)
+  const name = repo ? `Kiln AI for ${repo}` : "Kiln AI"
+  const description = repo
+    ? `Kiln AI auto sync for ${repo}`
+    : "Kiln AI auto sync"
+  return `https://github.com/settings/personal-access-tokens/new?name=${encodeURIComponent(name)}&description=${encodeURIComponent(description)}&contents=write&metadata=read&expires_in=none`
 }
 
 export function gitLabPatDeepLink(git_url: string): string {
   const host = gitHostname(git_url) || "gitlab.com"
-  return `https://${host}/-/user_settings/personal_access_tokens?name=Kiln+AI&scopes=write_repository&description=Kiln+AI+auto+sync`
+  const repo = gitRepoNameFromUrl(git_url)
+  const name = repo ? `Kiln AI for ${repo}` : "Kiln AI"
+  const description = repo
+    ? `Kiln AI auto sync for ${repo}`
+    : "Kiln AI auto sync"
+  return `https://${host}/-/user_settings/personal_access_tokens?name=${encodeURIComponent(name)}&scopes=write_repository&description=${encodeURIComponent(description)}`
 }

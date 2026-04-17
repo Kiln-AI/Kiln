@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 
 from app.desktop.git_sync.config import GitSyncProjectConfig
 from app.desktop.git_sync.conftest import (
-    SIG,
+    _test_sig,
     commit_in_repo,
     delete_in_repo,
     git_repos,
@@ -32,7 +32,7 @@ from app.desktop.git_sync.git_sync_manager import GitSyncManager
 from app.desktop.git_sync.middleware import GitSyncMiddleware
 
 __all__ = [
-    "SIG",
+    "_test_sig",
     "commit_in_repo",
     "delete_in_repo",
     "git_repos",
@@ -103,7 +103,7 @@ class LibraryWriteContext:
 
                     if await self.manager.has_dirty_files():
                         await self.manager.commit_and_push(
-                            api_path="TEST library_mode",
+                            context="TEST library_mode",
                             pre_request_head=pre_request_head,
                         )
                         post_head = get_head_sync(self.repo_path)
@@ -123,6 +123,39 @@ class LibraryWriteContext:
                     error=str(e),
                 )
             raise
+
+    async def do_read(self) -> ReadResult:
+        return ReadResult(body={"status": "ok"})
+
+
+class AtomicWriteContext:
+    def __init__(self, manager: GitSyncManager, repo_path: Path, remote_path: Path):
+        self.manager = manager
+        self.repo_path = repo_path
+        self.remote_path = remote_path
+
+    async def do_write(
+        self,
+        write_fn: Callable[[Path], object],
+        expect_error: bool = False,
+    ) -> WriteResult:
+        pre_request_head = get_head_sync(self.repo_path)
+        try:
+            async with self.manager.atomic_write("TEST atomic_write"):
+                write_fn(self.repo_path)
+        except Exception as e:
+            if expect_error:
+                return WriteResult(
+                    committed=False,
+                    pushed=False,
+                    error=str(e),
+                )
+            raise
+
+        post_head = get_head_sync(self.repo_path)
+        committed = post_head != pre_request_head
+        pushed = committed and remote_has_commit(self.remote_path, post_head)
+        return WriteResult(committed=committed, pushed=pushed)
 
     async def do_read(self) -> ReadResult:
         return ReadResult(body={"status": "ok"})
@@ -449,7 +482,7 @@ def manager(git_repos) -> Generator[GitSyncManager]:
     mgr._git_executor.shutdown(wait=False)
 
 
-@pytest.fixture(params=["library", "api"])
+@pytest.fixture(params=["library", "api", "atomic_write"])
 def write_ctx(request, git_repos):
     local_path, remote_path = git_repos
     config = auto_config(str(local_path))
@@ -460,13 +493,19 @@ def write_ctx(request, git_repos):
         with mock_git_sync_config(config):
             yield ctx
         mgr._git_executor.shutdown(wait=False)
+    elif request.param == "atomic_write":
+        mgr = GitSyncManager(repo_path=local_path, auth_mode="system_keys")
+        ctx = AtomicWriteContext(mgr, local_path, remote_path)
+        with mock_git_sync_config(config):
+            yield ctx
+        mgr._git_executor.shutdown(wait=False)
     else:
         write_fn_slot: list = []
         app = build_test_app(local_path, write_fn_slot)
         with mock_git_sync_config(config):
-            client = TestClient(app, raise_server_exceptions=False)
-            ctx = APIWriteContext(client, local_path, remote_path, write_fn_slot)
-            yield ctx
+            with TestClient(app, raise_server_exceptions=False) as client:
+                ctx = APIWriteContext(client, local_path, remote_path, write_fn_slot)
+                yield ctx
 
 
 @pytest.fixture
@@ -487,8 +526,8 @@ def api_ctx(git_repos):
     write_fn_slot: list = []
     app = build_test_app(local_path, write_fn_slot)
     with mock_git_sync_config(config):
-        client = TestClient(app, raise_server_exceptions=False)
-        yield APIWriteContext(client, local_path, remote_path, write_fn_slot)
+        with TestClient(app, raise_server_exceptions=False) as client:
+            yield APIWriteContext(client, local_path, remote_path, write_fn_slot)
 
 
 @pytest.fixture
@@ -498,5 +537,5 @@ def api_client(git_repos):
     write_fn_slot: list = []
     app = build_test_app(local_path, write_fn_slot)
     with mock_git_sync_config(config):
-        client = TestClient(app, raise_server_exceptions=False)
-        yield client, local_path, remote_path, write_fn_slot
+        with TestClient(app, raise_server_exceptions=False) as client:
+            yield client, local_path, remote_path, write_fn_slot

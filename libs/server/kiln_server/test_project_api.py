@@ -427,7 +427,7 @@ def test_delete_project_success(client):
         mock_config.return_value.git_sync_projects = None
         mock_config.return_value.save_setting = MagicMock()
 
-        response = client.delete("/api/projects/test-id")
+        response = client.delete("/api/delete_project/test-id")
 
     assert response.status_code == 200
     assert response.json() == {"message": "Project removed. ID: test-id"}
@@ -455,7 +455,7 @@ def test_delete_project_cleans_up_git_sync(client):
         }
         mock_config.return_value.save_setting = MagicMock()
 
-        response = client.delete("/api/projects/test-id")
+        response = client.delete("/api/delete_project/test-id")
 
     assert response.status_code == 200
     assert response.json() == {"message": "Project removed. ID: test-id"}
@@ -474,7 +474,7 @@ def test_delete_project_not_found(client):
         "kiln_server.project_api.project_from_id",
         side_effect=HTTPException(status_code=404, detail="Project not found"),
     ):
-        response = client.delete("/api/projects/non-existent-id")
+        response = client.delete("/api/delete_project/non-existent-id")
 
     assert response.status_code == 404
     assert response.json() == {"message": "Project not found"}

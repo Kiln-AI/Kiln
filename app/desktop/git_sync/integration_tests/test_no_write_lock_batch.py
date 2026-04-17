@@ -11,7 +11,6 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.desktop.git_sync.decorators import no_write_lock
 from app.desktop.git_sync.integration_tests.conftest import (
     PROJECT_ID,
     assert_clean_working_tree,
@@ -21,6 +20,7 @@ from app.desktop.git_sync.integration_tests.conftest import (
 )
 from app.desktop.git_sync.middleware import GitSyncMiddleware
 from app.desktop.git_sync.registry import GitSyncRegistry
+from kiln_server.git_sync_decorators import no_write_lock
 
 
 def _build_batch_app(
@@ -62,7 +62,7 @@ def _build_batch_app(
                         await manager.rollback(pre_head)
                         raise ValueError(f"Simulated failure on iteration {i}")
                     await manager.commit_and_push(
-                        api_path=api_path,
+                        context=api_path,
                         pre_request_head=pre_head,
                     )
                     if iteration_commits is not None:
@@ -92,17 +92,17 @@ class TestNoWriteLockPartialFailure:
         )
 
         with mock_git_sync_config(config):
-            client = TestClient(app, raise_server_exceptions=False)
-            resp = client.post(endpoint_url)
+            with TestClient(app, raise_server_exceptions=False) as client:
+                resp = client.post(endpoint_url)
 
-            assert resp.status_code == 500
+                assert resp.status_code == 500
 
-            assert len(iteration_commits) == 2
-            for commit_hex in iteration_commits:
-                assert remote_has_commit(remote_path, commit_hex)
+                assert len(iteration_commits) == 2
+                for commit_hex in iteration_commits:
+                    assert remote_has_commit(remote_path, commit_hex)
 
-            assert (local_path / "batch_0.kiln").exists()
-            assert (local_path / "batch_1.kiln").exists()
+                assert (local_path / "batch_0.kiln").exists()
+                assert (local_path / "batch_1.kiln").exists()
 
     @pytest.mark.asyncio
     async def test_partial_failure_iteration3_rolled_back(self, git_repos):
@@ -113,8 +113,8 @@ class TestNoWriteLockPartialFailure:
         app, endpoint_url = _build_batch_app(local_path, "batch2", "batch_op2")
 
         with mock_git_sync_config(config):
-            client = TestClient(app, raise_server_exceptions=False)
-            client.post(endpoint_url)
+            with TestClient(app, raise_server_exceptions=False) as client:
+                client.post(endpoint_url)
 
-            assert not (local_path / "batch2_2.kiln").exists()
-            assert_clean_working_tree(local_path)
+                assert not (local_path / "batch2_2.kiln").exists()
+                assert_clean_working_tree(local_path)

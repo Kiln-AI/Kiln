@@ -81,6 +81,18 @@ THINKING_DATA_STRATEGIES: list[ChatStrategy] = [
 ]
 
 
+class FeedbackSource(str, Enum):
+    """Where a piece of feedback originated.
+
+    This is an append-only enum: new sources can be added freely, but existing
+    values must never be removed or renamed so that older persisted data
+    continues to load.
+    """
+
+    run_page = "run-page"
+    spec_feedback = "spec-feedback"
+
+
 class ModelProviderName(str, Enum):
     """
     Enumeration of supported AI model providers.
