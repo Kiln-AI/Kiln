@@ -173,9 +173,12 @@
   // note: this run is NOT the main run, but a repair run TaskRun
   let repair_run: TaskRun | null = null
   let repair_instructions: string | null = null
-  // Seed repair_instructions from the persisted run so tooltips/UI on historical repairs show the original feedback
-  $: if (run?.repair_instructions && repair_instructions === null) {
-    repair_instructions = run.repair_instructions
+  // Seed repair_instructions from the persisted run so tooltips/UI on historical repairs show the original feedback.
+  // Track the last seeded run id so switching to a different run reseeds rather than leaking prior text.
+  let seeded_for_run_id: string | null = null
+  $: if (run?.id && run.id !== seeded_for_run_id) {
+    repair_instructions = run.repair_instructions ?? null
+    seeded_for_run_id = run.id
   }
 
   $: rate_focus = run && overall_rating === null

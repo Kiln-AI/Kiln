@@ -105,7 +105,7 @@
     <FormElement
       id={"repair_manual_output"}
       label="Manual Repair"
-      info_description="Provide a improvement or correction to the task's output"
+      info_description="Provide an improvement or correction to the task's output"
       inputType="textarea"
       height="large"
       bind:value={repair_output_edited}
