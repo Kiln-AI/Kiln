@@ -3,12 +3,11 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
   import CloseIcon from "$lib/ui/icons/close_icon.svelte"
+  import { getChatBarWidth, setChatBarWidth } from "$lib/chat/chat_ui_storage"
   import {
-    getChatBarExpanded,
+    chatBarExpanded,
     setChatBarExpanded,
-    getChatBarWidth,
-    setChatBarWidth,
-  } from "$lib/chat/chat_ui_storage"
+  } from "$lib/stores/chat_ui_state"
   import {
     clampChatBarWidth,
     getChatBarDefaultWidth,
@@ -26,7 +25,7 @@
 
   const RIGHT_MARGIN = 16
 
-  let expanded = browser ? getChatBarExpanded() : true
+  $: expanded = $chatBarExpanded
   let dialog: Dialog
   let dialogOpen = false
   let customWidth: number | null = browser ? getChatBarWidth() : null
@@ -55,16 +54,13 @@
     if (isLargeScreen() && animState === "idle") {
       if (expanded) {
         animState = "collapsing"
-        expanded = false
         setChatBarExpanded(false)
       } else {
         animState = "expanding"
-        expanded = true
         setChatBarExpanded(true)
       }
     } else if (!isLargeScreen()) {
-      expanded = !expanded
-      setChatBarExpanded(expanded)
+      setChatBarExpanded(!expanded)
     }
   }
 
