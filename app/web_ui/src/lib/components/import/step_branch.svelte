@@ -137,7 +137,7 @@
       label="Branch"
       id="branch"
       inputType="fancy_select"
-      info_description="This is the Git branch Kiln will auto sync with. It must be an existing branch in the repository."
+      info_description="This is the Git branch Kiln will auto-sync with."
       bind:value={selected_branch}
       fancy_select_options={branch_option_groups}
     />

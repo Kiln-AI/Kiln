@@ -102,7 +102,7 @@
       </svg>
     </div>
 
-    <h2 class="text-xl font-medium">Git Sync Enabled</h2>
+    <h2 class="text-xl font-medium">Git Auto Sync Enabled</h2>
 
     <p class="text-sm text-gray-500 text-center max-w-md">
       Auto-sync is now active for "{project_name || project_path}". Changes will
@@ -111,7 +111,10 @@
     </p>
 
     <div class="flex flex-row gap-4 mt-4">
-      <button class="btn btn-primary" on:click={() => on_complete(project_id)}>
+      <button
+        class="btn btn-primary btn-wide"
+        on:click={() => on_complete(project_id)}
+      >
         Done
       </button>
     </div>

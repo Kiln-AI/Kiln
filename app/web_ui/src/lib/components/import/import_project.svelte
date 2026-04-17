@@ -326,7 +326,7 @@
         on:click={() => set_step("url")}
       >
         <div class="font-medium flex flex-row gap-2 items-center">
-          <div class="flex-1">Automatic Git Sync</div>
+          <div class="flex-1">Git Auto Sync</div>
           <div class="badge badge-secondary">Beta</div>
         </div>
         <div class="text-sm text-gray-500 mt-1">
