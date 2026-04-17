@@ -1384,7 +1384,7 @@ def test_created_at_roundtrip_preserves_offset(tmp_path):
 
     raw_json = json.loads(model.path.read_text())
     raw_ts = raw_json["created_at"]
-    assert "+" in raw_ts or "-" in raw_ts[10:]
+    assert raw_ts.endswith("Z") or "+" in raw_ts or "-" in raw_ts[10:]
 
     loaded = KilnBaseModel.load_from_file(model.path)
     assert loaded.created_at.tzinfo is not None

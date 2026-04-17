@@ -313,16 +313,11 @@ class KilnBaseModel(BaseModel):
         description="Timestamp when the model was created. Timezone-aware; stores the writer's local offset.",
     )
 
-    @field_validator("created_at", mode="before")
+    @field_validator("created_at", mode="after")
     @classmethod
-    def _normalize_created_at_tz(cls, v: Any) -> Any:
-        if isinstance(v, datetime) and v.tzinfo is None:
+    def _normalize_created_at_tz(cls, v: datetime) -> datetime:
+        if v.tzinfo is None:
             return v.astimezone()
-        if isinstance(v, str):
-            parsed = datetime.fromisoformat(v)
-            if parsed.tzinfo is None:
-                return parsed.astimezone()
-            return parsed
         return v
 
     created_by: str = Field(

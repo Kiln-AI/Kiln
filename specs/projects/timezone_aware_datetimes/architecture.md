@@ -38,25 +38,20 @@ created_at: datetime = Field(
 
 ### Naive-datetime normalizer (new)
 
-Add a `@field_validator("created_at", mode="before")` (or `@model_validator(mode="before")` if it must catch other fields too — see "Other datetime fields" below):
+Add a `@field_validator("created_at", mode="after")` on `KilnBaseModel`:
 
 ```python
-@field_validator("created_at", mode="before")
+@field_validator("created_at", mode="after")
 @classmethod
-def _naive_assumed_local(cls, v):
-    if isinstance(v, datetime) and v.tzinfo is None:
-        return v.astimezone()  # attaches system local TZ
-    if isinstance(v, str):
-        parsed = datetime.fromisoformat(v)
-        if parsed.tzinfo is None:
-            return parsed.astimezone()
-        return parsed
+def _normalize_created_at_tz(cls, v: datetime) -> datetime:
+    if v.tzinfo is None:
+        return v.astimezone()
     return v
 ```
 
 Notes:
 - `validate_assignment=True` is already set on `KilnBaseModel` → this validator runs on direct assignment too, catching test fixtures that assign naive datetimes.
-- `mode="before"` runs ahead of Pydantic's built-in datetime parsing so we control naive-vs-aware semantics.
+- `mode="after"` lets Pydantic handle all string parsing first (including the `Z` suffix and ISO 8601 offsets). The validator only needs to handle the remaining case: a naive `datetime` with no timezone info.
 - `datetime.astimezone()` (no arg) on a naive datetime treats it as local and attaches the local TZ — exactly what we want for the legacy assumption.
 
 ### Other datetime fields
@@ -64,7 +59,7 @@ Notes:
 Audit Phase 1 deliverable identifies every other datetime field across the datamodel directory. For each, decide:
 
 - If it represents "moment something happened" → apply same default-factory + validator pattern. Hoist the validator into a reusable helper if more than one field needs it.
-- If it's an in-memory cache timestamp (e.g., `provider_api.py: AvailableModelsCache.last_updated`) → also fix the *comparison* call site (`datetime.now() - self.last_updated`) to use aware "now". Don't necessarily change the field type if it's never serialized.
+- If it's an in-memory cache timestamp (e.g., `provider_api.py: OpenAICompatibleProviderCache.last_updated`) → also fix the *comparison* call site (`datetime.now().astimezone() - self.last_updated`) to use aware "now". Don't necessarily change the field type if it's never serialized.
 
 `provider_api.py` is **outside** the data model directory but the fix-pattern is identical and small — handle it in the consumer-fix phase.
 
@@ -73,7 +68,7 @@ Audit Phase 1 deliverable identifies every other datetime field across the datam
 ### `libs/core/kiln_ai/datamodel/basemodel.py`
 
 - Update `created_at` default factory.
-- Add `_naive_assumed_local` validator.
+- Add `_normalize_created_at_tz` validator.
 - Update docstring on `KilnBaseModel.created_at`.
 
 ### `libs/core/kiln_ai/datamodel/**` (other files)
@@ -95,8 +90,8 @@ Audit Phase 1 deliverable identifies every other datetime field across the datam
 
 ### `app/desktop/studio_server/provider_api.py`
 
-- Line 2050: `if datetime.now() - self.last_updated > timedelta(minutes=60)` — make aware-consistent. Either both naive (cache stays naive) or both aware. Pick one and apply to the field default and the comparison.
-- Line 2157: same.
+- Line 2050: `if datetime.now().astimezone() - self.last_updated > timedelta(minutes=60)` — uses aware "now" for comparison with aware `last_updated`.
+- Line 2155+: cache construction also uses aware datetime.
 
 ### `app/desktop/studio_server/test_provider_api.py`, `test_tool_api.py`
 

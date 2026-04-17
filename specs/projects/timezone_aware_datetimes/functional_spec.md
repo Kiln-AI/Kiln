@@ -48,7 +48,7 @@ Behavior must be locked with tests covering all three formats.
 - **User changed system TZ or traveled between writes (legacy naive data):** old naive timestamp is interpreted as *current* local TZ on read. May display ~hours off. Acknowledged, not fixed (no data to recover the original zone).
 - **Shared dataset with mixed-version collaborators (legacy naive data):** a naive timestamp written by User A in TZ X, read by User B in TZ Y, will display in B's local TZ as if it were B-local. Already broken today; this project does not fix legacy data.
 - **Future shared collaboration (new aware data):** the absolute instant is always correct. Both collaborators see correct relative times.
-- **Pydantic field assigned a naive datetime in code (e.g., test fixture):** must be caught. Either the parse normalizer also runs on assignment (preferred — uses `validate_assignment=True` already on `KilnBaseModel`), or tests are updated to write aware datetimes. Architecture decides.
+- **Pydantic field assigned a naive datetime in code (e.g., test fixture):** caught automatically. The field validator runs on assignment because `validate_assignment=True` is set on `KilnBaseModel`, so naive datetimes assigned in code are normalized to aware datetimes at assignment time.
 
 ## Inputs / Outputs
 
@@ -64,7 +64,7 @@ New writes MUST use form (1).
 
 ### API contract (over the wire)
 
-FastAPI / Pydantic JSON responses serialize `created_at` as form (1) for new data and form (3) for legacy data unchanged. The frontend handles all three.
+FastAPI / Pydantic JSON responses serialize `created_at` as form (1) for all data. Legacy naive datetimes are normalized to aware at the model boundary (see "Reading an existing model instance"), so API responses always emit aware datetimes with an offset. The frontend handles all three forms for backward compatibility.
 
 ### Audit deliverable
 

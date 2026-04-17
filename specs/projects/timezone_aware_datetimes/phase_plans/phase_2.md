@@ -17,10 +17,10 @@ Update `KilnBaseModel.created_at` to produce timezone-aware datetimes by default
    Add `field_validator` to the pydantic import block.
 
 3. **`basemodel.py` -- Add naive-to-aware field validator**
-   Add `@field_validator("created_at", mode="before")` classmethod `_normalize_created_at_tz` that:
+   Add `@field_validator("created_at", mode="after")` classmethod `_normalize_created_at_tz` that:
    - If value is a naive `datetime`, calls `.astimezone()` to attach local TZ.
-   - If value is a `str`, parses with `datetime.fromisoformat()`, and if result is naive, calls `.astimezone()`.
    - Otherwise returns value unchanged.
+   `mode="after"` lets Pydantic handle all string parsing first (including `Z` suffix and ISO 8601 offsets on Python 3.10+), so the validator only needs to handle the remaining case of a naive `datetime`.
 
 4. **`test_basemodel.py:109` -- Fix naive `datetime.now()` in existing test**
    Change `now = datetime.datetime.now()` to `now = datetime.datetime.now().astimezone()`.
