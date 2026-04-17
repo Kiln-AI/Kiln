@@ -16,7 +16,7 @@
   import ToolApprovalBox from "./tool_approval_box.svelte"
   import ChatLoading from "./chat_loading.svelte"
   import ChatStatusSteps from "./chat_status_steps.svelte"
-  import BrailleSpinner from "./braille_spinner.svelte"
+  import ToolStatusLine from "./tool_status_line.svelte"
   import { env } from "$env/dynamic/public"
 
   export let store: ChatSessionStore = chatSessionStore
@@ -562,7 +562,7 @@
                         {@const visibleItems = shouldCompress
                           ? segment.items.slice(-MAX_VISIBLE_STEPS)
                           : segment.items}
-                        <div class="flex items-start gap-3">
+                        <div class="flex items-start gap-3 min-w-0">
                           {#if groupLoading}
                             <img
                               src="/images/chat_icon_animated.svg"
@@ -570,7 +570,7 @@
                               class="w-9 h-9 shrink-0 -mt-1.5"
                             />
                           {/if}
-                          <div class="flex flex-col">
+                          <div class="flex flex-col min-w-0 flex-1">
                             {#if totalSteps > MAX_VISIBLE_STEPS}
                               <button
                                 type="button"
@@ -717,49 +717,16 @@
                                     />
                                   </div>
                                 {:else}
-                                  <div
-                                    class="flex items-center gap-1.5 text-sm text-base-content/50 py-0.5"
-                                  >
-                                    {#if effectivelyComplete}
-                                      <span class="inline-block w-3 text-center"
-                                        >✓</span
-                                      >
-                                      <span>
-                                        {isGet ? "Fetched data" : "Saved data"}
-                                        {#if detail}
-                                          <span class="text-base-content/35"
-                                            >{detail}</span
-                                          >
-                                        {/if}
-                                      </span>
-                                    {:else}
-                                      <BrailleSpinner />
-                                      <span>
-                                        {isGet
-                                          ? "Fetching data"
-                                          : "Saving data"}<span
-                                          class="inline-flex items-baseline gap-px"
-                                          ><span
-                                            class="thinking-dot"
-                                            style="animation-delay: 0ms">.</span
-                                          ><span
-                                            class="thinking-dot"
-                                            style="animation-delay: 160ms"
-                                            >.</span
-                                          ><span
-                                            class="thinking-dot"
-                                            style="animation-delay: 320ms"
-                                            >.</span
-                                          ></span
-                                        >
-                                        {#if detail}
-                                          <span class="text-base-content/35"
-                                            >{detail}</span
-                                          >
-                                        {/if}
-                                      </span>
-                                    {/if}
-                                  </div>
+                                  <ToolStatusLine
+                                    variant={effectivelyComplete
+                                      ? isGet
+                                        ? "fetched"
+                                        : "saved"
+                                      : isGet
+                                        ? "fetching"
+                                        : "saving"}
+                                    {detail}
+                                  />
                                 {/if}
                               {/if}
                             {/each}
