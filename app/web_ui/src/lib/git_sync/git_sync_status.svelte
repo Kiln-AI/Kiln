@@ -21,12 +21,8 @@
     type OAuthWithInstallFlow,
   } from "$lib/git_sync/oauth_with_install"
   import OAuthInstallStep from "$lib/git_sync/oauth_install_step.svelte"
-  import {
-    initialAuthFormMode,
-    buildOAuthUpdatePayload,
-    buildPatUpdatePayload,
-    type AuthFormMode,
-  } from "$lib/git_sync/auth_form_mode"
+
+  type AuthFormMode = "oauth" | "pat"
 
   export let project_id: string
 
@@ -57,7 +53,10 @@
     oauth_flow = createOAuthWithInstall({
       git_url: config.git_url,
       on_success: async (token) => {
-        config = await updateConfig(project_id, buildOAuthUpdatePayload(token))
+        config = await updateConfig(project_id, {
+          oauth_token: token,
+          auth_mode: "github_oauth",
+        })
         close_auth_form()
       },
     })
@@ -96,7 +95,11 @@
     show_auth_form = true
     token_error = null
     new_pat_token = ""
-    mode = initialAuthFormMode(config?.auth_mode, config?.git_url)
+    if (config?.git_url && isGitHubUrl(config.git_url)) {
+      mode = config?.auth_mode === "github_oauth" ? "oauth" : "pat"
+    } else {
+      mode = "pat"
+    }
     init_oauth_flow()
   }
 
@@ -122,10 +125,11 @@
         }
       }
 
-      config = await updateConfig(
-        project_id,
-        buildPatUpdatePayload(new_pat_token, config.auth_mode),
-      )
+      const pat_payload: { pat_token: string; auth_mode?: string } =
+        config.auth_mode === "pat_token"
+          ? { pat_token: new_pat_token }
+          : { pat_token: new_pat_token, auth_mode: "pat_token" }
+      config = await updateConfig(project_id, pat_payload)
       close_auth_form()
       new_pat_token = ""
     } catch (e) {
