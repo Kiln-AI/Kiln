@@ -131,6 +131,7 @@
     bind:error
     bind:saved
     focus_on_mount={false}
+    submitting_status={status_message}
   >
     <FormElement
       label="Branch"
@@ -140,12 +141,5 @@
       bind:value={selected_branch}
       fancy_select_options={branch_option_groups}
     />
-
-    {#if status_message}
-      <div class="text-sm text-gray-500 flex items-center gap-2">
-        <span class="loading loading-spinner loading-sm"></span>
-        {status_message}
-      </div>
-    {/if}
   </FormContainer>
 {/if}
