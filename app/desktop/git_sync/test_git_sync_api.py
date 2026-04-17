@@ -586,7 +586,7 @@ class TestOAuthCallback:
 
     def test_missing_state_renders_error_page(self, api_client):
         resp = api_client.get("/api/git_sync/oauth/callback?code=auth_code")
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert "text/html" in resp.headers["content-type"]
         assert "Authorization Failed" in resp.text
         assert "Missing state" in resp.text
@@ -595,7 +595,7 @@ class TestOAuthCallback:
         resp = api_client.get(
             "/api/git_sync/oauth/callback?state=invalid&code=auth_code"
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert "Authorization Failed" in resp.text
         assert "expired" in resp.text
 
@@ -619,7 +619,7 @@ class TestOAuthCallback:
         resp = api_client.get(
             f"/api/git_sync/oauth/callback?state={state}&error=access_denied&error_description=User+denied",
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert "Authorization Failed" in resp.text
         assert "User denied" in resp.text
 
@@ -649,9 +649,17 @@ class TestOAuthCallback:
             resp = api_client.get(
                 f"/api/git_sync/oauth/callback?state={state}&code=bad_code",
             )
-        assert resp.status_code == 200
+        assert resp.status_code == 400
         assert "Authorization Failed" in resp.text
         assert "Exchange failed" in resp.text
+
+
+class TestOAuthInstalled:
+    def test_returns_install_complete_page(self, api_client):
+        resp = api_client.get("/api/git_sync/oauth/authorize")
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers["content-type"]
+        assert "Install Complete" in resp.text
 
 
 class TestOAuthStatus:

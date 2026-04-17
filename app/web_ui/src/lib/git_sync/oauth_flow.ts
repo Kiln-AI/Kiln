@@ -1,4 +1,8 @@
-import { oauthStart, oauthStatus } from "$lib/git_sync/api"
+import {
+  oauthStart,
+  oauthStatus,
+  type OAuthStartResponse,
+} from "$lib/git_sync/api"
 
 const POLL_INTERVAL_MS = 2000
 const TIMEOUT_MS = 300_000
@@ -60,7 +64,7 @@ export function startOAuthFlow(
       return
     }
 
-    let startResponse
+    let startResponse: OAuthStartResponse
     try {
       startResponse = await oauthStart(git_url)
     } catch (e) {

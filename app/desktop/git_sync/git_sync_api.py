@@ -90,6 +90,10 @@ _ERROR_ICON_PATH = "M6 18L18 6M6 6l12 12"
 
 
 def _render_oauth_page(title: str, body: str, *, is_error: bool = False) -> str:
+    """Render a styled OAuth result page.
+
+    ``body`` is injected as raw HTML and must be pre-escaped by the caller.
+    """
     icon_class = "error" if is_error else "success"
     icon_path = _ERROR_ICON_PATH if is_error else _SUCCESS_ICON_PATH
     escaped_title = html.escape(title)
@@ -756,7 +760,7 @@ def connect_git_sync_api(app: FastAPI):
         ),
     ) -> HTMLResponse:
         def error_page(msg: str) -> HTMLResponse:
-            return HTMLResponse(render_oauth_error_page(msg))
+            return HTMLResponse(render_oauth_error_page(msg), status_code=400)
 
         if not state:
             return error_page("Missing state parameter.")

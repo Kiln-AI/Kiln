@@ -176,6 +176,7 @@
 
   async function retry_access_check() {
     if (!oauth_token) return
+    oauth_error = null
     oauth_generation++
     await check_access_and_save(oauth_token, oauth_generation)
   }
