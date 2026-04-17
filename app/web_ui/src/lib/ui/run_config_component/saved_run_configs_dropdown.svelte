@@ -73,14 +73,26 @@
   // Last-used wins so a "Custom" selection (and any sticky model tied to it) survives revisits
   // even when the task has a default configured.
   let pending_preferred_run_config_id: string | null = null
+  let initialized_for_task_id: string | null = null
+
+  // Reset selection when the task changes so init re-runs for the new task. The parent's
+  // bound selected_run_config_id survives task switches (dropdown remounts, parent does not),
+  // so without this we'd persist the old task's id against the new task's storage key.
+  $: if (
+    initialized_for_task_id !== null &&
+    initialized_for_task_id !== (current_task?.id ?? null)
+  ) {
+    selected_run_config_id = null
+    pending_preferred_run_config_id = null
+    initialized_for_task_id = null
+  }
+
   $: if (auto_select_default && selected_run_config_id === null) {
-    if (run_page) {
-      const composite_key = get_task_composite_id(
-        project_id,
-        current_task.id ?? "",
-      )
+    if (run_page && current_task?.id) {
+      const composite_key = get_task_composite_id(project_id, current_task.id)
       const last_used = get_last_used_run_config(composite_key)
       selected_run_config_id = "custom"
+      initialized_for_task_id = current_task.id
       if (last_used === "custom") {
         pending_preferred_run_config_id = null
       } else if (last_used) {
@@ -98,12 +110,10 @@
     pending_preferred_run_config_id &&
     auto_select_default &&
     run_page &&
-    selected_run_config_id === "custom"
+    selected_run_config_id === "custom" &&
+    current_task?.id
   ) {
-    const composite_key = get_task_composite_id(
-      project_id,
-      current_task.id ?? "",
-    )
+    const composite_key = get_task_composite_id(project_id, current_task.id)
     const loaded_configs = $run_configs_by_task_composite_id[composite_key]
     if (loaded_configs !== undefined) {
       if (
@@ -122,13 +132,14 @@
   }
 
   // Persist the current selection so returning visits prefer it over the task default.
-  // Wait for init to settle (pending_preferred_run_config_id cleared) to avoid clobbering the
-  // persisted value with the transient "custom" placeholder used during loading.
+  // Gate on initialized_for_task_id matching current_task.id so we never write a stale selection
+  // (e.g., leftover from a previous task) against the wrong storage key.
   $: if (
     run_page &&
     !pending_preferred_run_config_id &&
     selected_run_config_id &&
-    current_task.id
+    current_task?.id &&
+    initialized_for_task_id === current_task.id
   ) {
     set_last_used_run_config(
       get_task_composite_id(project_id, current_task.id),
