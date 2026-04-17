@@ -41,11 +41,6 @@ const MOCK_START_RESPONSE: OAuthStartResponse = {
   repo_pre_selected: true,
 }
 
-const MOCK_START_RESPONSE_NEEDS_HINT: OAuthStartResponse = {
-  ...MOCK_START_RESPONSE,
-  repo_pre_selected: false,
-}
-
 function makeMockPopup() {
   return {
     location: { href: "" },
@@ -67,7 +62,7 @@ afterEach(() => {
 })
 
 describe("startOAuthFlow", () => {
-  it("calls oauthStart and opens install URL in browser", async () => {
+  it("calls oauthStart and opens authorize URL in popup", async () => {
     mockOauthStart.mockResolvedValue(MOCK_START_RESPONSE)
     mockOauthStatus.mockResolvedValue({
       complete: false,
@@ -84,9 +79,10 @@ describe("startOAuthFlow", () => {
       "https://github.com/Kiln-AI/kiln.git",
     )
     expect(cbs.calls.onStarted).toHaveLength(1)
-    expect(cbs.calls.onStarted[0]).toEqual(MOCK_START_RESPONSE)
+    expect(cbs.calls.onStarted[0]).toEqual({
+      install_url: MOCK_START_RESPONSE.install_url,
+    })
     expect(cbs.calls.onPolling).toHaveLength(1)
-    // The first window.open is about:blank (popup), then location.href is set
     expect(window.open).toHaveBeenCalledWith("about:blank", "_blank")
   })
 
@@ -239,7 +235,7 @@ describe("startOAuthFlow", () => {
     expect(cbs.calls.onSuccess[0]).toBe("ghu_recovered")
   })
 
-  it("uses pre-opened popup and does not call window.open itself", async () => {
+  it("uses pre-opened popup and navigates to authorize URL", async () => {
     const preOpenedPopup = makeMockPopup()
     const mockOpen = vi.fn()
     const mockWindow = { open: mockOpen }
@@ -262,40 +258,7 @@ describe("startOAuthFlow", () => {
     await vi.advanceTimersByTimeAsync(0)
 
     expect(mockOpen).not.toHaveBeenCalled()
-    expect(preOpenedPopup.location.href).toBe(MOCK_START_RESPONSE.install_url)
-  })
-
-  it("delays popup navigation when pre-selection hints are needed", async () => {
-    const preOpenedPopup = makeMockPopup()
-    const mockOpen = vi.fn()
-    const mockWindow = { open: mockOpen }
-    vi.stubGlobal("window", mockWindow)
-
-    mockOauthStart.mockResolvedValue(MOCK_START_RESPONSE_NEEDS_HINT)
-    mockOauthStatus.mockResolvedValue({
-      complete: false,
-      oauth_token: null,
-      error: null,
-    })
-
-    const cbs = makeCallbacks()
-    startOAuthFlow(
-      "https://github.com/Kiln-AI/kiln.git",
-      cbs,
-      preOpenedPopup as unknown as Window,
-    )
-
-    await vi.advanceTimersByTimeAsync(0)
-    expect(cbs.calls.onStarted).toHaveLength(1)
-    // Hint needs time to render: popup should not have navigated yet.
-    expect(preOpenedPopup.location.href).toBe("")
-    expect(cbs.calls.onPolling).toHaveLength(0)
-
-    await vi.advanceTimersByTimeAsync(1500)
-    expect(preOpenedPopup.location.href).toBe(
-      MOCK_START_RESPONSE_NEEDS_HINT.install_url,
-    )
-    expect(cbs.calls.onPolling).toHaveLength(1)
+    expect(preOpenedPopup.location.href).toBe(MOCK_START_RESPONSE.authorize_url)
   })
 
   it("gives up polling after repeated consecutive network errors", async () => {

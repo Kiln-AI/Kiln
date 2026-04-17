@@ -164,25 +164,6 @@ class TestOAuthFlowManager:
         mgr = OAuthFlowManager()
         assert mgr.consume_flow("nonexistent") is None
 
-    def test_get_most_recent_pending_flow(self):
-        mgr = OAuthFlowManager()
-        mgr.start_flow("https://github.com/owner/repo1.git")
-        flow2 = mgr.start_flow("https://github.com/owner/repo2.git")
-        result = mgr.get_most_recent_pending_flow()
-        assert result is flow2
-
-    def test_get_most_recent_pending_flow_skips_completed(self):
-        mgr = OAuthFlowManager()
-        flow1 = mgr.start_flow("https://github.com/owner/repo1.git")
-        flow2 = mgr.start_flow("https://github.com/owner/repo2.git")
-        mgr.complete_flow(flow2.state, "token")
-        result = mgr.get_most_recent_pending_flow()
-        assert result is flow1
-
-    def test_get_most_recent_pending_flow_empty(self):
-        mgr = OAuthFlowManager()
-        assert mgr.get_most_recent_pending_flow() is None
-
     def test_cleanup_expired(self):
         mgr = OAuthFlowManager()
         flow = mgr.start_flow("https://github.com/owner/repo.git")

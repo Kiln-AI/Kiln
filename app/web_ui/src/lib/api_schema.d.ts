@@ -2771,8 +2771,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** OAuth Authorize Redirect */
-        get: operations["api_oauth_authorize_api_git_sync_oauth_authorize_get"];
+        /** GitHub App Install Complete */
+        get: operations["api_oauth_installed_api_git_sync_oauth_authorize_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -15740,7 +15740,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "text/html": string;
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -15754,7 +15754,7 @@ export interface operations {
             };
         };
     };
-    api_oauth_authorize_api_git_sync_oauth_authorize_get: {
+    api_oauth_installed_api_git_sync_oauth_authorize_get: {
         parameters: {
             query?: never;
             header?: never;

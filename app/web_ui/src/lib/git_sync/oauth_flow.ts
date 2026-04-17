@@ -1,16 +1,11 @@
 import { oauthStart, oauthStatus } from "$lib/git_sync/api"
-import type { OAuthStartResponse } from "$lib/git_sync/api"
 
 const POLL_INTERVAL_MS = 2000
 const TIMEOUT_MS = 300_000
 const MAX_CONSECUTIVE_POLL_FAILURES = 5
-// When GitHub's org or repo couldn't be pre-selected, the component renders
-// a hint telling the user what to pick on GitHub. Delay popup navigation so
-// the hint is visible in Kiln before GitHub's tab steals focus.
-const HINT_DISPLAY_DELAY_MS = 1500
 
 export type OAuthFlowCallbacks = {
-  onStarted: (response: OAuthStartResponse) => void
+  onStarted: (response: { install_url: string }) => void
   onPolling: () => void
   onSuccess: (token: string) => void
   onError: (error: string) => void
@@ -36,9 +31,6 @@ export function startOAuthFlow(
       clearTimeout(timeoutTimer)
       timeoutTimer = null
     }
-    // Close popup on cancel/timeout, but not on success (HTML_SUCCESS page
-    // self-closes via its own script — calling close() again from a different
-    // origin after navigation may be blocked).
     if (closePopup && popup !== null) {
       try {
         popup.close()
@@ -51,13 +43,9 @@ export function startOAuthFlow(
 
   async function run() {
     // Open the window synchronously (during the user's click event) to avoid
-    // popup blockers. We'll navigate it to the install URL once the API responds.
-    // If this returns null, the popup was blocked — surface an error rather
-    // than trying to re-open later (which would also be blocked since it runs
-    // after an await, outside the user gesture).
-    // Callers may pass a pre-opened popup to ensure window.open is at the
-    // very top of the click handler (Safari is strict about user gestures
-    // even with synchronous async function bodies).
+    // popup blockers. Callers may pass a pre-opened popup to ensure
+    // window.open is at the very top of the click handler (Safari is strict
+    // about user gestures even with synchronous async function bodies).
     if (popup === null) {
       popup = window.open("about:blank", "_blank")
     }
@@ -72,7 +60,7 @@ export function startOAuthFlow(
       return
     }
 
-    let startResponse: OAuthStartResponse
+    let startResponse
     try {
       startResponse = await oauthStart(git_url)
     } catch (e) {
@@ -90,27 +78,13 @@ export function startOAuthFlow(
       return
     }
 
-    callbacks.onStarted(startResponse)
+    // Provide the install_url so the caller can offer an "Install app" step
+    // if the token doesn't have access after authorization.
+    callbacks.onStarted({ install_url: startResponse.install_url })
 
-    // If Kiln needs to show the user a pre-selection hint (because we
-    // couldn't pre-fill the org or repo on GitHub's install page), pause
-    // briefly so the hint renders before the popup takes focus.
-    const needsHint =
-      !startResponse.owner_pre_selected || !startResponse.repo_pre_selected
-    if (needsHint) {
-      await new Promise((resolve) => setTimeout(resolve, HINT_DISPLAY_DELAY_MS))
-      if (cancelled) {
-        cleanup(true)
-        return
-      }
-    }
-
-    // Navigate the popup to the install URL. For new users, GitHub chains:
-    // install → setup URL redirect → OAuth authorize → callback.
-    // For returning users who already have the app installed, the install
-    // page shows a "manage" view with no redirect. The component provides
-    // an escape hatch link to authorize directly for that case.
-    popup.location.href = startResponse.install_url
+    // Navigate the popup directly to the OAuth authorize URL.
+    // This is always a consistent flow regardless of app installation state.
+    popup.location.href = startResponse.authorize_url
     callbacks.onPolling()
 
     const state = startResponse.state

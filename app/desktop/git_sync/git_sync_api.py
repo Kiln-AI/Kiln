@@ -7,7 +7,7 @@ from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi import Path as FastAPIPath
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from kiln_ai.utils.project_utils import (
     DuplicateProjectError,
     check_duplicate_project_id,
@@ -45,6 +45,87 @@ from app.desktop.git_sync.oauth import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+_OAUTH_PAGE_STYLES = """
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: #f8fafc;
+    color: #0f172a;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .card {
+    max-width: 420px;
+    width: 100%;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  .icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .icon.success { background: #dcfce7; color: #15803d; }
+  .icon.error { background: #fee2e2; color: #b91c1c; }
+  .icon svg { width: 28px; height: 28px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0; }
+  p { font-size: 14px; color: #64748b; margin: 0; line-height: 1.5; }
+  .detail { color: #475569; word-break: break-word; }
+"""
+
+_SUCCESS_ICON_PATH = "M4.5 12.75l6 6 9-13.5"
+_ERROR_ICON_PATH = "M6 18L18 6M6 6l12 12"
+
+
+def _render_oauth_page(title: str, body: str, *, is_error: bool = False) -> str:
+    icon_class = "error" if is_error else "success"
+    icon_path = _ERROR_ICON_PATH if is_error else _SUCCESS_ICON_PATH
+    escaped_title = html.escape(title)
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{escaped_title}</title>
+<style>{_OAUTH_PAGE_STYLES}</style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon {icon_class}">
+      <svg fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" d="{icon_path}" />
+      </svg>
+    </div>
+    <h1>{escaped_title}</h1>
+    {body}
+  </div>
+</body>
+</html>
+"""
+
+
+_RETURN_TO_KILN = "<p>Return to Kiln to continue setup</p>"
+OAUTH_SUCCESS_HTML = _render_oauth_page("Authorization Complete", _RETURN_TO_KILN)
+INSTALL_COMPLETE_HTML = _render_oauth_page("Install Complete", _RETURN_TO_KILN)
+
+
+def render_oauth_error_page(message: str) -> str:
+    body = (
+        f'<p class="detail">{html.escape(message)}</p>'
+        "<p>You can close this tab and try again in Kiln.</p>"
+    )
+    return _render_oauth_page("Authorization Failed", body, is_error=True)
 
 
 class TestAccessRequest(BaseModel):
@@ -649,27 +730,11 @@ def connect_git_sync_api(app: FastAPI):
             repo_pre_selected=repo_id is not None,
         )
 
-    HTML_SUCCESS = """<!DOCTYPE html><html><head>
-<meta charset="utf-8"><title>Kiln AI - Authorization</title>
-</head><body>
-<h2>Authorization complete</h2>
-<p>You can close this tab and return to Kiln.</p>
-<script>window.close()</script>
-</body></html>"""
-
-    HTML_ERROR_TEMPLATE = """<!DOCTYPE html><html><head>
-<meta charset="utf-8"><title>Kiln AI - Authorization</title>
-</head><body>
-<h2>Authorization failed</h2>
-<p>{error}</p>
-<p>You can close this tab and try again in Kiln.</p>
-</body></html>"""
-
     @app.get(
         "/api/git_sync/oauth/callback",
         summary="OAuth Callback",
         tags=["Git Sync"],
-        response_class=HTMLResponse,
+        response_model=None,
         openapi_extra=DENY_AGENT,
     )
     async def api_oauth_callback(
@@ -690,65 +755,47 @@ def connect_git_sync_api(app: FastAPI):
             description="Human-readable description of the error from GitHub.",
         ),
     ) -> HTMLResponse:
+        def error_page(msg: str) -> HTMLResponse:
+            return HTMLResponse(render_oauth_error_page(msg))
+
         if not state:
-            return HTMLResponse(
-                HTML_ERROR_TEMPLATE.format(error="Missing state parameter."),
-                status_code=400,
-            )
+            return error_page("Missing state parameter.")
 
         flow = oauth_manager.get_flow(state)
         if flow is None:
-            return HTMLResponse(
-                HTML_ERROR_TEMPLATE.format(
-                    error="Authorization session expired or invalid. Please start over in Kiln."
-                ),
-                status_code=400,
+            return error_page(
+                "Authorization session expired or invalid. Please start over in Kiln."
             )
 
         if error:
             desc = error_description or error
             oauth_manager.fail_flow(state, desc)
-            return HTMLResponse(
-                HTML_ERROR_TEMPLATE.format(error=html.escape(desc)),
-                status_code=400,
-            )
+            return error_page(desc)
 
         if not code:
             oauth_manager.fail_flow(state, "Missing authorization code.")
-            return HTMLResponse(
-                HTML_ERROR_TEMPLATE.format(error="Missing authorization code."),
-                status_code=400,
-            )
+            return error_page("Missing authorization code.")
 
         try:
             token = await exchange_code_for_token(code, flow.code_verifier)
             oauth_manager.complete_flow(state, token)
-            return HTMLResponse(HTML_SUCCESS)
+            return HTMLResponse(OAUTH_SUCCESS_HTML)
         except OAuthError as e:
             oauth_manager.fail_flow(state, str(e))
-            return HTMLResponse(
-                HTML_ERROR_TEMPLATE.format(error=html.escape(str(e))),
-                status_code=400,
-            )
+            return error_page(str(e))
 
+    # GitHub App "Setup URL" — GitHub redirects here after the user installs
+    # the app on a repository. Returning plain HTML (rather than an app route)
+    # avoids the app's setup-redirect logic hijacking the install tab.
     @app.get(
         "/api/git_sync/oauth/authorize",
-        summary="OAuth Authorize Redirect",
+        summary="GitHub App Install Complete",
         tags=["Git Sync"],
         response_model=None,
         openapi_extra=DENY_AGENT,
     )
-    async def api_oauth_authorize() -> HTMLResponse | RedirectResponse:
-        flow = oauth_manager.get_most_recent_pending_flow()
-        if flow is None:
-            return HTMLResponse(
-                HTML_ERROR_TEMPLATE.format(
-                    error="No pending authorization. Please start over in Kiln."
-                ),
-                status_code=400,
-            )
-        authorize_url = build_authorize_url(flow)
-        return RedirectResponse(authorize_url)
+    async def api_oauth_installed() -> HTMLResponse:
+        return HTMLResponse(INSTALL_COMPLETE_HTML)
 
     @app.get(
         "/api/git_sync/oauth/status/{state}",

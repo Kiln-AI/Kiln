@@ -11,7 +11,6 @@
     gitHubPatDeepLink,
     gitLabPatDeepLink,
     gitOwnerFromUrl,
-    type OAuthStartResponse,
   } from "$lib/git_sync/api"
   import {
     startOAuthFlow,
@@ -36,8 +35,14 @@
   let oauth_starting = false
   let oauth_error: string | null = null
   let cancel_oauth: (() => void) | null = null
-  let start_response: OAuthStartResponse | null = null
   let oauth_generation = 0
+
+  // Two-step state: after OAuth succeeds, we may need to install the app
+  let oauth_token: string | null = null
+  let install_url: string | null = null
+  let needs_install = false
+  let checking_access = false
+  let install_clicked = false
 
   onDestroy(() => {
     if (cancel_oauth) {
@@ -53,13 +58,43 @@
     }
     oauth_starting = false
     oauth_error = null
-    start_response = null
+    oauth_token = null
+    install_url = null
+    needs_install = false
+    checking_access = false
+    install_clicked = false
     oauth_generation++
   }
 
+  function open_install() {
+    if (!install_url) return
+    // Open window first so popup blockers don't block it.
+    window.open(install_url, "_blank", "noopener,noreferrer")
+    install_clicked = true
+  }
+
+  async function check_access_with_token(token: string, generation: number) {
+    checking_access = true
+    try {
+      const result = await testAccess(git_url, null, "github_oauth", token)
+      if (generation !== oauth_generation) return
+      if (result.success) {
+        on_success(token, "github_oauth")
+      } else {
+        oauth_token = token
+        needs_install = true
+      }
+    } catch (e) {
+      if (generation !== oauth_generation) return
+      oauth_error = e instanceof Error ? e.message : "Failed to verify access"
+    } finally {
+      if (generation === oauth_generation) {
+        checking_access = false
+      }
+    }
+  }
+
   function start_oauth() {
-    // Open popup as the very first thing in the click handler so Safari
-    // recognizes it as user-initiated. Pass it to startOAuthFlow.
     const popup = window.open("about:blank", "_blank")
 
     if (cancel_oauth) {
@@ -68,36 +103,24 @@
 
     oauth_error = null
     oauth_starting = true
-    start_response = null
+    needs_install = false
+    oauth_token = null
+    install_url = null
     oauth_generation++
     const this_generation = oauth_generation
 
     const callbacks: OAuthFlowCallbacks = {
-      onStarted: (response: OAuthStartResponse) => {
+      onStarted: (response) => {
         if (this_generation !== oauth_generation) return
-        start_response = response
+        install_url = response.install_url
         oauth_starting = false
       },
       onPolling: () => {
         if (this_generation !== oauth_generation) return
       },
-      onSuccess: async (token: string) => {
+      onSuccess: (token: string) => {
         if (this_generation !== oauth_generation) return
-        try {
-          const result = await testAccess(git_url, null, "github_oauth", token)
-          if (this_generation !== oauth_generation) return
-          if (result.success) {
-            on_success(token, "github_oauth")
-          } else {
-            oauth_error =
-              result.message ||
-              "The GitHub App does not have access to this repository. Please ensure the app is installed on the correct organization and repository, then try again."
-          }
-        } catch (e) {
-          if (this_generation !== oauth_generation) return
-          oauth_error =
-            e instanceof Error ? e.message : "Failed to verify access"
-        }
+        check_access_with_token(token, this_generation)
       },
       onError: (err: string) => {
         if (this_generation !== oauth_generation) return
@@ -108,6 +131,12 @@
 
     const handle = startOAuthFlow(git_url, callbacks, popup)
     cancel_oauth = handle.cancel
+  }
+
+  async function retry_access_check() {
+    if (!oauth_token) return
+    oauth_generation++
+    await check_access_with_token(oauth_token, oauth_generation)
   }
 
   async function test_and_save() {
@@ -163,86 +192,126 @@
     : is_gitlab
       ? "Generate token on GitLab"
       : null
-
-  $: needs_pre_selection_hint =
-    start_response &&
-    (!start_response.owner_pre_selected || !start_response.repo_pre_selected)
-
-  $: pre_selection_hint_md = (() => {
-    if (!start_response) return ""
-    const hints = []
-    if (!start_response.owner_pre_selected) {
-      hints.push(`select the **${start_response.owner_name}** organization`)
-    }
-    if (!start_response.repo_pre_selected) {
-      hints.push(`select the **${start_response.repo_name}** repository`)
-    }
-    return "Be sure to " + hints.join(" and ") + "."
-  })()
 </script>
 
 <h2 class="text-xl font-medium mb-2">Authentication</h2>
 
 {#if is_github && mode === "oauth"}
-  <p class="text-sm text-gray-500 mb-6">
-    Connect your GitHub account to grant Kiln access to this repository.
-  </p>
+  {#if needs_install && oauth_token}
+    <p class="text-sm text-gray-500 mb-6">
+      GitHub account connected. Now install the Kiln Sync app on the repository
+      to grant access.
+    </p>
 
-  {#if oauth_error}
-    <div class="mb-4">
-      <Warning warning_message={oauth_error} warning_color="error" />
-    </div>
-  {/if}
-
-  {#if start_response && !oauth_error}
-    <div class="flex flex-col items-center py-8 gap-4">
-      <span class="loading loading-spinner loading-lg text-primary"></span>
-      <p class="text-sm text-gray-500">Waiting for GitHub authorization...</p>
-      {#if needs_pre_selection_hint && start_response}
-        <div
-          class="border rounded-lg px-4 py-3 border-base-200 text-sm text-gray-500 max-w-md"
+    <div class="flex flex-col items-center py-4 gap-4">
+      <div
+        class="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center"
+      >
+        <svg
+          class="w-6 h-6 text-success"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="2"
+          stroke="currentColor"
         >
-          <MarkdownBlock markdown_text={pre_selection_hint_md} />
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M4.5 12.75l6 6 9-13.5"
+          />
+        </svg>
+      </div>
+      <p class="text-sm font-medium">Step 1: Authorized</p>
+
+      <div class="w-full border-t border-base-200 my-2"></div>
+
+      <p class="text-sm font-medium">Step 2: Install App on Repository</p>
+      <p class="text-sm text-gray-500 text-center max-w-sm">
+        The Kiln Sync GitHub App needs to be installed on the repository to
+        enable syncing. Click below to install it, then come back and verify.
+      </p>
+      <button
+        class="btn w-full max-w-sm {install_clicked
+          ? 'btn-sm btn-ghost'
+          : 'btn-primary'}"
+        on:click={open_install}
+      >
+        {install_clicked
+          ? "Retry Install on GitHub"
+          : "Install Kiln Sync on GitHub"}
+      </button>
+      <button
+        class="btn w-full max-w-sm {install_clicked
+          ? 'btn-primary'
+          : 'btn-sm btn-ghost'}"
+        on:click={retry_access_check}
+        disabled={checking_access}
+      >
+        {#if checking_access}
+          <span class="loading loading-spinner loading-xs"></span>
+        {/if}
+        Verify Access
+      </button>
+      {#if oauth_error}
+        <div class="w-full max-w-sm">
+          <Warning warning_message={oauth_error} warning_color="error" />
         </div>
       {/if}
-      {#if start_response?.authorize_url}
-        <a
-          href={start_response.authorize_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          class="text-sm text-gray-500 hover:text-gray-700 underline"
-        >
-          Already have the app installed? Authorize directly
-        </a>
-      {/if}
-      <button class="btn btn-sm btn-ghost mt-2" on:click={reset_oauth}>
-        Cancel
+      <button
+        class="btn btn-link btn-xs text-gray-500 no-underline hover:text-gray-700 hover:underline focus-visible:underline"
+        on:click={reset_oauth}
+      >
+        Start over
       </button>
     </div>
   {:else}
-    <button
-      class="btn btn-primary w-full"
-      on:click={start_oauth}
-      disabled={oauth_starting}
-    >
-      {#if oauth_starting}
-        <span class="loading loading-spinner loading-sm"></span>
-      {/if}
-      {oauth_error ? "Retry with GitHub" : "Connect with GitHub"}
-    </button>
-  {/if}
+    <p class="text-sm text-gray-500 mb-6">
+      Connect your GitHub account to grant Kiln access to this repository.
+    </p>
 
-  <div class="mt-4 text-center">
-    <button
-      class="btn btn-link btn-sm text-gray-500 no-underline hover:text-gray-700 hover:underline focus-visible:underline"
-      on:click={() => {
-        mode = "pat"
-        reset_oauth()
-      }}
-    >
-      or use a Personal Access Token
-    </button>
-  </div>
+    {#if oauth_error}
+      <div class="mb-4">
+        <Warning warning_message={oauth_error} warning_color="error" />
+      </div>
+    {/if}
+
+    {#if (oauth_starting || checking_access) && !oauth_error}
+      <div class="flex flex-col items-center py-8 gap-4">
+        <span class="loading loading-spinner loading-lg text-primary"></span>
+        <p class="text-sm text-gray-500">
+          {checking_access
+            ? "Verifying access..."
+            : "Waiting for GitHub authorization..."}
+        </p>
+        <button class="btn btn-sm btn-ghost mt-2" on:click={reset_oauth}>
+          Cancel
+        </button>
+      </div>
+    {:else}
+      <button
+        class="btn btn-primary w-full"
+        on:click={start_oauth}
+        disabled={oauth_starting}
+      >
+        {#if oauth_starting}
+          <span class="loading loading-spinner loading-sm"></span>
+        {/if}
+        {oauth_error ? "Retry with GitHub" : "Connect with GitHub"}
+      </button>
+    {/if}
+
+    <div class="mt-4 text-center">
+      <button
+        class="btn btn-link btn-sm text-gray-500 no-underline hover:text-gray-700 hover:underline focus-visible:underline"
+        on:click={() => {
+          mode = "pat"
+          reset_oauth()
+        }}
+      >
+        or use a Personal Access Token
+      </button>
+    </div>
+  {/if}
 {:else}
   {#if is_github}
     <p class="text-sm text-gray-500 mb-6">

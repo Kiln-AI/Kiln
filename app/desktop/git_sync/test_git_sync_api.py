@@ -555,7 +555,7 @@ class TestOAuthStart:
 
 
 class TestOAuthCallback:
-    def test_success(self, api_client):
+    def test_success_renders_success_page(self, api_client):
         with (
             patch(
                 "app.desktop.git_sync.git_sync_api.resolve_github_owner_id",
@@ -577,21 +577,26 @@ class TestOAuthCallback:
             return_value="ghu_token",
         ):
             resp = api_client.get(
-                f"/api/git_sync/oauth/callback?state={state}&code=auth_code"
+                f"/api/git_sync/oauth/callback?state={state}&code=auth_code",
             )
         assert resp.status_code == 200
-        assert "Authorization complete" in resp.text
+        assert "text/html" in resp.headers["content-type"]
+        assert "Authorization Complete" in resp.text
+        assert "Return to Kiln" in resp.text
 
-    def test_missing_state(self, api_client):
+    def test_missing_state_renders_error_page(self, api_client):
         resp = api_client.get("/api/git_sync/oauth/callback?code=auth_code")
-        assert resp.status_code == 400
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers["content-type"]
+        assert "Authorization Failed" in resp.text
         assert "Missing state" in resp.text
 
-    def test_invalid_state(self, api_client):
+    def test_invalid_state_renders_error_page(self, api_client):
         resp = api_client.get(
             "/api/git_sync/oauth/callback?state=invalid&code=auth_code"
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 200
+        assert "Authorization Failed" in resp.text
         assert "expired" in resp.text
 
     def test_error_from_github(self, api_client):
@@ -612,9 +617,10 @@ class TestOAuthCallback:
         state = start_resp.json()["state"]
 
         resp = api_client.get(
-            f"/api/git_sync/oauth/callback?state={state}&error=access_denied&error_description=User+denied"
+            f"/api/git_sync/oauth/callback?state={state}&error=access_denied&error_description=User+denied",
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 200
+        assert "Authorization Failed" in resp.text
         assert "User denied" in resp.text
 
     def test_token_exchange_failure(self, api_client):
@@ -641,41 +647,11 @@ class TestOAuthCallback:
             side_effect=OAuthError("Exchange failed"),
         ):
             resp = api_client.get(
-                f"/api/git_sync/oauth/callback?state={state}&code=bad_code"
+                f"/api/git_sync/oauth/callback?state={state}&code=bad_code",
             )
-        assert resp.status_code == 400
+        assert resp.status_code == 200
+        assert "Authorization Failed" in resp.text
         assert "Exchange failed" in resp.text
-
-
-class TestOAuthAuthorize:
-    def test_redirects_to_github(self, api_client):
-        with (
-            patch(
-                "app.desktop.git_sync.git_sync_api.resolve_github_owner_id",
-                return_value=None,
-            ),
-            patch(
-                "app.desktop.git_sync.git_sync_api.resolve_github_repo_id",
-                return_value=None,
-            ),
-        ):
-            start_resp = api_client.post(
-                "/api/git_sync/oauth/start",
-                json={"git_url": "https://github.com/owner/repo.git"},
-            )
-        state = start_resp.json()["state"]
-
-        resp = api_client.get("/api/git_sync/oauth/authorize", follow_redirects=False)
-        assert resp.status_code == 307
-        location = resp.headers["location"]
-        assert "github.com/login/oauth/authorize" in location
-        assert f"state={state}" in location
-        assert "code_challenge=" in location
-
-    def test_no_pending_flow(self, api_client):
-        resp = api_client.get("/api/git_sync/oauth/authorize")
-        assert resp.status_code == 400
-        assert "No pending authorization" in resp.text
 
 
 class TestOAuthStatus:
@@ -722,7 +698,9 @@ class TestOAuthStatus:
             "app.desktop.git_sync.git_sync_api.exchange_code_for_token",
             return_value="ghu_token",
         ):
-            api_client.get(f"/api/git_sync/oauth/callback?state={state}&code=code")
+            api_client.get(
+                f"/api/git_sync/oauth/callback?state={state}&code=code",
+            )
 
         resp = api_client.get(f"/api/git_sync/oauth/status/{state}")
         data = resp.json()
@@ -750,7 +728,9 @@ class TestOAuthStatus:
             "app.desktop.git_sync.git_sync_api.exchange_code_for_token",
             return_value="ghu_token",
         ):
-            api_client.get(f"/api/git_sync/oauth/callback?state={state}&code=code")
+            api_client.get(
+                f"/api/git_sync/oauth/callback?state={state}&code=code",
+            )
 
         api_client.get(f"/api/git_sync/oauth/status/{state}")
         resp = api_client.get(f"/api/git_sync/oauth/status/{state}")

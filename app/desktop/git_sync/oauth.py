@@ -266,19 +266,6 @@ class OAuthFlowManager:
                 return flow
         return None
 
-    def get_most_recent_pending_flow(self) -> OAuthFlowState | None:
-        """Return the most recently created pending (not-yet-complete) flow."""
-        now = time.monotonic()
-        with self._lock:
-            pending = [
-                f
-                for f in self._flows.values()
-                if not f.complete and (now - f.created_at) < OAUTH_TIMEOUT_SECONDS
-            ]
-            if not pending:
-                return None
-            return max(pending, key=lambda f: f.created_at)
-
     def _cleanup_expired(self) -> None:
         """Remove flows older than OAUTH_TIMEOUT_SECONDS."""
         now = time.monotonic()
