@@ -9,6 +9,6 @@
   onDestroy(() => clearInterval(interval))
 </script>
 
-<span class="inline-block w-3 text-center" aria-hidden="true"
+<span class="inline-block w-3 text-center font-mono" aria-hidden="true"
   >{frames[index]}</span
 >
