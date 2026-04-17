@@ -28,6 +28,9 @@
   import TraceComponent from "$lib/ui/trace/trace.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
+  import Warning from "$lib/ui/warning.svelte"
+  import OutputRepairEditForm from "./output_repair_edit_form.svelte"
+  import type { components } from "$lib/api_schema"
 
   type SubtaskReference = {
     project_id: string
@@ -147,12 +150,19 @@
     }
   }
 
+  const REPAIR_ENABLED_FOR_SOURCES: Array<
+    components["schemas"]["DataSourceType"]
+  > = ["human", "synthetic"]
+
   export let project_id: string
   export let task: Task
   export let initial_run: TaskRun
   let updated_run: TaskRun | null = null
   $: run = updated_run || initial_run
+  export let model_name: string | null = null
+  export let provider: string | null = null
   export let run_complete: boolean = false
+  export let focus_repair_on_appear: boolean = false
 
   // Dynamic rating requirements based on tags
   $: rating_requirements = rating_options_for_sample(
@@ -160,8 +170,43 @@
     run?.tags || [],
   )
 
+  // note: this run is NOT the main run, but a repair run TaskRun
+  let repair_run: TaskRun | null = null
+  let repair_instructions: string | null = null
+  // Seed repair_instructions from the persisted run so tooltips/UI on historical repairs show the original feedback.
+  // Track the last seeded run id so switching to a different run reseeds rather than leaking prior text.
+  let seeded_for_run_id: string | null = null
+  $: if (run?.id && run.id !== seeded_for_run_id) {
+    repair_instructions = run.repair_instructions ?? null
+    seeded_for_run_id = run.id
+  }
+
   $: rate_focus = run && overall_rating === null
-  $: run_complete = overall_rating !== null
+  // True if this "Run" has everything we want: a rating and a repaired output (or 5-star rating and no repair is needed)
+  $: run_complete = overall_rating === 5 || !!run?.repaired_output?.output
+
+  // Repair is available if the run has an overall rating but it's not 5 stars, and it doesn't yet have a repaired output
+  $: should_offer_repair =
+    run &&
+    overall_rating !== null &&
+    overall_rating !== 5 &&
+    !run?.repaired_output?.output && // model already repaired
+    !repair_run // repair generated, should show repair evaluation instead
+  $: repair_review_available = !!repair_run && !run?.repaired_output?.output
+  $: repair_complete = !!run?.repaired_output?.output
+  $: repair_enabled_for_source = REPAIR_ENABLED_FOR_SOURCES.some(
+    (s) => s === run?.output?.source?.type,
+  )
+
+  $: repair_source =
+    run?.repaired_output?.source?.type === "human"
+      ? {
+          type: "user",
+          name: run.repaired_output.source.properties?.created_by ?? "unknown",
+        }
+      : run?.repaired_output?.source?.type === "synthetic"
+        ? { type: "synthetic" }
+        : null
 
   let show_raw_data = false
   let save_rating_error: KilnError | null = null
@@ -281,6 +326,156 @@
     } catch (err) {
       save_rating_error = createKilnError(err)
     }
+  }
+
+  let repair_submitting = false
+  let repair_error: KilnError | null = null
+  async function attempt_repair() {
+    try {
+      repair_submitting = true
+      const trimmed_instructions = repair_instructions?.trim()
+      if (!trimmed_instructions) {
+        throw new KilnError("Repair instructions are required", null)
+      }
+      if (!task.id || !run?.id) {
+        throw new KilnError(
+          "This task run isn't saved. Enable Auto-save. You can't repair unsaved runs.",
+          null,
+        )
+      }
+      const {
+        data: repair_data, // only present if 2XX response
+        error: fetch_error, // only present if 4XX or 5XX response
+      } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/generate_repair",
+        {
+          params: {
+            path: {
+              project_id: project_id,
+              task_id: task.id,
+              run_id: run?.id,
+            },
+          },
+          body:
+            model_name && provider
+              ? {
+                  evaluator_feedback: trimmed_instructions,
+                  model_name: model_name,
+                  provider: provider,
+                }
+              : {
+                  evaluator_feedback: trimmed_instructions,
+                },
+        },
+      )
+      if (fetch_error) {
+        throw fetch_error
+      }
+      repair_run = repair_data
+      repair_error = null
+    } catch (err) {
+      repair_error = createKilnError(err)
+    } finally {
+      repair_submitting = false
+    }
+  }
+
+  let accept_repair_error: KilnError | null = null
+  let accept_repair_submitting = false
+  async function accept_repair() {
+    try {
+      accept_repair_error = null
+      accept_repair_submitting = true
+      if (!repair_run) {
+        throw new KilnError("No repair to accept", null)
+      }
+      if (!task.id || !run?.id) {
+        throw new KilnError(
+          "This task run isn't saved. Enable Auto-save. You can't accept repairs for unsaved runs.",
+          null,
+        )
+      }
+      const {
+        data, // only present if 2XX response
+        error: fetch_error, // only present if 4XX or 5XX response
+      } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/save_repair",
+        {
+          params: {
+            path: {
+              project_id: project_id,
+              task_id: task.id,
+              run_id: run?.id,
+            },
+          },
+          body: {
+            repair_run: repair_run,
+            evaluator_feedback: repair_instructions || "",
+          },
+        },
+      )
+      if (fetch_error) {
+        throw fetch_error
+      }
+      updated_run = data
+      repair_run = null
+    } catch (err) {
+      accept_repair_error = createKilnError(err)
+    } finally {
+      accept_repair_submitting = false
+    }
+  }
+
+  let delete_repair_error: KilnError | null = null
+  let delete_repair_submitting = false
+  async function delete_repair() {
+    if (
+      !confirm(
+        "Are you sure you want to delete this repair?\n\nThis action cannot be undone.",
+      )
+    ) {
+      return
+    }
+    try {
+      delete_repair_error = null
+      delete_repair_submitting = true
+      let original_repair_instructions = run?.repair_instructions
+      let patch_body = {
+        repair_instructions: null,
+        repaired_output: null,
+      }
+      updated_run = await patch_run(patch_body)
+      repair_run = null
+
+      // Pull in the instructions from the original repair, so they can edit them if wanted
+      if (!repair_instructions && original_repair_instructions) {
+        repair_instructions = original_repair_instructions
+      }
+    } catch (err) {
+      delete_repair_error = createKilnError(err)
+    } finally {
+      delete_repair_submitting = false
+    }
+  }
+
+  function retry_repair() {
+    repair_run = null
+    accept_repair_error = null
+  }
+
+  let repair_edit_mode = false
+  function show_repair_edit() {
+    repair_edit_mode = true
+  }
+
+  function handle_manual_edit_cancel() {
+    repair_edit_mode = false
+  }
+
+  function handle_manual_edit_submit(repair_run_edited: TaskRun) {
+    repair_edit_mode = false
+    updated_run = repair_run_edited
+    repair_run = null
   }
 
   function toggle_raw_data() {
@@ -573,6 +768,125 @@
           </div>
         </div>
       </div>
+
+      {#if !repair_enabled_for_source && (should_offer_repair || repair_review_available || repair_complete)}
+        <div class="grow mt-10">
+          <Warning
+            warning_message="Repair is not available for runs from {run.output
+              .source?.type || 'unknown'} sources."
+            warning_color="warning"
+            tight={true}
+          />
+        </div>
+      {/if}
+
+      {#if repair_enabled_for_source && (should_offer_repair || repair_review_available || repair_complete)}
+        <div class="grow mt-10">
+          <div class="text-xl font-bold mb-2">Repair Output</div>
+          {#if should_offer_repair}
+            <p class="text-sm text-gray-500 mb-4">
+              Since the output isn't 5-star, provide instructions for the model
+              on how to fix it.
+            </p>
+            <FormContainer
+              submit_label="Attempt Repair"
+              on:submit={attempt_repair}
+              bind:submitting={repair_submitting}
+              bind:error={repair_error}
+              focus_on_mount={focus_repair_on_appear}
+            >
+              <FormElement
+                id="repair_instructions"
+                label="Repair Instructions"
+                inputType="textarea"
+                bind:value={repair_instructions}
+              />
+            </FormContainer>
+          {:else if repair_edit_mode && repair_run}
+            <p class="text-sm text-gray-500 mb-4">
+              Manually improve or correct the response.
+            </p>
+            <OutputRepairEditForm
+              {task}
+              {run}
+              {repair_run}
+              {project_id}
+              repair_instructions={repair_instructions || ""}
+              on_submit={handle_manual_edit_submit}
+              on_cancel={handle_manual_edit_cancel}
+            />
+          {:else if repair_review_available}
+            <p class="text-sm text-gray-500 mb-4">
+              The model has attempted to fix the output given <span
+                class="tooltip link"
+                data-tip="The instructions you provided to the model: {repair_instructions ||
+                  'No instruction provided'}">your instructions</span
+              >. Review the result.
+            </p>
+            <Output raw_output={repair_run?.output.output || ""} />
+          {:else if repair_complete}
+            {#if repair_source?.type === "user"}
+              <p class="text-sm text-gray-500 mb-4">
+                This repaired output was provided by {repair_source.name}.
+              </p>
+            {:else}
+              <p class="text-sm text-gray-500 mb-4">
+                The model has fixed the output given <span
+                  class="tooltip link"
+                  data-tip="The instructions you provided to the model: {repair_instructions ||
+                    'No instruction provided'}">your instructions</span
+                >.
+              </p>
+            {/if}
+            <Output raw_output={run?.repaired_output?.output || ""} />
+            <div class="mt-2 text-xs text-gray-500 text-right">
+              {#if delete_repair_submitting}
+                <span class="loading loading-spinner loading-sm"></span>
+              {:else if delete_repair_error}
+                <p class="text-error">
+                  Error Deleting Repair:
+                  {delete_repair_error.getMessage()}
+                </p>
+              {:else}
+                <button class="link" on:click={delete_repair}
+                  >Delete Repair</button
+                >
+              {/if}
+            </div>
+          {/if}
+        </div>
+        {#if repair_review_available && !repair_edit_mode}
+          <div class="mt-4">
+            <div class="flex flex-row gap-4 justify-between">
+              <button class="btn" on:click={show_repair_edit}>Edit</button>
+              <div class="flex flex-row gap-4">
+                <button class="btn" on:click={retry_repair}>Retry Repair</button
+                >
+                <button
+                  class="btn btn-primary"
+                  on:click={accept_repair}
+                  disabled={accept_repair_submitting}
+                >
+                  {#if accept_repair_submitting}
+                    <span class="loading loading-spinner loading-sm"></span>
+                  {:else}
+                    Accept Repair (5 Stars)
+                  {/if}
+                </button>
+              </div>
+            </div>
+
+            {#if accept_repair_error}
+              <p class="mt-2 text-error font-medium text-sm">
+                Error Accepting Repair<br />
+                <span class="text-error text-xs font-normal">
+                  {accept_repair_error.getMessage()}</span
+                >
+              </p>
+            {/if}
+          </div>
+        {/if}
+      {/if}
     </div>
 
     <div class="w-72 2xl:w-96 flex-none">

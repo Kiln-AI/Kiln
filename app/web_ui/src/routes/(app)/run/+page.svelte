@@ -244,7 +244,10 @@
           initial_run={response}
           task={$current_task}
           {project_id}
+          bind:model_name
+          bind:provider
           bind:run_complete
+          focus_repair_on_appear={true}
         />
       </div>
     {/if}
