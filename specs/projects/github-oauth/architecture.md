@@ -96,13 +96,15 @@ Handles OAuth state management, GitHub API calls for ID resolution, and token ex
 
 ```python
 # GitHub App credentials for Kiln AI.
-# Embedded client secret is standard practice for native/desktop OAuth apps —
-# the secret cannot be kept confidential in a distributed binary.
-# See: https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/best-practices-for-creating-an-oauth-app
-GITHUB_CLIENT_ID = "..."  # To be filled after GitHub App registration
-GITHUB_CLIENT_SECRET = "..."  # To be filled after GitHub App registration
+# This is a GitHub App using the user-access-token (OAuth) flow. Embedding
+# the client secret in a distributed desktop binary is standard for
+# native/public clients -- the secret cannot be kept confidential on the
+# user's machine, which is why PKCE protects the code exchange.
+# See: https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app
+GITHUB_CLIENT_ID = "..."  # Actual values are in oauth.py
+GITHUB_CLIENT_SECRET = "..."  # Actual values are in oauth.py
 
-GITHUB_APP_NAME = "kiln-ai"  # Slug used in install URL
+GITHUB_APP_NAME = "kiln-ai-github-sync"  # Slug used in install URL
 CALLBACK_URL = "http://localhost:8757/api/git_sync/oauth/callback"
 OAUTH_TIMEOUT_SECONDS = 300  # 5 minutes
 ```
@@ -145,10 +147,12 @@ class OAuthFlowManager:
         """Mark a flow as complete with the received token."""
 
     def fail_flow(self, state: str, error: str) -> None:
-        """Mark a flow as failed with an error message."""
+        """Mark a flow as failed with an error message. Sets complete=True so
+        the flow goes through consume_flow like successful completions."""
 
     def consume_flow(self, state: str) -> OAuthFlowState | None:
-        """Retrieve and delete a completed flow (one-time retrieval)."""
+        """Retrieve and delete a completed flow (one-time retrieval).
+        Works for both successful and failed flows (both have complete=True)."""
 
     def cleanup_expired(self) -> None:
         """Remove flows older than OAUTH_TIMEOUT_SECONDS. Called lazily."""
@@ -233,6 +237,7 @@ class OAuthStartRequest(BaseModel):
     git_url: str
 
 class OAuthStartResponse(BaseModel):
+    authorize_url: str
     install_url: str
     state: str
     owner_name: str
@@ -246,7 +251,8 @@ Implementation:
 2. Call `resolve_github_owner_id(owner)` and `resolve_github_repo_id(owner, repo)` concurrently via `asyncio.gather` (both are async httpx calls)
 3. Call `OAuthFlowManager.start_flow(git_url)` to generate state + PKCE
 4. Build `install_url` via `build_install_url(owner_id, repo_id)`
-5. Return response with pre-selection info
+5. Build `authorize_url` via `build_authorize_url(flow)` — the GitHub OAuth URL with PKCE parameters
+6. Return response with both URLs and pre-selection info
 
 ### `GET /api/git_sync/oauth/callback`
 
@@ -263,12 +269,11 @@ Implementation:
 Returns HTML (not JSON) since this is rendered in the user's browser tab. Simple inline HTML, no template needed:
 
 ```python
-HTML_SUCCESS = """<!DOCTYPE html><html><body>
-<h2>Authorization complete</h2>
-<p>You can close this tab and return to Kiln.</p>
-<script>window.close()</script>
-</body></html>"""
+OAUTH_SUCCESS_HTML = _render_oauth_page("Authorization Complete", _RETURN_TO_KILN)
+# Where _RETURN_TO_KILN = "<p>Return to Kiln to continue setup</p>"
 ```
+
+The page does not attempt `window.close()` — many browsers refuse to close tabs the script did not open.
 
 ### `GET /api/git_sync/oauth/status/{state}`
 
@@ -280,10 +285,10 @@ class OAuthStatusResponse(BaseModel):
 ```
 
 Implementation:
-1. Call `OAuthFlowManager.get_flow(state)` — if not found, return `{complete: false, error: "Session expired"}`
-2. If `flow.complete`: call `consume_flow(state)` and return token
-3. If `flow.error`: call `consume_flow(state)` and return error
-4. Otherwise: return `{complete: false}` (still waiting)
+1. Call `OAuthFlowManager.get_flow(state)` — if not found, return `{complete: false, error: "Session expired or not found."}` (does not consume; the flow may have never existed or already expired)
+2. If `flow.complete`: call `consume_flow(state)` and return `{complete: true}` with token and/or error. Both success and failure flows are marked `complete: true` (via `complete_flow` or `fail_flow` respectively), so `consume_flow` handles both cases.
+3. If `consume_flow` returns `None` (already consumed by another request): return `{complete: true, error: "Flow already consumed by another request."}`
+4. Otherwise (flow exists but not yet complete): return `{complete: false}` (still waiting)
 
 ## Frontend Changes
 
@@ -293,6 +298,7 @@ Add new functions:
 
 ```typescript
 export type OAuthStartResponse = {
+  authorize_url: string
   install_url: string
   state: string
   owner_name: string
@@ -332,7 +338,7 @@ let pre_selection_hints: { owner_name: string; repo_name: string; owner_pre_sele
 
 **OAuth mode UI** (when `mode === "oauth"` and `is_github`):
 - "Connect with GitHub" primary button
-- Pre-selection hints (if `owner_pre_selected === false` or `repo_pre_selected === false`): show hint text like "Be sure to select the **{owner_name}** organization and the **{repo_name}** repository"
+- The backend returns `owner_pre_selected`, `repo_pre_selected`, `owner_name`, and `repo_name` in `OAuthStartResponse` for potential future use, but the frontend does not currently render pre-selection hints
 - While polling: show spinner with "Waiting for GitHub authorization..."
 - On error: show error with retry button
 - Subtle link below: "or use a Personal Access Token" → sets `mode = "pat"`
@@ -342,11 +348,13 @@ let pre_selection_hints: { owner_name: string; repo_name: string; owner_pre_sele
 - If `is_github`: subtle link "or connect with GitHub" → sets `mode = "oauth"`
 
 **OAuth flow logic:**
-1. On "Connect with GitHub" click: call `oauthStart(git_url)`
-2. Store `state`, display hints, open `install_url` in new tab via `window.open()`
+1. On "Connect with GitHub" click: pre-open a popup via `window.open("about:blank")` (to avoid popup blockers), then call `oauthStart(git_url)`
+2. Navigate the popup to `authorize_url` (the OAuth authorization page); hold `install_url` for later
 3. Start polling `oauthStatus(state)` every 2 seconds
-4. On `complete: true` with token: call `testAccess(git_url, oauth_token)` to verify, then `on_success(oauth_token, "github_oauth")`
-5. On error or 5-minute timeout: show error, stop polling
+4. On `complete: true` with token: call `testAccess(git_url, oauth_token)` to verify
+5. If access succeeds: call `on_success(oauth_token, "github_oauth")`
+6. If access fails (app not installed): show install step with `install_url`; user installs, then clicks "Verify Access" to re-check
+7. On error or 5-minute timeout: show error, stop polling
 
 ### `import_project.svelte`
 
@@ -385,13 +393,13 @@ Update the "Update Auth" form:
 
 ### Shared OAuth Logic
 
-The OAuth polling logic (start flow, open tab, poll, handle result) is shared between `step_credentials.svelte` and `git_sync_status.svelte`. Extract into a helper:
+The OAuth polling logic (start flow, open popup, poll, handle result) is in `oauth_flow.ts`. The authorize-first, install-if-needed orchestration (including `testAccess()` and the install step) is in `oauth_with_install.ts`.
 
-**`app/web_ui/src/lib/git_sync/oauth_flow.ts`**
+**`app/web_ui/src/lib/git_sync/oauth_flow.ts`** — Low-level flow: calls `oauthStart`, navigates popup to `authorize_url`, polls `oauthStatus`, handles timeout. Returns `{ cancel }` handle.
 
 ```typescript
 export type OAuthFlowCallbacks = {
-  onHints: (hints: OAuthStartResponse) => void
+  onStarted: (response: { install_url: string }) => void
   onPolling: () => void
   onSuccess: (token: string) => void
   onError: (error: string) => void
@@ -400,62 +408,36 @@ export type OAuthFlowCallbacks = {
 export function startOAuthFlow(
   git_url: string,
   callbacks: OAuthFlowCallbacks,
-): { cancel: () => void } {
-  // 1. Call oauthStart(git_url)
-  // 2. Open install_url in new tab
-  // 3. Poll oauthStatus every 2s
-  // 4. Call appropriate callback on completion/error/timeout
-  // Returns cancel handle to stop polling
-}
+  preOpenedPopup?: Window | null,
+): { cancel: () => void }
 ```
 
-## Setup URL Chaining
+**`app/web_ui/src/lib/git_sync/oauth_with_install.ts`** — Higher-level orchestration: wraps `startOAuthFlow`, calls `testAccess()` on success, and manages the install-if-needed state machine. Used by both `step_credentials.svelte` and `git_sync_status.svelte`.
 
-The GitHub App's "setup URL" is configured to our OAuth authorization URL. After the user installs the app, GitHub redirects to this URL, which initiates the OAuth authorization.
+```typescript
+export function createOAuthWithInstall(
+  options: OAuthWithInstallOptions,
+): OAuthWithInstallFlow
+```
 
-However, the setup URL is static (configured in GitHub App settings), and our OAuth authorize URL has dynamic params (`state`, `code_challenge`). Two options:
+## Setup URL and Authorize-First Design
 
-**Option A: Setup URL → backend redirect endpoint**
+The implementation uses an authorize-first, install-if-needed 2-step flow rather than chaining install into authorize via redirect. The frontend holds the `authorize_url` (returned by `/oauth/start`) and opens it directly in a popup. The `install_url` is only used if `testAccess()` fails after authorization.
 
-Configure the setup URL to point to a backend endpoint like `http://localhost:8757/api/git_sync/oauth/authorize`. This endpoint:
-1. Looks up the most recent pending `OAuthFlowState`
-2. Builds the full GitHub OAuth authorize URL with the correct `state` and `code_challenge`
-3. Redirects (302) to GitHub's authorize URL
+This avoids the complexity of dynamic redirect chaining (the setup URL is static, but OAuth authorize URLs have dynamic `state` and `code_challenge` params) and eliminates failure modes around re-installation when the app is already installed.
 
-This works because only one OAuth flow is active at a time in the desktop app.
+### `/api/git_sync/oauth/authorize` — Static Landing Page
 
-**Option B: Skip setup URL chaining — two separate redirects**
-
-Don't use the setup URL. Instead:
-1. Open the install URL in the browser
-2. Frontend detects when the user returns (tab is closed or focus returns) and prompts them to continue
-3. Frontend opens the OAuth authorize URL in a second tab
-
-Option A is cleaner (automatic chaining), but has a subtle race if the user starts a flow and then starts another before completing the first. Option B is more explicit but requires two browser tabs or a manual "Continue" click.
-
-**Recommendation: Option A.** The desktop app is single-user, so concurrent flows are unlikely. Add a guard: if multiple pending flows exist, use the most recent one.
-
-### Backend Redirect Endpoint
+The GitHub App's "setup URL" is configured to `http://localhost:8757/api/git_sync/oauth/authorize`. This endpoint is hit after the user completes GitHub App installation. It renders a static "Install Complete -- return to Kiln" HTML page. No redirect, no flow lookup.
 
 ```python
 @app.get("/api/git_sync/oauth/authorize")
-async def api_oauth_authorize():
-    """Setup URL redirect: after GitHub App install, redirect to OAuth authorize."""
-    flow = oauth_manager.get_most_recent_pending_flow()
-    if flow is None:
-        return HTMLResponse("No pending authorization. Please start over in Kiln.")
-    authorize_url = (
-        f"https://github.com/login/oauth/authorize"
-        f"?client_id={GITHUB_CLIENT_ID}"
-        f"&redirect_uri={CALLBACK_URL}"
-        f"&state={flow.state}"
-        f"&code_challenge={flow.code_challenge}"
-        f"&code_challenge_method=S256"
-    )
-    return RedirectResponse(authorize_url)
+async def api_oauth_installed() -> HTMLResponse:
+    return HTMLResponse(INSTALL_COMPLETE_HTML)
+# Where INSTALL_COMPLETE_HTML renders "Install Complete" with "Return to Kiln to continue setup"
 ```
 
-`OAuthFlowManager.get_most_recent_pending_flow()`: returns the flow with the highest `created_at` that is not yet complete.
+This keeps the install tab simple and avoids the app's setup-redirect logic from interfering with the popup.
 
 ## Error Handling
 
@@ -470,7 +452,7 @@ Token exchange errors propagate via `OAuthFlowState.error` → polled by fronten
 ### Unit Tests: `test_oauth.py`
 
 - **PKCE generation**: Verify format (URL-safe base64, correct length), verify challenge matches verifier via SHA256
-- **OAuthFlowManager**: Start flow, get flow, complete flow, consume flow, expired flow cleanup, state validation, get_most_recent_pending_flow
+- **OAuthFlowManager**: Start flow, get flow, complete flow, fail flow, consume flow, expired flow cleanup, state validation
 - **`build_install_url`**: With both IDs, with only owner ID, with neither, URL encoding
 - **`exchange_code_for_token`**: Mock HTTP responses — success, error, network failure
 - **`resolve_github_owner_id` / `resolve_github_repo_id`**: Mock HTTP — success, 404, network error, rate limit
