@@ -9,11 +9,16 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException, Query
 from fastapi import Path as FastAPIPath
 from fastapi.responses import HTMLResponse
+from kiln_ai.utils.config import Config
 from kiln_ai.utils.project_utils import (
     DuplicateProjectError,
     check_duplicate_project_id,
 )
-from kiln_server.project_api import add_project_to_config, default_project_path
+from kiln_server.project_api import (
+    add_project_to_config,
+    default_project_path,
+    project_from_id,
+)
 from kiln_server.utils.agent_checks import DENY_AGENT
 from pydantic import BaseModel, Field
 
@@ -34,6 +39,7 @@ from app.desktop.git_sync.config import (
     project_path_from_id,
     save_git_sync_config,
 )
+from app.desktop.git_sync.registry import GitSyncRegistry
 from app.desktop.git_sync.oauth import (
     OAuthError,
     OAuthFlowManager,
@@ -837,6 +843,41 @@ def connect_git_sync_api(app: FastAPI):
             )
 
         return OAuthStatusResponse(complete=False)
+
+    # Path intentionally outside /api/projects/* so GitSyncMiddleware does not
+    # intercept it. Delete only updates Kiln config (no git operations) and
+    # must succeed even when git credentials are dead.
+    @app.delete(
+        "/api/delete_project/{project_id}",
+        summary="Delete Project",
+        tags=["Projects"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def delete_project(
+        project_id: str = FastAPIPath(
+            description="The unique identifier of the project."
+        ),
+    ) -> dict:
+        """Removes the project from Kiln but does not delete the files from disk."""
+        project = project_from_id(project_id)
+
+        project_path_str = str(project.path)
+
+        projects_before = Config.shared().projects
+        projects_after = [p for p in projects_before if p != project_path_str]
+        Config.shared().save_setting("projects", projects_after)
+
+        git_sync = Config.shared().git_sync_projects or {}
+        clone_path = None
+        if project_path_str in git_sync:
+            clone_path = git_sync[project_path_str].get("clone_path")
+            git_sync.pop(project_path_str)
+            Config.shared().save_setting("git_sync_projects", git_sync)
+
+        if clone_path is not None:
+            await GitSyncRegistry.unregister(Path(clone_path))
+
+        return {"message": f"Project removed. ID: {project_id}"}
 
     @app.delete(
         "/api/git_sync/config/{project_id}",

@@ -60,26 +60,6 @@ export interface paths {
         patch: operations["update_project_api_projects__project_id__patch"];
         trace?: never;
     };
-    "/api/delete_project/{project_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /**
-         * Delete Project
-         * @description Removes the project from Kiln but does not delete the files from disk.
-         */
-        delete: operations["delete_project_api_delete_project__project_id__delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/import_project": {
         parameters: {
             query?: never;
@@ -2861,6 +2841,26 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/delete_project/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Project
+         * @description Removes the project from Kiln but does not delete the files from disk.
+         */
+        delete: operations["delete_project_api_delete_project__project_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -9801,40 +9801,6 @@ export interface operations {
             };
         };
     };
-    delete_project_api_delete_project__project_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     import_project_api_import_project_post: {
         parameters: {
             query: {
@@ -16268,6 +16234,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OAuthStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_project_api_delete_project__project_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

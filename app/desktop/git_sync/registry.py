@@ -93,6 +93,21 @@ class GitSyncRegistry:
         return list(cls._managers.values())
 
     @classmethod
+    async def unregister(cls, path: Path) -> None:
+        """Stop background sync and remove the manager for *path*.
+
+        Idempotent: calling on an unregistered path is a no-op.
+        """
+        resolved = path.resolve()
+        with cls._lock:
+            bg_sync = cls._background_syncs.pop(resolved, None)
+            manager = cls._managers.pop(resolved, None)
+        if bg_sync is not None:
+            await bg_sync.stop()
+        if manager is not None:
+            manager._git_executor.shutdown(wait=False)
+
+    @classmethod
     def reset(cls) -> None:
         """Clear all cached managers. For test teardown."""
         with cls._lock:

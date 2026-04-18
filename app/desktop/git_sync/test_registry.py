@@ -1,5 +1,9 @@
 import threading
+from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
+from app.desktop.git_sync.background_sync import BackgroundSync
 from app.desktop.git_sync.git_sync_manager import GitSyncManager
 from app.desktop.git_sync.registry import GitSyncRegistry
 
@@ -78,3 +82,39 @@ def test_thread_safety(git_repos):
 
     assert len(results) == 4
     assert all(r is results[0] for r in results)
+
+
+@pytest.mark.asyncio
+async def test_unregister_stops_background_sync_and_removes_manager(git_repos):
+    local_path, _ = git_repos
+    manager = GitSyncRegistry.get_or_create(local_path, auth_mode="system_keys")
+    assert GitSyncRegistry.get_manager(local_path) is manager
+
+    bg_sync = MagicMock(spec=BackgroundSync)
+    bg_sync.stop = AsyncMock()
+    GitSyncRegistry.register_background_sync(local_path, bg_sync)
+
+    await GitSyncRegistry.unregister(local_path)
+
+    assert GitSyncRegistry.get_manager(local_path) is None
+    assert GitSyncRegistry.get_background_sync(local_path) is None
+    bg_sync.stop.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_unregister_idempotent(git_repos):
+    local_path, _ = git_repos
+    GitSyncRegistry.get_or_create(local_path, auth_mode="system_keys")
+    bg_sync = MagicMock(spec=BackgroundSync)
+    bg_sync.stop = AsyncMock()
+    GitSyncRegistry.register_background_sync(local_path, bg_sync)
+
+    await GitSyncRegistry.unregister(local_path)
+    await GitSyncRegistry.unregister(local_path)
+
+    assert GitSyncRegistry.get_manager(local_path) is None
+
+
+@pytest.mark.asyncio
+async def test_unregister_unknown_path_is_noop(tmp_path):
+    await GitSyncRegistry.unregister(tmp_path / "nonexistent")

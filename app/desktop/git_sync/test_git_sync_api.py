@@ -1,10 +1,11 @@
 import json
-from unittest.mock import MagicMock, patch
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-
+from kiln_ai.utils.config import Config
 from kiln_ai.utils.project_utils import DuplicateProjectError
 
 from app.desktop.git_sync.git_sync_api import connect_git_sync_api
@@ -1066,3 +1067,114 @@ class TestSaveConfigClonePathValidation:
         assert (
             "clone_path must be within the project directory" in resp.json()["detail"]
         )
+
+
+class TestDeleteProject:
+    def test_delete_project_success(self, api_client):
+        mock_project = MagicMock(path="/path/to/project.kiln")
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.project_from_id",
+                return_value=mock_project,
+            ),
+            patch.object(Config, "shared") as mock_config,
+            patch(
+                "app.desktop.git_sync.git_sync_api.GitSyncRegistry.unregister",
+                new_callable=AsyncMock,
+            ) as mock_unregister,
+        ):
+            mock_config.return_value.projects = [
+                "/path/to/project.kiln",
+                "/path/to/other_project.kiln",
+            ]
+            mock_config.return_value.git_sync_projects = None
+            mock_config.return_value.save_setting = MagicMock()
+
+            response = api_client.delete("/api/delete_project/test-id")
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "Project removed. ID: test-id"}
+        mock_config.return_value.save_setting.assert_called_once_with(
+            "projects", ["/path/to/other_project.kiln"]
+        )
+        mock_unregister.assert_not_awaited()
+
+    def test_delete_project_cleans_up_git_sync(self, api_client):
+        mock_project = MagicMock(path="/path/to/project.kiln")
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.project_from_id",
+                return_value=mock_project,
+            ),
+            patch.object(Config, "shared") as mock_config,
+            patch(
+                "app.desktop.git_sync.git_sync_api.GitSyncRegistry.unregister",
+                new_callable=AsyncMock,
+            ) as mock_unregister,
+        ):
+            mock_config.return_value.projects = [
+                "/path/to/project.kiln",
+                "/path/to/other_project.kiln",
+            ]
+            mock_config.return_value.git_sync_projects = {
+                "/path/to/project.kiln": {
+                    "sync_mode": "auto",
+                    "branch": "main",
+                    "clone_path": "/path/to/clone",
+                },
+                "/path/to/other_project.kiln": {
+                    "sync_mode": "manual",
+                    "branch": "dev",
+                },
+            }
+            mock_config.return_value.save_setting = MagicMock()
+
+            response = api_client.delete("/api/delete_project/test-id")
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "Project removed. ID: test-id"}
+        assert mock_config.return_value.save_setting.call_count == 2
+        mock_config.return_value.save_setting.assert_any_call(
+            "projects", ["/path/to/other_project.kiln"]
+        )
+        mock_config.return_value.save_setting.assert_any_call(
+            "git_sync_projects",
+            {"/path/to/other_project.kiln": {"sync_mode": "manual", "branch": "dev"}},
+        )
+        mock_unregister.assert_awaited_once_with(Path("/path/to/clone"))
+
+    def test_delete_project_not_found(self, api_client):
+        with patch(
+            "app.desktop.git_sync.git_sync_api.project_from_id",
+            side_effect=HTTPException(
+                status_code=404, detail="Project not found. ID: non-existent-id"
+            ),
+        ):
+            response = api_client.delete("/api/delete_project/non-existent-id")
+
+        assert response.status_code == 404
+
+    def test_delete_non_git_synced_project(self, api_client):
+        mock_project = MagicMock(path="/path/to/project.kiln")
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.project_from_id",
+                return_value=mock_project,
+            ),
+            patch.object(Config, "shared") as mock_config,
+            patch(
+                "app.desktop.git_sync.git_sync_api.GitSyncRegistry.unregister",
+                new_callable=AsyncMock,
+            ) as mock_unregister,
+        ):
+            mock_config.return_value.projects = ["/path/to/project.kiln"]
+            mock_config.return_value.git_sync_projects = {
+                "/path/to/other.kiln": {"sync_mode": "auto", "branch": "main"},
+            }
+            mock_config.return_value.save_setting = MagicMock()
+
+            response = api_client.delete("/api/delete_project/test-id")
+
+        assert response.status_code == 200
+        mock_config.return_value.save_setting.assert_called_once_with("projects", [])
+        mock_unregister.assert_not_awaited()

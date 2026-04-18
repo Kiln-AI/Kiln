@@ -15,7 +15,6 @@ from kiln_ai.utils.project_utils import (
 
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
-    DENY_AGENT,
     agent_policy_require_approval,
 )
 
@@ -125,37 +124,6 @@ def connect_project_api(app: FastAPI):
         ],
     ) -> Project:
         return project_from_id(project_id)
-
-    # Path intentionally outside /api/projects/* so GitSyncMiddleware does not
-    # intercept it. Delete only updates Kiln config (no git operations) and
-    # must succeed even when git credentials are dead.
-    @app.delete(
-        "/api/delete_project/{project_id}",
-        summary="Delete Project",
-        tags=["Projects"],
-        openapi_extra=DENY_AGENT,
-    )
-    async def delete_project(
-        project_id: Annotated[
-            str, Path(description="The unique identifier of the project.")
-        ],
-    ) -> dict:
-        """Removes the project from Kiln but does not delete the files from disk."""
-        project = project_from_id(project_id)
-
-        # Remove from config
-        projects_before = Config.shared().projects
-        projects_after = [p for p in projects_before if p != str(project.path)]
-        Config.shared().save_setting("projects", projects_after)
-
-        # Remove git sync config for this project if it exists
-        git_sync = Config.shared().git_sync_projects or {}
-        project_path_str = str(project.path)
-        if project_path_str in git_sync:
-            git_sync.pop(project_path_str)
-            Config.shared().save_setting("git_sync_projects", git_sync)
-
-        return {"message": f"Project removed. ID: {project_id}"}
 
     @app.post(
         "/api/import_project",
