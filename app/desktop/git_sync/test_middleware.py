@@ -883,3 +883,65 @@ def test_delete_project_bypasses_middleware_when_fetch_would_fail():
 
     assert resp.status_code == 200
     assert resp.json() == {"message": f"Project removed. ID: {PROJECT_ID}"}
+
+
+# --- Dev-mode warning when endpoint resolution fails ---
+
+
+def test_unresolved_endpoint_warns_in_dev_mode(git_repos, monkeypatch, caplog):
+    """When _resolve_endpoint returns None for a project-scoped URL in dev mode,
+    a WARNING is logged with the request method and path."""
+    monkeypatch.setenv("KILN_DEV_MODE", "true")
+    local_path, _ = git_repos
+    config = _auto_config(str(local_path))
+    app = _build_app()
+
+    with (
+        mock_git_sync_config(config),
+        patch.object(
+            GitSyncMiddleware,
+            "_resolve_endpoint",
+            return_value=None,
+        ),
+        caplog.at_level(logging.WARNING, logger="app.desktop.git_sync.middleware"),
+    ):
+        client = TestClient(app)
+        resp = client.get(f"/api/projects/{PROJECT_ID}/items")
+
+    assert resp.status_code == 200
+    warning_records = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.WARNING and "could not resolve endpoint" in r.message
+    ]
+    assert len(warning_records) == 1
+    assert "GET" in warning_records[0].message
+    assert f"/api/projects/{PROJECT_ID}/items" in warning_records[0].message
+
+
+def test_unresolved_endpoint_no_warning_in_prod_mode(git_repos, monkeypatch, caplog):
+    """When dev mode is off, no warning is emitted even if endpoint is None."""
+    monkeypatch.delenv("KILN_DEV_MODE", raising=False)
+    local_path, _ = git_repos
+    config = _auto_config(str(local_path))
+    app = _build_app()
+
+    with (
+        mock_git_sync_config(config),
+        patch.object(
+            GitSyncMiddleware,
+            "_resolve_endpoint",
+            return_value=None,
+        ),
+        caplog.at_level(logging.WARNING, logger="app.desktop.git_sync.middleware"),
+    ):
+        client = TestClient(app)
+        resp = client.get(f"/api/projects/{PROJECT_ID}/items")
+
+    assert resp.status_code == 200
+    warning_records = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.WARNING and "could not resolve endpoint" in r.message
+    ]
+    assert len(warning_records) == 0

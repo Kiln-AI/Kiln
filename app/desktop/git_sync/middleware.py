@@ -78,6 +78,15 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
             return await self._unmatched_dispatch(request, call_next)
 
         endpoint = self._resolve_endpoint(request)
+        if endpoint is None and _is_dev_mode():
+            logger.warning(
+                "GitSyncMiddleware: could not resolve endpoint for "
+                "project-scoped URL %s %s. Falling back to HTTP-method-only "
+                "lock decision. If this is a @no_write_lock SSE endpoint, "
+                "the lock fallback may buffer the response.",
+                request.method,
+                request.url.path,
+            )
         needs_lock = (
             request.method in MUTATING_METHODS
             or getattr(endpoint, "_git_sync_write_lock", False)
