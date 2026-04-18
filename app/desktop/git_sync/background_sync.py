@@ -35,6 +35,8 @@ class BackgroundSync:
         self._wake_event.set()
 
     async def start(self) -> None:
+        if self._task is not None:
+            return
         self._last_request_time = time.monotonic()
         self._task = asyncio.create_task(self._poll_loop())
 

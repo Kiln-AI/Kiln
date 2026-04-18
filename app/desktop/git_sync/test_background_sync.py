@@ -102,6 +102,37 @@ async def test_stop_cancels_task(manager):
 
 
 @pytest.mark.asyncio
+async def test_start_is_idempotent(manager):
+    bg = BackgroundSync(manager, poll_interval=0.05, idle_pause_after=60.0)
+    await bg.start()
+    first_task = bg._task
+    assert first_task is not None
+
+    await bg.start()
+    assert bg._task is first_task
+
+    await bg.stop()
+
+
+@pytest.mark.asyncio
+async def test_start_stop_start_cycle(manager):
+    bg = BackgroundSync(manager, poll_interval=0.05, idle_pause_after=60.0)
+    await bg.start()
+    first_task = bg._task
+    assert first_task is not None
+
+    await bg.stop()
+    assert bg._task is None
+
+    await bg.start()
+    second_task = bg._task
+    assert second_task is not None
+    assert second_task is not first_task
+
+    await bg.stop()
+
+
+@pytest.mark.asyncio
 async def test_fast_forward_skipped_when_not_ff_able(manager, git_repos, second_clone):
     """When local has diverged (unpushed commits), background sync skips fast-forward."""
     local_path, _ = git_repos
