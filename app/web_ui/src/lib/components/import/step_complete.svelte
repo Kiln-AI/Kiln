@@ -6,6 +6,7 @@
     saveConfig,
     is_stale_clone_error,
   } from "$lib/git_sync/api"
+  import { clear_wizard_store } from "$lib/stores/git_import_wizard_store"
   import { load_projects } from "$lib/stores"
   import { onMount } from "svelte"
 
@@ -21,6 +22,10 @@
   export let on_complete: (project_id: string) => void
   export let on_back: () => void
   export let on_stale_clone: (() => void) | null = null
+
+  let display_project_name = project_name
+  let display_project_path = project_path
+  let display_branch = branch
 
   let saving = true
   let error: KilnError | null = null
@@ -55,6 +60,8 @@
         auth_mode: auth_mode,
         sync_mode: "auto",
       })
+
+      clear_wizard_store()
 
       try {
         await load_projects()
@@ -107,9 +114,10 @@
     <h2 class="text-xl font-medium">Git Auto Sync Enabled</h2>
 
     <p class="text-sm text-gray-500 text-center max-w-md">
-      Auto-sync is now active for "{project_name || project_path}". Changes will
-      be automatically committed and pushed to the
-      <span class="font-medium">{branch}</span> branch.
+      Auto-sync is now active for "{display_project_name ||
+        display_project_path}". Changes will be automatically committed and
+      pushed to the
+      <span class="font-medium">{display_branch}</span> branch.
     </p>
 
     <div class="flex flex-row gap-4 mt-4">
