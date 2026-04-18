@@ -574,6 +574,7 @@ def connect_git_sync_api(app: FastAPI):
         openapi_extra=DENY_AGENT,
     )
     async def api_save_config(request: SaveConfigRequest) -> GitSyncConfigResponse:
+        _validate_clone_path(request.clone_path)
         if Path(request.project_path).is_absolute():
             raise HTTPException(
                 status_code=400,

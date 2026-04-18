@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -218,8 +217,14 @@ class TestScanProjects:
 
 
 class TestSaveAndGetConfig:
-    def test_save_and_retrieve(self, api_client):
+    def test_save_and_retrieve(self, api_client, tmp_path):
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
         with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.default_project_path",
+                return_value=str(tmp_path),
+            ),
             patch("app.desktop.git_sync.git_sync_api.save_git_sync_config"),
             patch("app.desktop.git_sync.git_sync_api.add_project_to_config"),
         ):
@@ -229,7 +234,7 @@ class TestSaveAndGetConfig:
                     "project_id": "proj1",
                     "project_path": "project.kiln",
                     "git_url": "https://github.com/test/repo.git",
-                    "clone_path": "/tmp/clone",
+                    "clone_path": str(clone_dir),
                     "branch": "main",
                     "pat_token": "ghp_test",
                 },
@@ -239,11 +244,19 @@ class TestSaveAndGetConfig:
         assert data["has_pat_token"] is True
         assert "pat_token" not in data
 
-    def test_save_duplicate_same_path(self, api_client):
-        with patch(
-            "app.desktop.git_sync.git_sync_api.check_duplicate_project_id",
-            side_effect=DuplicateProjectError(
-                "This project is already imported.", same_path=True
+    def test_save_duplicate_same_path(self, api_client, tmp_path):
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.default_project_path",
+                return_value=str(tmp_path),
+            ),
+            patch(
+                "app.desktop.git_sync.git_sync_api.check_duplicate_project_id",
+                side_effect=DuplicateProjectError(
+                    "This project is already imported.", same_path=True
+                ),
             ),
         ):
             resp = api_client.post(
@@ -252,19 +265,27 @@ class TestSaveAndGetConfig:
                     "project_id": "proj1",
                     "project_path": "project.kiln",
                     "git_url": "https://github.com/test/repo.git",
-                    "clone_path": "/tmp/clone",
+                    "clone_path": str(clone_dir),
                     "branch": "main",
                 },
             )
         assert resp.status_code == 409
         assert "already imported" in resp.json()["detail"]
 
-    def test_save_duplicate_different_path(self, api_client):
-        with patch(
-            "app.desktop.git_sync.git_sync_api.check_duplicate_project_id",
-            side_effect=DuplicateProjectError(
-                'You already have a project with this ID. You must remove project "Existing" before adding this.',
-                same_path=False,
+    def test_save_duplicate_different_path(self, api_client, tmp_path):
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.default_project_path",
+                return_value=str(tmp_path),
+            ),
+            patch(
+                "app.desktop.git_sync.git_sync_api.check_duplicate_project_id",
+                side_effect=DuplicateProjectError(
+                    'You already have a project with this ID. You must remove project "Existing" before adding this.',
+                    same_path=False,
+                ),
             ),
         ):
             resp = api_client.post(
@@ -273,15 +294,21 @@ class TestSaveAndGetConfig:
                     "project_id": "proj1",
                     "project_path": "project.kiln",
                     "git_url": "https://github.com/test/repo.git",
-                    "clone_path": "/tmp/clone",
+                    "clone_path": str(clone_dir),
                     "branch": "main",
                 },
             )
         assert resp.status_code == 409
         assert "remove project" in resp.json()["detail"]
 
-    def test_save_adds_project_to_config(self, api_client):
+    def test_save_adds_project_to_config(self, api_client, tmp_path):
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
         with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.default_project_path",
+                return_value=str(tmp_path),
+            ),
             patch(
                 "app.desktop.git_sync.git_sync_api.save_git_sync_config"
             ) as mock_save,
@@ -295,14 +322,14 @@ class TestSaveAndGetConfig:
                     "project_id": "proj1",
                     "project_path": "subdir/project.kiln",
                     "git_url": "https://github.com/test/repo.git",
-                    "clone_path": "/tmp/clone",
+                    "clone_path": str(clone_dir),
                     "branch": "main",
                 },
             )
         assert resp.status_code == 200
         mock_save.assert_called_once()
         saved_key = mock_save.call_args[0][0]
-        expected = str(Path("/tmp/clone/subdir/project.kiln").resolve())
+        expected = str((clone_dir / "subdir/project.kiln").resolve())
         assert saved_key == expected
         mock_add.assert_called_once_with(expected)
 
@@ -803,8 +830,14 @@ class TestOAuthStatus:
 
 
 class TestOAuthTokenInConfig:
-    def test_save_config_with_oauth_token(self, api_client):
+    def test_save_config_with_oauth_token(self, api_client, tmp_path):
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
         with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.default_project_path",
+                return_value=str(tmp_path),
+            ),
             patch("app.desktop.git_sync.git_sync_api.save_git_sync_config"),
             patch("app.desktop.git_sync.git_sync_api.add_project_to_config"),
         ):
@@ -814,7 +847,7 @@ class TestOAuthTokenInConfig:
                     "project_id": "proj1",
                     "project_path": "project.kiln",
                     "git_url": "https://github.com/test/repo.git",
-                    "clone_path": "/tmp/clone",
+                    "clone_path": str(clone_dir),
                     "branch": "main",
                     "auth_mode": "github_oauth",
                     "oauth_token": "ghu_token",
@@ -956,3 +989,26 @@ class TestOAuthTokenInConfig:
         saved_config = mock_save.call_args[0][1]
         assert saved_config["pat_token"] is None
         assert saved_config["oauth_token"] is None
+
+
+class TestSaveConfigClonePathValidation:
+    def test_rejects_clone_path_outside_project_directory(self, api_client, tmp_path):
+        with patch(
+            "app.desktop.git_sync.git_sync_api.default_project_path",
+            return_value=str(tmp_path),
+        ):
+            resp = api_client.post(
+                "/api/git_sync/save_config",
+                json={
+                    "project_id": "proj1",
+                    "project_path": "project.kiln",
+                    "git_url": "https://github.com/test/repo.git",
+                    "clone_path": "/some/arbitrary/path",
+                    "branch": "main",
+                    "auth_mode": "system_keys",
+                },
+            )
+        assert resp.status_code == 400
+        assert (
+            "clone_path must be within the project directory" in resp.json()["detail"]
+        )
