@@ -100,6 +100,19 @@ class TestListBranches:
             )
         assert resp.status_code == 400
 
+    def test_error_does_not_leak_internal_details(self, api_client, caplog):
+        sentinel = "https://user:ghp_SECRET_TOKEN@github.com/org/repo.git"
+        with patch("app.desktop.git_sync.git_sync_api.list_remote_branches") as mock:
+            mock.side_effect = Exception(sentinel)
+            resp = api_client.post(
+                "/api/git_sync/list_branches",
+                json={"git_url": "https://github.com/test/repo.git"},
+            )
+        assert resp.status_code == 400
+        assert sentinel not in resp.json()["detail"]
+        assert resp.json()["detail"] == "Failed to list branches"
+        assert sentinel in caplog.text
+
 
 class TestClone:
     def test_success(self, api_client, tmp_path):
@@ -203,6 +216,37 @@ class TestClone:
             )
         assert resp.status_code == 401
         assert not clone_dir.exists()
+
+    def test_clone_error_does_not_leak_internal_details(
+        self, api_client, tmp_path, caplog
+    ):
+        sentinel = "pygit2 internal /Users/someone/private/path"
+        clone_dir = tmp_path / "kiln_clone_temp"
+        clone_dir.mkdir()
+
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.default_project_path"
+            ) as mock_path,
+            patch("app.desktop.git_sync.git_sync_api.clone_repo") as mock_clone,
+            patch(
+                "app.desktop.git_sync.git_sync_api.compute_temp_clone_path"
+            ) as mock_compute,
+        ):
+            mock_path.return_value = str(tmp_path)
+            mock_compute.return_value = clone_dir
+            mock_clone.side_effect = Exception(sentinel)
+            resp = api_client.post(
+                "/api/git_sync/clone",
+                json={
+                    "git_url": "https://github.com/test/repo.git",
+                    "branch": "main",
+                },
+            )
+        assert resp.status_code == 400
+        assert sentinel not in resp.json()["detail"]
+        assert resp.json()["detail"] == "Clone failed"
+        assert sentinel in caplog.text
 
 
 class TestTestWriteAccess:
@@ -577,6 +621,36 @@ class TestRenameClone:
                 },
             )
         assert resp.status_code == 400
+
+    def test_rename_error_does_not_leak_internal_details(
+        self, api_client, tmp_path, caplog
+    ):
+        sentinel = "https://user:ghp_SECRET_TOKEN@github.com/org/repo.git"
+        clone_dir = tmp_path / "kiln_clone_abc"
+        clone_dir.mkdir()
+
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.default_project_path"
+            ) as mock_path,
+            patch(
+                "app.desktop.git_sync.git_sync_api.rename_clone_to_final_path"
+            ) as mock_rename,
+        ):
+            mock_path.return_value = str(tmp_path)
+            mock_rename.side_effect = Exception(sentinel)
+            resp = api_client.post(
+                "/api/git_sync/rename_clone",
+                json={
+                    "clone_path": str(clone_dir),
+                    "project_name": "Test",
+                    "project_id": "proj_123",
+                },
+            )
+        assert resp.status_code == 500
+        assert sentinel not in resp.json()["detail"]
+        assert resp.json()["detail"] == "Failed to rename clone"
+        assert sentinel in caplog.text
 
 
 class TestDeleteConfig:

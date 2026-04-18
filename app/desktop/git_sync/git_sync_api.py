@@ -455,7 +455,8 @@ def connect_git_sync_api(app: FastAPI):
                 branches=branches, default_branch=default_branch
             )
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Failed to list branches: {e}")
+            logger.exception(f"Failed to list branches: {e}")
+            raise HTTPException(status_code=400, detail="Failed to list branches")
 
     @app.post(
         "/api/git_sync/clone",
@@ -489,7 +490,8 @@ def connect_git_sync_api(app: FastAPI):
                     status_code=401,
                     detail="Authentication failed - check your token permissions",
                 )
-            raise HTTPException(status_code=400, detail=f"Clone failed: {e}")
+            logger.exception(f"Clone failed: {e}")
+            raise HTTPException(status_code=400, detail="Clone failed")
 
     @app.post(
         "/api/git_sync/test_write_access",
@@ -572,7 +574,8 @@ def connect_git_sync_api(app: FastAPI):
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to rename clone: {e}")
+            logger.exception(f"Failed to rename clone: {e}")
+            raise HTTPException(status_code=500, detail="Failed to rename clone")
 
     @app.post(
         "/api/git_sync/save_config",
