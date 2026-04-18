@@ -742,3 +742,30 @@ def test_sensitive_keys_hidden_in_nested_and_top_level_dict():
     assert git_sync["pat_token"] == "[hidden]"
     assert git_sync["project1"]["pat_token"] == "[hidden]"
     assert git_sync["project1"]["name"] == "my_project"
+
+
+def test_oauth_token_hidden_in_git_sync_projects():
+    """Test that oauth_token is redacted from git_sync_projects when hide_sensitive=True."""
+    config = Config.shared()
+
+    config.save_setting(
+        "git_sync_projects",
+        {
+            "project1": {
+                "oauth_token": "gho_secret_oauth_value",
+                "pat_token": "ghp_secret_pat_value",
+                "repo_url": "https://github.com/example/repo",
+            },
+        },
+    )
+
+    hidden_settings = config.settings(hide_sensitive=True)
+    project1 = hidden_settings["git_sync_projects"]["project1"]
+    assert project1["oauth_token"] == "[hidden]"
+    assert project1["pat_token"] == "[hidden]"
+    assert project1["repo_url"] == "https://github.com/example/repo"
+
+    visible_settings = config.settings(hide_sensitive=False)
+    project1_visible = visible_settings["git_sync_projects"]["project1"]
+    assert project1_visible["oauth_token"] == "gho_secret_oauth_value"
+    assert project1_visible["pat_token"] == "ghp_secret_pat_value"
