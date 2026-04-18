@@ -77,7 +77,11 @@
         return
       }
 
-      const result = await testAccess(git_url, pat_token)
+      const result = await testAccess(
+        git_url,
+        pat_token,
+        pat_token ? "pat_token" : "system_keys",
+      )
 
       if (result.success && result.auth_method) {
         on_success(git_url, result.auth_method)

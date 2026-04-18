@@ -118,7 +118,11 @@
       token_error = null
 
       if (config.git_url) {
-        const result = await testAccess(config.git_url, new_pat_token)
+        const result = await testAccess(
+          config.git_url,
+          new_pat_token,
+          "pat_token",
+        )
         if (!result.success) {
           token_error = new KilnError(result.message)
           return
