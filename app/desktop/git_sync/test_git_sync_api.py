@@ -149,6 +149,60 @@ class TestClone:
             )
         assert resp.status_code == 401
 
+    def test_clone_failure_cleans_up_temp_dir(self, api_client, tmp_path):
+        clone_dir = tmp_path / "kiln_clone_temp"
+        clone_dir.mkdir()
+        (clone_dir / "partial_file").write_text("partial")
+
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.default_project_path"
+            ) as mock_path,
+            patch("app.desktop.git_sync.git_sync_api.clone_repo") as mock_clone,
+            patch(
+                "app.desktop.git_sync.git_sync_api.compute_temp_clone_path"
+            ) as mock_compute,
+        ):
+            mock_path.return_value = str(tmp_path)
+            mock_compute.return_value = clone_dir
+            mock_clone.side_effect = Exception("network timeout")
+            resp = api_client.post(
+                "/api/git_sync/clone",
+                json={
+                    "git_url": "https://github.com/test/repo.git",
+                    "branch": "main",
+                },
+            )
+        assert resp.status_code == 400
+        assert "Clone failed" in resp.json()["detail"]
+        assert not clone_dir.exists()
+
+    def test_clone_auth_failure_cleans_up_temp_dir(self, api_client, tmp_path):
+        clone_dir = tmp_path / "kiln_clone_temp"
+        clone_dir.mkdir()
+
+        with (
+            patch(
+                "app.desktop.git_sync.git_sync_api.default_project_path"
+            ) as mock_path,
+            patch("app.desktop.git_sync.git_sync_api.clone_repo") as mock_clone,
+            patch(
+                "app.desktop.git_sync.git_sync_api.compute_temp_clone_path"
+            ) as mock_compute,
+        ):
+            mock_path.return_value = str(tmp_path)
+            mock_compute.return_value = clone_dir
+            mock_clone.side_effect = Exception("403 Forbidden")
+            resp = api_client.post(
+                "/api/git_sync/clone",
+                json={
+                    "git_url": "https://github.com/test/repo.git",
+                    "branch": "main",
+                },
+            )
+        assert resp.status_code == 401
+        assert not clone_dir.exists()
+
 
 class TestTestWriteAccess:
     def test_success(self, api_client, tmp_path):

@@ -2,6 +2,7 @@ import asyncio
 import html
 import logging
 import os
+import shutil
 from pathlib import Path
 from typing import Literal
 
@@ -457,9 +458,8 @@ def connect_git_sync_api(app: FastAPI):
         openapi_extra=DENY_AGENT,
     )
     async def api_clone(request: CloneRequest) -> CloneResponse:
+        clone_path = compute_temp_clone_path(Path(default_project_path()))
         try:
-            clone_path = compute_temp_clone_path(Path(default_project_path()))
-
             await asyncio.to_thread(
                 clone_repo,
                 request.git_url,
@@ -476,6 +476,7 @@ def connect_git_sync_api(app: FastAPI):
                 message="Repository cloned successfully",
             )
         except Exception as e:
+            shutil.rmtree(clone_path, ignore_errors=True)
             error_str = str(e).lower()
             if "401" in error_str or "403" in error_str or "auth" in error_str:
                 raise HTTPException(
