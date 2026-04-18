@@ -93,6 +93,10 @@ tags_metadata = [
         "description": "List and manage AI providers and models.",
     },
     {
+        "name": "Git Sync",
+        "description": "Git-based synchronization setup, configuration, and management.",
+    },
+    {
         "name": "Settings & Utilities",
         "description": "Server settings, connectivity checks, and utility endpoints.",
     },

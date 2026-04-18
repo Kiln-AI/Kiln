@@ -37,7 +37,11 @@
 <div
   class="flex-none min-h-[50vh] py-8 px-4 h-full flex flex-col py-18 mx-auto w-full max-w-[500px]"
 >
-  <EditProject redirect_on_created="/setup/create_task" bind:project />
+  <EditProject
+    redirect_on_created="/setup/create_task"
+    import_link="/setup/import_project"
+    bind:project
+  />
 </div>
 
 <div class="grow-[1.5]"></div>

@@ -53,11 +53,7 @@ export interface paths {
         get: operations["get_project_api_projects__project_id__get"];
         put?: never;
         post?: never;
-        /**
-         * Delete Project
-         * @description Removes the project from Kiln but does not delete the files from disk.
-         */
-        delete: operations["delete_project_api_projects__project_id__delete"];
+        delete?: never;
         options?: never;
         head?: never;
         /** Update Project */
@@ -2628,6 +2624,232 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/git_sync/test_access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Git Remote Access */
+        post: operations["api_test_access_api_git_sync_test_access_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/list_branches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** List Remote Branches */
+        post: operations["api_list_branches_api_git_sync_list_branches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clone Repository */
+        post: operations["api_clone_api_git_sync_clone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/test_write_access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Write Access */
+        post: operations["api_test_write_access_api_git_sync_test_write_access_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/scan_projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Scan for Kiln Projects */
+        post: operations["api_scan_projects_api_git_sync_scan_projects_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/rename_clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rename Clone to Final Path */
+        post: operations["api_rename_clone_api_git_sync_rename_clone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/save_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save Git Sync Config */
+        post: operations["api_save_config_api_git_sync_save_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/config/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Git Sync Config */
+        get: operations["api_get_config_api_git_sync_config__project_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Git Sync Config */
+        delete: operations["api_delete_config_api_git_sync_config__project_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Git Sync Config */
+        patch: operations["api_update_config_api_git_sync_config__project_id__patch"];
+        trace?: never;
+    };
+    "/api/git_sync/oauth/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start GitHub OAuth Flow */
+        post: operations["api_oauth_start_api_git_sync_oauth_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** OAuth Callback */
+        get: operations["api_oauth_callback_api_git_sync_oauth_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/oauth/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GitHub App Install Complete */
+        get: operations["api_oauth_installed_api_git_sync_oauth_authorize_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/oauth/status/{state}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** OAuth Flow Status */
+        get: operations["api_oauth_status_api_git_sync_oauth_status__state__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/delete_project/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Project
+         * @description Removes the project from Kiln but does not delete the files from disk.
+         */
+        delete: operations["delete_project_api_delete_project__project_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat/execute-tools": {
         parameters: {
             query?: never;
@@ -3359,6 +3581,60 @@ export interface components {
             examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
             judge_result: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
             sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Output"];
+        };
+        /**
+         * CloneRequest
+         * @description Request to clone a git repository into a temporary directory.
+         */
+        CloneRequest: {
+            /**
+             * Git Url
+             * @description The git remote URL to clone.
+             */
+            git_url: string;
+            /**
+             * Branch
+             * @description The branch to check out after cloning.
+             */
+            branch: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+            /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
+        };
+        /**
+         * CloneResponse
+         * @description Result of a clone operation.
+         */
+        CloneResponse: {
+            /**
+             * Clone Path
+             * @description Filesystem path where the repo was cloned.
+             */
+            clone_path: string;
+            /**
+             * Success
+             * @description Whether the clone succeeded.
+             */
+            success: boolean;
+            /**
+             * Message
+             * @description Human-readable result message.
+             */
+            message: string;
         };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
@@ -4156,6 +4432,17 @@ export interface components {
          * @enum {string}
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
+        /**
+         * DeleteConfigResponse
+         * @description Confirmation that a git sync configuration was deleted.
+         */
+        DeleteConfigResponse: {
+            /**
+             * Message
+             * @description Human-readable confirmation message.
+             */
+            message: string;
+        };
         /** DesiredBehaviourProperties */
         DesiredBehaviourProperties: {
             /**
@@ -5648,6 +5935,57 @@ export interface components {
              */
             rag_config_ids?: string[] | null;
         };
+        /**
+         * GitSyncConfigResponse
+         * @description Current git sync configuration for a project (PAT redacted).
+         */
+        GitSyncConfigResponse: {
+            /**
+             * Sync Mode
+             * @description Sync mode: 'auto' or 'manual'.
+             * @enum {string}
+             */
+            sync_mode: "auto" | "manual";
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
+            /**
+             * Remote Name
+             * @description Git remote name.
+             */
+            remote_name: string;
+            /**
+             * Branch
+             * @description Branch name being synced.
+             */
+            branch: string;
+            /**
+             * Clone Path
+             * @description Local filesystem path of the clone.
+             */
+            clone_path?: string | null;
+            /**
+             * Git Url
+             * @description The git remote URL.
+             */
+            git_url?: string | null;
+            /**
+             * Has Pat Token
+             * @description Whether a PAT token is configured (token not shown).
+             * @default false
+             */
+            has_pat_token: boolean;
+            /**
+             * Has Oauth Token
+             * @description Whether an OAuth token is configured (token not shown).
+             * @default false
+             */
+            has_oauth_token: boolean;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -5985,6 +6323,50 @@ export interface components {
              */
             similarity_top_k: number;
         };
+        /**
+         * ListBranchesRequest
+         * @description Request to list branches on a git remote.
+         */
+        ListBranchesRequest: {
+            /**
+             * Git Url
+             * @description The git remote URL to list branches from.
+             */
+            git_url: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+            /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
+        };
+        /**
+         * ListBranchesResponse
+         * @description List of branches available on the remote.
+         */
+        ListBranchesResponse: {
+            /**
+             * Branches
+             * @description Branch names available on the remote.
+             */
+            branches: string[];
+            /**
+             * Default Branch
+             * @description The HEAD branch of the remote, if detected.
+             */
+            default_branch?: string | null;
+        };
         /** LitellmExtractorConfigProperties */
         LitellmExtractorConfigProperties: {
             /**
@@ -6258,6 +6640,79 @@ export interface components {
             /** Nsfw Examples */
             nsfw_examples: string;
         };
+        /**
+         * OAuthStartRequest
+         * @description Request to start a GitHub OAuth flow.
+         */
+        OAuthStartRequest: {
+            /**
+             * Git Url
+             * @description The git remote URL to authenticate against.
+             */
+            git_url: string;
+        };
+        /**
+         * OAuthStartResponse
+         * @description Response from starting a GitHub OAuth flow.
+         */
+        OAuthStartResponse: {
+            /**
+             * Authorize Url
+             * @description GitHub OAuth authorization URL to open in the browser.
+             */
+            authorize_url: string;
+            /**
+             * Install Url
+             * @description GitHub App installation URL (used if app not yet installed on repo).
+             */
+            install_url: string;
+            /**
+             * State
+             * @description OAuth state parameter for polling.
+             */
+            state: string;
+            /**
+             * Owner Name
+             * @description Parsed owner name from git URL.
+             */
+            owner_name: string;
+            /**
+             * Repo Name
+             * @description Parsed repo name from git URL.
+             */
+            repo_name: string;
+            /**
+             * Owner Pre Selected
+             * @description Whether the owner was pre-selected in the install URL.
+             */
+            owner_pre_selected: boolean;
+            /**
+             * Repo Pre Selected
+             * @description Whether the repo was pre-selected in the install URL.
+             */
+            repo_pre_selected: boolean;
+        };
+        /**
+         * OAuthStatusResponse
+         * @description Status of an in-progress OAuth flow.
+         */
+        OAuthStatusResponse: {
+            /**
+             * Complete
+             * @description Whether the OAuth flow has completed.
+             */
+            complete: boolean;
+            /**
+             * Oauth Token
+             * @description The OAuth token, if flow completed successfully.
+             */
+            oauth_token?: string | null;
+            /**
+             * Error
+             * @description Error message, if flow failed.
+             */
+            error?: string | null;
+        };
         /** OllamaConnection */
         OllamaConnection: {
             /** Message */
@@ -6444,6 +6899,33 @@ export interface components {
             description?: string | null;
             /** Model Type */
             readonly model_type: string;
+        };
+        /**
+         * ProjectInfo
+         * @description Metadata about a discovered Kiln project.
+         */
+        ProjectInfo: {
+            /**
+             * Path
+             * @description Relative path to the project.kiln file.
+             */
+            path: string;
+            /**
+             * Name
+             * @description Project name from the project file.
+             */
+            name: string;
+            /**
+             * Description
+             * @description Project description from the project file.
+             */
+            description: string;
+            /**
+             * Id
+             * @description Unique project identifier.
+             * @default
+             */
+            id: string;
         };
         /**
          * Prompt
@@ -7124,6 +7606,48 @@ export interface components {
             is_archived: boolean;
         };
         /**
+         * RenameCloneRequest
+         * @description Request to rename a temp clone directory to its final path.
+         */
+        RenameCloneRequest: {
+            /**
+             * Clone Path
+             * @description Current filesystem path of the cloned repo (typically in .tmp/).
+             */
+            clone_path: string;
+            /**
+             * Project Name
+             * @description Human-readable project name for the final directory.
+             */
+            project_name: string;
+            /**
+             * Project Id
+             * @description Unique project identifier used in the final path.
+             */
+            project_id: string;
+        };
+        /**
+         * RenameCloneResponse
+         * @description Result of renaming a clone directory.
+         */
+        RenameCloneResponse: {
+            /**
+             * New Clone Path
+             * @description The new filesystem path of the renamed clone.
+             */
+            new_clone_path: string;
+            /**
+             * Success
+             * @description Whether the rename succeeded.
+             */
+            success: boolean;
+            /**
+             * Message
+             * @description Human-readable result message.
+             */
+            message: string;
+        };
+        /**
          * RepairRunPost
          * @description Request to save a repair for a task run.
          */
@@ -7390,6 +7914,67 @@ export interface components {
             /** Output */
             output: string;
         };
+        /**
+         * SaveConfigRequest
+         * @description Request to save a complete git sync configuration for a project.
+         */
+        SaveConfigRequest: {
+            /**
+             * Project Id
+             * @description Unique project identifier.
+             */
+            project_id: string;
+            /**
+             * Project Path
+             * @description Relative path to the project.kiln file within the clone.
+             */
+            project_path: string;
+            /**
+             * Git Url
+             * @description The git remote URL.
+             */
+            git_url: string;
+            /**
+             * Clone Path
+             * @description Local filesystem path of the clone.
+             */
+            clone_path: string;
+            /**
+             * Branch
+             * @description Branch name to sync.
+             */
+            branch: string;
+            /**
+             * Remote Name
+             * @description Git remote name.
+             * @default origin
+             */
+            remote_name: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+            /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode detected during setup: 'system_keys', 'pat_token', or 'github_oauth'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
+            /**
+             * Sync Mode
+             * @description Sync mode: 'auto' or 'manual'.
+             * @default auto
+             * @enum {string}
+             */
+            sync_mode: "auto" | "manual";
+        };
         /** SaveQnaPairInput */
         SaveQnaPairInput: {
             /**
@@ -7417,6 +8002,28 @@ export interface components {
              * @description Optional tags
              */
             tags?: string[] | null;
+        };
+        /**
+         * ScanProjectsRequest
+         * @description Request to scan a cloned repo for Kiln project files.
+         */
+        ScanProjectsRequest: {
+            /**
+             * Clone Path
+             * @description Local filesystem path of the cloned repo.
+             */
+            clone_path: string;
+        };
+        /**
+         * ScanProjectsResponse
+         * @description Projects discovered inside a cloned repository.
+         */
+        ScanProjectsResponse: {
+            /**
+             * Projects
+             * @description List of discovered projects.
+             */
+            projects: components["schemas"]["ProjectInfo"][];
         };
         /**
          * ScoreSummary
@@ -8535,6 +9142,89 @@ export interface components {
              */
             incompatibility_reason?: string | null;
         };
+        /**
+         * TestAccessRequest
+         * @description Request to test read access to a git remote.
+         */
+        TestAccessRequest: {
+            /**
+             * Git Url
+             * @description The git remote URL to test access against.
+             */
+            git_url: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+            /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
+        };
+        /**
+         * TestAccessResponse
+         * @description Result of a git remote access test.
+         */
+        TestAccessResponse: {
+            /**
+             * Success
+             * @description Whether access to the remote succeeded.
+             */
+            success: boolean;
+            /**
+             * Message
+             * @description Human-readable result message.
+             */
+            message: string;
+            /**
+             * Auth Required
+             * @description True when the failure is due to missing authentication.
+             * @default false
+             */
+            auth_required: boolean;
+            /**
+             * Auth Method
+             * @description Auth method that succeeded: 'system_keys', 'pat_token', or 'github_oauth'. Null on failure.
+             */
+            auth_method?: string | null;
+        };
+        /**
+         * TestWriteAccessRequest
+         * @description Request to test push/write access to a cloned repo's remote.
+         */
+        TestWriteAccessRequest: {
+            /**
+             * Clone Path
+             * @description Local filesystem path of the cloned repo.
+             */
+            clone_path: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+            /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
+        };
         /** ToneProperties */
         ToneProperties: {
             /**
@@ -8671,6 +9361,32 @@ export interface components {
             name: string;
             /** Arguments */
             arguments: string;
+        };
+        /**
+         * UpdateConfigRequest
+         * @description Request to partially update a git sync configuration.
+         */
+        UpdateConfigRequest: {
+            /**
+             * Sync Mode
+             * @description New sync mode, if changing.
+             */
+            sync_mode?: ("auto" | "manual") | null;
+            /**
+             * Pat Token
+             * @description New personal access token, if changing.
+             */
+            pat_token?: string | null;
+            /**
+             * Oauth Token
+             * @description New OAuth token, if changing.
+             */
+            oauth_token?: string | null;
+            /**
+             * Auth Mode
+             * @description New auth mode, if changing.
+             */
+            auth_mode?: ("system_keys" | "pat_token" | "github_oauth") | null;
         };
         /**
          * UpdateEvalRequest
@@ -9018,40 +9734,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Project-Output"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_project_api_projects__project_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
                 };
             };
             /** @description Validation Error */
@@ -15082,6 +15764,494 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Spec"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_test_access_api_git_sync_test_access_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestAccessRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestAccessResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_list_branches_api_git_sync_list_branches_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListBranchesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListBranchesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_clone_api_git_sync_clone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloneResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_test_write_access_api_git_sync_test_write_access_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestWriteAccessRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestAccessResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_scan_projects_api_git_sync_scan_projects_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScanProjectsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanProjectsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_rename_clone_api_git_sync_rename_clone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameCloneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenameCloneResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_save_config_api_git_sync_save_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitSyncConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_get_config_api_git_sync_config__project_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitSyncConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_delete_config_api_git_sync_config__project_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_update_config_api_git_sync_config__project_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitSyncConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_oauth_start_api_git_sync_oauth_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthStartResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_oauth_callback_api_git_sync_oauth_callback_get: {
+        parameters: {
+            query?: {
+                /** @description OAuth state parameter linking the callback to a pending flow. */
+                state?: string;
+                /** @description Authorization code from GitHub to exchange for an access token. */
+                code?: string;
+                /** @description Error code returned by GitHub if authorization was denied. */
+                error?: string;
+                /** @description Human-readable description of the error from GitHub. */
+                error_description?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_oauth_installed_api_git_sync_oauth_authorize_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_oauth_status_api_git_sync_oauth_status__state__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The OAuth state parameter to check. */
+                state: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_project_api_delete_project__project_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

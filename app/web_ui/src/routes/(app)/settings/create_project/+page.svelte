@@ -15,6 +15,9 @@
     title="Add Project"
     subtitle="Projects are a collection of tasks, results, evals, and other resources."
   >
-    <EditProject redirect_on_created="/settings/create_task" />
+    <EditProject
+      redirect_on_created="/settings/create_task"
+      import_link="/settings/import_project"
+    />
   </AppPage>
 </div>

@@ -1,7 +1,7 @@
 import json
 from typing import Annotated, Any, Dict, List, Set, Tuple
 
-from fastapi import FastAPI, HTTPException, Path, Query
+from fastapi import FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.eval.eval_runner import EvalRunner
 from kiln_ai.adapters.fine_tune.finetune_run_config_id import (
@@ -29,6 +29,7 @@ from kiln_ai.datamodel.spec import SpecStatus
 from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
+from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -766,7 +767,9 @@ def connect_evals_api(app: FastAPI):
         tags=["Evals"],
         openapi_extra=agent_policy_require_approval("Run eval comparison?"),
     )
+    @no_write_lock
     async def run_eval_config(
+        request: Request,
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -812,6 +815,7 @@ def connect_evals_api(app: FastAPI):
             eval_configs=[eval_config],
             run_configs=run_configs,
             eval_run_type="task_run_eval",
+            save_context=build_save_context(request),
         )
 
         return await run_eval_runner_with_status(eval_runner)
@@ -870,7 +874,9 @@ def connect_evals_api(app: FastAPI):
             "Run eval calibration? This runs LLM calls across all eval configs and uses AI credits."
         ),
     )
+    @no_write_lock
     async def run_eval_config_eval(
+        request: Request,
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -887,6 +893,7 @@ def connect_evals_api(app: FastAPI):
             eval_configs=eval_configs,
             run_configs=None,
             eval_run_type="eval_config_eval",
+            save_context=build_save_context(request),
         )
 
         return await run_eval_runner_with_status(eval_runner)

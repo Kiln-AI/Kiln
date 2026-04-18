@@ -5,11 +5,16 @@ from typing import Annotated, Any, Dict
 from fastapi import Body, FastAPI, HTTPException, Path, Query
 from kiln_ai.datamodel import Project
 from kiln_ai.utils.config import Config
-from kiln_ai.utils.project_utils import project_from_id as project_from_id_core
+from kiln_ai.utils.project_utils import (
+    DuplicateProjectError,
+    check_duplicate_project_id,
+)
+from kiln_ai.utils.project_utils import (
+    project_from_id as project_from_id_core,
+)
 
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
-    DENY_AGENT,
     agent_policy_require_approval,
 )
 
@@ -120,27 +125,6 @@ def connect_project_api(app: FastAPI):
     ) -> Project:
         return project_from_id(project_id)
 
-    @app.delete(
-        "/api/projects/{project_id}",
-        summary="Delete Project",
-        tags=["Projects"],
-        openapi_extra=DENY_AGENT,
-    )
-    async def delete_project(
-        project_id: Annotated[
-            str, Path(description="The unique identifier of the project.")
-        ],
-    ) -> dict:
-        """Removes the project from Kiln but does not delete the files from disk."""
-        project = project_from_id(project_id)
-
-        # Remove from config
-        projects_before = Config.shared().projects
-        projects_after = [p for p in projects_before if p != str(project.path)]
-        Config.shared().save_setting("projects", projects_after)
-
-        return {"message": f"Project removed. ID: {project_id}"}
-
     @app.post(
         "/api/import_project",
         summary="Import Project",
@@ -165,6 +149,12 @@ def connect_project_api(app: FastAPI):
                 status_code=500,
                 detail=f"Failed to load project. The file is invalid: {e}",
             )
+
+        if project.id is not None:
+            try:
+                check_duplicate_project_id(project.id, project_path)
+            except DuplicateProjectError as e:
+                raise HTTPException(status_code=409, detail=str(e))
 
         # add to projects list
         add_project_to_config(project_path)

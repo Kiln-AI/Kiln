@@ -4,7 +4,17 @@ import json
 import logging
 from typing import Annotated, Awaitable, Callable, Dict, List, Literal
 
-from fastapi import Body, FastAPI, File, Form, HTTPException, Path, Query, UploadFile
+from fastapi import (
+    Body,
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Path,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import FileResponse, StreamingResponse
 from kiln_ai.adapters.chunkers.chunker_registry import chunker_adapter_from_type
 from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
@@ -75,10 +85,12 @@ from kiln_ai.utils import shared_async_lock_manager
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.filesystem_cache import TemporaryFilesystemCache
+from kiln_ai.utils.git_sync_protocols import SaveContext
 from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
 from pydantic import BaseModel, Field, PositiveInt, model_validator
 
+from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -807,6 +819,7 @@ class DocumentLibraryState(BaseModel):
 async def build_rag_workflow_runner(
     project: Project,
     rag_config_id: str,
+    save_context: SaveContext | None = None,
 ) -> RagWorkflowRunner:
     rag_config = RagConfig.from_id_and_parent_path(rag_config_id, project.path)
     if rag_config is None:
@@ -889,6 +902,7 @@ async def build_rag_workflow_runner(
                     concurrency=extractor_concurrency,
                     rag_config=rag_config,
                     filesystem_cache=TemporaryFilesystemCache.shared(),
+                    save_context=save_context,
                 ),
                 RagChunkingStepRunner(
                     project,
@@ -896,6 +910,7 @@ async def build_rag_workflow_runner(
                     chunker_config,
                     concurrency=5,
                     rag_config=rag_config,
+                    save_context=save_context,
                 ),
                 RagEmbeddingStepRunner(
                     project,
@@ -904,6 +919,7 @@ async def build_rag_workflow_runner(
                     embedding_config,
                     concurrency=5,
                     rag_config=rag_config,
+                    save_context=save_context,
                 ),
                 RagIndexingStepRunner(
                     project,
@@ -1377,7 +1393,9 @@ def connect_document_api(app: FastAPI):
             "Run document extractor? This processes all documents and may take significant time."
         ),
     )
+    @no_write_lock
     async def run_extractor_config(
+        request: Request,
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -1390,6 +1408,7 @@ def connect_document_api(app: FastAPI):
             Query(description="Comma-separated list of tags to filter documents by."),
         ] = None,
     ) -> StreamingResponse:
+        save_context = build_save_context(request)
         target_tags: list[str] | None = None
         if tags:
             target_tags = parse_comma_separated_tags(tags)
@@ -1423,6 +1442,7 @@ def connect_document_api(app: FastAPI):
             extractor_runner = ExtractorRunner(
                 extractor_configs=[extractor_config],
                 documents=documents,
+                save_context=save_context,
             )
 
             return await run_extractor_runner_with_status(extractor_runner)
@@ -1722,7 +1742,9 @@ def connect_document_api(app: FastAPI):
             "Run document extraction? This processes the document and may take time."
         ),
     )
+    @no_write_lock
     async def extract_file(
+        request: Request,
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -1736,6 +1758,7 @@ def connect_document_api(app: FastAPI):
             ),
         ] = None,
     ) -> StreamingResponse:
+        save_context = build_save_context(request)
         project = project_from_id(project_id)
         document = Document.from_id_and_parent_path(document_id, project.path)
         if not document:
@@ -1770,6 +1793,7 @@ def connect_document_api(app: FastAPI):
         extractor_runner = ExtractorRunner(
             extractor_configs=extractor_configs,
             documents=[document],
+            save_context=save_context,
         )
 
         return await run_extractor_runner_with_status(extractor_runner)
@@ -2357,7 +2381,9 @@ def connect_document_api(app: FastAPI):
             "Run RAG config indexing? This re-indexes documents and may take time."
         ),
     )
+    @no_write_lock
     async def run_rag_config(
+        request: Request,
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -2374,8 +2400,12 @@ def connect_document_api(app: FastAPI):
                 detail="This RAG configuration is archived. You must unarchive it to use it.",
             )
 
+        save_context = build_save_context(request)
+
         async def runner_factory():
-            return await build_rag_workflow_runner(project, rag_config_id)
+            return await build_rag_workflow_runner(
+                project, rag_config_id, save_context=save_context
+            )
 
         # the workflow runner handles locking
         return await run_rag_workflow_runner_with_status(runner_factory)
