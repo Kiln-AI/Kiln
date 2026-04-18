@@ -77,6 +77,7 @@ async def _start_background_syncs() -> None:
             repo_path=repo_path,
             remote_name=project_config["remote_name"],
             pat_token=project_config.get("pat_token"),
+            oauth_token=project_config.get("oauth_token"),
             auth_mode=project_config["auth_mode"],
         )
         bg_sync = BackgroundSync(manager)
