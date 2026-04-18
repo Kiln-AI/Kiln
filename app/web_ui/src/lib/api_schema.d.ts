@@ -2758,24 +2758,8 @@ export interface paths {
         delete: operations["api_delete_config_api_git_sync_config__project_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/git_sync/update_config/{project_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
         /** Update Git Sync Config */
-        patch: operations["api_update_config_api_git_sync_update_config__project_id__patch"];
+        patch: operations["api_update_config_api_git_sync_config__project_id__patch"];
         trace?: never;
     };
     "/api/git_sync/oauth/start": {
@@ -16088,7 +16072,7 @@ export interface operations {
             };
         };
     };
-    api_update_config_api_git_sync_update_config__project_id__patch: {
+    api_update_config_api_git_sync_config__project_id__patch: {
         parameters: {
             query?: never;
             header?: never;

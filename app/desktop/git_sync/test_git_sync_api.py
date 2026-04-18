@@ -500,7 +500,7 @@ class TestUpdateConfig:
         ):
             mock_get.return_value = existing
             resp = api_client.patch(
-                "/api/git_sync/update_config/proj1",
+                "/api/git_sync/config/proj1",
                 json={"sync_mode": "manual"},
             )
         data = resp.json()
@@ -529,7 +529,7 @@ class TestUpdateConfig:
         ):
             mock_get.return_value = existing
             resp = api_client.patch(
-                "/api/git_sync/update_config/proj1",
+                "/api/git_sync/config/proj1",
                 json={"pat_token": "ghp_new_token"},
             )
         data = resp.json()
@@ -541,7 +541,7 @@ class TestUpdateConfig:
             return_value=None,
         ):
             resp = api_client.patch(
-                "/api/git_sync/update_config/nonexistent",
+                "/api/git_sync/config/nonexistent",
                 json={"sync_mode": "manual"},
             )
         assert resp.status_code == 404
@@ -556,7 +556,7 @@ class TestUpdateConfig:
         ):
             mock.return_value = None
             resp = api_client.patch(
-                "/api/git_sync/update_config/nonexistent",
+                "/api/git_sync/config/nonexistent",
                 json={"sync_mode": "manual"},
             )
         assert resp.status_code == 404
@@ -1034,7 +1034,7 @@ class TestOAuthTokenInConfig:
         ):
             mock_get.return_value = existing
             resp = api_client.patch(
-                "/api/git_sync/update_config/proj1",
+                "/api/git_sync/config/proj1",
                 json={
                     "oauth_token": "ghu_new",
                     "auth_mode": "github_oauth",
@@ -1071,7 +1071,7 @@ class TestOAuthTokenInConfig:
         ):
             mock_get.return_value = existing
             resp = api_client.patch(
-                "/api/git_sync/update_config/proj1",
+                "/api/git_sync/config/proj1",
                 json={
                     "pat_token": "ghp_new",
                     "auth_mode": "pat_token",
@@ -1108,7 +1108,7 @@ class TestOAuthTokenInConfig:
         ):
             mock_get.return_value = existing
             resp = api_client.patch(
-                "/api/git_sync/update_config/proj1",
+                "/api/git_sync/config/proj1",
                 json={"auth_mode": "system_keys"},
             )
         data = resp.json()

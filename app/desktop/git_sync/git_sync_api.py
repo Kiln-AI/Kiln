@@ -660,7 +660,7 @@ def connect_git_sync_api(app: FastAPI):
         )
 
     @app.patch(
-        "/api/git_sync/update_config/{project_id}",
+        "/api/git_sync/config/{project_id}",
         summary="Update Git Sync Config",
         tags=["Git Sync"],
         openapi_extra=DENY_AGENT,

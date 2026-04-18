@@ -24,7 +24,7 @@ This phase adds the UI-driven setup wizard for Git Auto Sync, including:
    - `POST /api/git_sync/scan_projects` — Scan a cloned repo for `project.kiln` files. Returns list of paths + project names.
    - `POST /api/git_sync/save_config` — Save git sync config for a project. Enables auto-sync.
    - `GET /api/git_sync/config/{project_id}` — Get git sync config for a project.
-   - `POST /api/git_sync/update_config/{project_id}` — Update git sync config (e.g., toggle mode, update token).
+   - `PATCH /api/git_sync/config/{project_id}` — Update git sync config (e.g., toggle mode, update token).
 
 2. **Update `app/desktop/git_sync/config.py`**:
    - Add `save_git_sync_config()` function

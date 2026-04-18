@@ -216,7 +216,7 @@ Uses the same `/api/git_sync/oauth/start` → poll → `/api/git_sync/oauth/stat
 
 ### Update Config Endpoint Changes
 
-The `PATCH /api/git_sync/update_config/{project_id}` endpoint's `UpdateConfigRequest` must accept `oauth_token` in addition to the existing `pat_token` field.
+The `PATCH /api/git_sync/config/{project_id}` endpoint's `UpdateConfigRequest` must accept `oauth_token` in addition to the existing `pat_token` field.
 
 ## Scope
 

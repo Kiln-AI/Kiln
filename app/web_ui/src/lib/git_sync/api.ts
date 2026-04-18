@@ -212,7 +212,7 @@ export async function updateConfig(
     auth_mode?: string
   },
 ): Promise<GitSyncConfigResponse> {
-  return patch(`/api/git_sync/update_config/${project_id}`, updates)
+  return patch(`/api/git_sync/config/${project_id}`, updates)
 }
 
 export async function deleteConfig(

@@ -1,6 +1,6 @@
 {
   "method": "patch",
-  "path": "/api/git_sync/update_config/{project_id}",
+  "path": "/api/git_sync/config/{project_id}",
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
