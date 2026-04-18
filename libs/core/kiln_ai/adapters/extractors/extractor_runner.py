@@ -111,6 +111,7 @@ class ExtractorRunner:
             return True
         except Exception as e:
             logger.error(
-                f"Error running extraction job for dataset item {job.doc.id}: {e}"
+                f"Error running extraction job for dataset item {job.doc.id}: {e}",
+                exc_info=True,
             )
             return False

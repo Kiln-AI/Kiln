@@ -413,3 +413,26 @@ async def test_other_jobs_unaffected_by_save_context_rollback(
     # proves rollback from the first did not leak into the second's context.
     assert recorder.enter_count == 2
     assert recorder.exit_count == 2
+
+
+@pytest.mark.asyncio
+async def test_run_job_logs_with_exc_info_on_failure(
+    mock_extractor_runner, mock_document, mock_extractor_config
+):
+    fake_extractor = MagicMock(spec=BaseExtractor)
+    fake_extractor.extract = AsyncMock(side_effect=ValueError("something broke"))
+
+    with (
+        patch(
+            "kiln_ai.adapters.extractors.extractor_runner.extractor_adapter_from_type",
+            return_value=fake_extractor,
+        ),
+        patch("kiln_ai.adapters.extractors.extractor_runner.logger") as mock_logger,
+    ):
+        job = _make_extractor_job(mock_document, mock_extractor_config)
+        result = await mock_extractor_runner.run_job(job)
+
+    assert result is False
+    mock_logger.error.assert_called_once()
+    _, kwargs = mock_logger.error.call_args
+    assert kwargs.get("exc_info") is True
