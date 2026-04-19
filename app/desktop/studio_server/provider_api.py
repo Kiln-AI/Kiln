@@ -2047,7 +2047,7 @@ class OpenAICompatibleProviderCache:
         if self.had_error:
             return True
 
-        if datetime.now() - self.last_updated > timedelta(minutes=60):
+        if datetime.now().astimezone() - self.last_updated > timedelta(minutes=60):
             return True
 
         current_providers = Config.shared().openai_compatible_providers
@@ -2154,7 +2154,7 @@ def openai_compatible_providers_load_cache() -> OpenAICompatibleProviderCache | 
 
     cache = OpenAICompatibleProviderCache(
         providers=openai_compatible_models,
-        last_updated=datetime.now(),
+        last_updated=datetime.now().astimezone(),
         openai_compat_config_when_cached=provider_config,
         had_error=has_error,
     )
