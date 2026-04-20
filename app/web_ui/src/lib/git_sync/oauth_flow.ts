@@ -9,7 +9,11 @@ const TIMEOUT_MS = 300_000
 const MAX_CONSECUTIVE_POLL_FAILURES = 5
 
 export type OAuthFlowCallbacks = {
-  onStarted: (response: { install_url: string }) => void
+  onStarted: (response: {
+    install_url: string
+    authorize_url: string
+    popup_blocked: boolean
+  }) => void
   onPolling: () => void
   onSuccess: (token: string) => void
   onError: (error: string) => void
@@ -53,16 +57,7 @@ export function startOAuthFlow(
     if (popup === null) {
       popup = window.open("about:blank", "_blank")
     }
-
-    if (!popup) {
-      if (!cancelled) {
-        cleanup(false)
-        callbacks.onError(
-          "Popup blocked. Please allow popups for this site and try again.",
-        )
-      }
-      return
-    }
+    const popup_blocked = !popup
 
     let startResponse: OAuthStartResponse
     try {
@@ -82,13 +77,18 @@ export function startOAuthFlow(
       return
     }
 
-    // Provide the install_url so the caller can offer an "Install app" step
-    // if the token doesn't have access after authorization.
-    callbacks.onStarted({ install_url: startResponse.install_url })
+    callbacks.onStarted({
+      install_url: startResponse.install_url,
+      authorize_url: startResponse.authorize_url,
+      popup_blocked,
+    })
 
-    // Navigate the popup directly to the OAuth authorize URL.
-    // This is always a consistent flow regardless of app installation state.
-    popup.location.href = startResponse.authorize_url
+    // Navigate the popup directly to the OAuth authorize URL when the popup
+    // was opened. When blocked, the caller shows a copy-paste fallback and
+    // polling continues so manual completion is still detected.
+    if (popup) {
+      popup.location.href = startResponse.authorize_url
+    }
     callbacks.onPolling()
 
     const state = startResponse.state

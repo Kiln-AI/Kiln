@@ -81,6 +81,8 @@ describe("startOAuthFlow", () => {
     expect(cbs.calls.onStarted).toHaveLength(1)
     expect(cbs.calls.onStarted[0]).toEqual({
       install_url: MOCK_START_RESPONSE.install_url,
+      authorize_url: MOCK_START_RESPONSE.authorize_url,
+      popup_blocked: false,
     })
     expect(cbs.calls.onPolling).toHaveLength(1)
     expect(window.open).toHaveBeenCalledWith("about:blank", "_blank")
@@ -226,19 +228,29 @@ describe("startOAuthFlow", () => {
     expect(popup.close).toHaveBeenCalled()
   })
 
-  it("calls onError when popup is blocked", async () => {
+  it("reports popup_blocked via onStarted when window.open returns null", async () => {
     const mockWindow = { open: vi.fn(() => null) }
     vi.stubGlobal("window", mockWindow)
     mockOauthStart.mockResolvedValue(MOCK_START_RESPONSE)
+    mockOauthStatus.mockResolvedValue({
+      complete: false,
+      oauth_token: null,
+      error: null,
+    })
 
     const cbs = makeCallbacks()
     startOAuthFlow("https://github.com/Kiln-AI/kiln.git", cbs)
 
     await vi.advanceTimersByTimeAsync(0)
 
-    expect(cbs.calls.onError).toHaveLength(1)
-    expect(cbs.calls.onError[0]).toContain("Popup blocked")
-    expect(mockOauthStart).not.toHaveBeenCalled()
+    expect(cbs.calls.onError).toHaveLength(0)
+    expect(cbs.calls.onStarted).toHaveLength(1)
+    expect(cbs.calls.onStarted[0]).toEqual({
+      install_url: MOCK_START_RESPONSE.install_url,
+      authorize_url: MOCK_START_RESPONSE.authorize_url,
+      popup_blocked: true,
+    })
+    expect(cbs.calls.onPolling).toHaveLength(1)
   })
 
   it("retries polling on network error during status check", async () => {
