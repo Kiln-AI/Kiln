@@ -8,6 +8,7 @@ from kiln_ai.datamodel.external_tool_server import (
     ToolServerType,
 )
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.formatting import truncate_to_words
 from pydantic import BaseModel, Field
 
 from kiln_server.project_api import project_from_id
@@ -18,13 +19,6 @@ from kiln_server.utils.agent_checks.policy import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _truncate_to_words(text: str, max_words: int) -> tuple[str, bool]:
-    words = text.split()
-    if len(words) <= max_words:
-        return text, False
-    return " ".join(words[:max_words]) + " \u2026", True
 
 
 class AllTasksTask(BaseModel):
@@ -326,12 +320,18 @@ def connect_task_api(app: FastAPI):
             try:
                 project = Project.load_from_file(project_path)
             except Exception:
+                logger.warning(
+                    "Failed to load project from path: %s", project_path, exc_info=True
+                )
                 continue
-            assert project.id is not None
+            if project.id is None:
+                logger.warning("Project at %s has no ID, skipping", project_path)
+                continue
             tasks: list[AllTasksTask] = []
             for task in project.tasks(readonly=True):
-                assert task.id is not None
-                instruction, instruction_truncated = _truncate_to_words(
+                if task.id is None:
+                    continue
+                instruction, instruction_truncated = truncate_to_words(
                     task.instruction, 100
                 )
                 tasks.append(
@@ -339,7 +339,7 @@ def connect_task_api(app: FastAPI):
                         id=task.id,
                         name=task.name,
                         description=task.description,
-                        instruction=instruction,
+                        instruction=instruction or "",
                         instruction_truncated=instruction_truncated,
                         created_at=task.created_at,
                     )

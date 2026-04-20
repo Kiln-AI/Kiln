@@ -11,9 +11,9 @@ from app.desktop.studio_server.agent_api import (
     _specs_block,
     _split_tool_and_skill_ids,
     _tool_servers_block,
-    _truncate_to_words,
     connect_agent_api,
 )
+from kiln_ai.utils.formatting import truncate_to_words
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import (
@@ -91,47 +91,47 @@ def task(project, tmp_path):
     return t
 
 
-# --- _truncate_to_words tests ---
+# --- truncate_to_words tests ---
 
 
 class TestTruncateToWords:
     def test_under_limit(self):
         text = "hello world"
-        result, truncated = _truncate_to_words(text, 10)
+        result, truncated = truncate_to_words(text, 10)
         assert result == "hello world"
         assert truncated is False
 
     def test_at_limit(self):
         text = "one two three"
-        result, truncated = _truncate_to_words(text, 3)
+        result, truncated = truncate_to_words(text, 3)
         assert result == "one two three"
         assert truncated is False
 
     def test_over_limit(self):
         text = "one two three four five"
-        result, truncated = _truncate_to_words(text, 3)
+        result, truncated = truncate_to_words(text, 3)
         assert result == "one two three \u2026"
         assert truncated is True
 
     def test_none(self):
-        result, truncated = _truncate_to_words(None, 10)
+        result, truncated = truncate_to_words(None, 10)
         assert result is None
         assert truncated is False
 
     def test_empty(self):
-        result, truncated = _truncate_to_words("", 10)
+        result, truncated = truncate_to_words("", 10)
         assert result == ""
         assert truncated is False
 
     def test_exactly_300_words(self):
         text = " ".join(f"word{i}" for i in range(300))
-        result, truncated = _truncate_to_words(text, 300)
+        result, truncated = truncate_to_words(text, 300)
         assert truncated is False
         assert result == text
 
     def test_301_words(self):
         text = " ".join(f"word{i}" for i in range(301))
-        result, truncated = _truncate_to_words(text, 300)
+        result, truncated = truncate_to_words(text, 300)
         assert truncated is True
         words = result.rstrip(" \u2026").split()
         assert len(words) == 300
@@ -708,7 +708,7 @@ class TestPromptsBlock:
         )
         rc_with_prompt.save_to_file()
 
-        prompts = _prompts_block(task)
+        prompts = _prompts_block(task, project, task.run_configs())
 
         ids = [p.id for p in prompts]
 

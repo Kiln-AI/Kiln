@@ -5,9 +5,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Task, TaskRequirement
 from kiln_ai.datamodel.external_tool_server import ToolServerType
+from kiln_ai.utils.formatting import truncate_to_words
 
 from kiln_server.custom_errors import connect_custom_errors
-from kiln_server.task_api import _truncate_to_words, connect_task_api, task_from_id
+from kiln_server.task_api import connect_task_api, task_from_id
 
 
 @pytest.fixture
@@ -686,46 +687,46 @@ def test_delete_task_parent_project_none(client, project_and_task):
     assert response.status_code == 200
 
 
-# --- _truncate_to_words tests ---
+# --- truncate_to_words tests ---
 
 
-def test_truncate_to_words_empty():
-    text, truncated = _truncate_to_words("", 10)
+def testtruncate_to_words_empty():
+    text, truncated = truncate_to_words("", 10)
     assert text == ""
     assert truncated is False
 
 
-def test_truncate_to_words_under_limit():
-    text, truncated = _truncate_to_words("hello world", 10)
+def testtruncate_to_words_under_limit():
+    text, truncated = truncate_to_words("hello world", 10)
     assert text == "hello world"
     assert truncated is False
 
 
-def test_truncate_to_words_at_limit():
+def testtruncate_to_words_at_limit():
     words = " ".join(f"word{i}" for i in range(10))
-    text, truncated = _truncate_to_words(words, 10)
+    text, truncated = truncate_to_words(words, 10)
     assert text == words
     assert truncated is False
 
 
-def test_truncate_to_words_one_over():
+def testtruncate_to_words_one_over():
     words = " ".join(f"word{i}" for i in range(11))
-    text, truncated = _truncate_to_words(words, 10)
+    text, truncated = truncate_to_words(words, 10)
     expected = " ".join(f"word{i}" for i in range(10)) + " \u2026"
     assert text == expected
     assert truncated is True
 
 
-def test_truncate_to_words_over_limit():
+def testtruncate_to_words_over_limit():
     words = " ".join(f"w{i}" for i in range(200))
-    text, truncated = _truncate_to_words(words, 5)
+    text, truncated = truncate_to_words(words, 5)
     expected = " ".join(f"w{i}" for i in range(5)) + " \u2026"
     assert text == expected
     assert truncated is True
 
 
-def test_truncate_to_words_normalizes_whitespace():
-    text, truncated = _truncate_to_words("a  b\tc\nd  e  f  g", 5)
+def testtruncate_to_words_normalizes_whitespace():
+    text, truncated = truncate_to_words("a  b\tc\nd  e  f  g", 5)
     assert text == "a b c d e \u2026"
     assert truncated is True
 

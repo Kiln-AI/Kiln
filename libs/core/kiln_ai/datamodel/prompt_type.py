@@ -1,4 +1,5 @@
 _GENERATOR_LABELS: dict[str, str] = {
+    "simple_prompt_builder": "Basic (Zero Shot)",
     "kiln_prompt_optimizer": "Kiln Optimized",
     "few_shot_prompt_builder": "Few-Shot",
     "multi_shot_prompt_builder": "Many-Shot",

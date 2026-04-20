@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from typing import Annotated, Any
 
@@ -12,6 +13,8 @@ from kiln_ai.datamodel.prompt_type import prompt_type_label
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_output import DataSourceType
+from kiln_ai.utils.formatting import truncate_to_words
+from kiln_server.prompt_api import prompt_generators
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
 from pydantic import BaseModel
@@ -196,15 +199,6 @@ class AgentOverview(BaseModel):
 # --- Helpers ---
 
 
-def _truncate_to_words(text: str | None, max_words: int) -> tuple[str | None, bool]:
-    if text is None:
-        return None, False
-    words = text.split()
-    if len(words) <= max_words:
-        return text, False
-    return " ".join(words[:max_words]) + " \u2026", True
-
-
 def _split_tool_and_skill_ids(
     tool_ids: list[str],
 ) -> tuple[list[str], list[str]]:
@@ -344,7 +338,7 @@ def _specs_block(task: Task) -> AgentOverviewSpecs:
             AgentOverviewSpec(
                 eval_id=spec.eval_id,
                 name=spec.name,
-                spec_type=spec.properties["spec_type"],
+                spec_type=spec.properties.get("spec_type", "unknown"),
                 priority=spec.priority.name,
                 status=spec.status.value,
                 tags=spec.tags,
@@ -375,9 +369,9 @@ def _evals_block(task: Task) -> list[AgentOverviewEval]:
     return result
 
 
-def _prompts_block(task: Task) -> list[AgentOverviewPrompt]:
-    from kiln_server.prompt_api import prompt_generators
-
+def _prompts_block(
+    task: Task, project: Project, task_run_configs: list[TaskRunConfig]
+) -> list[AgentOverviewPrompt]:
     result: list[AgentOverviewPrompt] = []
 
     # Built-in generators
@@ -404,36 +398,26 @@ def _prompts_block(task: Task) -> list[AgentOverviewPrompt]:
     # Fine-tune prompts
     for ft in task.finetunes(readonly=True):
         if ft.fine_tune_model_id is not None:
-            parent_task = ft.parent_task()
-            parent_project = parent_task.parent_project() if parent_task else None
-            if parent_project and parent_task:
-                prompt_id = (
-                    f"fine_tune_prompt::{parent_project.id}::{parent_task.id}::{ft.id}"
+            prompt_id = f"fine_tune_prompt::{project.id}::{task.id}::{ft.id}"
+            result.append(
+                AgentOverviewPrompt(
+                    id=prompt_id,
+                    name=ft.name,
+                    type=prompt_type_label(prompt_id, None),
                 )
-                result.append(
-                    AgentOverviewPrompt(
-                        id=prompt_id,
-                        name=ft.name,
-                        type=prompt_type_label(prompt_id, None),
-                    )
-                )
+            )
 
-    # Frozen run config prompts
-    for rc in task.run_configs(readonly=True):
+    # Frozen run config prompts (use task_run_configs which includes fine-tune run configs)
+    for rc in task_run_configs:
         if rc.prompt is not None:
-            parent_task = rc.parent_task()
-            parent_project = parent_task.parent_project() if parent_task else None
-            if parent_project and parent_task:
-                prompt_id = (
-                    f"task_run_config::{parent_project.id}::{parent_task.id}::{rc.id}"
+            prompt_id = f"task_run_config::{project.id}::{task.id}::{rc.id}"
+            result.append(
+                AgentOverviewPrompt(
+                    id=prompt_id,
+                    name=rc.name,
+                    type=prompt_type_label(prompt_id, rc.prompt.generator_id),
                 )
-                result.append(
-                    AgentOverviewPrompt(
-                        id=prompt_id,
-                        name=rc.name,
-                        type=prompt_type_label(prompt_id, rc.prompt.generator_id),
-                    )
-                )
+            )
 
     return result
 
@@ -481,11 +465,9 @@ def _run_configs_block(
 
 
 async def _connected_providers_block() -> dict[str, dict[str, Any]]:
-    result: dict[str, dict[str, Any]] = {}
-    for name in ModelProviderName:
-        if await provider_enabled(name):
-            result[name.value] = {}
-    return result
+    names = list(ModelProviderName)
+    enabled = await asyncio.gather(*(provider_enabled(n) for n in names))
+    return {name.value: {} for name, is_on in zip(names, enabled) if is_on}
 
 
 def _fine_tunes_block(task: Task) -> list[AgentOverviewFineTune]:
@@ -563,10 +545,10 @@ def connect_agent_api(app: FastAPI):
             str(rc.id): rc for rc in task_run_configs
         }
 
-        instruction_text, instruction_truncated = _truncate_to_words(
+        instruction_text, instruction_truncated = truncate_to_words(
             task.instruction, 300
         )
-        thinking_text, thinking_truncated = _truncate_to_words(
+        thinking_text, thinking_truncated = truncate_to_words(
             task.thinking_instruction, 300
         )
 
@@ -593,7 +575,7 @@ def connect_agent_api(app: FastAPI):
             dataset=_dataset_stats(task),
             docs=_docs_stats(project),
             search_tools=_search_tools_block(project),
-            prompts=_prompts_block(task),
+            prompts=_prompts_block(task, project, task_run_configs),
             specs=_specs_block(task),
             evals=_evals_block(task),
             tool_servers=_tool_servers_block(project),

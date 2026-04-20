@@ -132,7 +132,7 @@ def connect_prompt_api(app: FastAPI):
             Path(description="The unique identifier of the task within the project."),
         ],
         prompt_data: PromptCreateRequest,
-    ) -> Prompt:
+    ) -> ApiPrompt:
         parent_task = task_from_id(project_id, task_id)
         prompt = Prompt(
             parent=parent_task,
@@ -143,7 +143,13 @@ def connect_prompt_api(app: FastAPI):
             chain_of_thought_instructions=prompt_data.chain_of_thought_instructions,
         )
         prompt.save_to_file()
-        return prompt
+        api_prompt_id = f"id::{prompt.id}"
+        properties = prompt.model_dump(exclude={"id"})
+        return ApiPrompt(
+            id=api_prompt_id,
+            type=prompt_type_label(api_prompt_id, prompt.generator_id),
+            **properties,
+        )
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/prompts",

@@ -7414,66 +7414,6 @@ export interface components {
              */
             id: string;
         };
-        /**
-         * Prompt
-         * @description A prompt for a task. This is the custom prompt parented by a task.
-         */
-        Prompt: {
-            /**
-             * Name
-             * @description The name of the prompt.
-             */
-            name: string;
-            /**
-             * Description
-             * @description A more detailed description of the prompt.
-             */
-            description?: string | null;
-            /**
-             * Generator Id
-             * @description The id of the generator that created this prompt.
-             */
-            generator_id?: string | null;
-            /**
-             * Prompt
-             * @description The prompt for the task.
-             */
-            prompt: string;
-            /**
-             * Chain Of Thought Instructions
-             * @description Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting. COT will not be used unless this is provided.
-             */
-            chain_of_thought_instructions?: string | null;
-            /**
-             * V
-             * @description Schema version for migration support.
-             * @default 1
-             */
-            v: number;
-            /**
-             * Id
-             * @description Unique identifier for this record.
-             */
-            id?: string | null;
-            /**
-             * Path
-             * @description File system path where the record is stored.
-             */
-            path?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
-             */
-            created_at?: string;
-            /**
-             * Created By
-             * @description User ID of the creator.
-             */
-            created_by?: string;
-            /** Model Type */
-            readonly model_type: string;
-        };
         /** PromptApiResponse */
         PromptApiResponse: {
             /** Prompt */
@@ -10594,7 +10534,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Prompt"];
+                    "application/json": components["schemas"]["ApiPrompt"];
                 };
             };
             /** @description Validation Error */

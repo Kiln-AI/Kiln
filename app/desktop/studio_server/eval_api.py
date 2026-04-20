@@ -1,4 +1,5 @@
 import json
+from collections import defaultdict
 from typing import Annotated, Any, Dict, List, Set, Tuple
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
@@ -491,6 +492,13 @@ def compute_score_summary(
     task_run_configs: list[TaskRunConfig],
     expected_dataset_ids: set[ID_TYPE],
 ) -> EvalResultSummary:
+    if len(expected_dataset_ids) == 0:
+        return EvalResultSummary(
+            results={},
+            run_config_percent_complete={},
+            dataset_size=0,
+        )
+
     remaining_expected_dataset_ids: Dict[ID_TYPE, Set[ID_TYPE]] = {
         run_config.id: set(expected_dataset_ids) for run_config in task_run_configs
     }
@@ -498,8 +506,10 @@ def compute_score_summary(
         run_config.id: 0 for run_config in task_run_configs
     }
 
-    total_scores: Dict[ID_TYPE, Dict[str, float]] = {}
-    score_counts: Dict[ID_TYPE, Dict[str, int]] = {}
+    total_scores: Dict[ID_TYPE, Dict[str, float]] = defaultdict(
+        lambda: defaultdict(float)
+    )
+    score_counts: Dict[ID_TYPE, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
     for eval_run in eval_config.runs(readonly=True):
         if eval_run.task_run_config_id is None:
@@ -514,14 +524,10 @@ def compute_score_summary(
             remaining_expected_dataset_ids[run_config_id].remove(eval_run.dataset_id)
 
         incomplete = False
+        # Ensure this run_config_id has an entry even if no scores match
+        _ = total_scores[run_config_id]
         for output_score in eval.output_scores:
             score_key = output_score.json_key()
-            if run_config_id not in total_scores:
-                total_scores[run_config_id] = {}
-                score_counts[run_config_id] = {}
-            if score_key not in total_scores[run_config_id]:
-                total_scores[run_config_id][score_key] = 0
-                score_counts[run_config_id][score_key] = 0
             if score_key in eval_run.scores:
                 total_scores[run_config_id][score_key] += eval_run.scores[score_key]
                 score_counts[run_config_id][score_key] += 1
@@ -1174,7 +1180,7 @@ def connect_evals_api(app: FastAPI):
         dataset_ids_cache: Dict[DatasetFilterId, Set[ID_TYPE]] = {}
         evals_out: list[EvalResultsSummaryEval] = []
 
-        for eval in task.evals():
+        for eval in task.evals(readonly=True):
             filter_id = eval.eval_set_filter_id
             if filter_id not in dataset_ids_cache:
                 dataset_ids_cache[filter_id] = dataset_ids_in_filter(
@@ -1183,7 +1189,7 @@ def connect_evals_api(app: FastAPI):
             expected_dataset_ids = dataset_ids_cache[filter_id]
 
             eval_configs_out: list[EvalResultsSummaryEvalConfig] = []
-            for eval_config in eval.configs():
+            for eval_config in eval.configs(readonly=True):
                 if len(expected_dataset_ids) == 0:
                     summary = EvalResultSummary(
                         results={},
