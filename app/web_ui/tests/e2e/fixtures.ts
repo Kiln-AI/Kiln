@@ -68,6 +68,9 @@ export const test = base.extend<Fixtures>({
     expect(resp.ok(), "POST /api/projects").toBeTruthy()
     const project = (await resp.json()) as SeededProject
     await use(project)
+    await apiRequest
+      .delete(`/api/delete_project/${encodeURIComponent(project.id)}`)
+      .catch(() => {})
   },
 
   seededProjectWithTask: async (
