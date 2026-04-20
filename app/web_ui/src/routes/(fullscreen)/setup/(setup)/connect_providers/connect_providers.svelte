@@ -96,9 +96,9 @@
       description: "Open models (Llama, Phi), plus the ability to fine-tune.",
       pill_text: highlight_finetune ? "Tuneable" : undefined,
       api_key_steps: [
-        "Go to https://fireworks.ai/account/api-keys",
+        "Go to https://app.fireworks.ai/settings/users/api-keys",
         "Create a new API Key and paste it below",
-        "Go to https://fireworks.ai/account/profile",
+        "Go to https://app.fireworks.ai/settings/account",
         "Copy the Account ID, paste it below, and click 'Connect'",
       ],
       featured: false,
