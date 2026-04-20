@@ -116,7 +116,7 @@
   {:else if $projects.projects.length == 0}
     <div class="p-16">No projects found</div>
   {:else}
-    <div class="rounded-lg border">
+    <div class="overflow-x-auto rounded-lg border">
       <table class="table">
         <thead>
           <tr>
