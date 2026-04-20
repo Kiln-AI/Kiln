@@ -135,11 +135,7 @@ export function createOAuthWithInstall(
   function open_install() {
     const current_install_url = get(state).install_url
     if (!current_install_url) return
-    const popup = window.open(
-      current_install_url,
-      "_blank",
-      "noopener,noreferrer",
-    )
+    const popup = window.open(current_install_url, "_blank")
     if (!popup) {
       update({ popup_blocked: true })
       return

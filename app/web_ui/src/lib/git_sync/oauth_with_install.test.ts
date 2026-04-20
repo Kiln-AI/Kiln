@@ -296,7 +296,6 @@ describe("createOAuthWithInstall", () => {
     expect(window.open).toHaveBeenCalledWith(
       "https://github.com/apps/kiln/installations/new",
       "_blank",
-      "noopener,noreferrer",
     )
     expect(get(flow.state).install_clicked).toBe(true)
   })
