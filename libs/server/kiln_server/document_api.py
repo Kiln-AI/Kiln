@@ -1611,6 +1611,7 @@ def connect_document_api(app: FastAPI):
             filename=extraction.output.path.name,
         )
 
+    @no_write_lock
     @app.post(
         "/api/projects/{project_id}/documents/{document_id}/open_enclosing_folder",
         tags=["Documents"],
@@ -2410,6 +2411,7 @@ def connect_document_api(app: FastAPI):
         # the workflow runner handles locking
         return await run_rag_workflow_runner_with_status(runner_factory)
 
+    @no_write_lock
     @app.post(
         "/api/projects/{project_id}/rag_configs/progress",
         tags=["Documents"],
@@ -2443,6 +2445,7 @@ def connect_document_api(app: FastAPI):
         ] = await compute_current_progress_for_rag_configs(project, rag_configs)
         return progress_map
 
+    @no_write_lock
     @app.post(
         "/api/projects/{project_id}/rag_configs/{rag_config_id}/search",
         tags=["Documents"],
