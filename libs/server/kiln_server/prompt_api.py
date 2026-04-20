@@ -194,7 +194,7 @@ def connect_prompt_api(app: FastAPI):
                 )
 
         return PromptResponse(
-            generators=_prompt_generators,
+            generators=prompt_generators,
             prompts=prompts,
         )
 
@@ -282,7 +282,7 @@ def connect_prompt_api(app: FastAPI):
 
 
 # User friendly descriptions of the prompt generators
-_prompt_generators = [
+prompt_generators = [
     PromptGenerator(
         id="simple_prompt_builder",
         name="Basic (Zero Shot)",

@@ -2884,6 +2884,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/agent_overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agent Overview */
+        get: operations["agent_overview_api_projects__project_id__tasks__task_id__agent_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat/execute-tools": {
         parameters: {
             query?: never;
@@ -2975,6 +2992,317 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AgentOverview */
+        AgentOverview: {
+            project: components["schemas"]["AgentOverviewProject"];
+            task: components["schemas"]["AgentOverviewTask"];
+            dataset: components["schemas"]["AgentOverviewDataset"];
+            docs: components["schemas"]["AgentOverviewDocs"];
+            search_tools: components["schemas"]["AgentOverviewSearchTools"];
+            /** Prompts */
+            prompts: components["schemas"]["AgentOverviewPrompt"][];
+            specs: components["schemas"]["AgentOverviewSpecs"];
+            /** Evals */
+            evals: components["schemas"]["AgentOverviewEval"][];
+            tool_servers: components["schemas"]["AgentOverviewToolServers"];
+            run_configs: components["schemas"]["AgentOverviewRunConfigs"];
+            /** Fine Tunes */
+            fine_tunes: components["schemas"]["AgentOverviewFineTune"][];
+            /** Prompt Optimization Jobs */
+            prompt_optimization_jobs: components["schemas"]["AgentOverviewPromptOptimizationJob"][];
+            skills: components["schemas"]["AgentOverviewSkills"];
+            /** Connected Providers */
+            connected_providers: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        /** AgentOverviewDataset */
+        AgentOverviewDataset: {
+            /** Total Count */
+            total_count: number;
+            /** By Tag */
+            by_tag: {
+                [key: string]: number;
+            };
+            /** By Source */
+            by_source: {
+                [key: string]: number;
+            };
+            /** By Rating */
+            by_rating: {
+                [key: string]: number;
+            };
+        };
+        /** AgentOverviewDocs */
+        AgentOverviewDocs: {
+            /** Doc Count */
+            doc_count: number;
+            /** By Tag */
+            by_tag: {
+                [key: string]: number;
+            };
+            /** By Kind */
+            by_kind: {
+                [key: string]: number;
+            };
+        };
+        /** AgentOverviewEval */
+        AgentOverviewEval: {
+            /** Eval Id */
+            eval_id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Template */
+            template: string | null;
+            /** Default Judge Config Id */
+            default_judge_config_id: string | null;
+            /** Output Scores */
+            output_scores: components["schemas"]["AgentOverviewOutputScore"][];
+            /** Favourite */
+            favourite: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** AgentOverviewFineTune */
+        AgentOverviewFineTune: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Provider */
+            provider: string;
+            /** Base Model Id */
+            base_model_id: string;
+            /** Fine Tune Model Id */
+            fine_tune_model_id: string | null;
+            /** Latest Status */
+            latest_status: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** AgentOverviewOutputScore */
+        AgentOverviewOutputScore: {
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+        };
+        /** AgentOverviewProject */
+        AgentOverviewProject: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** AgentOverviewPrompt */
+        AgentOverviewPrompt: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+        };
+        /** AgentOverviewPromptOptimizationJob */
+        AgentOverviewPromptOptimizationJob: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Model Name */
+            model_name: string | null;
+            /** Model Provider */
+            model_provider: string | null;
+            /** Latest Status */
+            latest_status: string;
+            /** Created Prompt Id */
+            created_prompt_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** AgentOverviewRunConfig */
+        AgentOverviewRunConfig: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Type */
+            type: string;
+            /** Model Name */
+            model_name: string | null;
+            /** Model Provider */
+            model_provider: string | null;
+            /** Prompt Id */
+            prompt_id: string | null;
+            /** Tool Ids */
+            tool_ids: string[];
+            /** Skill Ids */
+            skill_ids: string[];
+            /** Starred */
+            starred: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** AgentOverviewRunConfigs */
+        AgentOverviewRunConfigs: {
+            /** Default Run Config Id */
+            default_run_config_id: string | null;
+            /** Items */
+            items: components["schemas"]["AgentOverviewRunConfig"][];
+        };
+        /** AgentOverviewSearchTool */
+        AgentOverviewSearchTool: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Tool Name */
+            tool_name: string;
+            /** Tool Description */
+            tool_description: string;
+            /** Description */
+            description: string | null;
+            /** Tags */
+            tags: string[] | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** AgentOverviewSearchTools */
+        AgentOverviewSearchTools: {
+            /** Items */
+            items: components["schemas"]["AgentOverviewSearchTool"][];
+            /** Archived Search Tool Count */
+            archived_search_tool_count: number;
+        };
+        /** AgentOverviewSkill */
+        AgentOverviewSkill: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** AgentOverviewSkills */
+        AgentOverviewSkills: {
+            /** Items */
+            items: components["schemas"]["AgentOverviewSkill"][];
+            /** Archived Skill Count */
+            archived_skill_count: number;
+        };
+        /** AgentOverviewSpec */
+        AgentOverviewSpec: {
+            /** Eval Id */
+            eval_id: string | null;
+            /** Name */
+            name: string;
+            /** Spec Type */
+            spec_type: string;
+            /** Priority */
+            priority: string;
+            /** Status */
+            status: string;
+            /** Tags */
+            tags: string[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** AgentOverviewSpecs */
+        AgentOverviewSpecs: {
+            /** Items */
+            items: components["schemas"]["AgentOverviewSpec"][];
+            /** Archived Spec Count */
+            archived_spec_count: number;
+        };
+        /** AgentOverviewTask */
+        AgentOverviewTask: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Instruction */
+            instruction: string;
+            /** Instruction Truncated */
+            instruction_truncated: boolean;
+            /** Thinking Instruction */
+            thinking_instruction: string | null;
+            /** Thinking Instruction Truncated */
+            thinking_instruction_truncated: boolean;
+            /** Input Json Schema */
+            input_json_schema: unknown | null;
+            /** Output Json Schema */
+            output_json_schema: unknown | null;
+            /** Default Run Config Id */
+            default_run_config_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** AgentOverviewToolServer */
+        AgentOverviewToolServer: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+            /** Description */
+            description: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** AgentOverviewToolServers */
+        AgentOverviewToolServers: {
+            /** Items */
+            items: components["schemas"]["AgentOverviewToolServer"][];
+            /** Archived Tool Server Count */
+            archived_tool_server_count: number;
+        };
         /** AllTasksProject */
         AllTasksProject: {
             /** Id */
@@ -16465,6 +16793,40 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_overview_api_projects__project_id__tasks__task_id__agent_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentOverview"];
                 };
             };
             /** @description Validation Error */
