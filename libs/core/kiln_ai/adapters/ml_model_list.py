@@ -226,6 +226,7 @@ class ModelName(str, Enum):
     qwen_3_vl_30b_a3b_no_thinking = "qwen_3_vl_30b_a3b_no_thinking"
     qwen_3_vl_8b_no_thinking = "qwen_3_vl_8b_no_thinking"
     qwen_long_l1_32b = "qwen_long_l1_32b"
+    kimi_k2_6 = "kimi_k2_6"
     kimi_k2 = "kimi_k2"
     kimi_k2_0905 = "kimi_k2_0905"
     kimi_k2_thinking = "kimi_k2_thinking"
@@ -6782,13 +6783,60 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Kimi K2.6
+    # Not available on Together AI, Fireworks AI, or SiliconFlow CN yet
+    KilnModel(
+        family=ModelFamily.kimi,
+        name=ModelName.kimi_k2_6,
+        friendly_name="Kimi K2.6",
+        featured_rank=6,
+        editorial_notes="Open, state-of-the-art model from Moonshot AI. Excellent price-to-performance ratio. Enhanced agent planning and reasoning capabilities.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="moonshotai/kimi-k2.6",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_requires_pdf_as_image=True,
+                supports_doc_extraction=True,
+                # OpenRouter reports reasoning support via include_reasoning parameter
+                # but similar to K2.5, it doesn't always return reasoning in the response
+                # reasoning_capable=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+            # Together AI provider commented out - model not available yet
+            # Check https://api.together.ai/models for availability
+            # KilnModelProvider(
+            #     name=ModelProviderName.together_ai,
+            #     model_id="moonshotai/Kimi-K2.6",
+            #     structured_output_mode=StructuredOutputMode.json_instructions,
+            #     supports_data_gen=True,
+            #     multimodal_capable=True,
+            #     supports_vision=True,
+            #     supports_doc_extraction=True,
+            #     multimodal_mime_types=[
+            #         KilnMimeType.PDF,
+            #         KilnMimeType.TXT,
+            #         KilnMimeType.MD,
+            #         KilnMimeType.JPG,
+            #         KilnMimeType.PNG,
+            #     ],
+            #     multimodal_requires_pdf_as_image=True,
+            # ),
+        ],
+    ),
     # Kimi K2.5
     # Not available on SiliconFlow CN yet
     KilnModel(
         family=ModelFamily.kimi,
         name=ModelName.kimi_k2_5,
         friendly_name="Kimi K2.5",
-        featured_rank=6,
         editorial_notes="Open, state-of-the-art model from Moonshot AI. Excellent price-to-performance ratio.",
         providers=[
             # Fireworks provider commented out due to immutable parameter requirements:
