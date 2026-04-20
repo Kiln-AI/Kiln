@@ -5407,3 +5407,23 @@ def test_extract_file_has_no_write_lock(app):
 def test_run_rag_config_has_no_write_lock(app):
     endpoint = _find_endpoint_by_path(app, "/rag_configs/{rag_config_id}/run")
     assert getattr(endpoint, "_git_sync_no_write_lock", False) is True
+
+
+# --- Read-only POST endpoints must carry @no_write_lock ---
+
+
+def test_open_document_enclosing_folder_has_no_write_lock(app):
+    endpoint = _find_endpoint_by_path(
+        app, "/documents/{document_id}/open_enclosing_folder"
+    )
+    assert getattr(endpoint, "_git_sync_no_write_lock", False) is True
+
+
+def test_get_rag_config_progress_has_no_write_lock(app):
+    endpoint = _find_endpoint_by_path(app, "/rag_configs/progress")
+    assert getattr(endpoint, "_git_sync_no_write_lock", False) is True
+
+
+def test_search_rag_config_has_no_write_lock(app):
+    endpoint = _find_endpoint_by_path(app, "/rag_configs/{rag_config_id}/search")
+    assert getattr(endpoint, "_git_sync_no_write_lock", False) is True
