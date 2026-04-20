@@ -3005,17 +3005,14 @@ export interface components {
             dataset: components["schemas"]["AgentOverviewDataset"];
             docs: components["schemas"]["AgentOverviewDocs"];
             search_tools: components["schemas"]["AgentOverviewSearchTools"];
-            /** Prompts */
-            prompts: components["schemas"]["AgentOverviewPrompt"][];
+            prompts: components["schemas"]["AgentOverviewPrompts"];
             specs: components["schemas"]["AgentOverviewSpecs"];
             /** Evals */
             evals: components["schemas"]["AgentOverviewEval"][];
             tool_servers: components["schemas"]["AgentOverviewToolServers"];
             run_configs: components["schemas"]["AgentOverviewRunConfigs"];
-            /** Fine Tunes */
-            fine_tunes: components["schemas"]["AgentOverviewFineTune"][];
-            /** Prompt Optimization Jobs */
-            prompt_optimization_jobs: components["schemas"]["AgentOverviewPromptOptimizationJob"][];
+            fine_tunes: components["schemas"]["AgentOverviewFineTunes"];
+            prompt_optimization_jobs: components["schemas"]["AgentOverviewPromptOptimizationJobs"];
             skills: components["schemas"]["AgentOverviewSkills"];
             /** Connected Providers */
             connected_providers: {
@@ -3070,33 +3067,11 @@ export interface components {
             output_scores: components["schemas"]["AgentOverviewOutputScore"][];
             /** Favourite */
             favourite: boolean;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
         };
-        /** AgentOverviewFineTune */
-        AgentOverviewFineTune: {
-            /** Id */
-            id: string | null;
-            /** Name */
-            name: string;
-            /** Description */
-            description: string | null;
-            /** Provider */
-            provider: string;
-            /** Base Model Id */
-            base_model_id: string;
-            /** Fine Tune Model Id */
-            fine_tune_model_id: string | null;
-            /** Latest Status */
-            latest_status: string;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
+        /** AgentOverviewFineTunes */
+        AgentOverviewFineTunes: {
+            /** Total Count */
+            total_count: number;
         };
         /** AgentOverviewOutputScore */
         AgentOverviewOutputScore: {
@@ -3113,11 +3088,6 @@ export interface components {
             name: string;
             /** Description */
             description: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
         };
         /** AgentOverviewPrompt */
         AgentOverviewPrompt: {
@@ -3128,25 +3098,21 @@ export interface components {
             /** Type */
             type: string;
         };
-        /** AgentOverviewPromptOptimizationJob */
-        AgentOverviewPromptOptimizationJob: {
-            /** Id */
-            id: string | null;
-            /** Name */
-            name: string;
-            /** Model Name */
-            model_name: string | null;
-            /** Model Provider */
-            model_provider: string | null;
-            /** Latest Status */
-            latest_status: string;
-            /** Created Prompt Id */
-            created_prompt_id: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
+        /** AgentOverviewPromptOptimizationJobs */
+        AgentOverviewPromptOptimizationJobs: {
+            /** Total Count */
+            total_count: number;
+        };
+        /** AgentOverviewPrompts */
+        AgentOverviewPrompts: {
+            /** Total */
+            total: number;
+            /** Showing */
+            showing: string;
+            /** Generators From Task Instruction Count */
+            generators_from_task_instruction_count: number;
+            /** Items */
+            items: components["schemas"]["AgentOverviewPrompt"][];
         };
         /** AgentOverviewRunConfig */
         AgentOverviewRunConfig: {
@@ -3170,16 +3136,15 @@ export interface components {
             skill_ids: string[];
             /** Starred */
             starred: boolean;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
         };
         /** AgentOverviewRunConfigs */
         AgentOverviewRunConfigs: {
             /** Default Run Config Id */
             default_run_config_id: string | null;
+            /** Total */
+            total: number;
+            /** Showing */
+            showing: string;
             /** Items */
             items: components["schemas"]["AgentOverviewRunConfig"][];
         };
@@ -3197,11 +3162,6 @@ export interface components {
             description: string | null;
             /** Tags */
             tags: string[] | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
         };
         /** AgentOverviewSearchTools */
         AgentOverviewSearchTools: {
@@ -3218,11 +3178,6 @@ export interface components {
             name: string;
             /** Description */
             description: string;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
         };
         /** AgentOverviewSkills */
         AgentOverviewSkills: {
@@ -3245,11 +3200,6 @@ export interface components {
             status: string;
             /** Tags */
             tags: string[];
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
         };
         /** AgentOverviewSpecs */
         AgentOverviewSpecs: {
@@ -3268,23 +3218,12 @@ export interface components {
             description: string | null;
             /** Instruction */
             instruction: string;
-            /** Instruction Truncated */
-            instruction_truncated: boolean;
-            /** Thinking Instruction */
-            thinking_instruction: string | null;
-            /** Thinking Instruction Truncated */
-            thinking_instruction_truncated: boolean;
             /** Input Json Schema */
             input_json_schema: unknown | null;
             /** Output Json Schema */
             output_json_schema: unknown | null;
             /** Default Run Config Id */
             default_run_config_id: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
         };
         /** AgentOverviewToolServer */
         AgentOverviewToolServer: {
@@ -3296,11 +3235,6 @@ export interface components {
             type: string;
             /** Description */
             description: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
         };
         /** AgentOverviewToolServers */
         AgentOverviewToolServers: {
