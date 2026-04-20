@@ -2602,3 +2602,507 @@ def test_run_comparison_has_no_write_lock(app):
 def test_run_calibration_has_no_write_lock(app):
     endpoint = _find_endpoint_by_path(app, "/evals/{eval_id}/run_calibration")
     assert getattr(endpoint, "_git_sync_no_write_lock", False) is True
+
+
+# --- eval_results_summary tests ---
+
+
+def _build_mock_eval(
+    eval_id: str,
+    name: str,
+    current_config_id: str | None,
+    eval_set_filter_id: str,
+    output_scores: list[EvalOutputScore],
+    configs: list,
+) -> Mock:
+    mock = Mock(spec=Eval)
+    mock.id = eval_id
+    mock.name = name
+    mock.current_config_id = current_config_id
+    mock.eval_set_filter_id = eval_set_filter_id
+    mock.output_scores = output_scores
+    mock.configs.return_value = configs
+    return mock
+
+
+def _build_mock_eval_config(
+    config_id: str,
+    name: str,
+    eval_runs: list[EvalRun],
+) -> Mock:
+    mock = Mock(spec=EvalConfig)
+    mock.id = config_id
+    mock.name = name
+    mock.runs.return_value = eval_runs
+    return mock
+
+
+@pytest.mark.asyncio
+async def test_eval_results_summary_happy_path(client):
+    output_scores_1 = [
+        EvalOutputScore(
+            name="accuracy",
+            instruction="Test accuracy",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+    ]
+    output_scores_2 = [
+        EvalOutputScore(
+            name="relevance",
+            instruction="Test relevance",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+    ]
+
+    # Eval 1, config 1: rc1 has 2 runs, rc2 has 1 run, rc3 has 0 runs
+    eval1_runs_config1 = [
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.8},
+            input="i",
+            output="o",
+            dataset_id="ds1",
+        ),
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.6},
+            input="i",
+            output="o",
+            dataset_id="ds2",
+        ),
+        EvalRun(
+            task_run_config_id="rc2",
+            scores={"accuracy": 0.9},
+            input="i",
+            output="o",
+            dataset_id="ds1",
+        ),
+    ]
+
+    # Eval 1, config 2: rc1 has 1 run
+    eval1_runs_config2 = [
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 1.0},
+            input="i",
+            output="o",
+            dataset_id="ds1",
+        ),
+    ]
+
+    # Eval 2, config 1: rc1 and rc3 each have 1 run
+    eval2_runs_config1 = [
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"relevance": 0.5},
+            input="i",
+            output="o",
+            dataset_id="ds3",
+        ),
+        EvalRun(
+            task_run_config_id="rc3",
+            scores={"relevance": 0.7},
+            input="i",
+            output="o",
+            dataset_id="ds3",
+        ),
+    ]
+
+    # Eval 2, config 2: rc2 has 1 run
+    eval2_runs_config2 = [
+        EvalRun(
+            task_run_config_id="rc2",
+            scores={"relevance": 0.3},
+            input="i",
+            output="o",
+            dataset_id="ds3",
+        ),
+    ]
+
+    e1c1 = _build_mock_eval_config("ec1", "Judge A", eval1_runs_config1)
+    e1c2 = _build_mock_eval_config("ec2", "Judge B", eval1_runs_config2)
+
+    e2c1 = _build_mock_eval_config("ec3", "Judge C", eval2_runs_config1)
+    e2c2 = _build_mock_eval_config("ec4", "Judge D", eval2_runs_config2)
+
+    eval1 = _build_mock_eval(
+        eval_id="eval1",
+        name="Eval One",
+        current_config_id="ec1",
+        eval_set_filter_id="tag::eval_set_1",
+        output_scores=output_scores_1,
+        configs=[e1c1, e1c2],
+    )
+    eval2 = _build_mock_eval(
+        eval_id="eval2",
+        name="Eval Two",
+        current_config_id="ec4",
+        eval_set_filter_id="tag::eval_set_2",
+        output_scores=output_scores_2,
+        configs=[e2c1, e2c2],
+    )
+
+    rc1_mock = Mock(spec=TaskRunConfig, id="rc1")
+    rc1_mock.name = "Run Config 1"
+    rc2_mock = Mock(spec=TaskRunConfig, id="rc2")
+    rc2_mock.name = "Run Config 2"
+    rc3_mock = Mock(spec=TaskRunConfig, id="rc3")
+    rc3_mock.name = "Run Config 3"
+
+    mock_task = Mock(spec=Task)
+    mock_task.run_configs.return_value = [rc1_mock, rc2_mock, rc3_mock]
+    mock_task.finetunes.return_value = []
+    mock_task.evals.return_value = [eval1, eval2]
+
+    def ds_filter_side_effect(task, filter_id, readonly):
+        if filter_id == "tag::eval_set_1":
+            return {"ds1", "ds2"}
+        elif filter_id == "tag::eval_set_2":
+            return {"ds3"}
+        return set()
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
+        patch(
+            "app.desktop.studio_server.eval_api.dataset_ids_in_filter",
+            side_effect=ds_filter_side_effect,
+        ),
+    ):
+        mock_task_from_id.return_value = mock_task
+
+        response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["evals"]) == 2
+
+    # --- Eval 1 assertions ---
+    eval1_out = data["evals"][0]
+    assert eval1_out["eval_id"] == "eval1"
+    assert eval1_out["eval_name"] == "Eval One"
+    assert eval1_out["default_judge_config_id"] == "ec1"
+    assert len(eval1_out["run_configs"]) == 3
+    assert eval1_out["run_configs"][0]["id"] == "rc1"
+    assert eval1_out["run_configs"][0]["name"] == "Run Config 1"
+    assert eval1_out["run_configs"][2]["id"] == "rc3"
+    assert eval1_out["run_configs"][2]["name"] == "Run Config 3"
+
+    assert len(eval1_out["eval_configs"]) == 2
+    ec1_out = eval1_out["eval_configs"][0]
+    assert ec1_out["eval_config_id"] == "ec1"
+    assert ec1_out["eval_config_name"] == "Judge A"
+    assert ec1_out["is_default"] is True
+    assert ec1_out["summary"]["dataset_size"] == 2
+    assert ec1_out["summary"]["results"]["rc1"]["accuracy"]["mean_score"] == 0.7
+    assert ec1_out["summary"]["results"]["rc2"]["accuracy"]["mean_score"] == 0.9
+    assert ec1_out["summary"]["run_config_percent_complete"]["rc1"] == 1.0
+    assert ec1_out["summary"]["run_config_percent_complete"]["rc2"] == 0.5
+
+    ec2_out = eval1_out["eval_configs"][1]
+    assert ec2_out["eval_config_id"] == "ec2"
+    assert ec2_out["is_default"] is False
+    assert ec2_out["summary"]["results"]["rc1"]["accuracy"]["mean_score"] == 1.0
+
+    # --- Eval 2 assertions ---
+    eval2_out = data["evals"][1]
+    assert eval2_out["eval_id"] == "eval2"
+    assert eval2_out["eval_name"] == "Eval Two"
+    assert eval2_out["default_judge_config_id"] == "ec4"
+    assert len(eval2_out["run_configs"]) == 3
+
+    assert len(eval2_out["eval_configs"]) == 2
+    ec3_out = eval2_out["eval_configs"][0]
+    assert ec3_out["eval_config_id"] == "ec3"
+    assert ec3_out["eval_config_name"] == "Judge C"
+    assert ec3_out["is_default"] is False
+    assert ec3_out["summary"]["dataset_size"] == 1
+    assert ec3_out["summary"]["results"]["rc1"]["relevance"]["mean_score"] == 0.5
+    assert ec3_out["summary"]["results"]["rc3"]["relevance"]["mean_score"] == 0.7
+    assert ec3_out["summary"]["run_config_percent_complete"]["rc1"] == 1.0
+    assert ec3_out["summary"]["run_config_percent_complete"]["rc3"] == 1.0
+
+    ec4_out = eval2_out["eval_configs"][1]
+    assert ec4_out["eval_config_id"] == "ec4"
+    assert ec4_out["eval_config_name"] == "Judge D"
+    assert ec4_out["is_default"] is True
+    assert ec4_out["summary"]["dataset_size"] == 1
+    assert ec4_out["summary"]["results"]["rc2"]["relevance"]["mean_score"] == 0.3
+    assert ec4_out["summary"]["run_config_percent_complete"]["rc2"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_eval_results_summary_behavioral_equivalence(client):
+    """For each (eval, eval_config), the summary in eval_results_summary matches /score_summary."""
+    output_scores = [
+        EvalOutputScore(
+            name="accuracy",
+            instruction="Test accuracy",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+        EvalOutputScore(
+            name="relevance",
+            instruction="Test relevance",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+    ]
+
+    eval_runs = [
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.8, "relevance": 0.9},
+            input="i",
+            output="o",
+            dataset_id="ds1",
+        ),
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.6, "relevance": 0.7},
+            input="i",
+            output="o",
+            dataset_id="ds2",
+        ),
+    ]
+
+    ec1 = _build_mock_eval_config("ec1", "Judge A", eval_runs)
+
+    eval1 = _build_mock_eval(
+        eval_id="eval1",
+        name="Eval One",
+        current_config_id="ec1",
+        eval_set_filter_id="tag::eval_set",
+        output_scores=output_scores,
+        configs=[ec1],
+    )
+
+    mock_task = Mock(spec=Task)
+    mock_task.run_configs.return_value = [
+        Mock(spec=TaskRunConfig, id="rc1"),
+    ]
+    mock_task.run_configs.return_value[0].name = "Run Config 1"
+    mock_task.finetunes.return_value = []
+    mock_task.evals.return_value = [eval1]
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
+        patch(
+            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
+        ) as mock_ds_filter,
+        patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id,
+        patch(
+            "app.desktop.studio_server.eval_api.eval_config_from_id"
+        ) as mock_eval_config_from_id,
+    ):
+        mock_task_from_id.return_value = mock_task
+        mock_ds_filter.return_value = {"ds1", "ds2"}
+        mock_eval_from_id.return_value = eval1
+        mock_eval_config_from_id.return_value = ec1
+
+        summary_response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+        score_response = client.get(
+            "/api/projects/p1/tasks/t1/evals/eval1/eval_config/ec1/score_summary"
+        )
+
+    assert summary_response.status_code == 200
+    assert score_response.status_code == 200
+
+    summary_data = summary_response.json()["evals"][0]["eval_configs"][0]["summary"]
+    score_data = score_response.json()
+
+    assert summary_data == score_data
+
+
+@pytest.mark.asyncio
+async def test_eval_results_summary_empty_filter(client):
+    """Empty dataset filter returns empty summary instead of 400."""
+    output_scores = [
+        EvalOutputScore(
+            name="accuracy",
+            instruction="Test accuracy",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+    ]
+    ec1 = _build_mock_eval_config("ec1", "Judge A", [])
+    eval1 = _build_mock_eval(
+        eval_id="eval1",
+        name="Eval One",
+        current_config_id="ec1",
+        eval_set_filter_id="tag::empty",
+        output_scores=output_scores,
+        configs=[ec1],
+    )
+
+    mock_task = Mock(spec=Task)
+    mock_task.run_configs.return_value = []
+    mock_task.finetunes.return_value = []
+    mock_task.evals.return_value = [eval1]
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
+        patch(
+            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
+        ) as mock_ds_filter,
+    ):
+        mock_task_from_id.return_value = mock_task
+        mock_ds_filter.return_value = set()
+
+        response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+
+    assert response.status_code == 200
+    data = response.json()
+    ec_out = data["evals"][0]["eval_configs"][0]
+    assert ec_out["summary"]["results"] == {}
+    assert ec_out["summary"]["run_config_percent_complete"] == {}
+    assert ec_out["summary"]["dataset_size"] == 0
+
+
+@pytest.mark.asyncio
+async def test_eval_results_summary_is_default(client):
+    """is_default is true only when eval_config_id == eval.current_config_id."""
+    output_scores = [
+        EvalOutputScore(
+            name="accuracy",
+            instruction="Test accuracy",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+    ]
+    ec1 = _build_mock_eval_config("ec1", "Judge A", [])
+    ec2 = _build_mock_eval_config("ec2", "Judge B", [])
+    eval1 = _build_mock_eval(
+        eval_id="eval1",
+        name="Eval One",
+        current_config_id="ec2",
+        eval_set_filter_id="tag::test",
+        output_scores=output_scores,
+        configs=[ec1, ec2],
+    )
+
+    mock_task = Mock(spec=Task)
+    mock_task.run_configs.return_value = []
+    mock_task.finetunes.return_value = []
+    mock_task.evals.return_value = [eval1]
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
+        patch(
+            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
+        ) as mock_ds_filter,
+    ):
+        mock_task_from_id.return_value = mock_task
+        mock_ds_filter.return_value = set()
+
+        response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+
+    assert response.status_code == 200
+    configs = response.json()["evals"][0]["eval_configs"]
+    assert configs[0]["eval_config_id"] == "ec1"
+    assert configs[0]["is_default"] is False
+    assert configs[1]["eval_config_id"] == "ec2"
+    assert configs[1]["is_default"] is True
+
+
+@pytest.mark.asyncio
+async def test_eval_results_summary_no_evals(client):
+    """Task with no evals returns empty list."""
+    mock_task = Mock(spec=Task)
+    mock_task.run_configs.return_value = []
+    mock_task.finetunes.return_value = []
+    mock_task.evals.return_value = []
+
+    with patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = mock_task
+
+        response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+
+    assert response.status_code == 200
+    assert response.json() == {"evals": []}
+
+
+@pytest.mark.asyncio
+async def test_eval_results_summary_dataset_ids_cached_per_filter(client):
+    """dataset_ids_in_filter is called once per unique filter_id, not per eval x config."""
+    output_scores = [
+        EvalOutputScore(
+            name="accuracy",
+            instruction="Test accuracy",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+    ]
+
+    eval_runs = [
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.8},
+            input="i",
+            output="o",
+            dataset_id="ds1",
+        ),
+    ]
+
+    ec1a = _build_mock_eval_config("ec1a", "Judge A1", eval_runs)
+    ec1b = _build_mock_eval_config("ec1b", "Judge A2", eval_runs)
+    ec2a = _build_mock_eval_config("ec2a", "Judge B1", eval_runs)
+
+    eval1 = _build_mock_eval(
+        eval_id="eval1",
+        name="Eval One",
+        current_config_id="ec1a",
+        eval_set_filter_id="tag::set1",
+        output_scores=output_scores,
+        configs=[ec1a, ec1b],
+    )
+    eval2 = _build_mock_eval(
+        eval_id="eval2",
+        name="Eval Two",
+        current_config_id="ec2a",
+        eval_set_filter_id="tag::set2",
+        output_scores=output_scores,
+        configs=[ec2a],
+    )
+
+    mock_task = Mock(spec=Task)
+    mock_task.run_configs.return_value = [
+        Mock(spec=TaskRunConfig, id="rc1"),
+    ]
+    mock_task.run_configs.return_value[0].name = "RC1"
+    mock_task.finetunes.return_value = []
+    mock_task.evals.return_value = [eval1, eval2]
+
+    runs_call_count = 0
+
+    def counting_dataset_ids_in_filter(task, filter_id, readonly):
+        nonlocal runs_call_count
+        runs_call_count += 1
+        return {"ds1"}
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
+        patch(
+            "app.desktop.studio_server.eval_api.dataset_ids_in_filter",
+            side_effect=counting_dataset_ids_in_filter,
+        ),
+    ):
+        mock_task_from_id.return_value = mock_task
+
+        response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+
+    assert response.status_code == 200
+    # Two evals with different filter_ids, so dataset_ids_in_filter called twice (cached per filter_id)
+    assert runs_call_count == 2
+
+    # If they shared the same filter_id, it would be called once
+    eval2.eval_set_filter_id = "tag::set1"
+    runs_call_count = 0
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
+        patch(
+            "app.desktop.studio_server.eval_api.dataset_ids_in_filter",
+            side_effect=counting_dataset_ids_in_filter,
+        ),
+    ):
+        mock_task_from_id.return_value = mock_task
+
+        response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+
+    assert response.status_code == 200
+    assert runs_call_count == 1

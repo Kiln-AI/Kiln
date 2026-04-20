@@ -298,6 +298,50 @@ class EvalResultSummary(BaseModel):
     dataset_size: int = Field(description="Total size of the eval dataset.")
 
 
+class EvalResultsSummaryRunConfigRef(BaseModel):
+    """Reference to a run config within eval results summary."""
+
+    id: ID_TYPE = Field(description="The run config ID.")
+    name: str = Field(description="The run config name.")
+
+
+class EvalResultsSummaryEvalConfig(BaseModel):
+    """Summary of a single eval config within eval results summary."""
+
+    eval_config_id: ID_TYPE = Field(description="The eval config ID.")
+    eval_config_name: str = Field(description="The eval config name.")
+    is_default: bool = Field(
+        description="Whether this eval config is the default judge for its eval."
+    )
+    summary: EvalResultSummary = Field(
+        description="The score summary for this eval config."
+    )
+
+
+class EvalResultsSummaryEval(BaseModel):
+    """Summary of a single eval within eval results summary."""
+
+    eval_id: ID_TYPE = Field(description="The eval ID.")
+    eval_name: str = Field(description="The eval name.")
+    default_judge_config_id: ID_TYPE | None = Field(
+        description="The default judge config ID for this eval, if any."
+    )
+    run_configs: list[EvalResultsSummaryRunConfigRef] = Field(
+        description="The run configs for this eval."
+    )
+    eval_configs: list[EvalResultsSummaryEvalConfig] = Field(
+        description="The eval configs and their score summaries."
+    )
+
+
+class EvalResultsSummaryResponse(BaseModel):
+    """Aggregated eval results across all evals and eval configs for a task."""
+
+    evals: list[EvalResultsSummaryEval] = Field(
+        description="The evals and their results."
+    )
+
+
 class EvalConfigCompareSummary(BaseModel):
     """Summary comparing eval configs against human ratings."""
 
@@ -1103,6 +1147,73 @@ def connect_evals_api(app: FastAPI):
         return compute_score_summary(
             eval, eval_config, task_run_configs, expected_dataset_ids
         )
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_results_summary",
+        summary="Get Eval Results Summary",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_eval_results_summary(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> EvalResultsSummaryResponse:
+        task = task_from_id(project_id, task_id)
+        task_run_configs = get_all_run_configs(project_id, task_id)
+
+        run_config_refs = [
+            EvalResultsSummaryRunConfigRef(id=rc.id, name=rc.name)
+            for rc in task_run_configs
+        ]
+
+        dataset_ids_cache: Dict[DatasetFilterId, Set[ID_TYPE]] = {}
+        evals_out: list[EvalResultsSummaryEval] = []
+
+        for eval in task.evals():
+            filter_id = eval.eval_set_filter_id
+            if filter_id not in dataset_ids_cache:
+                dataset_ids_cache[filter_id] = dataset_ids_in_filter(
+                    task, filter_id, readonly=True
+                )
+            expected_dataset_ids = dataset_ids_cache[filter_id]
+
+            eval_configs_out: list[EvalResultsSummaryEvalConfig] = []
+            for eval_config in eval.configs():
+                if len(expected_dataset_ids) == 0:
+                    summary = EvalResultSummary(
+                        results={},
+                        run_config_percent_complete={},
+                        dataset_size=0,
+                    )
+                else:
+                    summary = compute_score_summary(
+                        eval, eval_config, task_run_configs, expected_dataset_ids
+                    )
+                eval_configs_out.append(
+                    EvalResultsSummaryEvalConfig(
+                        eval_config_id=eval_config.id,
+                        eval_config_name=eval_config.name,
+                        is_default=(eval_config.id == eval.current_config_id),
+                        summary=summary,
+                    )
+                )
+
+            evals_out.append(
+                EvalResultsSummaryEval(
+                    eval_id=eval.id,
+                    eval_name=eval.name,
+                    default_judge_config_id=eval.current_config_id,
+                    run_configs=run_config_refs,
+                    eval_configs=eval_configs_out,
+                )
+            )
+
+        return EvalResultsSummaryResponse(evals=evals_out)
 
     # Compared to above, this is comparing all eval configs to each other, not looking at a single eval config
     @app.get(

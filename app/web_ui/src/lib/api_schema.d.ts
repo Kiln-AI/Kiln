@@ -1956,6 +1956,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/eval_results_summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Eval Results Summary */
+        get: operations["get_eval_results_summary_api_projects__project_id__tasks__task_id__eval_results_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs_score_summary": {
         parameters: {
             query?: never;
@@ -5043,6 +5060,87 @@ export interface components {
              * @description Total size of the eval dataset.
              */
             dataset_size: number;
+        };
+        /**
+         * EvalResultsSummaryEval
+         * @description Summary of a single eval within eval results summary.
+         */
+        EvalResultsSummaryEval: {
+            /**
+             * Eval Id
+             * @description The eval ID.
+             */
+            eval_id: string | null;
+            /**
+             * Eval Name
+             * @description The eval name.
+             */
+            eval_name: string;
+            /**
+             * Default Judge Config Id
+             * @description The default judge config ID for this eval, if any.
+             */
+            default_judge_config_id: string | null;
+            /**
+             * Run Configs
+             * @description The run configs for this eval.
+             */
+            run_configs: components["schemas"]["EvalResultsSummaryRunConfigRef"][];
+            /**
+             * Eval Configs
+             * @description The eval configs and their score summaries.
+             */
+            eval_configs: components["schemas"]["EvalResultsSummaryEvalConfig"][];
+        };
+        /**
+         * EvalResultsSummaryEvalConfig
+         * @description Summary of a single eval config within eval results summary.
+         */
+        EvalResultsSummaryEvalConfig: {
+            /**
+             * Eval Config Id
+             * @description The eval config ID.
+             */
+            eval_config_id: string | null;
+            /**
+             * Eval Config Name
+             * @description The eval config name.
+             */
+            eval_config_name: string;
+            /**
+             * Is Default
+             * @description Whether this eval config is the default judge for its eval.
+             */
+            is_default: boolean;
+            /** @description The score summary for this eval config. */
+            summary: components["schemas"]["EvalResultSummary"];
+        };
+        /**
+         * EvalResultsSummaryResponse
+         * @description Aggregated eval results across all evals and eval configs for a task.
+         */
+        EvalResultsSummaryResponse: {
+            /**
+             * Evals
+             * @description The evals and their results.
+             */
+            evals: components["schemas"]["EvalResultsSummaryEval"][];
+        };
+        /**
+         * EvalResultsSummaryRunConfigRef
+         * @description Reference to a run config within eval results summary.
+         */
+        EvalResultsSummaryRunConfigRef: {
+            /**
+             * Id
+             * @description The run config ID.
+             */
+            id: string | null;
+            /**
+             * Name
+             * @description The run config name.
+             */
+            name: string;
         };
         /**
          * EvalRun
@@ -14428,6 +14526,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EvalResultSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_eval_results_summary_api_projects__project_id__tasks__task_id__eval_results_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalResultsSummaryResponse"];
                 };
             };
             /** @description Validation Error */
