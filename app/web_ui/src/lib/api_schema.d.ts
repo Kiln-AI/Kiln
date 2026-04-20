@@ -134,15 +134,21 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/all_tasks": {
+    "/api/task_summaries": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List All Tasks */
-        get: operations["all_tasks_api_all_tasks_get"];
+        /**
+         * Task Summaries (agent-tuned)
+         * @description Return a workspace-wide list of projects and their tasks, with truncated
+         *     task.instruction values. Unlike typical list endpoints, entries here are
+         *     intentionally lossy — the shape is tuned for LLM-agent context efficiency,
+         *     not for driving UIs that need the full Task model.
+         */
+        get: operations["task_summaries_api_task_summaries_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3302,45 +3308,6 @@ export interface components {
             items: components["schemas"]["AgentOverviewToolServer"][];
             /** Archived Tool Server Count */
             archived_tool_server_count: number;
-        };
-        /** AllTasksProject */
-        AllTasksProject: {
-            /** Id */
-            id: string;
-            /** Name */
-            name: string;
-            /** Description */
-            description: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Tasks */
-            tasks: components["schemas"]["AllTasksTask"][];
-        };
-        /** AllTasksResponse */
-        AllTasksResponse: {
-            /** Projects */
-            projects: components["schemas"]["AllTasksProject"][];
-        };
-        /** AllTasksTask */
-        AllTasksTask: {
-            /** Id */
-            id: string;
-            /** Name */
-            name: string;
-            /** Description */
-            description: string | null;
-            /** Instruction */
-            instruction: string;
-            /** Instruction Truncated */
-            instruction_truncated: boolean;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
         };
         /** AnswerOption */
         AnswerOption: {
@@ -9543,6 +9510,33 @@ export interface components {
              */
             output: string;
         };
+        /** TaskSummariesProject */
+        TaskSummariesProject: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Tasks */
+            tasks: components["schemas"]["TaskSummary"][];
+        };
+        /** TaskSummariesResponse */
+        TaskSummariesResponse: {
+            /** Projects */
+            projects: components["schemas"]["TaskSummariesProject"][];
+        };
+        /** TaskSummary */
+        TaskSummary: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Instruction */
+            instruction: string;
+        };
         /**
          * TaskToolCompatibility
          * @description Whether a task is compatible with a specific tool.
@@ -10456,7 +10450,7 @@ export interface operations {
             };
         };
     };
-    all_tasks_api_all_tasks_get: {
+    task_summaries_api_task_summaries_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -10471,7 +10465,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AllTasksResponse"];
+                    "application/json": components["schemas"]["TaskSummariesResponse"];
                 };
             };
         };

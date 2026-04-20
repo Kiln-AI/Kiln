@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime
 from typing import Annotated, Any, Dict, List
 
 from fastapi import Body, FastAPI, HTTPException, Path
@@ -8,7 +7,7 @@ from kiln_ai.datamodel.external_tool_server import (
     ToolServerType,
 )
 from kiln_ai.utils.config import Config
-from kiln_ai.utils.formatting import truncate_to_words
+from kiln_ai.utils.formatting import truncate_to_words_with_agent_sentinel
 from pydantic import BaseModel, Field
 
 from kiln_server.project_api import project_from_id
@@ -21,25 +20,22 @@ from kiln_server.utils.agent_checks.policy import (
 logger = logging.getLogger(__name__)
 
 
-class AllTasksTask(BaseModel):
+class TaskSummary(BaseModel):
     id: str
     name: str
     description: str | None
     instruction: str
-    instruction_truncated: bool
-    created_at: datetime
 
 
-class AllTasksProject(BaseModel):
+class TaskSummariesProject(BaseModel):
     id: str
     name: str
     description: str | None
-    created_at: datetime
-    tasks: list[AllTasksTask]
+    tasks: list[TaskSummary]
 
 
-class AllTasksResponse(BaseModel):
-    projects: list[AllTasksProject]
+class TaskSummariesResponse(BaseModel):
+    projects: list[TaskSummariesProject]
 
 
 def task_from_id(project_id: str, task_id: str) -> Task:
@@ -308,14 +304,18 @@ def connect_task_api(app: FastAPI):
         return RatingOptionResponse(options=results)
 
     @app.get(
-        "/api/all_tasks",
-        summary="List All Tasks",
+        "/api/task_summaries",
+        summary="Task Summaries (agent-tuned)",
         tags=["Tasks"],
         openapi_extra=ALLOW_AGENT,
     )
-    async def all_tasks() -> AllTasksResponse:
+    async def task_summaries() -> TaskSummariesResponse:
+        """Return a workspace-wide list of projects and their tasks, with truncated
+        task.instruction values. Unlike typical list endpoints, entries here are
+        intentionally lossy — the shape is tuned for LLM-agent context efficiency,
+        not for driving UIs that need the full Task model."""
         project_paths = Config.shared().projects or []
-        projects: list[AllTasksProject] = []
+        projects: list[TaskSummariesProject] = []
         for project_path in project_paths:
             try:
                 project = Project.load_from_file(project_path)
@@ -327,30 +327,27 @@ def connect_task_api(app: FastAPI):
             if project.id is None:
                 logger.warning("Project at %s has no ID, skipping", project_path)
                 continue
-            tasks: list[AllTasksTask] = []
+            tasks: list[TaskSummary] = []
             for task in project.tasks(readonly=True):
                 if task.id is None:
                     continue
-                instruction, instruction_truncated = truncate_to_words(
+                instruction = truncate_to_words_with_agent_sentinel(
                     task.instruction, 100
                 )
                 tasks.append(
-                    AllTasksTask(
+                    TaskSummary(
                         id=task.id,
                         name=task.name,
                         description=task.description,
                         instruction=instruction or "",
-                        instruction_truncated=instruction_truncated,
-                        created_at=task.created_at,
                     )
                 )
             projects.append(
-                AllTasksProject(
+                TaskSummariesProject(
                     id=project.id,
                     name=project.name,
                     description=project.description,
-                    created_at=project.created_at,
                     tasks=tasks,
                 )
             )
-        return AllTasksResponse(projects=projects)
+        return TaskSummariesResponse(projects=projects)
