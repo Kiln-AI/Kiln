@@ -1,9 +1,22 @@
 name: Playwright Tests
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
+    paths:
+      - 'app/web_ui/**'
+      - 'app/desktop/**'
+      - 'libs/**'
+      - '.github/workflows/playwright.yml'
   pull_request:
-    branches: [ main, master ]
+    branches: [ main ]
+    paths:
+      - 'app/web_ui/**'
+      - 'app/desktop/**'
+      - 'libs/**'
+      - '.github/workflows/playwright.yml'
+concurrency:
+  group: playwright-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   test:
     timeout-minutes: 60
@@ -20,7 +33,9 @@ jobs:
         with:
           python-version: '3.13'
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
       - name: Install Python deps (repo root)
         working-directory: .
         run: uv sync
