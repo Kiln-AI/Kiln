@@ -17,10 +17,7 @@ from app.desktop.studio_server.agent_api import (
     _top_n_by_recency,
     connect_agent_api,
 )
-from kiln_ai.utils.formatting import (
-    AGENT_TRUNCATION_SENTINEL,
-    truncate_to_words,
-)
+from kiln_ai.utils.formatting import AGENT_TRUNCATION_SENTINEL
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import (
@@ -98,53 +95,6 @@ def task(project, tmp_path):
     return t
 
 
-# --- truncate_to_words tests ---
-
-
-class TestTruncateToWords:
-    def test_under_limit(self):
-        text = "hello world"
-        result, truncated = truncate_to_words(text, 10)
-        assert result == "hello world"
-        assert truncated is False
-
-    def test_at_limit(self):
-        text = "one two three"
-        result, truncated = truncate_to_words(text, 3)
-        assert result == "one two three"
-        assert truncated is False
-
-    def test_over_limit(self):
-        text = "one two three four five"
-        result, truncated = truncate_to_words(text, 3)
-        assert result == "one two three \u2026"
-        assert truncated is True
-
-    def test_none(self):
-        result, truncated = truncate_to_words(None, 10)
-        assert result is None
-        assert truncated is False
-
-    def test_empty(self):
-        result, truncated = truncate_to_words("", 10)
-        assert result == ""
-        assert truncated is False
-
-    def test_exactly_300_words(self):
-        text = " ".join(f"word{i}" for i in range(300))
-        result, truncated = truncate_to_words(text, 300)
-        assert truncated is False
-        assert result == text
-
-    def test_301_words(self):
-        text = " ".join(f"word{i}" for i in range(301))
-        result, truncated = truncate_to_words(text, 300)
-        assert truncated is True
-        words = result.rstrip(" \u2026").split()
-        assert len(words) == 300
-        assert result.endswith(" \u2026")
-
-
 # --- _split_tool_and_skill_ids tests ---
 
 
@@ -158,10 +108,7 @@ class TestSplitToolAndSkillIds:
         ]
         tools, skills = _split_tool_and_skill_ids(ids)
         assert tools == ["mcp::server1::tool1", "kiln_tool::rag::rag1"]
-        assert skills == [
-            "kiln_tool::skill::my_skill",
-            "kiln_tool::skill::other_skill",
-        ]
+        assert skills == ["my_skill", "other_skill"]
 
     def test_all_tools(self):
         ids = ["mcp::a", "kiln_tool::rag::b"]
@@ -173,7 +120,7 @@ class TestSplitToolAndSkillIds:
         ids = ["kiln_tool::skill::a", "kiln_tool::skill::b"]
         tools, skills = _split_tool_and_skill_ids(ids)
         assert tools == []
-        assert skills == ids
+        assert skills == ["a", "b"]
 
     def test_empty(self):
         tools, skills = _split_tool_and_skill_ids([])
@@ -893,7 +840,7 @@ class TestAgentOverviewEndpoint:
             assert rc_data["model_name"] == "gpt-4"
             assert rc_data["model_provider"] == "openai"
             assert rc_data["tool_ids"] == ["mcp::remote::server1::tool1"]
-            assert rc_data["skill_ids"] == ["kiln_tool::skill::my_skill"]
+            assert rc_data["skill_ids"] == ["my_skill"]
             assert rc_data["starred"] is True
             assert "created_at" not in rc_data
             assert data["run_configs"]["total"] == 1

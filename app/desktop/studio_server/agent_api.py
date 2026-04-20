@@ -13,16 +13,14 @@ from kiln_ai.datamodel.prompt_type import prompt_type_label
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_output import DataSourceType
+from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX
 from kiln_ai.utils.formatting import truncate_to_words_with_agent_sentinel
 from kiln_server.prompt_api import prompt_generators
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import ALLOW_AGENT
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.desktop.studio_server.eval_api import get_all_run_configs
-
-# Skill prefix used to split tool_ids into tool_ids and skill_ids
-_SKILL_PREFIX = "kiln_tool::skill::"
 
 T = TypeVar("T")
 
@@ -37,20 +35,32 @@ class AgentOverviewProject(BaseModel):
 
 
 class AgentOverviewTask(BaseModel):
+    """The task definition including schemas and truncated instruction."""
+
     id: ID_TYPE
     name: str
     description: str | None
-    instruction: str
-    input_json_schema: Any | None
-    output_json_schema: Any | None
+    instruction: str = Field(
+        description="Task instruction, truncated with sentinel if over 70 words."
+    )
+    input_json_schema: Any | None = Field(
+        description="JSON Schema for task input, or null if plain text."
+    )
+    output_json_schema: Any | None = Field(
+        description="JSON Schema for task output, or null if plain text."
+    )
     default_run_config_id: ID_TYPE | None
 
 
 class AgentOverviewDataset(BaseModel):
+    """Aggregate counts of dataset examples by tag, source type, and rating."""
+
     total_count: int
     by_tag: dict[str, int]
-    by_source: dict[str, int]
-    by_rating: dict[str, int]
+    by_source: dict[str, int] = Field(description="Counts keyed by DataSourceType.")
+    by_rating: dict[str, int] = Field(
+        description="Counts keyed by star rating (1-5) or 'unrated'."
+    )
 
 
 class AgentOverviewDocs(BaseModel):
@@ -74,23 +84,33 @@ class AgentOverviewSearchTools(BaseModel):
 
 
 class AgentOverviewPrompt(BaseModel):
-    id: str
+    """A prompt available for use in run configs."""
+
+    id: str = Field(
+        description="The prompt ID (e.g. 'id::...' or 'task_run_config::...')."
+    )
     name: str
-    type: str
+    type: str = Field(description="Type label (e.g. 'Custom', 'Frozen', 'Fine-Tune').")
 
 
 class AgentOverviewPrompts(BaseModel):
+    """Available prompts, capped to the most recent entries."""
+
     total: int
-    showing: str
-    generators_from_task_instruction_count: int
+    showing: str = Field(description="Human-readable 'N of M' summary.")
+    generators_from_task_instruction_count: int = Field(
+        description="Number of built-in prompt generators that auto-generate from the task instruction."
+    )
     items: list[AgentOverviewPrompt]
 
 
 class AgentOverviewSpec(BaseModel):
-    eval_id: ID_TYPE
+    """A non-archived eval spec with its priority and status."""
+
+    eval_id: ID_TYPE = Field(description="The eval this spec belongs to.")
     name: str
     spec_type: str
-    priority: str
+    priority: str = Field(description="Priority level name (e.g. 'p0', 'p1', 'p2').")
     status: str
     tags: list[str]
 
@@ -106,11 +126,15 @@ class AgentOverviewOutputScore(BaseModel):
 
 
 class AgentOverviewEval(BaseModel):
+    """An eval definition with its scoring configuration."""
+
     eval_id: ID_TYPE
     name: str
     description: str | None
-    template: str | None
-    default_judge_config_id: ID_TYPE | None
+    template: str | None = Field(description="Eval template type, if template-based.")
+    default_judge_config_id: ID_TYPE | None = Field(
+        description="ID of the default judge run config for this eval."
+    )
     output_scores: list[AgentOverviewOutputScore]
     favourite: bool
 
@@ -128,22 +152,32 @@ class AgentOverviewToolServers(BaseModel):
 
 
 class AgentOverviewRunConfig(BaseModel):
+    """A run configuration defining model, prompt, and tool selections."""
+
     id: ID_TYPE
     name: str
     description: str | None
-    type: str
+    type: str = Field(description="Run config type (e.g. 'agent', 'mcp').")
     model_name: str | None
     model_provider: str | None
-    prompt_id: str | None
-    tool_ids: list[str]
-    skill_ids: list[str]
+    prompt_id: str | None = Field(
+        description="Prompt ID used by this config, matching AgentOverviewPrompt.id format."
+    )
+    tool_ids: list[str] = Field(
+        description="Non-skill tool IDs attached to this config."
+    )
+    skill_ids: list[str] = Field(
+        description="Raw skill IDs (prefix stripped), matching AgentOverviewSkill.id."
+    )
     starred: bool
 
 
 class AgentOverviewRunConfigs(BaseModel):
+    """Run configs with starred entries always included, capped to 5 total."""
+
     default_run_config_id: ID_TYPE | None
     total: int
-    showing: str
+    showing: str = Field(description="Human-readable 'N of M' summary.")
     items: list[AgentOverviewRunConfig]
 
 
@@ -201,8 +235,8 @@ def _split_tool_and_skill_ids(
     tools: list[str] = []
     skills: list[str] = []
     for tid in tool_ids:
-        if tid.startswith(_SKILL_PREFIX):
-            skills.append(tid)
+        if tid.startswith(SKILL_TOOL_ID_PREFIX):
+            skills.append(tid.removeprefix(SKILL_TOOL_ID_PREFIX))
         else:
             tools.append(tid)
     return tools, skills
@@ -396,7 +430,7 @@ def _prompts_block(
             pool.append(
                 (
                     prompt_id,
-                    rc.name,
+                    rc.prompt.name,
                     prompt_type_label(prompt_id, rc.prompt.generator_id),
                     rc.created_at,
                 )

@@ -3021,7 +3021,10 @@ export interface components {
                 };
             };
         };
-        /** AgentOverviewDataset */
+        /**
+         * AgentOverviewDataset
+         * @description Aggregate counts of dataset examples by tag, source type, and rating.
+         */
         AgentOverviewDataset: {
             /** Total Count */
             total_count: number;
@@ -3029,11 +3032,17 @@ export interface components {
             by_tag: {
                 [key: string]: number;
             };
-            /** By Source */
+            /**
+             * By Source
+             * @description Counts keyed by DataSourceType.
+             */
             by_source: {
                 [key: string]: number;
             };
-            /** By Rating */
+            /**
+             * By Rating
+             * @description Counts keyed by star rating (1-5) or 'unrated'.
+             */
             by_rating: {
                 [key: string]: number;
             };
@@ -3051,7 +3060,10 @@ export interface components {
                 [key: string]: number;
             };
         };
-        /** AgentOverviewEval */
+        /**
+         * AgentOverviewEval
+         * @description An eval definition with its scoring configuration.
+         */
         AgentOverviewEval: {
             /** Eval Id */
             eval_id: string | null;
@@ -3059,9 +3071,15 @@ export interface components {
             name: string;
             /** Description */
             description: string | null;
-            /** Template */
+            /**
+             * Template
+             * @description Eval template type, if template-based.
+             */
             template: string | null;
-            /** Default Judge Config Id */
+            /**
+             * Default Judge Config Id
+             * @description ID of the default judge run config for this eval.
+             */
             default_judge_config_id: string | null;
             /** Output Scores */
             output_scores: components["schemas"]["AgentOverviewOutputScore"][];
@@ -3089,13 +3107,22 @@ export interface components {
             /** Description */
             description: string | null;
         };
-        /** AgentOverviewPrompt */
+        /**
+         * AgentOverviewPrompt
+         * @description A prompt available for use in run configs.
+         */
         AgentOverviewPrompt: {
-            /** Id */
+            /**
+             * Id
+             * @description The prompt ID (e.g. 'id::...' or 'task_run_config::...').
+             */
             id: string;
             /** Name */
             name: string;
-            /** Type */
+            /**
+             * Type
+             * @description Type label (e.g. 'Custom', 'Frozen', 'Fine-Tune').
+             */
             type: string;
         };
         /** AgentOverviewPromptOptimizationJobs */
@@ -3103,18 +3130,30 @@ export interface components {
             /** Total Count */
             total_count: number;
         };
-        /** AgentOverviewPrompts */
+        /**
+         * AgentOverviewPrompts
+         * @description Available prompts, capped to the most recent entries.
+         */
         AgentOverviewPrompts: {
             /** Total */
             total: number;
-            /** Showing */
+            /**
+             * Showing
+             * @description Human-readable 'N of M' summary.
+             */
             showing: string;
-            /** Generators From Task Instruction Count */
+            /**
+             * Generators From Task Instruction Count
+             * @description Number of built-in prompt generators that auto-generate from the task instruction.
+             */
             generators_from_task_instruction_count: number;
             /** Items */
             items: components["schemas"]["AgentOverviewPrompt"][];
         };
-        /** AgentOverviewRunConfig */
+        /**
+         * AgentOverviewRunConfig
+         * @description A run configuration defining model, prompt, and tool selections.
+         */
         AgentOverviewRunConfig: {
             /** Id */
             id: string | null;
@@ -3122,28 +3161,46 @@ export interface components {
             name: string;
             /** Description */
             description: string | null;
-            /** Type */
+            /**
+             * Type
+             * @description Run config type (e.g. 'agent', 'mcp').
+             */
             type: string;
             /** Model Name */
             model_name: string | null;
             /** Model Provider */
             model_provider: string | null;
-            /** Prompt Id */
+            /**
+             * Prompt Id
+             * @description Prompt ID used by this config, matching AgentOverviewPrompt.id format.
+             */
             prompt_id: string | null;
-            /** Tool Ids */
+            /**
+             * Tool Ids
+             * @description Non-skill tool IDs attached to this config.
+             */
             tool_ids: string[];
-            /** Skill Ids */
+            /**
+             * Skill Ids
+             * @description Raw skill IDs (prefix stripped), matching AgentOverviewSkill.id.
+             */
             skill_ids: string[];
             /** Starred */
             starred: boolean;
         };
-        /** AgentOverviewRunConfigs */
+        /**
+         * AgentOverviewRunConfigs
+         * @description Run configs with starred entries always included, capped to 5 total.
+         */
         AgentOverviewRunConfigs: {
             /** Default Run Config Id */
             default_run_config_id: string | null;
             /** Total */
             total: number;
-            /** Showing */
+            /**
+             * Showing
+             * @description Human-readable 'N of M' summary.
+             */
             showing: string;
             /** Items */
             items: components["schemas"]["AgentOverviewRunConfig"][];
@@ -3186,15 +3243,24 @@ export interface components {
             /** Archived Skill Count */
             archived_skill_count: number;
         };
-        /** AgentOverviewSpec */
+        /**
+         * AgentOverviewSpec
+         * @description A non-archived eval spec with its priority and status.
+         */
         AgentOverviewSpec: {
-            /** Eval Id */
+            /**
+             * Eval Id
+             * @description The eval this spec belongs to.
+             */
             eval_id: string | null;
             /** Name */
             name: string;
             /** Spec Type */
             spec_type: string;
-            /** Priority */
+            /**
+             * Priority
+             * @description Priority level name (e.g. 'p0', 'p1', 'p2').
+             */
             priority: string;
             /** Status */
             status: string;
@@ -3208,7 +3274,10 @@ export interface components {
             /** Archived Spec Count */
             archived_spec_count: number;
         };
-        /** AgentOverviewTask */
+        /**
+         * AgentOverviewTask
+         * @description The task definition including schemas and truncated instruction.
+         */
         AgentOverviewTask: {
             /** Id */
             id: string | null;
@@ -3216,11 +3285,20 @@ export interface components {
             name: string;
             /** Description */
             description: string | null;
-            /** Instruction */
+            /**
+             * Instruction
+             * @description Task instruction, truncated with sentinel if over 70 words.
+             */
             instruction: string;
-            /** Input Json Schema */
+            /**
+             * Input Json Schema
+             * @description JSON Schema for task input, or null if plain text.
+             */
             input_json_schema: unknown | null;
-            /** Output Json Schema */
+            /**
+             * Output Json Schema
+             * @description JSON Schema for task output, or null if plain text.
+             */
             output_json_schema: unknown | null;
             /** Default Run Config Id */
             default_run_config_id: string | null;

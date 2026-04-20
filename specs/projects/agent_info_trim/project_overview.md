@@ -40,7 +40,7 @@ prompts: { "total": 24, "showing": "5 of 24", "items": [ /* 5 items */ ] }
 prompts: { "total": 4, "showing": "4 of 4", "items": [ /* 4 items */ ] }
 ```
 
-**Inclusion rule:** include all starred/favourited items (all of them). If that set has fewer than 5, pad to 5 using `created_at` timestamp (latest wins).
+**Inclusion rule for run_configs:** include all starred items. If that set has fewer than 5, pad to 5 using `created_at` timestamp (latest wins). **For prompts:** cap at 5 most recent (no starred/favourite distinction).
 
 ### Drop created_at everywhere
 

@@ -55,7 +55,7 @@ Rules:
 - The `instruction_truncated: bool` field is removed from both response shapes.
 - `null` / empty instruction: emit as-is (no sentinel, no bool).
 
-**Helper change:** `truncate_to_words(text, max_words)` in `libs/core/kiln_ai/utils/formatting.py` currently returns `(truncated_text, was_truncated)`. Callers in `agent_api.py` and `task_api.py` are updated to apply the sentinel themselves; the helper signature does not change (still used in both sites).
+**Helper change:** A dedicated `truncate_to_words_with_agent_sentinel(text, max_words)` helper in `libs/core/kiln_ai/utils/formatting.py` handles truncation and sentinel appending in one call. It preserves original whitespace in the retained prefix. Callers in `agent_api.py` and `task_api.py` use this helper directly.
 
 ## 2. Remove `thinking_instruction` fields from `agent_overview`
 
