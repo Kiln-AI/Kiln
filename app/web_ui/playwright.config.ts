@@ -18,6 +18,10 @@ const TEST_HOME = resolve(__dirname, ".e2e_home")
  */
 export default defineConfig({
   testDir: "./tests/e2e",
+  /* Wait until both backend + frontend actually respond to real requests before tests run.
+     The webServer `url` checks below are one-shot 200 probes — globalSetup adds a real
+     readiness poll so a page load's own fetches don't race a still-warming service. */
+  globalSetup: "./tests/e2e/global-setup.ts",
   /* Tests share one backend (protected by HOME isolation). Run serial to avoid state collisions. */
   fullyParallel: false,
   workers: 1,
@@ -73,7 +77,11 @@ export default defineConfig({
     {
       command: `rm -rf "${TEST_HOME}" && mkdir -p "${TEST_HOME}" && uv run python -m app.desktop.dev_server`,
       cwd: "../..",
-      env: { KILN_PORT: "6535", HOME: TEST_HOME },
+      env: {
+        KILN_PORT: "6535",
+        KILN_FRONTEND_PORT: "6534",
+        HOME: TEST_HOME,
+      },
       url: "http://localhost:6535/openapi.json",
       reuseExistingServer: false,
       timeout: 120_000,
