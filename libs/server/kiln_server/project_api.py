@@ -12,11 +12,57 @@ from kiln_ai.utils.project_utils import (
 from kiln_ai.utils.project_utils import (
     project_from_id as project_from_id_core,
 )
+from pydantic import BaseModel
 
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     agent_policy_require_approval,
 )
+
+
+class EntitySummary(BaseModel):
+    id: str | None
+    name: str
+    description: str | None = None
+
+
+class EvalSummary(EntitySummary):
+    config_count: int
+
+
+class TaskSummary(EntitySummary):
+    run_count: int
+    evals: list[EvalSummary]
+    prompts: list[EntitySummary]
+    finetunes: list[EntitySummary]
+    run_configs: list[EntitySummary]
+    dataset_splits: list[EntitySummary]
+    prompt_optimization_jobs: list[EntitySummary]
+    specs: list[EntitySummary]
+
+
+class ProjectContext(BaseModel):
+    id: str | None
+    name: str
+    description: str | None = None
+    tasks: list[TaskSummary]
+    skills: list[EntitySummary]
+    documents: list[EntitySummary]
+    extractor_configs: list[EntitySummary]
+    chunker_configs: list[EntitySummary]
+    embedding_configs: list[EntitySummary]
+    rag_configs: list[EntitySummary]
+    vector_store_configs: list[EntitySummary]
+    external_tool_servers: list[EntitySummary]
+    reranker_configs: list[EntitySummary]
+
+
+def _summarize(item: Any) -> EntitySummary:
+    return EntitySummary(
+        id=item.id,
+        name=item.name,
+        description=getattr(item, "description", None),
+    )
 
 
 def default_project_path():
@@ -124,6 +170,78 @@ def connect_project_api(app: FastAPI):
         ],
     ) -> Project:
         return project_from_id(project_id)
+
+    @app.get(
+        "/api/projects/{project_id}/context",
+        summary="Project Context Dump",
+        tags=["Projects"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_project_context(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+    ) -> ProjectContext:
+        project = project_from_id(project_id)
+
+        tasks: list[TaskSummary] = []
+        for t in project.tasks(readonly=True):
+            evals = [
+                EvalSummary(
+                    id=e.id,
+                    name=e.name,
+                    description=getattr(e, "description", None),
+                    config_count=len(e.configs(readonly=True)),
+                )
+                for e in t.evals(readonly=True)
+            ]
+            tasks.append(
+                TaskSummary(
+                    id=t.id,
+                    name=t.name,
+                    description=getattr(t, "description", None),
+                    run_count=len(t.runs(readonly=True)),
+                    evals=evals,
+                    prompts=[_summarize(p) for p in t.prompts(readonly=True)],
+                    finetunes=[_summarize(f) for f in t.finetunes(readonly=True)],
+                    run_configs=[_summarize(rc) for rc in t.run_configs(readonly=True)],
+                    dataset_splits=[
+                        _summarize(d) for d in t.dataset_splits(readonly=True)
+                    ],
+                    prompt_optimization_jobs=[
+                        _summarize(j) for j in t.prompt_optimization_jobs(readonly=True)
+                    ],
+                    specs=[_summarize(s) for s in t.specs(readonly=True)],
+                )
+            )
+
+        return ProjectContext(
+            id=project.id,
+            name=project.name,
+            description=project.description,
+            tasks=tasks,
+            skills=[_summarize(s) for s in project.skills(readonly=True)],
+            documents=[_summarize(d) for d in project.documents(readonly=True)],
+            extractor_configs=[
+                _summarize(x) for x in project.extractor_configs(readonly=True)
+            ],
+            chunker_configs=[
+                _summarize(x) for x in project.chunker_configs(readonly=True)
+            ],
+            embedding_configs=[
+                _summarize(x) for x in project.embedding_configs(readonly=True)
+            ],
+            rag_configs=[_summarize(x) for x in project.rag_configs(readonly=True)],
+            vector_store_configs=[
+                _summarize(x) for x in project.vector_store_configs(readonly=True)
+            ],
+            external_tool_servers=[
+                _summarize(x) for x in project.external_tool_servers(readonly=True)
+            ],
+            reranker_configs=[
+                _summarize(x) for x in project.reranker_configs(readonly=True)
+            ],
+        )
 
     @app.post(
         "/api/import_project",

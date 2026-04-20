@@ -7,6 +7,16 @@ from fastapi import FastAPI
 from fastapi.exceptions import HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project
+from kiln_ai.datamodel.eval import (
+    Eval,
+    EvalConfig,
+    EvalConfigType,
+    EvalOutputScore,
+)
+from kiln_ai.datamodel.prompt import Prompt
+from kiln_ai.datamodel.task import Task
+from kiln_ai.datamodel.task_output import TaskOutput, TaskOutputRatingType
+from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.project_utils import DuplicateProjectError
 
@@ -480,6 +490,165 @@ def test_update_project_not_found(client):
 
     assert response.status_code == 404
     assert response.json() == {"message": "Project not found. ID: non-existent-id"}
+
+
+def _build_project_with_entities(tmp_path):
+    project_path = tmp_path / "project" / "project.kiln"
+    project = Project(
+        name="Ctx Project", description="Context test project", path=project_path
+    )
+    project.save_to_file()
+
+    task1 = Task(
+        name="Task One",
+        description="First task",
+        instruction="Do thing one.",
+        parent=project,
+    )
+    task1.save_to_file()
+
+    task2 = Task(
+        name="Task Two",
+        description=None,
+        instruction="Do thing two.",
+        parent=project,
+    )
+    task2.save_to_file()
+
+    # Two runs on task1, zero on task2
+    for i in range(2):
+        TaskRun(
+            input=f"in-{i}",
+            output=TaskOutput(output=f"out-{i}"),
+            parent=task1,
+        ).save_to_file()
+
+    eval_ = Eval(
+        name="Accuracy Eval",
+        description="Measures accuracy",
+        eval_set_filter_id="tag::eval",
+        eval_configs_filter_id="tag::golden",
+        output_scores=[
+            EvalOutputScore(name="accuracy", type=TaskOutputRatingType.five_star)
+        ],
+        parent=task1,
+    )
+    eval_.save_to_file()
+
+    for i in range(2):
+        EvalConfig(
+            name=f"Config {i}",
+            config_type=EvalConfigType.g_eval,
+            properties={"eval_steps": ["step1", "step2"]},
+            model_name="gpt-4",
+            model_provider="openai",
+            parent=eval_,
+        ).save_to_file()
+
+    Prompt(
+        name="My Prompt",
+        description="A prompt",
+        prompt="You are helpful.",
+        parent=task1,
+    ).save_to_file()
+
+    return project, task1, task2, eval_
+
+
+def test_get_project_context_success(client, tmp_path):
+    project, task1, task2, eval_ = _build_project_with_entities(tmp_path)
+
+    with patch(
+        "kiln_server.project_api.project_from_id",
+        return_value=project,
+    ):
+        response = client.get(f"/api/projects/{project.id}/context")
+
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["id"] == project.id
+    assert body["name"] == "Ctx Project"
+    assert body["description"] == "Context test project"
+
+    # Top-level project-scoped buckets are present and empty for the untouched ones
+    for key in [
+        "skills",
+        "documents",
+        "extractor_configs",
+        "chunker_configs",
+        "embedding_configs",
+        "rag_configs",
+        "vector_store_configs",
+        "external_tool_servers",
+        "reranker_configs",
+    ]:
+        assert body[key] == [], f"expected empty list for {key}"
+
+    tasks_by_id = {t["id"]: t for t in body["tasks"]}
+    assert set(tasks_by_id.keys()) == {task1.id, task2.id}
+
+    t1 = tasks_by_id[task1.id]
+    assert t1["name"] == "Task One"
+    assert t1["description"] == "First task"
+    assert t1["run_count"] == 2
+    assert len(t1["evals"]) == 1
+    assert t1["evals"][0]["id"] == eval_.id
+    assert t1["evals"][0]["name"] == "Accuracy Eval"
+    assert t1["evals"][0]["description"] == "Measures accuracy"
+    assert t1["evals"][0]["config_count"] == 2
+    assert len(t1["prompts"]) == 1
+    assert t1["prompts"][0]["name"] == "My Prompt"
+    assert t1["finetunes"] == []
+    assert t1["run_configs"] == []
+    assert t1["dataset_splits"] == []
+    assert t1["prompt_optimization_jobs"] == []
+    assert t1["specs"] == []
+
+    t2 = tasks_by_id[task2.id]
+    assert t2["name"] == "Task Two"
+    assert t2["description"] is None
+    assert t2["run_count"] == 0
+    assert t2["evals"] == []
+
+
+def test_get_project_context_empty_project(client, tmp_path):
+    project_path = tmp_path / "empty" / "project.kiln"
+    project = Project(name="Empty", path=project_path)
+    project.save_to_file()
+
+    with patch(
+        "kiln_server.project_api.project_from_id",
+        return_value=project,
+    ):
+        response = client.get(f"/api/projects/{project.id}/context")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["name"] == "Empty"
+    assert body["tasks"] == []
+    assert body["skills"] == []
+    assert body["rag_configs"] == []
+
+
+def test_get_project_context_not_found(client):
+    with patch(
+        "kiln_server.project_api.project_from_id",
+        side_effect=HTTPException(status_code=404, detail="Project not found"),
+    ):
+        response = client.get("/api/projects/missing-id/context")
+
+    assert response.status_code == 404
+    assert response.json() == {"message": "Project not found"}
+
+
+def test_get_project_context_agent_policy(app):
+    schema = app.openapi()
+    path = schema["paths"]["/api/projects/{project_id}/context"]["get"]
+    assert path["x-agent-policy"] == {
+        "permission": "allow",
+        "requires_approval": False,
+    }
 
 
 @pytest.mark.filterwarnings("ignore")

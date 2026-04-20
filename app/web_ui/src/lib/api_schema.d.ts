@@ -60,6 +60,23 @@ export interface paths {
         patch: operations["update_project_api_projects__project_id__patch"];
         trace?: never;
     };
+    "/api/projects/{project_id}/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Project Context Dump */
+        get: operations["get_project_context_api_projects__project_id__context_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/import_project": {
         parameters: {
             query?: never;
@@ -4626,6 +4643,15 @@ export interface components {
             /** Models */
             models: components["schemas"]["EmbeddingModelDetails"][];
         };
+        /** EntitySummary */
+        EntitySummary: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+        };
         /**
          * EphemeralSplitChunk
          * @description A single chunk from an ephemeral split.
@@ -5092,6 +5118,17 @@ export interface components {
             eval_config: components["schemas"]["EvalConfig"];
             /** @description The run config used. */
             run_config: components["schemas"]["TaskRunConfig"];
+        };
+        /** EvalSummary */
+        EvalSummary: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Config Count */
+            config_count: number;
         };
         /**
          * EvalTemplateId
@@ -6899,6 +6936,35 @@ export interface components {
             description?: string | null;
             /** Model Type */
             readonly model_type: string;
+        };
+        /** ProjectContext */
+        ProjectContext: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Tasks */
+            tasks: components["schemas"]["TaskSummary"][];
+            /** Skills */
+            skills: components["schemas"]["EntitySummary"][];
+            /** Documents */
+            documents: components["schemas"]["EntitySummary"][];
+            /** Extractor Configs */
+            extractor_configs: components["schemas"]["EntitySummary"][];
+            /** Chunker Configs */
+            chunker_configs: components["schemas"]["EntitySummary"][];
+            /** Embedding Configs */
+            embedding_configs: components["schemas"]["EntitySummary"][];
+            /** Rag Configs */
+            rag_configs: components["schemas"]["EntitySummary"][];
+            /** Vector Store Configs */
+            vector_store_configs: components["schemas"]["EntitySummary"][];
+            /** External Tool Servers */
+            external_tool_servers: components["schemas"]["EntitySummary"][];
+            /** Reranker Configs */
+            reranker_configs: components["schemas"]["EntitySummary"][];
         };
         /**
          * ProjectInfo
@@ -9116,6 +9182,31 @@ export interface components {
              */
             output: string;
         };
+        /** TaskSummary */
+        TaskSummary: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Run Count */
+            run_count: number;
+            /** Evals */
+            evals: components["schemas"]["EvalSummary"][];
+            /** Prompts */
+            prompts: components["schemas"]["EntitySummary"][];
+            /** Finetunes */
+            finetunes: components["schemas"]["EntitySummary"][];
+            /** Run Configs */
+            run_configs: components["schemas"]["EntitySummary"][];
+            /** Dataset Splits */
+            dataset_splits: components["schemas"]["EntitySummary"][];
+            /** Prompt Optimization Jobs */
+            prompt_optimization_jobs: components["schemas"]["EntitySummary"][];
+            /** Specs */
+            specs: components["schemas"]["EntitySummary"][];
+        };
         /**
          * TaskToolCompatibility
          * @description Whether a task is compatible with a specific tool.
@@ -9772,6 +9863,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Project-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_project_context_api_projects__project_id__context_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectContext"];
                 };
             };
             /** @description Validation Error */
