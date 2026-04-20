@@ -1,24 +1,4 @@
-import { test, expect, type SeededTask, type SeededProject } from "./fixtures"
-
-async function primeUiState(
-  page: import("@playwright/test").Page,
-  project: SeededProject,
-  task: SeededTask | { id: string | null },
-) {
-  await page.addInitScript(
-    ([pid, tid]) => {
-      localStorage.setItem(
-        "ui_state",
-        JSON.stringify({
-          current_project_id: pid,
-          current_task_id: tid,
-          selected_model: null,
-        }),
-      )
-    },
-    [project.id, task.id] as const,
-  )
-}
+import { test, expect } from "./fixtures"
 
 /* @act
 ## Goals
@@ -47,10 +27,6 @@ test("edit task page loads existing task into form fields", async ({
 }) => {
   void registeredUser
   const { project, task } = seededProjectWithTask
-
-  // The root (app) layout redirects to /setup/select_task if ui_state lacks a current
-  // project/task. Prime localStorage so the edit_task route renders directly.
-  await primeUiState(page, project, task)
 
   await page.goto(`/settings/edit_task/${project.id}/${task.id}`)
 
@@ -85,7 +61,6 @@ test("edit task page saves edits via PATCH", async ({
 }) => {
   void registeredUser
   const { project, task } = seededProjectWithTask
-  await primeUiState(page, project, task)
 
   await page.goto(`/settings/edit_task/${project.id}/${task.id}`)
   await expect(page.locator("#task_name")).toHaveValue(task.name)
@@ -146,7 +121,6 @@ test("edit task page shows schemas as read-only with clone link", async ({
 }) => {
   void registeredUser
   const { project, task } = seededProjectWithTask
-  await primeUiState(page, project, task)
 
   await page.goto(`/settings/edit_task/${project.id}/${task.id}`)
   await expect(page.locator("#task_name")).toHaveValue(task.name)
@@ -188,7 +162,6 @@ test("edit task page Clone Task button navigates to clone route", async ({
 }) => {
   void registeredUser
   const { project, task } = seededProjectWithTask
-  await primeUiState(page, project, task)
 
   await page.goto(`/settings/edit_task/${project.id}/${task.id}`)
   await expect(page.locator("#task_name")).toHaveValue(task.name)
@@ -225,7 +198,6 @@ test("edit task page delete button removes task and redirects", async ({
 }) => {
   void registeredUser
   const { project, task } = seededProjectWithTask
-  await primeUiState(page, project, task)
 
   await page.goto(`/settings/edit_task/${project.id}/${task.id}`)
   await expect(page.locator("#task_name")).toHaveValue(task.name)
@@ -270,7 +242,6 @@ test("edit task page Settings breadcrumb navigates to /settings", async ({
 }) => {
   void registeredUser
   const { project, task } = seededProjectWithTask
-  await primeUiState(page, project, task)
 
   await page.goto(`/settings/edit_task/${project.id}/${task.id}`)
   await expect(page.locator("#task_name")).toHaveValue(task.name)

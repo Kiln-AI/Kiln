@@ -1,7 +1,5 @@
 import { request } from "@playwright/test"
-
-const FRONTEND_URL = "http://localhost:6534"
-const BACKEND_URL = "http://localhost:6535"
+import { BACKEND_URL, FRONTEND_URL } from "./ports"
 
 const POLL_TIMEOUT_MS = 60_000
 const POLL_INTERVAL_MS = 250

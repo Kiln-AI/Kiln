@@ -1,6 +1,12 @@
 import { defineConfig, devices } from "@playwright/test"
 import { dirname, resolve } from "path"
 import { fileURLToPath } from "url"
+import {
+  BACKEND_PORT,
+  BACKEND_URL,
+  FRONTEND_PORT,
+  FRONTEND_URL,
+} from "./tests/e2e/ports"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const TEST_HOME = resolve(__dirname, ".e2e_home")
@@ -31,7 +37,7 @@ export default defineConfig({
   reporter: "html",
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
-    baseURL: "http://localhost:6534",
+    baseURL: FRONTEND_URL,
     trace: "on-first-retry",
   },
 
@@ -78,20 +84,23 @@ export default defineConfig({
       command: `rm -rf "${TEST_HOME}" && mkdir -p "${TEST_HOME}" && uv run python -m app.desktop.dev_server`,
       cwd: "../..",
       env: {
-        KILN_PORT: "6535",
-        KILN_FRONTEND_PORT: "6534",
+        KILN_PORT: String(BACKEND_PORT),
+        KILN_FRONTEND_PORT: String(FRONTEND_PORT),
         HOME: TEST_HOME,
       },
-      url: "http://localhost:6535/openapi.json",
+      url: `${BACKEND_URL}/openapi.json`,
       reuseExistingServer: false,
       timeout: 120_000,
       stdout: "pipe",
       stderr: "pipe",
     },
     {
-      command: "npm run dev -- --port 6534 --strictPort",
-      env: { VITE_API_PORT: "6535", VITE_BRANCH_NAME: "" },
-      url: "http://localhost:6534",
+      command: `npm run dev -- --port ${FRONTEND_PORT} --strictPort`,
+      env: {
+        VITE_API_PORT: String(BACKEND_PORT),
+        VITE_BRANCH_NAME: "",
+      },
+      url: FRONTEND_URL,
       reuseExistingServer: false,
       timeout: 60_000,
     },

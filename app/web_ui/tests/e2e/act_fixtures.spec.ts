@@ -2,94 +2,100 @@ import { test, expect } from "./fixtures"
 
 /* @act
 ## Goals
-Verify the `freshState` fixture: the isolated backend starts with zero projects.
-This is an assertion-only fixture; it does not mutate state.
+Verify the `cleanBackend` fixture actually resets the app into a clean state: no
+projects and no registration. With the backend clean, the root layout's setup check
+must redirect the UI to the welcome page at /setup.
 
 ## Fixtures
-- freshState
+- cleanBackend
 
 ## Assertions
-- GET /api/projects returns an empty list immediately after backend start.
+- After navigating to /, the app redirects to /setup.
+- The "Welcome to Kiln" heading is visible.
 */
-test("fresh_state fixture: backend starts with no projects", async ({
-  freshState,
-  apiRequest,
+test("cleanBackend fixture: app redirects to /setup welcome when empty", async ({
+  cleanBackend,
+  page,
 }) => {
-  void freshState
-  const resp = await apiRequest.get("/api/projects")
-  expect(resp.ok()).toBeTruthy()
+  void cleanBackend
+  await page.goto("/")
+  await page.waitForURL(/\/setup$/)
+  await expect(
+    page.getByRole("heading", { name: "Welcome to Kiln" }),
+  ).toBeVisible()
 })
 
 /* @act
 ## Goals
-Verify the `registeredUser` fixture: POST /api/settings sets user_type +
-personal_use_contact, making the app treat the user as registered.
-
-## Fixtures
-- registeredUser
-
-## Assertions
-- GET /api/settings returns user_type = "personal" and a non-empty contact.
-*/
-test("registered_user fixture: user_type is set after registration", async ({
-  registeredUser,
-  apiRequest,
-}) => {
-  void registeredUser
-  const resp = await apiRequest.get("/api/settings")
-  expect(resp.ok()).toBeTruthy()
-  const settings = await resp.json()
-  expect(settings.user_type).toBe("personal")
-  expect(settings.personal_use_contact).toBeTruthy()
-})
-
-/* @act
-## Goals
-Verify the `seededProject` fixture: a project is created via POST /api/projects
-and returned to the test.
+Verify the `seededProject` fixture lands the app in the "has projects, pick a task"
+state: with a project seeded but no ui_state priming, the root layout must redirect
+to /setup/select_task (not /setup, because projects exist).
 
 ## Fixtures
 - seededProject
 
 ## Assertions
-- The fixture yields a project with a non-empty id and name.
-- GET /api/projects/{id} returns the seeded project.
+- After navigating to /, the app redirects to /setup/select_task.
+- The "Select a Task" heading is visible.
 */
-test("seeded_project fixture: project is created and retrievable", async ({
+test("seededProject fixture: app redirects to /setup/select_task when a project exists", async ({
   seededProject,
-  apiRequest,
+  page,
 }) => {
-  expect(seededProject.id).toBeTruthy()
-  expect(seededProject.name).toBeTruthy()
-  const resp = await apiRequest.get(
-    `/api/projects/${encodeURIComponent(seededProject.id)}`,
-  )
-  expect(resp.ok()).toBeTruthy()
-  const fetched = await resp.json()
-  expect(fetched.id).toBe(seededProject.id)
+  void seededProject
+  await page.goto("/")
+  await page.waitForURL(/\/setup\/select_task$/)
+  await expect(
+    page.getByRole("heading", { name: "Select a Task" }),
+  ).toBeVisible()
 })
 
 /* @act
 ## Goals
-Verify the `seededProjectWithTask` fixture: a project + task are created and
-returned together.
+Verify the `seededProjectWithTask` fixture primes ui_state so the task-selection
+redirect is skipped. Without a registered user, the setup check then falls through
+to the registration gate at /setup/select_account — proving ui_state priming worked
+(no /setup/select_task redirect).
 
 ## Fixtures
 - seededProjectWithTask
 
 ## Assertions
-- The fixture yields { project, task } with non-empty ids.
-- GET /api/projects/{project.id}/tasks/{task.id} returns the task.
+- After navigating to /, the app does NOT redirect to /setup/select_task.
+- The app lands on /setup/select_account (registration wall) because no user is
+  registered yet.
 */
-test("seeded_project_with_task fixture: task is created under project", async ({
+test("seededProjectWithTask fixture: ui_state primed, lands past task selection", async ({
   seededProjectWithTask,
-  apiRequest,
+  page,
 }) => {
-  const { project, task } = seededProjectWithTask
-  expect(project.id).toBeTruthy()
-  expect(task.id).toBeTruthy()
-  const resp = await apiRequest.get(
-    `/api/projects/${encodeURIComponent(project.id)}/tasks/${encodeURIComponent(task.id)}`,
-  )
-  expect(resp.ok()).toBeTruthy()
+  void seededProjectWithTask
+  await page.goto("/")
+  await page.waitForURL(/\/setup\/select_account/)
+})
+
+/* @act
+## Goals
+Verify the `registeredUser` fixture satisfies the root layout's registration gate:
+when combined with `seededProjectWithTask`, navigating to / must NOT redirect to
+/setup/select_account, and must land on the app home route (/run, per the home
+redirect in (app)/+page.svelte).
+
+## Fixtures
+- registeredUser
+- seededProjectWithTask
+
+## Assertions
+- After navigating to /, the app does NOT redirect to /setup/*.
+- The final URL is /run (home redirect target).
+*/
+test("registeredUser fixture: app lands on /run, not on the registration gate", async ({
+  registeredUser,
+  seededProjectWithTask,
+  page,
+}) => {
+  void registeredUser
+  void seededProjectWithTask
+  await page.goto("/")
+  await page.waitForURL(/\/run$/)
 })
