@@ -7,7 +7,7 @@ from kiln_ai.datamodel import Project, Task, TaskRequirement
 from kiln_ai.datamodel.external_tool_server import ToolServerType
 
 from kiln_server.custom_errors import connect_custom_errors
-from kiln_server.task_api import connect_task_api, task_from_id
+from kiln_server.task_api import _truncate_to_words, connect_task_api, task_from_id
 
 
 @pytest.fixture
@@ -684,3 +684,216 @@ def test_delete_task_parent_project_none(client, project_and_task):
         response = client.delete(f"/api/projects/{project.id}/tasks/{task.id}")
 
     assert response.status_code == 200
+
+
+# --- _truncate_to_words tests ---
+
+
+def test_truncate_to_words_empty():
+    text, truncated = _truncate_to_words("", 10)
+    assert text == ""
+    assert truncated is False
+
+
+def test_truncate_to_words_under_limit():
+    text, truncated = _truncate_to_words("hello world", 10)
+    assert text == "hello world"
+    assert truncated is False
+
+
+def test_truncate_to_words_at_limit():
+    words = " ".join(f"word{i}" for i in range(10))
+    text, truncated = _truncate_to_words(words, 10)
+    assert text == words
+    assert truncated is False
+
+
+def test_truncate_to_words_one_over():
+    words = " ".join(f"word{i}" for i in range(11))
+    text, truncated = _truncate_to_words(words, 10)
+    expected = " ".join(f"word{i}" for i in range(10)) + " \u2026"
+    assert text == expected
+    assert truncated is True
+
+
+def test_truncate_to_words_over_limit():
+    words = " ".join(f"w{i}" for i in range(200))
+    text, truncated = _truncate_to_words(words, 5)
+    expected = " ".join(f"w{i}" for i in range(5)) + " \u2026"
+    assert text == expected
+    assert truncated is True
+
+
+def test_truncate_to_words_normalizes_whitespace():
+    text, truncated = _truncate_to_words("a  b\tc\nd  e  f  g", 5)
+    assert text == "a b c d e \u2026"
+    assert truncated is True
+
+
+# --- all_tasks endpoint tests ---
+
+
+def test_all_tasks_happy_path(client, tmp_path):
+    p1_path = tmp_path / "proj1" / "project.kiln"
+    p1_path.parent.mkdir()
+    p1 = Project(name="Project One", path=str(p1_path))
+    p1.save_to_file()
+
+    t1 = Task(name="Task A", instruction="Do A", parent=p1)
+    t1.save_to_file()
+    t2 = Task(name="Task B", instruction="Do B", description="desc B", parent=p1)
+    t2.save_to_file()
+
+    p2_path = tmp_path / "proj2" / "project.kiln"
+    p2_path.parent.mkdir()
+    p2 = Project(name="Project Two", description="Second project", path=str(p2_path))
+    p2.save_to_file()
+
+    t3 = Task(name="Task C", instruction="Do C", parent=p2)
+    t3.save_to_file()
+    t4 = Task(name="Task D", instruction="Do D", description="desc D", parent=p2)
+    t4.save_to_file()
+
+    with patch("kiln_server.task_api.Config.shared") as mock_config:
+        mock_config.return_value.projects = [str(p1_path), str(p2_path)]
+        response = client.get("/api/all_tasks")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["projects"]) == 2
+
+    proj1 = data["projects"][0]
+    assert proj1["name"] == "Project One"
+    assert proj1["id"] == p1.id
+    assert proj1["description"] is None
+    assert proj1["created_at"] is not None
+    assert len(proj1["tasks"]) == 2
+
+    task_names = {t["name"] for t in proj1["tasks"]}
+    assert task_names == {"Task A", "Task B"}
+
+    proj2 = data["projects"][1]
+    assert proj2["name"] == "Project Two"
+    assert proj2["description"] == "Second project"
+    assert len(proj2["tasks"]) == 2
+
+    task_names_p2 = {t["name"] for t in proj2["tasks"]}
+    assert task_names_p2 == {"Task C", "Task D"}
+
+
+def test_all_tasks_empty_workspace(client):
+    with patch("kiln_server.task_api.Config.shared") as mock_config:
+        mock_config.return_value.projects = []
+        response = client.get("/api/all_tasks")
+
+    assert response.status_code == 200
+    assert response.json() == {"projects": []}
+
+
+def test_all_tasks_none_projects(client):
+    with patch("kiln_server.task_api.Config.shared") as mock_config:
+        mock_config.return_value.projects = None
+        response = client.get("/api/all_tasks")
+
+    assert response.status_code == 200
+    assert response.json() == {"projects": []}
+
+
+def test_all_tasks_instruction_truncation_over_limit(client, tmp_path):
+    p_path = tmp_path / "proj" / "project.kiln"
+    p_path.parent.mkdir()
+    p = Project(name="Proj", path=str(p_path))
+    p.save_to_file()
+
+    long_instruction = " ".join(f"word{i}" for i in range(150))
+    t = Task(name="Long Task", instruction=long_instruction, parent=p)
+    t.save_to_file()
+
+    with patch("kiln_server.task_api.Config.shared") as mock_config:
+        mock_config.return_value.projects = [str(p_path)]
+        response = client.get("/api/all_tasks")
+
+    assert response.status_code == 200
+    task_data = response.json()["projects"][0]["tasks"][0]
+    assert task_data["instruction_truncated"] is True
+    assert task_data["instruction"].endswith(" \u2026")
+    assert len(task_data["instruction"].split()) == 101  # 100 words + ellipsis
+
+
+def test_all_tasks_instruction_at_limit(client, tmp_path):
+    p_path = tmp_path / "proj" / "project.kiln"
+    p_path.parent.mkdir()
+    p = Project(name="Proj", path=str(p_path))
+    p.save_to_file()
+
+    exact_instruction = " ".join(f"word{i}" for i in range(100))
+    t = Task(name="Exact Task", instruction=exact_instruction, parent=p)
+    t.save_to_file()
+
+    with patch("kiln_server.task_api.Config.shared") as mock_config:
+        mock_config.return_value.projects = [str(p_path)]
+        response = client.get("/api/all_tasks")
+
+    assert response.status_code == 200
+    task_data = response.json()["projects"][0]["tasks"][0]
+    assert task_data["instruction_truncated"] is False
+    assert task_data["instruction"] == exact_instruction
+
+
+def test_all_tasks_instruction_under_limit(client, tmp_path):
+    p_path = tmp_path / "proj" / "project.kiln"
+    p_path.parent.mkdir()
+    p = Project(name="Proj", path=str(p_path))
+    p.save_to_file()
+
+    t = Task(name="Short Task", instruction="Short instruction", parent=p)
+    t.save_to_file()
+
+    with patch("kiln_server.task_api.Config.shared") as mock_config:
+        mock_config.return_value.projects = [str(p_path)]
+        response = client.get("/api/all_tasks")
+
+    assert response.status_code == 200
+    task_data = response.json()["projects"][0]["tasks"][0]
+    assert task_data["instruction_truncated"] is False
+    assert task_data["instruction"] == "Short instruction"
+
+
+def test_all_tasks_null_description(client, tmp_path):
+    p_path = tmp_path / "proj" / "project.kiln"
+    p_path.parent.mkdir()
+    p = Project(name="Proj", path=str(p_path))
+    p.save_to_file()
+
+    t = Task(name="No Desc Task", instruction="Do something", parent=p)
+    t.save_to_file()
+
+    with patch("kiln_server.task_api.Config.shared") as mock_config:
+        mock_config.return_value.projects = [str(p_path)]
+        response = client.get("/api/all_tasks")
+
+    assert response.status_code == 200
+    proj = response.json()["projects"][0]
+    assert proj["description"] is None
+    assert proj["tasks"][0]["description"] is None
+
+
+def test_all_tasks_skips_corrupt_project(client, tmp_path):
+    p_path = tmp_path / "good_proj" / "project.kiln"
+    p_path.parent.mkdir()
+    p = Project(name="Good", path=str(p_path))
+    p.save_to_file()
+
+    t = Task(name="Task", instruction="Do it", parent=p)
+    t.save_to_file()
+
+    bad_path = str(tmp_path / "nonexistent" / "project.kiln")
+
+    with patch("kiln_server.task_api.Config.shared") as mock_config:
+        mock_config.return_value.projects = [bad_path, str(p_path)]
+        response = client.get("/api/all_tasks")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["projects"]) == 1
+    assert data["projects"][0]["name"] == "Good"

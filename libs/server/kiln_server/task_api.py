@@ -1,11 +1,13 @@
 import logging
+from datetime import datetime
 from typing import Annotated, Any, Dict, List
 
 from fastapi import Body, FastAPI, HTTPException, Path
-from kiln_ai.datamodel import Task, TaskRequirement
+from kiln_ai.datamodel import Project, Task, TaskRequirement
 from kiln_ai.datamodel.external_tool_server import (
     ToolServerType,
 )
+from kiln_ai.utils.config import Config
 from pydantic import BaseModel, Field
 
 from kiln_server.project_api import project_from_id
@@ -16,6 +18,34 @@ from kiln_server.utils.agent_checks.policy import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _truncate_to_words(text: str, max_words: int) -> tuple[str, bool]:
+    words = text.split()
+    if len(words) <= max_words:
+        return text, False
+    return " ".join(words[:max_words]) + " \u2026", True
+
+
+class AllTasksTask(BaseModel):
+    id: str
+    name: str
+    description: str | None
+    instruction: str
+    instruction_truncated: bool
+    created_at: datetime
+
+
+class AllTasksProject(BaseModel):
+    id: str
+    name: str
+    description: str | None
+    created_at: datetime
+    tasks: list[AllTasksTask]
+
+
+class AllTasksResponse(BaseModel):
+    projects: list[AllTasksProject]
 
 
 def task_from_id(project_id: str, task_id: str) -> Task:
@@ -282,3 +312,45 @@ def connect_task_api(app: FastAPI):
                 )
 
         return RatingOptionResponse(options=results)
+
+    @app.get(
+        "/api/all_tasks",
+        summary="List All Tasks",
+        tags=["Tasks"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def all_tasks() -> AllTasksResponse:
+        project_paths = Config.shared().projects or []
+        projects: list[AllTasksProject] = []
+        for project_path in project_paths:
+            try:
+                project = Project.load_from_file(project_path)
+            except Exception:
+                continue
+            assert project.id is not None
+            tasks: list[AllTasksTask] = []
+            for task in project.tasks(readonly=True):
+                assert task.id is not None
+                instruction, instruction_truncated = _truncate_to_words(
+                    task.instruction, 100
+                )
+                tasks.append(
+                    AllTasksTask(
+                        id=task.id,
+                        name=task.name,
+                        description=task.description,
+                        instruction=instruction,
+                        instruction_truncated=instruction_truncated,
+                        created_at=task.created_at,
+                    )
+                )
+            projects.append(
+                AllTasksProject(
+                    id=project.id,
+                    name=project.name,
+                    description=project.description,
+                    created_at=project.created_at,
+                    tasks=tasks,
+                )
+            )
+        return AllTasksResponse(projects=projects)
