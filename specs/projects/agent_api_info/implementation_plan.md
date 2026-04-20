@@ -6,7 +6,7 @@ status: complete
 
 ## Phases
 
-- [ ] Phase 1: Port `prompt_type_label` to Python + surface `type` on `ApiPrompt`; switch Svelte prompts page to consume server-computed `type` and delete TS `getPromptType`.
+- [x] Phase 1: Port `prompt_type_label` to Python + surface `type` on `ApiPrompt`; switch Svelte prompts page to consume server-computed `type` and delete TS `getPromptType`.
 - [ ] Phase 2: `all_tasks` endpoint + response models in `task_api.py`, with tests.
 - [ ] Phase 3: Extract `compute_score_summary(...)` out of `/score_summary` handler in `eval_api.py` (behavior-preserving refactor; existing tests lock in parity).
 - [ ] Phase 4: `eval_results_summary` endpoint + response models in `eval_api.py`, with tests (happy path, empty-filter eval, behavioral-equivalence with `/score_summary`, single-`task.runs()` perf assertion).

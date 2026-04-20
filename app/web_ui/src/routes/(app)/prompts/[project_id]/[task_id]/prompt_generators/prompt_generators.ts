@@ -98,19 +98,3 @@ export const prompt_generator_categories: PromptGeneratorCategory[] = [
     ],
   },
 ]
-
-export function getPromptType(
-  prompt_id: string,
-  generator_id?: string | null,
-): string {
-  if (prompt_id.startsWith("fine_tune_prompt::")) return "Fine-Tune"
-  if (prompt_id.startsWith("task_run_config::")) return "Frozen"
-  if (generator_id) {
-    const generator = prompt_generator_categories
-      .flatMap((c) => c.templates)
-      .find((t) => t.generator_id === generator_id)
-    if (generator) return generator.name
-  }
-  if (prompt_id.startsWith("id::")) return "Custom"
-  return "Unknown"
-}

@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.adapters.prompt_builders import CustomExamplePromptBuilder, PromptExample
 from kiln_ai.datamodel import BasePrompt, Prompt, PromptId
+from kiln_ai.datamodel.prompt_type import prompt_type_label
 from pydantic import BaseModel, Field
 
 from kiln_server.task_api import task_from_id
@@ -36,6 +37,9 @@ class ApiPrompt(BasePrompt):
     """A prompt with its PromptId and metadata."""
 
     id: PromptId = Field(description="The prompt ID used to reference this prompt.")
+    type: str = Field(
+        description="The type label for this prompt (e.g. 'Custom', 'Fine-Tune', 'Frozen', 'Few-Shot')."
+    )
     created_at: datetime | None = Field(
         default=None, description="When the prompt was created."
     )
@@ -160,17 +164,30 @@ def connect_prompt_api(app: FastAPI):
 
         prompts: list[ApiPrompt] = []
         for prompt in parent_task.prompts():
+            prompt_id = f"id::{prompt.id}"
             properties = prompt.model_dump(exclude={"id"})
-            prompts.append(ApiPrompt(id=f"id::{prompt.id}", **properties))
+            prompts.append(
+                ApiPrompt(
+                    id=prompt_id,
+                    type=prompt_type_label(prompt_id, prompt.generator_id),
+                    **properties,
+                )
+            )
 
         # Add any task run config prompts to the list
         task_run_configs = parent_task.run_configs()
         for task_run_config in task_run_configs:
             if task_run_config.prompt:
+                prompt_id = (
+                    f"task_run_config::{project_id}::{task_id}::{task_run_config.id}"
+                )
                 properties = task_run_config.prompt.model_dump(exclude={"id"})
                 prompts.append(
                     ApiPrompt(
-                        id=f"task_run_config::{project_id}::{task_id}::{task_run_config.id}",
+                        id=prompt_id,
+                        type=prompt_type_label(
+                            prompt_id, task_run_config.prompt.generator_id
+                        ),
                         created_at=task_run_config.created_at,
                         **properties,
                     )
@@ -206,8 +223,13 @@ def connect_prompt_api(app: FastAPI):
         prompt.name = prompt_data.name
         prompt.description = prompt_data.description
         prompt.save_to_file()
+        api_prompt_id = f"id::{prompt.id}"
         properties = prompt.model_dump(exclude={"id"})
-        return ApiPrompt(id=f"id::{prompt.id}", **properties)
+        return ApiPrompt(
+            id=api_prompt_id,
+            type=prompt_type_label(api_prompt_id, prompt.generator_id),
+            **properties,
+        )
 
     @app.delete(
         "/api/projects/{project_id}/tasks/{task_id}/prompts/{prompt_id}",

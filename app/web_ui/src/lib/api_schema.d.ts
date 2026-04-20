@@ -3011,6 +3011,11 @@ export interface components {
              */
             id: string;
             /**
+             * Type
+             * @description The type label for this prompt (e.g. 'Custom', 'Fine-Tune', 'Frozen', 'Few-Shot').
+             */
+            type: string;
+            /**
              * Created At
              * @description When the prompt was created.
              */
