@@ -113,4 +113,24 @@ describe("OAuthInstallStep", () => {
     screen.getByText("Start over").click()
     expect(reset).toHaveBeenCalledOnce()
   })
+
+  it("shows popup-blocked copy fallback when popup_blocked is true", () => {
+    const { container } = render(OAuthInstallStep, {
+      props: {
+        state: make_state({
+          popup_blocked: true,
+          install_url: "https://github.com/apps/kiln/installations/new",
+        }),
+        open_install: noop,
+        verify_access: noop_async,
+        reset: noop,
+      },
+    })
+    const input = container.querySelector("input[readonly]") as HTMLInputElement
+    expect(input).not.toBeNull()
+    expect(input.value).toBe("https://github.com/apps/kiln/installations/new")
+    expect(screen.getByText("Copy")).not.toBeNull()
+    expect(screen.getByText(/blocked the popup/)).not.toBeNull()
+    expect(screen.queryByText("Install Kiln Sync on GitHub")).toBeNull()
+  })
 })

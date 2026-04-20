@@ -1,6 +1,7 @@
 <script lang="ts">
   import Warning from "$lib/ui/warning.svelte"
   import type { OAuthWithInstallState } from "$lib/git_sync/oauth_with_install"
+  import PopupBlockedFallback from "$lib/git_sync/popup_blocked_fallback.svelte"
 
   export let state: OAuthWithInstallState
   export let open_install: () => void
@@ -51,22 +52,33 @@
       ? "Install the Kiln Sync GitHub App on the repository, then verify access."
       : "The Kiln Sync GitHub App needs to be installed on the repository to enable syncing. Click below to install it, then come back and verify."}
   </p>
+  {#if state.popup_blocked && state.install_url}
+    <div class="w-full {compact ? '' : 'max-w-sm'}">
+      <PopupBlockedFallback
+        url={state.install_url}
+        message="Your browser blocked the popup. Copy the link below and open it manually in a new tab to install the app."
+        {compact}
+      />
+    </div>
+  {:else}
+    <button
+      class="btn w-full {compact ? '' : 'max-w-sm'} {state.install_clicked
+        ? compact
+          ? 'btn-xs btn-ghost'
+          : 'btn-sm btn-ghost'
+        : compact
+          ? 'btn-primary btn-sm'
+          : 'btn-primary'}"
+      on:click={open_install}
+    >
+      {state.install_clicked
+        ? "Retry Install on GitHub"
+        : "Install Kiln Sync on GitHub"}
+    </button>
+  {/if}
   <button
-    class="btn w-full {compact ? '' : 'max-w-sm'} {state.install_clicked
-      ? compact
-        ? 'btn-xs btn-ghost'
-        : 'btn-sm btn-ghost'
-      : compact
-        ? 'btn-primary btn-sm'
-        : 'btn-primary'}"
-    on:click={open_install}
-  >
-    {state.install_clicked
-      ? "Retry Install on GitHub"
-      : "Install Kiln Sync on GitHub"}
-  </button>
-  <button
-    class="btn w-full {compact ? '' : 'max-w-sm'} {state.install_clicked
+    class="btn w-full {compact ? '' : 'max-w-sm'} {state.install_clicked ||
+    state.popup_blocked
       ? compact
         ? 'btn-primary btn-sm'
         : 'btn-primary'

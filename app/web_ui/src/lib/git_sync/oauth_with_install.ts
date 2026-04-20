@@ -9,6 +9,8 @@ export type OAuthWithInstallState = {
   needs_install: boolean
   install_url: string | null
   install_clicked: boolean
+  authorize_url: string | null
+  popup_blocked: boolean
 }
 
 export const INITIAL_STATE: OAuthWithInstallState = {
@@ -18,6 +20,8 @@ export const INITIAL_STATE: OAuthWithInstallState = {
   needs_install: false,
   install_url: null,
   install_clicked: false,
+  authorize_url: null,
+  popup_blocked: false,
 }
 
 export type OAuthWithInstallOptions = {
@@ -97,18 +101,19 @@ export function createOAuthWithInstall(
     const this_generation = generation
 
     state.set({
+      ...INITIAL_STATE,
       oauth_starting: true,
-      oauth_error: null,
-      checking_access: false,
-      needs_install: false,
-      install_url: null,
-      install_clicked: false,
     })
 
     const callbacks: OAuthFlowCallbacks = {
       onStarted: (response) => {
         if (this_generation !== generation) return
-        update({ install_url: response.install_url, oauth_starting: false })
+        update({
+          install_url: response.install_url,
+          authorize_url: response.authorize_url,
+          popup_blocked: response.popup_blocked,
+          oauth_starting: false,
+        })
       },
       onPolling: () => {
         if (this_generation !== generation) return
@@ -130,8 +135,12 @@ export function createOAuthWithInstall(
   function open_install() {
     const current_install_url = get(state).install_url
     if (!current_install_url) return
-    window.open(current_install_url, "_blank", "noopener,noreferrer")
-    update({ install_clicked: true })
+    const popup = window.open(current_install_url, "_blank")
+    if (!popup) {
+      update({ popup_blocked: true })
+      return
+    }
+    update({ install_clicked: true, popup_blocked: false })
   }
 
   async function verify_access() {

@@ -55,6 +55,8 @@ describe("createOAuthWithInstall", () => {
     expect(state.needs_install).toBe(false)
     expect(state.install_url).toBeNull()
     expect(state.install_clicked).toBe(false)
+    expect(state.authorize_url).toBeNull()
+    expect(state.popup_blocked).toBe(false)
   })
 
   it("sets oauth_starting on start()", () => {
@@ -81,6 +83,8 @@ describe("createOAuthWithInstall", () => {
     flow.start()
     getCallbacks().onStarted({
       install_url: "https://github.com/apps/kiln/installations/new",
+      authorize_url: "https://github.com/login/oauth/authorize",
+      popup_blocked: false,
     })
     const state = get(flow.state)
     expect(state.oauth_starting).toBe(false)
@@ -181,7 +185,50 @@ describe("createOAuthWithInstall", () => {
     expect(state.install_url).toBeNull()
     expect(state.install_clicked).toBe(false)
     expect(state.checking_access).toBe(false)
+    expect(state.authorize_url).toBeNull()
+    expect(state.popup_blocked).toBe(false)
     expect(cancelFn).toHaveBeenCalled()
+  })
+
+  it("stores authorize_url and popup_blocked on onStarted", () => {
+    const { getCallbacks } = setupStartOAuthFlow()
+    const flow = createOAuthWithInstall({
+      git_url: "https://github.com/org/repo.git",
+      on_success: vi.fn(),
+    })
+    flow.start()
+    getCallbacks().onStarted({
+      install_url: "https://github.com/apps/kiln/installations/new",
+      authorize_url: "https://github.com/login/oauth/authorize?state=xyz",
+      popup_blocked: true,
+    })
+    const state = get(flow.state)
+    expect(state.popup_blocked).toBe(true)
+    expect(state.authorize_url).toBe(
+      "https://github.com/login/oauth/authorize?state=xyz",
+    )
+  })
+
+  it("open_install flags popup_blocked when window.open returns null", () => {
+    const { getCallbacks } = setupStartOAuthFlow()
+    const mockWindow = { open: vi.fn(() => null) }
+    vi.stubGlobal("window", mockWindow)
+
+    const flow = createOAuthWithInstall({
+      git_url: "https://github.com/org/repo.git",
+      on_success: vi.fn(),
+    })
+    flow.start()
+    getCallbacks().onStarted({
+      install_url: "https://github.com/apps/kiln/installations/new",
+      authorize_url: "https://github.com/login/oauth/authorize",
+      popup_blocked: false,
+    })
+
+    flow.open_install()
+    const state = get(flow.state)
+    expect(state.popup_blocked).toBe(true)
+    expect(state.install_clicked).toBe(false)
   })
 
   it("ignores stale callbacks after reset (generation tracking)", async () => {
@@ -241,13 +288,14 @@ describe("createOAuthWithInstall", () => {
     flow.start()
     getCallbacks().onStarted({
       install_url: "https://github.com/apps/kiln/installations/new",
+      authorize_url: "https://github.com/login/oauth/authorize",
+      popup_blocked: false,
     })
 
     flow.open_install()
     expect(window.open).toHaveBeenCalledWith(
       "https://github.com/apps/kiln/installations/new",
       "_blank",
-      "noopener,noreferrer",
     )
     expect(get(flow.state).install_clicked).toBe(true)
   })

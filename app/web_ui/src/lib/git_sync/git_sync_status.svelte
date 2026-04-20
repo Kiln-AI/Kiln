@@ -21,6 +21,7 @@
     type OAuthWithInstallFlow,
   } from "$lib/git_sync/oauth_with_install"
   import OAuthInstallStep from "$lib/git_sync/oauth_install_step.svelte"
+  import PopupBlockedFallback from "$lib/git_sync/popup_blocked_fallback.svelte"
 
   type AuthFormMode = "oauth" | "pat"
 
@@ -228,21 +229,39 @@
             {/if}
 
             {#if (oauth.oauth_starting || oauth.checking_access) && !oauth.oauth_error}
-              <div class="flex flex-col items-center py-6 gap-3">
-                <span class="loading loading-spinner loading-md text-primary"
-                ></span>
-                <p class="text-sm text-gray-500">
-                  {oauth.checking_access
-                    ? "Verifying access..."
-                    : "Waiting for GitHub authorization..."}
-                </p>
-                <button
-                  class="btn btn-sm btn-ghost mt-1"
-                  on:click={oauth_flow.reset}
-                >
-                  Cancel
-                </button>
-              </div>
+              {#if oauth.popup_blocked && oauth.authorize_url && !oauth.checking_access}
+                <div class="flex flex-col py-2 gap-2">
+                  <PopupBlockedFallback
+                    url={oauth.authorize_url}
+                    message="Your browser blocked the GitHub popup. Copy the link below and open it manually in a new tab to continue."
+                    compact
+                  />
+                  <div class="text-center">
+                    <button
+                      class="btn btn-xs btn-ghost"
+                      on:click={oauth_flow.reset}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              {:else}
+                <div class="flex flex-col items-center py-6 gap-3">
+                  <span class="loading loading-spinner loading-md text-primary"
+                  ></span>
+                  <p class="text-sm text-gray-500">
+                    {oauth.checking_access
+                      ? "Verifying access..."
+                      : "Waiting for GitHub authorization..."}
+                  </p>
+                  <button
+                    class="btn btn-sm btn-ghost mt-1"
+                    on:click={oauth_flow.reset}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              {/if}
             {:else}
               <button
                 class="btn btn-primary btn-sm w-full"
