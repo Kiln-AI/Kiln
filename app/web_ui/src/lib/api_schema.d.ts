@@ -134,6 +134,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/task_summaries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Task Summaries (agent-tuned)
+         * @description Return a workspace-wide list of projects and their tasks, with truncated
+         *     task.instruction values. Unlike typical list endpoints, entries here are
+         *     intentionally lossy — the shape is tuned for LLM-agent context efficiency,
+         *     not for driving UIs that need the full Task model.
+         */
+        get: operations["task_summaries_api_task_summaries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/prompts": {
         parameters: {
             query?: never;
@@ -1939,6 +1962,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/eval_results_summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Eval Results Summary */
+        get: operations["get_eval_results_summary_api_projects__project_id__tasks__task_id__eval_results_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs_score_summary": {
         parameters: {
             query?: never;
@@ -2850,6 +2890,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/agent_overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent Overview
+         * @description An overview of a task and all it's components, optimized for agents.
+         */
+        get: operations["agent_overview_api_projects__project_id__tasks__task_id__agent_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat/execute-tools": {
         parameters: {
             query?: never;
@@ -2941,6 +3001,324 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AgentOverview */
+        AgentOverview: {
+            project: components["schemas"]["AgentOverviewProject"];
+            task: components["schemas"]["AgentOverviewTask"];
+            dataset: components["schemas"]["AgentOverviewDataset"];
+            docs: components["schemas"]["AgentOverviewDocs"];
+            search_tools: components["schemas"]["AgentOverviewSearchTools"];
+            prompts: components["schemas"]["AgentOverviewPrompts"];
+            specs: components["schemas"]["AgentOverviewSpecs"];
+            /** Evals */
+            evals: components["schemas"]["AgentOverviewEval"][];
+            tool_servers: components["schemas"]["AgentOverviewToolServers"];
+            run_configs: components["schemas"]["AgentOverviewRunConfigs"];
+            fine_tunes: components["schemas"]["AgentOverviewFineTunes"];
+            prompt_optimization_jobs: components["schemas"]["AgentOverviewPromptOptimizationJobs"];
+            skills: components["schemas"]["AgentOverviewSkills"];
+            /** Connected Providers */
+            connected_providers: {
+                [key: string]: {
+                    [key: string]: boolean;
+                };
+            };
+        };
+        /**
+         * AgentOverviewDataset
+         * @description Aggregate counts of dataset examples by tag, source type, and rating.
+         */
+        AgentOverviewDataset: {
+            /** Total Count */
+            total_count: number;
+            /** By Tag */
+            by_tag: {
+                [key: string]: number;
+            };
+            /**
+             * By Source
+             * @description Counts keyed by DataSourceType.
+             */
+            by_source: {
+                [key: string]: number;
+            };
+            /**
+             * By Rating
+             * @description Counts keyed by star rating (1-5) or 'unrated'.
+             */
+            by_rating: {
+                [key: string]: number;
+            };
+        };
+        /** AgentOverviewDocs */
+        AgentOverviewDocs: {
+            /** Doc Count */
+            doc_count: number;
+            /** By Tag */
+            by_tag: {
+                [key: string]: number;
+            };
+            /** By Kind */
+            by_kind: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * AgentOverviewEval
+         * @description An eval definition with its scoring configuration.
+         */
+        AgentOverviewEval: {
+            /** Eval Id */
+            eval_id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /**
+             * Template
+             * @description Eval template type, if template-based.
+             */
+            template: string | null;
+            /**
+             * Default Judge Config Id
+             * @description ID of the default judge run config for this eval.
+             */
+            default_judge_config_id: string | null;
+            /** Output Scores */
+            output_scores: components["schemas"]["AgentOverviewOutputScore"][];
+            /** Favourite */
+            favourite: boolean;
+        };
+        /** AgentOverviewFineTunes */
+        AgentOverviewFineTunes: {
+            /** Total Count */
+            total_count: number;
+        };
+        /** AgentOverviewOutputScore */
+        AgentOverviewOutputScore: {
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+        };
+        /** AgentOverviewProject */
+        AgentOverviewProject: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+        };
+        /**
+         * AgentOverviewPrompt
+         * @description A prompt available for use in run configs.
+         */
+        AgentOverviewPrompt: {
+            /**
+             * Id
+             * @description The prompt ID (e.g. 'id::...' or 'task_run_config::...').
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Type
+             * @description Type label (e.g. 'Custom', 'Frozen', 'Fine-Tune').
+             */
+            type: string;
+        };
+        /** AgentOverviewPromptOptimizationJobs */
+        AgentOverviewPromptOptimizationJobs: {
+            /** Total Count */
+            total_count: number;
+        };
+        /**
+         * AgentOverviewPrompts
+         * @description Available prompts, capped to the most recent entries.
+         */
+        AgentOverviewPrompts: {
+            /** Total */
+            total: number;
+            /**
+             * Showing
+             * @description Human-readable 'N of M' summary.
+             */
+            showing: string;
+            /**
+             * Generators From Task Instruction Count
+             * @description Number of built-in prompt generators that auto-generate from the task instruction.
+             */
+            generators_from_task_instruction_count: number;
+            /** Items */
+            items: components["schemas"]["AgentOverviewPrompt"][];
+        };
+        /**
+         * AgentOverviewRunConfig
+         * @description A run configuration defining model, prompt, and tool selections.
+         */
+        AgentOverviewRunConfig: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /**
+             * Type
+             * @description Run config type (e.g. 'agent', 'mcp').
+             */
+            type: string;
+            /** Model Name */
+            model_name: string | null;
+            /** Model Provider */
+            model_provider: string | null;
+            /**
+             * Prompt Id
+             * @description Prompt ID used by this config, matching AgentOverviewPrompt.id format.
+             */
+            prompt_id: string | null;
+            /**
+             * Tool Ids
+             * @description Tool IDs attached to this config, including skills (prefixed with 'kiln_tool::skill::').
+             */
+            tool_ids: string[];
+            /** Starred */
+            starred: boolean;
+        };
+        /**
+         * AgentOverviewRunConfigs
+         * @description Run configs with starred entries always included, capped to 5 total.
+         */
+        AgentOverviewRunConfigs: {
+            /** Default Run Config Id */
+            default_run_config_id: string | null;
+            /** Total */
+            total: number;
+            /**
+             * Showing
+             * @description Human-readable 'N of M' summary.
+             */
+            showing: string;
+            /** Items */
+            items: components["schemas"]["AgentOverviewRunConfig"][];
+        };
+        /** AgentOverviewSearchTool */
+        AgentOverviewSearchTool: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Tool Name */
+            tool_name: string;
+            /** Tool Description */
+            tool_description: string;
+            /** Description */
+            description: string | null;
+            /** Tags */
+            tags: string[] | null;
+        };
+        /** AgentOverviewSearchTools */
+        AgentOverviewSearchTools: {
+            /** Items */
+            items: components["schemas"]["AgentOverviewSearchTool"][];
+            /** Archived Search Tool Count */
+            archived_search_tool_count: number;
+        };
+        /** AgentOverviewSkill */
+        AgentOverviewSkill: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+        };
+        /** AgentOverviewSkills */
+        AgentOverviewSkills: {
+            /** Items */
+            items: components["schemas"]["AgentOverviewSkill"][];
+            /** Archived Skill Count */
+            archived_skill_count: number;
+        };
+        /**
+         * AgentOverviewSpec
+         * @description A non-archived eval spec with its priority and status.
+         */
+        AgentOverviewSpec: {
+            /**
+             * Eval Id
+             * @description The eval this spec belongs to.
+             */
+            eval_id: string | null;
+            /** Name */
+            name: string;
+            /** Spec Type */
+            spec_type: string;
+            /**
+             * Priority
+             * @description Priority level name (e.g. 'p0', 'p1', 'p2').
+             */
+            priority: string;
+            /** Status */
+            status: string;
+            /** Tags */
+            tags: string[];
+        };
+        /** AgentOverviewSpecs */
+        AgentOverviewSpecs: {
+            /** Items */
+            items: components["schemas"]["AgentOverviewSpec"][];
+            /** Archived Spec Count */
+            archived_spec_count: number;
+        };
+        /**
+         * AgentOverviewTask
+         * @description The task definition including schemas and truncated instruction.
+         */
+        AgentOverviewTask: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /**
+             * Instruction
+             * @description Task instruction, truncated with sentinel if over 70 words.
+             */
+            instruction: string;
+            /**
+             * Input Json Schema
+             * @description JSON Schema for task input, or null if plain text.
+             */
+            input_json_schema: unknown | null;
+            /**
+             * Output Json Schema
+             * @description JSON Schema for task output, or null if plain text.
+             */
+            output_json_schema: unknown | null;
+            /** Default Run Config Id */
+            default_run_config_id: string | null;
+        };
+        /** AgentOverviewToolServer */
+        AgentOverviewToolServer: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+            /** Description */
+            description: string | null;
+        };
+        /** AgentOverviewToolServers */
+        AgentOverviewToolServers: {
+            /** Items */
+            items: components["schemas"]["AgentOverviewToolServer"][];
+            /** Archived Tool Server Count */
+            archived_tool_server_count: number;
+        };
         /** AnswerOption */
         AnswerOption: {
             /**
@@ -3010,6 +3388,11 @@ export interface components {
              * @description The prompt ID used to reference this prompt.
              */
             id: string;
+            /**
+             * Type
+             * @description The type label for this prompt (e.g. 'Custom', 'Fine-Tune', 'Frozen', 'Few-Shot').
+             */
+            type: string;
             /**
              * Created At
              * @description When the prompt was created.
@@ -4984,6 +5367,90 @@ export interface components {
             dataset_size: number;
         };
         /**
+         * EvalResultsSummaryEvalInfo
+         * @description Metadata for a single eval within eval results summary.
+         */
+        EvalResultsSummaryEvalInfo: {
+            /**
+             * Name
+             * @description The eval name.
+             */
+            name: string;
+            /**
+             * Default Judge Config Id
+             * @description The default judge config ID for this eval, if any.
+             */
+            default_judge_config_id: string | null;
+            /**
+             * Dataset Size
+             * @description Total size of the eval dataset.
+             */
+            dataset_size: number;
+            /**
+             * Output Score Keys
+             * @description The output score keys for this eval.
+             */
+            output_score_keys: string[];
+        };
+        /**
+         * EvalResultsSummaryResponse
+         * @description Aggregated eval results across all evals for a task.
+         */
+        EvalResultsSummaryResponse: {
+            /**
+             * Evals By Id
+             * @description Eval metadata keyed by eval ID.
+             */
+            evals_by_id: {
+                [key: string]: components["schemas"]["EvalResultsSummaryEvalInfo"];
+            };
+            /**
+             * Run Configs By Id
+             * @description Run config metadata keyed by run config ID.
+             */
+            run_configs_by_id: {
+                [key: string]: components["schemas"]["EvalResultsSummaryRunConfigInfo"];
+            };
+            /**
+             * Scores By Run Config By Eval
+             * @description Results keyed by run config ID then eval ID.
+             */
+            scores_by_run_config_by_eval: {
+                [key: string]: {
+                    [key: string]: components["schemas"]["EvalResultsSummaryResultCell"];
+                };
+            };
+        };
+        /**
+         * EvalResultsSummaryResultCell
+         * @description Results for a single (eval, run_config) cell.
+         */
+        EvalResultsSummaryResultCell: {
+            /**
+             * Mean Scores
+             * @description Mean scores keyed by output_score_key.
+             */
+            mean_scores: {
+                [key: string]: number;
+            };
+            /**
+             * Percent Complete
+             * @description Percent of dataset processed for this run config.
+             */
+            percent_complete: number;
+        };
+        /**
+         * EvalResultsSummaryRunConfigInfo
+         * @description Metadata for a run config within eval results summary.
+         */
+        EvalResultsSummaryRunConfigInfo: {
+            /**
+             * Name
+             * @description The run config name.
+             */
+            name: string;
+        };
+        /**
          * EvalRun
          * @description The results of running an eval on a single dataset item.
          *
@@ -6926,66 +7393,6 @@ export interface components {
              * @default
              */
             id: string;
-        };
-        /**
-         * Prompt
-         * @description A prompt for a task. This is the custom prompt parented by a task.
-         */
-        Prompt: {
-            /**
-             * Name
-             * @description The name of the prompt.
-             */
-            name: string;
-            /**
-             * Description
-             * @description A more detailed description of the prompt.
-             */
-            description?: string | null;
-            /**
-             * Generator Id
-             * @description The id of the generator that created this prompt.
-             */
-            generator_id?: string | null;
-            /**
-             * Prompt
-             * @description The prompt for the task.
-             */
-            prompt: string;
-            /**
-             * Chain Of Thought Instructions
-             * @description Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting. COT will not be used unless this is provided.
-             */
-            chain_of_thought_instructions?: string | null;
-            /**
-             * V
-             * @description Schema version for migration support.
-             * @default 1
-             */
-            v: number;
-            /**
-             * Id
-             * @description Unique identifier for this record.
-             */
-            id?: string | null;
-            /**
-             * Path
-             * @description File system path where the record is stored.
-             */
-            path?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
-             */
-            created_at?: string;
-            /**
-             * Created By
-             * @description User ID of the creator.
-             */
-            created_by?: string;
-            /** Model Type */
-            readonly model_type: string;
         };
         /** PromptApiResponse */
         PromptApiResponse: {
@@ -9116,6 +9523,33 @@ export interface components {
              */
             output: string;
         };
+        /** TaskSummariesProject */
+        TaskSummariesProject: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Tasks */
+            tasks: components["schemas"]["TaskSummary"][];
+        };
+        /** TaskSummariesResponse */
+        TaskSummariesResponse: {
+            /** Projects */
+            projects: components["schemas"]["TaskSummariesProject"][];
+        };
+        /** TaskSummary */
+        TaskSummary: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Instruction */
+            instruction: string;
+        };
         /**
          * TaskToolCompatibility
          * @description Whether a task is compatible with a specific tool.
@@ -10029,6 +10463,26 @@ export interface operations {
             };
         };
     };
+    task_summaries_api_task_summaries_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskSummariesResponse"];
+                };
+            };
+        };
+    };
     get_prompts_api_projects__project_id__tasks__task_id__prompts_get: {
         parameters: {
             query?: never;
@@ -10087,7 +10541,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Prompt"];
+                    "application/json": components["schemas"]["ApiPrompt"];
                 };
             };
             /** @description Validation Error */
@@ -14360,6 +14814,40 @@ export interface operations {
             };
         };
     };
+    get_eval_results_summary_api_projects__project_id__tasks__task_id__eval_results_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalResultsSummaryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_eval_configs_score_summary_api_projects__project_id__tasks__task_id__evals__eval_id__eval_configs_score_summary_get: {
         parameters: {
             query?: never;
@@ -16252,6 +16740,40 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_overview_api_projects__project_id__tasks__task_id__agent_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentOverview"];
                 };
             };
             /** @description Validation Error */

@@ -5,7 +5,6 @@
   import Output from "$lib/ui/output.svelte"
   import { formatDate } from "$lib/utils/formatters"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
-  import { getPromptType } from "../../prompt_generators/prompt_generators"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -27,10 +26,7 @@
         ID: prompt_model?.id,
         Name: prompt_model?.name,
         Description: prompt_model?.description || undefined,
-        Type: getPromptType(
-          prompt_model?.id || "",
-          prompt_model?.generator_id || null,
-        ),
+        Type: prompt_model?.type ?? "Unknown",
         "Created By": prompt_model?.created_by,
         "Created At": formatDate(prompt_model?.created_at || undefined),
       }).filter(([_, value]) => value !== undefined && value !== null),

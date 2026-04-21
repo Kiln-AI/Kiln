@@ -97,6 +97,10 @@ tags_metadata = [
         "description": "Git-based synchronization setup, configuration, and management.",
     },
     {
+        "name": "Agent",
+        "description": "Token-efficient overview endpoints designed for the Kiln chat agent.",
+    },
+    {
         "name": "Settings & Utilities",
         "description": "Server settings, connectivity checks, and utility endpoints.",
     },

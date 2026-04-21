@@ -1,4 +1,5 @@
 import json
+from collections import defaultdict
 from typing import Annotated, Any, Dict, List, Set, Tuple
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
@@ -298,6 +299,50 @@ class EvalResultSummary(BaseModel):
     dataset_size: int = Field(description="Total size of the eval dataset.")
 
 
+class EvalResultsSummaryEvalInfo(BaseModel):
+    """Metadata for a single eval within eval results summary."""
+
+    name: str = Field(description="The eval name.")
+    default_judge_config_id: ID_TYPE | None = Field(
+        description="The default judge config ID for this eval, if any."
+    )
+    dataset_size: int = Field(description="Total size of the eval dataset.")
+    output_score_keys: list[str] = Field(
+        description="The output score keys for this eval."
+    )
+
+
+class EvalResultsSummaryRunConfigInfo(BaseModel):
+    """Metadata for a run config within eval results summary."""
+
+    name: str = Field(description="The run config name.")
+
+
+class EvalResultsSummaryResultCell(BaseModel):
+    """Results for a single (eval, run_config) cell."""
+
+    mean_scores: Dict[str, float] = Field(
+        description="Mean scores keyed by output_score_key."
+    )
+    percent_complete: float = Field(
+        description="Percent of dataset processed for this run config."
+    )
+
+
+class EvalResultsSummaryResponse(BaseModel):
+    """Aggregated eval results across all evals for a task."""
+
+    evals_by_id: Dict[ID_TYPE, EvalResultsSummaryEvalInfo] = Field(
+        description="Eval metadata keyed by eval ID."
+    )
+    run_configs_by_id: Dict[ID_TYPE, EvalResultsSummaryRunConfigInfo] = Field(
+        description="Run config metadata keyed by run config ID."
+    )
+    scores_by_run_config_by_eval: Dict[
+        ID_TYPE, Dict[ID_TYPE, EvalResultsSummaryResultCell]
+    ] = Field(description="Results keyed by run config ID then eval ID.")
+
+
 class EvalConfigCompareSummary(BaseModel):
     """Summary comparing eval configs against human ratings."""
 
@@ -439,6 +484,82 @@ def count_human_evals(
             partially_rated_count += 1
 
     return fully_rated_count, partially_rated_count, not_rated_count
+
+
+def compute_score_summary(
+    eval: Eval,
+    eval_config: EvalConfig,
+    task_run_configs: list[TaskRunConfig],
+    expected_dataset_ids: set[ID_TYPE],
+) -> EvalResultSummary:
+    if len(expected_dataset_ids) == 0:
+        return EvalResultSummary(
+            results={},
+            run_config_percent_complete={},
+            dataset_size=0,
+        )
+
+    remaining_expected_dataset_ids: Dict[ID_TYPE, Set[ID_TYPE]] = {
+        run_config.id: set(expected_dataset_ids) for run_config in task_run_configs
+    }
+    partial_incomplete_counts: Dict[ID_TYPE, int] = {
+        run_config.id: 0 for run_config in task_run_configs
+    }
+
+    total_scores: Dict[ID_TYPE, Dict[str, float]] = defaultdict(
+        lambda: defaultdict(float)
+    )
+    score_counts: Dict[ID_TYPE, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
+
+    for eval_run in eval_config.runs(readonly=True):
+        if eval_run.task_run_config_id is None:
+            continue
+        run_config_id = eval_run.task_run_config_id
+
+        if run_config_id not in remaining_expected_dataset_ids:
+            continue
+        if eval_run.dataset_id not in remaining_expected_dataset_ids[run_config_id]:
+            continue
+        else:
+            remaining_expected_dataset_ids[run_config_id].remove(eval_run.dataset_id)
+
+        incomplete = False
+        # Ensure this run_config_id has an entry even if no scores match
+        _ = total_scores[run_config_id]
+        for output_score in eval.output_scores:
+            score_key = output_score.json_key()
+            if score_key in eval_run.scores:
+                total_scores[run_config_id][score_key] += eval_run.scores[score_key]
+                score_counts[run_config_id][score_key] += 1
+            else:
+                incomplete = True
+
+        if incomplete:
+            partial_incomplete_counts[run_config_id] += 1
+
+    results: Dict[ID_TYPE, Dict[str, ScoreSummary]] = {}
+    for run_config_id, output_scores in total_scores.items():
+        results[run_config_id] = {}
+        for output_score_id, score in output_scores.items():
+            count = score_counts[run_config_id][output_score_id]
+            if count > 0:
+                results[run_config_id][output_score_id] = ScoreSummary(
+                    mean_score=score / count
+                )
+
+    run_config_percent_complete: Dict[ID_TYPE, float] = {}
+    for run_config in task_run_configs:
+        incomplete_count = partial_incomplete_counts[run_config.id] + len(
+            remaining_expected_dataset_ids[run_config.id]
+        )
+        percent_incomplete = incomplete_count / len(expected_dataset_ids)
+        run_config_percent_complete[run_config.id] = 1 - percent_incomplete
+
+    return EvalResultSummary(
+        results=results,
+        run_config_percent_complete=run_config_percent_complete,
+        dataset_size=len(expected_dataset_ids),
+    )
 
 
 def connect_evals_api(app: FastAPI):
@@ -1018,10 +1139,8 @@ def connect_evals_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
         eval = eval_from_id(project_id, task_id, eval_id)
         eval_config = eval_config_from_id(project_id, task_id, eval_id, eval_config_id)
-        # special case, we cannot directly lod task.run_configs(), we need to also get all finetune run configs which lives inside the finetune model
-        task_runs_configs = get_all_run_configs(project_id, task_id)
+        task_run_configs = get_all_run_configs(project_id, task_id)
 
-        # Build a set of all the dataset items IDs we expect to have scores for
         expected_dataset_ids = dataset_ids_in_filter(
             task, eval.eval_set_filter_id, readonly=True
         )
@@ -1031,82 +1150,86 @@ def connect_evals_api(app: FastAPI):
                 detail="No dataset ids in eval set filter. Add items to your dataset matching the eval set filter.",
             )
 
-        # save a copy of the expected dataset ids for each run config, we'll update each as we process each eval run
-        remaining_expected_dataset_ids: Dict[ID_TYPE, Set[ID_TYPE]] = {
-            run_config.id: set(expected_dataset_ids) for run_config in task_runs_configs
+        return compute_score_summary(
+            eval, eval_config, task_run_configs, expected_dataset_ids
+        )
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/eval_results_summary",
+        summary="Get Eval Results Summary",
+        tags=["Evals"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_eval_results_summary(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> EvalResultsSummaryResponse:
+        task = task_from_id(project_id, task_id)
+        task_run_configs = get_all_run_configs(project_id, task_id)
+
+        run_configs_out: Dict[ID_TYPE, EvalResultsSummaryRunConfigInfo] = {
+            rc.id: EvalResultsSummaryRunConfigInfo(name=rc.name)
+            for rc in task_run_configs
         }
-        # Track how often we are missing scores in a eval_config. Should be 0 for a complete eval_config
-        partial_incomplete_counts: Dict[ID_TYPE, int] = {
-            run_config.id: 0 for run_config in task_runs_configs
-        }
 
-        # task_run_config_id -> output_score_json_key -> score/total for calculating the mean score
-        total_scores: Dict[ID_TYPE, Dict[str, float]] = {}
-        score_counts: Dict[ID_TYPE, Dict[str, int]] = {}
+        dataset_ids_cache: Dict[DatasetFilterId, Set[ID_TYPE]] = {}
+        evals_out: Dict[ID_TYPE, EvalResultsSummaryEvalInfo] = {}
+        scores_out: Dict[ID_TYPE, Dict[ID_TYPE, EvalResultsSummaryResultCell]] = {}
 
-        for eval_run in eval_config.runs(readonly=True):
-            if eval_run.task_run_config_id is None:
-                # This eval_run is not associated with a run_config, so we should not count it
-                continue
-            run_config_id = eval_run.task_run_config_id
-
-            # Check if we should count this eval_run. Not every eval_run has to go into the stats:
-            # - a dataset_id can be removed from the dataset filter (removed a tag)
-            # - this dataset_id was already counted (not great there are dupes, but shouldn't be double counted if there are)
-            if run_config_id not in remaining_expected_dataset_ids:
-                # This run_config is not in the eval config, so we should not count it
-                continue
-            if eval_run.dataset_id not in remaining_expected_dataset_ids[run_config_id]:
-                continue
-            else:
-                remaining_expected_dataset_ids[run_config_id].remove(
-                    eval_run.dataset_id
+        for eval in task.evals(readonly=True):
+            filter_id = eval.eval_set_filter_id
+            if filter_id not in dataset_ids_cache:
+                dataset_ids_cache[filter_id] = dataset_ids_in_filter(
+                    task, filter_id, readonly=True
                 )
+            expected_dataset_ids = dataset_ids_cache[filter_id]
 
-            incomplete = False
-            for output_score in eval.output_scores:
-                score_key = output_score.json_key()
-                if run_config_id not in total_scores:
-                    total_scores[run_config_id] = {}
-                    score_counts[run_config_id] = {}
-                if score_key not in total_scores[run_config_id]:
-                    total_scores[run_config_id][score_key] = 0
-                    score_counts[run_config_id][score_key] = 0
-                if score_key in eval_run.scores:
-                    total_scores[run_config_id][score_key] += eval_run.scores[score_key]
-                    score_counts[run_config_id][score_key] += 1
-                else:
-                    # We're missing a required score, so this eval_run is incomplete
-                    incomplete = True
-
-            if incomplete:
-                partial_incomplete_counts[run_config_id] += 1
-
-        # Convert to score summaries
-        results: Dict[ID_TYPE, Dict[str, ScoreSummary]] = {}
-        for run_config_id, output_scores in total_scores.items():
-            results[run_config_id] = {}
-            for output_score_id, score in output_scores.items():
-                count = score_counts[run_config_id][output_score_id]
-                if count > 0:
-                    results[run_config_id][output_score_id] = ScoreSummary(
-                        mean_score=score / count
-                    )
-
-        # Calculate the percent of the dataset that has been processed
-        run_config_percent_complete: Dict[ID_TYPE, float] = {}
-        for run_config in task_runs_configs:
-            # Partial incomplete (missing scores), and fully incomplete (no eval_run)
-            incomplete_count = partial_incomplete_counts[run_config.id] + len(
-                remaining_expected_dataset_ids[run_config.id]
+            evals_out[eval.id] = EvalResultsSummaryEvalInfo(
+                name=eval.name,
+                default_judge_config_id=eval.current_config_id,
+                dataset_size=len(expected_dataset_ids),
+                output_score_keys=[s.json_key() for s in eval.output_scores],
             )
-            percent_incomplete = incomplete_count / len(expected_dataset_ids)
-            run_config_percent_complete[run_config.id] = 1 - percent_incomplete
 
-        return EvalResultSummary(
-            results=results,
-            run_config_percent_complete=run_config_percent_complete,
-            dataset_size=len(expected_dataset_ids),
+            if eval.current_config_id is None:
+                continue
+
+            default_config = None
+            for eval_config in eval.configs(readonly=True):
+                if eval_config.id == eval.current_config_id:
+                    default_config = eval_config
+                    break
+
+            if default_config is None or len(expected_dataset_ids) == 0:
+                continue
+
+            summary = compute_score_summary(
+                eval,
+                default_config,
+                task_run_configs,
+                expected_dataset_ids,
+            )
+
+            for rc_id, scores_dict in summary.results.items():
+                mean_scores = {key: s.mean_score for key, s in scores_dict.items()}
+                percent_complete = summary.run_config_percent_complete.get(rc_id, 0.0)
+                cell = EvalResultsSummaryResultCell(
+                    mean_scores=mean_scores,
+                    percent_complete=percent_complete,
+                )
+                if rc_id not in scores_out:
+                    scores_out[rc_id] = {}
+                scores_out[rc_id][eval.id] = cell
+
+        return EvalResultsSummaryResponse(
+            evals_by_id=evals_out,
+            run_configs_by_id=run_configs_out,
+            scores_by_run_config_by_eval=scores_out,
         )
 
     # Compared to above, this is comparing all eval configs to each other, not looking at a single eval config
