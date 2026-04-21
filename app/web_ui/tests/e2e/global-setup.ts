@@ -1,5 +1,5 @@
 import { request } from "@playwright/test"
-import { BACKEND_URL, FRONTEND_URL } from "./ports"
+import { BACKEND_URL, FRONTEND_URL, MOCK_PROVIDER_URL } from "./ports"
 
 const POLL_TIMEOUT_MS = 60_000
 const POLL_INTERVAL_MS = 250
@@ -53,6 +53,11 @@ export default async function globalSetup() {
       `${FRONTEND_URL}/`,
       (status, body) =>
         status === 200 && body.toLowerCase().includes("<!doctype html"),
+    ),
+    waitFor(
+      "mock-provider",
+      `${MOCK_PROVIDER_URL}/__state`,
+      (status) => status === 200,
     ),
   ])
 }

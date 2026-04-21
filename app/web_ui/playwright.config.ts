@@ -6,6 +6,8 @@ import {
   BACKEND_URL,
   FRONTEND_PORT,
   FRONTEND_URL,
+  MOCK_PROVIDER_PORT,
+  MOCK_PROVIDER_URL,
 } from "./tests/e2e/ports"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -103,6 +105,17 @@ export default defineConfig({
       url: FRONTEND_URL,
       reuseExistingServer: false,
       timeout: 60_000,
+    },
+    {
+      // Run via plain `node` — Node 22.6+ strips TS types natively, so no extra
+      // dep (tsx/ts-node) is needed. Avoids tsx's per-process IPC pipe.
+      command: `node ./tests/e2e/mock_provider/server.ts`,
+      env: {
+        MOCK_PROVIDER_PORT: String(MOCK_PROVIDER_PORT),
+      },
+      url: `${MOCK_PROVIDER_URL}/__state`,
+      reuseExistingServer: false,
+      timeout: 30_000,
     },
   ],
 })

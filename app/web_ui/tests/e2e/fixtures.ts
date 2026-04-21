@@ -1,6 +1,12 @@
 import { test as base, expect, type APIRequestContext } from "@playwright/test"
 import { randomUUID } from "crypto"
-import { BACKEND_URL } from "./ports"
+import { BACKEND_URL, MOCK_PROVIDER_URL } from "./ports"
+import {
+  MockProviderClient,
+  MOCK_MODEL_ID,
+  MOCK_MODEL_NAME,
+  MOCK_PROVIDER_NAME,
+} from "./mock_provider/client"
 
 export type SeededProject = {
   id: string
@@ -15,12 +21,21 @@ export type SeededTask = {
   instruction: string
 }
 
+export type ConnectedMockProvider = {
+  providerName: string
+  modelId: string
+  modelName: string
+  modelProviderName: "openai_compatible"
+}
+
 type Fixtures = {
   apiRequest: APIRequestContext
   cleanBackend: void
   registeredUser: void
   seededProject: SeededProject
   seededProjectWithTask: { project: SeededProject; task: SeededTask }
+  mockInferenceProvider: MockProviderClient
+  connectedMockProvider: ConnectedMockProvider
 }
 
 export const test = base.extend<Fixtures>({
@@ -124,6 +139,51 @@ export const test = base.extend<Fixtures>({
     await apiRequest
       .delete(
         `/api/projects/${encodeURIComponent(project.id)}/tasks/${encodeURIComponent(task.id)}`,
+      )
+      .catch(() => {})
+  },
+
+  mockInferenceProvider: async ({ playwright }, use) => {
+    const ctx = await playwright.request.newContext({
+      baseURL: MOCK_PROVIDER_URL,
+    })
+    const client = new MockProviderClient(ctx)
+    await client.reset()
+    await use(client)
+    await client.reset()
+    await ctx.dispose()
+  },
+
+  connectedMockProvider: async ({ apiRequest, mockInferenceProvider }, use) => {
+    void mockInferenceProvider
+    // DELETE-then-POST keeps this idempotent across tests that share a backend.
+    await apiRequest
+      .delete(
+        `/api/provider/openai_compatible?name=${encodeURIComponent(MOCK_PROVIDER_NAME)}`,
+      )
+      .catch(() => {})
+    const resp = await apiRequest.post("/api/provider/openai_compatible", {
+      data: {
+        name: MOCK_PROVIDER_NAME,
+        base_url: `${MOCK_PROVIDER_URL}/v1`,
+        api_key: "NA",
+      },
+    })
+    expect(
+      resp.ok(),
+      "POST /api/provider/openai_compatible register mock",
+    ).toBeTruthy()
+
+    await use({
+      providerName: MOCK_PROVIDER_NAME,
+      modelId: MOCK_MODEL_ID,
+      modelName: MOCK_MODEL_NAME,
+      modelProviderName: "openai_compatible",
+    })
+
+    await apiRequest
+      .delete(
+        `/api/provider/openai_compatible?name=${encodeURIComponent(MOCK_PROVIDER_NAME)}`,
       )
       .catch(() => {})
   },

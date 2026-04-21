@@ -3,3 +3,6 @@
 **/package-lock.json
 
 src/lib/api_schema.d.ts
+
+# ActRight skill working state (matches .act_right entry in root .gitignore)
+.act_right/
