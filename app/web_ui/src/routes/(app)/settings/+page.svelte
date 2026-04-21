@@ -20,6 +20,7 @@
   import RefreshIcon from "$lib/ui/icons/refresh_icon.svelte"
   import BookIcon from "$lib/ui/icons/book_icon.svelte"
   import ShieldIcon from "$lib/ui/icons/shield_icon.svelte"
+  import type { ComponentType } from "svelte"
 
   agentInfo.set({
     name: "Settings",
@@ -27,17 +28,14 @@
       "Main settings page with options for editing current workspace, managing AI providers and custom models, managing projects, viewing logs, and checking for updates.",
   })
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  type IconComponent = any
-
   type SettingsRow = {
     label: string
-    icon: IconComponent
-    detail: string | undefined
-    href: string | undefined
-    on_click: (() => void) | undefined
-    is_external: boolean | undefined
-    status: "warn" | undefined
+    icon: ComponentType
+    detail?: string
+    href?: string
+    on_click?: () => void
+    is_external?: boolean
+    status?: "warn"
   }
 
   type SettingsSection = {
@@ -56,18 +54,12 @@
           icon: EditIcon,
           detail: $current_task?.name,
           href: `/settings/edit_task/${$ui_state?.current_project_id}/${$ui_state?.current_task_id}`,
-          on_click: undefined,
-          is_external: undefined,
-          status: undefined,
         },
         {
           label: "Edit Current Project",
           icon: FolderIcon,
           detail: $current_project?.name,
           href: "/settings/edit_project/" + $ui_state.current_project_id,
-          on_click: undefined,
-          is_external: undefined,
-          status: undefined,
         },
         {
           label: "Manage Projects",
@@ -77,9 +69,6 @@
               ? `${project_count} project${project_count === 1 ? "" : "s"}`
               : undefined,
           href: "/settings/manage_projects",
-          on_click: undefined,
-          is_external: undefined,
-          status: undefined,
         },
       ],
     },
@@ -91,18 +80,12 @@
           icon: KeyIcon,
           detail: "Manage connected providers",
           href: "/settings/providers",
-          on_click: undefined,
-          is_external: undefined,
-          status: undefined,
         },
         {
           label: "Custom Models",
           icon: CubeIcon,
           detail: "Add or remove custom models",
           href: "/settings/providers/add_models",
-          on_click: undefined,
-          is_external: undefined,
-          status: undefined,
         },
       ],
     },
@@ -113,19 +96,13 @@
           label: "Application Logs",
           icon: TerminalIcon,
           detail: "LLM calls and application events",
-          href: undefined,
           on_click: view_logs,
-          is_external: undefined,
-          status: undefined,
         },
         {
           label: "Check for Update",
           icon: RefreshIcon,
           detail: `Kiln ${app_version}`,
           href: "/settings/check_for_update",
-          on_click: undefined,
-          is_external: undefined,
-          status: undefined,
         },
       ],
     },
@@ -137,22 +114,18 @@
           icon: BookIcon,
           detail: "docs.kiln.tech",
           href: "https://docs.kiln.tech",
-          on_click: undefined,
           is_external: true,
-          status: undefined,
         },
         {
           label: "License Agreement",
           icon: ShieldIcon,
           detail: "EULA",
           href: "https://github.com/Kiln-AI/Kiln/blob/main/app/EULA.md",
-          on_click: undefined,
           is_external: true,
-          status: undefined,
         },
       ],
     },
-  ] satisfies Array<SettingsSection>
+  ] as Array<SettingsSection>
 </script>
 
 <AppPage title="Settings" no_y_padding>
@@ -200,7 +173,7 @@
               detail={row.detail}
               href={row.href}
               on_click={row.on_click}
-              is_external={row.is_external ?? false}
+              is_external={row.is_external}
               status={row.status}
               is_last={i === section.rows.length - 1}
             >

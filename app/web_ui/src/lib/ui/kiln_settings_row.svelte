@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { goto } from "$app/navigation"
-
   export let label: string
   export let detail: string | undefined = undefined
   export let href: string | undefined = undefined
@@ -9,26 +7,23 @@
   export let status: "warn" | undefined = undefined
   export let is_last: boolean = false
 
-  function clicked() {
-    if (on_click) {
-      on_click()
-    } else if (href) {
-      if (is_external) {
-        window.open(href, "_blank")
-      } else {
-        goto(href)
-      }
-    }
-  }
+  $: row_class = `flex items-center w-full text-left gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors no-underline ${is_last ? "" : "border-b border-gray-100"}`
 </script>
 
-<button
-  type="button"
-  on:click={clicked}
+<!--
+  Svelte 4 doesn't support snippets, and extracting to a child component
+  would break slot forwarding. Instead we use svelte:element to pick the
+  wrapper tag dynamically, keeping the inner markup written once.
+-->
+<svelte:element
+  this={href ? "a" : "button"}
+  href={href || undefined}
+  type={href ? undefined : "button"}
+  target={href && is_external ? "_blank" : undefined}
+  rel={href && is_external ? "noopener noreferrer" : undefined}
   data-testid="settings-row"
-  class="flex items-center w-full text-left gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors {is_last
-    ? ''
-    : 'border-b border-gray-100'}"
+  class={row_class}
+  on:click={href ? undefined : on_click}
 >
   <span
     class="flex items-center justify-center w-6 h-6 rounded-[5px] flex-shrink-0 bg-gray-100 text-gray-600"
@@ -52,7 +47,7 @@
     </span>
   {/if}
   <span class="text-gray-400 flex-shrink-0 w-3 h-3 flex items-center">
-    {#if is_external}
+    {#if href && is_external}
       <svg
         viewBox="0 0 24 24"
         fill="none"
@@ -82,4 +77,4 @@
       </svg>
     {/if}
   </span>
-</button>
+</svelte:element>
