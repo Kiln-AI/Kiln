@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/stores"
-  import { current_task, get_task_composite_id } from "$lib/stores"
+  import { get_task_composite_id } from "$lib/stores"
   import {
     load_task_prompts,
     prompts_by_task_composite_id,
@@ -22,7 +22,6 @@
     description: `Saved prompt detail for prompt ID ${prompt_id} in project ID ${project_id}, task ID ${task_id}. Prompt name: ${prompt_model?.name ?? "[loading]"}. Shows prompt content, version history, and options to clone or edit.`,
   })
 
-  let prompt_model: ApiPrompt | null = null
   let loading = true
   let loading_error: KilnError | null = null
 
@@ -31,18 +30,17 @@
       // Force-refresh so deeplinks to prompts created mid-chat (which
       // bypass the store's save helpers) are picked up on direct load.
       await load_task_prompts(project_id, task_id, true)
-      const task_prompts =
-        $prompts_by_task_composite_id[
-          get_task_composite_id(project_id, task_id)
-        ]
-      prompt_model =
-        task_prompts?.prompts.find((p) => p.id === prompt_id) ?? null
     } catch (e) {
       loading_error = createKilnError(e)
     } finally {
       loading = false
     }
   })
+
+  $: prompt_model =
+    ($prompts_by_task_composite_id[
+      get_task_composite_id(project_id, task_id)
+    ]?.prompts.find((p) => p.id === prompt_id) as ApiPrompt | undefined) ?? null
 
   let prompt_props: Record<string, string | undefined | null> = {}
   $: {
@@ -104,12 +102,6 @@
     {:else if loading_error}
       <div class="text-error">
         {loading_error.getMessage() || "Failed to load prompt."}
-      </div>
-    {:else if $current_task?.id != task_id}
-      <div class="text-error">
-        This link is to another task's prompt. Either select that task in the
-        sidebar, or click 'Prompts' in the sidebar to load the current task's
-        prompts.
       </div>
     {:else if prompt_model}
       <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
