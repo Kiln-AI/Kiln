@@ -4,7 +4,6 @@
   import type { PromptResponse } from "$lib/types"
   import Warning from "$lib/ui/warning.svelte"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
-  import { getStaticPromptDisplayName } from "$lib/utils/run_config_formatters"
   import { client } from "$lib/api_client"
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
@@ -199,11 +198,7 @@
       }
       static_prompts.push({
         value: prompt.id,
-        label: getStaticPromptDisplayName(
-          prompt.name,
-          prompt.generator_id,
-          current_task_prompts,
-        ),
+        label: prompt.name,
       })
     }
     const saved_prompts_action =

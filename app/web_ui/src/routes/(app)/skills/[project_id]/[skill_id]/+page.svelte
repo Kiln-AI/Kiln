@@ -136,17 +136,16 @@
     action_buttons={skill && !loading && !loading_error
       ? [
           {
+            icon: "/images/folder.svg",
+            handler: () => open_enclosing_folder(),
+          },
+          {
             label: "Clone",
             handler: () => goto(`/skills/${project_id}/clone/${skill_id}`),
           },
           {
             label: is_archived ? "Unarchive" : "Archive",
             handler: () => update_archive(!is_archived),
-          },
-          {
-            label: "Show in Finder",
-            icon: "/images/folder.svg",
-            handler: () => open_enclosing_folder(),
           },
         ]
       : []}
