@@ -13,7 +13,6 @@ from kiln_ai.datamodel.prompt_type import prompt_type_label
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_output import DataSourceType
-from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX
 from kiln_ai.utils.formatting import truncate_to_words_with_agent_sentinel
 from kiln_server.prompt_api import prompt_generators
 from kiln_server.task_api import task_from_id
@@ -164,10 +163,7 @@ class AgentOverviewRunConfig(BaseModel):
         description="Prompt ID used by this config, matching AgentOverviewPrompt.id format."
     )
     tool_ids: list[str] = Field(
-        description="Non-skill tool IDs attached to this config."
-    )
-    skill_ids: list[str] = Field(
-        description="Raw skill IDs (prefix stripped), matching AgentOverviewSkill.id."
+        description="Tool IDs attached to this config, including skills (prefixed with 'kiln_tool::skill::')."
     )
     starred: bool
 
@@ -214,7 +210,7 @@ class AgentOverview(BaseModel):
     fine_tunes: AgentOverviewFineTunes
     prompt_optimization_jobs: AgentOverviewPromptOptimizationJobs
     skills: AgentOverviewSkills
-    connected_providers: dict[str, dict[str, Any]]
+    connected_providers: dict[str, dict[str, bool]]
 
 
 # --- Helpers ---
@@ -227,19 +223,6 @@ def _top_n_by_recency(
     cap: int,
 ) -> list[T]:
     return sorted(items, key=key, reverse=True)[:cap]
-
-
-def _split_tool_and_skill_ids(
-    tool_ids: list[str],
-) -> tuple[list[str], list[str]]:
-    tools: list[str] = []
-    skills: list[str] = []
-    for tid in tool_ids:
-        if tid.startswith(SKILL_TOOL_ID_PREFIX):
-            skills.append(tid.removeprefix(SKILL_TOOL_ID_PREFIX))
-        else:
-            tools.append(tid)
-    return tools, skills
 
 
 def _dataset_stats(task: Task) -> AgentOverviewDataset:
@@ -259,13 +242,20 @@ def _dataset_stats(task: Task) -> AgentOverviewDataset:
             key = output.source.type.value
             by_source[key] = by_source.get(key, 0) + 1
 
+        # Overall rating uses five_star type; other types are bucketed as unrated
         if (
             output.rating is not None
             and output.rating.value is not None
             and output.rating.type == TaskOutputRatingType.five_star
         ):
-            star = str(int(output.rating.value))
-            by_rating[star] = by_rating.get(star, 0) + 1
+            try:
+                star = str(int(output.rating.value))
+                if star in ("1", "2", "3", "4", "5"):
+                    by_rating[star] = by_rating.get(star, 0) + 1
+                else:
+                    by_rating["unrated"] += 1
+            except (ValueError, OverflowError):
+                by_rating["unrated"] += 1
         else:
             by_rating["unrated"] += 1
 
@@ -484,7 +474,6 @@ def _run_configs_block(
         model_provider: str | None = None
         prompt_id: str | None = None
         tool_ids: list[str] = []
-        skill_ids: list[str] = []
         rc_type = props.type
 
         if isinstance(props, KilnAgentRunConfigProperties):
@@ -492,8 +481,7 @@ def _run_configs_block(
             model_provider = props.model_provider_name.value
             prompt_id = props.prompt_id
             if props.tools_config is not None:
-                all_ids = list(props.tools_config.tools)
-                tool_ids, skill_ids = _split_tool_and_skill_ids(all_ids)
+                tool_ids = list(props.tools_config.tools)
 
         items.append(
             AgentOverviewRunConfig(
@@ -505,7 +493,6 @@ def _run_configs_block(
                 model_provider=model_provider,
                 prompt_id=prompt_id,
                 tool_ids=tool_ids,
-                skill_ids=skill_ids,
                 starred=rc.starred,
             )
         )
@@ -518,10 +505,12 @@ def _run_configs_block(
     )
 
 
-async def _connected_providers_block() -> dict[str, dict[str, Any]]:
+async def _connected_providers_block() -> dict[str, dict[str, bool]]:
     names = list(ModelProviderName)
     enabled = await asyncio.gather(*(provider_enabled(n) for n in names))
-    return {name.value: {} for name, is_on in zip(names, enabled) if is_on}
+    return {
+        name.value: {"connected": True} for name, is_on in zip(names, enabled) if is_on
+    }
 
 
 def _fine_tunes_block(task: Task) -> AgentOverviewFineTunes:
@@ -543,6 +532,7 @@ def connect_agent_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/agent_overview",
         summary="Agent Overview",
+        description="An overview of a task and all it's components, optimized for agents.",
         tags=["Agent"],
         openapi_extra=ALLOW_AGENT,
     )

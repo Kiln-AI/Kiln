@@ -12,7 +12,6 @@ from app.desktop.studio_server.agent_api import (
     _search_tools_block,
     _skills_block,
     _specs_block,
-    _split_tool_and_skill_ids,
     _tool_servers_block,
     _top_n_by_recency,
     connect_agent_api,
@@ -93,39 +92,6 @@ def task(project, tmp_path):
     )
     t.save_to_file()
     return t
-
-
-# --- _split_tool_and_skill_ids tests ---
-
-
-class TestSplitToolAndSkillIds:
-    def test_mixed(self):
-        ids = [
-            "mcp::server1::tool1",
-            "kiln_tool::skill::my_skill",
-            "kiln_tool::rag::rag1",
-            "kiln_tool::skill::other_skill",
-        ]
-        tools, skills = _split_tool_and_skill_ids(ids)
-        assert tools == ["mcp::server1::tool1", "kiln_tool::rag::rag1"]
-        assert skills == ["my_skill", "other_skill"]
-
-    def test_all_tools(self):
-        ids = ["mcp::a", "kiln_tool::rag::b"]
-        tools, skills = _split_tool_and_skill_ids(ids)
-        assert tools == ids
-        assert skills == []
-
-    def test_all_skills(self):
-        ids = ["kiln_tool::skill::a", "kiln_tool::skill::b"]
-        tools, skills = _split_tool_and_skill_ids(ids)
-        assert tools == []
-        assert skills == ["a", "b"]
-
-    def test_empty(self):
-        tools, skills = _split_tool_and_skill_ids([])
-        assert tools == []
-        assert skills == []
 
 
 # --- _top_n_by_recency tests ---
@@ -839,8 +805,10 @@ class TestAgentOverviewEndpoint:
             assert rc_data["type"] == "kiln_agent"
             assert rc_data["model_name"] == "gpt-4"
             assert rc_data["model_provider"] == "openai"
-            assert rc_data["tool_ids"] == ["mcp::remote::server1::tool1"]
-            assert rc_data["skill_ids"] == ["my_skill"]
+            assert rc_data["tool_ids"] == [
+                "mcp::remote::server1::tool1",
+                "kiln_tool::skill::my_skill",
+            ]
             assert rc_data["starred"] is True
             assert "created_at" not in rc_data
             assert data["run_configs"]["total"] == 1
@@ -920,6 +888,6 @@ class TestAgentOverviewEndpoint:
             data = response.json()
             assert "openai" in data["connected_providers"]
             assert "anthropic" in data["connected_providers"]
-            assert data["connected_providers"]["openai"] == {}
-            assert data["connected_providers"]["anthropic"] == {}
+            assert data["connected_providers"]["openai"] == {"connected": True}
+            assert data["connected_providers"]["anthropic"] == {"connected": True}
             assert "groq" not in data["connected_providers"]

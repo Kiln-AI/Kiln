@@ -2897,7 +2897,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Agent Overview */
+        /**
+         * Agent Overview
+         * @description An overview of a task and all it's components, optimized for agents.
+         */
         get: operations["agent_overview_api_projects__project_id__tasks__task_id__agent_overview_get"];
         put?: never;
         post?: never;
@@ -3017,7 +3020,7 @@ export interface components {
             /** Connected Providers */
             connected_providers: {
                 [key: string]: {
-                    [key: string]: unknown;
+                    [key: string]: boolean;
                 };
             };
         };
@@ -3177,14 +3180,9 @@ export interface components {
             prompt_id: string | null;
             /**
              * Tool Ids
-             * @description Non-skill tool IDs attached to this config.
+             * @description Tool IDs attached to this config, including skills (prefixed with 'kiln_tool::skill::').
              */
             tool_ids: string[];
-            /**
-             * Skill Ids
-             * @description Raw skill IDs (prefix stripped), matching AgentOverviewSkill.id.
-             */
-            skill_ids: string[];
             /** Starred */
             starred: boolean;
         };
