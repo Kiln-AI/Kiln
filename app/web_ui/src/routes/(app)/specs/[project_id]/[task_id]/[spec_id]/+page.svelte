@@ -68,7 +68,7 @@
   let statusField: EditableStatusField | null = null
 
   let eval_progress: EvalProgress | null = null
-  let eval_progress_loading = true
+  let eval_progress_loading = false
   let eval_progress_error: KilnError | null = null
 
   let evaluator: Eval | null = null
@@ -203,6 +203,22 @@
     task = null
     score_summary = null
     eval_progress = null
+    current_tags = []
+    eval_state = "not_started"
+
+    spec_error = null
+    tags_error = null
+    eval_error = null
+    task_error = null
+    run_configs_error = null
+    score_summary_error = null
+    eval_progress_error = null
+
+    spec_loading = true
+    eval_loading = false
+    task_loading = false
+    run_configs_loading = false
+    eval_progress_loading = false
   }
   async function reload_all() {
     reset_spec_state()
