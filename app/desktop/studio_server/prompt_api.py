@@ -11,6 +11,7 @@ from pydantic import BaseModel
 class PromptApiResponse(BaseModel):
     prompt: str
     prompt_id: PromptId
+    chain_of_thought_instructions: str | None = None
 
 
 def connect_prompt_api(app: FastAPI):
@@ -35,11 +36,15 @@ def connect_prompt_api(app: FastAPI):
 
         try:
             prompt_builder = prompt_builder_from_id(prompt_id, task)
-            prompt = prompt_builder.build_prompt_for_ui()
+            # Return the base prompt without thinking instructions appended so
+            # the UI can render the chain of thought as a separate, editable field.
+            prompt = prompt_builder.build_prompt(include_json_instructions=False)
+            cot_prompt = prompt_builder.chain_of_thought_prompt()
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
 
         return PromptApiResponse(
             prompt=prompt,
             prompt_id=prompt_id,
+            chain_of_thought_instructions=cot_prompt,
         )

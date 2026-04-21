@@ -73,6 +73,24 @@
     return props
   }
 
+  async function open_enclosing_folder() {
+    try {
+      const { error: open_error } = await client.POST(
+        "/api/projects/{project_id}/skills/{skill_id}/open_enclosing_folder",
+        {
+          params: {
+            path: { project_id, skill_id },
+          },
+        },
+      )
+      if (open_error) {
+        throw open_error
+      }
+    } catch (e) {
+      loading_error = createKilnError(e)
+    }
+  }
+
   async function update_archive(is_archived: boolean) {
     try {
       archive_error = null
@@ -122,6 +140,10 @@
           {
             label: is_archived ? "Unarchive" : "Archive",
             handler: () => update_archive(!is_archived),
+          },
+          {
+            icon: "/images/folder.svg",
+            handler: () => open_enclosing_folder(),
           },
         ]
       : []}

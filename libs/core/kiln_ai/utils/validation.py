@@ -84,6 +84,12 @@ def tool_name_validator(name: str) -> str:
     if len(name) > 64:
         raise ValueError("Tool name must be less than 64 characters long")
 
+    # Reserved: "skill" collides with the built-in skill tool and breaks runtime
+    if name.lower() == "skill":
+        raise ValueError(
+            '"skill" is a reserved tool name — please choose a different name'
+        )
+
     return name
 
 
@@ -117,6 +123,12 @@ def skill_name_validator(name: str) -> str:
 
     if not re.match(r"^[a-z]", name):
         raise ValueError("Skill name must start with a lowercase letter")
+
+    # Reserved: "skill" collides with the built-in skill tool and breaks runtime
+    if name.lower() == "skill":
+        raise ValueError(
+            '"skill" is a reserved skill name — please choose a different name'
+        )
 
     return name
 

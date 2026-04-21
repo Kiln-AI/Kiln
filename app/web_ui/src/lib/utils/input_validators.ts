@@ -169,6 +169,11 @@ export const skill_name_validator: (value: unknown) => string | null = (
     return "Must start with a lowercase letter"
   }
 
+  // Reserved: "skill" collides with the built-in skill tool and breaks runtime
+  if (name.toLowerCase() === "skill") {
+    return '"skill" is a reserved name — please choose a different skill name'
+  }
+
   return null
 }
 
@@ -217,6 +222,11 @@ export const tool_name_validator: (value: unknown) => string | null = (
   // Check length
   if (name.length > 64) {
     return "Must be less than 65 characters long"
+  }
+
+  // Reserved: "skill" collides with the built-in skill tool and breaks runtime
+  if (name.toLowerCase() === "skill") {
+    return '"skill" is a reserved name — please choose a different tool name'
   }
 
   return null

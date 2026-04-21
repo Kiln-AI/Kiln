@@ -15,6 +15,7 @@
   export let task_id: string | null = null
   export let skills: string[] = []
   export let settings: Partial<SkillsSelectorSettings> = {}
+  export let pending_skill_id: string | null = null
 
   let default_settings: SkillsSelectorSettings = {
     mandatory_skills: null,
@@ -68,6 +69,31 @@
       skills = [...new Set(combined)]
       skills_store_loaded_task_id = task_id
     }
+
+    apply_pending_skill()
+  }
+
+  function is_skill_available(skill_id: string, project_id: string): boolean {
+    const available = $available_tools[project_id]
+    if (!available) return false
+    return available.some(
+      (ts) => ts.type === "skill" && ts.tools.some((t) => t.id === skill_id),
+    )
+  }
+
+  function apply_pending_skill() {
+    if (
+      pending_skill_id &&
+      !skills.includes(pending_skill_id) &&
+      is_skill_available(pending_skill_id, project_id)
+    ) {
+      skills = [...new Set([...skills, pending_skill_id])]
+    }
+  }
+
+  // If skills load after initial render, re-apply pending skill
+  $: if (pending_skill_id && $available_tools[project_id]) {
+    apply_pending_skill()
   }
 
   $: if (task_id && skills && skills_store_loaded_task_id === task_id) {

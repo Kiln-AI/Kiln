@@ -428,7 +428,7 @@
       ) {
         run_config_validation_status = "invalid"
         run_config_validation_message =
-          "Tools are not supported for Kiln Prompt Optimization"
+          "Tools and skills aren't supported for Kiln Prompt Optimization"
         run_config_blocking_reason = "has_tools"
         return
       }
@@ -835,7 +835,7 @@
                     warning_color="error"
                     outline={true}
                     warning_message={run_config_blocking_reason === "has_tools"
-                      ? `**${run_config_validation_message}**\nPlease select a different run configuration or create a new one without tools configured.`
+                      ? `**${run_config_validation_message}**\nPlease select a different run configuration, or create a new one without tools or skills.`
                       : run_config_blocking_reason === "unsupported_model"
                         ? `**${run_config_validation_message}**\nPrompt Optimization only supports OpenRouter, OpenAI, Gemini, and Anthropic. See the [models page](/models) for supported models. Choose another run configuration or create one that uses a supported model and provider.`
                         : run_config_validation_message}

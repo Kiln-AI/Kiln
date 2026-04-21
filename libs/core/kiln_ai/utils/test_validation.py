@@ -460,6 +460,20 @@ class TestToolNameValidator:
         result = tool_name_validator(max_length_name)
         assert result == max_length_name
 
+    def test_reserved_skill_name_raises_error(self):
+        """Test that the reserved name 'skill' raises ValueError for tool names."""
+        with pytest.raises(ValueError) as exc_info:
+            tool_name_validator("skill")
+        assert "reserved" in str(exc_info.value)
+
+    def test_reserved_skill_name_raises_error_for_skills(self):
+        """Test that the reserved name 'skill' raises ValueError for skill names too."""
+        from kiln_ai.utils.validation import skill_name_validator
+
+        with pytest.raises(ValueError) as exc_info:
+            skill_name_validator("skill")
+        assert "reserved" in str(exc_info.value)
+
     def test_boundary_length_cases(self):
         """Test various boundary cases for name length."""
         # Test lengths around the limit
