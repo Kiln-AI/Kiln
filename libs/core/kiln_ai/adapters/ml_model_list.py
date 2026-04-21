@@ -6799,7 +6799,6 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 multimodal_capable=True,
                 supports_vision=True,
-                supports_doc_extraction=True,
                 multimodal_mime_types=[
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
