@@ -6,6 +6,8 @@ import {
   BACKEND_URL,
   FRONTEND_PORT,
   FRONTEND_URL,
+  KILN_SERVER_MOCK_PORT,
+  KILN_SERVER_MOCK_URL,
   MOCK_PROVIDER_PORT,
   MOCK_PROVIDER_URL,
 } from "./tests/e2e/ports"
@@ -89,6 +91,10 @@ export default defineConfig({
         KILN_PORT: String(BACKEND_PORT),
         KILN_FRONTEND_PORT: String(FRONTEND_PORT),
         HOME: TEST_HOME,
+        // Route the generated kiln_ai_server_client (api.kiln.tech) to the
+        // localhost mock so copilot/spec/entitlement flows never hit the
+        // real hosted server during e2e tests.
+        KILN_SERVER_BASE_URL: KILN_SERVER_MOCK_URL,
       },
       url: `${BACKEND_URL}/openapi.json`,
       reuseExistingServer: false,
@@ -114,6 +120,15 @@ export default defineConfig({
         MOCK_PROVIDER_PORT: String(MOCK_PROVIDER_PORT),
       },
       url: `${MOCK_PROVIDER_URL}/__state`,
+      reuseExistingServer: false,
+      timeout: 30_000,
+    },
+    {
+      command: `node ./tests/e2e/mock_kiln_server/server.ts`,
+      env: {
+        KILN_SERVER_MOCK_PORT: String(KILN_SERVER_MOCK_PORT),
+      },
+      url: `${KILN_SERVER_MOCK_URL}/ping`,
       reuseExistingServer: false,
       timeout: 30_000,
     },

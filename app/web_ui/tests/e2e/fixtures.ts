@@ -1,12 +1,16 @@
 import { test as base, expect, type APIRequestContext } from "@playwright/test"
 import { randomUUID } from "crypto"
-import { BACKEND_URL, MOCK_PROVIDER_URL } from "./ports"
+import { BACKEND_URL, KILN_SERVER_MOCK_URL, MOCK_PROVIDER_URL } from "./ports"
 import {
   MockProviderClient,
   MOCK_MODEL_ID,
   MOCK_MODEL_NAME,
   MOCK_PROVIDER_NAME,
 } from "./mock_provider/client"
+import {
+  COPILOT_TEST_API_KEY,
+  MockKilnServerClient,
+} from "./mock_kiln_server/client"
 
 export type SeededProject = {
   id: string
@@ -36,6 +40,8 @@ type Fixtures = {
   seededProjectWithTask: { project: SeededProject; task: SeededTask }
   mockInferenceProvider: MockProviderClient
   connectedMockProvider: ConnectedMockProvider
+  mockKilnServer: MockKilnServerClient
+  seededCopilotKey: string
 }
 
 export const test = base.extend<Fixtures>({
@@ -185,6 +191,31 @@ export const test = base.extend<Fixtures>({
       .delete(
         `/api/provider/openai_compatible?name=${encodeURIComponent(MOCK_PROVIDER_NAME)}`,
       )
+      .catch(() => {})
+  },
+
+  mockKilnServer: async ({ playwright }, use) => {
+    const ctx = await playwright.request.newContext({
+      baseURL: KILN_SERVER_MOCK_URL,
+    })
+    const client = new MockKilnServerClient(ctx)
+    await client.reset()
+    await use(client)
+    await client.reset()
+    await ctx.dispose()
+  },
+
+  // Writes a stable test API key to Config.kiln_copilot_api_key so the backend
+  // will treat the user as "copilot-connected" and route authenticated calls
+  // through the mock kiln-server. Bypasses the real OAuth/Kinde signup flow.
+  seededCopilotKey: async ({ apiRequest }, use) => {
+    const resp = await apiRequest.post("/api/settings", {
+      data: { kiln_copilot_api_key: COPILOT_TEST_API_KEY },
+    })
+    expect(resp.ok(), "POST /api/settings seed copilot key").toBeTruthy()
+    await use(COPILOT_TEST_API_KEY)
+    await apiRequest
+      .post("/api/settings", { data: { kiln_copilot_api_key: null } })
       .catch(() => {})
   },
 })
