@@ -7,6 +7,10 @@ from ... import errors
 from ...client import AuthenticatedClient, Client
 from ...models.chat_session_list_item import ChatSessionListItem
 from ...models.http_validation_error import HTTPValidationError
+from ...models.list_sessions_v1_chat_sessions_get_response_400 import ListSessionsV1ChatSessionsGetResponse400
+from ...models.list_sessions_v1_chat_sessions_get_response_404 import ListSessionsV1ChatSessionsGetResponse404
+from ...models.list_sessions_v1_chat_sessions_get_response_426 import ListSessionsV1ChatSessionsGetResponse426
+from ...models.list_sessions_v1_chat_sessions_get_response_500 import ListSessionsV1ChatSessionsGetResponse500
 from ...types import UNSET, Response, Unset
 
 
@@ -35,7 +39,15 @@ def _get_kwargs(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> HTTPValidationError | list[ChatSessionListItem] | None:
+) -> (
+    HTTPValidationError
+    | ListSessionsV1ChatSessionsGetResponse400
+    | ListSessionsV1ChatSessionsGetResponse404
+    | ListSessionsV1ChatSessionsGetResponse426
+    | ListSessionsV1ChatSessionsGetResponse500
+    | list[ChatSessionListItem]
+    | None
+):
     if response.status_code == 200:
         response_200 = []
         _response_200 = response.json()
@@ -46,10 +58,30 @@ def _parse_response(
 
         return response_200
 
+    if response.status_code == 400:
+        response_400 = ListSessionsV1ChatSessionsGetResponse400.from_dict(response.json())
+
+        return response_400
+
+    if response.status_code == 404:
+        response_404 = ListSessionsV1ChatSessionsGetResponse404.from_dict(response.json())
+
+        return response_404
+
     if response.status_code == 422:
         response_422 = HTTPValidationError.from_dict(response.json())
 
         return response_422
+
+    if response.status_code == 426:
+        response_426 = ListSessionsV1ChatSessionsGetResponse426.from_dict(response.json())
+
+        return response_426
+
+    if response.status_code == 500:
+        response_500 = ListSessionsV1ChatSessionsGetResponse500.from_dict(response.json())
+
+        return response_500
 
     if client.raise_on_unexpected_status:
         raise errors.UnexpectedStatus(response.status_code, response.content)
@@ -59,7 +91,14 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[HTTPValidationError | list[ChatSessionListItem]]:
+) -> Response[
+    HTTPValidationError
+    | ListSessionsV1ChatSessionsGetResponse400
+    | ListSessionsV1ChatSessionsGetResponse404
+    | ListSessionsV1ChatSessionsGetResponse426
+    | ListSessionsV1ChatSessionsGetResponse500
+    | list[ChatSessionListItem]
+]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -73,7 +112,14 @@ def sync_detailed(
     client: AuthenticatedClient,
     limit: int | Unset = 50,
     offset: int | Unset = 0,
-) -> Response[HTTPValidationError | list[ChatSessionListItem]]:
+) -> Response[
+    HTTPValidationError
+    | ListSessionsV1ChatSessionsGetResponse400
+    | ListSessionsV1ChatSessionsGetResponse404
+    | ListSessionsV1ChatSessionsGetResponse426
+    | ListSessionsV1ChatSessionsGetResponse500
+    | list[ChatSessionListItem]
+]:
     """List Sessions
 
     Args:
@@ -85,7 +131,7 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | list[ChatSessionListItem]]
+        Response[HTTPValidationError | ListSessionsV1ChatSessionsGetResponse400 | ListSessionsV1ChatSessionsGetResponse404 | ListSessionsV1ChatSessionsGetResponse426 | ListSessionsV1ChatSessionsGetResponse500 | list[ChatSessionListItem]]
     """
 
     kwargs = _get_kwargs(
@@ -105,7 +151,15 @@ def sync(
     client: AuthenticatedClient,
     limit: int | Unset = 50,
     offset: int | Unset = 0,
-) -> HTTPValidationError | list[ChatSessionListItem] | None:
+) -> (
+    HTTPValidationError
+    | ListSessionsV1ChatSessionsGetResponse400
+    | ListSessionsV1ChatSessionsGetResponse404
+    | ListSessionsV1ChatSessionsGetResponse426
+    | ListSessionsV1ChatSessionsGetResponse500
+    | list[ChatSessionListItem]
+    | None
+):
     """List Sessions
 
     Args:
@@ -117,7 +171,7 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | list[ChatSessionListItem]
+        HTTPValidationError | ListSessionsV1ChatSessionsGetResponse400 | ListSessionsV1ChatSessionsGetResponse404 | ListSessionsV1ChatSessionsGetResponse426 | ListSessionsV1ChatSessionsGetResponse500 | list[ChatSessionListItem]
     """
 
     return sync_detailed(
@@ -132,7 +186,14 @@ async def asyncio_detailed(
     client: AuthenticatedClient,
     limit: int | Unset = 50,
     offset: int | Unset = 0,
-) -> Response[HTTPValidationError | list[ChatSessionListItem]]:
+) -> Response[
+    HTTPValidationError
+    | ListSessionsV1ChatSessionsGetResponse400
+    | ListSessionsV1ChatSessionsGetResponse404
+    | ListSessionsV1ChatSessionsGetResponse426
+    | ListSessionsV1ChatSessionsGetResponse500
+    | list[ChatSessionListItem]
+]:
     """List Sessions
 
     Args:
@@ -144,7 +205,7 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[HTTPValidationError | list[ChatSessionListItem]]
+        Response[HTTPValidationError | ListSessionsV1ChatSessionsGetResponse400 | ListSessionsV1ChatSessionsGetResponse404 | ListSessionsV1ChatSessionsGetResponse426 | ListSessionsV1ChatSessionsGetResponse500 | list[ChatSessionListItem]]
     """
 
     kwargs = _get_kwargs(
@@ -162,7 +223,15 @@ async def asyncio(
     client: AuthenticatedClient,
     limit: int | Unset = 50,
     offset: int | Unset = 0,
-) -> HTTPValidationError | list[ChatSessionListItem] | None:
+) -> (
+    HTTPValidationError
+    | ListSessionsV1ChatSessionsGetResponse400
+    | ListSessionsV1ChatSessionsGetResponse404
+    | ListSessionsV1ChatSessionsGetResponse426
+    | ListSessionsV1ChatSessionsGetResponse500
+    | list[ChatSessionListItem]
+    | None
+):
     """List Sessions
 
     Args:
@@ -174,7 +243,7 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        HTTPValidationError | list[ChatSessionListItem]
+        HTTPValidationError | ListSessionsV1ChatSessionsGetResponse400 | ListSessionsV1ChatSessionsGetResponse404 | ListSessionsV1ChatSessionsGetResponse426 | ListSessionsV1ChatSessionsGetResponse500 | list[ChatSessionListItem]
     """
 
     return (
