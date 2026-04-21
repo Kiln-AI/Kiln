@@ -1,6 +1,6 @@
 import json
 from collections import defaultdict
-from typing import Annotated, Any, Dict, Iterable, List, Set, Tuple
+from typing import Annotated, Any, Dict, List, Set, Tuple
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import StreamingResponse
@@ -491,7 +491,6 @@ def compute_score_summary(
     eval_config: EvalConfig,
     task_run_configs: list[TaskRunConfig],
     expected_dataset_ids: set[ID_TYPE],
-    eval_config_runs: Iterable[EvalRun] | None = None,
 ) -> EvalResultSummary:
     if len(expected_dataset_ids) == 0:
         return EvalResultSummary(
@@ -512,12 +511,7 @@ def compute_score_summary(
     )
     score_counts: Dict[ID_TYPE, Dict[str, int]] = defaultdict(lambda: defaultdict(int))
 
-    runs = (
-        eval_config_runs
-        if eval_config_runs is not None
-        else eval_config.runs(readonly=True)
-    )
-    for eval_run in runs:
+    for eval_run in eval_config.runs(readonly=True):
         if eval_run.task_run_config_id is None:
             continue
         run_config_id = eval_run.task_run_config_id
@@ -1214,13 +1208,11 @@ def connect_evals_api(app: FastAPI):
             if default_config is None or len(expected_dataset_ids) == 0:
                 continue
 
-            eval_config_runs = list(default_config.runs(readonly=True))
             summary = compute_score_summary(
                 eval,
                 default_config,
                 task_run_configs,
                 expected_dataset_ids,
-                eval_config_runs,
             )
 
             for rc_id, scores_dict in summary.results.items():
