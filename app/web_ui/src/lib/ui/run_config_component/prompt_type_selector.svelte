@@ -7,6 +7,7 @@
   import { getStaticPromptDisplayName } from "$lib/utils/run_config_formatters"
   import { client } from "$lib/api_client"
   import { goto } from "$app/navigation"
+  import { page } from "$app/stores"
   import { prompt_generator_categories } from "$lib/prompt_generators"
 
   export let prompt_method: string
@@ -70,11 +71,19 @@
     project_id: string | null,
     task_id: string | null,
   ) {
-    if (!project_id || !task_id) return
+    if (!project_id || !task_id) {
+      requirements_loaded_key = null
+      data_requirements_checked = false
+      has_rated_data = false
+      has_repair_data = false
+      return
+    }
     const key = `${project_id}:${task_id}`
     if (requirements_loaded_key === key) return
     requirements_loaded_key = key
     data_requirements_checked = false
+    has_rated_data = false
+    has_repair_data = false
     try {
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/runs_summaries",
@@ -84,6 +93,9 @@
           },
         },
       )
+      // Drop stale responses if the task was swapped while the request was
+      // in flight — avoids overwriting the new task's flags with old data.
+      if (requirements_loaded_key !== key) return
       if (error) return
       if (data) {
         has_rated_data = data.some(
@@ -97,7 +109,9 @@
         )
       }
     } finally {
-      data_requirements_checked = true
+      if (requirements_loaded_key === key) {
+        data_requirements_checked = true
+      }
     }
   }
 
@@ -106,6 +120,8 @@
     exclude_cot,
     custom_prompt_name,
     fine_tune_prompt_id,
+    project_id,
+    task_id,
     data_requirements_checked,
     has_rated_data,
     has_repair_data,
@@ -116,6 +132,8 @@
     exclude_cot: boolean,
     custom_prompt_name: string | undefined,
     fine_tune_prompt_id: string | undefined,
+    project_id: string | null,
+    task_id: string | null,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _requirements_checked: boolean,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -193,7 +211,17 @@
         ? {
             action_label: "Create New",
             action_handler: () => {
-              goto(`/prompts/${project_id}/${task_id}/prompt_generators`)
+              const params = new URLSearchParams()
+              const from = $page.url.searchParams.get("from")
+              if (from) {
+                params.set("from", from)
+              }
+              const qs = params.toString()
+              goto(
+                `/prompts/${project_id}/${task_id}/prompt_generators${
+                  qs ? `?${qs}` : ""
+                }`,
+              )
             },
           }
         : {}
@@ -241,6 +269,8 @@
       exclude_cot,
       custom_prompt_name,
       fine_tune_prompt_id,
+      project_id,
+      task_id,
       data_requirements_checked,
       has_rated_data,
       has_repair_data,
