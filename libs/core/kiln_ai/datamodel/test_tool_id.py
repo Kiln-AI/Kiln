@@ -5,14 +5,17 @@ from kiln_ai.datamodel.tool_id import (
     MCP_LOCAL_TOOL_ID_PREFIX,
     MCP_REMOTE_TOOL_ID_PREFIX,
     RAG_TOOL_ID_PREFIX,
+    SKILL_SEARCH_TOOL_ID_PREFIX,
     KilnBuiltInToolId,
     ToolId,
     _check_tool_id,
     build_kiln_unmanaged_tool_id,
+    build_skill_search_tool_id,
     kiln_task_server_id_from_tool_id,
     kiln_unmanaged_tool_slug_from_id,
     mcp_server_and_tool_name_from_id,
     rag_config_id_from_id,
+    skill_id_from_skill_search_tool_id,
 )
 
 
@@ -182,6 +185,90 @@ class TestCheckToolId:
         # This tests the case where kiln_task_server_id_from_tool_id returns empty string which should raise an error
         with pytest.raises(ValueError, match="Invalid Kiln task tool ID"):
             _check_tool_id("kiln_task::")
+
+
+class TestSkillSearchToolIds:
+    """kiln_tool::skill_search::<skill_id> for SkillSearchTool."""
+
+    @pytest.mark.parametrize(
+        "tool_id",
+        [
+            "kiln_tool::skill_search::abc123",
+            "kiln_tool::skill_search::my_skill",
+            "kiln_tool::skill_search::1",
+            "kiln_tool::skill_search::408910145779",
+        ],
+    )
+    def test_valid_skill_search_tool_ids(self, tool_id: str):
+        assert _check_tool_id(tool_id) == tool_id
+
+    @pytest.mark.parametrize(
+        "tool_id",
+        [
+            "kiln_tool::skill_search::",
+            "kiln_tool::skill_search::a::b",
+            "kiln_tool::skill_search::a::b::c",
+        ],
+    )
+    def test_invalid_skill_search_tool_ids(self, tool_id: str):
+        with pytest.raises(ValueError, match="Invalid skill search tool ID"):
+            _check_tool_id(tool_id)
+
+    def test_skill_id_from_skill_search_tool_id(self):
+        assert (
+            skill_id_from_skill_search_tool_id("kiln_tool::skill_search::xyz789")
+            == "xyz789"
+        )
+
+    @pytest.mark.parametrize(
+        "tool_id",
+        [
+            "kiln_tool::skill::xyz789",
+            "kiln_tool::skill_search::a::b",
+            "wrong::skill_search::xyz",
+            "",
+            "kiln_tool::skill_search",
+        ],
+    )
+    def test_skill_id_from_skill_search_tool_id_rejects_malformed(self, tool_id: str):
+        with pytest.raises(ValueError, match="Invalid skill search tool ID"):
+            skill_id_from_skill_search_tool_id(tool_id)
+
+    def test_build_skill_search_tool_id(self):
+        assert build_skill_search_tool_id("abc123") == "kiln_tool::skill_search::abc123"
+
+    def test_round_trip(self):
+        skill_id = "408910145779"
+        built = build_skill_search_tool_id(skill_id)
+        assert _check_tool_id(built) == built
+        assert skill_id_from_skill_search_tool_id(built) == skill_id
+
+    def test_prefix_constant(self):
+        assert SKILL_SEARCH_TOOL_ID_PREFIX == "kiln_tool::skill_search::"
+
+    def test_pydantic_validation_accepts_skill_search_id(self):
+        class _M(BaseModel):
+            tool_id: ToolId
+
+        model = _M(tool_id="kiln_tool::skill_search::xyz")
+        assert model.tool_id == "kiln_tool::skill_search::xyz"
+
+    def test_pydantic_validation_rejects_missing_skill_id_segment(self):
+        class _M(BaseModel):
+            tool_id: ToolId
+
+        with pytest.raises(ValidationError):
+            _M(tool_id="kiln_tool::skill_search::")
+
+    def test_skill_and_skill_search_prefixes_do_not_collide(self):
+        """Ensures skill_search IDs are not validated as skill IDs and vice versa."""
+        search_id = "kiln_tool::skill_search::s1"
+        skill_id = "kiln_tool::skill::s1"
+        assert _check_tool_id(search_id) == search_id
+        assert _check_tool_id(skill_id) == skill_id
+        # and parsers only accept their own prefix
+        with pytest.raises(ValueError):
+            skill_id_from_skill_search_tool_id(skill_id)
 
 
 class TestKilnUnmanagedToolIds:

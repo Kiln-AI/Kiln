@@ -212,6 +212,7 @@ async def test_prompt_builder_json_instructions(
     mock_prompt_builder.build_prompt.assert_called_with(
         include_json_instructions=expected_json_instructions,
         skills=[],
+        skill_search_enabled=False,
     )
 
 
@@ -1770,3 +1771,155 @@ class TestResolveSkills:
     def test_build_prompt_no_skills_section_without_skills(self, adapter):
         prompt = adapter.build_prompt()
         assert "## Skills" not in prompt
+
+
+class TestResolveSkillSearchSkills:
+    @pytest.fixture
+    def _run_config_with_tools(self):
+        def _make(tools: list[str]) -> KilnAgentRunConfigProperties:
+            return KilnAgentRunConfigProperties(
+                model_name="test_model",
+                model_provider_name="openai",
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="json_schema",
+                tools_config=ToolsRunConfig(tools=tools),
+            )
+
+        return _make
+
+    def test_returns_empty_for_non_kiln_agent(self, base_task):
+        from kiln_ai.datamodel.run_config import (
+            McpRunConfigProperties,
+            MCPToolReference,
+        )
+
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=McpRunConfigProperties(
+                tool_reference=MCPToolReference(tool_id="mcp::local::s::t"),
+            ),
+        )
+        assert adapter._resolve_skill_search_tool_skills() == []
+
+    def test_returns_empty_when_no_tools_config(self, adapter):
+        assert adapter._resolve_skill_search_tool_skills() == []
+
+    def test_returns_empty_when_no_search_ids(self, base_task, _run_config_with_tools):
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=_run_config_with_tools(["kiln_tool::skill::skill_123"]),
+            config=AdapterConfig(skills={}),
+        )
+        assert adapter._resolve_skill_search_tool_skills() == []
+
+    def test_raises_when_skills_dict_not_provided(
+        self, base_task, _run_config_with_tools
+    ):
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=_run_config_with_tools(["kiln_tool::skill_search::skill_123"]),
+        )
+        with pytest.raises(ValueError, match="no skills dict was provided"):
+            adapter._resolve_skill_search_tool_skills()
+
+    def test_raises_when_skill_missing_from_dict(
+        self, base_task, _run_config_with_tools
+    ):
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=_run_config_with_tools(["kiln_tool::skill_search::skill_123"]),
+            config=AdapterConfig(skills={}),
+        )
+        with pytest.raises(ValueError, match="not found in the injected skills dict"):
+            adapter._resolve_skill_search_tool_skills()
+
+    def test_resolves_search_only_tool_config(self, base_task, _run_config_with_tools):
+        skill = Skill(name="my-skill", description="A skill")
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=_run_config_with_tools([f"kiln_tool::skill_search::{skill.id}"]),
+            config=AdapterConfig(skills={skill.id: skill}),
+        )
+        result = adapter._resolve_skill_search_tool_skills()
+        assert len(result) == 1
+        assert result[0].name == "my-skill"
+
+    def test_resolves_both_prefixes_independently(
+        self, base_task, _run_config_with_tools
+    ):
+        skill = Skill(name="my-skill", description="A skill")
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=_run_config_with_tools(
+                [
+                    f"kiln_tool::skill::{skill.id}",
+                    f"kiln_tool::skill_search::{skill.id}",
+                ]
+            ),
+            config=AdapterConfig(skills={skill.id: skill}),
+        )
+        skill_result = adapter._resolve_skills()
+        search_result = adapter._resolve_skill_search_tool_skills()
+        assert len(skill_result) == 1
+        assert len(search_result) == 1
+        assert skill_result[0].id == skill.id
+        assert search_result[0].id == skill.id
+
+    def test_deduplicates_search_ids(self, base_task, _run_config_with_tools):
+        skill = Skill(name="my-skill", description="A skill", body="do things")
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=_run_config_with_tools(
+                [
+                    f"kiln_tool::skill_search::{skill.id}",
+                    f"kiln_tool::skill_search::{skill.id}",
+                ]
+            ),
+            config=AdapterConfig(skills={skill.id: skill}),
+        )
+        result = adapter._resolve_skill_search_tool_skills()
+        assert len(result) == 1
+        assert result[0].name == "my-skill"
+
+    def test_caches_result(self, base_task, _run_config_with_tools):
+        skill = Skill(name="my-skill", description="A skill")
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=_run_config_with_tools([f"kiln_tool::skill_search::{skill.id}"]),
+            config=AdapterConfig(skills={skill.id: skill}),
+        )
+        r1 = adapter._resolve_skill_search_tool_skills()
+        r2 = adapter._resolve_skill_search_tool_skills()
+        assert r1 is r2
+
+    def test_build_prompt_mentions_skill_search_when_enabled(
+        self, base_task, _run_config_with_tools
+    ):
+        skill = Skill(name="my-skill", description="A test skill")
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=_run_config_with_tools([f"kiln_tool::skill_search::{skill.id}"]),
+            config=AdapterConfig(skills={skill.id: skill}),
+        )
+        prompt = adapter.build_prompt()
+        assert "skill_search(name, pattern)" in prompt
+        assert "my-skill" in prompt
+
+    def test_build_prompt_omits_skill_search_when_only_skill_tool(
+        self, base_task, _run_config_with_tools
+    ):
+        skill = Skill(name="my-skill", description="A test skill")
+        adapter = MockAdapter(
+            task=base_task,
+            run_config=_run_config_with_tools([f"kiln_tool::skill::{skill.id}"]),
+            config=AdapterConfig(skills={skill.id: skill}),
+        )
+        prompt = adapter.build_prompt()
+        assert "skill_search(name, pattern)" not in prompt
+        assert "my-skill" in prompt
+
+    def test_merge_skills_dedups_overlapping_sets(self):
+        s1 = Skill(name="s1", description="d1")
+        s2 = Skill(name="s2", description="d2")
+        merged = BaseAdapter._merge_skills([s1, s2], [s2])
+        assert [s.id for s in merged] == [s1.id, s2.id]

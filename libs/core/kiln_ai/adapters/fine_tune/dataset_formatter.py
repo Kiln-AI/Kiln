@@ -17,7 +17,10 @@ from kiln_ai.adapters.fine_tune.vertex_formatter import generate_vertex_gemini
 from kiln_ai.datamodel import DatasetSplit, TaskRun
 from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES, ChatStrategy
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX
+from kiln_ai.datamodel.tool_id import (
+    SKILL_SEARCH_TOOL_ID_PREFIX,
+    SKILL_TOOL_ID_PREFIX,
+)
 from kiln_ai.tools.base_tool import ToolCallDefinition
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
@@ -433,10 +436,16 @@ class DatasetFormatter:
         skill_tool_ids = [
             tid for tid in tools_config.tools if tid.startswith(SKILL_TOOL_ID_PREFIX)
         ]
+        skill_search_tool_ids = [
+            tid
+            for tid in tools_config.tools
+            if tid.startswith(SKILL_SEARCH_TOOL_ID_PREFIX)
+        ]
         non_skill_tool_ids = [
             tid
             for tid in tools_config.tools
             if not tid.startswith(SKILL_TOOL_ID_PREFIX)
+            and not tid.startswith(SKILL_SEARCH_TOOL_ID_PREFIX)
         ]
 
         for tool_id in non_skill_tool_ids:
@@ -474,5 +483,25 @@ class DatasetFormatter:
                     skill_def = await skill_tool.toolcall_definition()
                     self._tool_cache[cache_key] = skill_def
                     tool_definitions.append(skill_def)
+
+        if skill_search_tool_ids:
+            cache_key = "search::" + "::".join(sorted(skill_search_tool_ids))
+            if cache_key in self._tool_cache:
+                tool_definitions.append(self._tool_cache[cache_key])
+            else:
+                from kiln_ai.adapters.adapter_registry import (
+                    load_skills_from_tool_ids,
+                )
+                from kiln_ai.tools.skill_search_tool import SkillSearchTool
+
+                skills_dict = load_skills_from_tool_ids(task, skill_search_tool_ids)
+                if skills_dict:
+                    search_tool = SkillSearchTool(
+                        f"{SKILL_SEARCH_TOOL_ID_PREFIX}_combined",
+                        list(skills_dict.values()),
+                    )
+                    search_def = await search_tool.toolcall_definition()
+                    self._tool_cache[cache_key] = search_def
+                    tool_definitions.append(search_def)
 
         return tool_definitions if tool_definitions else None

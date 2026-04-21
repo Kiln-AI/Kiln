@@ -201,10 +201,6 @@ class TestSkillToolResource:
         assert "Error" in result.output
         assert "not found" in result.output.lower()
 
-    async def test_no_filename_after_prefix(self, skill_tool: SkillTool):
-        result = await skill_tool.run(name="code-review", resource="references/")
-        assert "Error" in result.output
-
     async def test_without_resource_returns_body(self, skill_tool: SkillTool):
         result = await skill_tool.run(name="code-review")
         assert result.output == "## Code Review\nCheck for bugs."
@@ -220,6 +216,132 @@ class TestSkillToolResource:
         )
         assert "Error" in result.output
         assert "not a readable text file" in result.output
+
+
+class TestSkillToolDirectoryListing:
+    def _seed_refs(self, skill: Skill) -> None:
+        ref_dir = skill.references_dir()
+        ref_dir.mkdir(parents=True, exist_ok=True)
+        (ref_dir / "guide.md").write_text("# Guide\nline2\nline3\n", encoding="utf-8")
+        (ref_dir / "notes.txt").write_text("plain text", encoding="utf-8")
+        sub = ref_dir / "knowledge"
+        sub.mkdir()
+        (sub / "rag.md").write_text("# RAG\nbody\n", encoding="utf-8")
+        (sub / "tools.md").write_text("# Tools\na\nb\nc\n", encoding="utf-8")
+
+    async def test_references_with_trailing_slash_returns_listing(
+        self, sample_skills: list[Skill], skill_tool: SkillTool
+    ):
+        self._seed_refs(sample_skills[0])
+        result = await skill_tool.run(name="code-review", resource="references/")
+        out = result.output
+        assert out.startswith("Directory: references/")
+        assert "references/\n" in out
+        assert "guide.md (3 lines)" in out
+        assert "notes.txt" in out
+        assert "knowledge/ (2 files)" in out
+        assert "rag.md (2 lines)" in out
+        assert "tools.md (4 lines)" in out
+        assert "Total: 3 markdown files, 9 lines." in out
+        assert "Tip: read a file with skill(" in out
+        assert 'skill_search(name="code-review"' in out
+
+    async def test_references_no_slash_returns_listing(
+        self, sample_skills: list[Skill], skill_tool: SkillTool
+    ):
+        self._seed_refs(sample_skills[0])
+        result = await skill_tool.run(name="code-review", resource="references")
+        assert "Directory: references/" in result.output
+        assert "guide.md (3 lines)" in result.output
+
+    async def test_subdirectory_listing(
+        self, sample_skills: list[Skill], skill_tool: SkillTool
+    ):
+        self._seed_refs(sample_skills[0])
+        result = await skill_tool.run(
+            name="code-review", resource="references/knowledge"
+        )
+        out = result.output
+        assert out.startswith("Directory: references/knowledge/")
+        assert "rag.md (2 lines)" in out
+        assert "tools.md (4 lines)" in out
+        assert "guide.md" not in out  # top-level file excluded
+        assert "Total: 2 markdown files, 6 lines." in out
+
+    async def test_subdirectory_listing_trailing_slash(
+        self, sample_skills: list[Skill], skill_tool: SkillTool
+    ):
+        self._seed_refs(sample_skills[0])
+        result = await skill_tool.run(
+            name="code-review", resource="references/knowledge/"
+        )
+        assert "Directory: references/knowledge/" in result.output
+
+    async def test_empty_directory_returns_empty_marker(
+        self, sample_skills: list[Skill], skill_tool: SkillTool
+    ):
+        result = await skill_tool.run(name="code-review", resource="references/")
+        out = result.output
+        assert out == ("Directory: references/\n\n(empty)\nTotal: 0 files, 0 lines.")
+
+    async def test_non_markdown_files_have_no_line_count(
+        self, sample_skills: list[Skill], skill_tool: SkillTool
+    ):
+        ref_dir = sample_skills[0].references_dir()
+        ref_dir.mkdir(parents=True, exist_ok=True)
+        (ref_dir / "data.json").write_text('{"k": 1}', encoding="utf-8")
+        result = await skill_tool.run(name="code-review", resource="references/")
+        out = result.output
+        assert "data.json" in out
+        assert "data.json (" not in out  # no annotation for non-md
+        assert "Total: 0 markdown files, 0 lines." in out
+
+    async def test_assets_listing(
+        self, sample_skills: list[Skill], skill_tool: SkillTool
+    ):
+        assets_dir = sample_skills[0].assets_dir()
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        (assets_dir / "prices.csv").write_text(
+            "item,price\nwidget,9.99", encoding="utf-8"
+        )
+        result = await skill_tool.run(name="code-review", resource="assets/")
+        out = result.output
+        assert out.startswith("Directory: assets/")
+        assert "prices.csv" in out
+        assert "Tip: read a file with skill(" in out
+
+    async def test_single_file_read_still_works(
+        self, sample_skills: list[Skill], skill_tool: SkillTool
+    ):
+        ref_dir = sample_skills[0].references_dir()
+        ref_dir.mkdir(parents=True, exist_ok=True)
+        (ref_dir / "guide.md").write_text(
+            "# Guide\nReference content.", encoding="utf-8"
+        )
+        result = await skill_tool.run(
+            name="code-review", resource="references/guide.md"
+        )
+        assert result.output == "# Guide\nReference content."
+
+    async def test_path_traversal_on_directory_blocked(self, skill_tool: SkillTool):
+        result = await skill_tool.run(name="code-review", resource="references/..")
+        assert "Error" in result.output
+        assert "Path traversal" in result.output
+
+    async def test_nested_directory_count_is_recursive(
+        self, sample_skills: list[Skill], skill_tool: SkillTool
+    ):
+        ref_dir = sample_skills[0].references_dir()
+        ref_dir.mkdir(parents=True, exist_ok=True)
+        nested = ref_dir / "outer" / "inner"
+        nested.mkdir(parents=True)
+        (nested / "deep.md").write_text("one\ntwo\n", encoding="utf-8")
+        (ref_dir / "outer" / "sibling.md").write_text("a\n", encoding="utf-8")
+        result = await skill_tool.run(name="code-review", resource="references/")
+        out = result.output
+        assert "outer/ (2 files)" in out
+        assert "inner/ (1 files)" in out
+        assert "Total: 2 markdown files, 3 lines." in out
 
 
 class TestSkillToolId:

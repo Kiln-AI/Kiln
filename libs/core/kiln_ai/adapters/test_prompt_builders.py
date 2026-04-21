@@ -659,6 +659,23 @@ def test_build_skills_prompt_section_empty():
     assert build_skills_prompt_section(None) is None
 
 
+def test_build_skills_prompt_section_default_excludes_skill_search():
+    skills = [Skill(name="code-review", description="Reviews code for quality")]
+    section = build_skills_prompt_section(skills)
+    assert section is not None
+    assert "skill_search" not in section
+    assert "code-review" in section
+
+
+def test_build_skills_prompt_section_with_skill_search_enabled():
+    skills = [Skill(name="code-review", description="Reviews code for quality")]
+    section = build_skills_prompt_section(skills, skill_search_enabled=True)
+    assert section is not None
+    assert "skill_search(name, pattern)" in section
+    assert "code-review" in section
+    assert "Reviews code for quality" in section
+
+
 def test_build_prompt_with_skills(tmp_path):
     task = build_test_task(tmp_path)
     builder = SimplePromptBuilder(task=task)
