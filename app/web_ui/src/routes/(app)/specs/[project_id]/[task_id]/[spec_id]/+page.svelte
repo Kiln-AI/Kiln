@@ -197,7 +197,6 @@
   $: has_default_eval_config = evaluator && evaluator.current_config_id
   $: should_show_compare_table = has_eval && has_default_eval_config
 
-  let load_token = 0
   function reset_spec_state() {
     spec = null
     evaluator = null
@@ -206,14 +205,10 @@
     eval_progress = null
   }
   async function reload_all() {
-    const my_token = ++load_token
     reset_spec_state()
-
     await tick()
-    if (my_token !== load_token) return
     load_model_info()
     await load_spec()
-    if (my_token !== load_token) return
     if (spec?.eval_id) {
       await Promise.all([
         load_eval_data(),
@@ -221,7 +216,6 @@
         load_run_configs_data(),
         get_eval_progress(),
       ])
-      if (my_token !== load_token) return
       if (evaluator?.current_config_id) {
         await load_score_summary()
       }
