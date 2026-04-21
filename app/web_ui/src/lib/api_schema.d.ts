@@ -5369,80 +5369,83 @@ export interface components {
             dataset_size: number;
         };
         /**
-         * EvalResultsSummaryEval
-         * @description Summary of a single eval within eval results summary.
+         * EvalResultsSummaryEvalInfo
+         * @description Metadata for a single eval within eval results summary.
          */
-        EvalResultsSummaryEval: {
+        EvalResultsSummaryEvalInfo: {
             /**
-             * Eval Id
-             * @description The eval ID.
-             */
-            eval_id: string | null;
-            /**
-             * Eval Name
+             * Name
              * @description The eval name.
              */
-            eval_name: string;
+            name: string;
             /**
              * Default Judge Config Id
              * @description The default judge config ID for this eval, if any.
              */
             default_judge_config_id: string | null;
             /**
-             * Run Configs
-             * @description The run configs for this eval.
+             * Dataset Size
+             * @description Total size of the eval dataset.
              */
-            run_configs: components["schemas"]["EvalResultsSummaryRunConfigRef"][];
+            dataset_size: number;
             /**
-             * Eval Configs
-             * @description The eval configs and their score summaries.
+             * Output Score Keys
+             * @description The output score keys for this eval.
              */
-            eval_configs: components["schemas"]["EvalResultsSummaryEvalConfig"][];
-        };
-        /**
-         * EvalResultsSummaryEvalConfig
-         * @description Summary of a single eval config within eval results summary.
-         */
-        EvalResultsSummaryEvalConfig: {
-            /**
-             * Eval Config Id
-             * @description The eval config ID.
-             */
-            eval_config_id: string | null;
-            /**
-             * Eval Config Name
-             * @description The eval config name.
-             */
-            eval_config_name: string;
-            /**
-             * Is Default
-             * @description Whether this eval config is the default judge for its eval.
-             */
-            is_default: boolean;
-            /** @description The score summary for this eval config. */
-            summary: components["schemas"]["EvalResultSummary"];
+            output_score_keys: string[];
         };
         /**
          * EvalResultsSummaryResponse
-         * @description Aggregated eval results across all evals and eval configs for a task.
+         * @description Aggregated eval results across all evals for a task.
          */
         EvalResultsSummaryResponse: {
             /**
-             * Evals
-             * @description The evals and their results.
+             * Evals By Id
+             * @description Eval metadata keyed by eval ID.
              */
-            evals: components["schemas"]["EvalResultsSummaryEval"][];
+            evals_by_id: {
+                [key: string]: components["schemas"]["EvalResultsSummaryEvalInfo"];
+            };
+            /**
+             * Run Configs By Id
+             * @description Run config metadata keyed by run config ID.
+             */
+            run_configs_by_id: {
+                [key: string]: components["schemas"]["EvalResultsSummaryRunConfigInfo"];
+            };
+            /**
+             * Scores By Run Config By Eval
+             * @description Results keyed by run config ID then eval ID.
+             */
+            scores_by_run_config_by_eval: {
+                [key: string]: {
+                    [key: string]: components["schemas"]["EvalResultsSummaryResultCell"];
+                };
+            };
         };
         /**
-         * EvalResultsSummaryRunConfigRef
-         * @description Reference to a run config within eval results summary.
+         * EvalResultsSummaryResultCell
+         * @description Results for a single (eval, run_config) cell.
          */
-        EvalResultsSummaryRunConfigRef: {
+        EvalResultsSummaryResultCell: {
             /**
-             * Id
-             * @description The run config ID.
+             * Mean Scores
+             * @description Mean scores keyed by output_score_key.
              */
-            id: string | null;
+            mean_scores: {
+                [key: string]: number;
+            };
+            /**
+             * Percent Complete
+             * @description Percent of dataset processed for this run config.
+             */
+            percent_complete: number;
+        };
+        /**
+         * EvalResultsSummaryRunConfigInfo
+         * @description Metadata for a run config within eval results summary.
+         */
+        EvalResultsSummaryRunConfigInfo: {
             /**
              * Name
              * @description The run config name.

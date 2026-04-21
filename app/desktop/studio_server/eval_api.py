@@ -299,48 +299,48 @@ class EvalResultSummary(BaseModel):
     dataset_size: int = Field(description="Total size of the eval dataset.")
 
 
-class EvalResultsSummaryRunConfigRef(BaseModel):
-    """Reference to a run config within eval results summary."""
+class EvalResultsSummaryEvalInfo(BaseModel):
+    """Metadata for a single eval within eval results summary."""
 
-    id: ID_TYPE = Field(description="The run config ID.")
-    name: str = Field(description="The run config name.")
-
-
-class EvalResultsSummaryEvalConfig(BaseModel):
-    """Summary of a single eval config within eval results summary."""
-
-    eval_config_id: ID_TYPE = Field(description="The eval config ID.")
-    eval_config_name: str = Field(description="The eval config name.")
-    is_default: bool = Field(
-        description="Whether this eval config is the default judge for its eval."
-    )
-    summary: EvalResultSummary = Field(
-        description="The score summary for this eval config."
-    )
-
-
-class EvalResultsSummaryEval(BaseModel):
-    """Summary of a single eval within eval results summary."""
-
-    eval_id: ID_TYPE = Field(description="The eval ID.")
-    eval_name: str = Field(description="The eval name.")
+    name: str = Field(description="The eval name.")
     default_judge_config_id: ID_TYPE | None = Field(
         description="The default judge config ID for this eval, if any."
     )
-    run_configs: list[EvalResultsSummaryRunConfigRef] = Field(
-        description="The run configs for this eval."
+    dataset_size: int = Field(description="Total size of the eval dataset.")
+    output_score_keys: list[str] = Field(
+        description="The output score keys for this eval."
     )
-    eval_configs: list[EvalResultsSummaryEvalConfig] = Field(
-        description="The eval configs and their score summaries."
+
+
+class EvalResultsSummaryRunConfigInfo(BaseModel):
+    """Metadata for a run config within eval results summary."""
+
+    name: str = Field(description="The run config name.")
+
+
+class EvalResultsSummaryResultCell(BaseModel):
+    """Results for a single (eval, run_config) cell."""
+
+    mean_scores: Dict[str, float] = Field(
+        description="Mean scores keyed by output_score_key."
+    )
+    percent_complete: float = Field(
+        description="Percent of dataset processed for this run config."
     )
 
 
 class EvalResultsSummaryResponse(BaseModel):
-    """Aggregated eval results across all evals and eval configs for a task."""
+    """Aggregated eval results across all evals for a task."""
 
-    evals: list[EvalResultsSummaryEval] = Field(
-        description="The evals and their results."
+    evals_by_id: Dict[ID_TYPE, EvalResultsSummaryEvalInfo] = Field(
+        description="Eval metadata keyed by eval ID."
     )
+    run_configs_by_id: Dict[ID_TYPE, EvalResultsSummaryRunConfigInfo] = Field(
+        description="Run config metadata keyed by run config ID."
+    )
+    scores_by_run_config_by_eval: Dict[
+        ID_TYPE, Dict[ID_TYPE, EvalResultsSummaryResultCell]
+    ] = Field(description="Results keyed by run config ID then eval ID.")
 
 
 class EvalConfigCompareSummary(BaseModel):
@@ -1172,13 +1172,14 @@ def connect_evals_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
         task_run_configs = get_all_run_configs(project_id, task_id)
 
-        run_config_refs = [
-            EvalResultsSummaryRunConfigRef(id=rc.id, name=rc.name)
+        run_configs_out: Dict[ID_TYPE, EvalResultsSummaryRunConfigInfo] = {
+            rc.id: EvalResultsSummaryRunConfigInfo(name=rc.name)
             for rc in task_run_configs
-        ]
+        }
 
         dataset_ids_cache: Dict[DatasetFilterId, Set[ID_TYPE]] = {}
-        evals_out: list[EvalResultsSummaryEval] = []
+        evals_out: Dict[ID_TYPE, EvalResultsSummaryEvalInfo] = {}
+        scores_out: Dict[ID_TYPE, Dict[ID_TYPE, EvalResultsSummaryResultCell]] = {}
 
         for eval in task.evals(readonly=True):
             filter_id = eval.eval_set_filter_id
@@ -1188,38 +1189,45 @@ def connect_evals_api(app: FastAPI):
                 )
             expected_dataset_ids = dataset_ids_cache[filter_id]
 
-            eval_configs_out: list[EvalResultsSummaryEvalConfig] = []
-            for eval_config in eval.configs(readonly=True):
-                if len(expected_dataset_ids) == 0:
-                    summary = EvalResultSummary(
-                        results={},
-                        run_config_percent_complete={},
-                        dataset_size=0,
-                    )
-                else:
-                    summary = compute_score_summary(
-                        eval, eval_config, task_run_configs, expected_dataset_ids
-                    )
-                eval_configs_out.append(
-                    EvalResultsSummaryEvalConfig(
-                        eval_config_id=eval_config.id,
-                        eval_config_name=eval_config.name,
-                        is_default=(eval_config.id == eval.current_config_id),
-                        summary=summary,
-                    )
-                )
-
-            evals_out.append(
-                EvalResultsSummaryEval(
-                    eval_id=eval.id,
-                    eval_name=eval.name,
-                    default_judge_config_id=eval.current_config_id,
-                    run_configs=run_config_refs,
-                    eval_configs=eval_configs_out,
-                )
+            evals_out[eval.id] = EvalResultsSummaryEvalInfo(
+                name=eval.name,
+                default_judge_config_id=eval.current_config_id,
+                dataset_size=len(expected_dataset_ids),
+                output_score_keys=[s.json_key() for s in eval.output_scores],
             )
 
-        return EvalResultsSummaryResponse(evals=evals_out)
+            if eval.current_config_id is None:
+                continue
+
+            default_config = None
+            for eval_config in eval.configs(readonly=True):
+                if eval_config.id == eval.current_config_id:
+                    default_config = eval_config
+                    break
+
+            if default_config is None or len(expected_dataset_ids) == 0:
+                continue
+
+            summary = compute_score_summary(
+                eval, default_config, task_run_configs, expected_dataset_ids
+            )
+
+            for rc_id, scores_dict in summary.results.items():
+                mean_scores = {key: s.mean_score for key, s in scores_dict.items()}
+                percent_complete = summary.run_config_percent_complete.get(rc_id, 0.0)
+                cell = EvalResultsSummaryResultCell(
+                    mean_scores=mean_scores,
+                    percent_complete=percent_complete,
+                )
+                if rc_id not in scores_out:
+                    scores_out[rc_id] = {}
+                scores_out[rc_id][eval.id] = cell
+
+        return EvalResultsSummaryResponse(
+            evals_by_id=evals_out,
+            run_configs_by_id=run_configs_out,
+            scores_by_run_config_by_eval=scores_out,
+        )
 
     # Compared to above, this is comparing all eval configs to each other, not looking at a single eval config
     @app.get(
