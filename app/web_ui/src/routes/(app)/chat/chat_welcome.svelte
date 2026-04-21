@@ -35,7 +35,7 @@
 
   const secondarySuggestions = [
     {
-      label: "Run On-Prem / Local",
+      label: "On-Prem\u2009/\u2009Local",
       prompt: "Help me run this task on-prem or with a local model",
     },
     {
