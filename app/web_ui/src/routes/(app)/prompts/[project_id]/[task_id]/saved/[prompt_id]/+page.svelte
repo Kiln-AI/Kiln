@@ -5,7 +5,7 @@
   import Output from "$lib/ui/output.svelte"
   import { formatDate } from "$lib/utils/formatters"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
-  import { getPromptType } from "../../prompt_generators/prompt_generators"
+  import { getPromptType } from "$lib/prompt_generators"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!

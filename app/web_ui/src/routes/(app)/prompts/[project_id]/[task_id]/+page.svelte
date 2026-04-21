@@ -13,7 +13,7 @@
   import { onMount } from "svelte"
   import type { Task, ApiPrompt } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import { getPromptType } from "./prompt_generators/prompt_generators"
+  import { getPromptType } from "$lib/prompt_generators"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Banner from "$lib/ui/banner.svelte"
 

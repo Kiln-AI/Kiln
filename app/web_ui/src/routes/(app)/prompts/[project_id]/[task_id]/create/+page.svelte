@@ -5,7 +5,7 @@
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
-  import { prompt_generator_categories } from "../prompt_generators/prompt_generators"
+  import { prompt_generator_categories } from "$lib/prompt_generators"
   import { generate_memorable_name } from "$lib/utils/name_generator"
   import PromptForm from "../prompt_form.svelte"
 

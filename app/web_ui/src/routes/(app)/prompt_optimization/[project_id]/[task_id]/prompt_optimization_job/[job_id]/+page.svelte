@@ -316,7 +316,7 @@
             </div>
           {:else}
             <div class="mt-4 flex flex-col gap-2 items-center">
-              <div class="text-gray-500 text-md italic">
+              <div class="text-gray-500 text-base italic">
                 {no_optimized_prompt_status_message(
                   prompt_optimization_job.latest_status,
                 )}

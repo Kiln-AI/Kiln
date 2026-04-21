@@ -695,8 +695,8 @@
                 <button
                   type="button"
                   class="btn btn-xs btn-primary btn-outline rounded-full"
-                  on:mousedown|preventDefault|stopPropagation={(event) => {
-                    event.preventDefault()
+                  on:mousedown|preventDefault|stopPropagation
+                  on:click|preventDefault|stopPropagation={() => {
                     option.action_handler?.()
                   }}
                 >

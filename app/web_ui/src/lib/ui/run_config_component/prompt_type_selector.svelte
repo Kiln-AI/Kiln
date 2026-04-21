@@ -6,9 +6,8 @@
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
   import { getStaticPromptDisplayName } from "$lib/utils/run_config_formatters"
   import { client } from "$lib/api_client"
-  import { onMount } from "svelte"
   import { goto } from "$app/navigation"
-  import { prompt_generator_categories } from "../../../routes/(app)/prompts/[project_id]/[task_id]/prompt_generators/prompt_generators"
+  import { prompt_generator_categories } from "$lib/prompt_generators"
 
   export let prompt_method: string
   export let linked_model_selection: string | null | undefined = undefined
@@ -62,10 +61,20 @@
     return null
   }
 
-  onMount(async () => {
-    if (!project_id || !task_id) {
-      return
-    }
+  // Re-fetch rated/repair data whenever project_id or task_id changes so the
+  // generator disabled states stay in sync if the parent swaps tasks.
+  let requirements_loaded_key: string | null = null
+  $: load_data_requirements(project_id, task_id)
+
+  async function load_data_requirements(
+    project_id: string | null,
+    task_id: string | null,
+  ) {
+    if (!project_id || !task_id) return
+    const key = `${project_id}:${task_id}`
+    if (requirements_loaded_key === key) return
+    requirements_loaded_key = key
+    data_requirements_checked = false
     try {
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/runs_summaries",
@@ -75,9 +84,7 @@
           },
         },
       )
-      if (error) {
-        return
-      }
+      if (error) return
       if (data) {
         has_rated_data = data.some(
           (run) =>
@@ -85,12 +92,14 @@
             run.rating.value !== null &&
             run.rating.value !== undefined,
         )
-        has_repair_data = data.some((run) => run.repair_state === "repaired")
+        has_repair_data = data.some(
+          (run) => run.repair_state?.toLowerCase() === "repaired",
+        )
       }
     } finally {
       data_requirements_checked = true
     }
-  })
+  }
 
   $: options = build_prompt_options(
     $current_task_prompts,
