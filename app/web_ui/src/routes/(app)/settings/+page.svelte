@@ -1,12 +1,25 @@
 <script lang="ts">
   import AppPage from "../app_page.svelte"
-  import { ui_state } from "$lib/stores"
-  import KilnSection from "$lib/ui/kiln_section.svelte"
+  import {
+    ui_state,
+    current_project,
+    current_task,
+    projects,
+  } from "$lib/stores"
+  import KilnSettingsRow from "$lib/ui/kiln_settings_row.svelte"
   import { view_logs } from "$lib/utils/logs"
-  import type { KilnSectionItem } from "$lib/ui/kiln_section_types"
   import { agentInfo } from "$lib/agent"
-  import { update_info } from "$lib/utils/update"
+  import { update_info, app_version } from "$lib/utils/update"
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
+  import EditIcon from "$lib/ui/icons/edit_icon.svelte"
+  import FolderIcon from "$lib/ui/icons/folder_icon.svelte"
+  import DatabaseIcon from "$lib/ui/icons/database_icon.svelte"
+  import KeyIcon from "$lib/ui/icons/key_icon.svelte"
+  import CubeIcon from "$lib/ui/icons/cube_icon.svelte"
+  import TerminalIcon from "$lib/ui/icons/terminal_icon.svelte"
+  import RefreshIcon from "$lib/ui/icons/refresh_icon.svelte"
+  import BookIcon from "$lib/ui/icons/book_icon.svelte"
+  import ShieldIcon from "$lib/ui/icons/shield_icon.svelte"
 
   agentInfo.set({
     name: "Settings",
@@ -14,111 +27,136 @@
       "Main settings page with options for editing current workspace, managing AI providers and custom models, managing projects, viewing logs, and checking for updates.",
   })
 
-  type SettingsSection = {
-    category: string
-    items: Array<KilnSectionItem>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type IconComponent = any
+
+  type SettingsRow = {
+    label: string
+    icon: IconComponent
+    detail: string | undefined
+    href: string | undefined
+    on_click: (() => void) | undefined
+    is_external: boolean | undefined
+    status: "warn" | undefined
   }
 
-  const sections: Array<SettingsSection> = [
+  type SettingsSection = {
+    title: string
+    rows: Array<SettingsRow>
+  }
+
+  $: project_count = $projects?.projects?.length ?? 0
+
+  $: sections = [
     {
-      category: "Current Workspace",
-      items: [
+      title: "Workspace",
+      rows: [
         {
-          type: "settings",
-          name: "Edit Current Task",
-          description:
-            "Modify your current task's prompt, requirements, and configuration settings.",
-          button_text: "Edit Task",
+          label: "Edit Current Task",
+          icon: EditIcon,
+          detail: $current_task?.name,
           href: `/settings/edit_task/${$ui_state?.current_project_id}/${$ui_state?.current_task_id}`,
+          on_click: undefined,
+          is_external: undefined,
+          status: undefined,
         },
         {
-          type: "settings",
-          name: "Edit Current Project",
-          description:
-            "Update your current project's name, description, and settings.",
-          button_text: "Edit Project",
+          label: "Edit Current Project",
+          icon: FolderIcon,
+          detail: $current_project?.name,
           href: "/settings/edit_project/" + $ui_state.current_project_id,
-        },
-      ],
-    },
-    {
-      category: "Models & Providers",
-      items: [
-        {
-          type: "settings",
-          name: "AI Providers",
-          description:
-            "Connect to over a dozen AI providers like Ollama, OpenRouter, Together, OpenAI and more.",
-          href: "/settings/providers",
-          button_text: "Manage Providers",
+          on_click: undefined,
+          is_external: undefined,
+          status: undefined,
         },
         {
-          type: "settings",
-          name: "Custom Models",
-          description:
-            "Add or remove custom models from one of your connected AI providers.",
-          href: "/settings/providers/add_models",
-          button_text: "Custom Models",
-        },
-      ],
-    },
-    {
-      category: "Projects",
-      items: [
-        {
-          type: "settings",
-          name: "Manage Projects",
-          description:
-            "Create new projects, organize existing ones, or remove projects you no longer need.",
+          label: "Manage Projects",
+          icon: DatabaseIcon,
+          detail:
+            project_count > 0
+              ? `${project_count} project${project_count === 1 ? "" : "s"}`
+              : undefined,
           href: "/settings/manage_projects",
-          button_text: "Manage Projects",
+          on_click: undefined,
+          is_external: undefined,
+          status: undefined,
         },
       ],
     },
     {
-      category: "Help & Resources",
-      items: [
+      title: "Models & Providers",
+      rows: [
         {
-          type: "settings",
-          name: "Application Logs",
-          description:
-            "View detailed logs of LLM calls and application events for debugging and monitoring.",
-          button_text: "View Logs",
-          on_click: view_logs,
+          label: "AI Providers",
+          icon: KeyIcon,
+          detail: "Manage connected providers",
+          href: "/settings/providers",
+          on_click: undefined,
+          is_external: undefined,
+          status: undefined,
         },
         {
-          type: "settings",
-          name: "Check for Update",
-          description:
-            "Check if there is a newer version of the Kiln app available.",
-          href: "/settings/check_for_update",
-          button_text: "Check for Update",
-        },
-        {
-          type: "settings",
-          name: "Docs & Getting Started",
-          description:
-            "Read the docs, including our getting started guide and video tutorials.",
-          href: "https://docs.kiln.tech",
-          button_text: "Docs & Guides",
-          is_external: true,
-        },
-        {
-          type: "settings",
-          name: "License Agreement",
-          description:
-            "View the End User License Agreement (EULA) for the Kiln AI desktop application.",
-          href: "https://github.com/Kiln-AI/Kiln/blob/main/app/EULA.md",
-          button_text: "View EULA",
-          is_external: true,
+          label: "Custom Models",
+          icon: CubeIcon,
+          detail: "Add or remove custom models",
+          href: "/settings/providers/add_models",
+          on_click: undefined,
+          is_external: undefined,
+          status: undefined,
         },
       ],
     },
-  ]
+    {
+      title: "Application",
+      rows: [
+        {
+          label: "Application Logs",
+          icon: TerminalIcon,
+          detail: "LLM calls and application events",
+          href: undefined,
+          on_click: view_logs,
+          is_external: undefined,
+          status: undefined,
+        },
+        {
+          label: "Check for Update",
+          icon: RefreshIcon,
+          detail: `Kiln ${app_version}`,
+          href: "/settings/check_for_update",
+          on_click: undefined,
+          is_external: undefined,
+          status: undefined,
+        },
+      ],
+    },
+    {
+      title: "About",
+      rows: [
+        {
+          label: "Docs & Getting Started",
+          icon: BookIcon,
+          detail: "docs.kiln.tech",
+          href: "https://docs.kiln.tech",
+          on_click: undefined,
+          is_external: true,
+          status: undefined,
+        },
+        {
+          label: "License Agreement",
+          icon: ShieldIcon,
+          detail: "EULA",
+          href: "https://github.com/Kiln-AI/Kiln/blob/main/app/EULA.md",
+          on_click: undefined,
+          is_external: true,
+          status: undefined,
+        },
+      ],
+    },
+  ] satisfies Array<SettingsSection>
 </script>
 
 <AppPage title="Settings" no_y_padding>
-  <div class="max-w-4xl mt-12 space-y-12">
+  <div class="max-w-3xl mt-8 space-y-6">
     {#if $update_info.update_result?.has_update}
       <div
         class="card card-bordered border-primary/30 bg-primary/5 shadow-sm rounded-md"
@@ -147,8 +185,32 @@
         </div>
       </div>
     {/if}
+
     {#each sections as section}
-      <KilnSection title={section.category} items={section.items} />
+      <div>
+        <h2
+          class="px-2 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500"
+        >
+          {section.title}
+        </h2>
+        <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          {#each section.rows as row, i}
+            <KilnSettingsRow
+              label={row.label}
+              detail={row.detail}
+              href={row.href}
+              on_click={row.on_click}
+              is_external={row.is_external ?? false}
+              status={row.status}
+              is_last={i === section.rows.length - 1}
+            >
+              <svelte:fragment slot="icon">
+                <svelte:component this={row.icon} />
+              </svelte:fragment>
+            </KilnSettingsRow>
+          {/each}
+        </div>
+      </div>
     {/each}
   </div>
 </AppPage>

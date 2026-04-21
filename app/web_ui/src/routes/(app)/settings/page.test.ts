@@ -67,13 +67,13 @@ describe("Settings +page.svelte — Update Available callout", () => {
     expect(position & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it("keeps the 'Check for Update' item in Help & Resources regardless of update state", () => {
+  it("keeps the 'Check for Update' item in the Application section regardless of update state", () => {
     update_info.set(default_update_state)
     const { container } = render(Page)
-    const headings = Array.from(container.querySelectorAll("h3")).map((h) =>
-      h.textContent?.trim(),
-    )
-    expect(headings).toContain("Check for Update")
+    const rowLabels = Array.from(
+      container.querySelectorAll('[data-testid="settings-row"]'),
+    ).map((b) => b.textContent?.trim())
+    expect(rowLabels.some((t) => t?.includes("Check for Update"))).toBe(true)
   })
 
   it("keeps the 'Check for Update' item when has_update is true", () => {
@@ -87,9 +87,9 @@ describe("Settings +page.svelte — Update Available callout", () => {
       update_error: null,
     })
     const { container } = render(Page)
-    const itemNames = Array.from(container.querySelectorAll("h3")).map((h) =>
-      h.textContent?.trim(),
-    )
-    expect(itemNames).toContain("Check for Update")
+    const rowLabels = Array.from(
+      container.querySelectorAll('[data-testid="settings-row"]'),
+    ).map((b) => b.textContent?.trim())
+    expect(rowLabels.some((t) => t?.includes("Check for Update"))).toBe(true)
   })
 })
