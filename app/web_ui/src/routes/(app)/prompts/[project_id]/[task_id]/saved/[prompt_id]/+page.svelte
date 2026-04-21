@@ -1,10 +1,17 @@
 <script lang="ts">
   import { page } from "$app/stores"
-  import { current_task, current_task_prompts } from "$lib/stores"
+  import { current_task, get_task_composite_id } from "$lib/stores"
+  import {
+    load_task_prompts,
+    prompts_by_task_composite_id,
+  } from "$lib/stores/prompts_store"
   import AppPage from "../../../../../app_page.svelte"
   import Output from "$lib/ui/output.svelte"
   import { formatDate } from "$lib/utils/formatters"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
+  import { onMount } from "svelte"
+  import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import type { ApiPrompt } from "$lib/types"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -15,9 +22,27 @@
     description: `Saved prompt detail for prompt ID ${prompt_id} in project ID ${project_id}, task ID ${task_id}. Prompt name: ${prompt_model?.name ?? "[loading]"}. Shows prompt content, version history, and options to clone or edit.`,
   })
 
-  $: prompt_model = $current_task_prompts?.prompts.find(
-    (prompt) => prompt.id === prompt_id,
-  )
+  let prompt_model: ApiPrompt | null = null
+  let loading = true
+  let loading_error: KilnError | null = null
+
+  onMount(async () => {
+    try {
+      // Force-refresh so deeplinks to prompts created mid-chat (which
+      // bypass the store's save helpers) are picked up on direct load.
+      await load_task_prompts(project_id, task_id, true)
+      const task_prompts =
+        $prompts_by_task_composite_id[
+          get_task_composite_id(project_id, task_id)
+        ]
+      prompt_model =
+        task_prompts?.prompts.find((p) => p.id === prompt_id) ?? null
+    } catch (e) {
+      loading_error = createKilnError(e)
+    } finally {
+      loading = false
+    }
+  })
 
   let prompt_props: Record<string, string | undefined | null> = {}
   $: {
@@ -72,9 +97,13 @@
         : []),
     ]}
   >
-    {#if !$current_task_prompts}
+    {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
+      </div>
+    {:else if loading_error}
+      <div class="text-error">
+        {loading_error.getMessage() || "Failed to load prompt."}
       </div>
     {:else if $current_task?.id != task_id}
       <div class="text-error">

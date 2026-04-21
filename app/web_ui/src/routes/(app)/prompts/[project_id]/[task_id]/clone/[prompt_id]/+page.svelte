@@ -27,7 +27,9 @@
 
   onMount(async () => {
     try {
-      await load_task_prompts(project_id, task_id)
+      // Force-refresh so deeplinks to prompts created mid-chat (which
+      // bypass the store's save helpers) are picked up on direct load.
+      await load_task_prompts(project_id, task_id, true)
       const task_prompts =
         $prompts_by_task_composite_id[
           get_task_composite_id(project_id, task_id)
