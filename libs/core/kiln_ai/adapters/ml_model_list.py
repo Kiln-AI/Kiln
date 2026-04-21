@@ -6784,7 +6784,7 @@ built_in_models: List[KilnModel] = [
         ],
     ),
     # Kimi K2.6
-    # Not available on Together AI, Fireworks AI, or SiliconFlow CN yet
+    # Not available on Together AI or SiliconFlow CN yet
     KilnModel(
         family=ModelFamily.kimi,
         name=ModelName.kimi_k2_6,
@@ -6792,6 +6792,19 @@ built_in_models: List[KilnModel] = [
         featured_rank=6,
         editorial_notes="Open, state-of-the-art model from Moonshot AI. Excellent price-to-performance ratio. Enhanced agent planning and reasoning capabilities.",
         providers=[
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/kimi-k2p6",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                supports_doc_extraction=True,
+                multimodal_mime_types=[
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
             KilnModelProvider(
                 name=ModelProviderName.openrouter,
                 model_id="moonshotai/kimi-k2.6",
