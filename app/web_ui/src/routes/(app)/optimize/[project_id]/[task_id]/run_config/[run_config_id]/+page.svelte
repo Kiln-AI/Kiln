@@ -49,13 +49,8 @@
       load_available_tools(project_id)
       await Promise.all([load_model_info(), load_available_models()])
       await Promise.all([
-        // Prompts are only used for display-name lookups in
-        // getRunConfigUiProperties; the normal cache is fine.
         load_task_prompts(project_id, task_id),
-        // Force-refresh so deeplinks to run configs created mid-chat
-        // (which bypass the store's save helpers) are picked up on
-        // direct load.
-        load_task_run_configs(project_id, task_id, true),
+        load_task_run_configs(project_id, task_id),
       ])
       task = await load_task(project_id, task_id)
     } catch (e) {

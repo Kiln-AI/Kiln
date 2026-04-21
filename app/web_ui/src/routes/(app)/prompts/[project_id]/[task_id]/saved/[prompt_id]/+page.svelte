@@ -1,17 +1,11 @@
 <script lang="ts">
   import { page } from "$app/stores"
   import { get_task_composite_id } from "$lib/stores"
-  import {
-    load_task_prompts,
-    prompts_by_task_composite_id,
-  } from "$lib/stores/prompts_store"
+  import { prompts_by_task_composite_id } from "$lib/stores/prompts_store"
   import AppPage from "../../../../../app_page.svelte"
   import Output from "$lib/ui/output.svelte"
   import { formatDate } from "$lib/utils/formatters"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
-  import { onMount } from "svelte"
-  import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import type { ApiPrompt } from "$lib/types"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -22,25 +16,10 @@
     description: `Saved prompt detail for prompt ID ${prompt_id} in project ID ${project_id}, task ID ${task_id}. Prompt name: ${prompt_model?.name ?? "[loading]"}. Shows prompt content, version history, and options to clone or edit.`,
   })
 
-  let loading = true
-  let loading_error: KilnError | null = null
-
-  onMount(async () => {
-    try {
-      // Force-refresh so deeplinks to prompts created mid-chat (which
-      // bypass the store's save helpers) are picked up on direct load.
-      await load_task_prompts(project_id, task_id, true)
-    } catch (e) {
-      loading_error = createKilnError(e)
-    } finally {
-      loading = false
-    }
-  })
-
   $: prompt_model =
-    ($prompts_by_task_composite_id[
+    $prompts_by_task_composite_id[
       get_task_composite_id(project_id, task_id)
-    ]?.prompts.find((p) => p.id === prompt_id) as ApiPrompt | undefined) ?? null
+    ]?.prompts.find((p) => p.id === prompt_id) ?? null
 
   let prompt_props: Record<string, string | undefined | null> = {}
   $: {
@@ -95,15 +74,7 @@
         : []),
     ]}
   >
-    {#if loading}
-      <div class="w-full min-h-[50vh] flex justify-center items-center">
-        <div class="loading loading-spinner loading-lg"></div>
-      </div>
-    {:else if loading_error}
-      <div class="text-error">
-        {loading_error.getMessage() || "Failed to load prompt."}
-      </div>
-    {:else if prompt_model}
+    {#if prompt_model}
       <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
         <div class="grow">
           <div class="text-xl font-bold mb-2">Prompt</div>

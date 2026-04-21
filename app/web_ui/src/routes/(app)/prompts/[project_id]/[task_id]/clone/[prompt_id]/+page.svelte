@@ -19,30 +19,37 @@
     description: `Clone prompt ID ${prompt_id} for project ID ${project_id}, task ID ${task_id}.`,
   })
 
+  let initial_prompt_name = ""
+  let initial_prompt = ""
+  let initial_chain_of_thought_instructions: string | null = null
   let loading = true
   let loading_error: KilnError | null = null
 
   onMount(async () => {
     try {
-      // Force-refresh so deeplinks to prompts created mid-chat (which
-      // bypass the store's save helpers) are picked up on direct load.
-      await load_task_prompts(project_id, task_id, true)
+      await load_task_prompts(project_id, task_id)
+      const task_prompts =
+        $prompts_by_task_composite_id[
+          get_task_composite_id(project_id, task_id)
+        ]
+      const source_prompt = task_prompts?.prompts.find(
+        (p) => p.id === prompt_id,
+      )
+
+      if (!source_prompt) {
+        throw new KilnError("Source prompt not found.")
+      }
+
+      initial_prompt_name = `Copy of ${source_prompt.name}`
+      initial_prompt = source_prompt.prompt
+      initial_chain_of_thought_instructions =
+        source_prompt.chain_of_thought_instructions || null
     } catch (e) {
       loading_error = createKilnError(e)
     } finally {
       loading = false
     }
   })
-
-  $: source_prompt =
-    $prompts_by_task_composite_id[
-      get_task_composite_id(project_id, task_id)
-    ]?.prompts.find((p) => p.id === prompt_id) ?? null
-
-  $: initial_prompt_name = source_prompt ? `Copy of ${source_prompt.name}` : ""
-  $: initial_prompt = source_prompt?.prompt ?? ""
-  $: initial_chain_of_thought_instructions =
-    source_prompt?.chain_of_thought_instructions ?? null
 </script>
 
 <div class="max-w-[1400px]">
@@ -69,8 +76,6 @@
       <div class="text-error text-sm">
         {loading_error.getMessage() || "An unknown error occurred"}
       </div>
-    {:else if !source_prompt}
-      <div class="text-error text-sm">Source prompt not found.</div>
     {:else}
       <PromptForm
         {project_id}
