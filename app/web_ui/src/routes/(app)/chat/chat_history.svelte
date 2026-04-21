@@ -11,9 +11,6 @@
   import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
 
-  /** Called before the modal opens (e.g. abort in-flight stream). */
-  export let onBeforeOpen: (() => void) | undefined = undefined
-
   const dispatch = createEventDispatcher<{
     apply: LoadedChatSessionDetail
   }>()
@@ -51,7 +48,6 @@
   }
 
   export function open() {
-    onBeforeOpen?.()
     historyDialog?.show()
     void loadSessionList()
   }
