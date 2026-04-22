@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -6,6 +7,8 @@ import pygit2
 import pytest
 
 from app.desktop.git_sync.clone import (
+    _WINDOWS_RENAME_MAX_ATTEMPTS,
+    _WINDOWS_RENAME_RETRY_DELAY,
     clone_repo,
     compute_clone_path,
     compute_temp_clone_path,
@@ -117,6 +120,115 @@ class TestRenameCloneToFinalPath:
         final_path = compute_clone_path(tmp_path, "Test", "id1")
         result = rename_clone_to_final_path(temp_dir, final_path)
         assert result.name == "id1 - Test2"
+
+
+class TestRenameCloneRetryWindows:
+    def test_rename_succeeds_on_first_attempt(self, tmp_path: Path):
+        src = tmp_path / "source"
+        src.mkdir()
+        (src / "marker.txt").write_text("ok")
+        dest = tmp_path / "dest"
+
+        with (
+            patch("app.desktop.git_sync.clone.sys") as mock_sys,
+            patch("app.desktop.git_sync.clone.time.sleep") as mock_sleep,
+        ):
+            mock_sys.platform = "win32"
+            result = rename_clone_to_final_path(src, dest)
+
+        assert result == dest
+        assert (dest / "marker.txt").read_text() == "ok"
+        assert not src.exists()
+        mock_sleep.assert_not_called()
+
+    def test_rename_succeeds_after_transient_permission_errors(self, tmp_path: Path):
+        src = tmp_path / "source"
+        src.mkdir()
+        dest = tmp_path / "dest"
+
+        call_count = 0
+        original_rename = os.rename
+
+        def flaky_rename(s, d):
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                raise PermissionError("Access is denied")
+            original_rename(s, d)
+
+        with (
+            patch("app.desktop.git_sync.clone.sys") as mock_sys,
+            patch("app.desktop.git_sync.clone.os.rename", side_effect=flaky_rename),
+            patch("app.desktop.git_sync.clone.time.sleep") as mock_sleep,
+        ):
+            mock_sys.platform = "win32"
+            result = rename_clone_to_final_path(src, dest)
+
+        assert result == dest
+        assert call_count == 3
+        assert mock_sleep.call_count == 2
+        for call in mock_sleep.call_args_list:
+            assert call[0][0] == _WINDOWS_RENAME_RETRY_DELAY
+
+    def test_rename_raises_after_all_retries_exhausted(self, tmp_path: Path):
+        src = tmp_path / "source"
+        src.mkdir()
+        dest = tmp_path / "dest"
+
+        with (
+            patch("app.desktop.git_sync.clone.sys") as mock_sys,
+            patch(
+                "app.desktop.git_sync.clone.os.rename",
+                side_effect=PermissionError("Access is denied"),
+            ) as mock_rename,
+            patch("app.desktop.git_sync.clone.time.sleep") as mock_sleep,
+            pytest.raises(PermissionError, match="Access is denied"),
+        ):
+            mock_sys.platform = "win32"
+            rename_clone_to_final_path(src, dest)
+
+        assert mock_rename.call_count == _WINDOWS_RENAME_MAX_ATTEMPTS
+        assert mock_sleep.call_count == _WINDOWS_RENAME_MAX_ATTEMPTS - 1
+
+    def test_non_permission_errors_propagate_immediately(self, tmp_path: Path):
+        src = tmp_path / "source"
+        src.mkdir()
+        dest = tmp_path / "dest"
+
+        with (
+            patch("app.desktop.git_sync.clone.sys") as mock_sys,
+            patch(
+                "app.desktop.git_sync.clone.os.rename",
+                side_effect=FileNotFoundError("No such file"),
+            ) as mock_rename,
+            patch("app.desktop.git_sync.clone.time.sleep") as mock_sleep,
+            pytest.raises(FileNotFoundError, match="No such file"),
+        ):
+            mock_sys.platform = "win32"
+            rename_clone_to_final_path(src, dest)
+
+        mock_rename.assert_called_once()
+        mock_sleep.assert_not_called()
+
+    def test_non_windows_does_not_retry(self, tmp_path: Path):
+        src = tmp_path / "source"
+        src.mkdir()
+        dest = tmp_path / "dest"
+
+        with (
+            patch("app.desktop.git_sync.clone.sys") as mock_sys,
+            patch(
+                "app.desktop.git_sync.clone.os.rename",
+                side_effect=PermissionError("Access is denied"),
+            ) as mock_rename,
+            patch("app.desktop.git_sync.clone.time.sleep") as mock_sleep,
+            pytest.raises(PermissionError, match="Access is denied"),
+        ):
+            mock_sys.platform = "darwin"
+            rename_clone_to_final_path(src, dest)
+
+        mock_rename.assert_called_once()
+        mock_sleep.assert_not_called()
 
 
 class TestScanForProjects:

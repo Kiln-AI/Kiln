@@ -3,7 +3,9 @@ import logging
 import os
 import re
 import shutil
+import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +35,9 @@ ehthumbs.db
 """
 
 DEFAULT_REMOTE_NAME = "origin"
+
+_WINDOWS_RENAME_MAX_ATTEMPTS = 5
+_WINDOWS_RENAME_RETRY_DELAY = 2.0
 
 
 def make_push_callbacks(
@@ -275,6 +280,10 @@ def rename_clone_to_final_path(
     The caller is responsible for computing final_path (via compute_clone_path)
     and validating it before calling this function.
 
+    On Windows, retries on PermissionError up to 5 times with a 2-second delay
+    between attempts to handle transient file locks from antivirus or indexing
+    services.
+
     Returns the final path.
 
     Raises ValueError if current_path does not exist.
@@ -283,8 +292,25 @@ def rename_clone_to_final_path(
         raise ValueError(f"Clone path does not exist: {current_path}")
 
     final_path.parent.mkdir(parents=True, exist_ok=True)
-    os.rename(current_path, final_path)
 
+    if sys.platform == "win32":
+        for attempt in range(1, _WINDOWS_RENAME_MAX_ATTEMPTS + 1):
+            try:
+                os.rename(current_path, final_path)
+                return final_path
+            except PermissionError:
+                if attempt == _WINDOWS_RENAME_MAX_ATTEMPTS:
+                    raise
+                logger.warning(
+                    "Rename attempt %d/%d failed with PermissionError, "
+                    "retrying in %.1fs",
+                    attempt,
+                    _WINDOWS_RENAME_MAX_ATTEMPTS,
+                    _WINDOWS_RENAME_RETRY_DELAY,
+                )
+                time.sleep(_WINDOWS_RENAME_RETRY_DELAY)
+
+    os.rename(current_path, final_path)
     return final_path
 
 
