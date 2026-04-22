@@ -29,8 +29,13 @@ class AgentPolicyLookup:
                 self._cache[(method, path)] = AgentPolicy(**policy_data)
 
     def _load(self) -> None:
+        warnings.warn(
+            "_load is deprecated and will be removed in a future version. "
+            "Please use preload() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.preload()
-
     def get_policy(self, method: str, path: str) -> AgentPolicy:
         if self._cache is None:
             self.preload()
