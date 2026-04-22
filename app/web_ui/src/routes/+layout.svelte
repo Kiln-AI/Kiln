@@ -22,6 +22,9 @@
   import { browser } from "$app/environment"
   import { beforeNavigate, afterNavigate } from "$app/navigation"
   import { client } from "$lib/api_client"
+  import { agentInfo } from "$lib/agent"
+
+  const pageTitle = import.meta.env.VITE_BRANCH_NAME || "Kiln"
 
   function sanitize_route_id(route_id: string | null | undefined) {
     if (!route_id) {
@@ -50,7 +53,11 @@
   }
 
   if (browser) {
-    beforeNavigate(() => {
+    beforeNavigate(({ from, to }) => {
+      if (from?.route?.id !== to?.route?.id) {
+        // Clear agent info, only if the route is changing (not just a query param change)
+        agentInfo.set(null)
+      }
       const { route_id, url } = get_route_info()
       posthog.capture("$pageleave", { $current_url: url, $pathname: route_id })
     })
@@ -121,7 +128,7 @@
 </script>
 
 <svelte:head>
-  <title>Kiln</title>
+  <title>{pageTitle}</title>
   <meta name="description" content="The easiest way to built AI products" />
 
   <link

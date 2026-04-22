@@ -144,7 +144,9 @@
             ) || "N/A"}
           </div>
           <div>
-            Reranker: {reranker_name_with_provider(rag_config.reranker_config)}
+            Reranker: {reranker_name_with_provider(
+              rag_config.reranker_config ?? null,
+            )}
           </div>
           <div class="text-xs text-gray-500 flex flex-row flex-wrap gap-2 w-80">
             {#each rag_config.tags || [] as tag}

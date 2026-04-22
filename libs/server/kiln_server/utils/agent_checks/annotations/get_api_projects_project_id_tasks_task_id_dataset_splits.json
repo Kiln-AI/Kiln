@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/projects/{project_id}/tasks/{task_id}/dataset_splits",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

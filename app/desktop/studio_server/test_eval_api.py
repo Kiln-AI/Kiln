@@ -47,7 +47,7 @@ from kiln_ai.datamodel.eval import (
 )
 from kiln_ai.datamodel.prompt import BasePrompt
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-from kiln_ai.datamodel.spec import Spec
+from kiln_ai.datamodel.spec import Spec, SpecStatus
 from kiln_ai.datamodel.spec_properties import DesiredBehaviourProperties, SpecType
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import Usage
@@ -176,7 +176,7 @@ def test_get_evals_success(client, mock_task, mock_task_from_id, mock_eval):
 def test_get_eval_success(client, mock_task, mock_task_from_id, mock_eval):
     mock_task_from_id.return_value = mock_task
 
-    response = client.get("/api/projects/project1/tasks/task1/eval/eval1")
+    response = client.get("/api/projects/project1/tasks/task1/evals/eval1")
 
     assert response.status_code == 200
     result = response.json()
@@ -188,7 +188,7 @@ def test_get_eval_success(client, mock_task, mock_task_from_id, mock_eval):
 def test_get_eval_not_found(client, mock_task, mock_task_from_id):
     mock_task_from_id.return_value = mock_task
 
-    response = client.get("/api/projects/project1/tasks/task1/eval/non_existent")
+    response = client.get("/api/projects/project1/tasks/task1/evals/non_existent")
 
     assert response.status_code == 404
     assert response.json()["message"] == "Eval not found. ID: non_existent"
@@ -269,7 +269,7 @@ async def test_create_task_run_config_with_freezing(
         mock_generate_memorable_name.return_value = "Custom Name"
 
         response = client.post(
-            "/api/projects/project1/tasks/task1/task_run_config",
+            "/api/projects/project1/tasks/task1/run_configs",
             json={
                 "name": "Test Task Run Config",
                 "description": "Test Description",
@@ -304,7 +304,7 @@ async def test_create_task_run_config_with_freezing(
         == "Frozen copy of prompt 'simple_chain_of_thought_prompt_builder'."
     )
     # Fetch it from API
-    fetch_response = client.get("/api/projects/project1/tasks/task1/run_configs/")
+    fetch_response = client.get("/api/projects/project1/tasks/task1/run_configs")
     assert fetch_response.status_code == 200
     configs = fetch_response.json()
     assert len(configs) == 1
@@ -336,7 +336,7 @@ async def test_create_task_run_config_without_freezing(
         mock_generate_memorable_name.return_value = "Custom Name"
 
         response = client.post(
-            "/api/projects/project1/tasks/task1/task_run_config",
+            "/api/projects/project1/tasks/task1/run_configs",
             json={
                 "name": "Test Task Run Config",
                 "description": "Test Description",
@@ -371,7 +371,7 @@ async def test_create_eval_config(
         mock_eval_from_id.return_value = mock_eval
 
         response = client.post(
-            "/api/projects/project1/tasks/task1/eval/eval1/create_eval_config",
+            "/api/projects/project1/tasks/task1/evals/eval1/create_eval_config",
             json=valid_eval_config_request.model_dump(),
         )
 
@@ -402,7 +402,7 @@ def test_get_eval_config(
     with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
         mock_eval_from_id.return_value = mock_eval
         response = client.get(
-            "/api/projects/project1/tasks/task1/eval/eval1/eval_config/eval_config1"
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1"
         )
 
     assert response.status_code == 200
@@ -425,7 +425,7 @@ def test_get_eval_configs(
     with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
         mock_eval_from_id.return_value = mock_eval
         response = client.get(
-            "/api/projects/project1/tasks/task1/eval/eval1/eval_configs"
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_configs"
         )
 
     assert response.status_code == 200
@@ -473,7 +473,7 @@ async def test_run_eval_config(
 
         # Make request with specific run_config_ids
         response = client.get(
-            "/api/projects/project1/tasks/task1/eval/eval1/eval_config/eval_config1/run_task_run_eval",
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1/run_comparison",
             params={"run_config_ids": ["run_config1", "run_config2"]},
         )
 
@@ -510,7 +510,7 @@ async def test_run_eval_config_no_run_configs_error(
 
         # Make request with no run_config_ids and all_run_configs=False
         response = client.get(
-            "/api/projects/project1/tasks/task1/eval/eval1/eval_config/eval_config1/run_task_run_eval"
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1/run_comparison"
         )
 
         assert response.status_code == 400
@@ -693,7 +693,7 @@ def test_update_run_config_starred(client, mock_task_from_id, mock_run_config):
     assert mock_run_config.starred is False
 
     response = client.patch(
-        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        "/api/projects/project1/tasks/task1/run_configs/run_config1",
         json={"starred": True},
     )
     assert response.status_code == 200
@@ -710,7 +710,7 @@ def test_update_run_config_unstar(client, mock_task_from_id, mock_run_config):
     mock_run_config.save_to_file()
 
     response = client.patch(
-        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        "/api/projects/project1/tasks/task1/run_configs/run_config1",
         json={"starred": False},
     )
     assert response.status_code == 200
@@ -724,7 +724,7 @@ def test_update_run_config_unstar(client, mock_task_from_id, mock_run_config):
 def test_update_run_config_not_found(client, mock_task_from_id, mock_task):
     """Test the PATCH endpoint returns 404 for non-existent run config."""
     response = client.patch(
-        "/api/projects/project1/tasks/task1/run_config/non_existent",
+        "/api/projects/project1/tasks/task1/run_configs/non_existent",
         json={"starred": True},
     )
     assert response.status_code == 404
@@ -749,7 +749,7 @@ def test_update_run_config_no_path(client, mock_task_from_id, mock_task):
     ) as mock_from_id:
         mock_from_id.return_value = finetune_run_config
         response = client.patch(
-            "/api/projects/project1/tasks/task1/run_config/finetune_run_config::project1::task1::ft1",
+            "/api/projects/project1/tasks/task1/run_configs/finetune_run_config::project1::task1::ft1",
             json={"starred": True},
         )
     assert response.status_code == 400
@@ -764,7 +764,7 @@ def test_update_run_config_prompt_name(client, mock_task_from_id, mock_run_confi
     mock_run_config.save_to_file()
 
     response = client.patch(
-        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        "/api/projects/project1/tasks/task1/run_configs/run_config1",
         json={"prompt_name": "Updated Name"},
     )
     assert response.status_code == 200
@@ -783,7 +783,7 @@ def test_update_run_config_prompt_name_no_prompt(
     assert mock_run_config.prompt is None
 
     response = client.patch(
-        "/api/projects/project1/tasks/task1/run_config/run_config1",
+        "/api/projects/project1/tasks/task1/run_configs/run_config1",
         json={"prompt_name": "New Name"},
     )
     assert response.status_code == 400
@@ -881,7 +881,7 @@ async def test_get_eval_config_score_summary(
         mock_task_from_id.return_value = mock_task
 
         response = client.get(
-            "/api/projects/project1/tasks/task1/eval/eval1/eval_config/eval_config1/score_summary"
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_config/eval_config1/score_summary"
         )
 
         assert response.status_code == 200
@@ -953,7 +953,7 @@ async def test_get_eval_run_results(
 
     # Test successful retrieval
     response = client.get(
-        "/api/projects/project1/tasks/task1/eval/eval1"
+        "/api/projects/project1/tasks/task1/evals/eval1"
         "/eval_config/eval_config1/run_config/run_config1/results"
     )
 
@@ -974,21 +974,21 @@ async def test_get_eval_run_results(
 
     # Test with invalid eval ID
     response = client.get(
-        "/api/projects/project1/tasks/task1/eval/invalid_eval"
+        "/api/projects/project1/tasks/task1/evals/invalid_eval"
         "/eval_config/eval_config1/run_config/run_config1/results"
     )
     assert response.status_code == 404
 
     # Test with invalid eval config ID
     response = client.get(
-        "/api/projects/project1/tasks/task1/eval/eval1"
+        "/api/projects/project1/tasks/task1/evals/eval1"
         "/eval_config/invalid_config/run_config/run_config1/results"
     )
     assert response.status_code == 404
 
     # Test with invalid run config ID
     response = client.get(
-        "/api/projects/project1/tasks/task1/eval/eval1"
+        "/api/projects/project1/tasks/task1/evals/eval1"
         "/eval_config/eval_config1/run_config/invalid_run_config/results"
     )
     assert response.status_code == 404
@@ -1160,7 +1160,7 @@ async def test_get_eval_config_compare_summary(
 
     # Test successful retrieval
     response = client.get(
-        "/api/projects/project1/tasks/task1/eval/eval1/eval_configs_score_summary"
+        "/api/projects/project1/tasks/task1/evals/eval1/eval_configs_score_summary"
     )
 
     assert response.status_code == 200
@@ -1270,7 +1270,7 @@ async def test_run_eval_config_eval(
 
         # Call the endpoint
         response = client.get(
-            "/api/projects/project1/tasks/task1/eval/eval1/run_eval_config_eval"
+            "/api/projects/project1/tasks/task1/evals/eval1/run_calibration"
         )
 
         # Verify the response
@@ -1297,7 +1297,7 @@ async def test_set_current_eval_config(
     mock_task_from_id.return_value = mock_task
 
     # Get the eval before updating to verify the change
-    response = client.get("/api/projects/project1/tasks/task1/eval/eval1")
+    response = client.get("/api/projects/project1/tasks/task1/evals/eval1")
     assert response.status_code == 200
     eval_before = response.json()
 
@@ -1309,7 +1309,7 @@ async def test_set_current_eval_config(
     with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
         mock_eval_from_id.return_value = mock_eval
         response = client.post(
-            "/api/projects/project1/tasks/task1/eval/eval1/set_current_eval_config/eval_config1"
+            "/api/projects/project1/tasks/task1/evals/eval1/set_current_eval_config/eval_config1"
         )
         assert response.status_code == 200
         updated_eval = response.json()
@@ -1330,7 +1330,7 @@ def test_delete_eval_success(client, mock_task_from_id, mock_eval, mock_task):
         mock_eval_from_id.return_value = mock_eval
 
         # Make the delete request
-        response = client.delete("/api/projects/project1/tasks/task1/eval/eval1")
+        response = client.delete("/api/projects/project1/tasks/task1/evals/eval1")
 
     # Verify the response
     assert response.status_code == 200
@@ -1351,7 +1351,7 @@ def test_delete_eval_not_found(client):
 
         # Make the delete request
         response = client.delete(
-            "/api/projects/project1/tasks/task1/eval/nonexistent_eval"
+            "/api/projects/project1/tasks/task1/evals/nonexistent_eval"
         )
 
     # Verify the response
@@ -1394,7 +1394,7 @@ async def test_create_eval_then_delete_on_spec_failure(
         mock_eval_from_id.return_value = created_eval
 
         delete_response = client.delete(
-            f"/api/projects/project1/tasks/task1/eval/{eval_id}"
+            f"/api/projects/project1/tasks/task1/evals/{eval_id}"
         )
 
     assert delete_response.status_code == 200
@@ -1414,7 +1414,7 @@ def test_update_eval_name_and_description(
         }
 
         response = client.patch(
-            "/api/projects/project1/tasks/task1/eval/eval1",
+            "/api/projects/project1/tasks/task1/evals/eval1",
             json=update_request,
         )
 
@@ -1444,7 +1444,7 @@ def test_update_eval_train_set_filter_id_when_none(
         }
 
         response = client.patch(
-            "/api/projects/project1/tasks/task1/eval/eval1",
+            "/api/projects/project1/tasks/task1/evals/eval1",
             json=update_request,
         )
 
@@ -1472,7 +1472,7 @@ def test_update_eval_train_set_filter_id_when_already_set(
         }
 
         response = client.patch(
-            "/api/projects/project1/tasks/task1/eval/eval1",
+            "/api/projects/project1/tasks/task1/evals/eval1",
             json=update_request,
         )
 
@@ -1498,7 +1498,7 @@ def test_update_eval_partial_update(client, mock_task_from_id, mock_eval, mock_t
         }
 
         response = client.patch(
-            "/api/projects/project1/tasks/task1/eval/eval1",
+            "/api/projects/project1/tasks/task1/evals/eval1",
             json=update_request,
         )
 
@@ -1524,7 +1524,7 @@ def test_update_eval_not_found(client):
         }
 
         response = client.patch(
-            "/api/projects/project1/tasks/task1/eval/nonexistent_eval",
+            "/api/projects/project1/tasks/task1/evals/nonexistent_eval",
             json=update_request,
         )
 
@@ -1545,7 +1545,7 @@ def test_update_eval_empty_request(client, mock_task_from_id, mock_eval, mock_ta
         update_request = {}
 
         response = client.patch(
-            "/api/projects/project1/tasks/task1/eval/eval1",
+            "/api/projects/project1/tasks/task1/evals/eval1",
             json=update_request,
         )
 
@@ -1716,7 +1716,7 @@ async def test_get_eval_progress(client, mock_task_from_id, mock_task, mock_eval
         )  # fully_rated, partially_rated, not_rated
 
         # Call the endpoint
-        response = client.get("/api/projects/project1/tasks/task1/eval/eval1/progress")
+        response = client.get("/api/projects/project1/tasks/task1/evals/eval1/progress")
 
         # Verify the response
         assert response.status_code == 200
@@ -1756,7 +1756,7 @@ async def test_get_eval_progress_not_found(client, mock_task_from_id, mock_task)
 
         # Call the endpoint with non-existent eval ID
         response = client.get(
-            "/api/projects/project1/tasks/task1/eval/non_existent/progress"
+            "/api/projects/project1/tasks/task1/evals/non_existent/progress"
         )
 
         # Verify the response
@@ -1783,7 +1783,7 @@ async def test_set_current_eval_config_none(
     with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
         mock_eval_from_id.return_value = mock_eval
         response = client.post(
-            "/api/projects/project1/tasks/task1/eval/eval1/set_current_eval_config/None"
+            "/api/projects/project1/tasks/task1/evals/eval1/set_current_eval_config/None"
         )
         assert response.status_code == 200
         updated_eval = response.json()
@@ -1807,7 +1807,7 @@ async def test_set_current_eval_config_not_found(
     with patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id:
         mock_eval_from_id.return_value = mock_eval
         response = client.post(
-            "/api/projects/project1/tasks/task1/eval/eval1/set_current_eval_config/non_existent_eval_config"
+            "/api/projects/project1/tasks/task1/evals/eval1/set_current_eval_config/non_existent_eval_config"
         )
 
     # Verify the response
@@ -1890,7 +1890,7 @@ async def test_create_task_run_config_invalid_temperature_values(
 
     # Test temperature below 0
     response = client.post(
-        "/api/projects/project1/tasks/task1/task_run_config",
+        "/api/projects/project1/tasks/task1/run_configs",
         json={
             "name": "Test Task Run Config",
             "run_config_properties": {
@@ -1908,7 +1908,7 @@ async def test_create_task_run_config_invalid_temperature_values(
 
     # Test temperature above 2
     response = client.post(
-        "/api/projects/project1/tasks/task1/task_run_config",
+        "/api/projects/project1/tasks/task1/run_configs",
         json={
             "name": "Test Task Run Config",
             "run_config_properties": {
@@ -1934,7 +1934,7 @@ async def test_create_task_run_config_invalid_top_p_values(
 
     # Test top_p below 0
     response = client.post(
-        "/api/projects/project1/tasks/task1/task_run_config",
+        "/api/projects/project1/tasks/task1/run_configs",
         json={
             "name": "Test Task Run Config",
             "run_config_properties": {
@@ -1952,7 +1952,7 @@ async def test_create_task_run_config_invalid_top_p_values(
 
     # Test top_p above 1
     response = client.post(
-        "/api/projects/project1/tasks/task1/task_run_config",
+        "/api/projects/project1/tasks/task1/run_configs",
         json={
             "name": "Test Task Run Config",
             "run_config_properties": {
@@ -1978,7 +1978,7 @@ async def test_create_task_run_config_valid_boundary_values(
 
     # Test valid boundary values - temperature = 0, top_p = 0
     response = client.post(
-        "/api/projects/project1/tasks/task1/task_run_config",
+        "/api/projects/project1/tasks/task1/run_configs",
         json={
             "name": "Test Task Run Config Min",
             "run_config_properties": {
@@ -1998,7 +1998,7 @@ async def test_create_task_run_config_valid_boundary_values(
 
     # Test valid boundary values - temperature = 2, top_p = 1
     response = client.post(
-        "/api/projects/project1/tasks/task1/task_run_config",
+        "/api/projects/project1/tasks/task1/run_configs",
         json={
             "name": "Test Task Run Config Max",
             "run_config_properties": {
@@ -2162,7 +2162,7 @@ async def test_get_run_config_eval_scores_with_usage(
             }
 
             response = client.get(
-                f"/api/projects/project1/tasks/task1/run_config/{mock_run_config.id}/eval_scores"
+                f"/api/projects/project1/tasks/task1/run_configs/{mock_run_config.id}/eval_scores"
             )
 
     assert response.status_code == 200
@@ -2223,7 +2223,7 @@ def test_get_eval_configs_score_summary_no_filter_id(
         mock_eval_from_id.return_value = eval_without_filter
 
         response = client.get(
-            "/api/projects/project1/tasks/task1/eval/eval1/eval_configs_score_summary"
+            "/api/projects/project1/tasks/task1/evals/eval1/eval_configs_score_summary"
         )
 
         assert response.status_code == 400
@@ -2334,7 +2334,7 @@ async def test_get_run_config_eval_scores_includes_spec_id(
         mock_dataset_ids_in_filter.return_value = set()
 
         response = client.get(
-            f"/api/projects/project1/tasks/task1/run_config/{mock_run_config.id}/eval_scores"
+            f"/api/projects/project1/tasks/task1/run_configs/{mock_run_config.id}/eval_scores"
         )
 
     assert response.status_code == 200
@@ -2360,6 +2360,132 @@ async def test_get_run_config_eval_scores_includes_spec_id(
 
     # Verify spec_id is None for legacy eval
     assert legacy_eval_result["spec_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_run_config_eval_scores_excludes_archived_specs(
+    client, mock_task, mock_eval, mock_eval_config, mock_run_config
+):
+    """Test that get_run_config_eval_scores excludes evals associated with archived specs"""
+
+    # Create an active spec
+    active_spec = Spec(
+        id="active_spec1",
+        name="Active Spec",
+        definition="Active spec definition",
+        properties=DesiredBehaviourProperties(
+            spec_type=SpecType.desired_behaviour,
+            core_requirement="test instruction",
+            desired_behaviour_description="test desired behaviour",
+        ),
+        eval_id=mock_eval.id,
+        status=SpecStatus.active,
+        parent=mock_task,
+    )
+    active_spec.save_to_file()
+
+    # Create an archived spec with its own eval
+    archived_eval = Eval(
+        id="archived_eval1",
+        name="Archived Eval",
+        description="Eval for archived spec",
+        template=None,
+        eval_set_filter_id="tag::archived_eval_set",
+        eval_configs_filter_id="tag::archived_golden",
+        output_scores=[
+            EvalOutputScore(
+                name="score1",
+                instruction="desc1",
+                type=TaskOutputRatingType.five_star,
+            ),
+        ],
+        parent=mock_task,
+    )
+    archived_eval.save_to_file()
+
+    archived_eval_config = EvalConfig(
+        id="archived_eval_config1",
+        name="Archived Eval Config",
+        config_type=EvalConfigType.g_eval,
+        properties={"eval_steps": ["step1"]},
+        parent=archived_eval,
+        model_name="gpt-4",
+        model_provider="openai",
+    )
+    archived_eval_config.save_to_file()
+    archived_eval.current_config_id = archived_eval_config.id
+    archived_eval.save_to_file()
+
+    archived_spec = Spec(
+        id="archived_spec1",
+        name="Archived Spec",
+        definition="Archived spec definition",
+        properties=DesiredBehaviourProperties(
+            spec_type=SpecType.desired_behaviour,
+            core_requirement="test instruction",
+            desired_behaviour_description="test desired behaviour",
+        ),
+        eval_id=archived_eval.id,
+        status=SpecStatus.archived,
+        parent=mock_task,
+    )
+    archived_spec.save_to_file()
+
+    # Build mock eval objects with explicit attributes
+    mock_eval_config_for_api = MagicMock()
+    mock_eval_config_for_api.id = mock_eval_config.id
+    mock_eval_config_for_api.runs.return_value = []
+
+    mock_eval_for_api = MagicMock()
+    mock_eval_for_api.id = mock_eval.id
+    mock_eval_for_api.name = mock_eval.name
+    mock_eval_for_api.eval_set_filter_id = mock_eval.eval_set_filter_id
+    mock_eval_for_api.output_scores = mock_eval.output_scores
+    mock_eval_for_api.current_config_id = mock_eval_config.id
+    mock_eval_for_api.configs.return_value = [mock_eval_config_for_api]
+
+    archived_eval_config_for_api = MagicMock()
+    archived_eval_config_for_api.id = archived_eval_config.id
+    archived_eval_config_for_api.runs.return_value = []
+
+    archived_eval_for_api = MagicMock()
+    archived_eval_for_api.id = archived_eval.id
+    archived_eval_for_api.name = archived_eval.name
+    archived_eval_for_api.eval_set_filter_id = archived_eval.eval_set_filter_id
+    archived_eval_for_api.output_scores = archived_eval.output_scores
+    archived_eval_for_api.current_config_id = archived_eval_config.id
+    archived_eval_for_api.configs.return_value = [archived_eval_config_for_api]
+
+    mock_task_for_api = MagicMock()
+    mock_task_for_api.evals.return_value = [mock_eval_for_api, archived_eval_for_api]
+    mock_task_for_api.specs.return_value = [active_spec, archived_spec]
+
+    with (
+        patch(
+            "app.desktop.studio_server.eval_api.task_from_id"
+        ) as mock_task_from_id_patch,
+        patch(
+            "app.desktop.studio_server.eval_api.task_run_config_from_id"
+        ) as mock_task_run_config_from_id_patch,
+        patch(
+            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
+        ) as mock_dataset_ids_in_filter,
+    ):
+        mock_task_from_id_patch.return_value = mock_task_for_api
+        mock_task_run_config_from_id_patch.return_value = mock_run_config
+        mock_dataset_ids_in_filter.return_value = set()
+
+        response = client.get(
+            f"/api/projects/project1/tasks/task1/run_configs/{mock_run_config.id}/eval_scores"
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # Only the active spec's eval should be present, not the archived one
+    assert len(data["eval_results"]) == 1
+    assert data["eval_results"][0]["eval_name"] == "Test Eval"
+    assert data["eval_results"][0]["spec_id"] == "active_spec1"
 
 
 @pytest.mark.asyncio
@@ -2441,7 +2567,7 @@ async def test_get_run_configs_includes_finetunes_with_run_config(
     for finetune in finetunes:
         finetune.save_to_file()
 
-    response = client.get("/api/projects/project1/tasks/task1/run_configs/")
+    response = client.get("/api/projects/project1/tasks/task1/run_configs")
 
     assert response.status_code == 200
     configs = response.json()
@@ -2453,3 +2579,499 @@ async def test_get_run_configs_includes_finetunes_with_run_config(
     assert "finetune_run_config::project1::task1::ft_failed" not in config_ids
     assert "finetune_run_config::project1::task1::ft_unknown" not in config_ids
     assert "finetune_run_config::project1::task1::ft_no_run_config" not in config_ids
+
+
+# --- SSE endpoints must carry @no_write_lock ---
+
+
+def _find_endpoint_by_path(app, path_suffix: str):
+    """Locate the endpoint function for a route ending with path_suffix."""
+    for route in app.routes:
+        if getattr(route, "path", "").endswith(path_suffix):
+            return route.endpoint  # type: ignore[attr-defined]
+    raise AssertionError(f"Route ending in {path_suffix} not found")
+
+
+def test_run_comparison_has_no_write_lock(app):
+    endpoint = _find_endpoint_by_path(
+        app, "/eval_config/{eval_config_id}/run_comparison"
+    )
+    assert getattr(endpoint, "_git_sync_no_write_lock", False) is True
+
+
+def test_run_calibration_has_no_write_lock(app):
+    endpoint = _find_endpoint_by_path(app, "/evals/{eval_id}/run_calibration")
+    assert getattr(endpoint, "_git_sync_no_write_lock", False) is True
+
+
+# --- eval_results_summary tests ---
+
+
+def _build_mock_eval(
+    eval_id: str,
+    name: str,
+    current_config_id: str | None,
+    eval_set_filter_id: str,
+    output_scores: list[EvalOutputScore],
+    configs: list,
+) -> Mock:
+    mock = Mock(spec=Eval)
+    mock.id = eval_id
+    mock.name = name
+    mock.current_config_id = current_config_id
+    mock.eval_set_filter_id = eval_set_filter_id
+    mock.output_scores = output_scores
+    mock.configs.return_value = configs
+    return mock
+
+
+def _build_mock_eval_config(
+    config_id: str,
+    name: str,
+    eval_runs: list[EvalRun],
+) -> Mock:
+    mock = Mock(spec=EvalConfig)
+    mock.id = config_id
+    mock.name = name
+    mock.runs.return_value = eval_runs
+    return mock
+
+
+@pytest.mark.asyncio
+async def test_eval_results_summary_happy_path(client):
+    output_scores_1 = [
+        EvalOutputScore(
+            name="accuracy",
+            instruction="Test accuracy",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+    ]
+    output_scores_2 = [
+        EvalOutputScore(
+            name="relevance",
+            instruction="Test relevance",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+    ]
+
+    # Eval 1 default config (ec1): rc1 has 2 runs, rc2 has 1 run
+    eval1_runs_default = [
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.8},
+            input="i",
+            output="o",
+            dataset_id="ds1",
+        ),
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.6},
+            input="i",
+            output="o",
+            dataset_id="ds2",
+        ),
+        EvalRun(
+            task_run_config_id="rc2",
+            scores={"accuracy": 0.9},
+            input="i",
+            output="o",
+            dataset_id="ds1",
+        ),
+    ]
+
+    # Eval 2 default config (ec4): rc2 has 1 run
+    eval2_runs_default = [
+        EvalRun(
+            task_run_config_id="rc2",
+            scores={"relevance": 0.3},
+            input="i",
+            output="o",
+            dataset_id="ds3",
+        ),
+    ]
+
+    e1c1 = _build_mock_eval_config("ec1", "Judge A", eval1_runs_default)
+    e1c2 = _build_mock_eval_config("ec2", "Judge B", [])
+
+    e2c1 = _build_mock_eval_config("ec3", "Judge C", [])
+    e2c2 = _build_mock_eval_config("ec4", "Judge D", eval2_runs_default)
+
+    eval1 = _build_mock_eval(
+        eval_id="eval1",
+        name="Eval One",
+        current_config_id="ec1",
+        eval_set_filter_id="tag::eval_set_1",
+        output_scores=output_scores_1,
+        configs=[e1c1, e1c2],
+    )
+    eval2 = _build_mock_eval(
+        eval_id="eval2",
+        name="Eval Two",
+        current_config_id="ec4",
+        eval_set_filter_id="tag::eval_set_2",
+        output_scores=output_scores_2,
+        configs=[e2c1, e2c2],
+    )
+
+    rc1_mock = Mock(spec=TaskRunConfig, id="rc1")
+    rc1_mock.name = "Run Config 1"
+    rc2_mock = Mock(spec=TaskRunConfig, id="rc2")
+    rc2_mock.name = "Run Config 2"
+    rc3_mock = Mock(spec=TaskRunConfig, id="rc3")
+    rc3_mock.name = "Run Config 3"
+
+    mock_task = Mock(spec=Task)
+    mock_task.run_configs.return_value = [rc1_mock, rc2_mock, rc3_mock]
+    mock_task.finetunes.return_value = []
+    mock_task.evals.return_value = [eval1, eval2]
+
+    def ds_filter_side_effect(task, filter_id, readonly):
+        if filter_id == "tag::eval_set_1":
+            return {"ds1", "ds2"}
+        elif filter_id == "tag::eval_set_2":
+            return {"ds3"}
+        return set()
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
+        patch(
+            "app.desktop.studio_server.eval_api.dataset_ids_in_filter",
+            side_effect=ds_filter_side_effect,
+        ),
+    ):
+        mock_task_from_id.return_value = mock_task
+
+        response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+
+    assert response.status_code == 200
+    data = response.json()
+
+    # --- evals_by_id dict ---
+    assert "eval1" in data["evals_by_id"]
+    assert "eval2" in data["evals_by_id"]
+    assert data["evals_by_id"]["eval1"]["name"] == "Eval One"
+    assert data["evals_by_id"]["eval1"]["default_judge_config_id"] == "ec1"
+    assert data["evals_by_id"]["eval1"]["dataset_size"] == 2
+    assert data["evals_by_id"]["eval1"]["output_score_keys"] == ["accuracy"]
+    assert data["evals_by_id"]["eval2"]["name"] == "Eval Two"
+    assert data["evals_by_id"]["eval2"]["default_judge_config_id"] == "ec4"
+    assert data["evals_by_id"]["eval2"]["dataset_size"] == 1
+    assert data["evals_by_id"]["eval2"]["output_score_keys"] == ["relevance"]
+
+    # --- run_configs_by_id dict ---
+    assert data["run_configs_by_id"]["rc1"]["name"] == "Run Config 1"
+    assert data["run_configs_by_id"]["rc2"]["name"] == "Run Config 2"
+    assert data["run_configs_by_id"]["rc3"]["name"] == "Run Config 3"
+
+    # --- scores_by_run_config_by_eval dict (run_config outer, eval inner) ---
+    # Eval 1 default judge (ec1): rc1 mean=0.7, rc2 mean=0.9
+    assert data["scores_by_run_config_by_eval"]["rc1"]["eval1"]["mean_scores"][
+        "accuracy"
+    ] == pytest.approx(0.7)
+    assert (
+        data["scores_by_run_config_by_eval"]["rc1"]["eval1"]["percent_complete"] == 1.0
+    )
+    assert data["scores_by_run_config_by_eval"]["rc2"]["eval1"]["mean_scores"][
+        "accuracy"
+    ] == pytest.approx(0.9)
+    assert (
+        data["scores_by_run_config_by_eval"]["rc2"]["eval1"]["percent_complete"] == 0.5
+    )
+
+    # Eval 2 default judge (ec4): rc2 mean=0.3
+    assert data["scores_by_run_config_by_eval"]["rc2"]["eval2"]["mean_scores"][
+        "relevance"
+    ] == pytest.approx(0.3)
+    assert (
+        data["scores_by_run_config_by_eval"]["rc2"]["eval2"]["percent_complete"] == 1.0
+    )
+
+
+@pytest.mark.asyncio
+async def test_eval_results_summary_behavioral_equivalence(client):
+    """For the default judge of an eval, results in eval_results_summary match /score_summary."""
+    output_scores = [
+        EvalOutputScore(
+            name="accuracy",
+            instruction="Test accuracy",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+        EvalOutputScore(
+            name="relevance",
+            instruction="Test relevance",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+    ]
+
+    eval_runs = [
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.8, "relevance": 0.9},
+            input="i",
+            output="o",
+            dataset_id="ds1",
+        ),
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.6, "relevance": 0.7},
+            input="i",
+            output="o",
+            dataset_id="ds2",
+        ),
+    ]
+
+    ec1 = _build_mock_eval_config("ec1", "Judge A", eval_runs)
+
+    eval1 = _build_mock_eval(
+        eval_id="eval1",
+        name="Eval One",
+        current_config_id="ec1",
+        eval_set_filter_id="tag::eval_set",
+        output_scores=output_scores,
+        configs=[ec1],
+    )
+
+    rc1_mock = Mock(spec=TaskRunConfig, id="rc1")
+    rc1_mock.name = "Run Config 1"
+
+    mock_task = Mock(spec=Task)
+    mock_task.run_configs.return_value = [rc1_mock]
+    mock_task.finetunes.return_value = []
+    mock_task.evals.return_value = [eval1]
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
+        patch(
+            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
+        ) as mock_ds_filter,
+        patch("app.desktop.studio_server.eval_api.eval_from_id") as mock_eval_from_id,
+        patch(
+            "app.desktop.studio_server.eval_api.eval_config_from_id"
+        ) as mock_eval_config_from_id,
+    ):
+        mock_task_from_id.return_value = mock_task
+        mock_ds_filter.return_value = {"ds1", "ds2"}
+        mock_eval_from_id.return_value = eval1
+        mock_eval_config_from_id.return_value = ec1
+
+        summary_response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+        score_response = client.get(
+            "/api/projects/p1/tasks/t1/evals/eval1/eval_config/ec1/score_summary"
+        )
+
+    assert summary_response.status_code == 200
+    assert score_response.status_code == 200
+
+    summary_data = summary_response.json()
+    score_data = score_response.json()
+
+    # Compare per run_config cell: mean_scores should match score_summary results
+    for rc_id, evals_dict in summary_data["scores_by_run_config_by_eval"].items():
+        cell = evals_dict["eval1"]
+        for score_key, mean_val in cell["mean_scores"].items():
+            assert mean_val == pytest.approx(
+                score_data["results"][rc_id][score_key]["mean_score"]
+            )
+        assert cell["percent_complete"] == pytest.approx(
+            score_data["run_config_percent_complete"][rc_id]
+        )
+
+
+@pytest.mark.asyncio
+async def test_eval_results_summary_empty_filter(client):
+    """Empty dataset filter: eval appears in evals but not in results."""
+    output_scores = [
+        EvalOutputScore(
+            name="accuracy",
+            instruction="Test accuracy",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+    ]
+    ec1 = _build_mock_eval_config("ec1", "Judge A", [])
+    eval1 = _build_mock_eval(
+        eval_id="eval1",
+        name="Eval One",
+        current_config_id="ec1",
+        eval_set_filter_id="tag::empty",
+        output_scores=output_scores,
+        configs=[ec1],
+    )
+
+    mock_task = Mock(spec=Task)
+    mock_task.run_configs.return_value = []
+    mock_task.finetunes.return_value = []
+    mock_task.evals.return_value = [eval1]
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
+        patch(
+            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
+        ) as mock_ds_filter,
+    ):
+        mock_task_from_id.return_value = mock_task
+        mock_ds_filter.return_value = set()
+
+        response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "eval1" in data["evals_by_id"]
+    assert data["evals_by_id"]["eval1"]["dataset_size"] == 0
+    # No run_config should have an eval1 entry
+    for rc_evals in data["scores_by_run_config_by_eval"].values():
+        assert "eval1" not in rc_evals
+
+
+@pytest.mark.asyncio
+async def test_eval_results_summary_no_default_judge(client):
+    """Eval with no current_config_id appears in evals but not in results."""
+    output_scores = [
+        EvalOutputScore(
+            name="accuracy",
+            instruction="Test accuracy",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+    ]
+    ec1 = _build_mock_eval_config("ec1", "Judge A", [])
+    eval1 = _build_mock_eval(
+        eval_id="eval1",
+        name="Eval One",
+        current_config_id=None,
+        eval_set_filter_id="tag::test",
+        output_scores=output_scores,
+        configs=[ec1],
+    )
+
+    mock_task = Mock(spec=Task)
+    mock_task.run_configs.return_value = []
+    mock_task.finetunes.return_value = []
+    mock_task.evals.return_value = [eval1]
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
+        patch(
+            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
+        ) as mock_ds_filter,
+    ):
+        mock_task_from_id.return_value = mock_task
+        mock_ds_filter.return_value = {"ds1"}
+
+        response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "eval1" in data["evals_by_id"]
+    assert data["evals_by_id"]["eval1"]["default_judge_config_id"] is None
+    # No run_config should have an eval1 entry
+    for rc_evals in data["scores_by_run_config_by_eval"].values():
+        assert "eval1" not in rc_evals
+
+
+@pytest.mark.asyncio
+async def test_eval_results_summary_no_evals(client):
+    """Task with no evals returns empty dicts."""
+    mock_task = Mock(spec=Task)
+    mock_task.run_configs.return_value = []
+    mock_task.finetunes.return_value = []
+    mock_task.evals.return_value = []
+
+    with patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = mock_task
+
+        response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "evals_by_id": {},
+        "run_configs_by_id": {},
+        "scores_by_run_config_by_eval": {},
+    }
+
+
+@pytest.mark.asyncio
+async def test_eval_results_summary_dataset_ids_cached_per_filter(client):
+    """dataset_ids_in_filter is called once per unique filter_id, not per eval."""
+    output_scores = [
+        EvalOutputScore(
+            name="accuracy",
+            instruction="Test accuracy",
+            type=TaskOutputRatingType.pass_fail,
+        ),
+    ]
+
+    eval_runs = [
+        EvalRun(
+            task_run_config_id="rc1",
+            scores={"accuracy": 0.8},
+            input="i",
+            output="o",
+            dataset_id="ds1",
+        ),
+    ]
+
+    ec1a = _build_mock_eval_config("ec1a", "Judge A1", eval_runs)
+    ec2a = _build_mock_eval_config("ec2a", "Judge B1", eval_runs)
+
+    eval1 = _build_mock_eval(
+        eval_id="eval1",
+        name="Eval One",
+        current_config_id="ec1a",
+        eval_set_filter_id="tag::set1",
+        output_scores=output_scores,
+        configs=[ec1a],
+    )
+    eval2 = _build_mock_eval(
+        eval_id="eval2",
+        name="Eval Two",
+        current_config_id="ec2a",
+        eval_set_filter_id="tag::set2",
+        output_scores=output_scores,
+        configs=[ec2a],
+    )
+
+    rc1_mock = Mock(spec=TaskRunConfig, id="rc1")
+    rc1_mock.name = "RC1"
+
+    mock_task = Mock(spec=Task)
+    mock_task.run_configs.return_value = [rc1_mock]
+    mock_task.finetunes.return_value = []
+    mock_task.evals.return_value = [eval1, eval2]
+
+    runs_call_count = 0
+
+    def counting_dataset_ids_in_filter(task, filter_id, readonly):
+        nonlocal runs_call_count
+        runs_call_count += 1
+        return {"ds1"}
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
+        patch(
+            "app.desktop.studio_server.eval_api.dataset_ids_in_filter",
+            side_effect=counting_dataset_ids_in_filter,
+        ),
+    ):
+        mock_task_from_id.return_value = mock_task
+
+        response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+
+    assert response.status_code == 200
+    assert runs_call_count == 2
+
+    # If they shared the same filter_id, it would be called once
+    eval2.eval_set_filter_id = "tag::set1"
+    runs_call_count = 0
+
+    with (
+        patch("app.desktop.studio_server.eval_api.task_from_id") as mock_task_from_id,
+        patch(
+            "app.desktop.studio_server.eval_api.dataset_ids_in_filter",
+            side_effect=counting_dataset_ids_in_filter,
+        ),
+    ):
+        mock_task_from_id.return_value = mock_task
+
+        response = client.get("/api/projects/p1/tasks/t1/eval_results_summary")
+
+    assert response.status_code == 200
+    assert runs_call_count == 1

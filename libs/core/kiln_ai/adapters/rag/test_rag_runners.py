@@ -1,3 +1,5 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -39,6 +41,7 @@ from kiln_ai.datamodel.extraction import (
 )
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.rag import RagConfig
+from kiln_ai.utils.git_sync_protocols import default_save_context
 
 
 # Test fixtures
@@ -2433,3 +2436,418 @@ class TestRagStepRunnersWithTagFiltering:
         job_doc_ids = {job.doc.id for job in jobs}
         assert "doc1" in job_doc_ids
         assert "doc2" in job_doc_ids
+
+
+# --- save_context tests ---
+
+
+class _RecordingSaveContext:
+    def __init__(self):
+        self.enter_count = 0
+        self.exit_count = 0
+        self.last_exit_exc_type: type | None = None
+        self.saved_during_context = False
+
+    def __call__(self):
+        @asynccontextmanager
+        async def cm() -> AsyncIterator[None]:
+            self.enter_count += 1
+            try:
+                yield
+            except BaseException as exc:
+                self.last_exit_exc_type = type(exc)
+                self.exit_count += 1
+                raise
+            else:
+                self.exit_count += 1
+
+        return cm()
+
+
+class TestExecuteExtractorJobSaveContext:
+    @pytest.mark.asyncio
+    async def test_default_save_context_saves_extraction(
+        self, mock_document, mock_extractor_config
+    ):
+        job = ExtractorJob(doc=mock_document, extractor_config=mock_extractor_config)
+
+        mock_extractor = MagicMock(spec=BaseExtractor)
+        mock_extractor.extract = AsyncMock(
+            return_value=ExtractionOutput(
+                content="extracted", content_format=OutputFormat.TEXT
+            )
+        )
+
+        with patch(
+            "kiln_ai.adapters.rag.rag_runners.Extraction"
+        ) as mock_extraction_class:
+            mock_extraction = MagicMock()
+            mock_extraction_class.return_value = mock_extraction
+
+            result = await execute_extractor_job(job, mock_extractor)
+
+            assert result is True
+            mock_extraction.save_to_file.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_custom_save_context_wraps_save(
+        self, mock_document, mock_extractor_config
+    ):
+        job = ExtractorJob(doc=mock_document, extractor_config=mock_extractor_config)
+        recorder = _RecordingSaveContext()
+
+        mock_extractor = MagicMock(spec=BaseExtractor)
+        mock_extractor.extract = AsyncMock(
+            return_value=ExtractionOutput(
+                content="extracted", content_format=OutputFormat.TEXT
+            )
+        )
+
+        with patch(
+            "kiln_ai.adapters.rag.rag_runners.Extraction"
+        ) as mock_extraction_class:
+            mock_extraction = MagicMock()
+
+            def record_open(*args, **kwargs):
+                recorder.saved_during_context = (
+                    recorder.enter_count == 1 and recorder.exit_count == 0
+                )
+
+            mock_extraction.save_to_file.side_effect = record_open
+            mock_extraction_class.return_value = mock_extraction
+
+            result = await execute_extractor_job(
+                job, mock_extractor, save_context=recorder
+            )
+
+        assert result is True
+        assert recorder.enter_count == 1
+        assert recorder.exit_count == 1
+        assert recorder.saved_during_context is True
+
+    @pytest.mark.asyncio
+    async def test_save_context_sees_exception(
+        self, mock_document, mock_extractor_config
+    ):
+        job = ExtractorJob(doc=mock_document, extractor_config=mock_extractor_config)
+        recorder = _RecordingSaveContext()
+
+        mock_extractor = MagicMock(spec=BaseExtractor)
+        mock_extractor.extract = AsyncMock(
+            return_value=ExtractionOutput(
+                content="extracted", content_format=OutputFormat.TEXT
+            )
+        )
+
+        with patch(
+            "kiln_ai.adapters.rag.rag_runners.Extraction"
+        ) as mock_extraction_class:
+            mock_extraction = MagicMock()
+            mock_extraction.save_to_file.side_effect = RuntimeError("boom")
+            mock_extraction_class.return_value = mock_extraction
+
+            with pytest.raises(RuntimeError, match="boom"):
+                await execute_extractor_job(job, mock_extractor, save_context=recorder)
+
+        assert recorder.last_exit_exc_type is RuntimeError
+
+    @pytest.mark.asyncio
+    async def test_other_jobs_unaffected_by_rollback(
+        self, mock_document, mock_extractor_config
+    ):
+        recorder = _RecordingSaveContext()
+
+        mock_extractor = MagicMock(spec=BaseExtractor)
+        mock_extractor.extract = AsyncMock(
+            return_value=ExtractionOutput(
+                content="extracted", content_format=OutputFormat.TEXT
+            )
+        )
+
+        call_count = {"n": 0}
+
+        def fail_first_save(*args, **kwargs):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise RuntimeError("disk full")
+
+        with patch(
+            "kiln_ai.adapters.rag.rag_runners.Extraction"
+        ) as mock_extraction_class:
+            mock_extraction = MagicMock()
+            mock_extraction.save_to_file.side_effect = fail_first_save
+            mock_extraction_class.return_value = mock_extraction
+
+            job1 = ExtractorJob(
+                doc=mock_document, extractor_config=mock_extractor_config
+            )
+            job2 = ExtractorJob(
+                doc=mock_document, extractor_config=mock_extractor_config
+            )
+
+            with pytest.raises(RuntimeError, match="disk full"):
+                await execute_extractor_job(job1, mock_extractor, save_context=recorder)
+            result2 = await execute_extractor_job(
+                job2, mock_extractor, save_context=recorder
+            )
+
+        assert result2 is True
+        # Two fresh contexts were opened and both closed; job2's success proves
+        # rollback from job1 did not leak into job2's context.
+        assert recorder.enter_count == 2
+        assert recorder.exit_count == 2
+
+
+class TestExecuteChunkerJobSaveContext:
+    @pytest.mark.asyncio
+    async def test_default_save_context_saves_chunks(
+        self, mock_extraction, mock_chunker_config
+    ):
+        job = ChunkerJob(extraction=mock_extraction, chunker_config=mock_chunker_config)
+
+        mock_chunker = MagicMock(spec=BaseChunker)
+        chunk = MagicMock()
+        chunk.text = "chunk text"
+        chunking_result = MagicMock(spec=ChunkingResult)
+        chunking_result.chunks = [chunk]
+        mock_chunker.chunk = AsyncMock(return_value=chunking_result)
+
+        with patch(
+            "kiln_ai.adapters.rag.rag_runners.ChunkedDocument"
+        ) as mock_chunked_doc_class:
+            mock_chunked_doc = MagicMock()
+            mock_chunked_doc_class.return_value = mock_chunked_doc
+
+            result = await execute_chunker_job(job, mock_chunker)
+
+            assert result is True
+            mock_chunked_doc.save_to_file.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_custom_save_context_wraps_save(
+        self, mock_extraction, mock_chunker_config
+    ):
+        job = ChunkerJob(extraction=mock_extraction, chunker_config=mock_chunker_config)
+        recorder = _RecordingSaveContext()
+
+        mock_chunker = MagicMock(spec=BaseChunker)
+        chunk = MagicMock()
+        chunk.text = "chunk text"
+        chunking_result = MagicMock(spec=ChunkingResult)
+        chunking_result.chunks = [chunk]
+        mock_chunker.chunk = AsyncMock(return_value=chunking_result)
+
+        with patch(
+            "kiln_ai.adapters.rag.rag_runners.ChunkedDocument"
+        ) as mock_chunked_doc_class:
+            mock_chunked_doc = MagicMock()
+
+            def record_open(*args, **kwargs):
+                recorder.saved_during_context = (
+                    recorder.enter_count == 1 and recorder.exit_count == 0
+                )
+
+            mock_chunked_doc.save_to_file.side_effect = record_open
+            mock_chunked_doc_class.return_value = mock_chunked_doc
+
+            result = await execute_chunker_job(job, mock_chunker, save_context=recorder)
+
+        assert result is True
+        assert recorder.saved_during_context is True
+
+    @pytest.mark.asyncio
+    async def test_save_context_sees_exception(
+        self, mock_extraction, mock_chunker_config
+    ):
+        job = ChunkerJob(extraction=mock_extraction, chunker_config=mock_chunker_config)
+        recorder = _RecordingSaveContext()
+
+        mock_chunker = MagicMock(spec=BaseChunker)
+        chunk = MagicMock()
+        chunk.text = "chunk text"
+        chunking_result = MagicMock(spec=ChunkingResult)
+        chunking_result.chunks = [chunk]
+        mock_chunker.chunk = AsyncMock(return_value=chunking_result)
+
+        with patch(
+            "kiln_ai.adapters.rag.rag_runners.ChunkedDocument"
+        ) as mock_chunked_doc_class:
+            mock_chunked_doc = MagicMock()
+            mock_chunked_doc.save_to_file.side_effect = RuntimeError("boom")
+            mock_chunked_doc_class.return_value = mock_chunked_doc
+
+            with pytest.raises(RuntimeError, match="boom"):
+                await execute_chunker_job(job, mock_chunker, save_context=recorder)
+
+        assert recorder.last_exit_exc_type is RuntimeError
+
+
+class TestExecuteEmbeddingJobSaveContext:
+    @pytest.mark.asyncio
+    async def test_default_save_context_saves_embeddings(
+        self, mock_chunked_document, mock_embedding_config
+    ):
+        job = EmbeddingJob(
+            chunked_document=mock_chunked_document,
+            embedding_config=mock_embedding_config,
+        )
+
+        embedding = MagicMock()
+        embedding.vector = [0.1, 0.2]
+        emb_result = MagicMock(spec=EmbeddingResult)
+        emb_result.embeddings = [embedding]
+        mock_adapter = MagicMock(spec=BaseEmbeddingAdapter)
+        mock_adapter.generate_embeddings = AsyncMock(return_value=emb_result)
+
+        with patch(
+            "kiln_ai.adapters.rag.rag_runners.ChunkEmbeddings"
+        ) as mock_chunk_embeddings_class:
+            mock_chunk_embeddings = MagicMock()
+            mock_chunk_embeddings_class.return_value = mock_chunk_embeddings
+
+            result = await execute_embedding_job(job, mock_adapter)
+
+            assert result is True
+            mock_chunk_embeddings.save_to_file.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_custom_save_context_wraps_save(
+        self, mock_chunked_document, mock_embedding_config
+    ):
+        job = EmbeddingJob(
+            chunked_document=mock_chunked_document,
+            embedding_config=mock_embedding_config,
+        )
+        recorder = _RecordingSaveContext()
+
+        embedding = MagicMock()
+        embedding.vector = [0.1, 0.2]
+        emb_result = MagicMock(spec=EmbeddingResult)
+        emb_result.embeddings = [embedding]
+        mock_adapter = MagicMock(spec=BaseEmbeddingAdapter)
+        mock_adapter.generate_embeddings = AsyncMock(return_value=emb_result)
+
+        with patch(
+            "kiln_ai.adapters.rag.rag_runners.ChunkEmbeddings"
+        ) as mock_chunk_embeddings_class:
+            mock_chunk_embeddings = MagicMock()
+
+            def record_open(*args, **kwargs):
+                recorder.saved_during_context = (
+                    recorder.enter_count == 1 and recorder.exit_count == 0
+                )
+
+            mock_chunk_embeddings.save_to_file.side_effect = record_open
+            mock_chunk_embeddings_class.return_value = mock_chunk_embeddings
+
+            result = await execute_embedding_job(
+                job, mock_adapter, save_context=recorder
+            )
+
+        assert result is True
+        assert recorder.saved_during_context is True
+
+    @pytest.mark.asyncio
+    async def test_empty_chunks_skips_save_context(self, mock_embedding_config):
+        mock_chunked_doc = MagicMock(spec=ChunkedDocument, id="123")
+        mock_chunked_doc.load_chunks_text = AsyncMock(return_value=[])
+
+        job = EmbeddingJob(
+            chunked_document=mock_chunked_doc, embedding_config=mock_embedding_config
+        )
+        recorder = _RecordingSaveContext()
+        mock_adapter = MagicMock(spec=BaseEmbeddingAdapter)
+
+        result = await execute_embedding_job(job, mock_adapter, save_context=recorder)
+
+        assert result is True
+        assert recorder.enter_count == 0
+        assert recorder.exit_count == 0
+
+
+class TestStepRunnerSaveContextWiring:
+    def test_extraction_step_runner_defaults(self, mock_project, mock_extractor_config):
+        runner = RagExtractionStepRunner(mock_project, mock_extractor_config)
+        assert runner._save_context is default_save_context
+
+    def test_extraction_step_runner_accepts_custom(
+        self, mock_project, mock_extractor_config
+    ):
+        recorder = _RecordingSaveContext()
+        runner = RagExtractionStepRunner(
+            mock_project, mock_extractor_config, save_context=recorder
+        )
+        assert runner._save_context is recorder
+
+    def test_chunking_step_runner_defaults(
+        self, mock_project, mock_extractor_config, mock_chunker_config
+    ):
+        runner = RagChunkingStepRunner(
+            mock_project, mock_extractor_config, mock_chunker_config
+        )
+        assert runner._save_context is default_save_context
+
+    def test_chunking_step_runner_accepts_custom(
+        self, mock_project, mock_extractor_config, mock_chunker_config
+    ):
+        recorder = _RecordingSaveContext()
+        runner = RagChunkingStepRunner(
+            mock_project,
+            mock_extractor_config,
+            mock_chunker_config,
+            save_context=recorder,
+        )
+        assert runner._save_context is recorder
+
+    def test_embedding_step_runner_defaults(
+        self,
+        mock_project,
+        mock_extractor_config,
+        mock_chunker_config,
+        mock_embedding_config,
+    ):
+        runner = RagEmbeddingStepRunner(
+            mock_project,
+            mock_extractor_config,
+            mock_chunker_config,
+            mock_embedding_config,
+        )
+        assert runner._save_context is default_save_context
+
+    def test_embedding_step_runner_accepts_custom(
+        self,
+        mock_project,
+        mock_extractor_config,
+        mock_chunker_config,
+        mock_embedding_config,
+    ):
+        recorder = _RecordingSaveContext()
+        runner = RagEmbeddingStepRunner(
+            mock_project,
+            mock_extractor_config,
+            mock_chunker_config,
+            mock_embedding_config,
+            save_context=recorder,
+        )
+        assert runner._save_context is recorder
+
+    def test_indexing_step_runner_has_no_save_context(
+        self,
+        mock_project,
+        mock_extractor_config,
+        mock_chunker_config,
+        mock_embedding_config,
+    ):
+        vector_store = MagicMock()
+        vector_store.id = "vs-1"
+        rag_config = MagicMock(spec=RagConfig)
+        rag_config.tags = None
+        runner = RagIndexingStepRunner(
+            mock_project,
+            mock_extractor_config,
+            mock_chunker_config,
+            mock_embedding_config,
+            vector_store,
+            rag_config,
+        )
+        assert not hasattr(runner, "_save_context")

@@ -1,19 +1,28 @@
 import json
 from pathlib import Path
-from typing import Dict
-from unittest.mock import Mock, patch
+from typing import Any, Callable, Dict
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from litellm.types.utils import ModelResponse
 
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
-from kiln_ai.adapters.ml_model_list import built_in_models
+from kiln_ai.adapters.ml_model_list import (
+    ModelProviderName,
+    StructuredOutputMode,
+    built_in_models,
+)
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput, Usage
+from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
+from kiln_ai.adapters.model_adapters.test_paid_utils import (
+    skip_if_missing_provider_keys,
+)
 from kiln_ai.adapters.ollama_tools import ollama_online
 from kiln_ai.adapters.test_prompt_adaptors import get_all_models_and_providers
 from kiln_ai.datamodel import PromptId
 from kiln_ai.datamodel.datamodel_enums import InputType
+from kiln_ai.datamodel.json_schema import validate_schema
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.test_json_schema import json_joke_schema, json_triangle_schema
 
@@ -30,6 +39,41 @@ async def test_structured_output_ollama_phi(tmp_path):
 @pytest.mark.paid
 async def test_structured_output_gpt_4o_mini(tmp_path):
     await run_structured_output_test(tmp_path, "gpt_4o_mini", "openai")
+
+
+NESTED_OBJECT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "result": {
+            "type": "object",
+            "properties": {
+                "answer": {"type": "string"},
+            },
+            "required": ["answer"],
+        }
+    },
+    "required": ["result"],
+}
+NESTED_OBJECT_SCHEMA_JSON = json.dumps(NESTED_OBJECT_SCHEMA)
+
+ARRAY_OF_OBJECTS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "jokes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "setup": {"type": "string"},
+                    "punchline": {"type": "string"},
+                },
+                "required": ["setup", "punchline"],
+            },
+        }
+    },
+    "required": ["jokes"],
+}
+ARRAY_OF_OBJECTS_SCHEMA_JSON = json.dumps(ARRAY_OF_OBJECTS_SCHEMA)
 
 
 @pytest.mark.parametrize("model_name", ["llama_3_1_8b", "gemma_2_2b"])
@@ -53,7 +97,7 @@ class MockAdapter(BaseAdapter):
         )
         self.response = response
 
-    async def _run(self, input: str) -> tuple[RunOutput, Usage | None]:
+    async def _run(self, input: str, **kwargs) -> tuple[RunOutput, Usage | None]:
         return RunOutput(output=self.response, intermediate_outputs=None), None
 
     def adapter_name(self) -> str:
@@ -125,15 +169,27 @@ async def test_all_built_in_models_structured_output(
     await run_structured_output_test(tmp_path, model_name, provider_name)
 
 
-def build_structured_output_test_task(tmp_path: Path):
+def build_task_with_output_schema(
+    tmp_path: Path, output_json_schema: str, instruction: str
+) -> datamodel.Task:
     project = datamodel.Project(name="test", path=tmp_path / "test.kiln")
     project.save_to_file()
     task = datamodel.Task(
         parent=project,
         name="test task",
-        instruction="You are an assistant which tells a joke, given a subject.",
+        instruction=instruction,
+        output_json_schema=output_json_schema,
     )
-    task.output_json_schema = json_joke_schema
+    task.save_to_file()
+    return task
+
+
+def build_structured_output_test_task(tmp_path: Path):
+    task = build_task_with_output_schema(
+        tmp_path,
+        json_joke_schema,
+        "You are an assistant which tells a joke, given a subject.",
+    )
     schema = task.output_schema()
     assert schema is not None
     assert schema["properties"]["setup"]["type"] == "string"
@@ -142,6 +198,143 @@ def build_structured_output_test_task(tmp_path: Path):
     assert task.name == "test task"
     assert len(task.requirements) == 0
     return task
+
+
+def assert_flat_object(parsed: dict[str, Any]) -> None:
+    validate_schema(parsed, json_joke_schema)
+    assert parsed["setup"]
+    assert parsed["punchline"]
+
+
+def assert_nested_object(parsed: dict[str, Any]) -> None:
+    validate_schema(parsed, NESTED_OBJECT_SCHEMA_JSON)
+    assert parsed["result"]["answer"]
+
+
+def assert_array_of_objects(parsed: dict[str, Any]) -> None:
+    validate_schema(parsed, ARRAY_OF_OBJECTS_SCHEMA_JSON)
+    assert isinstance(parsed["jokes"], list)
+    assert len(parsed["jokes"]) > 0
+    for joke in parsed["jokes"]:
+        assert joke["setup"]
+        assert joke["punchline"]
+
+
+async def run_paid_structured_output_case(
+    *,
+    tmp_path: Path,
+    model_name: str,
+    provider_name: str,
+    structured_output_mode: StructuredOutputMode,
+    output_json_schema: str,
+    instruction: str,
+    input_text: str,
+    assert_valid: Callable[[dict[str, Any]], None],
+) -> None:
+    skip_if_missing_provider_keys(provider_name)
+    task = build_task_with_output_schema(
+        tmp_path,
+        output_json_schema,
+        instruction,
+    )
+    adapter = adapter_for_task(
+        task,
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name=model_name,
+            model_provider_name=provider_name,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=structured_output_mode,
+        ),
+    )
+
+    run = await adapter.invoke(input_text)
+    parsed = json.loads(run.output.output)
+    assert isinstance(parsed, dict)
+    assert_valid(parsed)
+
+
+@pytest.mark.paid
+async def test_structured_output_anthropic_json_schema_nested_object(tmp_path):
+    await run_paid_structured_output_case(
+        tmp_path=tmp_path,
+        model_name="claude_sonnet_4_6",
+        provider_name=ModelProviderName.anthropic,
+        structured_output_mode=StructuredOutputMode.json_schema,
+        output_json_schema=NESTED_OBJECT_SCHEMA_JSON,
+        instruction="Return a short answer wrapped in the required JSON shape.",
+        input_text="Say hello",
+        assert_valid=assert_nested_object,
+    )
+
+
+@pytest.mark.paid
+async def test_structured_output_openai_json_schema_nested_object(tmp_path):
+    await run_paid_structured_output_case(
+        tmp_path=tmp_path,
+        model_name="gpt_4o_mini",
+        provider_name=ModelProviderName.openai,
+        structured_output_mode=StructuredOutputMode.json_schema,
+        output_json_schema=NESTED_OBJECT_SCHEMA_JSON,
+        instruction="Return a short answer wrapped in the required JSON shape.",
+        input_text="Cows",
+        assert_valid=assert_nested_object,
+    )
+
+
+@pytest.mark.paid
+async def test_structured_output_openai_function_calling_nested_object(tmp_path):
+    await run_paid_structured_output_case(
+        tmp_path=tmp_path,
+        model_name="gpt_4o_mini",
+        provider_name=ModelProviderName.openai,
+        structured_output_mode=StructuredOutputMode.function_calling,
+        output_json_schema=NESTED_OBJECT_SCHEMA_JSON,
+        instruction="Return a short answer wrapped in the required JSON shape.",
+        input_text="Cows",
+        assert_valid=assert_nested_object,
+    )
+
+
+@pytest.mark.paid
+async def test_structured_output_openrouter_function_calling_nested_object(tmp_path):
+    await run_paid_structured_output_case(
+        tmp_path=tmp_path,
+        model_name="claude_sonnet_4_6",
+        provider_name=ModelProviderName.openrouter,
+        structured_output_mode=StructuredOutputMode.function_calling,
+        output_json_schema=NESTED_OBJECT_SCHEMA_JSON,
+        instruction="Return a short answer wrapped in the required JSON shape.",
+        input_text="Cows",
+        assert_valid=assert_nested_object,
+    )
+
+
+@pytest.mark.paid
+async def test_structured_output_anthropic_json_schema_array_of_objects(tmp_path):
+    await run_paid_structured_output_case(
+        tmp_path=tmp_path,
+        model_name="claude_sonnet_4_6",
+        provider_name=ModelProviderName.anthropic,
+        structured_output_mode=StructuredOutputMode.json_schema,
+        output_json_schema=ARRAY_OF_OBJECTS_SCHEMA_JSON,
+        instruction="Return one or more jokes about cows following the requested JSON schema exactly.",
+        input_text="Cows",
+        assert_valid=assert_array_of_objects,
+    )
+
+
+@pytest.mark.paid
+async def test_structured_output_openai_json_schema_flat_object(tmp_path):
+    await run_paid_structured_output_case(
+        tmp_path=tmp_path,
+        model_name="gpt_4o_mini",
+        provider_name=ModelProviderName.openai,
+        structured_output_mode=StructuredOutputMode.json_schema,
+        output_json_schema=json_joke_schema,
+        instruction="Return a joke about cows following the requested JSON schema exactly.",
+        input_text="Cows",
+        assert_valid=assert_flat_object,
+    )
 
 
 async def run_structured_output_test(tmp_path: Path, model_name: str, provider: str):
@@ -347,9 +540,10 @@ async def test_all_built_in_models_structured_input_mocked(tmp_path):
     mock_config.groq_api_key = "mock_api_key"
 
     with (
-        patch(
-            "litellm.acompletion",
-            side_effect=[mock_response],
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=AsyncMock(return_value=(mock_response, mock_response.choices[0])),
         ),
         patch("kiln_ai.utils.config.Config.shared", return_value=mock_config),
     ):
@@ -402,9 +596,15 @@ async def test_structured_input_cot_prompt_builder_mocked(tmp_path):
     mock_config.groq_api_key = "mock_api_key"
 
     with (
-        patch(
-            "litellm.acompletion",
-            side_effect=[mock_response_1, mock_response_2],
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=AsyncMock(
+                side_effect=[
+                    (mock_response_1, mock_response_1.choices[0]),
+                    (mock_response_2, mock_response_2.choices[0]),
+                ]
+            ),
         ),
         patch("kiln_ai.utils.config.Config.shared", return_value=mock_config),
     ):

@@ -3,8 +3,9 @@ import os
 import sys
 
 from fastapi import FastAPI, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # Explicitly add MIME types for most common file types. Several users have reported issues on windows 11, where these should be loaded from the registry, but aren't working.
 mimetypes.add_type("text/css", ".css")
@@ -62,5 +63,10 @@ def connect_webhost(app: FastAPI):
     def not_found_exception_handler(request, exc):
         # don't handle /api routes, which return JSON errors
         if request.url.path.startswith("/api"):
+            if isinstance(exc, StarletteHTTPException):
+                return JSONResponse(
+                    status_code=exc.status_code,
+                    content={"detail": exc.detail},
+                )
             raise exc
         return FileResponse(os.path.join(studio_path(), "404.html"), status_code=404)

@@ -1,6 +1,7 @@
 <script lang="ts">
   import AppPage from "../app_page.svelte"
-  import { current_task, current_project } from "$lib/stores"
+  import { agentInfo } from "$lib/agent"
+  import { current_task, current_project, ui_state } from "$lib/stores"
   import { createKilnError } from "$lib/utils/error_handlers"
   import FormContainer from "$lib/utils/form_container.svelte"
   import { KilnError } from "$lib/utils/error_handlers"
@@ -15,6 +16,11 @@
   import { isMcpRunConfig } from "$lib/types"
   import { page } from "$app/stores"
 
+  $: agentInfo.set({
+    name: "Run",
+    description: `Run a task with a selected model and configuration.${$current_task ? ` Current task: ${$current_task.name}.` : ""}`,
+  })
+
   let run_error: KilnError | null = null
   let submitting = false
   let run_complete = false
@@ -26,7 +32,7 @@
   let selected_run_config_id: string | null = null
   // Some models have a model-specific suggested run config, such as fine-tuned models. If a model like that is selected, this will be set to the run config ID.
   let selected_model_specific_run_config_id: string | null = null
-  let model: string = ""
+  let model: string = $ui_state.selected_model || ""
 
   let run_config_component: RunConfigComponent
   let save_config_error: KilnError | null = null
@@ -166,16 +172,11 @@
     }
   }
 
-  async function handle_save_new_run_config(): Promise<TaskRunConfig | null> {
-    try {
-      if (!run_config_component) {
-        throw new Error("Run configuration component is not loaded")
-      }
-      return await run_config_component.save_new_run_config()
-    } catch (e) {
-      save_config_error = createKilnError(e)
+  async function handle_save_new_run_config(): Promise<TaskRunConfig> {
+    if (!run_config_component) {
+      throw new Error("Run configuration component is not loaded")
     }
-    return null
+    return await run_config_component.save_new_run_config()
   }
 
   function handle_input_change() {
@@ -228,7 +229,6 @@
             current_task={$current_task}
             requires_structured_output={!!$current_task.output_json_schema}
             bind:selected_run_config_id
-            bind:save_config_error
             bind:set_default_error
             bind:selected_model_specific_run_config_id
             {pending_tool_id}

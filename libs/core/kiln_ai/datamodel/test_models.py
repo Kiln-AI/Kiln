@@ -743,3 +743,290 @@ def test_generate_model_id():
     # check it is a valid name - as we typically use model ids in filenames on FS
     validator = name_validator(min_length=1, max_length=12)
     validator(model_id)
+
+
+# project and task fixture
+@pytest.fixture
+def task(tmp_path):
+    project_path = tmp_path / "project.kiln"
+    project = Project(name="P", path=project_path)
+    project.save_to_file()
+    task = Task(name="T", instruction="Do it", parent=project)
+    task.save_to_file()
+    return task
+
+
+def test_flat_task_run_folder_structure(task: Task):
+    output = TaskOutput(output="out")
+
+    parent_run = TaskRun(input="in", output=output, parent=task)
+    parent_run.save_to_file()
+
+    nested_run = TaskRun(
+        input="nested in",
+        output=output,
+        parent=task,
+        parent_task_run_id=parent_run.id,
+    )
+    nested_run.save_to_file()
+
+    assert task.path is not None
+    assert parent_run.path is not None
+    assert nested_run.path is not None
+    task_dir = task.path.parent
+    runs_dir = task_dir / "runs"
+    parent_run_dir = runs_dir / parent_run.build_child_dirname()
+    nested_run_dir = runs_dir / nested_run.build_child_dirname()
+
+    assert runs_dir.is_dir()
+    assert (parent_run_dir / "task_run.kiln").is_file()
+    assert (nested_run_dir / "task_run.kiln").is_file()
+    assert nested_run.path.parent == nested_run_dir
+    assert not (parent_run_dir / "runs").exists()
+
+    assert parent_run.parent_task() == task
+    assert parent_run.parent_task_run_id is None
+    assert nested_run.parent_task() == task
+    assert nested_run.parent_task_run_id == parent_run.id
+
+
+def test_task_runs_multiple_levels_via_parent_task_run_id(task: Task):
+    output = TaskOutput(output="out")
+
+    run1 = TaskRun(input="in1", output=output, parent=task)
+    run1.save_to_file()
+    run2 = TaskRun(
+        input="in2",
+        output=output,
+        parent=task,
+        parent_task_run_id=run1.id,
+    )
+    run2.save_to_file()
+    run3 = TaskRun(
+        input="in3",
+        output=output,
+        parent=task,
+        parent_task_run_id=run2.id,
+    )
+    run3.save_to_file()
+
+    assert run1.parent_task_run_id is None
+    assert run1.parent_task() == task
+
+    assert run2.parent_task_run_id == run1.id
+    assert run2.parent_task() == task
+
+    assert run3.parent_task_run_id == run2.id
+    assert run3.parent_task() == task
+
+    assert task.path is not None
+    loaded_task = Task.load_from_file(task.path)
+    all_runs = {r.id: r for r in loaded_task.runs()}
+    assert len(all_runs) == 3
+    assert all_runs[run2.id].parent_task_run_id == run1.id
+    assert all_runs[run3.id].parent_task_run_id == run2.id
+
+
+def test_parent_task_for_chained_runs(task: Task):
+    output = TaskOutput(output="out")
+    run1 = TaskRun(input="in1", output=output, parent=task)
+    run1.save_to_file()
+    run2 = TaskRun(
+        input="in2",
+        output=output,
+        parent=task,
+        parent_task_run_id=run1.id,
+    )
+    run2.save_to_file()
+    run3 = TaskRun(
+        input="in3",
+        output=output,
+        parent=task,
+        parent_task_run_id=run2.id,
+    )
+    run3.save_to_file()
+
+    assert run3.parent_task() == task
+
+
+def test_find_nested_task_run_by_parent_task_run_id(task: Task):
+    assert task.path is not None
+
+    output = TaskOutput(output="out")
+    parent_run = TaskRun(input="in", output=output, parent=task)
+    parent_run.save_to_file()
+    nested_run = TaskRun(
+        input="nested in",
+        output=output,
+        parent=task,
+        parent_task_run_id=parent_run.id,
+    )
+    nested_run.save_to_file()
+    target_id = nested_run.id
+
+    loaded_task = Task.load_from_file(task.path)
+    found = next(
+        r
+        for r in loaded_task.runs()
+        if r.id == target_id and r.parent_task_run_id == parent_run.id
+    )
+    assert found is not None
+    assert found.id == target_id
+    assert found.input == "nested in"
+
+
+def test_find_root_task_run_by_id_given_task(task: Task):
+    output = TaskOutput(output="out")
+    root_run = TaskRun(input="in", output=output, parent=task)
+    root_run.save_to_file()
+    target_id = root_run.id
+
+    assert task.path is not None
+    loaded_task = Task.load_from_file(task.path)
+    found = next(r for r in loaded_task.runs() if r.id == target_id)
+    assert found is not None
+    assert found.id == target_id
+    assert found.input == "in"
+
+
+def test_comprehensive_flat_task_run_hierarchy(tmp_path):
+    project_path = tmp_path / "project.kiln"
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+    task = Task(name="Test Task", instruction="Test instruction", parent=project)
+    task.save_to_file()
+
+    output = TaskOutput(output="test output")
+
+    run1_l1 = TaskRun(input="level1_run1", output=output, parent=task)
+    run1_l1.save_to_file()
+
+    run2_l1 = TaskRun(input="level1_run2", output=output, parent=task)
+    run2_l1.save_to_file()
+
+    run1_l2 = TaskRun(
+        input="level2_run1",
+        output=output,
+        parent=task,
+        parent_task_run_id=run1_l1.id,
+    )
+    run1_l2.save_to_file()
+
+    run2_l2 = TaskRun(
+        input="level2_run2",
+        output=output,
+        parent=task,
+        parent_task_run_id=run1_l1.id,
+    )
+    run2_l2.save_to_file()
+
+    run1_l3 = TaskRun(
+        input="level3_run1",
+        output=output,
+        parent=task,
+        parent_task_run_id=run1_l2.id,
+    )
+    run1_l3.save_to_file()
+
+    run2_l3 = TaskRun(
+        input="level3_run2",
+        output=output,
+        parent=task,
+        parent_task_run_id=run1_l2.id,
+    )
+    run2_l3.save_to_file()
+
+    run1_l4 = TaskRun(
+        input="level4_run1",
+        output=output,
+        parent=task,
+        parent_task_run_id=run1_l3.id,
+    )
+    run1_l4.save_to_file()
+
+    run2_l4 = TaskRun(
+        input="level4_sibling",
+        output=output,
+        parent=task,
+        parent_task_run_id=run2_l3.id,
+    )
+    run2_l4.save_to_file()
+
+    loaded_project = Project.load_from_file(project_path)
+    loaded_task = loaded_project.tasks()[0]
+
+    all_runs = {r.id: r for r in loaded_task.runs()}
+    assert len(all_runs) == 8
+
+    assert all_runs[run1_l1.id].parent_task_run_id is None
+    assert all_runs[run2_l1.id].parent_task_run_id is None
+    assert all_runs[run1_l2.id].parent_task_run_id == run1_l1.id
+    assert all_runs[run2_l2.id].parent_task_run_id == run1_l1.id
+    assert all_runs[run1_l3.id].parent_task_run_id == run1_l2.id
+    assert all_runs[run2_l3.id].parent_task_run_id == run1_l2.id
+    assert all_runs[run1_l4.id].parent_task_run_id == run1_l3.id
+    assert all_runs[run2_l4.id].parent_task_run_id == run2_l3.id
+
+    for r in all_runs.values():
+        assert r.parent_task() == loaded_task
+
+    roots = [r for r in all_runs.values() if r.parent_task_run_id is None]
+    assert len(roots) == 2
+    chained = [r for r in all_runs.values() if r.parent_task_run_id is not None]
+    assert len(chained) == 6
+
+
+def test_task_run_wrong_parent_type_raises(tmp_path):
+    project = Project(name="proj", path=tmp_path / "project.kiln")
+    project.save_to_file()
+
+    with pytest.raises(ValidationError, match="Parent must be of type"):
+        TaskRun(
+            input="bad parent",
+            output=TaskOutput(
+                output="x",
+                source=DataSource(
+                    type=DataSourceType.human, properties={"created_by": "test"}
+                ),
+            ),
+            parent=project,
+        )
+
+
+def test_task_run_runs_on_disk(tmp_path):
+    project = Project(name="proj", path=tmp_path / "project.kiln")
+    project.save_to_file()
+    task = Task(name="t", instruction="i", parent=project)
+    task.save_to_file()
+
+    parent_run = TaskRun(
+        input="parent",
+        output=TaskOutput(
+            output="parent out",
+            source=DataSource(
+                type=DataSourceType.human, properties={"created_by": "test"}
+            ),
+        ),
+        parent=task,
+    )
+    parent_run.save_to_file()
+
+    child_run = TaskRun(
+        input="child",
+        output=TaskOutput(
+            output="child out",
+            source=DataSource(
+                type=DataSourceType.human, properties={"created_by": "test"}
+            ),
+        ),
+        parent=task,
+        parent_task_run_id=parent_run.id,
+    )
+    child_run.save_to_file()
+
+    loaded_task = Task.load_from_file(task.path)
+    children = loaded_task.runs()
+    assert len(children) == 2
+    by_id = {r.id: r for r in children}
+    assert by_id[child_run.id].parent_task_run_id == parent_run.id
+    assert by_id[parent_run.id].parent_task_run_id is None

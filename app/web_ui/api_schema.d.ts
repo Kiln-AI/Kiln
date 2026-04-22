@@ -7500,7 +7500,7 @@ export interface components {
      * ToolSetType
      * @enum {string}
      */
-    ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill"
+    ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin"
     /**
      * ToolsRunConfig
      * @description A config describing which tools are available to a task.

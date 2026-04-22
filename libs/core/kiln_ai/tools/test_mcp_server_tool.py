@@ -1,4 +1,3 @@
-import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -17,6 +16,15 @@ from kiln_ai.datamodel.external_tool_server import (
 )
 from kiln_ai.datamodel.tool_id import MCP_REMOTE_TOOL_ID_PREFIX
 from kiln_ai.tools.mcp_server_tool import MCPServerTool
+
+
+def _configure_ephemeral_mcp_client_mock(
+    mock_session_manager, mock_session: AsyncMock
+) -> None:
+    mock_cm = AsyncMock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_cm.__aexit__ = AsyncMock(return_value=False)
+    mock_session_manager.shared.return_value.mcp_client.return_value = mock_cm
 
 
 class TestMCPServerTool:
@@ -209,9 +217,9 @@ class TestMCPServerTool:
 
         result = await tool.run()
 
-        # Should return structured error with "Unknown error"
-        expected_output = json.dumps({"isError": True, "error": "Unknown error"})
-        assert result.output == expected_output
+        assert result.output == "Unknown error"
+        assert result.is_error is True
+        assert result.error_message == "Unknown error"
 
     @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id")
@@ -243,9 +251,9 @@ class TestMCPServerTool:
 
         result = await tool.run()
 
-        # Should return structured error, not raise an exception
-        expected_output = json.dumps({"isError": True, "error": "Error occurred"})
-        assert result.output == expected_output
+        assert result.output == "Error occurred"
+        assert result.is_error is True
+        assert result.error_message == "Error occurred"
 
     @pytest.mark.asyncio
     @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id")
@@ -315,11 +323,12 @@ class TestMCPServerTool:
         )
 
     @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value=None)
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    async def test_get_tool_success(self, mock_session_manager):
+    async def test_get_tool_success(self, mock_session_manager, _mock_get_run_id):
         """Test _get_tool() method finds tool successfully."""
         mock_session = AsyncMock()
-        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+        _configure_ephemeral_mcp_client_mock(mock_session_manager, mock_session)
 
         # Mock tools list
         target_tool = Tool(
@@ -330,7 +339,7 @@ class TestMCPServerTool:
         other_tool = Tool(name="other_tool", description="Other tool", inputSchema={})
 
         tools_result = ListToolsResult(tools=[other_tool, target_tool])
-        mock_session.list_tools.return_value = tools_result
+        mock_session.list_tools = AsyncMock(return_value=tools_result)
 
         server = ExternalToolServer(
             name="test_server",
@@ -348,16 +357,17 @@ class TestMCPServerTool:
         mock_session.list_tools.assert_called_once()
 
     @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value=None)
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    async def test_get_tool_not_found(self, mock_session_manager):
+    async def test_get_tool_not_found(self, mock_session_manager, _mock_get_run_id):
         """Test _get_tool() raises error when tool not found."""
         mock_session = AsyncMock()
-        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+        _configure_ephemeral_mcp_client_mock(mock_session_manager, mock_session)
 
         # Mock tools list without target tool
         other_tool = Tool(name="other_tool", description="Other tool", inputSchema={})
         tools_result = ListToolsResult(tools=[other_tool])
-        mock_session.list_tools.return_value = tools_result
+        mock_session.list_tools = AsyncMock(return_value=tools_result)
 
         server = ExternalToolServer(
             name="test_server",
@@ -373,11 +383,14 @@ class TestMCPServerTool:
             await tool._get_tool("missing_tool")
 
     @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value=None)
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    async def test_load_tool_properties_success(self, mock_session_manager):
+    async def test_load_tool_properties_success(
+        self, mock_session_manager, _mock_get_run_id
+    ):
         """Test _load_tool_properties() updates tool properties."""
         mock_session = AsyncMock()
-        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+        _configure_ephemeral_mcp_client_mock(mock_session_manager, mock_session)
 
         # Mock tool with properties
         tool_def = Tool(
@@ -386,7 +399,7 @@ class TestMCPServerTool:
             inputSchema={"type": "object", "properties": {"param": {"type": "string"}}},
         )
         tools_result = ListToolsResult(tools=[tool_def])
-        mock_session.list_tools.return_value = tools_result
+        mock_session.list_tools = AsyncMock(return_value=tools_result)
 
         server = ExternalToolServer(
             name="test_server",
@@ -411,16 +424,19 @@ class TestMCPServerTool:
         assert tool._tool == tool_def
 
     @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value=None)
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    async def test_load_tool_properties_no_description(self, mock_session_manager):
+    async def test_load_tool_properties_no_description(
+        self, mock_session_manager, _mock_get_run_id
+    ):
         """Test _load_tool_properties() handles missing description."""
         mock_session = AsyncMock()
-        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+        _configure_ephemeral_mcp_client_mock(mock_session_manager, mock_session)
 
         # Mock tool without description
         tool_def = Tool(name="test_tool", description=None, inputSchema={})
         tools_result = ListToolsResult(tools=[tool_def])
-        mock_session.list_tools.return_value = tools_result
+        mock_session.list_tools = AsyncMock(return_value=tools_result)
 
         server = ExternalToolServer(
             name="test_server",
@@ -437,16 +453,19 @@ class TestMCPServerTool:
         assert await tool.description() == "N/A"
 
     @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value=None)
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    async def test_load_tool_properties_no_input_schema(self, mock_session_manager):
+    async def test_load_tool_properties_no_input_schema(
+        self, mock_session_manager, _mock_get_run_id
+    ):
         """Test _load_tool_properties() handles missing inputSchema."""
         mock_session = AsyncMock()
-        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+        _configure_ephemeral_mcp_client_mock(mock_session_manager, mock_session)
 
         # Mock tool without inputSchema - actually test with empty dict since None is not allowed
         tool_def = Tool(name="test_tool", description="Test tool", inputSchema={})
         tools_result = ListToolsResult(tools=[tool_def])
-        mock_session.list_tools.return_value = tools_result
+        mock_session.list_tools = AsyncMock(return_value=tools_result)
 
         server = ExternalToolServer(
             name="test_server",
@@ -464,11 +483,12 @@ class TestMCPServerTool:
         assert tool._parameters_schema == {"type": "object", "properties": {}}
 
     @pytest.mark.asyncio
+    @patch("kiln_ai.tools.mcp_server_tool.get_agent_run_id", return_value=None)
     @patch("kiln_ai.tools.mcp_server_tool.MCPSessionManager")
-    async def test_output_schema(self, mock_session_manager):
+    async def test_output_schema(self, mock_session_manager, _mock_get_run_id):
         """Test output_schema() returns MCP outputSchema."""
         mock_session = AsyncMock()
-        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+        _configure_ephemeral_mcp_client_mock(mock_session_manager, mock_session)
 
         tool_schema = {"type": "object", "properties": {"status": {"type": "string"}}}
         tool_def = Tool(
@@ -478,7 +498,7 @@ class TestMCPServerTool:
             outputSchema=tool_schema,
         )
         tools_result = ListToolsResult(tools=[tool_def])
-        mock_session.list_tools.return_value = tools_result
+        mock_session.list_tools = AsyncMock(return_value=tools_result)
 
         server = ExternalToolServer(
             name="test_server",
@@ -698,7 +718,7 @@ class TestMCPServerToolAgentRunContext:
             inputSchema={"type": "object", "properties": {"param": {"type": "string"}}},
         )
         tools_result = ListToolsResult(tools=[target_tool])
-        mock_session.list_tools.return_value = tools_result
+        mock_session.list_tools = AsyncMock(return_value=tools_result)
 
         server = ExternalToolServer(
             name="test_server",
@@ -728,7 +748,7 @@ class TestMCPServerToolAgentRunContext:
         """Test that _get_tool falls back to ephemeral session when no session ID."""
         # Mock mcp_client (ephemeral session)
         mock_session = AsyncMock()
-        mock_session_manager.shared.return_value.mcp_client.return_value.__aenter__.return_value = mock_session
+        _configure_ephemeral_mcp_client_mock(mock_session_manager, mock_session)
 
         # Mock tools list
         target_tool = Tool(
@@ -737,7 +757,7 @@ class TestMCPServerToolAgentRunContext:
             inputSchema={"type": "object", "properties": {"param": {"type": "string"}}},
         )
         tools_result = ListToolsResult(tools=[target_tool])
-        mock_session.list_tools.return_value = tools_result
+        mock_session.list_tools = AsyncMock(return_value=tools_result)
 
         server = ExternalToolServer(
             name="test_server",

@@ -204,5 +204,5 @@ class TestGetAuthenticatedClient:
         """Verify the client has a reasonable timeout for long-running requests."""
         client = get_authenticated_client("test_api_key")
         assert client._timeout is not None
-        assert client._timeout.read == 300.0
+        assert client._timeout.read == 900.0
         assert client._timeout.connect == 30.0

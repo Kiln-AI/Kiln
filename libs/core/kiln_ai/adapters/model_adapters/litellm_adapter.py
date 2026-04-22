@@ -3,7 +3,7 @@ import copy
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Tuple, TypeAlias, Union
+from typing import Any, Dict, List, Tuple
 
 import litellm
 from litellm.types.utils import (
@@ -19,11 +19,14 @@ from openai.types.chat.chat_completion_message_tool_call_param import (
 )
 
 import kiln_ai.datamodel as datamodel
+from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
+from kiln_ai.adapters.chat.chat_formatter import ToolResponseMessage
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     ModelProviderName,
     StructuredOutputMode,
 )
+from kiln_ai.adapters.model_adapters.adapter_stream import AdapterStream
 from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterConfig,
     BaseAdapter,
@@ -32,7 +35,10 @@ from kiln_ai.adapters.model_adapters.base_adapter import (
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
 from kiln_ai.datamodel.datamodel_enums import InputType
-from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
+from kiln_ai.datamodel.json_schema import (
+    close_object_schemas,
+    validate_schema_with_value_error,
+)
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     as_kiln_agent_run_config,
@@ -56,9 +62,13 @@ MAX_TOOL_CALLS_PER_TURN = 30
 
 logger = logging.getLogger(__name__)
 
-ChatCompletionMessageIncludingLiteLLM: TypeAlias = Union[
-    ChatCompletionMessageParam, LiteLLMMessage
-]
+
+def _validate_unmanaged_tools(tools: list[KilnToolInterface]) -> None:
+    for i, tool in enumerate(tools):
+        if not isinstance(tool, KilnToolInterface):
+            raise TypeError(
+                f"unmanaged_tools[{i}] must be a KilnToolInterface instance, got {type(tool).__name__}"
+            )
 
 
 @dataclass
@@ -68,6 +78,7 @@ class ModelTurnResult:
     model_response: ModelResponse | None
     model_choice: Choices | None
     usage: Usage
+    interrupted_by_tool_calls: list[ChatCompletionMessageToolCall] | None = None
 
 
 class LiteLlmAdapter(BaseAdapter):
@@ -91,6 +102,10 @@ class LiteLlmAdapter(BaseAdapter):
             run_config=config.run_config_properties,
             config=base_adapter_config,
         )
+
+        unmanaged_tools = self.base_adapter_config.unmanaged_tools
+        if unmanaged_tools:
+            _validate_unmanaged_tools(unmanaged_tools)
 
     async def _run_model_turn(
         self,
@@ -142,6 +157,27 @@ class LiteLlmAdapter(BaseAdapter):
 
             # Process tool calls if any
             if tool_calls and len(tool_calls) > 0:
+                # check if we should return control to caller
+                if self.base_adapter_config.return_on_tool_call:
+                    # filter out task_response tool (task_response tools are internal)
+                    standard_tool_calls = [
+                        tc for tc in tool_calls if tc.function.name != "task_response"
+                    ]
+                    has_task_response = any(
+                        tc.function.name == "task_response" for tc in tool_calls
+                    )
+                    if standard_tool_calls and not has_task_response:
+                        return ModelTurnResult(
+                            # we don't have any content, we are waiting for toolcall output to come back from client
+                            assistant_message="",
+                            all_messages=messages,
+                            model_response=model_response,
+                            model_choice=response_choice,
+                            usage=usage,
+                            interrupted_by_tool_calls=standard_tool_calls,
+                        )
+
+                # otherwise: process tool calls internally until final output
                 (
                     assistant_message_from_toolcall,
                     tool_call_messages,
@@ -184,20 +220,29 @@ class LiteLlmAdapter(BaseAdapter):
             f"Too many tool calls ({tool_calls_count}). Stopping iteration to avoid using too many tokens."
         )
 
-    async def _run(self, input: InputType) -> tuple[RunOutput, Usage | None]:
+    async def _run(
+        self,
+        input: InputType,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
+    ) -> tuple[RunOutput, Usage | None]:
         usage = Usage()
 
         provider = self.model_provider()
         if not provider.model_id:
             raise ValueError("Model ID is required for OpenAI compatible models")
 
-        chat_formatter = self.build_chat_formatter(input)
-        messages: list[ChatCompletionMessageIncludingLiteLLM] = []
+        # build_chat_formatter returns MultiturnFormatter when prior_trace is set, else prompt-based formatter
+        chat_formatter = self.build_chat_formatter(input, prior_trace)
+        messages: list[ChatCompletionMessageIncludingLiteLLM] = copy.deepcopy(
+            chat_formatter.initial_messages()
+        )
 
         prior_output: str | None = None
         final_choice: Choices | None = None
         turns = 0
 
+        # Same loop for both fresh runs and prior_trace continuation.
+        # _run_model_turn has its own internal loop for tool calls (model calls tool -> we run it -> model continues).
         while True:
             turns += 1
             if turns > MAX_CALLS_PER_TURN:
@@ -215,7 +260,10 @@ class LiteLlmAdapter(BaseAdapter):
                 if message.content is None:
                     raise ValueError("Empty message content isn't allowed")
                 # pyright incorrectly warns about this, but it's valid so we can ignore. It can't handle the multi-value role.
-                messages.append({"role": message.role, "content": message.content})  # type: ignore
+                msg_dict: dict = {"role": message.role, "content": message.content}
+                if isinstance(message, ToolResponseMessage):
+                    msg_dict["tool_call_id"] = message.tool_call_id
+                messages.append(msg_dict)  # type: ignore
 
             skip_response_format = not turn.final_call
             turn_result = await self._run_model_turn(
@@ -230,6 +278,18 @@ class LiteLlmAdapter(BaseAdapter):
             prior_output = turn_result.assistant_message
             messages = turn_result.all_messages
             final_choice = turn_result.model_choice
+
+            # Check if we were interrupted by tool calls
+            if turn_result.interrupted_by_tool_calls:
+                trace = self.all_messages_to_trace(messages)
+                intermediate_outputs = chat_formatter.intermediate_outputs()
+                output = RunOutput(
+                    output=prior_output or "",
+                    intermediate_outputs=intermediate_outputs,
+                    output_logprobs=None,
+                    trace=trace,
+                )
+                return output, usage
 
             if not prior_output:
                 raise RuntimeError("No assistant message/output returned from model")
@@ -254,6 +314,28 @@ class LiteLlmAdapter(BaseAdapter):
         )
 
         return output, usage
+
+    def _create_run_stream(
+        self,
+        input: InputType,
+        prior_trace: list[ChatCompletionMessageParam] | None = None,
+    ) -> AdapterStream:
+        provider = self.model_provider()
+        if not provider.model_id:
+            raise ValueError("Model ID is required for OpenAI compatible models")
+
+        chat_formatter = self.build_chat_formatter(input, prior_trace)
+        initial_messages: list[ChatCompletionMessageIncludingLiteLLM] = copy.deepcopy(
+            chat_formatter.initial_messages()
+        )
+
+        return AdapterStream(
+            adapter=self,
+            provider=provider,
+            chat_formatter=chat_formatter,
+            initial_messages=initial_messages,
+            top_logprobs=self.base_adapter_config.top_logprobs,
+        )
 
     def _extract_and_validate_logprobs(
         self, final_choice: Choices | None
@@ -291,9 +373,10 @@ class LiteLlmAdapter(BaseAdapter):
                     intermediate_outputs["reasoning"] = stripped_reasoning_content
 
     async def acompletion_checking_response(
-        self, **kwargs
+        self, **kwargs: Any
     ) -> Tuple[ModelResponse, Choices]:
         response = await litellm.acompletion(**kwargs)
+
         if (
             not isinstance(response, ModelResponse)
             or not response.choices
@@ -355,6 +438,11 @@ class LiteLlmAdapter(BaseAdapter):
 
     def json_schema_response_format(self) -> dict[str, Any]:
         output_schema = self.task.output_schema()
+        if output_schema is None:
+            raise ValueError(
+                "Invalid output schema for this task. Cannot use JSON schema response format."
+            )
+        output_schema = close_object_schemas(output_schema, strict=True)
         return {
             "response_format": {
                 "type": "json_schema",
@@ -372,7 +460,7 @@ class LiteLlmAdapter(BaseAdapter):
             raise ValueError(
                 "Invalid output schema for this task. Can not use tool calls."
             )
-        output_schema["additionalProperties"] = False
+        output_schema = close_object_schemas(output_schema, strict=strict)
 
         function_params = {
             "name": "task_response",
@@ -399,8 +487,7 @@ class LiteLlmAdapter(BaseAdapter):
         # Don't love having this logic here. But it's worth the usability improvement
         # so better to keep it than exclude it. Should figure out how I want to isolate
         # this sort of logic so it's config driven and can be overridden
-
-        extra_body = {}
+        extra_body: dict[str, Any] = {}
         provider_options = {}
 
         run_config = as_kiln_agent_run_config(self.run_config)
@@ -501,6 +588,41 @@ class LiteLlmAdapter(BaseAdapter):
         self._litellm_model_id = litellm_provider_info.litellm_model_id
         return self._litellm_model_id
 
+    def _allowed_openai_params_for_completion_kwargs(
+        self, completion_kwargs: dict[str, Any]
+    ) -> list[str]:
+        """
+        LiteLLM drops params it thinks are not supported by the model when drop_params is True. Sometimes it is wrong
+        and we know it is supported, so we whitelist them here and pass that as an allowed_openai_params parameter.
+        """
+        # callers could have set allowed_openai_params in the additional_body_options, so we need to check for that
+        explicit_allowed_params: Any | list = completion_kwargs.get(
+            "allowed_openai_params", []
+        )
+        if not isinstance(explicit_allowed_params, list):
+            raise ValueError(
+                f"Unexpected allowed_openai_params format: {explicit_allowed_params} - expected list, got {type(explicit_allowed_params)}"
+            )
+        explicit_allowed_params_validated = [
+            param for param in explicit_allowed_params if isinstance(param, str)
+        ]
+        invalid_count = len(explicit_allowed_params) - len(
+            explicit_allowed_params_validated
+        )
+        if invalid_count > 0:
+            raise ValueError(
+                f"Unexpected allowed_openai_params format: {explicit_allowed_params} - {invalid_count} items are not strings"
+            )
+
+        # these are our own logic
+        automatic_allowed_params: list[str] = []
+        if "tools" in completion_kwargs:
+            automatic_allowed_params.append("tools")
+        if "tool_choice" in completion_kwargs:
+            automatic_allowed_params.append("tool_choice")
+
+        return list(set(explicit_allowed_params_validated + automatic_allowed_params))
+
     async def build_completion_kwargs(
         self,
         provider: KilnModelProvider,
@@ -527,6 +649,14 @@ class LiteLlmAdapter(BaseAdapter):
             **extra_body,
             **self._additional_body_options,
         }
+
+        if self.base_adapter_config.automatic_prompt_caching:
+            # Mark the last message for cache control. Litellm's AnthropicCacheControlHook
+            # handles provider-specific injection. Providers auto-cache matching prefixes,
+            # so marking the last message is sufficient for multi-turn conversations.
+            completion_kwargs["cache_control_injection_points"] = [
+                {"location": "message", "index": -1}
+            ]
 
         tool_calls = await self.litellm_tools()
         has_tools = len(tool_calls) > 0
@@ -566,6 +696,13 @@ class LiteLlmAdapter(BaseAdapter):
             completion_kwargs["logprobs"] = True
             completion_kwargs["top_logprobs"] = top_logprobs
 
+        # any params listed in this list will be passed to the model regardless of LiteLLM's own validation
+        allowed_openai_params = self._allowed_openai_params_for_completion_kwargs(
+            completion_kwargs
+        )
+        if len(allowed_openai_params) > 0:
+            completion_kwargs["allowed_openai_params"] = allowed_openai_params
+
         return completion_kwargs
 
     def usage_from_response(self, response: ModelResponse) -> Usage:
@@ -585,6 +722,13 @@ class LiteLlmAdapter(BaseAdapter):
             usage.input_tokens = litellm_usage.get("prompt_tokens", None)
             usage.output_tokens = litellm_usage.get("completion_tokens", None)
             usage.total_tokens = litellm_usage.get("total_tokens", None)
+            prompt_details = litellm_usage.get("prompt_tokens_details", None)
+            if prompt_details and hasattr(prompt_details, "cached_tokens"):
+                usage.cached_tokens = prompt_details.cached_tokens
+            elif prompt_details:
+                logger.warning(
+                    f"prompt_tokens_details has unexpected type {type(prompt_details)}, cached_tokens not extracted"
+                )
         else:
             logger.warning(
                 f"Unexpected usage format from litellm: {litellm_usage}. Expected Usage object, got {type(litellm_usage)}"
@@ -605,11 +749,32 @@ class LiteLlmAdapter(BaseAdapter):
             self._cached_available_tools = await self.available_tools()
         return self._cached_available_tools
 
+    async def _tools_for_execution(self) -> list[KilnToolInterface]:
+        """Registry-resolved tools plus :attr:`AdapterConfig.unmanaged_tools` (same order as ``litellm_tools``)."""
+        registry = await self.cached_available_tools()
+        unmanaged = self.base_adapter_config.unmanaged_tools or []
+        return registry + unmanaged
+
     async def litellm_tools(self) -> list[ToolCallDefinition]:
         available_tools = await self.cached_available_tools()
 
-        # LiteLLM takes the standard OpenAI-compatible tool call format
-        return [await tool.toolcall_definition() for tool in available_tools]
+        registry_defs = [await tool.toolcall_definition() for tool in available_tools]
+        unmanaged = self.base_adapter_config.unmanaged_tools
+        unmanaged_defs = (
+            [await t.toolcall_definition() for t in unmanaged] if unmanaged else []
+        )
+
+        merged = registry_defs + unmanaged_defs
+        seen_names: set[str] = set()
+        for d in merged:
+            name = d["function"]["name"]
+            if name in seen_names:
+                raise ValueError(
+                    f"Duplicate tool name {name!r}: unmanaged and registry tools must have unique names."
+                )
+            seen_names.add(name)
+
+        return merged
 
     async def process_tool_calls(
         self, tool_calls: list[ChatCompletionMessageToolCall] | None
@@ -631,7 +796,7 @@ class LiteLlmAdapter(BaseAdapter):
             # Process normal tool calls (not the "task_response" tool)
             tool_name = tool_call.function.name
             tool = None
-            for tool_option in await self.cached_available_tools():
+            for tool_option in await self._tools_for_execution():
                 if await tool_option.name() == tool_name:
                     tool = tool_option
                     break
@@ -671,6 +836,10 @@ class LiteLlmAdapter(BaseAdapter):
                     content=result.output,
                     kiln_task_tool_data=result.kiln_task_tool_data
                     if isinstance(result, KilnTaskToolResult)
+                    else None,
+                    is_error=result.is_error if result.is_error else None,
+                    error_message=result.error_message
+                    if result.error_message
                     else None,
                 )
 

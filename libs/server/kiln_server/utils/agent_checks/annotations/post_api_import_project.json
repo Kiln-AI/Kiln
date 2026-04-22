@@ -1,0 +1,8 @@
+{
+  "method": "post",
+  "path": "/api/import_project",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

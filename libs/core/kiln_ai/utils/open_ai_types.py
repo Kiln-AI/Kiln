@@ -96,9 +96,15 @@ class ChatCompletionToolMessageParamWrapper(TypedDict, total=False):
 
     kiln_task_tool_data: Optional[str]
     """The data for the Kiln task tool that this message is responding to.
-    
+
     Formatted as `<project_id>:::<tool_id>:::<task_id>:::<run_id>`
     """
+
+    is_error: Optional[bool]
+    """Whether this tool message represents an error result."""
+
+    error_message: Optional[str]
+    """Human-readable error description when is_error is True."""
 
 
 ChatCompletionMessageParam: TypeAlias = Union[
@@ -109,3 +115,24 @@ ChatCompletionMessageParam: TypeAlias = Union[
     ChatCompletionToolMessageParamWrapper,
     ChatCompletionFunctionMessageParam,
 ]
+
+
+def trace_has_pending_client_tool_calls(
+    trace: list[ChatCompletionMessageParam] | None,
+) -> bool:
+    """Return True if the trace ends with an assistant message awaiting client tool results.
+
+    Structured-output flows use an internal ``task_response`` tool call; traces that end
+    with only those calls are complete from the client's perspective for external tools.
+    """
+    if not trace:
+        return False
+    last_msg = trace[-1]
+    if last_msg.get("role") != "assistant":
+        return False
+    tool_calls = last_msg.get("tool_calls") or []
+    return any(
+        isinstance(tc, dict)
+        and (tc.get("function") or {}).get("name") != "task_response"
+        for tc in tool_calls
+    )

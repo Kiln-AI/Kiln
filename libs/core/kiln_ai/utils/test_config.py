@@ -697,3 +697,75 @@ def test_in_memory_property_sensitive_hidden(mock_yaml_file):
         settings_visible = config.settings(hide_sensitive=False)
         assert settings_visible["in_memory_secret"] == "secret_value"
         assert settings_visible["in_memory_public"] == "public_value"
+
+
+def test_sensitive_keys_hidden_in_top_level_dict():
+    """Test that sensitive_keys are redacted from top-level dict values, not just nested dicts."""
+    config = Config.shared()
+
+    config.save_setting(
+        "git_sync_projects",
+        {
+            "pat_token": "ghp_secret123",
+            "repo_url": "https://github.com/example/repo",
+        },
+    )
+
+    hidden_settings = config.settings(hide_sensitive=True)
+    assert hidden_settings["git_sync_projects"]["pat_token"] == "[hidden]"
+    assert (
+        hidden_settings["git_sync_projects"]["repo_url"]
+        == "https://github.com/example/repo"
+    )
+
+    visible_settings = config.settings(hide_sensitive=False)
+    assert visible_settings["git_sync_projects"]["pat_token"] == "ghp_secret123"
+
+
+def test_sensitive_keys_hidden_in_nested_and_top_level_dict():
+    """Test that sensitive_keys are redacted from both top-level and nested dict values."""
+    config = Config.shared()
+
+    config.save_setting(
+        "git_sync_projects",
+        {
+            "pat_token": "ghp_toplevel_secret",
+            "project1": {
+                "pat_token": "ghp_nested_secret",
+                "name": "my_project",
+            },
+        },
+    )
+
+    hidden_settings = config.settings(hide_sensitive=True)
+    git_sync = hidden_settings["git_sync_projects"]
+    assert git_sync["pat_token"] == "[hidden]"
+    assert git_sync["project1"]["pat_token"] == "[hidden]"
+    assert git_sync["project1"]["name"] == "my_project"
+
+
+def test_oauth_token_hidden_in_git_sync_projects():
+    """Test that oauth_token is redacted from git_sync_projects when hide_sensitive=True."""
+    config = Config.shared()
+
+    config.save_setting(
+        "git_sync_projects",
+        {
+            "project1": {
+                "oauth_token": "gho_secret_oauth_value",
+                "pat_token": "ghp_secret_pat_value",
+                "repo_url": "https://github.com/example/repo",
+            },
+        },
+    )
+
+    hidden_settings = config.settings(hide_sensitive=True)
+    project1 = hidden_settings["git_sync_projects"]["project1"]
+    assert project1["oauth_token"] == "[hidden]"
+    assert project1["pat_token"] == "[hidden]"
+    assert project1["repo_url"] == "https://github.com/example/repo"
+
+    visible_settings = config.settings(hide_sensitive=False)
+    project1_visible = visible_settings["git_sync_projects"]["project1"]
+    assert project1_visible["oauth_token"] == "gho_secret_oauth_value"
+    assert project1_visible["pat_token"] == "ghp_secret_pat_value"

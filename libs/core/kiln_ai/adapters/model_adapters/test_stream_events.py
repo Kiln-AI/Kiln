@@ -1,0 +1,436 @@
+from litellm.types.utils import (
+    ChatCompletionDeltaToolCall,
+    Delta,
+    Function,
+    ModelResponseStream,
+    StreamingChoices,
+)
+from pydantic import TypeAdapter
+
+from kiln_ai.adapters.model_adapters.stream_events import (
+    AiSdkEventType,
+    AiSdkStreamConverter,
+    AiSdkStreamEvent,
+    FinishEvent,
+    StartEvent,
+    ToolCallEvent,
+    ToolCallEventType,
+)
+
+_ai_sdk_stream_event_adapter = TypeAdapter(AiSdkStreamEvent)
+
+
+def _make_tool_call_delta(
+    index: int = 0,
+    call_id: str | None = None,
+    name: str | None = None,
+    arguments: str | None = None,
+) -> ChatCompletionDeltaToolCall:
+    func = Function(name=name, arguments=arguments or "")
+    tc = ChatCompletionDeltaToolCall(index=index, function=func)
+    if call_id is not None:
+        tc.id = call_id
+    return tc
+
+
+def _make_chunk(
+    content: str | None = None,
+    reasoning_content: str | None = None,
+    tool_calls: list[ChatCompletionDeltaToolCall] | None = None,
+    finish_reason: str | None = None,
+) -> ModelResponseStream:
+    delta = Delta(content=content, tool_calls=tool_calls)
+    if reasoning_content is not None:
+        delta.reasoning_content = reasoning_content
+    choice = StreamingChoices(
+        index=0,
+        delta=delta,
+        finish_reason=finish_reason,
+    )
+    return ModelResponseStream(id="test", choices=[choice])
+
+
+class TestAiSdkStreamEvent:
+    def test_model_dump(self):
+        event = StartEvent(messageId="msg-123")
+        dump = event.model_dump()
+        assert dump["type"] == "start"
+        assert dump["messageId"] == "msg-123"
+
+    def test_kiln_metadata_round_trip(self):
+        payload = {
+            "type": "start",
+            "messageId": "msg-1",
+            "kiln_metadata": {
+                "trace": "abc",
+                "n": 1,
+                "pi": 3.14,
+                "ok": True,
+            },
+        }
+        parsed = _ai_sdk_stream_event_adapter.validate_python(payload)
+        assert isinstance(parsed, StartEvent)
+        assert parsed.kiln_metadata == {
+            "trace": "abc",
+            "n": 1,
+            "pi": 3.14,
+            "ok": True,
+        }
+        assert (
+            _ai_sdk_stream_event_adapter.validate_python(
+                parsed.model_dump(mode="python")
+            )
+            == parsed
+        )
+
+    def test_model_dump_default_kiln_metadata_is_empty_dict(self):
+        event = FinishEvent()
+        assert event.kiln_metadata == {}
+        dump = event.model_dump(exclude_none=True)
+        assert dump["kiln_metadata"] == {}
+
+    def test_kiln_metadata_defaults_when_omitted_in_payload(self):
+        parsed = _ai_sdk_stream_event_adapter.validate_python(
+            {"type": "start", "messageId": "msg-2"}
+        )
+        assert isinstance(parsed, StartEvent)
+        assert parsed.kiln_metadata == {}
+
+
+class TestAiSdkStreamConverter:
+    def test_text_start_and_delta(self):
+        converter = AiSdkStreamConverter()
+        events = converter.convert_chunk(_make_chunk(content="Hello"))
+        types = [e.type for e in events]
+        assert AiSdkEventType.TEXT_START in types
+        assert AiSdkEventType.TEXT_DELTA in types
+        assert events[-1].delta == "Hello"
+
+    def test_text_delta_no_duplicate_start(self):
+        converter = AiSdkStreamConverter()
+        converter.convert_chunk(_make_chunk(content="Hello"))
+        events = converter.convert_chunk(_make_chunk(content=" world"))
+        types = [e.type for e in events]
+        assert AiSdkEventType.TEXT_START not in types
+        assert AiSdkEventType.TEXT_DELTA in types
+
+    def test_reasoning_start_and_delta(self):
+        converter = AiSdkStreamConverter()
+        events = converter.convert_chunk(_make_chunk(reasoning_content="Thinking..."))
+        types = [e.type for e in events]
+        assert AiSdkEventType.REASONING_START in types
+        assert AiSdkEventType.REASONING_DELTA in types
+
+    def test_reasoning_ends_when_content_starts(self):
+        converter = AiSdkStreamConverter()
+        converter.convert_chunk(_make_chunk(reasoning_content="Thinking..."))
+        events = converter.convert_chunk(_make_chunk(content="Answer"))
+        types = [e.type for e in events]
+        assert AiSdkEventType.REASONING_END in types
+        assert AiSdkEventType.TEXT_START in types
+
+    def test_reasoning_ends_when_tool_calls_start(self):
+        converter = AiSdkStreamConverter()
+        converter.convert_chunk(_make_chunk(reasoning_content="Thinking..."))
+
+        tc_delta = _make_tool_call_delta(
+            index=0, call_id="call_1", name="add", arguments='{"a":1}'
+        )
+        events = converter.convert_chunk(_make_chunk(tool_calls=[tc_delta]))
+        types = [e.type for e in events]
+        assert AiSdkEventType.REASONING_END in types
+
+    def test_tool_call_input_start_and_delta(self):
+        converter = AiSdkStreamConverter()
+
+        tc_delta = _make_tool_call_delta(
+            index=0, call_id="call_1", name="add", arguments='{"a":'
+        )
+        events = converter.convert_chunk(_make_chunk(tool_calls=[tc_delta]))
+        types = [e.type for e in events]
+        assert AiSdkEventType.TOOL_INPUT_START in types
+        assert AiSdkEventType.TOOL_INPUT_DELTA in types
+
+        start_event = next(
+            e for e in events if e.type == AiSdkEventType.TOOL_INPUT_START
+        )
+        assert start_event.toolCallId == "call_1"
+        assert start_event.toolName == "add"
+
+    def test_close_open_blocks_closes_text(self):
+        converter = AiSdkStreamConverter()
+        converter.convert_chunk(_make_chunk(content="text"))
+        block_events = converter.close_open_blocks()
+        types = [e.type for e in block_events]
+        assert AiSdkEventType.TEXT_END in types
+        finish_events = converter.finalize()
+        assert any(e.type == AiSdkEventType.FINISH for e in finish_events)
+
+    def test_close_open_blocks_closes_reasoning(self):
+        converter = AiSdkStreamConverter()
+        converter.convert_chunk(_make_chunk(reasoning_content="thinking"))
+        block_events = converter.close_open_blocks()
+        types = [e.type for e in block_events]
+        assert AiSdkEventType.REASONING_END in types
+
+    def test_convert_tool_event_input_available(self):
+        converter = AiSdkStreamConverter()
+        event = ToolCallEvent(
+            event_type=ToolCallEventType.INPUT_AVAILABLE,
+            tool_call_id="call_1",
+            tool_name="add",
+            arguments={"a": 1, "b": 2},
+        )
+        events = converter.convert_tool_event(event)
+        assert len(events) == 1
+        assert events[0].type == AiSdkEventType.TOOL_INPUT_AVAILABLE
+        assert events[0].toolCallId == "call_1"
+        assert events[0].input == {"a": 1, "b": 2}
+
+    def test_convert_tool_event_output_available(self):
+        converter = AiSdkStreamConverter()
+        event = ToolCallEvent(
+            event_type=ToolCallEventType.OUTPUT_AVAILABLE,
+            tool_call_id="call_1",
+            tool_name="add",
+            result="3",
+        )
+        events = converter.convert_tool_event(event)
+        assert len(events) == 1
+        assert events[0].type == AiSdkEventType.TOOL_OUTPUT_AVAILABLE
+        assert events[0].output == "3"
+
+    def test_convert_tool_event_output_error(self):
+        converter = AiSdkStreamConverter()
+        event = ToolCallEvent(
+            event_type=ToolCallEventType.OUTPUT_ERROR,
+            tool_call_id="call_1",
+            tool_name="add",
+            error="Something went wrong",
+        )
+        events = converter.convert_tool_event(event)
+        assert len(events) == 1
+        assert events[0].type == AiSdkEventType.TOOL_OUTPUT_ERROR
+        assert events[0].errorText == "Something went wrong"
+
+    def test_reasoning_not_interrupted_by_empty_content(self):
+        # Minimax and similar models send chunks with both reasoning_content and
+        # delta.content="" simultaneously. Empty content must not close reasoning
+        # blocks or emit useless text-delta events.
+        converter = AiSdkStreamConverter()
+
+        chunk1 = _make_chunk(reasoning_content="The", content="")
+        chunk2 = _make_chunk(reasoning_content=" user", content="")
+        chunk3 = _make_chunk(reasoning_content=" is", content="")
+
+        events1 = converter.convert_chunk(chunk1)
+        events2 = converter.convert_chunk(chunk2)
+        events3 = converter.convert_chunk(chunk3)
+
+        all_types1 = [e.type for e in events1]
+        all_types2 = [e.type for e in events2]
+        all_types3 = [e.type for e in events3]
+
+        # First chunk opens the reasoning block
+        assert AiSdkEventType.REASONING_START in all_types1
+        assert AiSdkEventType.REASONING_DELTA in all_types1
+        # No text events from empty content
+        assert AiSdkEventType.TEXT_START not in all_types1
+        assert AiSdkEventType.TEXT_DELTA not in all_types1
+
+        # Subsequent chunks must NOT re-open reasoning (no start) and must NOT
+        # close reasoning with reasoning-end
+        assert AiSdkEventType.REASONING_START not in all_types2
+        assert AiSdkEventType.REASONING_END not in all_types2
+        assert AiSdkEventType.REASONING_DELTA in all_types2
+        assert AiSdkEventType.TEXT_DELTA not in all_types2
+
+        assert AiSdkEventType.REASONING_START not in all_types3
+        assert AiSdkEventType.REASONING_END not in all_types3
+        assert AiSdkEventType.REASONING_DELTA in all_types3
+        assert AiSdkEventType.TEXT_DELTA not in all_types3
+
+    def test_reset_for_next_step(self):
+        converter = AiSdkStreamConverter()
+        converter._finish_reason = "tool_calls"
+        converter._tool_calls_state = {
+            0: {"id": "x", "name": "y", "arguments": "", "started": True}
+        }
+        converter.reset_for_next_step()
+        assert converter._tool_calls_state == {}
+        assert converter._finish_reason is None
+
+    def test_finish_reason_in_finalize(self):
+        converter = AiSdkStreamConverter()
+        converter.convert_chunk(_make_chunk(content="done", finish_reason="stop"))
+        converter.close_open_blocks()
+        events = converter.finalize()
+        finish_events = [e for e in events if e.type == AiSdkEventType.FINISH]
+        assert len(finish_events) == 1
+        meta = finish_events[0].messageMetadata
+        assert meta is not None
+        assert meta.finishReason == "stop"
+
+    def test_tool_input_start_reemitted_after_reset(self):
+        """After reset_for_next_step, tool-input-start must fire again for index 0."""
+        converter = AiSdkStreamConverter()
+
+        tc_round1 = _make_tool_call_delta(
+            index=0, call_id="call_r1", name="search", arguments='{"q":"hi"}'
+        )
+        events_r1 = converter.convert_chunk(_make_chunk(tool_calls=[tc_round1]))
+        starts_r1 = [e for e in events_r1 if e.type == AiSdkEventType.TOOL_INPUT_START]
+        assert len(starts_r1) == 1
+        assert starts_r1[0].toolCallId == "call_r1"
+
+        converter.reset_for_next_step()
+
+        tc_round2 = _make_tool_call_delta(
+            index=0, call_id="call_r2", name="search", arguments='{"q":"world"}'
+        )
+        events_r2 = converter.convert_chunk(_make_chunk(tool_calls=[tc_round2]))
+        starts_r2 = [e for e in events_r2 if e.type == AiSdkEventType.TOOL_INPUT_START]
+        assert len(starts_r2) == 1, (
+            "tool-input-start must be re-emitted for index 0 after reset"
+        )
+        assert starts_r2[0].toolCallId == "call_r2"
+
+    def test_text_ends_before_tool_calls(self):
+        converter = AiSdkStreamConverter()
+        events1 = converter.convert_chunk(_make_chunk(content="Hello"))
+        text_start = next(e for e in events1 if e.type == AiSdkEventType.TEXT_START)
+        text_id_1 = text_start.id
+
+        tc_delta = _make_tool_call_delta(
+            index=0, call_id="call_1", name="add", arguments='{"a":1}'
+        )
+        events2 = converter.convert_chunk(_make_chunk(tool_calls=[tc_delta]))
+        types2 = [e.type for e in events2]
+        assert AiSdkEventType.TEXT_END in types2
+        text_end_idx = types2.index(AiSdkEventType.TEXT_END)
+        tool_start_idx = types2.index(AiSdkEventType.TOOL_INPUT_START)
+        assert text_end_idx < tool_start_idx, (
+            "text-end must come before tool-input-start"
+        )
+
+        text_end_event = next(e for e in events2 if e.type == AiSdkEventType.TEXT_END)
+        assert text_end_event.id == text_id_1
+
+    def test_text_restarts_with_new_id_after_tool_calls(self):
+        converter = AiSdkStreamConverter()
+        events1 = converter.convert_chunk(_make_chunk(content="Hello"))
+        text_start_1 = next(e for e in events1 if e.type == AiSdkEventType.TEXT_START)
+        text_id_1 = text_start_1.id
+
+        tc_delta = _make_tool_call_delta(
+            index=0, call_id="call_1", name="add", arguments='{"a":1}'
+        )
+        converter.convert_chunk(_make_chunk(tool_calls=[tc_delta]))
+        converter.reset_for_next_step()
+
+        events3 = converter.convert_chunk(_make_chunk(content="Result"))
+        types3 = [e.type for e in events3]
+        assert AiSdkEventType.TEXT_START in types3
+        text_start_2 = next(e for e in events3 if e.type == AiSdkEventType.TEXT_START)
+        text_id_2 = text_start_2.id
+        assert text_id_1 != text_id_2, (
+            "New text block after tool calls must have a different id"
+        )
+
+    def test_no_text_end_before_tool_calls_when_text_not_started(self):
+        converter = AiSdkStreamConverter()
+        tc_delta = _make_tool_call_delta(
+            index=0, call_id="call_1", name="add", arguments='{"a":1}'
+        )
+        events = converter.convert_chunk(_make_chunk(tool_calls=[tc_delta]))
+        types = [e.type for e in events]
+        assert AiSdkEventType.TEXT_END not in types
+
+    def test_tool_input_start_not_reemitted_without_reset(self):
+        """Without reset, a second tool call at index 0 must NOT re-emit tool-input-start."""
+        converter = AiSdkStreamConverter()
+
+        tc_round1 = _make_tool_call_delta(
+            index=0, call_id="call_r1", name="search", arguments='{"q":"hi"}'
+        )
+        converter.convert_chunk(_make_chunk(tool_calls=[tc_round1]))
+
+        tc_round2 = _make_tool_call_delta(
+            index=0, call_id="call_r2", name="search", arguments='{"q":"world"}'
+        )
+        events_r2 = converter.convert_chunk(_make_chunk(tool_calls=[tc_round2]))
+        starts_r2 = [e for e in events_r2 if e.type == AiSdkEventType.TOOL_INPUT_START]
+        assert len(starts_r2) == 0, (
+            "Without reset, started=True blocks duplicate tool-input-start"
+        )
+
+    def test_choice_with_none_delta_is_skipped(self):
+        chunk = ModelResponseStream(
+            id="test",
+            choices=[StreamingChoices(index=0, delta=None, finish_reason=None)],
+        )
+        converter = AiSdkStreamConverter()
+        events = converter.convert_chunk(chunk)
+        assert events == []
+
+    def test_usage_data_extracted_from_empty_choices_chunk(self):
+        usage = type(
+            "Usage",
+            (),
+            {
+                "prompt_tokens": 10,
+                "completion_tokens": 20,
+                "total_tokens": 30,
+            },
+        )()
+        chunk = ModelResponseStream(id="test", choices=[])
+        chunk.usage = usage
+
+        converter = AiSdkStreamConverter()
+        converter.convert_chunk(chunk)
+        assert converter._usage_data is usage
+
+    def test_finalize_includes_usage_payload(self):
+        usage = type(
+            "Usage",
+            (),
+            {
+                "prompt_tokens": 15,
+                "completion_tokens": 25,
+                "total_tokens": 40,
+            },
+        )()
+        converter = AiSdkStreamConverter()
+        converter._usage_data = usage
+        converter._finish_reason = "stop"
+
+        events = converter.finalize()
+        finish = next(e for e in events if e.type == AiSdkEventType.FINISH)
+        meta = finish.messageMetadata
+        assert meta is not None
+        assert meta.finishReason == "stop"
+        assert meta.usage is not None
+        assert meta.usage.promptTokens == 15
+        assert meta.usage.completionTokens == 25
+        assert meta.usage.totalTokens == 40
+
+    def test_finalize_usage_without_total_tokens(self):
+        usage = type(
+            "Usage",
+            (),
+            {
+                "prompt_tokens": 5,
+                "completion_tokens": 10,
+            },
+        )()
+        converter = AiSdkStreamConverter()
+        converter._usage_data = usage
+
+        events = converter.finalize()
+        finish = next(e for e in events if e.type == AiSdkEventType.FINISH)
+        meta = finish.messageMetadata
+        assert meta is not None
+        assert meta.usage is not None
+        assert meta.usage.promptTokens == 5
+        assert meta.usage.completionTokens == 10
+        assert meta.usage.totalTokens is None

@@ -1,11 +1,15 @@
+import json
+
 import pytest
 from pydantic import ValidationError
 
+from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
     TaskOutputRatingType,
 )
+from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.spec import Spec
@@ -15,7 +19,8 @@ from kiln_ai.datamodel.spec_properties import (
     ToxicityProperties,
 )
 from kiln_ai.datamodel.task import Task, TaskRunConfig
-from kiln_ai.datamodel.task_output import normalize_rating
+from kiln_ai.datamodel.task_output import TaskOutput, normalize_rating
+from kiln_ai.datamodel.task_run import TaskRun
 
 
 def test_runconfig_valid_creation():
@@ -309,6 +314,41 @@ def test_task_name_unicode_name():
     assert task.name == "你好"
 
 
+def test_task_run_config_long_name_folder_has_no_trailing_space(tmp_path):
+    """Folder segment from name must not end with a trailing space (path/git tooling)."""
+    project_path = tmp_path / "project.kiln"
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+
+    task = Task(
+        name="run_agent_brand_mentions_feed_cl",
+        instruction="Test instruction",
+        parent=project,
+    )
+    task.save_to_file()
+
+    long_name = "Deepseek 3p2 + KilnOptimized (3 xyz)"
+    assert len(long_name[:32]) == 32 and long_name[:32].endswith(" ")
+
+    run_config = TaskRunConfig(
+        name=long_name,
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="gpt-4",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id=PromptGenerators.SIMPLE,
+            structured_output_mode=StructuredOutputMode.json_schema,
+        ),
+        parent=task,
+    )
+    run_config.save_to_file()
+
+    assert run_config.path is not None
+    assert "run_configs" in run_config.path.parts
+    folder_name = run_config.path.parent.name
+    assert folder_name == folder_name.rstrip()
+    assert not folder_name.endswith(" ")
+
+
 def test_task_default_run_config_id_property(tmp_path):
     """Test that default_run_config_id can be set and retrieved."""
 
@@ -456,4 +496,259 @@ def test_task_prompt_optimization_jobs_readonly(tmp_path):
     assert len(prompt_optimization_jobs_default) == 1
     assert (
         prompt_optimization_jobs_default[0].name == "Readonly Prompt Optimization Job"
+    )
+
+
+def test_all_children_of_parent_path_task_runs(tmp_path):
+    """all_children_of_parent_path lists TaskRun files under a Task."""
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        path=tmp_path / "task.kiln",
+    )
+    task.save_to_file()
+
+    output = TaskOutput(output="test output")
+
+    run1 = TaskRun(input="input1", output=output, parent=task)
+    run2 = TaskRun(input="input2", output=output, parent=task)
+    run1.save_to_file()
+    run2.save_to_file()
+
+    children = TaskRun.all_children_of_parent_path(task.path)
+    assert len(children) == 2
+    inputs = {child.input for child in children}
+    assert inputs == {"input1", "input2"}
+
+
+def test_taskrun_parent_task_run_id_persists_on_load(tmp_path):
+    output = TaskOutput(output="test output")
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        path=tmp_path / "task.kiln",
+    )
+    task.save_to_file()
+
+    parent_run = TaskRun(input="parent input", output=output, parent=task)
+    parent_run.save_to_file()
+
+    nested_run = TaskRun(
+        input="nested input",
+        output=output,
+        parent=task,
+        parent_task_run_id=parent_run.id,
+    )
+    nested_run.save_to_file()
+
+    loaded_run = TaskRun.load_from_file(nested_run.path)
+    assert loaded_run is not None
+    assert loaded_run.input == "nested input"
+    assert loaded_run.parent_task_run_id == parent_run.id
+    loaded_parent_task = loaded_run.parent_task()
+    assert loaded_parent_task is not None
+    assert loaded_parent_task.name == "Test Task"
+    assert loaded_parent_task.instruction == "Test instruction"
+    assert loaded_run.load_parent() is not None
+    assert loaded_run.load_parent().id == task.id
+
+
+def test_taskrun_loads_from_task_path(tmp_path):
+    """TaskRun children can be loaded from Task path."""
+    output = TaskOutput(output="test output")
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        path=tmp_path / "task.kiln",
+    )
+    task.save_to_file()
+
+    run = TaskRun(input="test input", output=output, parent=task)
+    run.save_to_file()
+
+    # Load children from task path - should succeed
+    children = list(TaskRun.iterate_children_paths_of_parent_path(task.path))
+    assert len(children) == 1
+    assert children[0] == run.path
+
+
+def test_taskrun_fails_to_load_from_project_path(tmp_path):
+    project_path = tmp_path / "project.kiln"
+    project = Project(name="Test Project", path=project_path)
+    project.save_to_file()
+
+    with pytest.raises(ValidationError, match="validation error for Task"):
+        list(TaskRun.iterate_children_paths_of_parent_path(project_path))
+
+
+def test_multiple_runs_flat_under_task_with_parent_task_run_chain(tmp_path):
+    output = TaskOutput(output="test output")
+
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        path=tmp_path / "task.kiln",
+    )
+    task.save_to_file()
+
+    run1 = TaskRun(input="input1", output=output, parent=task)
+    run1.save_to_file()
+
+    run2 = TaskRun(
+        input="input2",
+        output=output,
+        parent=task,
+        parent_task_run_id=run1.id,
+    )
+    run2.save_to_file()
+
+    run3 = TaskRun(
+        input="input3",
+        output=output,
+        parent=task,
+        parent_task_run_id=run2.id,
+    )
+    run3.save_to_file()
+
+    task_children = TaskRun.all_children_of_parent_path(task.path)
+    assert len(task_children) == 3
+    by_id = {r.id: r for r in task_children}
+    assert by_id[run2.id].parent_task_run_id == run1.id
+    assert by_id[run3.id].parent_task_run_id == run2.id
+    assert by_id[run1.id].parent_task_run_id is None
+
+
+def test_iterate_children_wrong_parent_model_type(tmp_path):
+    invalid_parent_path = tmp_path / "invalid.kiln"
+    invalid_data = {
+        "model_type": "project",
+        "extra_field": "x",
+    }
+    with open(invalid_parent_path, "w") as f:
+        json.dump(invalid_data, f)
+
+    with pytest.raises(ValidationError, match="validation errors for Task"):
+        list(TaskRun.iterate_children_paths_of_parent_path(invalid_parent_path))
+
+
+def test_is_toolcall_pending_false_when_no_trace():
+    run = TaskRun(input="test", output=TaskOutput(output="response"))
+    assert run.is_toolcall_pending is False
+
+
+def test_is_toolcall_pending_false_when_last_message_has_no_tool_calls():
+    run = TaskRun(
+        input="test",
+        output=TaskOutput(output="response"),
+        trace=[
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "world"},
+        ],
+    )
+    assert run.is_toolcall_pending is False
+
+
+def test_is_toolcall_pending_true_when_last_message_has_tool_calls():
+    run = TaskRun(
+        input="test",
+        output=TaskOutput(output=""),
+        trace=[
+            {"role": "user", "content": "hello"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "function": {"name": "add", "arguments": '{"a":1,"b":2}'},
+                        "type": "function",
+                    }
+                ],
+            },
+        ],
+    )
+    assert run.is_toolcall_pending is True
+
+
+def test_is_toolcall_pending_false_when_tool_calls_followed_by_tool_response():
+    run = TaskRun(
+        input="test",
+        output=TaskOutput(output="3"),
+        trace=[
+            {"role": "user", "content": "hello"},
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "function": {"name": "add", "arguments": '{"a":1,"b":2}'},
+                        "type": "function",
+                    }
+                ],
+            },
+            {"role": "tool", "content": "3", "tool_call_id": "call_1"},
+        ],
+    )
+    assert run.is_toolcall_pending is False
+
+
+def test_is_toolcall_pending_false_when_only_task_response_tool_calls():
+    trace = [
+        {"role": "user", "content": "hello"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_tr",
+                    "function": {
+                        "name": "task_response",
+                        "arguments": '{"answer": 42}',
+                    },
+                    "type": "function",
+                }
+            ],
+        },
+    ]
+    run = TaskRun(input="test", output=TaskOutput(output='{"answer": 42}'), trace=trace)
+    assert run.is_toolcall_pending is False
+    assert (
+        RunOutput(
+            output='{"answer": 42}', intermediate_outputs=None, trace=trace
+        ).is_toolcall_pending
+        is False
+    )
+
+
+def test_is_toolcall_pending_true_when_task_response_mixed_with_unmanaged_tools():
+    trace = [
+        {"role": "user", "content": "hello"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_tr",
+                    "function": {
+                        "name": "task_response",
+                        "arguments": '{"x": 1}',
+                    },
+                    "type": "function",
+                },
+                {
+                    "id": "call_unmanaged",
+                    "function": {"name": "unmanaged_do", "arguments": "{}"},
+                    "type": "function",
+                },
+            ],
+        },
+    ]
+    run = TaskRun(input="test", output=TaskOutput(output=""), trace=trace)
+    assert run.is_toolcall_pending is True
+    assert (
+        RunOutput(output="", intermediate_outputs=None, trace=trace).is_toolcall_pending
+        is True
     )

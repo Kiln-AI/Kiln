@@ -7,9 +7,10 @@ import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.eval.eval_utils.eval_trace_formatter import EvalTraceFormatter
 from kiln_ai.adapters.ml_model_list import ModelProviderName, built_in_models
-from kiln_ai.adapters.provider_tools import provider_warnings
+from kiln_ai.adapters.model_adapters.test_paid_utils import (
+    skip_if_missing_provider_keys,
+)
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-from kiln_ai.utils.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -57,23 +58,6 @@ def reasoning_content_from_run(run: datamodel.TaskRun) -> str | None:
                 return reasoning.strip()
 
     return None
-
-
-def skip_if_missing_provider_keys(provider_name) -> None:
-    warning = provider_warnings.get(provider_name)
-    if warning is None:
-        return
-    missing = [
-        key
-        for key in warning.required_config_keys
-        if not Config.shared().get_value(key)
-    ]
-    if missing:
-        missing_list = ", ".join(missing)
-        pytest.skip(
-            f"Missing config keys for {provider_name}: {missing_list}. "
-            "Set env vars or .env before running paid tests."
-        )
 
 
 def get_all_model_providers_with_thinking_levels(

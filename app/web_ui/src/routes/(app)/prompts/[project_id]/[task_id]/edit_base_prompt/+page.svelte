@@ -10,8 +10,13 @@
   import { onMount } from "svelte"
   import type { Task } from "$lib/types"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Edit Base Prompt",
+    description: `Edit the base prompt instruction for project ID ${project_id}, task ID ${task_id}.`,
+  })
 
   let task: Task | null = null
   let instruction = ""
@@ -57,7 +62,7 @@
     save_error = null
     try {
       const { error: err } = await client.PATCH(
-        "/api/projects/{project_id}/task/{task_id}",
+        "/api/projects/{project_id}/tasks/{task_id}",
         {
           params: {
             path: { project_id, task_id },

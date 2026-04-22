@@ -17,9 +17,14 @@
   import { prompt_link } from "$lib/utils/link_builder"
   import { getRunConfigModelDisplayName } from "$lib/utils/run_config_formatters"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: prompt_optimization_job_id = $page.params.job_id!
+  $: agentInfo.set({
+    name: "Prompt Optimization Job Detail",
+    description: `Prompt optimization job detail for job ID ${prompt_optimization_job_id} in project ID ${project_id}, task ID ${task_id}. Job name: ${prompt_optimization_job?.name ?? "[loading]"}. Shows job progress, iterations, and results.`,
+  })
 
   let prompt_optimization_job: PromptOptimizationJob | null = null
   let prompt_optimization_job_error: KilnError | null = null
@@ -111,9 +116,6 @@
       get_task_composite_id(project_id, task_id)
     ] || []
 
-  $: target_run_config_page_link = `/optimize/${project_id}/${task_id}/run_config/${prompt_optimization_job?.target_run_config_id}`
-  $: created_run_config_page_link = `/optimize/${project_id}/${task_id}/run_config/${prompt_optimization_job?.created_run_config_id}`
-
   $: is_terminal =
     prompt_optimization_job?.latest_status === "succeeded" ||
     prompt_optimization_job?.latest_status === "failed" ||
@@ -181,6 +183,12 @@
       properties = []
       return
     }
+
+    const target_run_config_page_link = `/optimize/${project_id}/${task_id}/run_config/${prompt_optimization_job.target_run_config_id}`
+    const created_run_config_page_link =
+      prompt_optimization_job.created_run_config_id
+        ? `/optimize/${project_id}/${task_id}/run_config/${prompt_optimization_job.created_run_config_id}`
+        : undefined
 
     const target_run_config_info = get_run_config_info(
       prompt_optimization_job.target_run_config_id,

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import CloseIcon from "$lib/ui/icons/close_icon.svelte"
 
   const dispatch = createEventDispatcher()
 
@@ -43,10 +44,13 @@
     error = null
     dispatch("show")
     const dialogElement = document.getElementById(id)
-    // @ts-expect-error showModal is not a method on HTMLElement
-    dialogElement?.showModal()
+    const htmlDialog = dialogElement as HTMLDialogElement | null
+    // Check if dialog is already open before calling showModal()
+    if (htmlDialog && !htmlDialog.open) {
+      htmlDialog.showModal()
+    }
     // Focus the dialog itself to prevent auto-focus on the first link
-    dialogElement?.focus()
+    htmlDialog?.focus()
   }
 
   export function close() {
@@ -78,7 +82,13 @@
   }
 </script>
 
-<dialog {id} class="modal" tabindex="-1" on:close={() => dispatch("close")}>
+<dialog
+  {id}
+  class="modal"
+  tabindex="-1"
+  on:close={() => dispatch("close")}
+  on:cancel={(e) => dispatch("cancel", e)}
+>
   <div class="modal-box {width === 'wide' ? 'w-11/12 max-w-3xl' : ''}">
     <!-- Hidden div to force the compiler to find these classes -->
     <div class="hidden w-11/12 max-w-3xl"></div>
@@ -116,7 +126,8 @@
           <button
             class="btn btn-sm h-8 w-8 btn-circle btn-ghost focus:outline-none"
             on:click={button.action}
-            aria-label="Close dialog"
+            aria-label={button.alt_text}
+            title={button.alt_text}
           >
             <img
               class="h-6 w-6 mb-[1px]"
@@ -126,36 +137,12 @@
             />
           </button>
         {/each}
-
         <form method="dialog">
           <button
             class="btn btn-sm h-8 w-8 btn-circle btn-ghost focus:outline-none"
             aria-label="Close dialog"
           >
-            <!-- Uploaded to: SVG Repo, www.svgrepo.com, Generator: SVG Repo Mixer Tools -->
-            <svg
-              class="h-6 w-6"
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              aria-hidden="true"
-              focusable="false"
-            >
-              <g clip-path="url(#clip0_429_11083)">
-                <path
-                  d="M7 7.00006L17 17.0001M7 17.0001L17 7.00006"
-                  stroke="currentColor"
-                  stroke-width="2.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </g>
-              <defs>
-                <clipPath id="clip0_429_11083">
-                  <rect width="24" height="24" fill="white" />
-                </clipPath>
-              </defs>
-            </svg>
+            <span class="h-6 w-6 block"><CloseIcon /></span>
           </button>
         </form>
       </div>

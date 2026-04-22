@@ -2,7 +2,8 @@ import asyncio
 import io
 import logging
 import tempfile
-from pathlib import Path
+from pathlib import Path as PathlibPath
+from typing import Annotated
 
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.jobs import (
     check_prompt_optimization_model_supported_v1_jobs_prompt_optimization_job_check_model_supported_get,
@@ -32,7 +33,7 @@ from app.desktop.studio_server.eval_api import (
     task_run_config_from_id,
 )
 from app.desktop.studio_server.utils.response_utils import unwrap_response
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path, Query
 from kiln_ai.cli.commands.package_project import (
     PackageForTrainingConfig,
     package_project_for_training,
@@ -44,6 +45,10 @@ from kiln_ai.utils.config import Config
 from kiln_ai.utils.lock import shared_async_lock_manager
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.task_api import task_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    agent_policy_require_approval,
+)
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -336,10 +341,21 @@ async def update_prompt_optimization_job_and_create_artifacts(
 
 def connect_prompt_optimization_job_api(app: FastAPI):
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config"
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config",
+        tags=["Prompt Optimization"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def check_run_config(
-        project_id: str, task_id: str, run_config_id: str
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_config_id: Annotated[
+            str, Query(description="The unique identifier of the run configuration.")
+        ],
     ) -> CheckRunConfigResponse:
         """
         Check if a run config is valid for a Prompt Optimization job by validating the model is supported.
@@ -390,10 +406,21 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             )
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval"
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_eval",
+        tags=["Prompt Optimization"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def check_eval(
-        project_id: str, task_id: str, eval_id: str
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        eval_id: Annotated[
+            str, Query(description="The unique identifier of the evaluation.")
+        ],
     ) -> CheckEvalResponse:
         """
         Check if an eval is valid for a Prompt Optimization job.
@@ -462,11 +489,20 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             )
 
     @app.post(
-        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start"
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/start",
+        tags=["Prompt Optimization"],
+        openapi_extra=agent_policy_require_approval(
+            "Running prompt optimizer uses many credits"
+        ),
     )
     async def start_prompt_optimization_job(
-        project_id: str,
-        task_id: str,
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
         request: StartPromptOptimizationJobRequest,
     ) -> PromptOptimizationJob:
         """
@@ -507,7 +543,7 @@ def connect_prompt_optimization_job_api(app: FastAPI):
             with tempfile.TemporaryDirectory(
                 prefix="kiln_prompt_optimization_"
             ) as tmpdir:
-                tmp_file = Path(tmpdir) / "kiln_prompt_optimization_project.zip"
+                tmp_file = PathlibPath(tmpdir) / "kiln_prompt_optimization_project.zip"
                 package_project_for_training(
                     project=project,
                     task_ids=[task_id],
@@ -573,9 +609,25 @@ def connect_prompt_optimization_job_api(app: FastAPI):
                 detail=f"Failed to start Prompt Optimization job: {str(e)}",
             )
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs")
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs",
+        tags=["Prompt Optimization"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def list_prompt_optimization_jobs(
-        project_id: str, task_id: str, update_status: bool = False
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        update_status: Annotated[
+            bool,
+            Query(
+                description="Whether to update the status of non-final jobs from the remote server."
+            ),
+        ] = False,
     ) -> list[PromptOptimizationJob]:
         """
         List all Prompt Optimization jobs for a task.
@@ -619,10 +671,22 @@ def connect_prompt_optimization_job_api(app: FastAPI):
         return prompt_optimization_jobs
 
     @app.get(
-        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}"
+        "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/{prompt_optimization_job_id}",
+        tags=["Prompt Optimization"],
+        openapi_extra=ALLOW_AGENT,
     )
     async def get_prompt_optimization_job(
-        project_id: str, task_id: str, prompt_optimization_job_id: str
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        prompt_optimization_job_id: Annotated[
+            str,
+            Path(description="The unique identifier of the prompt optimization job."),
+        ],
     ) -> PromptOptimizationJob:
         """
         Get a specific Prompt Optimization job and update its status from the remote server.
@@ -653,9 +717,13 @@ def connect_prompt_optimization_job_api(app: FastAPI):
 
         return prompt_optimization_job
 
-    @app.get("/api/prompt_optimization_jobs/{job_id}/status")
+    @app.get(
+        "/api/prompt_optimization_jobs/{job_id}/status",
+        tags=["Prompt Optimization"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_prompt_optimization_job_status(
-        job_id: str,
+        job_id: Annotated[str, Path(description="The unique identifier of the job.")],
     ) -> PublicPromptOptimizationJobStatusResponse:
         """
         Get the status of a Prompt Optimization job.
@@ -692,9 +760,13 @@ def connect_prompt_optimization_job_api(app: FastAPI):
                 detail=f"Failed to get Prompt Optimization job status: {str(e)}",
             )
 
-    @app.get("/api/prompt_optimization_jobs/{job_id}/result")
+    @app.get(
+        "/api/prompt_optimization_jobs/{job_id}/result",
+        tags=["Prompt Optimization"],
+        openapi_extra=ALLOW_AGENT,
+    )
     async def get_prompt_optimization_job_result(
-        job_id: str,
+        job_id: Annotated[str, Path(description="The unique identifier of the job.")],
     ) -> PublicPromptOptimizationJobResultResponse:
         """
         Get the result of a prompt optimization job (includes status and output if completed).

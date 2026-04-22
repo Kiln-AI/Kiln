@@ -1,5 +1,6 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
+  import { agentInfo } from "$lib/agent"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
@@ -8,11 +9,16 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import { getContext } from "svelte"
   import type { Writable } from "svelte/store"
-  import TableButton from "../../../generate/[project_id]/[task_id]/table_button.svelte"
+  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import Intro from "$lib/ui/intro.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import type { OptionGroup } from "$lib/ui/fancy_select_types"
   import type { UserModelEntry, AvailableProviderInfo } from "$lib/types"
+
+  agentInfo.set({
+    name: "Custom Models",
+    description: "Add or remove custom models from connected AI providers.",
+  })
 
   let available_providers: AvailableProviderInfo[] = []
   let user_models: UserModelEntry[] = []
@@ -420,20 +426,15 @@
                 {/if}
               </td>
               <td class="p-0">
-                <div class="dropdown dropdown-end dropdown-hover">
-                  <TableButton />
-                  <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-                  <ul
-                    tabindex="0"
-                    class="dropdown-content menu bg-base-100 rounded-box z-[1] w-40 p-2 shadow"
-                  >
-                    <li>
-                      <button on:click={() => remove_model(model)}>
-                        Remove Model
-                      </button>
-                    </li>
-                  </ul>
-                </div>
+                <TableActionMenu
+                  width="w-40"
+                  items={[
+                    {
+                      label: "Remove Model",
+                      onclick: () => remove_model(model),
+                    },
+                  ]}
+                />
               </td>
             </tr>
           {/each}

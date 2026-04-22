@@ -102,17 +102,9 @@ export function filename_string_validator(
     return 'Cannot contain any of these characters: / \\ ? % * : | " < > . , ; = or newlines'
   }
 
-  // Check for leading/trailing whitespace or underscores
-  if (name !== name.trim()) {
-    return "Cannot have leading or trailing whitespace"
-  }
-  if (name.startsWith("_") || name.endsWith("_")) {
+  // Check for leading/trailing underscores
+  if (name.trim().startsWith("_") || name.trim().endsWith("_")) {
     return "Cannot start or end with an underscore"
-  }
-
-  // Check for consecutive whitespace
-  if (/\s\s+/.test(name)) {
-    return "Cannot contain consecutive whitespace"
   }
 
   // Check for consecutive underscores
@@ -121,6 +113,12 @@ export function filename_string_validator(
   }
 
   return null
+}
+
+// Normalizes a filename string by trimming whitespace and collapsing consecutive spaces.
+// Apply before submitting to the backend.
+export function normalize_filename_string(value: string): string {
+  return value.trim().replace(/\s\s+/g, " ")
 }
 
 // FilenameStringShort validator (max 32 characters) - used for eval score names, task requirement names

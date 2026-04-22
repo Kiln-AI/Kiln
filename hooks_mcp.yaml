@@ -4,18 +4,18 @@
 actions:
   - name: "check_all"
     description: "Run all checks for the project (web, python, formatting, etc). Very slow. Use for final checks before committing but use more lightweight checks for faster feedback."
-    command: "uv run ./checks.sh"
+    command: "uv run ./checks.sh --agent-mode"
 
   - name: "all_python_tests"
     description: "Run all python tests in the project"
-    command: "uv run python -m pytest --benchmark-quiet -q ."
+    command: "uv run python -m pytest --benchmark-quiet -q -n auto ."
 
   - name: "lint_python"
     description: "Lint the python source code, checking for errors and warnings"
     command: "uv run ruff check"
 
   - name: "lint_fix_python"
-    description: "Lint the pythong source code, fixing errors and warnings which it can fix. Not all errors can be fixed automatically."
+    description: "Lint the python source code, fixing errors and warnings which it can fix. Not all errors can be fixed automatically."
     command: "uv run ruff check --fix"
 
   - name: "check_format_python"
@@ -75,10 +75,13 @@ actions:
     command: "npm run build_quiet"
     run_path: "app/web_ui"
 
-  - name: "update_api_types"
-    description: "Update typescript API definition for the frontend to use, from the latest FastAPI server code."
-    command: "npx openapi-typescript http://localhost:8757/openapi.json -o api_schema.d.ts"
-    run_path: "app/web_ui/src/lib/"
+  - name: "check_schema"
+    description: "Check if the OpenAPI TypeScript schema is up to date with the FastAPI server code. Fails if generate_schema needs to be run."
+    command: "app/web_ui/src/lib/check_schema.sh"
+
+  - name: "generate_schema"
+    description: "Regenerate the OpenAPI TypeScript schema from the FastAPI server code. Run this when check_schema fails."
+    command: "app/web_ui/src/lib/generate_schema.sh"
 
 prompts:
   - name: "AGENTS.md"
@@ -87,20 +90,20 @@ prompts:
 
   - name: "python_test_guide.md"
     description: "Guide for testing best practices for python code"
-    prompt-file: "agents/python_test_guide.md"
+    prompt-file: ".agents/python_test_guide.md"
 
   - name: "frontend_design_guide.md"
     description: "Guide for UI design including color, typography, and controls"
-    prompt-file: "agents/frontend_design_guide.md"
+    prompt-file: ".agents/frontend_design_guide.md"
 
   - name: "frontend_controls.md"
     description: "Guide for UI controls available in the web app (spinners, buttons, dialogs, etc)"
-    prompt-file: "agents/frontend_controls.md"
+    prompt-file: ".agents/frontend_controls.md"
 
   - name: "tables_style.md"
     description: "Guide for css table styling"
-    prompt-file: "agents/tables_style.md"
+    prompt-file: ".agents/tables_style.md"
 
   - name: "card_style.md"
     description: "Guide for css card styling"
-    prompt-file: "agents/card_style.md"
+    prompt-file: ".agents/card_style.md"

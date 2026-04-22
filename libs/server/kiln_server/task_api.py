@@ -1,16 +1,41 @@
 import logging
-from typing import Any, Dict, List
+from typing import Annotated, Any, Dict, List
 
-from fastapi import FastAPI, HTTPException
-from kiln_ai.datamodel import Task, TaskRequirement
+from fastapi import Body, FastAPI, HTTPException, Path
+from kiln_ai.datamodel import Project, Task, TaskRequirement
 from kiln_ai.datamodel.external_tool_server import (
     ToolServerType,
 )
-from pydantic import BaseModel
+from kiln_ai.utils.config import Config
+from kiln_ai.utils.formatting import truncate_to_words_with_agent_sentinel
+from pydantic import BaseModel, Field
 
 from kiln_server.project_api import project_from_id
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    DENY_AGENT,
+    agent_policy_require_approval,
+)
 
 logger = logging.getLogger(__name__)
+
+
+class TaskSummary(BaseModel):
+    id: str
+    name: str
+    description: str | None
+    instruction: str
+
+
+class TaskSummariesProject(BaseModel):
+    id: str
+    name: str
+    description: str | None
+    tasks: list[TaskSummary]
+
+
+class TaskSummariesResponse(BaseModel):
+    projects: list[TaskSummariesProject]
 
 
 def task_from_id(project_id: str, task_id: str) -> Task:
@@ -26,18 +51,38 @@ def task_from_id(project_id: str, task_id: str) -> Task:
 
 
 class RatingOption(BaseModel):
-    requirement: TaskRequirement
-    show_for_all: bool
-    show_for_tags: List[str]
+    """A rating requirement with display rules."""
+
+    requirement: TaskRequirement = Field(description="The task requirement to rate.")
+    show_for_all: bool = Field(
+        description="Whether this rating option is shown for all outputs."
+    )
+    show_for_tags: List[str] = Field(
+        description="Tags for which this rating option is shown."
+    )
 
 
 class RatingOptionResponse(BaseModel):
-    options: List[RatingOption]
+    """The available rating options for a task."""
+
+    options: List[RatingOption] = Field(description="The list of rating options.")
 
 
 def connect_task_api(app: FastAPI):
-    @app.post("/api/projects/{project_id}/task")
-    async def create_task(project_id: str, task_data: Dict[str, Any]) -> Task:
+    @app.post(
+        "/api/projects/{project_id}/tasks",
+        summary="Create Task",
+        tags=["Tasks"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def create_task(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_data: Annotated[
+            Dict[str, Any], Body(description="The task data to create.")
+        ],
+    ) -> Task:
         if "id" in task_data:
             raise HTTPException(
                 status_code=400,
@@ -61,9 +106,25 @@ def connect_task_api(app: FastAPI):
 
         return task
 
-    @app.patch("/api/projects/{project_id}/task/{task_id}")
+    @app.patch(
+        "/api/projects/{project_id}/tasks/{task_id}",
+        summary="Update Task",
+        tags=["Tasks"],
+        openapi_extra=agent_policy_require_approval(
+            "Allow agent to edit task? Ensure you backup your project before allowing agentic edits."
+        ),
+    )
     async def update_task(
-        project_id: str, task_id: str, task_updates: Dict[str, Any]
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        task_updates: Annotated[
+            Dict[str, Any], Body(description="Fields to update on the task.")
+        ],
     ) -> Task:
         if "input_json_schema" in task_updates or "output_json_schema" in task_updates:
             raise HTTPException(
@@ -83,7 +144,7 @@ def connect_task_api(app: FastAPI):
         if updated_task is None:
             raise HTTPException(
                 status_code=400,
-                detail="Failed to create task.",
+                detail="Failed to update task.",
             )
         if not isinstance(updated_task, Task):
             raise HTTPException(
@@ -93,8 +154,21 @@ def connect_task_api(app: FastAPI):
 
         return updated_task
 
-    @app.delete("/api/projects/{project_id}/task/{task_id}")
-    async def delete_task(project_id: str, task_id: str) -> None:
+    @app.delete(
+        "/api/projects/{project_id}/tasks/{task_id}",
+        summary="Delete Task",
+        tags=["Tasks"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def delete_task(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> None:
         task = task_from_id(project_id, task_id)
         task.delete()
 
@@ -114,20 +188,53 @@ def connect_task_api(app: FastAPI):
 
                     tool_server.save_to_file()
 
-    @app.get("/api/projects/{project_id}/tasks")
-    async def get_tasks(project_id: str) -> List[Task]:
+    @app.get(
+        "/api/projects/{project_id}/tasks",
+        summary="List Tasks",
+        tags=["Tasks"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_tasks(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+    ) -> List[Task]:
         parent_project = project_from_id(project_id)
         return parent_project.tasks()
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}")
-    async def get_task(project_id: str, task_id: str) -> Task:
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}",
+        summary="Get Task",
+        tags=["Tasks"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_task(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> Task:
         return task_from_id(project_id, task_id)
 
-    @app.get("/api/projects/{project_id}/tasks/{task_id}/rating_options")
-    async def get_rating_options(project_id: str, task_id: str) -> RatingOptionResponse:
-        """
-        Generates an object which determines which rating options should be shown for a given dataset item.
-        """
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/rating_options",
+        summary="Get Rating Options",
+        tags=["Tasks"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_rating_options(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> RatingOptionResponse:
+        """Determines which rating options should be shown for a given dataset item."""
         task = task_from_id(project_id, task_id)
         results: List[RatingOption] = []
 
@@ -195,3 +302,52 @@ def connect_task_api(app: FastAPI):
                 )
 
         return RatingOptionResponse(options=results)
+
+    @app.get(
+        "/api/task_summaries",
+        summary="Task Summaries (agent-tuned)",
+        tags=["Tasks"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def task_summaries() -> TaskSummariesResponse:
+        """Return a workspace-wide list of projects and their tasks, with truncated
+        task.instruction values. Unlike typical list endpoints, entries here are
+        intentionally lossy — the shape is tuned for LLM-agent context efficiency,
+        not for driving UIs that need the full Task model."""
+        project_paths = Config.shared().projects or []
+        projects: list[TaskSummariesProject] = []
+        for project_path in project_paths:
+            try:
+                project = Project.load_from_file(project_path)
+            except Exception:
+                logger.warning(
+                    "Failed to load project from path: %s", project_path, exc_info=True
+                )
+                continue
+            if project.id is None:
+                logger.warning("Project at %s has no ID, skipping", project_path)
+                continue
+            tasks: list[TaskSummary] = []
+            for task in project.tasks(readonly=True):
+                if task.id is None:
+                    continue
+                instruction = truncate_to_words_with_agent_sentinel(
+                    task.instruction, 100
+                )
+                tasks.append(
+                    TaskSummary(
+                        id=task.id,
+                        name=task.name,
+                        description=task.description,
+                        instruction=instruction or "",
+                    )
+                )
+            projects.append(
+                TaskSummariesProject(
+                    id=project.id,
+                    name=project.name,
+                    description=project.description,
+                    tasks=tasks,
+                )
+            )
+        return TaskSummariesResponse(projects=projects)

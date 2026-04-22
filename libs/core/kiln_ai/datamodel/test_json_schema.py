@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from kiln_ai.datamodel.json_schema import (
     JsonObjectSchema,
+    close_object_schemas,
     schema_from_json_str,
     single_string_field_name,
     string_to_json_key,
@@ -191,6 +192,150 @@ def test_array_schema_validation():
 
     # Arrays are valid if we don't require an object
     validate_schema(value, schema_str, require_object=False)
+
+
+def test_close_object_schemas_sets_missing_additional_properties_recursively():
+    schema = {
+        "type": "object",
+        "properties": {
+            "child": {
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "required": ["name"],
+            },
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {"value": {"type": "integer"}},
+                },
+            },
+        },
+        "required": ["child", "items"],
+        "$defs": {
+            "Nested": {
+                "type": "object",
+                "properties": {"enabled": {"type": "boolean"}},
+            }
+        },
+        "anyOf": [{"$ref": "#/$defs/Nested"}],
+    }
+
+    normalized = close_object_schemas(schema)
+
+    assert "additionalProperties" not in schema
+    assert normalized["additionalProperties"] is False
+    assert normalized["properties"]["child"]["additionalProperties"] is False
+    assert normalized["properties"]["items"]["items"]["additionalProperties"] is False
+    assert normalized["$defs"]["Nested"]["additionalProperties"] is False
+
+
+def test_close_object_schemas_preserves_explicit_additional_properties():
+    schema = {
+        "type": "object",
+        "properties": {
+            "metadata": {
+                "type": "object",
+                "properties": {"key": {"type": "string"}},
+                "additionalProperties": True,
+            }
+        },
+    }
+
+    normalized = close_object_schemas(schema)
+
+    assert normalized["additionalProperties"] is False
+    assert normalized["properties"]["metadata"]["additionalProperties"] is True
+
+
+def test_close_object_schemas_strict_adds_required():
+    schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "age": {"type": "integer"},
+        },
+    }
+    result = close_object_schemas(schema, strict=True)
+    assert result["required"] == ["name", "age"]
+    assert result["additionalProperties"] is False
+
+
+def test_close_object_schemas_strict_overwrites_partial_required():
+    schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "age": {"type": "integer"},
+            "email": {"type": "string"},
+        },
+        "required": ["name"],
+    }
+    result = close_object_schemas(schema, strict=True)
+    assert result["required"] == ["name", "age", "email"]
+
+
+def test_close_object_schemas_strict_nested():
+    schema = {
+        "type": "object",
+        "properties": {
+            "user": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "address": {
+                        "type": "object",
+                        "properties": {
+                            "street": {"type": "string"},
+                            "city": {"type": "string"},
+                        },
+                    },
+                },
+            },
+            "tags": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "key": {"type": "string"},
+                        "value": {"type": "string"},
+                    },
+                },
+            },
+        },
+    }
+    result = close_object_schemas(schema, strict=True)
+    assert result["required"] == ["user", "tags"]
+    assert result["properties"]["user"]["required"] == ["name", "address"]
+    assert result["properties"]["user"]["properties"]["address"]["required"] == [
+        "street",
+        "city",
+    ]
+    assert result["properties"]["tags"]["items"]["required"] == ["key", "value"]
+
+
+def test_close_object_schemas_non_strict_no_required():
+    schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "age": {"type": "integer"},
+        },
+    }
+    result = close_object_schemas(schema)
+    assert "required" not in result
+
+    result_explicit = close_object_schemas(schema, strict=False)
+    assert "required" not in result_explicit
+
+
+def test_close_object_schemas_strict_no_properties():
+    schema = {
+        "type": "object",
+        "additionalProperties": {"type": "string"},
+    }
+    result = close_object_schemas(schema, strict=True)
+    assert "required" not in result
 
 
 @pytest.mark.parametrize(

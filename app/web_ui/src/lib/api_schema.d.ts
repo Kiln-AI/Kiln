@@ -12,8 +12,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Ping
-         * @description Ping the server 🏓
+         * Ping Server
+         * @description Ping the server to check connectivity.
          */
         get: operations["ping_ping_get"];
         put?: never;
@@ -24,40 +24,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/project": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create Project */
-        post: operations["create_project_api_project_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/project/{project_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update Project */
-        patch: operations["update_project_api_project__project_id__patch"];
-        trace?: never;
-    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -65,10 +31,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Projects */
+        /** List Projects */
         get: operations["get_projects_api_projects_get"];
         put?: never;
-        post?: never;
+        /** Create Project */
+        post: operations["create_project_api_projects_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -86,11 +53,11 @@ export interface paths {
         get: operations["get_project_api_projects__project_id__get"];
         put?: never;
         post?: never;
-        /** Delete Project */
-        delete: operations["delete_project_api_projects__project_id__delete"];
+        delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update Project */
+        patch: operations["update_project_api_projects__project_id__patch"];
         trace?: never;
     };
     "/api/import_project": {
@@ -110,41 +77,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/task": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create Task */
-        post: operations["create_task_api_projects__project_id__task_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/task/{task_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete Task */
-        delete: operations["delete_task_api_projects__project_id__task__task_id__delete"];
-        options?: never;
-        head?: never;
-        /** Update Task */
-        patch: operations["update_task_api_projects__project_id__task__task_id__patch"];
-        trace?: never;
-    };
     "/api/projects/{project_id}/tasks": {
         parameters: {
             query?: never;
@@ -152,10 +84,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Tasks */
+        /** List Tasks */
         get: operations["get_tasks_api_projects__project_id__tasks_get"];
         put?: never;
-        post?: never;
+        /** Create Task */
+        post: operations["create_task_api_projects__project_id__tasks_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -173,10 +106,12 @@ export interface paths {
         get: operations["get_task_api_projects__project_id__tasks__task_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Task */
+        delete: operations["delete_task_api_projects__project_id__tasks__task_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update Task */
+        patch: operations["update_task_api_projects__project_id__tasks__task_id__patch"];
         trace?: never;
     };
     "/api/projects/{project_id}/tasks/{task_id}/rating_options": {
@@ -188,7 +123,7 @@ export interface paths {
         };
         /**
          * Get Rating Options
-         * @description Generates an object which determines which rating options should be shown for a given dataset item.
+         * @description Determines which rating options should be shown for a given dataset item.
          */
         get: operations["get_rating_options_api_projects__project_id__tasks__task_id__rating_options_get"];
         put?: never;
@@ -199,34 +134,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/task/{task_id}/prompt": {
+    "/api/task_summaries": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Task Summaries (agent-tuned)
+         * @description Return a workspace-wide list of projects and their tasks, with truncated
+         *     task.instruction values. Unlike typical list endpoints, entries here are
+         *     intentionally lossy — the shape is tuned for LLM-agent context efficiency,
+         *     not for driving UIs that need the full Task model.
+         */
+        get: operations["task_summaries_api_task_summaries_get"];
         put?: never;
-        /** Create Prompt */
-        post: operations["create_prompt_api_projects__project_id__task__task_id__prompt_post"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/task/{task_id}/prompts": {
+    "/api/projects/{project_id}/tasks/{task_id}/prompts": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Prompts */
-        get: operations["get_prompts_api_projects__project_id__task__task_id__prompts_get"];
+        /** List Prompts */
+        get: operations["get_prompts_api_projects__project_id__tasks__task_id__prompts_get"];
         put?: never;
-        post?: never;
+        /** Create Prompt */
+        post: operations["create_prompt_api_projects__project_id__tasks__task_id__prompts_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -273,23 +215,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/spec": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create Spec */
-        post: operations["create_spec_api_projects__project_id__tasks__task_id__spec_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/projects/{project_id}/tasks/{task_id}/specs": {
         parameters: {
             query?: never;
@@ -297,10 +222,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Specs */
+        /** List Specs */
         get: operations["get_specs_api_projects__project_id__tasks__task_id__specs_get"];
         put?: never;
-        post?: never;
+        /** Create Spec */
+        post: operations["create_spec_api_projects__project_id__tasks__task_id__specs_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -352,11 +278,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Runs */
+        /** List Runs */
         get: operations["get_runs_api_projects__project_id__tasks__task_id__runs_get"];
         put?: never;
         /**
-         * Create Task Run
+         * Create Run
          * @description Create a TaskRun directly without running a model.
          */
         post: operations["create_task_run_api_projects__project_id__tasks__task_id__runs_post"];
@@ -373,7 +299,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Runs Summary */
+        /** List Run Summaries */
         get: operations["get_runs_summary_api_projects__project_id__tasks__task_id__runs_summaries_get"];
         put?: never;
         post?: never;
@@ -409,7 +335,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Run Task */
+        /**
+         * Execute Run
+         * @description Invoke an AI model on a task and return the result. Unlike 'Create Run', this actually executes the model.
+         */
         post: operations["run_task_api_projects__project_id__tasks__task_id__run_post"];
         delete?: never;
         options?: never;
@@ -426,7 +355,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Edit Tags */
+        /** Edit Run Tags */
         post: operations["edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post"];
         delete?: never;
         options?: never;
@@ -443,7 +372,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Bulk Upload */
+        /** Bulk Upload Runs */
         post: operations["bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post"];
         delete?: never;
         options?: never;
@@ -458,11 +387,46 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Tags */
+        /** List Run Tags */
         get: operations["get_tags_api_projects__project_id__tasks__task_id__tags_get"];
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Feedback */
+        get: operations["list_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback_get"];
+        put?: never;
+        /** Create Feedback */
+        post: operations["create_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/feedback/{feedback_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Feedback */
+        delete: operations["delete_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback__feedback_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -477,7 +441,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Create Documents Bulk */
+        /** Bulk Create Documents */
         post: operations["create_documents_bulk_api_projects__project_id__documents_bulk_post"];
         delete?: never;
         options?: never;
@@ -492,7 +456,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Documents */
+        /** List Documents */
         get: operations["get_documents_api_projects__project_id__documents_get"];
         put?: never;
         post?: never;
@@ -510,7 +474,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Extractions For Extractor Config
+         * List Extractions for Extractor Config
          * @description Return mapping of document id to list of extractions for the given extractor config id.
          */
         get: operations["get_extractions_for_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__extractions_get"];
@@ -529,7 +493,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Document Tags */
+        /** List Document Tags */
         get: operations["get_document_tags_api_projects__project_id__documents_tags_get"];
         put?: never;
         post?: never;
@@ -1104,7 +1068,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Providers Models */
+        /** List Provider Models */
         get: operations["get_providers_models_api_providers_models_get"];
         put?: never;
         post?: never;
@@ -1121,7 +1085,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Available Models */
+        /** List Available Models */
         get: operations["get_available_models_api_available_models_get"];
         put?: never;
         post?: never;
@@ -1138,7 +1102,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Providers Embedding Models */
+        /** List Provider Embedding Models */
         get: operations["get_providers_embedding_models_api_providers_embedding_models_get"];
         put?: never;
         post?: never;
@@ -1155,7 +1119,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Available Embedding Models */
+        /** List Available Embedding Models */
         get: operations["get_available_embedding_models_api_available_embedding_models_get"];
         put?: never;
         post?: never;
@@ -1172,7 +1136,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Providers Reranker Models */
+        /** List Provider Reranker Models */
         get: operations["get_providers_reranker_models_api_providers_reranker_models_get"];
         put?: never;
         post?: never;
@@ -1189,7 +1153,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Available Reranker Models */
+        /** List Available Reranker Models */
         get: operations["get_available_reranker_models_api_available_reranker_models_get"];
         put?: never;
         post?: never;
@@ -1206,10 +1170,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Connect Ollama Api */
-        get: operations["connect_ollama_api_api_provider_ollama_connect_get"];
+        get?: never;
         put?: never;
-        post?: never;
+        /** Connect Ollama */
+        post: operations["connect_ollama_api_api_provider_ollama_connect_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1223,10 +1187,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Connect Docker Model Runner Api */
-        get: operations["connect_docker_model_runner_api_api_provider_docker_model_runner_connect_get"];
+        get?: never;
         put?: never;
-        post?: never;
+        /** Connect Docker Model Runner */
+        post: operations["connect_docker_model_runner_api_api_provider_docker_model_runner_connect_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1242,9 +1206,9 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Save Openai Compatible Providers */
+        /** Add OpenAI Compatible Provider */
         post: operations["save_openai_compatible_providers_api_provider_openai_compatible_post"];
-        /** Delete Openai Compatible Providers */
+        /** Delete OpenAI Compatible Provider */
         delete: operations["delete_openai_compatible_providers_api_provider_openai_compatible_delete"];
         options?: never;
         head?: never;
@@ -1259,7 +1223,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get Available Providers
+         * List Available Providers
          * @description Returns all providers that can have custom models added.
          */
         get: operations["get_available_providers_api_settings_available_providers_get"];
@@ -1279,7 +1243,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get User Models
+         * List User Models
          * @description Returns all user-defined models (new registry + legacy combined).
          *
          *     Includes both user_model_registry entries and legacy custom_models
@@ -1319,7 +1283,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Connect Api Key */
+        /** Connect Provider API Key */
         post: operations["connect_api_key_api_provider_connect_api_key_post"];
         delete?: never;
         options?: never;
@@ -1336,7 +1300,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Disconnect Api Key */
+        /** Disconnect Provider API Key */
         post: operations["disconnect_api_key_api_provider_disconnect_api_key_post"];
         delete?: never;
         options?: never;
@@ -1344,7 +1308,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/task/{task_id}/gen_prompt/{prompt_id}": {
+    "/api/provider/create_kiln_copilot_api_key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Kiln Copilot API Key */
+        post: operations["create_kiln_copilot_api_key_api_provider_create_kiln_copilot_api_key_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/gen_prompt/{prompt_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1352,7 +1333,7 @@ export interface paths {
             cookie?: never;
         };
         /** Generate Prompt */
-        get: operations["generate_prompt_api_projects__project_id__task__task_id__gen_prompt__prompt_id__get"];
+        get: operations["generate_prompt_api_projects__project_id__tasks__task_id__gen_prompt__prompt_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1361,7 +1342,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/run_repair": {
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/generate_repair": {
         parameters: {
             query?: never;
             header?: never;
@@ -1370,15 +1351,18 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Run Repair */
-        post: operations["run_repair_api_projects__project_id__tasks__task_id__runs__run_id__run_repair_post"];
+        /**
+         * Generate Repair
+         * @description Invoke an AI model to generate a repaired output for a task run based on evaluator feedback. Returns the repair as a new TaskRun without persisting it.
+         */
+        post: operations["run_repair_api_projects__project_id__tasks__task_id__runs__run_id__generate_repair_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/repair": {
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/save_repair": {
         parameters: {
             query?: never;
             header?: never;
@@ -1387,8 +1371,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Post Repair Run */
-        post: operations["post_repair_run_api_projects__project_id__tasks__task_id__runs__run_id__repair_post"];
+        /**
+         * Save Repair
+         * @description Persist a repaired output for a task run. Use after reviewing the result from Generate Repair or creating a manual repair.
+         */
+        post: operations["post_repair_run_api_projects__project_id__tasks__task_id__runs__run_id__save_repair_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1402,7 +1389,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read Settings */
+        /** Get Settings */
         get: operations["read_settings_api_settings_get"];
         put?: never;
         /** Update Settings */
@@ -1420,7 +1407,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read Setting Item */
+        /** Get Setting Item */
         get: operations["read_setting_item_api_settings__item_id__get"];
         put?: never;
         post?: never;
@@ -1439,7 +1426,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Open Logs */
+        /**
+         * Open Logs Folder
+         * @description Opens the log folder in the system file browser.
+         */
         post: operations["open_logs_api_open_logs_post"];
         delete?: never;
         options?: never;
@@ -1456,7 +1446,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Open Project Folder */
+        /**
+         * Open Project Folder
+         * @description Opens the project folder in the system file browser.
+         */
         post: operations["open_project_folder_api_open_project_folder__project_id__post"];
         delete?: never;
         options?: never;
@@ -1475,11 +1468,8 @@ export interface paths {
          * Check Entitlements
          * @description Check whether the authenticated user has the given entitlements.
          *
-         *     Args:
-         *         feature_codes: Comma-separated entitlement feature codes to check
-         *
-         *     Returns:
-         *         Dict mapping each feature code to a boolean indicating if user has that entitlement
+         *     The feature_codes parameter should be a comma-separated list of entitlement feature codes to check.
+         *     Returns a dict mapping each feature code to a boolean indicating if the user has that entitlement.
          */
         get: operations["check_entitlements_api_check_entitlements_get"];
         put?: never;
@@ -1516,7 +1506,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Generate Samples */
+        /** Generate Inputs */
         post: operations["generate_samples_api_projects__project_id__tasks__task_id__generate_inputs_post"];
         delete?: never;
         options?: never;
@@ -1570,7 +1560,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Generate Qna Pairs */
+        /** Generate Q&A Pairs */
         post: operations["generate_qna_pairs_api_projects__project_id__tasks__task_id__generate_qna_post"];
         delete?: never;
         options?: never;
@@ -1588,7 +1578,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Save Qna Pair
+         * Save Q&A Pair
          * @description Save a single QnA pair as a TaskRun. We store the task's system prompt
          *     as the system message, the query as the user message, and the answer
          *     as the assistant message in the trace. The output is the answer.
@@ -1607,7 +1597,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Dataset Splits */
+        /** List Dataset Splits */
         get: operations["dataset_splits_api_projects__project_id__tasks__task_id__dataset_splits_get"];
         put?: never;
         /** Create Dataset Split */
@@ -1625,7 +1615,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Finetunes */
+        /** List Finetunes */
         get: operations["finetunes_api_projects__project_id__tasks__task_id__finetunes_get"];
         put?: never;
         /** Create Finetune */
@@ -1643,7 +1633,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Finetune */
+        /** Get Finetune */
         get: operations["finetune_api_projects__project_id__tasks__task_id__finetunes__finetune_id__get"];
         put?: never;
         post?: never;
@@ -1661,7 +1651,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Finetune Providers */
+        /** List Finetune Providers */
         get: operations["finetune_providers_api_finetune_providers_get"];
         put?: never;
         post?: never;
@@ -1678,7 +1668,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Finetune Hyperparameters */
+        /** List Finetune Hyperparameters */
         get: operations["finetune_hyperparameters_api_finetune_hyperparameters__provider_id__get"];
         put?: never;
         post?: never;
@@ -1695,7 +1685,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Finetune Dataset Info */
+        /** Get Finetune Dataset Info */
         get: operations["finetune_dataset_info_api_projects__project_id__tasks__task_id__finetune_dataset_info_get"];
         put?: never;
         post?: never;
@@ -1712,7 +1702,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Download Dataset Jsonl */
+        /** Download Dataset JSONL */
         get: operations["download_dataset_jsonl_api_download_dataset_jsonl_get"];
         put?: never;
         post?: never;
@@ -1739,24 +1729,25 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/run_configs/": {
+    "/api/projects/{project_id}/tasks/{task_id}/run_configs": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Run Configs */
-        get: operations["get_run_configs_api_projects__project_id__tasks__task_id__run_configs__get"];
+        /** List Run Configs */
+        get: operations["get_run_configs_api_projects__project_id__tasks__task_id__run_configs_get"];
         put?: never;
-        post?: never;
+        /** Create Run Config */
+        post: operations["create_task_run_config_api_projects__project_id__tasks__task_id__run_configs_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}": {
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1764,15 +1755,15 @@ export interface paths {
             cookie?: never;
         };
         /** Get Eval */
-        get: operations["get_eval_api_projects__project_id__tasks__task_id__eval__eval_id__get"];
+        get: operations["get_eval_api_projects__project_id__tasks__task_id__evals__eval_id__get"];
         put?: never;
         post?: never;
         /** Delete Eval */
-        delete: operations["delete_eval_api_projects__project_id__tasks__task_id__eval__eval_id__delete"];
+        delete: operations["delete_eval_api_projects__project_id__tasks__task_id__evals__eval_id__delete"];
         options?: never;
         head?: never;
         /** Update Eval */
-        patch: operations["update_eval_api_projects__project_id__tasks__task_id__eval__eval_id__patch"];
+        patch: operations["update_eval_api_projects__project_id__tasks__task_id__evals__eval_id__patch"];
         trace?: never;
     };
     "/api/projects/{project_id}/tasks/{task_id}/evals": {
@@ -1782,7 +1773,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Evals */
+        /**
+         * List Evals
+         * @description List all evals for a task.
+         */
         get: operations["get_evals_api_projects__project_id__tasks__task_id__evals_get"];
         put?: never;
         post?: never;
@@ -1792,15 +1786,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs": {
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Eval Configs */
-        get: operations["get_eval_configs_api_projects__project_id__tasks__task_id__eval__eval_id__eval_configs_get"];
+        /** List Eval Configs */
+        get: operations["get_eval_configs_api_projects__project_id__tasks__task_id__evals__eval_id__eval_configs_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1809,7 +1803,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}": {
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1817,7 +1811,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get Eval Config */
-        get: operations["get_eval_config_api_projects__project_id__tasks__task_id__eval__eval_id__eval_config__eval_config_id__get"];
+        get: operations["get_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1826,24 +1820,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/task_run_config": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create Task Run Config */
-        post: operations["create_task_run_config_api_projects__project_id__tasks__task_id__task_run_config_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}": {
+    "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1857,10 +1834,10 @@ export interface paths {
         options?: never;
         head?: never;
         /** Update Run Config */
-        patch: operations["update_run_config_api_projects__project_id__tasks__task_id__run_config__run_config_id__patch"];
+        patch: operations["update_run_config_api_projects__project_id__tasks__task_id__run_configs__run_config_id__patch"];
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/create_eval_config": {
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/create_eval_config": {
         parameters: {
             query?: never;
             header?: never;
@@ -1870,22 +1847,25 @@ export interface paths {
         get?: never;
         put?: never;
         /** Create Eval Config */
-        post: operations["create_eval_config_api_projects__project_id__tasks__task_id__eval__eval_id__create_eval_config_post"];
+        post: operations["create_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__create_eval_config_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/run_task_run_eval": {
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_comparison": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Run Eval Config */
-        get: operations["run_eval_config_api_projects__project_id__tasks__task_id__eval__eval_id__eval_config__eval_config_id__run_task_run_eval_get"];
+        /**
+         * Run Run Config Comparison
+         * @description Run a specific eval config against one or more run configs and stream progress via SSE. Executes model runs and scores them.
+         */
+        get: operations["run_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_comparison_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1894,7 +1874,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/set_current_eval_config/{eval_config_id}": {
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/set_current_eval_config/{eval_config_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -1904,22 +1884,25 @@ export interface paths {
         get?: never;
         put?: never;
         /** Set Default Eval Config */
-        post: operations["set_default_eval_config_api_projects__project_id__tasks__task_id__eval__eval_id__set_current_eval_config__eval_config_id__post"];
+        post: operations["set_default_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__set_current_eval_config__eval_config_id__post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/run_eval_config_eval": {
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/run_calibration": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Run Eval Config Eval */
-        get: operations["run_eval_config_eval_api_projects__project_id__tasks__task_id__eval__eval_id__run_eval_config_eval_get"];
+        /**
+         * Run Calibration
+         * @description Run all eval configs against each other for calibration and stream progress via SSE. Used to check that eval configs produce consistent scores.
+         */
+        get: operations["run_eval_config_eval_api_projects__project_id__tasks__task_id__evals__eval_id__run_calibration_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1928,7 +1911,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/results": {
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/results": {
         parameters: {
             query?: never;
             header?: never;
@@ -1936,7 +1919,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get Eval Run Results */
-        get: operations["get_eval_run_results_api_projects__project_id__tasks__task_id__eval__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get"];
+        get: operations["get_eval_run_results_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1945,7 +1928,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress": {
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/progress": {
         parameters: {
             query?: never;
             header?: never;
@@ -1953,7 +1936,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get Eval Progress */
-        get: operations["get_eval_progress_api_projects__project_id__tasks__task_id__eval__eval_id__progress_get"];
+        get: operations["get_eval_progress_api_projects__project_id__tasks__task_id__evals__eval_id__progress_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1962,15 +1945,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/score_summary": {
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/score_summary": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Eval Config Score Summary */
-        get: operations["get_eval_config_score_summary_api_projects__project_id__tasks__task_id__eval__eval_id__eval_config__eval_config_id__score_summary_get"];
+        /** Get Run Config Score Summary */
+        get: operations["get_eval_config_score_summary_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__score_summary_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1979,15 +1962,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_configs_score_summary": {
+    "/api/projects/{project_id}/tasks/{task_id}/eval_results_summary": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Eval Configs Score Summary */
-        get: operations["get_eval_configs_score_summary_api_projects__project_id__tasks__task_id__eval__eval_id__eval_configs_score_summary_get"];
+        /** Get Eval Results Summary */
+        get: operations["get_eval_results_summary_api_projects__project_id__tasks__task_id__eval_results_summary_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1996,7 +1979,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/projects/{project_id}/tasks/{task_id}/run_config/{run_config_id}/eval_scores": {
+    "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_configs_score_summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Eval Config Comparison Summary */
+        get: operations["get_eval_configs_score_summary_api_projects__project_id__tasks__task_id__evals__eval_id__eval_configs_score_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/run_configs/{run_config_id}/eval_scores": {
         parameters: {
             query?: never;
             header?: never;
@@ -2004,7 +2004,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get Run Config Eval Scores */
-        get: operations["get_run_config_eval_scores_api_projects__project_id__tasks__task_id__run_config__run_config_id__eval_scores_get"];
+        get: operations["get_run_config_eval_scores_api_projects__project_id__tasks__task_id__run_configs__run_config_id__eval_scores_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2233,6 +2233,23 @@ export interface paths {
         head?: never;
         /** Edit Local Mcp */
         patch: operations["edit_local_mcp_api_projects__project_id__edit_local_mcp__tool_server_id__patch"];
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tool_servers/{tool_server_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Archive Tool Server */
+        post: operations["archive_tool_server_api_projects__project_id__tool_servers__tool_server_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/projects/{project_id}/kiln_task_tool": {
@@ -2647,10 +2664,661 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/git_sync/test_access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Git Remote Access */
+        post: operations["api_test_access_api_git_sync_test_access_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/list_branches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** List Remote Branches */
+        post: operations["api_list_branches_api_git_sync_list_branches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clone Repository */
+        post: operations["api_clone_api_git_sync_clone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/test_write_access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Write Access */
+        post: operations["api_test_write_access_api_git_sync_test_write_access_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/scan_projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Scan for Kiln Projects */
+        post: operations["api_scan_projects_api_git_sync_scan_projects_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/rename_clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rename Clone to Final Path */
+        post: operations["api_rename_clone_api_git_sync_rename_clone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/save_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save Git Sync Config */
+        post: operations["api_save_config_api_git_sync_save_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/config/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Git Sync Config */
+        get: operations["api_get_config_api_git_sync_config__project_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Git Sync Config */
+        delete: operations["api_delete_config_api_git_sync_config__project_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Git Sync Config */
+        patch: operations["api_update_config_api_git_sync_config__project_id__patch"];
+        trace?: never;
+    };
+    "/api/git_sync/oauth/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start GitHub OAuth Flow */
+        post: operations["api_oauth_start_api_git_sync_oauth_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** OAuth Callback */
+        get: operations["api_oauth_callback_api_git_sync_oauth_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/oauth/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GitHub App Install Complete */
+        get: operations["api_oauth_installed_api_git_sync_oauth_authorize_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/oauth/status/{state}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** OAuth Flow Status */
+        get: operations["api_oauth_status_api_git_sync_oauth_status__state__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/delete_project/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Project
+         * @description Removes the project from Kiln but does not delete the files from disk.
+         */
+        delete: operations["delete_project_api_delete_project__project_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/agent_overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent Overview
+         * @description An overview of a task and all it's components, optimized for agents.
+         */
+        get: operations["agent_overview_api_projects__project_id__tasks__task_id__agent_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/execute-tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Execute approved client tools and continue chat stream
+         * @description Tool calls that require user approval are streamed to the client for approval, along with the
+         *     other toolcalls part of the same turn. The user must approve / reject all the approval-requiring
+         *     toolcalls in the UI, then send back the decisions through this endpoint, which will execute
+         *     the toolcalls and continue the chat stream.
+         */
+        post: operations["post_execute_tools_api_chat_execute_tools_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List chat sessions
+         * @description Proxy to Kiln Copilot ``GET /v1/chat/sessions``.
+         */
+        get: operations["list_chat_sessions_api_chat_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get chat session
+         * @description Proxy to Kiln Copilot ``GET /v1/chat/sessions/{session_id}``.
+         */
+        get: operations["get_chat_session_api_chat_sessions__session_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete chat session
+         * @description Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{session_id}``.
+         */
+        delete: operations["delete_chat_session_api_chat_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stream Chat
+         * @description Forward chat to Kiln Copilot and stream AI SDK events as Server-Sent Events.
+         */
+        post: operations["chat_api_chat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AgentOverview */
+        AgentOverview: {
+            project: components["schemas"]["AgentOverviewProject"];
+            task: components["schemas"]["AgentOverviewTask"];
+            dataset: components["schemas"]["AgentOverviewDataset"];
+            docs: components["schemas"]["AgentOverviewDocs"];
+            search_tools: components["schemas"]["AgentOverviewSearchTools"];
+            prompts: components["schemas"]["AgentOverviewPrompts"];
+            specs: components["schemas"]["AgentOverviewSpecs"];
+            /** Evals */
+            evals: components["schemas"]["AgentOverviewEval"][];
+            tool_servers: components["schemas"]["AgentOverviewToolServers"];
+            run_configs: components["schemas"]["AgentOverviewRunConfigs"];
+            fine_tunes: components["schemas"]["AgentOverviewFineTunes"];
+            prompt_optimization_jobs: components["schemas"]["AgentOverviewPromptOptimizationJobs"];
+            skills: components["schemas"]["AgentOverviewSkills"];
+            /** Connected Providers */
+            connected_providers: {
+                [key: string]: {
+                    [key: string]: boolean;
+                };
+            };
+        };
+        /**
+         * AgentOverviewDataset
+         * @description Aggregate counts of dataset examples by tag, source type, and rating.
+         */
+        AgentOverviewDataset: {
+            /** Total Count */
+            total_count: number;
+            /** By Tag */
+            by_tag: {
+                [key: string]: number;
+            };
+            /**
+             * By Source
+             * @description Counts keyed by DataSourceType.
+             */
+            by_source: {
+                [key: string]: number;
+            };
+            /**
+             * By Rating
+             * @description Counts keyed by star rating (1-5) or 'unrated'.
+             */
+            by_rating: {
+                [key: string]: number;
+            };
+        };
+        /** AgentOverviewDocs */
+        AgentOverviewDocs: {
+            /** Doc Count */
+            doc_count: number;
+            /** By Tag */
+            by_tag: {
+                [key: string]: number;
+            };
+            /** By Kind */
+            by_kind: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * AgentOverviewEval
+         * @description An eval definition with its scoring configuration.
+         */
+        AgentOverviewEval: {
+            /** Eval Id */
+            eval_id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /**
+             * Template
+             * @description Eval template type, if template-based.
+             */
+            template: string | null;
+            /**
+             * Default Judge Config Id
+             * @description ID of the default judge run config for this eval.
+             */
+            default_judge_config_id: string | null;
+            /** Output Scores */
+            output_scores: components["schemas"]["AgentOverviewOutputScore"][];
+            /** Favourite */
+            favourite: boolean;
+        };
+        /** AgentOverviewFineTunes */
+        AgentOverviewFineTunes: {
+            /** Total Count */
+            total_count: number;
+        };
+        /** AgentOverviewOutputScore */
+        AgentOverviewOutputScore: {
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+        };
+        /** AgentOverviewProject */
+        AgentOverviewProject: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+        };
+        /**
+         * AgentOverviewPrompt
+         * @description A prompt available for use in run configs.
+         */
+        AgentOverviewPrompt: {
+            /**
+             * Id
+             * @description The prompt ID (e.g. 'id::...' or 'task_run_config::...').
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Type
+             * @description Type label (e.g. 'Custom', 'Frozen', 'Fine-Tune').
+             */
+            type: string;
+        };
+        /** AgentOverviewPromptOptimizationJobs */
+        AgentOverviewPromptOptimizationJobs: {
+            /** Total Count */
+            total_count: number;
+        };
+        /**
+         * AgentOverviewPrompts
+         * @description Available prompts, capped to the most recent entries.
+         */
+        AgentOverviewPrompts: {
+            /** Total */
+            total: number;
+            /**
+             * Showing
+             * @description Human-readable 'N of M' summary.
+             */
+            showing: string;
+            /**
+             * Generators From Task Instruction Count
+             * @description Number of built-in prompt generators that auto-generate from the task instruction.
+             */
+            generators_from_task_instruction_count: number;
+            /** Items */
+            items: components["schemas"]["AgentOverviewPrompt"][];
+        };
+        /**
+         * AgentOverviewRunConfig
+         * @description A run configuration defining model, prompt, and tool selections.
+         */
+        AgentOverviewRunConfig: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /**
+             * Type
+             * @description Run config type (e.g. 'agent', 'mcp').
+             */
+            type: string;
+            /** Model Name */
+            model_name: string | null;
+            /** Model Provider */
+            model_provider: string | null;
+            /**
+             * Prompt Id
+             * @description Prompt ID used by this config, matching AgentOverviewPrompt.id format.
+             */
+            prompt_id: string | null;
+            /**
+             * Tool Ids
+             * @description Tool IDs attached to this config, including skills (prefixed with 'kiln_tool::skill::').
+             */
+            tool_ids: string[];
+            /** Starred */
+            starred: boolean;
+        };
+        /**
+         * AgentOverviewRunConfigs
+         * @description Run configs with starred entries always included, capped to 5 total.
+         */
+        AgentOverviewRunConfigs: {
+            /** Default Run Config Id */
+            default_run_config_id: string | null;
+            /** Total */
+            total: number;
+            /**
+             * Showing
+             * @description Human-readable 'N of M' summary.
+             */
+            showing: string;
+            /** Items */
+            items: components["schemas"]["AgentOverviewRunConfig"][];
+        };
+        /** AgentOverviewSearchTool */
+        AgentOverviewSearchTool: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Tool Name */
+            tool_name: string;
+            /** Tool Description */
+            tool_description: string;
+            /** Description */
+            description: string | null;
+            /** Tags */
+            tags: string[] | null;
+        };
+        /** AgentOverviewSearchTools */
+        AgentOverviewSearchTools: {
+            /** Items */
+            items: components["schemas"]["AgentOverviewSearchTool"][];
+            /** Archived Search Tool Count */
+            archived_search_tool_count: number;
+        };
+        /** AgentOverviewSkill */
+        AgentOverviewSkill: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+        };
+        /** AgentOverviewSkills */
+        AgentOverviewSkills: {
+            /** Items */
+            items: components["schemas"]["AgentOverviewSkill"][];
+            /** Archived Skill Count */
+            archived_skill_count: number;
+        };
+        /**
+         * AgentOverviewSpec
+         * @description A non-archived eval spec with its priority and status.
+         */
+        AgentOverviewSpec: {
+            /**
+             * Eval Id
+             * @description The eval this spec belongs to.
+             */
+            eval_id: string | null;
+            /** Name */
+            name: string;
+            /** Spec Type */
+            spec_type: string;
+            /**
+             * Priority
+             * @description Priority level name (e.g. 'p0', 'p1', 'p2').
+             */
+            priority: string;
+            /** Status */
+            status: string;
+            /** Tags */
+            tags: string[];
+        };
+        /** AgentOverviewSpecs */
+        AgentOverviewSpecs: {
+            /** Items */
+            items: components["schemas"]["AgentOverviewSpec"][];
+            /** Archived Spec Count */
+            archived_spec_count: number;
+        };
+        /**
+         * AgentOverviewTask
+         * @description The task definition including schemas and truncated instruction.
+         */
+        AgentOverviewTask: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /**
+             * Instruction
+             * @description Task instruction, truncated with sentinel if over 70 words.
+             */
+            instruction: string;
+            /**
+             * Input Json Schema
+             * @description JSON Schema for task input, or null if plain text.
+             */
+            input_json_schema: unknown | null;
+            /**
+             * Output Json Schema
+             * @description JSON Schema for task output, or null if plain text.
+             */
+            output_json_schema: unknown | null;
+            /** Default Run Config Id */
+            default_run_config_id: string | null;
+        };
+        /** AgentOverviewToolServer */
+        AgentOverviewToolServer: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+            /** Description */
+            description: string | null;
+        };
+        /** AgentOverviewToolServers */
+        AgentOverviewToolServers: {
+            /** Items */
+            items: components["schemas"]["AgentOverviewToolServer"][];
+            /** Archived Tool Server Count */
+            archived_tool_server_count: number;
+        };
         /** AnswerOption */
         AnswerOption: {
             /**
@@ -2685,7 +3353,10 @@ export interface components {
              */
             selected: boolean;
         };
-        /** ApiPrompt */
+        /**
+         * ApiPrompt
+         * @description A prompt with its PromptId and metadata.
+         */
         ApiPrompt: {
             /**
              * Name
@@ -2712,11 +3383,25 @@ export interface components {
              * @description Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting. COT will not be used unless this is provided.
              */
             chain_of_thought_instructions?: string | null;
-            /** Id */
+            /**
+             * Id
+             * @description The prompt ID used to reference this prompt.
+             */
             id: string;
-            /** Created At */
+            /**
+             * Type
+             * @description The type label for this prompt (e.g. 'Custom', 'Fine-Tune', 'Frozen', 'Few-Shot').
+             */
+            type: string;
+            /**
+             * Created At
+             * @description When the prompt was created.
+             */
             created_at?: string | null;
-            /** Created By */
+            /**
+             * Created By
+             * @description The user who created the prompt.
+             */
             created_by?: string | null;
         };
         /** AppropriateToolUseProperties */
@@ -2753,14 +3438,24 @@ export interface components {
             /** Models */
             models: components["schemas"]["ModelDetails"][];
         };
-        /** AvailableProviderInfo */
+        /**
+         * AvailableProviderInfo
+         * @description Information about an available AI provider.
+         */
         AvailableProviderInfo: {
-            /** Id */
+            /**
+             * Id
+             * @description The unique provider identifier used in API calls.
+             */
             id: string;
-            /** Name */
+            /**
+             * Name
+             * @description The human-readable display name of the provider.
+             */
             name: string;
             /**
              * Provider Type
+             * @description Whether the provider is built-in or user-configured.
              * @enum {string}
              */
             provider_type: "builtin" | "custom";
@@ -2815,65 +3510,127 @@ export interface components {
             /**
              * File
              * Format: binary
+             * @description The CSV file containing run data to import.
              */
             file: string;
-            /** Splits */
+            /**
+             * Splits
+             * @description JSON string mapping split names to numeric proportions (0-1).
+             */
             splits?: string | null;
         };
         /** Body_create_documents_bulk_api_projects__project_id__documents_bulk_post */
         Body_create_documents_bulk_api_projects__project_id__documents_bulk_post: {
-            /** Files */
+            /**
+             * Files
+             * @description The files to upload.
+             */
             files?: string[] | null;
-            /** Names */
+            /**
+             * Names
+             * @description Optional names for the files.
+             */
             names?: string[] | null;
-            /** Tags */
+            /**
+             * Tags
+             * @description Tags to apply to all created documents.
+             */
             tags?: string[] | null;
         };
         /** Body_edit_tags_api_projects__project_id__documents_edit_tags_post */
         Body_edit_tags_api_projects__project_id__documents_edit_tags_post: {
-            /** Document Ids */
+            /**
+             * Document Ids
+             * @description List of document IDs to modify tags for.
+             */
             document_ids: string[];
-            /** Add Tags */
+            /**
+             * Add Tags
+             * @description Tags to add to the documents.
+             */
             add_tags?: string[] | null;
-            /** Remove Tags */
+            /**
+             * Remove Tags
+             * @description Tags to remove from the documents.
+             */
             remove_tags?: string[] | null;
         };
         /** Body_edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post */
         Body_edit_tags_api_projects__project_id__tasks__task_id__runs_edit_tags_post: {
-            /** Run Ids */
+            /**
+             * Run Ids
+             * @description The list of task run IDs to edit.
+             */
             run_ids: string[];
-            /** Add Tags */
+            /**
+             * Add Tags
+             * @description Tags to add to the task runs.
+             */
             add_tags?: string[] | null;
-            /** Remove Tags */
+            /**
+             * Remove Tags
+             * @description Tags to remove from the task runs.
+             */
             remove_tags?: string[] | null;
         };
-        /** BuildPromptRequest */
+        /**
+         * BuildPromptRequest
+         * @description Request to build a prompt from examples.
+         */
         BuildPromptRequest: {
             /**
              * Examples
+             * @description Few-shot examples to include in the prompt.
              * @default []
              */
             examples: components["schemas"]["FewShotExample"][];
         };
-        /** BuildPromptResponse */
+        /**
+         * BuildPromptResponse
+         * @description Response containing a fully constructed prompt with examples.
+         */
         BuildPromptResponse: {
-            /** Prompt */
+            /**
+             * Prompt
+             * @description The generated prompt text.
+             */
             prompt: string;
         };
-        /** BulkCreateDocumentsResponse */
+        /**
+         * BulkCreateDocumentsResponse
+         * @description Response from bulk document creation.
+         */
         BulkCreateDocumentsResponse: {
-            /** Created Documents */
+            /**
+             * Created Documents
+             * @description The documents that were created.
+             */
             created_documents: components["schemas"]["Document"][];
-            /** Failed Files */
+            /**
+             * Failed Files
+             * @description Filenames that failed to upload.
+             */
             failed_files: string[];
         };
-        /** BulkUploadResponse */
+        /**
+         * BulkUploadResponse
+         * @description Response from a bulk import of task runs.
+         */
         BulkUploadResponse: {
-            /** Success */
+            /**
+             * Success
+             * @description Whether the import succeeded.
+             */
             success: boolean;
-            /** Filename */
+            /**
+             * Filename
+             * @description The filename that was imported.
+             */
             filename: string;
-            /** Imported Count */
+            /**
+             * Imported Count
+             * @description The number of task runs imported.
+             */
             imported_count: number;
         };
         /**
@@ -3030,6 +3787,10 @@ export interface components {
             tool_call_id: string;
             /** Kiln Task Tool Data */
             kiln_task_tool_data?: string | null;
+            /** Is Error */
+            is_error?: boolean | null;
+            /** Error Message */
+            error_message?: string | null;
         };
         /** ChatCompletionUserMessageParam */
         "ChatCompletionUserMessageParam-Input": {
@@ -3054,6 +3815,41 @@ export interface components {
             role: "user";
             /** Name */
             name?: string;
+        };
+        /** ChatRequest */
+        ChatRequest: {
+            /** Messages */
+            messages: components["schemas"]["ChatRequestMessage"][];
+            /** Trace Id */
+            trace_id?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ChatRequestMessage */
+        ChatRequestMessage: {
+            /** Role */
+            role: string;
+            /** Content */
+            content?: string | {
+                [key: string]: unknown;
+            }[] | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ChatSessionListItem */
+        ChatSessionListItem: {
+            /** Id */
+            id: string;
+            /** Title */
+            title?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** ChatSessionSnapshot */
+        ChatSessionSnapshot: {
+            /** Id */
+            id: string;
+            task_run: components["schemas"]["TaskRunSnapshot"];
         };
         /**
          * ChatStrategy
@@ -3081,23 +3877,37 @@ export interface components {
             /** Is Supported */
             is_supported: boolean;
         };
-        /** ChunkerConfig */
+        /**
+         * ChunkerConfig
+         * @description Configuration for chunking extracted documents into smaller pieces.
+         */
         ChunkerConfig: {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Name
@@ -3121,6 +3931,7 @@ export interface components {
         };
         /**
          * ChunkerType
+         * @description The type of chunking algorithm to use.
          * @enum {string}
          */
         ChunkerType: "fixed_window" | "semantic";
@@ -3153,6 +3964,60 @@ export interface components {
             examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
             judge_result: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
             sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Output"];
+        };
+        /**
+         * CloneRequest
+         * @description Request to clone a git repository into a temporary directory.
+         */
+        CloneRequest: {
+            /**
+             * Git Url
+             * @description The git remote URL to clone.
+             */
+            git_url: string;
+            /**
+             * Branch
+             * @description The branch to check out after cloning.
+             */
+            branch: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+            /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
+        };
+        /**
+         * CloneResponse
+         * @description Result of a clone operation.
+         */
+        CloneResponse: {
+            /**
+             * Clone Path
+             * @description Filesystem path where the repo was cloned.
+             */
+            clone_path: string;
+            /**
+             * Success
+             * @description Whether the clone succeeded.
+             */
+            success: boolean;
+            /**
+             * Message
+             * @description Human-readable result message.
+             */
+            message: string;
         };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
@@ -3212,15 +4077,25 @@ export interface components {
         };
         /**
          * CreateDatasetSplitRequest
-         * @description Request to create a dataset split
+         * @description Request to create a dataset split.
          */
         CreateDatasetSplitRequest: {
+            /** @description The type of split to create. */
             dataset_split_type: components["schemas"]["DatasetSplitType"];
-            /** Filter Id */
+            /**
+             * Filter Id
+             * @description The dataset filter to use.
+             */
             filter_id: string;
-            /** Name */
+            /**
+             * Name
+             * @description The name of the dataset split.
+             */
             name?: string | null;
-            /** Description */
+            /**
+             * Description
+             * @description The description of the dataset split.
+             */
             description?: string | null;
         };
         /** CreateEmbeddingConfigRequest */
@@ -3245,36 +4120,73 @@ export interface components {
             /** @description Properties to be used to execute the embedding config. */
             properties?: components["schemas"]["EmbeddingProperties"];
         };
-        /** CreateEvalConfigRequest */
+        /**
+         * CreateEvalConfigRequest
+         * @description Request to create a new eval configuration.
+         */
         CreateEvalConfigRequest: {
-            /** Name */
+            /**
+             * Name
+             * @description The name of the eval config.
+             */
             name?: string | null;
+            /** @description The type of eval config. */
             type: components["schemas"]["EvalConfigType"];
-            /** Properties */
+            /**
+             * Properties
+             * @description Properties for the eval config, specific to the type.
+             */
             properties: {
                 [key: string]: unknown;
             };
-            /** Model Name */
+            /**
+             * Model Name
+             * @description The model to use for evaluation.
+             */
             model_name: string;
+            /** @description The provider of the evaluation model. */
             provider: components["schemas"]["ModelProviderName"];
         };
-        /** CreateEvaluatorRequest */
+        /**
+         * CreateEvaluatorRequest
+         * @description Request to create a new evaluator.
+         */
         CreateEvaluatorRequest: {
-            /** Name */
+            /**
+             * Name
+             * @description The name of the evaluator.
+             */
             name: string;
-            /** Description */
+            /**
+             * Description
+             * @description The description of the evaluator.
+             */
             description?: string | null;
-            template: components["schemas"]["EvalTemplateId"] | null;
-            /** Output Scores */
+            /** @description The eval template to use. */
+            template?: components["schemas"]["EvalTemplateId"] | null;
+            /**
+             * Output Scores
+             * @description The scores this evaluator should produce.
+             */
             output_scores: components["schemas"]["EvalOutputScore"][];
-            /** Eval Set Filter Id */
+            /**
+             * Eval Set Filter Id
+             * @description The dataset filter for the eval set.
+             */
             eval_set_filter_id: string;
-            /** Eval Configs Filter Id */
-            eval_configs_filter_id: string | null;
-            /** Template Properties */
-            template_properties: {
+            /**
+             * Eval Configs Filter Id
+             * @description The dataset filter for comparing eval configs.
+             */
+            eval_configs_filter_id?: string | null;
+            /**
+             * Template Properties
+             * @description Template-specific properties.
+             */
+            template_properties?: {
                 [key: string]: string | number | boolean;
             } | null;
+            /** @description The type of task output to evaluate. */
             evaluation_data_type: components["schemas"]["EvalDataType"];
         };
         /** CreateExtractorConfigRequest */
@@ -3300,11 +4212,24 @@ export interface components {
             output_format: components["schemas"]["OutputFormat"];
             /**
              * Passthrough Mimetypes
-             * @description The mimetypes to pass through to the extractor
+             * @description MIME types that bypass extraction and return the file content as-is.
              */
             passthrough_mimetypes?: components["schemas"]["OutputFormat"][];
             /** @description The properties of the extractor config, specific to the selected extractor_type. */
             properties: components["schemas"]["LitellmExtractorConfigProperties"];
+        };
+        /**
+         * CreateFeedbackRequest
+         * @description Request body for creating feedback on a task run.
+         */
+        CreateFeedbackRequest: {
+            /**
+             * Feedback
+             * @description Free-form text feedback on the task run.
+             */
+            feedback: string;
+            /** @description Where this feedback originated. */
+            source: components["schemas"]["FeedbackSource"];
         };
         /**
          * CreateFinetuneRequest
@@ -3338,13 +4263,33 @@ export interface components {
             data_strategy: components["schemas"]["ChatStrategy"];
             run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
         };
-        /** CreateMcpRunConfigRequest */
+        /** CreateKilnCopilotApiKeyRequest */
+        CreateKilnCopilotApiKeyRequest: {
+            /**
+             * Access Token
+             * @description Kinde OAuth access token.
+             */
+            access_token: string;
+        };
+        /**
+         * CreateMcpRunConfigRequest
+         * @description Request to create a run config from an MCP tool.
+         */
         CreateMcpRunConfigRequest: {
-            /** Name */
+            /**
+             * Name
+             * @description The name of the run config.
+             */
             name?: string | null;
-            /** Description */
+            /**
+             * Description
+             * @description The description of the run config.
+             */
             description?: string | null;
-            /** Tool Id */
+            /**
+             * Tool Id
+             * @description The MCP tool ID to use.
+             */
             tool_id: string;
         };
         /** CreateRagConfigRequest */
@@ -3482,22 +4427,46 @@ export interface components {
             task_prompt_with_example: string;
             task_sample?: components["schemas"]["TaskSample"] | null;
         };
-        /** CreateTaskFromToolRequest */
+        /**
+         * CreateTaskFromToolRequest
+         * @description Request to create a new task from an MCP tool.
+         */
         CreateTaskFromToolRequest: {
-            /** Tool Id */
+            /**
+             * Tool Id
+             * @description The tool ID to create the task from.
+             */
             tool_id: string;
-            /** Task Name */
+            /**
+             * Task Name
+             * @description The name for the new task.
+             */
             task_name: string;
-            /** Instruction */
+            /**
+             * Instruction
+             * @description The instruction for the new task.
+             */
             instruction: string;
         };
-        /** CreateTaskRunConfigRequest */
+        /**
+         * CreateTaskRunConfigRequest
+         * @description Request to create a new run config for eval.
+         */
         CreateTaskRunConfigRequest: {
-            /** Name */
+            /**
+             * Name
+             * @description The name of the run config.
+             */
             name?: string | null;
-            /** Description */
+            /**
+             * Description
+             * @description The description of the run config.
+             */
             description?: string | null;
-            /** Run Config Properties */
+            /**
+             * Run Config Properties
+             * @description The run configuration properties.
+             */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
         };
         /**
@@ -3640,7 +4609,7 @@ export interface components {
             num_samples: number;
             /**
              * Gen Type
-             * @description The type of task to generate topics for
+             * @description The type of data generation: eval or training.
              * @enum {string}
              */
             gen_type: "training" | "eval";
@@ -3701,6 +4670,7 @@ export interface components {
          *     this includes file information.
          */
         "DataSource-Input": {
+            /** @description The type of data source. */
             type: components["schemas"]["DataSourceType"];
             /**
              * Properties
@@ -3725,6 +4695,7 @@ export interface components {
          *     this includes file information.
          */
         "DataSource-Output": {
+            /** @description The type of data source. */
             type: components["schemas"]["DataSourceType"];
             /**
              * Properties
@@ -3760,19 +4731,30 @@ export interface components {
         DatasetSplit: {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Name
@@ -3833,6 +4815,17 @@ export interface components {
          * @enum {string}
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
+        /**
+         * DeleteConfigResponse
+         * @description Confirmation that a git sync configuration was deleted.
+         */
+        DeleteConfigResponse: {
+            /**
+             * Message
+             * @description Human-readable confirmation message.
+             */
+            message: string;
+        };
         /** DesiredBehaviourProperties */
         DesiredBehaviourProperties: {
             /**
@@ -3858,27 +4851,41 @@ export interface components {
             /** Untested Models */
             untested_models?: string[];
         };
-        /** Document */
+        /**
+         * Document
+         * @description A document uploaded to a project for extraction and RAG.
+         */
         Document: {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Name
-             * @description A name to identify the document.
+             * @description A name to identify the document. Should not be changed after creation.
              */
             name: string;
             /**
@@ -3913,23 +4920,37 @@ export interface components {
              */
             is_empty: boolean;
         };
-        /** EmbeddingConfig */
+        /**
+         * EmbeddingConfig
+         * @description Configuration for generating embeddings from document chunks.
+         */
         EmbeddingConfig: {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Name
@@ -3988,11 +5009,20 @@ export interface components {
             /** Models */
             models: components["schemas"]["EmbeddingModelDetails"][];
         };
-        /** EphemeralSplitChunk */
+        /**
+         * EphemeralSplitChunk
+         * @description A single chunk from an ephemeral split.
+         */
         EphemeralSplitChunk: {
-            /** Id */
+            /**
+             * Id
+             * @description The chunk index as a string.
+             */
             id: string;
-            /** Text */
+            /**
+             * Text
+             * @description The text content of the chunk.
+             */
             text: string;
         };
         /** EphemeralSplitRequest */
@@ -4008,28 +5038,48 @@ export interface components {
              */
             chunk_overlap?: number | null;
         };
-        /** EphemeralSplitResponse */
+        /**
+         * EphemeralSplitResponse
+         * @description Response from ephemeral document splitting.
+         */
         EphemeralSplitResponse: {
-            /** Chunks */
+            /**
+             * Chunks
+             * @description The resulting chunks.
+             */
             chunks: components["schemas"]["EphemeralSplitChunk"][];
         };
-        /** Eval */
+        /**
+         * Eval
+         * @description An evaluator definition that specifies what to evaluate and how scores should be produced.
+         */
         Eval: {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Name
@@ -4098,19 +5148,30 @@ export interface components {
         EvalConfig: {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Name
@@ -4143,45 +5204,80 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
-        /** EvalConfigCompareSummary */
+        /**
+         * EvalConfigCompareSummary
+         * @description Summary comparing eval configs against human ratings.
+         */
         EvalConfigCompareSummary: {
-            /** Results */
+            /**
+             * Results
+             * @description Correlation results keyed by eval_config_id then output_score_id.
+             */
             results: {
                 [key: string]: {
                     [key: string]: components["schemas"]["CorrelationResult"];
                 };
             };
-            /** Eval Config Percent Complete */
+            /**
+             * Eval Config Percent Complete
+             * @description Percent of dataset processed per eval config.
+             */
             eval_config_percent_complete: {
                 [key: string]: number;
             };
-            /** Dataset Size */
+            /**
+             * Dataset Size
+             * @description Total size of the eval config comparison dataset.
+             */
             dataset_size: number;
-            /** Fully Rated Count */
+            /**
+             * Fully Rated Count
+             * @description Number of fully rated dataset items.
+             */
             fully_rated_count: number;
-            /** Partially Rated Count */
+            /**
+             * Partially Rated Count
+             * @description Number of partially rated dataset items.
+             */
             partially_rated_count: number;
-            /** Not Rated Count */
+            /**
+             * Not Rated Count
+             * @description Number of unrated dataset items.
+             */
             not_rated_count: number;
         };
-        /** EvalConfigResult */
+        /**
+         * EvalConfigResult
+         * @description Results for a single eval config.
+         */
         EvalConfigResult: {
-            /** Eval Config Id */
+            /**
+             * Eval Config Id
+             * @description The eval config ID.
+             */
             eval_config_id: string | null;
-            /** Results */
+            /**
+             * Results
+             * @description Scores keyed by output_score_id. None when no data.
+             */
             results: {
                 [key: string]: components["schemas"]["ScoreSummary"] | null;
             };
-            /** Percent Complete */
+            /**
+             * Percent Complete
+             * @description Percent of the dataset processed.
+             */
             percent_complete: number;
         };
         /**
          * EvalConfigType
+         * @description The type of eval configuration, determining how scores are generated.
          * @enum {string}
          */
         EvalConfigType: "g_eval" | "llm_as_judge";
         /**
          * EvalDataType
+         * @description The type of task output data to evaluate.
          * @enum {string}
          */
         EvalDataType: "final_answer" | "full_trace" | "reference_answer";
@@ -4205,36 +5301,154 @@ export interface components {
             /** @description The type of rating to use ('five_star', 'pass_fail', 'pass_fail_critical'). */
             type: components["schemas"]["TaskOutputRatingType"];
         };
-        /** EvalProgress */
+        /**
+         * EvalProgress
+         * @description Progress information for an eval.
+         */
         EvalProgress: {
-            /** Dataset Size */
+            /**
+             * Dataset Size
+             * @description The total size of the eval dataset.
+             */
             dataset_size: number;
-            /** Golden Dataset Size */
+            /**
+             * Golden Dataset Size
+             * @description The total size of the golden dataset.
+             */
             golden_dataset_size: number;
-            /** Golden Dataset Not Rated Count */
+            /**
+             * Golden Dataset Not Rated Count
+             * @description Number of unrated golden dataset items.
+             */
             golden_dataset_not_rated_count: number;
-            /** Golden Dataset Partially Rated Count */
+            /**
+             * Golden Dataset Partially Rated Count
+             * @description Number of partially rated golden dataset items.
+             */
             golden_dataset_partially_rated_count: number;
-            /** Golden Dataset Fully Rated Count */
+            /**
+             * Golden Dataset Fully Rated Count
+             * @description Number of fully rated golden dataset items.
+             */
             golden_dataset_fully_rated_count: number;
-            /** Train Dataset Size */
+            /**
+             * Train Dataset Size
+             * @description The total size of the train dataset.
+             */
             train_dataset_size: number;
-            current_eval_method: components["schemas"]["EvalConfig"] | null;
+            /** @description The currently selected eval config. */
+            current_eval_method?: components["schemas"]["EvalConfig"] | null;
         };
-        /** EvalResultSummary */
+        /**
+         * EvalResultSummary
+         * @description Summary of eval results across run configs.
+         */
         EvalResultSummary: {
-            /** Results */
+            /**
+             * Results
+             * @description Scores keyed by run_config_id then output_score_id.
+             */
             results: {
                 [key: string]: {
                     [key: string]: components["schemas"]["ScoreSummary"];
                 };
             };
-            /** Run Config Percent Complete */
+            /**
+             * Run Config Percent Complete
+             * @description Percent of dataset processed per run config.
+             */
             run_config_percent_complete: {
                 [key: string]: number;
             };
-            /** Dataset Size */
+            /**
+             * Dataset Size
+             * @description Total size of the eval dataset.
+             */
             dataset_size: number;
+        };
+        /**
+         * EvalResultsSummaryEvalInfo
+         * @description Metadata for a single eval within eval results summary.
+         */
+        EvalResultsSummaryEvalInfo: {
+            /**
+             * Name
+             * @description The eval name.
+             */
+            name: string;
+            /**
+             * Default Judge Config Id
+             * @description The default judge config ID for this eval, if any.
+             */
+            default_judge_config_id: string | null;
+            /**
+             * Dataset Size
+             * @description Total size of the eval dataset.
+             */
+            dataset_size: number;
+            /**
+             * Output Score Keys
+             * @description The output score keys for this eval.
+             */
+            output_score_keys: string[];
+        };
+        /**
+         * EvalResultsSummaryResponse
+         * @description Aggregated eval results across all evals for a task.
+         */
+        EvalResultsSummaryResponse: {
+            /**
+             * Evals By Id
+             * @description Eval metadata keyed by eval ID.
+             */
+            evals_by_id: {
+                [key: string]: components["schemas"]["EvalResultsSummaryEvalInfo"];
+            };
+            /**
+             * Run Configs By Id
+             * @description Run config metadata keyed by run config ID.
+             */
+            run_configs_by_id: {
+                [key: string]: components["schemas"]["EvalResultsSummaryRunConfigInfo"];
+            };
+            /**
+             * Scores By Run Config By Eval
+             * @description Results keyed by run config ID then eval ID.
+             */
+            scores_by_run_config_by_eval: {
+                [key: string]: {
+                    [key: string]: components["schemas"]["EvalResultsSummaryResultCell"];
+                };
+            };
+        };
+        /**
+         * EvalResultsSummaryResultCell
+         * @description Results for a single (eval, run_config) cell.
+         */
+        EvalResultsSummaryResultCell: {
+            /**
+             * Mean Scores
+             * @description Mean scores keyed by output_score_key.
+             */
+            mean_scores: {
+                [key: string]: number;
+            };
+            /**
+             * Percent Complete
+             * @description Percent of dataset processed for this run config.
+             */
+            percent_complete: number;
+        };
+        /**
+         * EvalResultsSummaryRunConfigInfo
+         * @description Metadata for a run config within eval results summary.
+         */
+        EvalResultsSummaryRunConfigInfo: {
+            /**
+             * Name
+             * @description The run config name.
+             */
+            name: string;
         };
         /**
          * EvalRun
@@ -4249,19 +5463,30 @@ export interface components {
         EvalRun: {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Dataset Id
@@ -4318,12 +5543,21 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
-        /** EvalRunResult */
+        /**
+         * EvalRunResult
+         * @description Results of an eval run including the eval and run config.
+         */
         EvalRunResult: {
-            /** Results */
+            /**
+             * Results
+             * @description The individual eval run results.
+             */
             results: components["schemas"]["EvalRun"][];
+            /** @description The parent eval. */
             eval: components["schemas"]["Eval"];
+            /** @description The eval config used. */
             eval_config: components["schemas"]["EvalConfig"];
+            /** @description The run config used. */
             run_config: components["schemas"]["TaskRunConfig"];
         };
         /**
@@ -4347,6 +5581,17 @@ export interface components {
             fails_specification: boolean;
             /** User Feedback */
             user_feedback?: string | null;
+        };
+        /** ExecuteToolsRequest */
+        ExecuteToolsRequest: {
+            /** Trace Id */
+            trace_id: string;
+            /** Tool Calls */
+            tool_calls: components["schemas"]["ToolCallInfo"][];
+            /** Decisions */
+            decisions: {
+                [key: string]: boolean;
+            };
         };
         /**
          * ExternalToolApiDescription
@@ -4376,19 +5621,30 @@ export interface components {
         ExternalToolServer: {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Name
@@ -4433,67 +5689,132 @@ export interface components {
             /** Missing Secrets */
             missing_secrets: string[];
         };
-        /** ExternalToolServerCreationRequest */
+        /**
+         * ExternalToolServerCreationRequest
+         * @description Request to create a remote MCP tool server.
+         */
         ExternalToolServerCreationRequest: {
-            /** Name */
+            /**
+             * Name
+             * @description The name of the tool server.
+             */
             name: string;
-            /** Description */
+            /**
+             * Description
+             * @description A description of the tool server.
+             */
             description?: string | null;
-            /** Server Url */
+            /**
+             * Server Url
+             * @description The URL of the MCP server.
+             */
             server_url: string;
-            /** Headers */
+            /**
+             * Headers
+             * @description HTTP headers to send with requests.
+             */
             headers?: {
                 [key: string]: string;
             };
-            /** Secret Header Keys */
+            /**
+             * Secret Header Keys
+             * @description Header keys whose values are stored as secrets.
+             */
             secret_header_keys?: string[];
-            /** Is Archived */
+            /**
+             * Is Archived
+             * @description Whether the tool server is archived.
+             */
             is_archived: boolean;
         };
-        /** ExtractionProgress */
+        /**
+         * ExtractionProgress
+         * @description Progress of a document extraction run.
+         */
         ExtractionProgress: {
-            /** Document Count Total */
+            /**
+             * Document Count Total
+             * @description The total number of documents to extract.
+             */
             document_count_total: number;
-            /** Document Count Successful */
+            /**
+             * Document Count Successful
+             * @description The number of documents successfully extracted.
+             */
             document_count_successful: number;
-            extractor_config: components["schemas"]["ExtractorConfig"] | null;
+            /** @description The extractor config used. */
+            extractor_config?: components["schemas"]["ExtractorConfig"] | null;
         };
-        /** ExtractionSummary */
+        /**
+         * ExtractionSummary
+         * @description A summary of an extraction result.
+         */
         ExtractionSummary: {
-            /** Id */
+            /**
+             * Id
+             * @description The extraction ID.
+             */
             id: string;
             /**
              * Created At
              * Format: date-time
+             * @description When the extraction was created.
              */
             created_at: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description The user who created the extraction.
+             */
             created_by: string;
-            /** Source */
+            /**
+             * Source
+             * @description The source type of the extraction.
+             */
             source: string;
-            /** Output Content */
+            /**
+             * Output Content
+             * @description The extracted text content.
+             */
             output_content: string;
+            /** @description The extractor config used. */
             extractor: components["schemas"]["ExtractorSummary"];
-            /** Output Content Truncated */
+            /**
+             * Output Content Truncated
+             * @description Whether the output content was truncated.
+             */
             output_content_truncated: boolean;
         };
-        /** ExtractorConfig */
+        /**
+         * ExtractorConfig
+         * @description Configuration for extracting content from documents using a specific model and prompts.
+         */
         ExtractorConfig: {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Name
@@ -4541,21 +5862,39 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
-        /** ExtractorSummary */
+        /**
+         * ExtractorSummary
+         * @description A summary of an extractor config.
+         */
         ExtractorSummary: {
-            /** Id */
+            /**
+             * Id
+             * @description The extractor config ID.
+             */
             id: string;
-            /** Name */
+            /**
+             * Name
+             * @description The name of the extractor config.
+             */
             name: string;
-            /** Description */
-            description: string | null;
+            /**
+             * Description
+             * @description The description of the extractor config.
+             */
+            description?: string | null;
+            /** @description The output format of the extractor. */
             output_format: components["schemas"]["OutputFormat"];
-            /** Passthrough Mimetypes */
+            /**
+             * Passthrough Mimetypes
+             * @description MIME types that bypass extraction and return the file content as-is.
+             */
             passthrough_mimetypes: components["schemas"]["OutputFormat"][];
+            /** @description The type of extractor. */
             extractor_type: components["schemas"]["ExtractorType"];
         };
         /**
          * ExtractorType
+         * @description The type of extractor used to process documents.
          * @enum {string}
          */
         ExtractorType: "litellm";
@@ -4571,11 +5910,76 @@ export interface components {
             /** Factually Inaccurate Examples */
             factually_inaccurate_examples: string;
         };
-        /** FewShotExample */
+        /**
+         * Feedback
+         * @description Feedback on a task run.
+         *
+         *     Supports multi-source feedback: different users, automated systems, and
+         *     different locations in the UI can each contribute independent feedback
+         *     entries on the same task run.
+         */
+        Feedback: {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /**
+             * Feedback
+             * @description Free-form text feedback on the task run.
+             */
+            feedback: string;
+            /** @description Where this feedback originated, e.g. 'run-page' or 'spec-feedback'. */
+            source: components["schemas"]["FeedbackSource"];
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * FeedbackSource
+         * @description Where a piece of feedback originated.
+         *
+         *     This is an append-only enum: new sources can be added freely, but existing
+         *     values must never be removed or renamed so that older persisted data
+         *     continues to load.
+         * @enum {string}
+         */
+        FeedbackSource: "run-page" | "spec-feedback";
+        /**
+         * FewShotExample
+         * @description An input/output example for few-shot prompting.
+         */
         FewShotExample: {
-            /** Input */
+            /**
+             * Input
+             * @description The example input.
+             */
             input: string;
-            /** Output */
+            /**
+             * Output
+             * @description The example output.
+             */
             output: string;
         };
         /** File */
@@ -4596,7 +6000,10 @@ export interface components {
             /** Filename */
             filename?: string;
         };
-        /** FileInfo */
+        /**
+         * FileInfo
+         * @description Metadata about an uploaded file.
+         */
         FileInfo: {
             /**
              * Filename
@@ -4651,7 +6058,7 @@ export interface components {
         };
         /**
          * FineTuneStatusType
-         * @description The status type of a fine-tune (running, completed, failed, etc).
+         * @description The status type of a fine-tune job.
          * @enum {string}
          */
         FineTuneStatusType: "unknown" | "pending" | "running" | "completed" | "failed";
@@ -4664,19 +6071,30 @@ export interface components {
         Finetune: {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Name
@@ -4769,73 +6187,127 @@ export interface components {
         };
         /**
          * FinetuneDatasetInfo
-         * @description Finetune dataset info
+         * @description Information about datasets and finetunes for a task.
          */
         FinetuneDatasetInfo: {
-            /** Existing Datasets */
+            /**
+             * Existing Datasets
+             * @description Existing dataset splits.
+             */
             existing_datasets: components["schemas"]["DatasetSplit"][];
-            /** Existing Finetunes */
+            /**
+             * Existing Finetunes
+             * @description Existing finetunes.
+             */
             existing_finetunes: components["schemas"]["Finetune"][];
-            /** Finetune Tags */
+            /**
+             * Finetune Tags
+             * @description Tag statistics for finetune data.
+             */
             finetune_tags: components["schemas"]["FinetuneDatasetTagInfo"][];
-            /** Eligible Datasets */
+            /**
+             * Eligible Datasets
+             * @description Eligible dataset splits based on tool selection.
+             */
             eligible_datasets: components["schemas"]["DatasetSplit"][];
-            /** Eligible Finetune Tags */
+            /**
+             * Eligible Finetune Tags
+             * @description Eligible tag statistics based on tool selection.
+             */
             eligible_finetune_tags: components["schemas"]["FinetuneDatasetTagInfo"][];
         };
         /**
          * FinetuneDatasetTagInfo
-         * @description Finetune dataset tag info
+         * @description Statistics about task runs with a specific tag.
          */
         FinetuneDatasetTagInfo: {
-            /** Tag */
+            /**
+             * Tag
+             * @description The tag applied to matching runs.
+             */
             tag: string;
-            /** Count */
+            /**
+             * Count
+             * @description Total number of runs with this tag.
+             */
             count: number;
-            /** Reasoning Count */
+            /**
+             * Reasoning Count
+             * @description Number of runs with reasoning data.
+             */
             reasoning_count: number;
-            /** High Quality Count */
+            /**
+             * High Quality Count
+             * @description Number of high-quality runs.
+             */
             high_quality_count: number;
-            /** Reasoning And High Quality Count */
+            /**
+             * Reasoning And High Quality Count
+             * @description Number of high-quality runs with reasoning data.
+             */
             reasoning_and_high_quality_count: number;
         };
         /**
          * FinetuneProvider
-         * @description Finetune provider: list of models a provider supports for fine-tuning
+         * @description A provider that offers fine-tuning.
          */
         FinetuneProvider: {
-            /** Name */
+            /**
+             * Name
+             * @description The display name of the provider.
+             */
             name: string;
-            /** Id */
+            /**
+             * Id
+             * @description The unique provider identifier used in API calls.
+             */
             id: string;
-            /** Enabled */
+            /**
+             * Enabled
+             * @description Whether this provider is enabled.
+             */
             enabled: boolean;
-            /** Models */
+            /**
+             * Models
+             * @description The models available for fine-tuning.
+             */
             models: components["schemas"]["FinetuneProviderModel"][];
         };
         /**
          * FinetuneProviderModel
-         * @description Finetune provider model: a model a provider supports for fine-tuning
+         * @description A model available for fine-tuning from a provider.
          */
         FinetuneProviderModel: {
-            /** Name */
+            /**
+             * Name
+             * @description The display name of the model.
+             */
             name: string;
-            /** Id */
+            /**
+             * Id
+             * @description The provider's model identifier.
+             */
             id: string;
-            /** Data Strategies Supported */
+            /**
+             * Data Strategies Supported
+             * @description The data strategies supported by this model.
+             */
             data_strategies_supported?: components["schemas"]["ChatStrategy"][];
             /**
              * Supports Function Calling
+             * @description Whether the model supports function calling.
              * @default true
              */
             supports_function_calling: boolean;
         };
         /**
          * FinetuneWithStatus
-         * @description Finetune with status
+         * @description A finetune with its current status.
          */
         FinetuneWithStatus: {
+            /** @description The finetune configuration and metadata. */
             finetune: components["schemas"]["Finetune"];
+            /** @description The current status of the finetune. */
             status: components["schemas"]["FineTuneStatus"];
         };
         /** FixedWindowChunkerProperties */
@@ -4929,6 +6401,57 @@ export interface components {
              * @description The RAG config ids to get progress for, if left empty, progress for all RAG configs in the project will be returned
              */
             rag_config_ids?: string[] | null;
+        };
+        /**
+         * GitSyncConfigResponse
+         * @description Current git sync configuration for a project (PAT redacted).
+         */
+        GitSyncConfigResponse: {
+            /**
+             * Sync Mode
+             * @description Sync mode: 'auto' or 'manual'.
+             * @enum {string}
+             */
+            sync_mode: "auto" | "manual";
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
+            /**
+             * Remote Name
+             * @description Git remote name.
+             */
+            remote_name: string;
+            /**
+             * Branch
+             * @description Branch name being synced.
+             */
+            branch: string;
+            /**
+             * Clone Path
+             * @description Local filesystem path of the clone.
+             */
+            clone_path?: string | null;
+            /**
+             * Git Url
+             * @description The git remote URL.
+             */
+            git_url?: string | null;
+            /**
+             * Has Pat Token
+             * @description Whether a PAT token is configured (token not shown).
+             * @default false
+             */
+            has_pat_token: boolean;
+            /**
+             * Has Oauth Token
+             * @description Whether an OAuth token is configured (token not shown).
+             * @default false
+             */
+            has_oauth_token: boolean;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -5062,19 +6585,30 @@ export interface components {
         KilnBaseModel: {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
         };
         /** KilnFileResponse */
@@ -5120,17 +6654,35 @@ export interface components {
              */
             created_at: string;
         };
-        /** KilnTaskToolServerCreationRequest */
+        /**
+         * KilnTaskToolServerCreationRequest
+         * @description Request to create a Kiln task tool server.
+         */
         KilnTaskToolServerCreationRequest: {
-            /** Name */
+            /**
+             * Name
+             * @description The name of the tool server.
+             */
             name: string;
-            /** Description */
+            /**
+             * Description
+             * @description A description of the tool server.
+             */
             description: string;
-            /** Task Id */
+            /**
+             * Task Id
+             * @description The task ID to expose as a tool.
+             */
             task_id: string;
-            /** Run Config Id */
+            /**
+             * Run Config Id
+             * @description The run config ID to use when running the task.
+             */
             run_config_id: string;
-            /** Is Archived */
+            /**
+             * Is Archived
+             * @description Whether the tool server is archived.
+             */
             is_archived: boolean;
         };
         /**
@@ -5152,6 +6704,7 @@ export interface components {
         };
         /**
          * Kind
+         * @description The kind of content a document contains.
          * @enum {string}
          */
         Kind: "document" | "image" | "video" | "audio";
@@ -5237,6 +6790,50 @@ export interface components {
              */
             similarity_top_k: number;
         };
+        /**
+         * ListBranchesRequest
+         * @description Request to list branches on a git remote.
+         */
+        ListBranchesRequest: {
+            /**
+             * Git Url
+             * @description The git remote URL to list branches from.
+             */
+            git_url: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+            /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
+        };
+        /**
+         * ListBranchesResponse
+         * @description List of branches available on the remote.
+         */
+        ListBranchesResponse: {
+            /**
+             * Branches
+             * @description Branch names available on the remote.
+             */
+            branches: string[];
+            /**
+             * Default Branch
+             * @description The HEAD branch of the remote, if detected.
+             */
+            default_branch?: string | null;
+        };
         /** LitellmExtractorConfigProperties */
         LitellmExtractorConfigProperties: {
             /**
@@ -5268,23 +6865,47 @@ export interface components {
             /** Is Archived */
             is_archived: boolean;
         };
-        /** LocalToolServerCreationRequest */
+        /**
+         * LocalToolServerCreationRequest
+         * @description Request to create a local MCP tool server.
+         */
         LocalToolServerCreationRequest: {
-            /** Name */
+            /**
+             * Name
+             * @description The name of the tool server.
+             */
             name: string;
-            /** Description */
+            /**
+             * Description
+             * @description A description of the tool server.
+             */
             description?: string | null;
-            /** Command */
+            /**
+             * Command
+             * @description The command to start the local MCP server.
+             */
             command: string;
-            /** Args */
-            args: string[];
-            /** Env Vars */
+            /**
+             * Args
+             * @description Command-line arguments for the server.
+             */
+            args?: string[];
+            /**
+             * Env Vars
+             * @description Environment variables for the server.
+             */
             env_vars?: {
                 [key: string]: string;
             };
-            /** Secret Env Var Keys */
+            /**
+             * Secret Env Var Keys
+             * @description Environment variable keys whose values are stored as secrets.
+             */
             secret_env_var_keys?: string[];
-            /** Is Archived */
+            /**
+             * Is Archived
+             * @description Whether the tool server is archived.
+             */
             is_archived: boolean;
         };
         /** LocalizationProperties */
@@ -5373,15 +6994,30 @@ export interface components {
             /** @description The MCP tool to use for this run config. */
             tool_reference: components["schemas"]["MCPToolReference"];
         };
-        /** MeanUsage */
+        /**
+         * MeanUsage
+         * @description Average token usage across eval runs.
+         */
         MeanUsage: {
-            /** Mean Input Tokens */
+            /**
+             * Mean Input Tokens
+             * @description Average input tokens per run.
+             */
             mean_input_tokens?: number | null;
-            /** Mean Output Tokens */
+            /**
+             * Mean Output Tokens
+             * @description Average output tokens per run.
+             */
             mean_output_tokens?: number | null;
-            /** Mean Total Tokens */
+            /**
+             * Mean Total Tokens
+             * @description Average total tokens per run.
+             */
             mean_total_tokens?: number | null;
-            /** Mean Cost */
+            /**
+             * Mean Cost
+             * @description Average cost per run in USD.
+             */
             mean_cost?: number | null;
         };
         /** ModelDetails */
@@ -5471,6 +7107,79 @@ export interface components {
             /** Nsfw Examples */
             nsfw_examples: string;
         };
+        /**
+         * OAuthStartRequest
+         * @description Request to start a GitHub OAuth flow.
+         */
+        OAuthStartRequest: {
+            /**
+             * Git Url
+             * @description The git remote URL to authenticate against.
+             */
+            git_url: string;
+        };
+        /**
+         * OAuthStartResponse
+         * @description Response from starting a GitHub OAuth flow.
+         */
+        OAuthStartResponse: {
+            /**
+             * Authorize Url
+             * @description GitHub OAuth authorization URL to open in the browser.
+             */
+            authorize_url: string;
+            /**
+             * Install Url
+             * @description GitHub App installation URL (used if app not yet installed on repo).
+             */
+            install_url: string;
+            /**
+             * State
+             * @description OAuth state parameter for polling.
+             */
+            state: string;
+            /**
+             * Owner Name
+             * @description Parsed owner name from git URL.
+             */
+            owner_name: string;
+            /**
+             * Repo Name
+             * @description Parsed repo name from git URL.
+             */
+            repo_name: string;
+            /**
+             * Owner Pre Selected
+             * @description Whether the owner was pre-selected in the install URL.
+             */
+            owner_pre_selected: boolean;
+            /**
+             * Repo Pre Selected
+             * @description Whether the repo was pre-selected in the install URL.
+             */
+            repo_pre_selected: boolean;
+        };
+        /**
+         * OAuthStatusResponse
+         * @description Status of an in-progress OAuth flow.
+         */
+        OAuthStatusResponse: {
+            /**
+             * Complete
+             * @description Whether the OAuth flow has completed.
+             */
+            complete: boolean;
+            /**
+             * Oauth Token
+             * @description The OAuth token, if flow completed successfully.
+             */
+            oauth_token?: string | null;
+            /**
+             * Error
+             * @description Error message, if flow failed.
+             */
+            error?: string | null;
+        };
         /** OllamaConnection */
         OllamaConnection: {
             /** Message */
@@ -5484,13 +7193,41 @@ export interface components {
             /** Supported Embedding Models */
             supported_embedding_models?: string[];
         };
-        /** OpenFileResponse */
+        /**
+         * OpenAICompatibleProviderConfig
+         * @description Configuration for an OpenAI compatible provider.
+         */
+        OpenAICompatibleProviderConfig: {
+            /**
+             * Name
+             * @description Name for the OpenAI compatible provider.
+             */
+            name: string;
+            /**
+             * Base Url
+             * @description Base URL for the OpenAI compatible API.
+             */
+            base_url: string;
+            /**
+             * Api Key
+             * @description API key for authentication.
+             */
+            api_key: string;
+        };
+        /**
+         * OpenFileResponse
+         * @description Response containing the filesystem path to a file.
+         */
         OpenFileResponse: {
-            /** Path */
+            /**
+             * Path
+             * @description The filesystem path to the file.
+             */
             path: string;
         };
         /**
          * OutputFormat
+         * @description The output format for extraction results.
          * @enum {string}
          */
         OutputFormat: "text/plain" | "text/markdown";
@@ -5546,19 +7283,30 @@ export interface components {
         "Project-Input": {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Name
@@ -5581,19 +7329,30 @@ export interface components {
         "Project-Output": {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Name
@@ -5609,53 +7368,31 @@ export interface components {
             readonly model_type: string;
         };
         /**
-         * Prompt
-         * @description A prompt for a task. This is the custom prompt parented by a task.
+         * ProjectInfo
+         * @description Metadata about a discovered Kiln project.
          */
-        Prompt: {
+        ProjectInfo: {
+            /**
+             * Path
+             * @description Relative path to the project.kiln file.
+             */
+            path: string;
             /**
              * Name
-             * @description The name of the prompt.
+             * @description Project name from the project file.
              */
             name: string;
             /**
              * Description
-             * @description A more detailed description of the prompt.
+             * @description Project description from the project file.
              */
-            description?: string | null;
+            description: string;
             /**
-             * Generator Id
-             * @description The id of the generator that created this prompt.
+             * Id
+             * @description Unique project identifier.
+             * @default
              */
-            generator_id?: string | null;
-            /**
-             * Prompt
-             * @description The prompt for the task.
-             */
-            prompt: string;
-            /**
-             * Chain Of Thought Instructions
-             * @description Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting. COT will not be used unless this is provided.
-             */
-            chain_of_thought_instructions?: string | null;
-            /**
-             * V
-             * @default 1
-             */
-            v: number;
-            /** Id */
-            id?: string | null;
-            /** Path */
-            path?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at?: string;
-            /** Created By */
-            created_by?: string;
-            /** Model Type */
-            readonly model_type: string;
+            id: string;
         };
         /** PromptApiResponse */
         PromptApiResponse: {
@@ -5664,30 +7401,66 @@ export interface components {
             /** Prompt Id */
             prompt_id: string;
         };
-        /** PromptCreateRequest */
+        /**
+         * PromptCreateRequest
+         * @description Request to create a new prompt.
+         */
         PromptCreateRequest: {
-            /** Generator Id */
+            /**
+             * Generator Id
+             * @description The generator ID if this prompt was auto-generated.
+             */
             generator_id?: string | null;
-            /** Name */
+            /**
+             * Name
+             * @description The name of the prompt.
+             */
             name: string;
-            /** Description */
+            /**
+             * Description
+             * @description A description of the prompt.
+             */
             description?: string | null;
-            /** Prompt */
+            /**
+             * Prompt
+             * @description The prompt text.
+             */
             prompt: string;
-            /** Chain Of Thought Instructions */
+            /**
+             * Chain Of Thought Instructions
+             * @description Chain of thought instructions to include in the prompt.
+             */
             chain_of_thought_instructions?: string | null;
         };
-        /** PromptGenerator */
+        /**
+         * PromptGenerator
+         * @description A built-in prompt generator that can construct prompts from a task.
+         */
         PromptGenerator: {
-            /** Id */
+            /**
+             * Id
+             * @description The unique identifier of the generator.
+             */
             id: string;
-            /** Short Description */
+            /**
+             * Short Description
+             * @description A brief description of the generator.
+             */
             short_description: string;
-            /** Description */
+            /**
+             * Description
+             * @description A detailed description of the generator.
+             */
             description: string;
-            /** Name */
+            /**
+             * Name
+             * @description The display name of the generator.
+             */
             name: string;
-            /** Chain Of Thought */
+            /**
+             * Chain Of Thought
+             * @description Whether the generator includes chain of thought instructions.
+             */
             chain_of_thought: boolean;
         };
         /** PromptLeakageProperties */
@@ -5709,19 +7482,30 @@ export interface components {
         PromptOptimizationJob: {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Name
@@ -5772,18 +7556,36 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
-        /** PromptResponse */
+        /**
+         * PromptResponse
+         * @description The available prompt generators and saved prompts for a task.
+         */
         PromptResponse: {
-            /** Generators */
+            /**
+             * Generators
+             * @description The available prompt generators.
+             */
             generators: components["schemas"]["PromptGenerator"][];
-            /** Prompts */
+            /**
+             * Prompts
+             * @description The saved prompts for the task.
+             */
             prompts: components["schemas"]["ApiPrompt"][];
         };
-        /** PromptUpdateRequest */
+        /**
+         * PromptUpdateRequest
+         * @description Request to update a prompt.
+         */
         PromptUpdateRequest: {
-            /** Name */
+            /**
+             * Name
+             * @description The updated name.
+             */
             name: string;
-            /** Description */
+            /**
+             * Description
+             * @description The updated description.
+             */
             description?: string | null;
         };
         /** ProviderEmbeddingModels */
@@ -5883,23 +7685,37 @@ export interface components {
              */
             custom_answer?: string | null;
         };
-        /** RagConfig */
+        /**
+         * RagConfig
+         * @description Configuration for Retrieval-Augmented Generation (RAG) on a project's documents.
+         */
         RagConfig: {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Name
@@ -5960,34 +7776,67 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
-        /** RagConfigWithSubConfigs */
+        /**
+         * RagConfigWithSubConfigs
+         * @description A RAG config with all its sub-configurations.
+         */
         RagConfigWithSubConfigs: {
-            /** Id */
+            /**
+             * Id
+             * @description The RAG config ID.
+             */
             id: string | null;
-            /** Name */
+            /**
+             * Name
+             * @description The name of the RAG config.
+             */
             name: string;
-            /** Description */
-            description: string | null;
-            /** Tool Name */
+            /**
+             * Description
+             * @description The description of the RAG config.
+             */
+            description?: string | null;
+            /**
+             * Tool Name
+             * @description The tool name for the model.
+             */
             tool_name: string;
-            /** Tool Description */
+            /**
+             * Tool Description
+             * @description The tool description for the model.
+             */
             tool_description: string;
             /**
              * Created At
              * Format: date-time
+             * @description When the config was created.
              */
             created_at: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description The user who created the config.
+             */
             created_by: string;
-            /** Is Archived */
+            /**
+             * Is Archived
+             * @description Whether the config is archived.
+             */
             is_archived: boolean;
+            /** @description The extractor config. */
             extractor_config: components["schemas"]["ExtractorConfig"];
+            /** @description The chunker config. */
             chunker_config: components["schemas"]["ChunkerConfig"];
+            /** @description The embedding config. */
             embedding_config: components["schemas"]["EmbeddingConfig"];
+            /** @description The vector store config. */
             vector_store_config: components["schemas"]["VectorStoreConfig"];
-            reranker_config: components["schemas"]["RerankerConfig"] | null;
-            /** Tags */
-            tags: string[] | null;
+            /** @description The reranker config, if any. */
+            reranker_config?: components["schemas"]["RerankerConfig"] | null;
+            /**
+             * Tags
+             * @description Tags for document filtering.
+             */
+            tags?: string[] | null;
         };
         /** RagProgress */
         RagProgress: {
@@ -6085,17 +7934,33 @@ export interface components {
              */
             results: components["schemas"]["SearchResult"][];
         };
-        /** RatingOption */
+        /**
+         * RatingOption
+         * @description A rating requirement with display rules.
+         */
         RatingOption: {
+            /** @description The task requirement to rate. */
             requirement: components["schemas"]["TaskRequirement"];
-            /** Show For All */
+            /**
+             * Show For All
+             * @description Whether this rating option is shown for all outputs.
+             */
             show_for_all: boolean;
-            /** Show For Tags */
+            /**
+             * Show For Tags
+             * @description Tags for which this rating option is shown.
+             */
             show_for_tags: string[];
         };
-        /** RatingOptionResponse */
+        /**
+         * RatingOptionResponse
+         * @description The available rating options for a task.
+         */
         RatingOptionResponse: {
-            /** Options */
+            /**
+             * Options
+             * @description The list of rating options.
+             */
             options: components["schemas"]["RatingOption"][];
         };
         /** ReferenceAnswerAccuracyProperties */
@@ -6147,10 +8012,59 @@ export interface components {
             /** Is Archived */
             is_archived: boolean;
         };
-        /** RepairRunPost */
+        /**
+         * RenameCloneRequest
+         * @description Request to rename a temp clone directory to its final path.
+         */
+        RenameCloneRequest: {
+            /**
+             * Clone Path
+             * @description Current filesystem path of the cloned repo (typically in .tmp/).
+             */
+            clone_path: string;
+            /**
+             * Project Name
+             * @description Human-readable project name for the final directory.
+             */
+            project_name: string;
+            /**
+             * Project Id
+             * @description Unique project identifier used in the final path.
+             */
+            project_id: string;
+        };
+        /**
+         * RenameCloneResponse
+         * @description Result of renaming a clone directory.
+         */
+        RenameCloneResponse: {
+            /**
+             * New Clone Path
+             * @description The new filesystem path of the renamed clone.
+             */
+            new_clone_path: string;
+            /**
+             * Success
+             * @description Whether the rename succeeded.
+             */
+            success: boolean;
+            /**
+             * Message
+             * @description Human-readable result message.
+             */
+            message: string;
+        };
+        /**
+         * RepairRunPost
+         * @description Request to save a repair for a task run.
+         */
         RepairRunPost: {
+            /** @description The repaired task run. */
             repair_run: components["schemas"]["TaskRun-Input"];
-            /** Evaluator Feedback */
+            /**
+             * Evaluator Feedback
+             * @description The feedback that guided the repair.
+             */
             evaluator_feedback: string;
         };
         /** RepairTaskApiInput */
@@ -6174,23 +8088,37 @@ export interface components {
             /** @description The type of rating */
             type: components["schemas"]["TaskOutputRatingType"];
         };
-        /** RerankerConfig */
+        /**
+         * RerankerConfig
+         * @description Configuration for reranking search results using a reranking model.
+         */
         RerankerConfig: {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Name
@@ -6260,63 +8188,127 @@ export interface components {
             /** Feedback */
             feedback: string;
         };
-        /** RunConfigEvalResult */
+        /**
+         * RunConfigEvalResult
+         * @description Eval results for a specific run config.
+         */
         RunConfigEvalResult: {
-            /** Eval Id */
+            /**
+             * Eval Id
+             * @description The unique identifier of the eval.
+             */
             eval_id: string | null;
-            /** Eval Name */
+            /**
+             * Eval Name
+             * @description The human-readable name of the eval.
+             */
             eval_name: string;
-            /** Dataset Size */
+            /**
+             * Dataset Size
+             * @description The dataset size for this eval.
+             */
             dataset_size: number;
-            eval_config_result: components["schemas"]["EvalConfigResult"] | null;
-            /** Missing Default Eval Config */
+            /** @description The eval config results, if available. */
+            eval_config_result?: components["schemas"]["EvalConfigResult"] | null;
+            /**
+             * Missing Default Eval Config
+             * @description Whether the default eval config is missing.
+             */
             missing_default_eval_config: boolean;
-            /** Spec Id */
-            spec_id: string | null;
+            /**
+             * Spec Id
+             * @description The associated spec ID, if any.
+             */
+            spec_id?: string | null;
         };
-        /** RunConfigEvalScoresSummary */
+        /**
+         * RunConfigEvalScoresSummary
+         * @description Summary of all eval scores for a run config.
+         */
         RunConfigEvalScoresSummary: {
-            /** Eval Results */
+            /**
+             * Eval Results
+             * @description Eval results for each eval.
+             */
             eval_results: components["schemas"]["RunConfigEvalResult"][];
+            /** @description Average usage statistics across eval runs. */
             mean_usage?: components["schemas"]["MeanUsage"] | null;
         };
-        /** RunSummary */
+        /**
+         * RunSummary
+         * @description A summary of a task run for list views.
+         */
         RunSummary: {
-            /** Id */
+            /**
+             * Id
+             * @description The unique identifier of the task run.
+             */
             id: string | null;
+            /** @description The rating of the task run output. */
             rating?: components["schemas"]["TaskOutputRating-Output"] | null;
             /**
              * Created At
              * Format: date-time
+             * @description When the run was created.
              */
             created_at: string;
-            /** Input Preview */
+            /**
+             * Input Preview
+             * @description A truncated preview of the task input.
+             */
             input_preview?: string | null;
-            /** Output Preview */
+            /**
+             * Output Preview
+             * @description A truncated preview of the task output.
+             */
             output_preview?: string | null;
-            /** Repair State */
+            /**
+             * Repair State
+             * @description The repair state of the run (e.g., 'Repaired', 'No repair needed').
+             */
             repair_state?: string | null;
-            /** Model Name */
+            /**
+             * Model Name
+             * @description The model used for this run.
+             */
             model_name?: string | null;
-            /** Input Source */
+            /**
+             * Input Source
+             * @description The source of the input (human, synthetic, etc.).
+             */
             input_source?: string | null;
-            /** Tags */
+            /**
+             * Tags
+             * @description Tags applied to the run.
+             */
             tags?: string[] | null;
         };
         /**
          * RunTaskRequest
-         * @description Request model for running a task.
+         * @description Request to invoke an AI model on a task.
          */
         RunTaskRequest: {
-            /** Run Config Properties */
+            /**
+             * Run Config Properties
+             * @description The run configuration specifying model, prompt, and generation parameters.
+             */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"];
-            /** Plaintext Input */
+            /**
+             * Plaintext Input
+             * @description The task input as plaintext. Use for unstructured tasks.
+             */
             plaintext_input?: string | null;
-            /** Structured Input */
+            /**
+             * Structured Input
+             * @description The task input as structured JSON. Use for tasks with an input schema.
+             */
             structured_input?: {
                 [key: string]: unknown;
             } | unknown[] | null;
-            /** Tags */
+            /**
+             * Tags
+             * @description Tags to apply to the resulting task run.
+             */
             tags?: string[] | null;
         };
         /**
@@ -6328,6 +8320,67 @@ export interface components {
             input: string;
             /** Output */
             output: string;
+        };
+        /**
+         * SaveConfigRequest
+         * @description Request to save a complete git sync configuration for a project.
+         */
+        SaveConfigRequest: {
+            /**
+             * Project Id
+             * @description Unique project identifier.
+             */
+            project_id: string;
+            /**
+             * Project Path
+             * @description Relative path to the project.kiln file within the clone.
+             */
+            project_path: string;
+            /**
+             * Git Url
+             * @description The git remote URL.
+             */
+            git_url: string;
+            /**
+             * Clone Path
+             * @description Local filesystem path of the clone.
+             */
+            clone_path: string;
+            /**
+             * Branch
+             * @description Branch name to sync.
+             */
+            branch: string;
+            /**
+             * Remote Name
+             * @description Git remote name.
+             * @default origin
+             */
+            remote_name: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+            /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode detected during setup: 'system_keys', 'pat_token', or 'github_oauth'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
+            /**
+             * Sync Mode
+             * @description Sync mode: 'auto' or 'manual'.
+             * @default auto
+             * @enum {string}
+             */
+            sync_mode: "auto" | "manual";
         };
         /** SaveQnaPairInput */
         SaveQnaPairInput: {
@@ -6357,9 +8410,37 @@ export interface components {
              */
             tags?: string[] | null;
         };
-        /** ScoreSummary */
+        /**
+         * ScanProjectsRequest
+         * @description Request to scan a cloned repo for Kiln project files.
+         */
+        ScanProjectsRequest: {
+            /**
+             * Clone Path
+             * @description Local filesystem path of the cloned repo.
+             */
+            clone_path: string;
+        };
+        /**
+         * ScanProjectsResponse
+         * @description Projects discovered inside a cloned repository.
+         */
+        ScanProjectsResponse: {
+            /**
+             * Projects
+             * @description List of discovered projects.
+             */
+            projects: components["schemas"]["ProjectInfo"][];
+        };
+        /**
+         * ScoreSummary
+         * @description Summary of scores for an eval run.
+         */
         ScoreSummary: {
-            /** Mean Score */
+            /**
+             * Mean Score
+             * @description The mean score across all runs.
+             */
             mean_score: number;
         };
         /** SearchResult */
@@ -6437,43 +8518,89 @@ export interface components {
              */
             breakpoint_percentile_threshold: number;
         };
-        /** SkillContentResponse */
+        /**
+         * SkillContentResponse
+         * @description The full content of a skill including its markdown body.
+         */
         SkillContentResponse: {
-            /** Skill Md */
+            /**
+             * Skill Md
+             * @description The full SKILL.md content including frontmatter.
+             */
             skill_md: string;
-            /** Body */
+            /**
+             * Body
+             * @description The markdown body of the skill.
+             */
             body: string;
         };
-        /** SkillCreationRequest */
+        /**
+         * SkillCreationRequest
+         * @description Request to create a new skill.
+         */
         SkillCreationRequest: {
-            /** Name */
+            /**
+             * Name
+             * @description The name of the skill.
+             */
             name: string;
-            /** Description */
+            /**
+             * Description
+             * @description What the skill does and when to use it.
+             */
             description: string;
-            /** Body */
+            /**
+             * Body
+             * @description The markdown body of the skill.
+             */
             body: string;
         };
-        /** SkillResponse */
+        /**
+         * SkillResponse
+         * @description A skill with its metadata.
+         */
         SkillResponse: {
-            /** Id */
+            /**
+             * Id
+             * @description The unique identifier of the skill.
+             */
             id?: string | null;
-            /** Name */
+            /**
+             * Name
+             * @description The human-readable name of the skill.
+             */
             name: string;
-            /** Description */
+            /**
+             * Description
+             * @description What the skill does.
+             */
             description: string;
             /**
              * Is Archived
+             * @description Whether the skill is archived.
              * @default false
              */
             is_archived: boolean;
-            /** Created By */
+            /**
+             * Created By
+             * @description The user who created the skill.
+             */
             created_by?: string | null;
-            /** Created At */
+            /**
+             * Created At
+             * @description When the skill was created.
+             */
             created_at?: string | null;
         };
-        /** SkillUpdateRequest */
+        /**
+         * SkillUpdateRequest
+         * @description Request to update a skill.
+         */
         SkillUpdateRequest: {
-            /** Is Archived */
+            /**
+             * Is Archived
+             * @description Whether the skill is archived.
+             */
             is_archived?: boolean | null;
         };
         /**
@@ -6483,19 +8610,30 @@ export interface components {
         Spec: {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Name
@@ -6554,25 +8692,48 @@ export interface components {
                 [key: string]: string;
             };
         };
-        /** SpecCreationRequest */
+        /**
+         * SpecCreationRequest
+         * @description Request to create a new spec.
+         */
         SpecCreationRequest: {
-            /** Name */
+            /**
+             * Name
+             * @description The name of the spec.
+             */
             name: string;
-            /** Definition */
+            /**
+             * Definition
+             * @description A detailed definition of the spec.
+             */
             definition: string;
-            /** Properties */
+            /**
+             * Properties
+             * @description The properties of the spec.
+             */
             properties: components["schemas"]["DesiredBehaviourProperties"] | components["schemas"]["IssueProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"];
-            /** @default 1 */
+            /**
+             * @description The priority of the spec.
+             * @default 1
+             */
             priority: components["schemas"]["Priority"];
-            /** @default active */
+            /**
+             * @description The status of the spec.
+             * @default active
+             */
             status: components["schemas"]["SpecStatus"];
-            /** Tags */
+            /**
+             * Tags
+             * @description The tags of the spec.
+             */
             tags?: string[];
             /**
              * Evaluate Full Trace
+             * @description Whether to evaluate the full trace instead of the final answer.
              * @default false
              */
             evaluate_full_trace: boolean;
+            /** @description An example task input/output pair. */
             task_sample?: components["schemas"]["TaskSample"] | null;
         };
         /** SpecQuestionerApiInput */
@@ -6760,19 +8921,30 @@ export interface components {
         Task: {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Name
@@ -6795,9 +8967,15 @@ export interface components {
              * @default []
              */
             requirements: components["schemas"]["TaskRequirement"][];
-            /** Output Json Schema */
+            /**
+             * Output Json Schema
+             * @description JSON schema for structured task output. Must be an object schema.
+             */
             output_json_schema?: string | null;
-            /** Input Json Schema */
+            /**
+             * Input Json Schema
+             * @description JSON schema for structured task input. Can be an object or array schema.
+             */
             input_json_schema?: string | null;
             /**
              * Thinking Instruction
@@ -6817,11 +8995,20 @@ export interface components {
          * @description Task information for copilot API calls.
          */
         TaskInfoApi: {
-            /** Task Prompt */
+            /**
+             * Task Prompt
+             * @description The task's prompt.
+             */
             task_prompt: string;
-            /** Task Input Schema */
+            /**
+             * Task Input Schema
+             * @description The task's input JSON schema.
+             */
             task_input_schema: string;
-            /** Task Output Schema */
+            /**
+             * Task Output Schema
+             * @description The task's output JSON schema.
+             */
             task_output_schema: string;
         };
         /**
@@ -6829,8 +9016,12 @@ export interface components {
          * @description Metadata about the model used for a task.
          */
         TaskMetadataApi: {
-            /** Model Name */
+            /**
+             * Model Name
+             * @description The name of the AI model used.
+             */
             model_name: string;
+            /** @description The provider hosting the model (e.g. OpenAI, Anthropic). */
             model_provider_name: components["schemas"]["ModelProviderName"];
         };
         /**
@@ -6843,19 +9034,30 @@ export interface components {
         "TaskOutput-Input": {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Output
@@ -6877,19 +9079,30 @@ export interface components {
         "TaskOutput-Output": {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Output
@@ -6915,21 +9128,35 @@ export interface components {
         "TaskOutputRating-Input": {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
-            /** @default five_star */
+            /**
+             * @description The rating system used for this rating.
+             * @default five_star
+             */
             type: components["schemas"]["TaskOutputRatingType"];
             /**
              * Value
@@ -6960,21 +9187,35 @@ export interface components {
         "TaskOutputRating-Output": {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
-            /** @default five_star */
+            /**
+             * @description The rating system used for this rating.
+             * @default five_star
+             */
             type: components["schemas"]["TaskOutputRatingType"];
             /**
              * Value
@@ -7009,20 +9250,35 @@ export interface components {
          *     priority level, and rating type (five_star, pass_fail, pass_fail_critical, custom).
          */
         TaskRequirement: {
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
             /**
              * Name
              * @description The name of the task requirement.
              */
             name: string;
-            /** Description */
+            /**
+             * Description
+             * @description Optional elaboration on the requirement's purpose.
+             */
             description?: string | null;
-            /** Instruction */
+            /**
+             * Instruction
+             * @description Instructions for meeting the requirement.
+             */
             instruction: string;
-            /** @default 2 */
+            /**
+             * @description The priority level of the requirement.
+             * @default 2
+             */
             priority: components["schemas"]["Priority"];
-            /** @default five_star */
+            /**
+             * @description The rating type used to evaluate this requirement.
+             * @default five_star
+             */
             type: components["schemas"]["TaskOutputRatingType"];
         };
         /**
@@ -7035,19 +9291,30 @@ export interface components {
         "TaskRun-Input": {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             parent?: components["schemas"]["KilnBaseModel"] | null;
             /**
@@ -7086,6 +9353,11 @@ export interface components {
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
             trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Input"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            /**
+             * Parent Task Run Id
+             * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
+             */
+            parent_task_run_id?: string | null;
         };
         /**
          * TaskRun
@@ -7097,19 +9369,30 @@ export interface components {
         "TaskRun-Output": {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Input
@@ -7147,6 +9430,11 @@ export interface components {
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
             trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Output"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Output"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            /**
+             * Parent Task Run Id
+             * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
+             */
+            parent_task_run_id?: string | null;
             /** Model Type */
             readonly model_type: string;
         };
@@ -7161,19 +9449,30 @@ export interface components {
         TaskRunConfig: {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Name
@@ -7201,6 +9500,13 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
+        /** TaskRunSnapshot */
+        TaskRunSnapshot: {
+            /** Trace */
+            trace?: components["schemas"]["TraceMessage"][] | null;
+        } & {
+            [key: string]: unknown;
+        };
         /**
          * TaskSample
          * @description An example task input/output pair used to demonstrate expected behavior.
@@ -7217,16 +9523,141 @@ export interface components {
              */
             output: string;
         };
-        /** TaskToolCompatibility */
+        /** TaskSummariesProject */
+        TaskSummariesProject: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Tasks */
+            tasks: components["schemas"]["TaskSummary"][];
+        };
+        /** TaskSummariesResponse */
+        TaskSummariesResponse: {
+            /** Projects */
+            projects: components["schemas"]["TaskSummariesProject"][];
+        };
+        /** TaskSummary */
+        TaskSummary: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Instruction */
+            instruction: string;
+        };
+        /**
+         * TaskToolCompatibility
+         * @description Whether a task is compatible with a specific tool.
+         */
         TaskToolCompatibility: {
-            /** Task Id */
+            /**
+             * Task Id
+             * @description The unique identifier of the task.
+             */
             task_id: string;
-            /** Task Name */
+            /**
+             * Task Name
+             * @description The human-readable name of the task.
+             */
             task_name: string;
-            /** Compatible */
+            /**
+             * Compatible
+             * @description Whether the task is compatible with the tool.
+             */
             compatible: boolean;
-            /** Incompatibility Reason */
+            /**
+             * Incompatibility Reason
+             * @description Why the task is incompatible, if applicable.
+             */
             incompatibility_reason?: string | null;
+        };
+        /**
+         * TestAccessRequest
+         * @description Request to test read access to a git remote.
+         */
+        TestAccessRequest: {
+            /**
+             * Git Url
+             * @description The git remote URL to test access against.
+             */
+            git_url: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+            /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
+        };
+        /**
+         * TestAccessResponse
+         * @description Result of a git remote access test.
+         */
+        TestAccessResponse: {
+            /**
+             * Success
+             * @description Whether access to the remote succeeded.
+             */
+            success: boolean;
+            /**
+             * Message
+             * @description Human-readable result message.
+             */
+            message: string;
+            /**
+             * Auth Required
+             * @description True when the failure is due to missing authentication.
+             * @default false
+             */
+            auth_required: boolean;
+            /**
+             * Auth Method
+             * @description Auth method that succeeded: 'system_keys', 'pat_token', or 'github_oauth'. Null on failure.
+             */
+            auth_method?: string | null;
+        };
+        /**
+         * TestWriteAccessRequest
+         * @description Request to test push/write access to a cloned repo's remote.
+         */
+        TestWriteAccessRequest: {
+            /**
+             * Clone Path
+             * @description Local filesystem path of the cloned repo.
+             */
+            clone_path: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+            /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
         };
         /** ToneProperties */
         ToneProperties: {
@@ -7253,6 +9684,19 @@ export interface components {
             /** Description */
             description: string | null;
         };
+        /** ToolCallInfo */
+        ToolCallInfo: {
+            /** Toolcallid */
+            toolCallId: string;
+            /** Toolname */
+            toolName: string;
+            /** Input */
+            input: {
+                [key: string]: unknown;
+            };
+            /** Requiresapproval */
+            requiresApproval: boolean;
+        };
         /**
          * ToolDefinitionResponse
          * @description Response model for tool definition endpoint.
@@ -7269,6 +9713,11 @@ export interface components {
             parameters: {
                 [key: string]: unknown;
             };
+        };
+        /** ToolServerArchiveRequest */
+        ToolServerArchiveRequest: {
+            /** Is Archived */
+            is_archived: boolean;
         };
         /**
          * ToolServerType
@@ -7288,7 +9737,7 @@ export interface components {
          * ToolSetType
          * @enum {string}
          */
-        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill";
+        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin";
         /**
          * ToolsRunConfig
          * @description A config describing which tools are available to a task.
@@ -7312,57 +9761,180 @@ export interface components {
             /** Toxicity Examples */
             toxicity_examples: string;
         };
-        /** UpdateEvalRequest */
-        UpdateEvalRequest: {
+        /** TraceMessage */
+        TraceMessage: {
+            /** Role */
+            role: string;
+            /** Content */
+            content?: string | {
+                [key: string]: unknown;
+            }[] | null;
+            /** Tool Calls */
+            tool_calls?: components["schemas"]["TraceToolCall"][] | null;
+            /** Tool Call Id */
+            tool_call_id?: string | null;
+            /** Reasoning Content */
+            reasoning_content?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** TraceToolCall */
+        TraceToolCall: {
+            /** Id */
+            id: string;
+            /**
+             * Type
+             * @default function
+             */
+            type: string;
+            function: components["schemas"]["TraceToolCallFunction"];
+        };
+        /** TraceToolCallFunction */
+        TraceToolCallFunction: {
             /** Name */
+            name: string;
+            /** Arguments */
+            arguments: string;
+        };
+        /**
+         * UpdateConfigRequest
+         * @description Request to partially update a git sync configuration.
+         */
+        UpdateConfigRequest: {
+            /**
+             * Sync Mode
+             * @description New sync mode, if changing.
+             */
+            sync_mode?: ("auto" | "manual") | null;
+            /**
+             * Pat Token
+             * @description New personal access token, if changing.
+             */
+            pat_token?: string | null;
+            /**
+             * Oauth Token
+             * @description New OAuth token, if changing.
+             */
+            oauth_token?: string | null;
+            /**
+             * Auth Mode
+             * @description New auth mode, if changing.
+             */
+            auth_mode?: ("system_keys" | "pat_token" | "github_oauth") | null;
+        };
+        /**
+         * UpdateEvalRequest
+         * @description Request to update an eval.
+         */
+        UpdateEvalRequest: {
+            /**
+             * Name
+             * @description The updated name.
+             */
             name?: string | null;
-            /** Description */
+            /**
+             * Description
+             * @description The updated description.
+             */
             description?: string | null;
-            /** Train Set Filter Id */
+            /**
+             * Train Set Filter Id
+             * @description The updated train set filter ID.
+             */
             train_set_filter_id?: string | null;
         };
         /**
          * UpdateFinetuneRequest
-         * @description Request to update a finetune
+         * @description Request to update a finetune.
          */
         UpdateFinetuneRequest: {
-            /** Name */
+            /**
+             * Name
+             * @description The updated name.
+             */
             name: string;
-            /** Description */
+            /**
+             * Description
+             * @description The updated description.
+             */
             description?: string | null;
         };
-        /** UpdateRagConfigRequest */
+        /**
+         * UpdateRagConfigRequest
+         * @description Request to update a RAG config.
+         */
         UpdateRagConfigRequest: {
-            /** Name */
+            /**
+             * Name
+             * @description The updated name.
+             */
             name?: string | null;
-            /** Description */
+            /**
+             * Description
+             * @description The updated description.
+             */
             description?: string | null;
-            /** Is Archived */
+            /**
+             * Is Archived
+             * @description Whether the config is archived.
+             */
             is_archived?: boolean | null;
         };
-        /** UpdateRunConfigRequest */
+        /**
+         * UpdateRunConfigRequest
+         * @description Request to update a run config.
+         */
         UpdateRunConfigRequest: {
-            /** Name */
+            /**
+             * Name
+             * @description The updated name.
+             */
             name?: string | null;
-            /** Starred */
+            /**
+             * Starred
+             * @description The updated starred status.
+             */
             starred?: boolean | null;
-            /** Prompt Name */
+            /**
+             * Prompt Name
+             * @description The updated prompt name.
+             */
             prompt_name?: string | null;
         };
-        /** UpdateSpecRequest */
+        /**
+         * UpdateSpecRequest
+         * @description Request to update a spec.
+         */
         UpdateSpecRequest: {
-            /** Name */
+            /**
+             * Name
+             * @description The updated name.
+             */
             name?: string | null;
-            /** Definition */
+            /**
+             * Definition
+             * @description The updated definition.
+             */
             definition?: string | null;
-            /** Properties */
+            /**
+             * Properties
+             * @description The updated spec properties.
+             */
             properties?: (components["schemas"]["DesiredBehaviourProperties"] | components["schemas"]["IssueProperties"] | components["schemas"]["ToneProperties"] | components["schemas"]["FormattingProperties"] | components["schemas"]["LocalizationProperties"] | components["schemas"]["AppropriateToolUseProperties"] | components["schemas"]["ReferenceAnswerAccuracyProperties"] | components["schemas"]["FactualCorrectnessProperties"] | components["schemas"]["HallucinationsProperties"] | components["schemas"]["CompletenessProperties"] | components["schemas"]["ToxicityProperties"] | components["schemas"]["BiasProperties"] | components["schemas"]["MaliciousnessProperties"] | components["schemas"]["NsfwProperties"] | components["schemas"]["TabooProperties"] | components["schemas"]["JailbreakProperties"] | components["schemas"]["PromptLeakageProperties"]) | null;
+            /** @description The updated priority. */
             priority?: components["schemas"]["Priority"] | null;
+            /** @description The updated status. */
             status?: components["schemas"]["SpecStatus"] | null;
-            /** Tags */
+            /**
+             * Tags
+             * @description The updated tags.
+             */
             tags?: string[] | null;
         };
-        /** Usage */
+        /**
+         * Usage
+         * @description Token usage and cost information for a task run.
+         */
         Usage: {
             /**
              * Input Tokens
@@ -7384,6 +9956,11 @@ export interface components {
              * @description The cost of the task run in US dollars, saved at runtime (prices can change over time).
              */
             cost?: number | null;
+            /**
+             * Cached Tokens
+             * @description Number of tokens served from prompt cache. None if not reported.
+             */
+            cached_tokens?: number | null;
         };
         /**
          * UserModelEntry
@@ -7432,23 +10009,37 @@ export interface components {
             /** Error Type */
             type: string;
         };
-        /** VectorStoreConfig */
+        /**
+         * VectorStoreConfig
+         * @description Configuration for a vector store used to index and search document embeddings.
+         */
         VectorStoreConfig: {
             /**
              * V
+             * @description Schema version for migration support.
              * @default 1
              */
             v: number;
-            /** Id */
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
             id?: string | null;
-            /** Path */
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
             path?: string | null;
             /**
              * Created At
              * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
-            /** Created By */
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
             created_by?: string;
             /**
              * Name
@@ -7472,6 +10063,7 @@ export interface components {
         };
         /**
          * VectorStoreType
+         * @description The type of vector store backend.
          * @enum {string}
          */
         VectorStoreType: "lancedb_fts" | "lancedb_hybrid" | "lancedb_vector";
@@ -7504,7 +10096,27 @@ export interface operations {
             };
         };
     };
-    create_project_api_project_post: {
+    get_projects_api_projects_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project-Output"][];
+                };
+            };
+        };
+    };
+    create_project_api_projects_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -7537,11 +10149,44 @@ export interface operations {
             };
         };
     };
-    update_project_api_project__project_id__patch: {
+    get_project_api_projects__project_id__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Project-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_project_api_projects__project_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -7574,93 +10219,10 @@ export interface operations {
             };
         };
     };
-    get_projects_api_projects_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Project-Output"][];
-                };
-            };
-        };
-    };
-    get_project_api_projects__project_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Project-Output"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_project_api_projects__project_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     import_project_api_import_project_post: {
         parameters: {
             query: {
+                /** @description File path to the project.kiln file to import. */
                 project_path: string;
             };
             header?: never;
@@ -7689,118 +10251,12 @@ export interface operations {
             };
         };
     };
-    create_task_api_projects__project_id__task_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Task"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_task_api_projects__project_id__task__task_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_task_api_projects__project_id__task__task_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Task"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_tasks_api_projects__project_id__tasks_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -7827,12 +10283,52 @@ export interface operations {
             };
         };
     };
+    create_task_api_projects__project_id__tasks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Task"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_task_api_projects__project_id__tasks__task_id__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -7859,12 +10355,88 @@ export interface operations {
             };
         };
     };
+    delete_task_api_projects__project_id__tasks__task_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_task_api_projects__project_id__tasks__task_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Task"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_rating_options_api_projects__project_id__tasks__task_id__rating_options_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -7891,21 +10463,14 @@ export interface operations {
             };
         };
     };
-    create_prompt_api_projects__project_id__task__task_id__prompt_post: {
+    task_summaries_api_task_summaries_get: {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                project_id: string;
-                task_id: string;
-            };
+            path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PromptCreateRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -7913,26 +10478,19 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Prompt"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["TaskSummariesResponse"];
                 };
             };
         };
     };
-    get_prompts_api_projects__project_id__task__task_id__prompts_get: {
+    get_prompts_api_projects__project_id__tasks__task_id__prompts_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -7959,13 +10517,54 @@ export interface operations {
             };
         };
     };
+    create_prompt_api_projects__project_id__tasks__task_id__prompts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromptCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiPrompt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     delete_prompt_api_projects__project_id__tasks__task_id__prompts__prompt_id__delete: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the prompt. */
                 prompt_id: string;
             };
             cookie?: never;
@@ -7997,8 +10596,11 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the prompt. */
                 prompt_id: string;
             };
             cookie?: never;
@@ -8034,7 +10636,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -8065,12 +10669,48 @@ export interface operations {
             };
         };
     };
-    create_spec_api_projects__project_id__tasks__task_id__spec_post: {
+    get_specs_api_projects__project_id__tasks__task_id__specs_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Spec"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_spec_api_projects__project_id__tasks__task_id__specs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -8101,45 +10741,16 @@ export interface operations {
             };
         };
     };
-    get_specs_api_projects__project_id__tasks__task_id__specs_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Spec"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     get_spec_api_projects__project_id__tasks__task_id__specs__spec_id__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the spec. */
                 spec_id: string;
             };
             cookie?: never;
@@ -8171,8 +10782,11 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the spec. */
                 spec_id: string;
             };
             cookie?: never;
@@ -8204,8 +10818,11 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the spec. */
                 spec_id: string;
             };
             cookie?: never;
@@ -8241,8 +10858,11 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the task run. */
                 run_id: string;
             };
             cookie?: never;
@@ -8274,8 +10894,11 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the task run. */
                 run_id: string;
             };
             cookie?: never;
@@ -8307,8 +10930,11 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the task run. */
                 run_id: string;
             };
             cookie?: never;
@@ -8346,7 +10972,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -8378,7 +11006,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -8414,7 +11044,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -8446,7 +11078,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -8482,7 +11116,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -8518,7 +11154,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -8554,7 +11192,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -8590,7 +11230,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -8619,11 +11261,126 @@ export interface operations {
             };
         };
     };
+    list_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the task run. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Feedback"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the task run. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Feedback"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback__feedback_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the task run. */
+                run_id: string;
+                /** @description The unique identifier of the feedback. */
+                feedback_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_documents_bulk_api_projects__project_id__documents_bulk_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -8657,10 +11414,12 @@ export interface operations {
     get_documents_api_projects__project_id__documents_get: {
         parameters: {
             query?: {
+                /** @description Comma-separated list of tags to filter by. */
                 tags?: string | null;
             };
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -8692,7 +11451,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the extractor configuration. */
                 extractor_config_id: string;
             };
             cookie?: never;
@@ -8726,6 +11487,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -8757,6 +11519,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -8790,7 +11553,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the document. */
                 document_id: string;
             };
             cookie?: never;
@@ -8822,7 +11587,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the document. */
                 document_id: string;
             };
             cookie?: never;
@@ -8856,7 +11623,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the document. */
                 document_id: string;
             };
             cookie?: never;
@@ -8892,6 +11661,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -8929,6 +11699,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -8964,6 +11735,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -8995,7 +11767,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the extractor configuration. */
                 extractor_config_id: string;
             };
             cookie?: never;
@@ -9027,7 +11801,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the extractor configuration. */
                 extractor_config_id: string;
             };
             cookie?: never;
@@ -9063,11 +11839,14 @@ export interface operations {
     run_extractor_config_api_projects__project_id__extractor_configs__extractor_config_id__run_extractor_config_get: {
         parameters: {
             query?: {
+                /** @description Comma-separated list of tags to filter documents by. */
                 tags?: string | null;
             };
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the extractor configuration. */
                 extractor_config_id: string;
             };
             cookie?: never;
@@ -9099,7 +11878,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the document. */
                 document_id: string;
             };
             cookie?: never;
@@ -9131,8 +11912,11 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the document. */
                 document_id: string;
+                /** @description The unique identifier of the extraction. */
                 extraction_id: string;
             };
             cookie?: never;
@@ -9164,8 +11948,11 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the document. */
                 document_id: string;
+                /** @description The unique identifier of the extraction. */
                 extraction_id: string;
             };
             cookie?: never;
@@ -9199,7 +11986,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the document. */
                 document_id: string;
             };
             cookie?: never;
@@ -9231,8 +12020,11 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the document. */
                 document_id: string;
+                /** @description The unique identifier of the extraction. */
                 extraction_id: string;
             };
             cookie?: never;
@@ -9264,7 +12056,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the document. */
                 document_id: string;
             };
             cookie?: never;
@@ -9296,6 +12090,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -9333,7 +12128,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the extractor configuration. */
                 extractor_config_id: string;
             };
             cookie?: never;
@@ -9365,7 +12162,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the document. */
                 document_id: string;
             };
             cookie?: never;
@@ -9401,6 +12200,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -9436,6 +12236,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -9467,6 +12268,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -9502,6 +12304,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -9533,6 +12336,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -9568,6 +12372,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -9599,7 +12404,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the embedding configuration. */
                 embedding_config_id: string;
             };
             cookie?: never;
@@ -9631,6 +12438,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -9666,6 +12474,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -9697,7 +12506,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the RAG configuration. */
                 rag_config_id: string;
             };
             cookie?: never;
@@ -9729,7 +12540,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the RAG configuration. */
                 rag_config_id: string;
             };
             cookie?: never;
@@ -9765,6 +12578,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -9800,6 +12614,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -9831,7 +12646,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the RAG configuration. */
                 rag_config_id: string;
             };
             cookie?: never;
@@ -9863,6 +12680,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -9900,7 +12718,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the RAG configuration. */
                 rag_config_id: string;
             };
             cookie?: never;
@@ -9936,6 +12756,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -9967,8 +12788,11 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the extractor configuration. */
                 extractor_config_id: string;
+                /** @description The unique identifier of the document. */
                 document_id: string;
             };
             cookie?: never;
@@ -10119,9 +12943,10 @@ export interface operations {
             };
         };
     };
-    connect_ollama_api_api_provider_ollama_connect_get: {
+    connect_ollama_api_api_provider_ollama_connect_post: {
         parameters: {
             query?: {
+                /** @description Custom URL for the Ollama server. */
                 custom_ollama_url?: string | null;
             };
             header?: never;
@@ -10150,9 +12975,10 @@ export interface operations {
             };
         };
     };
-    connect_docker_model_runner_api_api_provider_docker_model_runner_connect_get: {
+    connect_docker_model_runner_api_api_provider_docker_model_runner_connect_post: {
         parameters: {
             query?: {
+                /** @description Custom URL for the Docker Model Runner. */
                 docker_model_runner_custom_url?: string | null;
             };
             header?: never;
@@ -10183,16 +13009,16 @@ export interface operations {
     };
     save_openai_compatible_providers_api_provider_openai_compatible_post: {
         parameters: {
-            query: {
-                name: string;
-                base_url: string;
-                api_key: string;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpenAICompatibleProviderConfig"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -10217,6 +13043,7 @@ export interface operations {
     delete_openai_compatible_providers_api_provider_openai_compatible_delete: {
         parameters: {
             query: {
+                /** @description Name of the OpenAI compatible provider to delete. */
                 name: string;
             };
             header?: never;
@@ -10321,9 +13148,13 @@ export interface operations {
     delete_user_model_api_settings_user_models_delete: {
         parameters: {
             query?: {
+                /** @description Provider type: 'builtin' for built-in providers, 'custom' for OpenAI-compatible. */
                 provider_type?: string | null;
+                /** @description The provider identifier (e.g., 'openai', 'anthropic', or custom provider name). */
                 provider_id?: string | null;
+                /** @description The model identifier to delete. */
                 model_id?: string | null;
+                /** @description Unique ID of the model entry in user_model_registry (preferred deletion method). */
                 id?: string | null;
             };
             header?: never;
@@ -10390,6 +13221,7 @@ export interface operations {
     disconnect_api_key_api_provider_disconnect_api_key_post: {
         parameters: {
             query: {
+                /** @description The provider identifier to disconnect. */
                 provider_id: string;
             };
             header?: never;
@@ -10418,13 +13250,49 @@ export interface operations {
             };
         };
     };
-    generate_prompt_api_projects__project_id__task__task_id__gen_prompt__prompt_id__get: {
+    create_kiln_copilot_api_key_api_provider_create_kiln_copilot_api_key_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateKilnCopilotApiKeyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_prompt_api_projects__project_id__tasks__task_id__gen_prompt__prompt_id__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The prompt generator ID to use. */
                 prompt_id: string;
             };
             cookie?: never;
@@ -10451,13 +13319,16 @@ export interface operations {
             };
         };
     };
-    run_repair_api_projects__project_id__tasks__task_id__runs__run_id__run_repair_post: {
+    run_repair_api_projects__project_id__tasks__task_id__runs__run_id__generate_repair_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the task run. */
                 run_id: string;
             };
             cookie?: never;
@@ -10488,13 +13359,16 @@ export interface operations {
             };
         };
     };
-    post_repair_run_api_projects__project_id__tasks__task_id__runs__run_id__repair_post: {
+    post_repair_run_api_projects__project_id__tasks__task_id__runs__run_id__save_repair_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the task run. */
                 run_id: string;
             };
             cookie?: never;
@@ -10587,6 +13461,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The setting item key to retrieve. */
                 item_id: string;
             };
             cookie?: never;
@@ -10638,6 +13513,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -10667,6 +13543,7 @@ export interface operations {
     check_entitlements_api_check_entitlements_get: {
         parameters: {
             query: {
+                /** @description Comma-separated list of entitlement feature codes to check. */
                 feature_codes: string;
             };
             header?: never;
@@ -10702,7 +13579,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -10738,7 +13617,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -10774,7 +13655,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -10808,11 +13691,14 @@ export interface operations {
     generate_sample_api_projects__project_id__tasks__task_id__generate_sample_post: {
         parameters: {
             query?: {
+                /** @description Optional session ID to group generated samples. */
                 session_id?: string | null;
             };
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -10846,11 +13732,14 @@ export interface operations {
     generate_qna_pairs_api_projects__project_id__tasks__task_id__generate_qna_post: {
         parameters: {
             query?: {
+                /** @description Optional session ID to group generated Q&A pairs. */
                 session_id?: string | null;
             };
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -10884,11 +13773,14 @@ export interface operations {
     save_qna_pair_api_projects__project_id__tasks__task_id__save_qna_pair_post: {
         parameters: {
             query: {
+                /** @description Session ID to group saved Q&A pairs. */
                 session_id: string;
             };
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -10924,7 +13816,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -10956,7 +13850,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -10990,11 +13886,14 @@ export interface operations {
     finetunes_api_projects__project_id__tasks__task_id__finetunes_get: {
         parameters: {
             query?: {
+                /** @description Whether to update the status of each finetune. */
                 update_status?: boolean;
             };
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -11026,7 +13925,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -11062,8 +13963,11 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the finetune. */
                 finetune_id: string;
             };
             cookie?: never;
@@ -11095,8 +13999,11 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the finetune. */
                 finetune_id: string;
             };
             cookie?: never;
@@ -11152,6 +14059,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the finetune provider. */
                 provider_id: string;
             };
             cookie?: never;
@@ -11181,12 +14089,16 @@ export interface operations {
     finetune_dataset_info_api_projects__project_id__tasks__task_id__finetune_dataset_info_get: {
         parameters: {
             query?: {
+                /** @description Optional list of tool/skill IDs to filter by. */
                 tool_ids?: string[] | null;
+                /** @description If true and tool_ids is None, treats as empty tool filter. */
                 empty_tool_filter?: boolean;
             };
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -11216,14 +14128,23 @@ export interface operations {
     download_dataset_jsonl_api_download_dataset_jsonl_get: {
         parameters: {
             query: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the dataset split. */
                 dataset_id: string;
+                /** @description The name of the split to download (e.g., 'train', 'test', 'validation'). */
                 split_name: string;
+                /** @description The format type for the JSONL output. */
                 format_type: string;
+                /** @description The data strategy for formatting the output. */
                 data_strategy: string;
+                /** @description The system message generator to use. */
                 system_message_generator?: string | null;
+                /** @description Custom system message if not using a generator. */
                 custom_system_message?: string | null;
+                /** @description Custom thinking instructions for thinking models. */
                 custom_thinking_instructions?: string | null;
             };
             header?: never;
@@ -11257,7 +14178,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -11288,12 +14211,14 @@ export interface operations {
             };
         };
     };
-    get_run_configs_api_projects__project_id__tasks__task_id__run_configs__get: {
+    get_run_configs_api_projects__project_id__tasks__task_id__run_configs_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -11320,13 +14245,54 @@ export interface operations {
             };
         };
     };
-    get_eval_api_projects__project_id__tasks__task_id__eval__eval_id__get: {
+    create_task_run_config_api_projects__project_id__tasks__task_id__run_configs_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTaskRunConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRunConfig"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_eval_api_projects__project_id__tasks__task_id__evals__eval_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the eval. */
                 eval_id: string;
             };
             cookie?: never;
@@ -11353,13 +14319,16 @@ export interface operations {
             };
         };
     };
-    delete_eval_api_projects__project_id__tasks__task_id__eval__eval_id__delete: {
+    delete_eval_api_projects__project_id__tasks__task_id__evals__eval_id__delete: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the eval. */
                 eval_id: string;
             };
             cookie?: never;
@@ -11386,13 +14355,16 @@ export interface operations {
             };
         };
     };
-    update_eval_api_projects__project_id__tasks__task_id__eval__eval_id__patch: {
+    update_eval_api_projects__project_id__tasks__task_id__evals__eval_id__patch: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the eval. */
                 eval_id: string;
             };
             cookie?: never;
@@ -11428,7 +14400,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -11455,13 +14429,16 @@ export interface operations {
             };
         };
     };
-    get_eval_configs_api_projects__project_id__tasks__task_id__eval__eval_id__eval_configs_get: {
+    get_eval_configs_api_projects__project_id__tasks__task_id__evals__eval_id__eval_configs_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the eval. */
                 eval_id: string;
             };
             cookie?: never;
@@ -11488,14 +14465,18 @@ export interface operations {
             };
         };
     };
-    get_eval_config_api_projects__project_id__tasks__task_id__eval__eval_id__eval_config__eval_config_id__get: {
+    get_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the eval. */
                 eval_id: string;
+                /** @description The unique identifier of the eval configuration. */
                 eval_config_id: string;
             };
             cookie?: never;
@@ -11522,49 +14503,16 @@ export interface operations {
             };
         };
     };
-    create_task_run_config_api_projects__project_id__tasks__task_id__task_run_config_post: {
+    update_run_config_api_projects__project_id__tasks__task_id__run_configs__run_config_id__patch: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateTaskRunConfigRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TaskRunConfig"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    update_run_config_api_projects__project_id__tasks__task_id__run_config__run_config_id__patch: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                project_id: string;
-                task_id: string;
+                /** @description The unique identifier of the run configuration. */
                 run_config_id: string;
             };
             cookie?: never;
@@ -11595,13 +14543,16 @@ export interface operations {
             };
         };
     };
-    create_eval_config_api_projects__project_id__tasks__task_id__eval__eval_id__create_eval_config_post: {
+    create_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__create_eval_config_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the eval. */
                 eval_id: string;
             };
             cookie?: never;
@@ -11632,17 +14583,23 @@ export interface operations {
             };
         };
     };
-    run_eval_config_api_projects__project_id__tasks__task_id__eval__eval_id__eval_config__eval_config_id__run_task_run_eval_get: {
+    run_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_comparison_get: {
         parameters: {
             query?: {
+                /** @description The list of run configuration IDs to evaluate. */
                 run_config_ids?: string[];
+                /** @description Whether to evaluate all run configurations for the task. */
                 all_run_configs?: boolean;
             };
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the eval. */
                 eval_id: string;
+                /** @description The unique identifier of the eval configuration. */
                 eval_config_id: string;
             };
             cookie?: never;
@@ -11669,15 +14626,19 @@ export interface operations {
             };
         };
     };
-    set_default_eval_config_api_projects__project_id__tasks__task_id__eval__eval_id__set_current_eval_config__eval_config_id__post: {
+    set_default_eval_config_api_projects__project_id__tasks__task_id__evals__eval_id__set_current_eval_config__eval_config_id__post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the eval. */
                 eval_id: string;
-                eval_config_id: string | null;
+                /** @description The unique identifier of the eval configuration to set as default, or 'None' to clear the default. */
+                eval_config_id: string;
             };
             cookie?: never;
         };
@@ -11703,13 +14664,16 @@ export interface operations {
             };
         };
     };
-    run_eval_config_eval_api_projects__project_id__tasks__task_id__eval__eval_id__run_eval_config_eval_get: {
+    run_eval_config_eval_api_projects__project_id__tasks__task_id__evals__eval_id__run_calibration_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the eval. */
                 eval_id: string;
             };
             cookie?: never;
@@ -11736,15 +14700,20 @@ export interface operations {
             };
         };
     };
-    get_eval_run_results_api_projects__project_id__tasks__task_id__eval__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get: {
+    get_eval_run_results_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__run_config__run_config_id__results_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the eval. */
                 eval_id: string;
+                /** @description The unique identifier of the eval configuration. */
                 eval_config_id: string;
+                /** @description The unique identifier of the run configuration. */
                 run_config_id: string;
             };
             cookie?: never;
@@ -11771,13 +14740,16 @@ export interface operations {
             };
         };
     };
-    get_eval_progress_api_projects__project_id__tasks__task_id__eval__eval_id__progress_get: {
+    get_eval_progress_api_projects__project_id__tasks__task_id__evals__eval_id__progress_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the eval. */
                 eval_id: string;
             };
             cookie?: never;
@@ -11804,14 +14776,18 @@ export interface operations {
             };
         };
     };
-    get_eval_config_score_summary_api_projects__project_id__tasks__task_id__eval__eval_id__eval_config__eval_config_id__score_summary_get: {
+    get_eval_config_score_summary_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__score_summary_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the eval. */
                 eval_id: string;
+                /** @description The unique identifier of the eval configuration. */
                 eval_config_id: string;
             };
             cookie?: never;
@@ -11838,13 +14814,50 @@ export interface operations {
             };
         };
     };
-    get_eval_configs_score_summary_api_projects__project_id__tasks__task_id__eval__eval_id__eval_configs_score_summary_get: {
+    get_eval_results_summary_api_projects__project_id__tasks__task_id__eval_results_summary_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalResultsSummaryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_eval_configs_score_summary_api_projects__project_id__tasks__task_id__evals__eval_id__eval_configs_score_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the eval. */
                 eval_id: string;
             };
             cookie?: never;
@@ -11871,13 +14884,16 @@ export interface operations {
             };
         };
     };
-    get_run_config_eval_scores_api_projects__project_id__tasks__task_id__run_config__run_config_id__eval_scores_get: {
+    get_run_config_eval_scores_api_projects__project_id__tasks__task_id__run_configs__run_config_id__eval_scores_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the run configuration. */
                 run_config_id: string;
             };
             cookie?: never;
@@ -11907,10 +14923,12 @@ export interface operations {
     tasks_compatible_with_tool_api_projects__project_id__tasks_compatible_with_tool_get: {
         parameters: {
             query: {
+                /** @description The unique identifier of the tool. */
                 tool_id: string;
             };
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -11942,7 +14960,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -11978,6 +14998,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -12011,6 +15032,7 @@ export interface operations {
     select_kiln_file_api_select_kiln_file_get: {
         parameters: {
             query?: {
+                /** @description The title for the file dialog window. */
                 title?: string;
             };
             header?: never;
@@ -12044,6 +15066,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -12075,6 +15098,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -12106,6 +15130,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -12137,7 +15162,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the tool server. */
                 tool_server_id: string;
             };
             cookie?: never;
@@ -12169,7 +15196,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the tool server. */
                 tool_server_id: string;
             };
             cookie?: never;
@@ -12201,7 +15230,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the tool server. */
                 tool_server_id: string;
             };
             cookie?: never;
@@ -12233,6 +15264,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -12268,7 +15300,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the tool server. */
                 tool_server_id: string;
             };
             cookie?: never;
@@ -12304,6 +15338,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -12339,7 +15374,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the tool server. */
                 tool_server_id: string;
             };
             cookie?: never;
@@ -12370,11 +15407,50 @@ export interface operations {
             };
         };
     };
+    archive_tool_server_api_projects__project_id__tool_servers__tool_server_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the tool server. */
+                tool_server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ToolServerArchiveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExternalToolServer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     add_kiln_task_tool_api_projects__project_id__kiln_task_tool_post: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -12410,7 +15486,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the tool server. */
                 tool_server_id: string;
             };
             cookie?: never;
@@ -12464,6 +15542,7 @@ export interface operations {
     set_demo_tools_api_demo_tools_post: {
         parameters: {
             query: {
+                /** @description Whether to enable demo tools. */
                 enable_demo_tools: boolean;
             };
             header?: never;
@@ -12497,6 +15576,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -12528,8 +15608,11 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the tool. */
                 tool_id: string;
             };
             cookie?: never;
@@ -12561,6 +15644,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -12592,6 +15676,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
             };
             cookie?: never;
@@ -12627,7 +15712,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the skill. */
                 skill_id: string;
             };
             cookie?: never;
@@ -12659,7 +15746,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the skill. */
                 skill_id: string;
             };
             cookie?: never;
@@ -12695,7 +15784,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the skill. */
                 skill_id: string;
             };
             cookie?: never;
@@ -12725,11 +15816,14 @@ export interface operations {
     check_run_config_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_run_config_get: {
         parameters: {
             query: {
+                /** @description The unique identifier of the run configuration. */
                 run_config_id: string;
             };
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -12759,11 +15853,14 @@ export interface operations {
     check_eval_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_check_eval_get: {
         parameters: {
             query: {
+                /** @description The unique identifier of the evaluation. */
                 eval_id: string;
             };
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -12795,7 +15892,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -12829,11 +15928,14 @@ export interface operations {
     list_prompt_optimization_jobs_api_projects__project_id__tasks__task_id__prompt_optimization_jobs_get: {
         parameters: {
             query?: {
+                /** @description Whether to update the status of non-final jobs from the remote server. */
                 update_status?: boolean;
             };
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -12865,8 +15967,11 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
+                /** @description The unique identifier of the prompt optimization job. */
                 prompt_optimization_job_id: string;
             };
             cookie?: never;
@@ -12898,6 +16003,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the job. */
                 job_id: string;
             };
             cookie?: never;
@@ -12929,6 +16035,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the job. */
                 job_id: string;
             };
             cookie?: never;
@@ -13125,7 +16232,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description The unique identifier of the project. */
                 project_id: string;
+                /** @description The unique identifier of the task within the project. */
                 task_id: string;
             };
             cookie?: never;
@@ -13143,6 +16252,690 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Spec"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_test_access_api_git_sync_test_access_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestAccessRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestAccessResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_list_branches_api_git_sync_list_branches_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListBranchesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListBranchesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_clone_api_git_sync_clone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloneResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_test_write_access_api_git_sync_test_write_access_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestWriteAccessRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestAccessResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_scan_projects_api_git_sync_scan_projects_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScanProjectsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanProjectsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_rename_clone_api_git_sync_rename_clone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameCloneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenameCloneResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_save_config_api_git_sync_save_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitSyncConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_get_config_api_git_sync_config__project_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitSyncConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_delete_config_api_git_sync_config__project_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_update_config_api_git_sync_config__project_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitSyncConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_oauth_start_api_git_sync_oauth_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthStartResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_oauth_callback_api_git_sync_oauth_callback_get: {
+        parameters: {
+            query?: {
+                /** @description OAuth state parameter linking the callback to a pending flow. */
+                state?: string;
+                /** @description Authorization code from GitHub to exchange for an access token. */
+                code?: string;
+                /** @description Error code returned by GitHub if authorization was denied. */
+                error?: string;
+                /** @description Human-readable description of the error from GitHub. */
+                error_description?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_oauth_installed_api_git_sync_oauth_authorize_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_oauth_status_api_git_sync_oauth_status__state__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The OAuth state parameter to check. */
+                state: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_project_api_delete_project__project_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_overview_api_projects__project_id__tasks__task_id__agent_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentOverview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_execute_tools_api_chat_execute_tools_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecuteToolsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_chat_sessions_api_chat_sessions_get: {
+        parameters: {
+            query?: {
+                /** @description Maximum number of sessions to return */
+                limit?: number;
+                /** @description Number of sessions to skip */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSessionListItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chat_session_api_chat_sessions__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Chat session id (same as trace id for continuation). */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSessionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_chat_session_api_chat_sessions__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Chat session id to delete. */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chat_api_chat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

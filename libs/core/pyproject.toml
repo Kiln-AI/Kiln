@@ -1,6 +1,6 @@
 [project]
 name = "kiln-ai"
-version = "0.26.0"
+version = "0.27.1"
 requires-python = ">=3.10"
 readme = "README.md"
 description = 'Kiln AI'
@@ -20,9 +20,11 @@ classifiers = [
 dependencies = [
     "boto3>=1.37.10",
     "coverage>=7.6.4",
+    "httpx>=0.24.0",
     "exceptiongroup>=1.0.0; python_version<'3.11'",
     "google-cloud-aiplatform>=1.84.0",
     "google-genai>=1.21.1",
+    "jq>=1.8.0",
     "jsonschema>=4.23.0",
     "lancedb>=0.24.2",
     "openai>=1.53.0",
@@ -42,7 +44,7 @@ dependencies = [
     "llama-index-vector-stores-lancedb>=0.4.2",
     "mcp[cli]>=1.10.1",
     "typer>=0.9.0",
-    "litellm>=1.81.16",
+    "litellm>=1.81.16,<1.82.7",
 ]
 
 [project.scripts]
@@ -55,6 +57,7 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "pytest>=8.3.3",
     "python-dotenv>=1.0.1",
+    "respx>=0.22.0",
     "ruff>=0.9.0",
 ]
 

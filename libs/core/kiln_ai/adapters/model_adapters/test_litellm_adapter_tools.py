@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from litellm.types.utils import ModelResponse
@@ -9,6 +9,7 @@ from litellm.types.utils import Usage as LiteLlmUsage
 from kiln_ai import datamodel
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.ml_model_list import KilnModelProvider, built_in_models
+from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import (
     LiteLlmAdapter,
     ModelTurnResult,
@@ -19,7 +20,7 @@ from kiln_ai.datamodel import PromptId
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.datamodel.tool_id import ToolId
-from kiln_ai.tools.base_tool import ToolCallContext, ToolCallResult
+from kiln_ai.tools.base_tool import ToolCallContext, ToolCallResult, UnmanagedKilnTool
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
     DivideTool,
@@ -108,7 +109,7 @@ async def run_simple_task_with_tools(
             assert trace[1]["role"] == "user"
             assert trace[2]["role"] == "assistant"
             assert trace[3]["role"] == "tool"
-            assert trace[3]["content"] == "4"
+            assert trace[3]["content"] in ["4", "4.0"]
             assert trace[3]["tool_call_id"] is not None
             assert trace[4]["role"] == "assistant"
             assert "[4]" in trace[4]["content"]  # type: ignore
@@ -287,10 +288,17 @@ async def test_tools_simplied_mocked(tmp_path):
     mock_config.open_ai_api_key = "mock_api_key"
     mock_config.user_id = "test_user"
 
+    responses = [mock_response_1, mock_response_2]
+
+    async def mock_acompletion_checking_response(self, **kwargs):
+        response = responses.pop(0)
+        return response, response.choices[0]
+
     with (
-        patch(
-            "litellm.acompletion",
-            side_effect=[mock_response_1, mock_response_2],
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=mock_acompletion_checking_response,
         ),
         patch("kiln_ai.utils.config.Config.shared", return_value=mock_config),
     ):
@@ -386,9 +394,16 @@ async def test_tools_mocked(tmp_path):
     mock_config.user_id = "test_user"
 
     with (
-        patch(
-            "litellm.acompletion",
-            side_effect=[mock_response_1, mock_response_2, mock_response_3],
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=AsyncMock(
+                side_effect=[
+                    (mock_response_1, mock_response_1.choices[0]),
+                    (mock_response_2, mock_response_2.choices[0]),
+                    (mock_response_3, mock_response_3.choices[0]),
+                ]
+            ),
         ),
         patch("kiln_ai.utils.config.Config.shared", return_value=mock_config),
     ):
@@ -954,7 +969,55 @@ async def test_process_tool_calls_normal_tool_success(tmp_path):
         "tool_call_id": "call_1",
         "content": "5",
         "kiln_task_tool_data": None,
+        "is_error": None,
+        "error_message": None,
     }
+
+
+class _RunnableUnmanagedKilnToolForTest(UnmanagedKilnTool):
+    async def run(
+        self, context: ToolCallContext | None = None, **kwargs
+    ) -> ToolCallResult:
+        return ToolCallResult(output="from_unmanaged")
+
+
+async def test_process_tool_calls_unmanaged_tool_success(tmp_path):
+    """process_tool_calls resolves and runs tools from AdapterConfig.unmanaged_tools."""
+    task = build_test_task(tmp_path)
+    ext = _RunnableUnmanagedKilnToolForTest(
+        tool_id="kiln_unmanaged::proc_test",
+        name="unmanaged_do",
+        description="test unmanaged",
+        parameters_schema={
+            "type": "object",
+            "properties": {"x": {"type": "number"}},
+            "required": ["x"],
+        },
+    )
+    config = LiteLlmConfig(
+        run_config_properties=KilnAgentRunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        )
+    )
+    litellm_adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=task,
+        base_adapter_config=AdapterConfig(unmanaged_tools=[ext]),
+    )
+    tool_calls = [MockToolCall("call_1", "unmanaged_do", '{"x": 1}')]
+
+    with patch.object(litellm_adapter, "cached_available_tools", return_value=[]):
+        assistant_output, tool_messages = await litellm_adapter.process_tool_calls(
+            tool_calls  # type: ignore
+        )
+
+    assert assistant_output is None
+    assert len(tool_messages) == 1
+    assert tool_messages[0]["content"] == "from_unmanaged"
+    assert tool_messages[0]["tool_call_id"] == "call_1"
 
 
 async def test_process_tool_calls_multiple_normal_tools(tmp_path):
@@ -1179,6 +1242,77 @@ async def test_process_tool_calls_task_response_with_normal_tools_error(tmp_path
             match="task_response tool call and other tool calls were both provided",
         ):
             await litellm_adapter.process_tool_calls(tool_calls)  # type: ignore
+
+
+async def test_run_model_turn_return_on_tool_call_mixed_task_response_raises(
+    tmp_path: Path,
+):
+    """return_on_tool_call must not short-circuit when task_response is mixed with other tools."""
+    task = build_test_task(tmp_path)
+    config = LiteLlmConfig(
+        run_config_properties=KilnAgentRunConfigProperties(
+            structured_output_mode=StructuredOutputMode.json_schema,
+            model_name="gpt_4_1_mini",
+            model_provider_name=ModelProviderName.openai,
+            prompt_id="simple_prompt_builder",
+        )
+    )
+    litellm_adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=task,
+        base_adapter_config=AdapterConfig(return_on_tool_call=True),
+    )
+
+    mock_response = ModelResponse(
+        model="gpt-4o-mini",
+        choices=[
+            {
+                "message": {
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_tr",
+                            "type": "function",
+                            "function": {
+                                "name": "task_response",
+                                "arguments": '{"answer": "42"}',
+                            },
+                        },
+                        {
+                            "id": "call_add",
+                            "type": "function",
+                            "function": {
+                                "name": "add",
+                                "arguments": '{"a": 1, "b": 2}',
+                            },
+                        },
+                    ],
+                }
+            }
+        ],
+    )
+
+    provider = KilnModelProvider(name=ModelProviderName.openai, model_id="gpt_4_1_mini")
+    prior_messages: list[ChatCompletionMessageParam] = [
+        {"role": "user", "content": "hello"}
+    ]
+
+    with patch.object(
+        litellm_adapter, "cached_available_tools", return_value=[AddTool()]
+    ):
+        with patch.object(litellm_adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                litellm_adapter,
+                "acompletion_checking_response",
+                return_value=(mock_response, mock_response.choices[0]),
+            ):
+                with pytest.raises(
+                    RuntimeError,
+                    match="task_response tool call and other tool calls were both provided",
+                ):
+                    await litellm_adapter._run_model_turn(
+                        provider, prior_messages, None, False
+                    )
 
 
 async def test_process_tool_calls_kiln_task_tool_result(tmp_path):

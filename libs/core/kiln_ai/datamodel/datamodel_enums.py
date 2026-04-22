@@ -51,10 +51,10 @@ class StructuredOutputMode(str, Enum):
 
 class FineTuneStatusType(str, Enum):
     """
-    The status type of a fine-tune (running, completed, failed, etc).
+    The status type of a fine-tune job.
     """
 
-    unknown = "unknown"  # server error
+    unknown = "unknown"
     pending = "pending"
     running = "running"
     completed = "completed"
@@ -79,6 +79,18 @@ THINKING_DATA_STRATEGIES: list[ChatStrategy] = [
     ChatStrategy.single_turn_r1_thinking,
     ChatStrategy.two_message_cot,
 ]
+
+
+class FeedbackSource(str, Enum):
+    """Where a piece of feedback originated.
+
+    This is an append-only enum: new sources can be added freely, but existing
+    values must never be removed or renamed so that older persisted data
+    continues to load.
+    """
+
+    run_page = "run-page"
+    spec_feedback = "spec-feedback"
 
 
 class ModelProviderName(str, Enum):

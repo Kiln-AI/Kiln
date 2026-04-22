@@ -1,11 +1,9 @@
 <script lang="ts">
-  import FormContainer from "$lib/utils/form_container.svelte"
-  import FormElement from "$lib/utils/form_element.svelte"
   import Rating from "./rating.svelte"
-  let repair_instructions: string | null = null
   import type {
     TaskRun,
     Task,
+    Feedback,
     RequirementRating,
     TaskRequirement,
     Trace,
@@ -13,14 +11,15 @@
   import { client } from "$lib/api_client"
   import Output from "$lib/ui/output.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import { formatDate } from "$lib/utils/formatters"
   import { bounceOut } from "svelte/easing"
   import { fly } from "svelte/transition"
   import { onMount } from "svelte"
   import TagPicker from "../../../lib/ui/tag_picker.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import type { components } from "../../../lib/api_schema"
-  import Warning from "../../../lib/ui/warning.svelte"
-  import OutputRepairEditForm from "./output_repair_edit_form.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
+  import FormContainer from "$lib/utils/form_container.svelte"
+  import FormElement from "$lib/utils/form_element.svelte"
   import {
     rating_options_for_sample,
     current_task_rating_options,
@@ -28,6 +27,10 @@
   import posthog from "posthog-js"
   import TraceComponent from "$lib/ui/trace/trace.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
+  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
+  import Warning from "$lib/ui/warning.svelte"
+  import OutputRepairEditForm from "./output_repair_edit_form.svelte"
+  import type { components } from "$lib/api_schema"
 
   type SubtaskReference = {
     project_id: string
@@ -169,17 +172,18 @@
 
   // note: this run is NOT the main run, but a repair run TaskRun
   let repair_run: TaskRun | null = null
+  let repair_instructions: string | null = null
+  // Seed repair_instructions from the persisted run so tooltips/UI on historical repairs show the original feedback.
+  // Track the last seeded run id so switching to a different run reseeds rather than leaking prior text.
+  let seeded_for_run_id: string | null = null
+  $: if (run?.id && run.id !== seeded_for_run_id) {
+    repair_instructions = run.repair_instructions ?? null
+    seeded_for_run_id = run.id
+  }
 
   $: rate_focus = run && overall_rating === null
   // True if this "Run" has everything we want: a rating and a repaired output (or 5-star rating and no repair is needed)
   $: run_complete = overall_rating === 5 || !!run?.repaired_output?.output
-
-  let show_raw_data = false
-  let save_rating_error: KilnError | null = null
-
-  type RatingValue = number | null
-  let overall_rating: RatingValue = null
-  let requirement_ratings: RatingValue[] = []
 
   // Repair is available if the run has an overall rating but it's not 5 stars, and it doesn't yet have a repaired output
   $: should_offer_repair =
@@ -188,7 +192,7 @@
     overall_rating !== 5 &&
     !run?.repaired_output?.output && // model already repaired
     !repair_run // repair generated, should show repair evaluation instead
-  $: repair_review_available = !!repair_run && !run?.repaired_output
+  $: repair_review_available = !!repair_run && !run?.repaired_output?.output
   $: repair_complete = !!run?.repaired_output?.output
   $: repair_enabled_for_source = REPAIR_ENABLED_FOR_SOURCES.some(
     (s) => s === run?.output?.source?.type,
@@ -196,10 +200,20 @@
 
   $: repair_source =
     run?.repaired_output?.source?.type === "human"
-      ? { type: "user", name: run.repaired_output.source.properties.created_by }
+      ? {
+          type: "user",
+          name: run.repaired_output.source.properties?.created_by ?? "unknown",
+        }
       : run?.repaired_output?.source?.type === "synthetic"
         ? { type: "synthetic" }
         : null
+
+  let show_raw_data = false
+  let save_rating_error: KilnError | null = null
+
+  type RatingValue = number | null
+  let overall_rating: RatingValue = null
+  let requirement_ratings: RatingValue[] = []
 
   // Use for some animations on first mount
   let mounted = false
@@ -319,7 +333,8 @@
   async function attempt_repair() {
     try {
       repair_submitting = true
-      if (!repair_instructions) {
+      const trimmed_instructions = repair_instructions?.trim()
+      if (!trimmed_instructions) {
         throw new KilnError("Repair instructions are required", null)
       }
       if (!task.id || !run?.id) {
@@ -332,7 +347,7 @@
         data: repair_data, // only present if 2XX response
         error: fetch_error, // only present if 4XX or 5XX response
       } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/run_repair",
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/generate_repair",
         {
           params: {
             path: {
@@ -344,12 +359,12 @@
           body:
             model_name && provider
               ? {
-                  evaluator_feedback: repair_instructions,
+                  evaluator_feedback: trimmed_instructions,
                   model_name: model_name,
                   provider: provider,
                 }
               : {
-                  evaluator_feedback: repair_instructions,
+                  evaluator_feedback: trimmed_instructions,
                 },
         },
       )
@@ -362,19 +377,6 @@
       repair_error = createKilnError(err)
     } finally {
       repair_submitting = false
-    }
-  }
-
-  function toggle_raw_data() {
-    show_raw_data = !show_raw_data
-    if (show_raw_data) {
-      // Scroll to the raw data section when it's shown
-      setTimeout(() => {
-        const rawDataElement = document.getElementById("raw_data")
-        if (rawDataElement) {
-          rawDataElement.scrollIntoView({ behavior: "smooth", block: "start" })
-        }
-      }, 100)
     }
   }
 
@@ -397,7 +399,7 @@
         data, // only present if 2XX response
         error: fetch_error, // only present if 4XX or 5XX response
       } = await client.POST(
-        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/repair",
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/save_repair",
         {
           params: {
             path: {
@@ -435,7 +437,6 @@
       return
     }
     try {
-      repair_run = null
       delete_repair_error = null
       delete_repair_submitting = true
       let original_repair_instructions = run?.repair_instructions
@@ -444,6 +445,7 @@
         repaired_output: null,
       }
       updated_run = await patch_run(patch_body)
+      repair_run = null
 
       // Pull in the instructions from the original repair, so they can edit them if wanted
       if (!repair_instructions && original_repair_instructions) {
@@ -454,15 +456,6 @@
     } finally {
       delete_repair_submitting = false
     }
-  }
-
-  function get_intermediate_output_title(name: string): string {
-    return (
-      {
-        reasoning: "Model Reasoning Output",
-        chain_of_thought: "Chain of Thought Output",
-      }[name] || name
-    )
   }
 
   function retry_repair() {
@@ -480,10 +473,31 @@
   }
 
   function handle_manual_edit_submit(repair_run_edited: TaskRun) {
-    repair_run = repair_run_edited
     repair_edit_mode = false
     updated_run = repair_run_edited
     repair_run = null
+  }
+
+  function toggle_raw_data() {
+    show_raw_data = !show_raw_data
+    if (show_raw_data) {
+      // Scroll to the raw data section when it's shown
+      setTimeout(() => {
+        const rawDataElement = document.getElementById("raw_data")
+        if (rawDataElement) {
+          rawDataElement.scrollIntoView({ behavior: "smooth", block: "start" })
+        }
+      }, 100)
+    }
+  }
+
+  function get_intermediate_output_title(name: string): string {
+    return (
+      {
+        reasoning: "Model Reasoning Output",
+        chain_of_thought: "Chain of Thought Output",
+      }[name] || name
+    )
   }
 
   function get_usage_properties(
@@ -561,6 +575,142 @@
     subtask_usage_loading,
     subtask_tokens,
   )
+
+  // Feedback
+  let feedbacks: Feedback[] = []
+  let feedback_loading = false
+  let feedback_error: KilnError | null = null
+  let add_feedback_dialog: Dialog
+  let add_feedback_open = false
+  let view_feedback_dialog: Dialog
+  let new_feedback_text = ""
+  let add_feedback_submitting = false
+
+  const MAX_VISIBLE_FEEDBACKS = 3
+
+  type FeedbackSortColumn = "created_by" | "created_at"
+  let feedback_sort_column: FeedbackSortColumn = "created_at"
+  let feedback_sort_direction: "asc" | "desc" = "desc"
+
+  function handle_feedback_sort(column: FeedbackSortColumn) {
+    if (feedback_sort_column === column) {
+      feedback_sort_direction =
+        feedback_sort_direction === "asc" ? "desc" : "asc"
+    } else {
+      feedback_sort_column = column
+      feedback_sort_direction = column === "created_at" ? "desc" : "asc"
+    }
+  }
+
+  $: sorted_feedbacks = [...feedbacks].sort((a, b) => {
+    const dir = feedback_sort_direction === "asc" ? 1 : -1
+    if (feedback_sort_column === "created_by") {
+      return dir * (a.created_by ?? "").localeCompare(b.created_by ?? "")
+    }
+    return dir * (a.created_at ?? "").localeCompare(b.created_at ?? "")
+  })
+
+  let feedback_request_id = 0
+  let last_loaded_run_id: string | null = null
+
+  async function load_feedback() {
+    if (!task.id || !run?.id) {
+      feedbacks = []
+      last_loaded_run_id = null
+      return
+    }
+    if (run.id === last_loaded_run_id) return
+
+    const request_id = ++feedback_request_id
+    feedback_loading = true
+    feedbacks = []
+    try {
+      const { data, error: fetch_error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/feedback",
+        {
+          params: {
+            path: {
+              project_id,
+              task_id: task.id,
+              run_id: run.id,
+            },
+          },
+        },
+      )
+      if (request_id !== feedback_request_id) return
+      if (fetch_error) throw fetch_error
+      feedbacks = data
+      feedback_error = null
+      last_loaded_run_id = run.id
+    } catch (err) {
+      if (request_id !== feedback_request_id) return
+      feedback_error = createKilnError(err)
+    } finally {
+      if (request_id === feedback_request_id) {
+        feedback_loading = false
+      }
+    }
+  }
+
+  let add_feedback_error: KilnError | null = null
+
+  async function submit_feedback() {
+    if (!task.id || !run?.id || !new_feedback_text.trim()) return
+    add_feedback_submitting = true
+    try {
+      const { data, error: fetch_error } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/feedback",
+        {
+          params: {
+            path: {
+              project_id,
+              task_id: task.id,
+              run_id: run.id,
+            },
+          },
+          body: {
+            feedback: new_feedback_text.trim(),
+            source: "run-page",
+          },
+        },
+      )
+      if (fetch_error) throw fetch_error
+      ++feedback_request_id
+      feedbacks = [...feedbacks, data]
+      new_feedback_text = ""
+      add_feedback_dialog.close()
+      add_feedback_error = null
+    } catch (err) {
+      add_feedback_error = createKilnError(err)
+    } finally {
+      add_feedback_submitting = false
+    }
+  }
+
+  async function delete_feedback(fb: Feedback) {
+    if (!task.id || !run?.id || !fb.id) return
+    try {
+      const { error: fetch_error } = await client.DELETE(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/feedback/{feedback_id}",
+        {
+          params: {
+            path: {
+              project_id,
+              task_id: task.id,
+              run_id: run.id,
+              feedback_id: fb.id,
+            },
+          },
+        },
+      )
+      if (fetch_error) throw fetch_error
+      feedbacks = feedbacks.filter((f) => f.id !== fb.id)
+    } catch (err) {
+      feedback_error = createKilnError(err)
+    }
+  }
+
+  $: if (run?.id && task.id) load_feedback()
 </script>
 
 <div>
@@ -741,7 +891,7 @@
 
     <div class="w-72 2xl:w-96 flex-none">
       <div class="text-xl font-bold mt-10 lg:mt-0 mb-6">
-        Output Rating
+        Rating and Feedback
         {#if save_rating_error}
           <button class="tooltip" data-tip={save_rating_error.getMessage()}>
             <svg
@@ -774,12 +924,6 @@
             >
           </div>
         {/if}
-        <p class="text-xs text-gray-500 mt-1 font-light">
-          Ratings are defined in the <a
-            href={`/settings/edit_task/${project_id}/${task.id}`}
-            class="link">task settings</a
-          >.
-        </p>
       </div>
 
       <div class="grid grid-cols-[auto,1fr] gap-4 text-sm 2xl:text-base">
@@ -801,8 +945,11 @@
             </div>
           {/each}
         {/if}
-        <div class="font-medium flex items-center text-nowrap 2xl:min-w-32">
-          Overall Rating:
+        <div class="flex items-center text-nowrap 2xl:min-w-32">
+          <div class="font-medium">Overall Rating:</div>
+          <div class="text-gray-500">
+            <InfoTooltip tooltip_text="The overall rating of the output." />
+          </div>
         </div>
         <div class="flex items-center">
           <Rating
@@ -812,6 +959,66 @@
             on:rating_changed={save_ratings}
           />
         </div>
+        <div class="font-medium flex items-center text-nowrap">Feedback:</div>
+        <div class="flex items-center">
+          <button
+            type="button"
+            class="btn btn-outline btn-primary btn-xs"
+            on:click={() => {
+              new_feedback_text = ""
+              add_feedback_error = null
+              add_feedback_open = true
+              add_feedback_dialog.show()
+            }}>Add Feedback</button
+          >
+        </div>
+        {#if feedback_error}
+          <div></div>
+          <p class="text-error text-xs">{feedback_error.getMessage()}</p>
+        {/if}
+        {#if feedback_loading}
+          <div></div>
+          <div>
+            <span class="loading loading-spinner loading-xs"></span>
+          </div>
+        {:else if feedbacks.length > 0}
+          <div></div>
+          <!-- svelte-ignore a11y-no-static-element-interactions -->
+          <div
+            tabindex="0"
+            role="button"
+            class="text-left cursor-pointer hover:outline hover:outline-1 hover:outline-base-300 focus-visible:outline focus-visible:outline-1 focus-visible:outline-base-300 rounded px-1.5 py-1 -ml-1.5 transition-all outline-none"
+            on:click={(e) => {
+              const el = e.currentTarget
+              if (el instanceof HTMLElement) el.blur()
+              view_feedback_dialog.show()
+            }}
+            on:keydown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                const el = e.currentTarget
+                if (el instanceof HTMLElement) el.blur()
+                view_feedback_dialog.show()
+              }
+            }}
+          >
+            {#each feedbacks.slice(-MAX_VISIBLE_FEEDBACKS).reverse() as fb}
+              <div class="mb-2 last:mb-0">
+                <div class="text-xs text-gray-500">
+                  {fb.created_by || "Unknown"}
+                </div>
+                <div class="text-sm line-clamp-2 whitespace-pre-line">
+                  {fb.feedback}
+                </div>
+              </div>
+            {/each}
+            {#if feedbacks.length > MAX_VISIBLE_FEEDBACKS}
+              <div class="text-xs text-gray-400 mt-1">
+                {feedbacks.length - MAX_VISIBLE_FEEDBACKS} more…
+              </div>
+            {/if}
+          </div>
+        {/if}
       </div>
       <div class="mt-8 mb-4">
         <div class="text-xl font-bold">Tags</div>
@@ -841,3 +1048,96 @@
     </div>
   </div>
 </div>
+
+<Dialog
+  bind:this={add_feedback_dialog}
+  title="Add Feedback"
+  width="wide"
+  sub_subtitle="What worked well or fell short — the more specific, the more useful for improving results."
+  on:close={() => (add_feedback_open = false)}
+>
+  {#if add_feedback_open}
+    <FormContainer
+      submit_label="Save"
+      on:submit={submit_feedback}
+      bind:submitting={add_feedback_submitting}
+      bind:error={add_feedback_error}
+    >
+      <FormElement
+        id="new_feedback_input"
+        hide_label={true}
+        label="Feedback"
+        inputType="textarea"
+        height="medium"
+        placeholder="e.g., Tone was off — too casual; the second paragraph contradicts the first; factually wrong — it confused X with Y"
+        bind:value={new_feedback_text}
+      />
+    </FormContainer>
+  {/if}
+</Dialog>
+
+<Dialog bind:this={view_feedback_dialog} title="All Feedback" width="wide">
+  {#if feedbacks.length === 0}
+    <p class="text-sm text-gray-500">No feedback yet.</p>
+  {:else}
+    <div class="rounded-lg border overflow-hidden">
+      <table class="table table-sm w-full table-fixed">
+        <thead>
+          <tr>
+            <th
+              class="w-[15%] hover:bg-base-200 cursor-pointer"
+              on:click={() => handle_feedback_sort("created_by")}
+            >
+              Created By
+              <span class="inline-block w-3 text-center">
+                {feedback_sort_column === "created_by"
+                  ? feedback_sort_direction === "asc"
+                    ? "▲"
+                    : "▼"
+                  : "\u200B"}
+              </span>
+            </th>
+            <th>Feedback</th>
+            <th
+              class="w-[25%] hover:bg-base-200 cursor-pointer"
+              on:click={() => handle_feedback_sort("created_at")}
+            >
+              Created At
+              <span class="inline-block w-3 text-center">
+                {feedback_sort_column === "created_at"
+                  ? feedback_sort_direction === "asc"
+                    ? "▲"
+                    : "▼"
+                  : "\u200B"}
+              </span>
+            </th>
+            <th class="w-14"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each sorted_feedbacks as fb}
+            <tr>
+              <td class="whitespace-nowrap align-top"
+                >{fb.created_by || "Unknown"}</td
+              >
+              <td class="whitespace-pre-wrap break-words align-top"
+                >{fb.feedback}</td
+              >
+              <td class="align-top">{formatDate(fb.created_at)}</td>
+              <td class="align-top pr-3">
+                <TableActionMenu
+                  items={[
+                    {
+                      label: "Delete",
+                      onclick: () => delete_feedback(fb),
+                    },
+                  ]}
+                />
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  {/if}
+</Dialog>

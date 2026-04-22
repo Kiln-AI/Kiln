@@ -29,6 +29,10 @@
     run_configs_by_task_composite_id,
     update_task_default_run_config,
   } from "$lib/stores/run_configs_store"
+  import {
+    get_last_used_run_config,
+    set_last_used_run_config,
+  } from "$lib/stores/last_used_run_config_store"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import Warning from "$lib/ui/warning.svelte"
 
@@ -36,8 +40,7 @@
   export let project_id: string
   export let current_task: Task
   export let selected_run_config_id: string | null = null // This will be null until the default_run_config_id is set
-  export let save_new_run_config: (() => Promise<TaskRunConfig | null>) | null =
-    null
+  export let save_new_run_config: (() => Promise<TaskRunConfig>) | null = null
   export let save_config_error: KilnError | null = null
   export let set_default_error: KilnError | null = null
   export let info_description: string = ""
@@ -63,13 +66,85 @@
     load_task_prompts(project_id, current_task.id)
   }
 
-  // Initialization of selected_run_config_id
+  // Initialization of selected_run_config_id.
+  // Start with "custom" immediately (avoids showing "Select an option" while configs load),
+  // then upgrade to the preferred config once it's available in the loaded options.
+  // Preference order: user's persisted last-used selection for this task, then the task default.
+  // Last-used wins so a "Custom" selection (and any sticky model tied to it) survives revisits
+  // even when the task has a default configured.
+  let pending_preferred_run_config_id: string | null = null
+  let initialized_for_task_id: string | null = null
+
+  // Reset selection when the task changes so init re-runs for the new task. The parent's
+  // bound selected_run_config_id survives task switches (dropdown remounts, parent does not),
+  // so without this we'd persist the old task's id against the new task's storage key.
+  $: if (
+    initialized_for_task_id !== null &&
+    initialized_for_task_id !== (current_task?.id ?? null)
+  ) {
+    selected_run_config_id = null
+    pending_preferred_run_config_id = null
+    initialized_for_task_id = null
+  }
+
   $: if (auto_select_default && selected_run_config_id === null) {
-    if (default_run_config_id) {
-      selected_run_config_id = default_run_config_id
+    if (run_page && current_task?.id) {
+      const composite_key = get_task_composite_id(project_id, current_task.id)
+      const last_used = get_last_used_run_config(composite_key)
+      selected_run_config_id = "custom"
+      initialized_for_task_id = current_task.id
+      if (last_used === "custom") {
+        pending_preferred_run_config_id = null
+      } else if (last_used) {
+        pending_preferred_run_config_id = last_used
+      } else if (default_run_config_id) {
+        pending_preferred_run_config_id = default_run_config_id
+      } else {
+        pending_preferred_run_config_id = null
+      }
     } else {
-      selected_run_config_id = run_page ? "custom" : null
+      selected_run_config_id = null
     }
+  }
+  $: if (
+    pending_preferred_run_config_id &&
+    auto_select_default &&
+    run_page &&
+    selected_run_config_id === "custom" &&
+    current_task?.id
+  ) {
+    const composite_key = get_task_composite_id(project_id, current_task.id)
+    const loaded_configs = $run_configs_by_task_composite_id[composite_key]
+    if (loaded_configs !== undefined) {
+      if (
+        loaded_configs.some((c) => c.id === pending_preferred_run_config_id)
+      ) {
+        selected_run_config_id = pending_preferred_run_config_id
+      } else if (
+        default_run_config_id &&
+        loaded_configs.some((c) => c.id === default_run_config_id)
+      ) {
+        // Persisted last-used id no longer exists; fall back to the task default.
+        selected_run_config_id = default_run_config_id
+      }
+      pending_preferred_run_config_id = null
+    }
+  }
+
+  // Persist the current selection so returning visits prefer it over the task default.
+  // Gate on initialized_for_task_id matching current_task.id so we never write a stale selection
+  // (e.g., leftover from a previous task) against the wrong storage key.
+  $: if (
+    run_page &&
+    !pending_preferred_run_config_id &&
+    selected_run_config_id &&
+    current_task?.id &&
+    initialized_for_task_id === current_task.id
+  ) {
+    set_last_used_run_config(
+      get_task_composite_id(project_id, current_task.id),
+      selected_run_config_id,
+    )
   }
 
   let cold_start_info_description =
@@ -248,7 +323,7 @@
   async function handle_save() {
     if (save_new_run_config) {
       const saved_run_config = await save_new_run_config()
-      if (saved_run_config?.id) {
+      if (saved_run_config.id) {
         selected_run_config_id = saved_run_config.id
       }
     }

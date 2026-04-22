@@ -1,8 +1,8 @@
 <div class="flex flex-col items-center justify-center my-10">
-  <div class="flex flex-col max-h-[100px] max-w-[100px] mt-6 mb-6">
+  <div class="flex flex-col max-h-[125px] max-w-[125px] mt-6 mb-3">
     <svg
-      width="100"
-      height="100"
+      width="125"
+      height="125"
       viewBox="-4 -4 278 291"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"

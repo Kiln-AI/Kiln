@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/git_sync/config/{project_id}",
+  "agent_policy": {
+    "permission": "deny",
+    "requires_approval": false
+  }
+}

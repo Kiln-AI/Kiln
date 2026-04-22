@@ -46,7 +46,21 @@ def get_authenticated_client(api_key: str) -> AuthenticatedClient:
         base_url=_get_base_url(),
         token=api_key,
         headers=_get_common_headers(),
-        timeout=httpx.Timeout(timeout=300.0, connect=30.0),
+        timeout=httpx.Timeout(timeout=900.0, connect=30.0),
+    )
+
+
+def get_oauth_authenticated_client(access_token: str) -> AuthenticatedClient:
+    """Get a client authenticated with a Kinde OAuth access token.
+
+    Used for pre-API-key flows like signup, where the user has authenticated
+    with Kinde but does not yet have a Kiln API key.
+    """
+    return AuthenticatedClient(
+        base_url=_get_base_url(),
+        token=access_token,
+        headers=_get_common_headers(),
+        timeout=httpx.Timeout(timeout=900.0, connect=30.0),
     )
 
 

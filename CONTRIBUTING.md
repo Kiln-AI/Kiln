@@ -20,6 +20,10 @@ cd app/web_ui
 npm install
 ```
 
+### Environment Variables
+
+The web UI has optional dev-only environment variables. See [`app/web_ui/.env.example`](app/web_ui/.env.example) for details.
+
 ### Running Development Servers
 
 Running the web-UI and Python servers separately is useful for development, as both can hot-reload.
@@ -40,6 +44,10 @@ To run the API server, Studio server, and Studio Web UI with auto-reload for dev
    ```
 
 3. Open the app: http://localhost:5173/run
+
+### Makefile
+
+The root `Makefile` provides convenient shortcuts for commonly used scripts (`make dev`, `make ui`, `make package`, ...).
 
 ### Running and Building the Desktop App
 
@@ -63,6 +71,26 @@ In your base Kiln directory, run the following command to setup a pre-commit hoo
 
 ```bash
 cp utils/pre-commit-hook .git/hooks/pre-commit
+```
+
+5. Spec Skill
+
+We use the spec from this project for planning: https://github.com/scosman/vibe-crafting
+
+To install (adapt to your tooling):
+
+```bash
+# Outside of the project
+git clone git@github.com:scosman/vibe-crafting.git
+
+# Claude Code
+mkdir -p ~/.claude/skills
+ln -s "$(pwd)/vibe-crafting/skill" ~/.claude/skills/spec
+# Optional: add Read access to your skills path to ~/.claude/settings.yaml
+
+# Cursor
+mkdir -p ~/.cursor/skills
+ln -s "$(pwd)/vibe-crafting/skill" ~/.cursor/skills/spec
 ```
 
 ## Optional Setup

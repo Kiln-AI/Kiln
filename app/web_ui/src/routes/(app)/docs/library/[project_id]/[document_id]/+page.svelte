@@ -17,9 +17,10 @@
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
   import { ui_state } from "$lib/stores"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
-  import TableButton from "../../../../generate/[project_id]/[task_id]/table_button.svelte"
+  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import { agentInfo } from "$lib/agent"
 
   let initial_document: KilnDocument | null = null
   let updated_document: KilnDocument | null = null
@@ -30,6 +31,10 @@
 
   $: project_id = $page.params.project_id!
   $: document_id = $page.params.document_id!
+  $: agentInfo.set({
+    name: "Document Detail",
+    description: `Document detail page for document ID ${document_id} in project ID ${project_id}. Document name: ${document?.friendly_name ?? "[loading]"}. Shows document properties, extractions, and tagging.`,
+  })
 
   // dialog state
   let output_dialog: Dialog | null = null
@@ -310,25 +315,17 @@
                         </button>
                       </td>
                       <td class="flex justify-start">
-                        <div class="dropdown dropdown-end dropdown-hover">
-                          <TableButton />
-                          <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-                          <ul
-                            tabindex="0"
-                            class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
-                          >
-                            <li>
-                              <button
-                                on:click={() => {
-                                  delete_extraction_id = result.id || null
-                                  delete_extraction_dialog?.show()
-                                }}
-                              >
-                                Delete Extraction</button
-                              >
-                            </li>
-                          </ul>
-                        </div>
+                        <TableActionMenu
+                          items={[
+                            {
+                              label: "Delete Extraction",
+                              onclick: () => {
+                                delete_extraction_id = result.id || null
+                                delete_extraction_dialog?.show()
+                              },
+                            },
+                          ]}
+                        />
                       </td>
                     </tr>
                   {/each}

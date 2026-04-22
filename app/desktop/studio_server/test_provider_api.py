@@ -1,12 +1,16 @@
 import json
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+from http import HTTPStatus
 from unittest.mock import MagicMock, Mock, patch
 
 import httpx
 import litellm
 import openai
 import pytest
+from app.desktop.studio_server.api_client.kiln_ai_server_client.models.create_api_key_response import (
+    CreateApiKeyResponse,
+)
 from app.desktop.studio_server.provider_api import (
     AvailableModels,
     ModelDetails,
@@ -222,6 +226,76 @@ def test_connect_api_key_kiln_copilot_network_error(mock_httpx_get, client):
 
     assert response.status_code == 400
     assert "Failed to connect" in response.json()["message"]
+
+
+@patch("app.desktop.studio_server.provider_api.Config.shared")
+@patch(
+    "app.desktop.studio_server.provider_api.create_api_key_v1_create_api_key_post.asyncio_detailed"
+)
+def test_create_kiln_copilot_api_key_success(
+    mock_create_api_key, mock_config_shared, client
+):
+    mock_config = MagicMock()
+    mock_config_shared.return_value = mock_config
+
+    mock_response = MagicMock()
+    mock_response.status_code = HTTPStatus.CREATED
+    mock_response.parsed = CreateApiKeyResponse(api_key="new_test_key")
+    mock_create_api_key.return_value = mock_response
+
+    response = client.post(
+        "/api/provider/create_kiln_copilot_api_key",
+        json={"access_token": "kinde_oauth_token"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Connected to Kiln Copilot"}
+    assert mock_config.kiln_copilot_api_key == "new_test_key"
+    mock_create_api_key.assert_called_once()
+
+
+def test_create_kiln_copilot_api_key_empty_token(client):
+    response = client.post(
+        "/api/provider/create_kiln_copilot_api_key",
+        json={"access_token": ""},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"message": "Access token is required"}
+
+
+@patch(
+    "app.desktop.studio_server.provider_api.create_api_key_v1_create_api_key_post.asyncio_detailed"
+)
+def test_create_kiln_copilot_api_key_server_error(mock_create_api_key, client):
+    mock_response = MagicMock()
+    mock_response.status_code = HTTPStatus.UNAUTHORIZED
+    mock_response.parsed = None
+    mock_response.content = b'{"detail": "Invalid token"}'
+    mock_create_api_key.return_value = mock_response
+
+    response = client.post(
+        "/api/provider/create_kiln_copilot_api_key",
+        json={"access_token": "bad_token"},
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"message": "Invalid token"}
+
+
+@patch(
+    "app.desktop.studio_server.provider_api.create_api_key_v1_create_api_key_post.asyncio_detailed"
+)
+def test_create_kiln_copilot_api_key_network_error(mock_create_api_key, client):
+    mock_create_api_key.side_effect = httpx.RequestError("Connection refused")
+
+    response = client.post(
+        "/api/provider/create_kiln_copilot_api_key",
+        json={"access_token": "kinde_oauth_token"},
+    )
+
+    assert response.status_code == 502
+    assert "Failed to connect to Kiln server" in response.json()["message"]
 
 
 @patch("app.desktop.studio_server.provider_api.requests.get")
@@ -597,7 +671,7 @@ async def test_connect_docker_model_runner_api_endpoint(client):
     ) as mock_connect:
         mock_connect.return_value = mock_connection
 
-        response = client.get("/api/provider/docker_model_runner/connect")
+        response = client.post("/api/provider/docker_model_runner/connect")
 
         assert response.status_code == 200
         mock_connect.assert_called_once_with(None)
@@ -618,7 +692,7 @@ async def test_connect_docker_model_runner_api_endpoint_with_custom_url(client):
         mock_connect.return_value = mock_connection
 
         custom_url = "http://custom:8080/engines/llama.cpp"
-        response = client.get(
+        response = client.post(
             "/api/provider/docker_model_runner/connect",
             params={"docker_model_runner_custom_url": custom_url},
         )
@@ -1657,7 +1731,7 @@ async def test_save_openai_compatible_providers(client):
 
         response = client.post(
             "/api/provider/openai_compatible",
-            params={
+            json={
                 "name": "test_provider",
                 "base_url": "https://api.test.com",
                 "api_key": "test_key",
@@ -1692,7 +1766,7 @@ async def test_save_openai_compatible_providers_duplicate_name(client):
 
         response = client.post(
             "/api/provider/openai_compatible",
-            params={
+            json={
                 "name": "existing_provider",
                 "base_url": "https://api.test.com",
                 "api_key": "test_key",
@@ -1714,7 +1788,7 @@ async def test_save_openai_compatible_providers_new_array(client):
 
         response = client.post(
             "/api/provider/openai_compatible",
-            params={
+            json={
                 "name": "first_provider",
                 "base_url": "https://api.first.com",
                 "api_key": "first_key",
@@ -1749,7 +1823,7 @@ async def test_save_openai_compatible_providers_add_to_existing_array(client):
 
         response = client.post(
             "/api/provider/openai_compatible",
-            params={
+            json={
                 "name": "second_provider",
                 "base_url": "https://api.second.com",
                 "api_key": "second_key",
@@ -1881,18 +1955,18 @@ def test_openai_compatible_provider_cache_is_stale():
     assert cache.is_stale() is True
 
     # Test within time window
-    cache.last_updated = datetime.now()
+    cache.last_updated = datetime.now().astimezone()
     cache.openai_compat_config_when_cached = ["provider1"]
     with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
         mock_config.return_value.openai_compatible_providers = ["provider1"]
         assert cache.is_stale() is False
 
     # Test expired time window
-    cache.last_updated = datetime.now() - timedelta(minutes=61)
+    cache.last_updated = datetime.now().astimezone() - timedelta(minutes=61)
     assert cache.is_stale() is True
 
     # Test config change
-    cache.last_updated = datetime.now()
+    cache.last_updated = datetime.now().astimezone()
     cache.openai_compat_config_when_cached = ["provider1"]
     with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
         mock_config.return_value.openai_compatible_providers = ["provider2"]
@@ -1943,7 +2017,7 @@ def test_openai_compatible_providers():
                     ],
                 ),
             ],
-            last_updated=datetime.now(),
+            last_updated=datetime.now().astimezone(),
             openai_compat_config_when_cached=mock_provider_config,
         )
 

@@ -5,6 +5,7 @@ from app.desktop.studio_server.setup_certs import setup_certs  # isort:skip
 setup_certs()
 
 import contextlib
+import logging
 import os
 import sys
 import tkinter as tk
@@ -21,6 +22,8 @@ from app.desktop.custom_tray import KilnMenuItem, KilnTray
 from app.desktop.desktop_server import ThreadedServer, server_config
 from app.desktop.util.resource_limits import setup_resource_limits
 
+logger = logging.getLogger(__name__)
+
 # Set writeable cache directories as soon as we start
 os.environ["LLAMA_INDEX_CACHE_DIR"] = os.path.join(
     Config.settings_dir(), "cache", "llama_index_cache"
@@ -29,7 +32,7 @@ os.environ["NLTK_DATA"] = os.path.join(Config.settings_dir(), "cache", "nltk_dat
 
 
 class DesktopApp:
-    def __init__(self, port: int = 8757):
+    def __init__(self, port: int):
         self.port = port
         # TK without a window, to get dock events on MacOS
         self.root = tk.Tk()
@@ -122,8 +125,17 @@ class DesktopApp:
 
         self.tray = KilnTray("kiln", tray_image, "Kiln", menu)
 
-        # running detached since we use tk mainloop to get events from dock icon
-        self.tray.run_detached()
+        try:
+            # running detached since we use tk mainloop to get events from dock icon
+            self.tray.run_detached()
+        except Exception:
+            logger.error("Error running tray", exc_info=True)
+            # Tray not starting on MacOS or Windows is critical.
+            # Let Linux continue to start the app as tray is more fragmented there and requires system deps.
+            if sys.platform in ["darwin", "win32"]:
+                raise
+            else:
+                self.tray = None
 
     def close_splash(self):
         try:
@@ -155,11 +167,13 @@ class DesktopServer(ThreadedServer):
 if __name__ == "__main__":
     setup_resource_limits()
 
-    app = DesktopApp()
+    host = Config.shared().kiln_local_api_host
+    port = Config.shared().kiln_local_api_port
+    app = DesktopApp(port=port)
 
     # Create and run the server
     # run the server in a thread, and shut down server when main thread (tk mainloop) exits
-    config = server_config(tk_root=app.root, port=app.port)
+    config = server_config(port=port, host=host, tk_root=app.root)
     uni_server = DesktopServer(app=app, config=config)
     with uni_server.run_in_thread():
         if not uni_server.running():

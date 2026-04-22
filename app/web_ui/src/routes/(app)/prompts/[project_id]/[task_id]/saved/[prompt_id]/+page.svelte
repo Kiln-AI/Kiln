@@ -5,11 +5,15 @@
   import Output from "$lib/ui/output.svelte"
   import { formatDate } from "$lib/utils/formatters"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
-  import { getPromptType } from "../../prompt_generators/prompt_generators"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: prompt_id = $page.params.prompt_id!
+  $: agentInfo.set({
+    name: "Saved Prompt Detail",
+    description: `Saved prompt detail for prompt ID ${prompt_id} in project ID ${project_id}, task ID ${task_id}. Prompt name: ${prompt_model?.name ?? "[loading]"}. Shows prompt content, version history, and options to clone or edit.`,
+  })
 
   $: prompt_model = $current_task_prompts?.prompts.find(
     (prompt) => prompt.id === prompt_id,
@@ -22,10 +26,7 @@
         ID: prompt_model?.id,
         Name: prompt_model?.name,
         Description: prompt_model?.description || undefined,
-        Type: getPromptType(
-          prompt_model?.id || "",
-          prompt_model?.generator_id || null,
-        ),
+        Type: prompt_model?.type ?? "Unknown",
         "Created By": prompt_model?.created_by,
         "Created At": formatDate(prompt_model?.created_at || undefined),
       }).filter(([_, value]) => value !== undefined && value !== null),
@@ -50,16 +51,26 @@
         href: `/prompts/${project_id}/${task_id}`,
       },
     ]}
-    action_buttons={prompt_model?.id.startsWith("id::")
-      ? [
-          {
-            label: "Edit",
-            handler: () => {
-              edit_dialog?.show()
+    action_buttons={[
+      ...(prompt_model
+        ? [
+            {
+              label: "Clone",
+              href: `/prompts/${project_id}/${task_id}/clone/${encodeURIComponent(prompt_model.id)}`,
             },
-          },
-        ]
-      : []}
+          ]
+        : []),
+      ...(prompt_model?.id.startsWith("id::")
+        ? [
+            {
+              label: "Edit",
+              handler: () => {
+                edit_dialog?.show()
+              },
+            },
+          ]
+        : []),
+    ]}
   >
     {#if !$current_task_prompts}
       <div class="w-full min-h-[50vh] flex justify-center items-center">

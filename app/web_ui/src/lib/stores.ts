@@ -66,6 +66,9 @@ export const current_task_prompts = writable<PromptResponse | null>(null)
 export const fine_tune_target_model: Writable<string | null> =
   localStorageStore("fine_tune_target_model", null)
 
+export const chat_cost_disclaimer_acknowledged: Writable<boolean> =
+  localStorageStore("kiln_chat_cost_disclaimer_v1_ack", false)
+
 // Rating options for the current task
 export const current_task_rating_options =
   writable<RatingOptionResponse | null>(null)
@@ -641,7 +644,7 @@ export async function load_available_prompts(force: boolean = false) {
     }
     is_loading_prompts = true
     const { data, error } = await client.GET(
-      "/api/projects/{project_id}/task/{task_id}/prompts",
+      "/api/projects/{project_id}/tasks/{task_id}/prompts",
       {
         params: {
           path: {

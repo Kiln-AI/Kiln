@@ -8,6 +8,7 @@
   import { get, writable, type Writable } from "svelte/store"
   import { createQnaStore, type QnaStore } from "./qna/qna_ui_store"
   import { DEFAULT_QNA_GUIDANCE } from "./qna/guidance"
+  import { agentInfo } from "$lib/agent"
 
   // watch out because query param value is not the same as gen_type
   type SynthReasonQueryParam = "eval" | "fine_tune" | "qna"
@@ -15,6 +16,10 @@
   let loading = true
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Generate Data",
+    description: `Data generation home for project ID ${project_id}, task ID ${task_id}. Choose between synthetic data generation and Q&A generation.`,
+  })
 
   let cachedQnaStore: QnaStore | null = null
   let cachedQnaProjectId: string | null = null

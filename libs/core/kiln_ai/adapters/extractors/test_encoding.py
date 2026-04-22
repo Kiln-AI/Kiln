@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from conftest import MockFileFactoryMimeType
 from kiln_ai.adapters.extractors.encoding import from_base64_url, to_base64_url
+from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
 
 
 async def test_to_base64_url(mock_file_factory):

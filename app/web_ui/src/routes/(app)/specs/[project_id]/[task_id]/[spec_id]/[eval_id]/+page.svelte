@@ -23,10 +23,15 @@
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import { tagFromFilterId, linkFromFilterId } from "../../spec_utils"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: spec_id = $page.params.spec_id!
   $: eval_id = $page.params.eval_id!
+  $: agentInfo.set({
+    name: "Eval Detail",
+    description: `Eval detail for eval ID ${eval_id}, spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Eval name: ${evaluator?.name ?? "[loading]"}. Shows eval configurations and run results.`,
+  })
   $: is_legacy_eval = spec_id === "legacy"
 
   let spec: Spec | null = null
@@ -84,7 +89,7 @@
     try {
       eval_loading = true
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}",
         {
           params: {
             path: {
@@ -111,7 +116,7 @@
       eval_progress_loading = true
       eval_progress = null
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/progress",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/progress",
         {
           params: {
             path: {
@@ -744,8 +749,8 @@
   <EditDialog
     bind:this={edit_dialog}
     name="Eval"
-    patch_url={`/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}`}
-    delete_url={`/api/projects/${project_id}/tasks/${task_id}/eval/${eval_id}`}
+    patch_url={`/api/projects/${project_id}/tasks/${task_id}/evals/${eval_id}`}
+    delete_url={`/api/projects/${project_id}/tasks/${task_id}/evals/${eval_id}`}
     after_delete={() => {
       goto(`/specs/${project_id}/${task_id}`)
     }}

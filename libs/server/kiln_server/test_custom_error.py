@@ -1,12 +1,11 @@
+import httpx
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field
 
-from kiln_server.custom_errors import (
-    connect_custom_errors,
-    format_error_loc,
-)
+from kiln_server.custom_errors import connect_custom_errors, format_error_loc
+from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
 
 
 @pytest.fixture
@@ -22,12 +21,39 @@ def app():
     async def create_item(item: Item):
         return item
 
+    @app.get("/timeout")
+    async def raise_timeout():
+        raise httpx.TimeoutException("Request timed out")
+
+    @app.get("/generic-error")
+    async def raise_generic_error():
+        raise RuntimeError("Something went wrong")
+
+    @app.get("/http-error-string")
+    async def raise_http_error_string():
+        raise HTTPException(status_code=400, detail="bad request")
+
+    @app.get("/http-error-dict")
+    async def raise_http_error_dict():
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Update required",
+                "code": CHAT_CLIENT_VERSION_TOO_OLD,
+            },
+        )
+
     return app
 
 
 @pytest.fixture
 def client(app):
     return TestClient(app)
+
+
+@pytest.fixture
+def client_no_raise(app):
+    return TestClient(app, raise_server_exceptions=False)
 
 
 def test_validation_error_single_field(client):
@@ -92,3 +118,46 @@ def test_format_error_loc_with_none():
 
 def test_format_error_loc_with_empty_string():
     assert format_error_loc(("container", "", "field")) == "Container.Field"
+
+
+class TestTimeoutErrorHandler:
+    def test_timeout_exception_returns_408(self, client_no_raise):
+        response = client_no_raise.get("/timeout")
+        assert response.status_code == 408
+
+    def test_timeout_exception_message(self, client_no_raise):
+        response = client_no_raise.get("/timeout")
+        body = response.json()
+        assert body["message"] == "Request timed out. Please try again."
+        assert "raw_error" not in body
+
+    def test_timeout_exception_has_cors_header(self, client_no_raise):
+        response = client_no_raise.get("/timeout")
+        assert response.headers.get("access-control-allow-origin") == "*"
+
+    def test_other_exceptions_still_return_500(self, client_no_raise):
+        response = client_no_raise.get("/generic-error")
+        assert response.status_code == 500
+
+
+class TestHTTPExceptionHandler:
+    def test_string_detail(self, client_no_raise):
+        response = client_no_raise.get("/http-error-string")
+        assert response.status_code == 400
+        body = response.json()
+        assert body == {"message": "bad request"}
+
+    def test_dict_detail_preserves_structure(self, client_no_raise):
+        response = client_no_raise.get("/http-error-dict")
+        assert response.status_code == 400
+        body = response.json()
+        assert body == {
+            "message": {
+                "message": "Update required",
+                "code": CHAT_CLIENT_VERSION_TOO_OLD,
+            }
+        }
+
+    def test_dict_detail_has_cors_header(self, client_no_raise):
+        response = client_no_raise.get("/http-error-dict")
+        assert response.headers.get("access-control-allow-origin") == "*"

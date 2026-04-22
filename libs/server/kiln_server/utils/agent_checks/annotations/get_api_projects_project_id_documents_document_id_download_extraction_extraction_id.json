@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/projects/{project_id}/documents/{document_id}/download_extraction/{extraction_id}",
+  "agent_policy": {
+    "permission": "deny",
+    "requires_approval": false
+  }
+}

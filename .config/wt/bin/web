@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+URL="${KILN_WEB_URL:-http://localhost:8758}"
+if [[ "$(uname)" == "Darwin" ]]; then
+  open "$URL"
+else
+  xdg-open "$URL"
+fi

@@ -17,12 +17,16 @@
   import Warning from "$lib/ui/warning.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import { selected_tool_for_task } from "$lib/stores/tools_store"
-  import TableButton from "../../../../generate/[project_id]/[task_id]/table_button.svelte"
-  import Float from "$lib/ui/float.svelte"
+  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import ErrorDetailsBlock from "$lib/ui/error_details_block.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: tool_server_id = $page.params.tool_server_id!
+  $: agentInfo.set({
+    name: "Tool Server Detail",
+    description: `Tool server detail for server ID ${tool_server_id} in project ID ${project_id}. Server name: ${tool_server?.name ?? "[loading]"}. Shows server properties, tools, status, and configuration.`,
+  })
   $: is_archived = tool_server?.properties?.is_archived ?? false
 
   let tool_server: ExternalToolServerApiDescription | null = null
@@ -36,6 +40,30 @@
   onMount(async () => {
     await fetch_tool_server()
   })
+
+  async function fetch_tool_server_config(): Promise<ExternalToolServerApiDescription | null> {
+    if (!project_id || !tool_server_id) {
+      return null
+    }
+
+    const { data, error: fetch_error } = await client.GET(
+      "/api/projects/{project_id}/tool_servers/{tool_server_id}/config",
+      {
+        params: {
+          path: {
+            project_id,
+            tool_server_id,
+          },
+        },
+      },
+    )
+
+    if (fetch_error) {
+      throw fetch_error
+    }
+
+    return data as ExternalToolServerApiDescription
+  }
 
   async function fetch_tool_server() {
     try {
@@ -70,6 +98,13 @@
       tool_server = data as ExternalToolServerApiDescription
     } catch (err) {
       loading_error = createKilnError(err)
+      // If the full tool-server fetch fails, fall back to persisted config
+      // so archive/unarchive still works.
+      try {
+        tool_server = await fetch_tool_server_config()
+      } catch {
+        tool_server = null
+      }
     } finally {
       loading = false
     }
@@ -308,43 +343,22 @@
   }
 
   async function update_archive(is_archived: boolean) {
-    if (!tool_server) {
-      return
-    }
-
     try {
       archive_error = null
       unarchive_error = null
 
-      switch (tool_server.type) {
-        case "remote_mcp": {
-          toolIsType(tool_server, tool_server.type)
-          await client.PATCH(
-            "/api/projects/{project_id}/edit_remote_mcp/{tool_server_id}",
-            {
-              params: {
-                path: {
-                  project_id,
-                  tool_server_id,
-                },
-              },
-              body: {
-                name: tool_server.name,
-                description: tool_server.description ?? null,
-                server_url: tool_server.properties.server_url,
-                headers: tool_server.properties.headers || {},
-                secret_header_keys:
-                  tool_server.properties.secret_header_keys || [],
-                is_archived: is_archived,
-              },
-            },
-          )
-          break
-        }
+      const current_tool_server =
+        tool_server ?? (await fetch_tool_server_config())
+      if (!current_tool_server) {
+        return
+      }
+      tool_server = current_tool_server
+
+      switch (current_tool_server.type) {
+        case "remote_mcp":
         case "local_mcp": {
-          toolIsType(tool_server, tool_server.type)
-          await client.PATCH(
-            "/api/projects/{project_id}/edit_local_mcp/{tool_server_id}",
+          const { error: archive_request_error } = await client.POST(
+            "/api/projects/{project_id}/tool_servers/{tool_server_id}/archive",
             {
               params: {
                 path: {
@@ -353,17 +367,20 @@
                 },
               },
               body: {
-                name: tool_server.name,
-                description: tool_server.description ?? null,
-                command: tool_server.properties.command,
-                args: tool_server.properties.args || [],
-                env_vars: tool_server.properties.env_vars || {},
-                secret_env_var_keys:
-                  tool_server.properties.secret_env_var_keys || [],
-                is_archived: is_archived,
+                is_archived,
               },
             },
           )
+          if (archive_request_error) {
+            throw archive_request_error
+          }
+          tool_server = {
+            ...current_tool_server,
+            properties: {
+              ...current_tool_server.properties,
+              is_archived,
+            },
+          }
           break
         }
         case "kiln_task": {
@@ -371,7 +388,7 @@
           break
         }
         default: {
-          const exhaustiveCheck: never = tool_server.type
+          const exhaustiveCheck: never = current_tool_server.type
           console.warn(`Unhandled toolType: ${exhaustiveCheck}`)
           break
         }
@@ -489,7 +506,7 @@
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
       </div>
-    {:else if loading_error}
+    {:else if loading_error && !is_archived}
       <ErrorDetailsBlock
         title="Error Loading Tool Server"
         error_messages={loading_error.getErrorMessages()}
@@ -569,7 +586,9 @@
                   )}
                   <tr>
                     <td class="font-medium">{tool.name}</td>
-                    <td class="max-w-[300px]">{tool.description || "None"}</td>
+                    <td class="max-w-[300px] whitespace-pre-line break-words"
+                      >{tool.description || "None"}</td
+                    >
                     <td>
                       {#if formatted_args.length > 0}
                         <div class="divide-y divide-y-[0.5px]">
@@ -588,7 +607,9 @@
                               </div>
                               {#if arg.description}
                                 <div class="text-gray-500 text-sm mt-1">
-                                  {arg.description}
+                                  <span class="whitespace-pre-line break-words"
+                                    >{arg.description}</span
+                                  >
                                 </div>
                               {/if}
                             </div>
@@ -600,32 +621,19 @@
                     </td>
                     {#if tool_server?.type === "remote_mcp" || tool_server?.type === "local_mcp"}
                       <td class="p-0">
-                        <div class="dropdown dropdown-end dropdown-hover">
-                          <TableButton />
-                          <Float>
-                            <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-                            <ul
-                              tabindex="0"
-                              class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow"
-                            >
-                              <li>
-                                <button
-                                  on:click={() =>
-                                    open_tool_action_dialog(tool.name)}
-                                >
-                                  Run Task with Tool
-                                </button>
-                              </li>
-                              <li>
-                                <button
-                                  on:click={() => handleCreateTask(tool.name)}
-                                >
-                                  Create Task from Tool
-                                </button>
-                              </li>
-                            </ul>
-                          </Float>
-                        </div>
+                        <TableActionMenu
+                          width="w-64"
+                          items={[
+                            {
+                              label: "Run Task with Tool",
+                              onclick: () => open_tool_action_dialog(tool.name),
+                            },
+                            {
+                              label: "Create Task from Tool",
+                              onclick: () => handleCreateTask(tool.name),
+                            },
+                          ]}
+                        />
                       </td>
                     {/if}
                   </tr>

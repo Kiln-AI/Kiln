@@ -1,0 +1,193 @@
+from unittest.mock import patch
+
+from app.desktop.git_sync.config import (
+    GitSyncProjectConfig,
+    delete_git_sync_config,
+    get_git_sync_config,
+    save_git_sync_config,
+)
+
+
+def test_get_git_sync_config_returns_config():
+    mock_projects = {
+        "/tmp/clone/project.kiln": {
+            "sync_mode": "auto",
+            "remote_name": "upstream",
+            "branch": "develop",
+            "clone_path": "/tmp/clone",
+        }
+    }
+
+    with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
+        mock_shared.return_value.git_sync_projects = mock_projects
+        result = get_git_sync_config("/tmp/clone/project.kiln")
+
+    assert result is not None
+    assert result["sync_mode"] == "auto"
+    assert result["remote_name"] == "upstream"
+    assert result["branch"] == "develop"
+    assert result["clone_path"] == "/tmp/clone"
+
+
+def test_get_git_sync_config_returns_none_for_missing_project():
+    mock_projects = {"/tmp/other_project/project.kiln": {"sync_mode": "auto"}}
+
+    with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
+        mock_shared.return_value.git_sync_projects = mock_projects
+        result = get_git_sync_config("nonexistent")
+
+    assert result is None
+
+
+def test_get_git_sync_config_returns_none_when_no_projects():
+    with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
+        mock_shared.return_value.git_sync_projects = None
+        result = get_git_sync_config("/tmp/clone/project.kiln")
+
+    assert result is None
+
+
+def test_get_git_sync_config_uses_defaults():
+    mock_projects = {"/tmp/other/project.kiln": {}}
+
+    with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
+        mock_shared.return_value.git_sync_projects = mock_projects
+        result = get_git_sync_config("/tmp/other/project.kiln")
+
+    assert result is not None
+    assert result["sync_mode"] == "manual"
+    assert result["auth_mode"] == "system_keys"
+    assert result["remote_name"] == "origin"
+    assert result["branch"] == "main"
+    assert result["clone_path"] is None
+
+
+def test_get_git_sync_config_includes_new_fields():
+    mock_projects = {
+        "/tmp/clone3/project.kiln": {
+            "sync_mode": "auto",
+            "remote_name": "origin",
+            "branch": "main",
+            "clone_path": "/tmp/clone",
+            "git_url": "https://github.com/test/repo.git",
+            "pat_token": "ghp_secret",
+        }
+    }
+
+    with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
+        mock_shared.return_value.git_sync_projects = mock_projects
+        result = get_git_sync_config("/tmp/clone3/project.kiln")
+
+    assert result is not None
+    assert result["git_url"] == "https://github.com/test/repo.git"
+    assert result["pat_token"] == "ghp_secret"
+
+
+def test_get_git_sync_config_defaults_new_fields():
+    mock_projects = {"/tmp/other/project.kiln": {}}
+
+    with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
+        mock_shared.return_value.git_sync_projects = mock_projects
+        result = get_git_sync_config("/tmp/other/project.kiln")
+
+    assert result is not None
+    assert result["git_url"] is None
+    assert result["pat_token"] is None
+
+
+def test_save_git_sync_config():
+    mock_raw = {}
+
+    with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
+        instance = mock_shared.return_value
+        instance.git_sync_projects = mock_raw
+        config = GitSyncProjectConfig(
+            sync_mode="auto",
+            auth_mode="system_keys",
+            remote_name="origin",
+            branch="main",
+            clone_path="/tmp/clone",
+            git_url="https://github.com/test/repo.git",
+            pat_token="ghp_test",
+            oauth_token=None,
+        )
+        save_git_sync_config("/tmp/new/project.kiln", config)
+
+        # save_git_sync_config sets config.git_sync_projects = updated_dict
+        # The mock captures this as a property assignment
+        # Verify via the mock's attribute setting
+        saved_value = instance.git_sync_projects
+        assert "/tmp/new/project.kiln" in saved_value
+        assert saved_value["/tmp/new/project.kiln"]["sync_mode"] == "auto"
+
+
+def test_delete_git_sync_config():
+    mock_raw = {"/tmp/del/project.kiln": {"sync_mode": "auto"}}
+
+    with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
+        instance = mock_shared.return_value
+        instance.git_sync_projects = mock_raw
+        delete_git_sync_config("/tmp/del/project.kiln")
+
+    assert "/tmp/del/project.kiln" not in mock_raw
+
+
+def test_delete_nonexistent_config():
+    mock_raw = {}
+
+    with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
+        instance = mock_shared.return_value
+        instance.git_sync_projects = mock_raw
+        delete_git_sync_config("nonexistent")
+
+    assert mock_raw == {}
+
+
+def test_git_sync_project_config_type():
+    config = GitSyncProjectConfig(
+        sync_mode="auto",
+        auth_mode="system_keys",
+        remote_name="origin",
+        branch="main",
+        clone_path=None,
+        git_url=None,
+        pat_token=None,
+        oauth_token=None,
+    )
+    assert config["sync_mode"] == "auto"
+    assert config["clone_path"] is None
+    assert config["oauth_token"] is None
+
+
+def test_get_git_sync_config_includes_oauth_token():
+    mock_projects = {
+        "/tmp/clone/project.kiln": {
+            "sync_mode": "auto",
+            "auth_mode": "github_oauth",
+            "remote_name": "origin",
+            "branch": "main",
+            "clone_path": "/tmp/clone",
+            "git_url": "https://github.com/test/repo.git",
+            "pat_token": None,
+            "oauth_token": "ghu_token123",
+        }
+    }
+
+    with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
+        mock_shared.return_value.git_sync_projects = mock_projects
+        result = get_git_sync_config("/tmp/clone/project.kiln")
+
+    assert result is not None
+    assert result["oauth_token"] == "ghu_token123"
+    assert result["auth_mode"] == "github_oauth"
+
+
+def test_get_git_sync_config_defaults_oauth_token():
+    mock_projects = {"/tmp/other/project.kiln": {}}
+
+    with patch("app.desktop.git_sync.config.Config.shared") as mock_shared:
+        mock_shared.return_value.git_sync_projects = mock_projects
+        result = get_git_sync_config("/tmp/other/project.kiln")
+
+    assert result is not None
+    assert result["oauth_token"] is None

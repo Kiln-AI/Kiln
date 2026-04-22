@@ -7,40 +7,31 @@
   export let docs_link: string
   export let breadcrumbs: Array<{ label: string; href: string }>
   export let success_redirect_url: string
-  export let cancel_redirect_url: string
 
   let connect_success = false
 
   function proceed() {
     goto(success_redirect_url)
   }
-
-  function cancel() {
-    goto(cancel_redirect_url, { replaceState: true })
-  }
 </script>
 
-<div class="max-w-[1400px]">
-  <AppPage
-    {title}
-    sub_subtitle="Read the Docs"
-    sub_subtitle_link={docs_link}
-    {breadcrumbs}
+<AppPage
+  {title}
+  sub_subtitle="Read the Docs"
+  sub_subtitle_link={docs_link}
+  {breadcrumbs}
+>
+  <div
+    class="flex flex-col max-w-[400px] mx-auto mt-24 md:mt-36 border border-base-300 rounded-2xl bg-base-100 px-6 shadow-lg py-8 md:py-12"
   >
-    <div class="flex flex-col max-w-[400px]">
-      <ConnectKilnCopilotSteps
-        onSuccess={() => (connect_success = true)}
-        showCheckmark={connect_success}
-      />
-      {#if connect_success}
-        <button class="btn btn-primary mt-4 w-full" on:click={proceed}>
-          Next
-        </button>
-      {:else}
-        <button class="link text-center text-sm mt-8" on:click={cancel}>
-          Cancel setting up Kiln Copilot
-        </button>
-      {/if}
-    </div>
-  </AppPage>
-</div>
+    <ConnectKilnCopilotSteps
+      onSuccess={() => (connect_success = true)}
+      showCheckmark={connect_success}
+    />
+    {#if connect_success}
+      <button class="btn btn-primary mt-4 btn-wide mx-auto" on:click={proceed}>
+        Continue
+      </button>
+    {/if}
+  </div>
+</AppPage>

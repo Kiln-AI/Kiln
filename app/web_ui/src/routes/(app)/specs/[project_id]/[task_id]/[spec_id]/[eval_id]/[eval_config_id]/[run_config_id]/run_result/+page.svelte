@@ -28,11 +28,16 @@
   } from "$lib/stores"
   import OutputTypeTablePreview from "$lib/components/output_type_table_preview.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: eval_id = $page.params.eval_id!
   $: eval_config_id = $page.params.eval_config_id!
   $: run_config_id = $page.params.run_config_id!
+  $: agentInfo.set({
+    name: "Eval Run Result",
+    description: `Eval run result for eval ID ${eval_id}, eval config ID ${eval_config_id}, run config ID ${run_config_id} in project ID ${project_id}, task ID ${task_id}. Shows individual eval run outputs and scores.`,
+  })
 
   let results: EvalRunResult | null = null
   let results_error: KilnError | null = null
@@ -58,7 +63,7 @@
     try {
       results_loading = true
       const { data, error } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/eval/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/results",
+        "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/results",
         {
           params: {
             path: {
