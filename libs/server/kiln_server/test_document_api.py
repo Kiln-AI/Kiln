@@ -2809,7 +2809,9 @@ async def test_run_rag_workflow_runner_with_status_success():
         return mock_runner
 
     # Call the function
-    response = await run_rag_workflow_runner_with_status(mock_factory)
+    mock_request = MagicMock()
+    mock_request.is_disconnected = AsyncMock(return_value=False)
+    response = await run_rag_workflow_runner_with_status(mock_factory, mock_request)
 
     # Verify response type
     assert isinstance(response, StreamingResponse)
@@ -2885,7 +2887,9 @@ async def test_run_rag_workflow_runner_with_status_no_logs(logs):
         return mock_runner
 
     # Call the function
-    response = await run_rag_workflow_runner_with_status(mock_factory)
+    mock_request = MagicMock()
+    mock_request.is_disconnected = AsyncMock(return_value=False)
+    response = await run_rag_workflow_runner_with_status(mock_factory, mock_request)
 
     # Read the streaming content
     content = ""
@@ -2946,7 +2950,9 @@ async def test_run_rag_workflow_runner_with_status_multiple_logs():
         return mock_runner
 
     # Call the function
-    response = await run_rag_workflow_runner_with_status(mock_factory)
+    mock_request = MagicMock()
+    mock_request.is_disconnected = AsyncMock(return_value=False)
+    response = await run_rag_workflow_runner_with_status(mock_factory, mock_request)
 
     # Read the streaming content
     content = ""
@@ -2997,7 +3003,9 @@ async def test_run_rag_workflow_runner_with_status_no_progress():
         return mock_runner
 
     # Call the function
-    response = await run_rag_workflow_runner_with_status(mock_factory)
+    mock_request = MagicMock()
+    mock_request.is_disconnected = AsyncMock(return_value=False)
+    response = await run_rag_workflow_runner_with_status(mock_factory, mock_request)
 
     # Read the streaming content
     content = ""
@@ -5427,3 +5435,154 @@ def test_get_rag_config_progress_has_no_write_lock(app):
 def test_search_rag_config_has_no_write_lock(app):
     endpoint = _find_endpoint_by_path(app, "/rag_configs/{rag_config_id}/search")
     assert getattr(endpoint, "_git_sync_no_write_lock", False) is True
+
+
+@pytest.mark.asyncio
+async def test_run_extractor_runner_with_status_cancels_on_client_disconnect():
+    """Regression: disconnect (body_iterator.aclose()) must propagate to the
+    runner so AsyncJobRunner's finally block cancels its workers.
+    """
+    from kiln_ai.utils.async_job_runner import Progress
+
+    from kiln_server.document_api import run_extractor_runner_with_status
+
+    inner_closed = False
+
+    async def fake_run():
+        nonlocal inner_closed
+        try:
+            for i in range(10):
+                yield Progress(complete=i, total=10, errors=0)
+        finally:
+            inner_closed = True
+
+    extractor_runner = MagicMock()
+    extractor_runner.run.return_value = fake_run()
+
+    request = MagicMock()
+    request.is_disconnected = AsyncMock(return_value=False)
+
+    response = await run_extractor_runner_with_status(extractor_runner, request)
+
+    body_iter = response.body_iterator
+    first = await body_iter.__anext__()
+    assert "data: " in (first if isinstance(first, str) else first.decode())
+
+    await body_iter.aclose()
+
+    assert inner_closed is True
+
+
+@pytest.mark.asyncio
+async def test_run_extractor_runner_with_status_exits_when_is_disconnected():
+    """Polling is_disconnected() returning True must exit the stream and close
+    the runner generator.
+    """
+    from kiln_ai.utils.async_job_runner import Progress
+
+    from kiln_server.document_api import run_extractor_runner_with_status
+
+    inner_closed = False
+
+    async def fake_run():
+        nonlocal inner_closed
+        try:
+            for i in range(100):
+                yield Progress(complete=i, total=100, errors=0)
+        finally:
+            inner_closed = True
+
+    extractor_runner = MagicMock()
+    extractor_runner.run.return_value = fake_run()
+
+    # Return True on the third poll.
+    poll_count = {"n": 0}
+
+    async def is_disconnected():
+        poll_count["n"] += 1
+        return poll_count["n"] >= 3
+
+    request = MagicMock()
+    request.is_disconnected = is_disconnected
+
+    response = await run_extractor_runner_with_status(extractor_runner, request)
+
+    chunks: list[str] = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk if isinstance(chunk, str) else chunk.decode())
+
+    body = "".join(chunks)
+    assert inner_closed is True
+    assert "data: complete" not in body
+
+
+@pytest.mark.asyncio
+async def test_run_rag_workflow_runner_with_status_cancels_on_client_disconnect():
+    """Regression: same disconnect propagation guarantee for the RAG helper."""
+    from kiln_server.document_api import run_rag_workflow_runner_with_status
+
+    inner_closed = False
+
+    async def fake_run():
+        nonlocal inner_closed
+        try:
+            for _ in range(10):
+                yield RagProgress(total_document_count=10)
+        finally:
+            inner_closed = True
+
+    runner = MagicMock()
+    runner.run.return_value = fake_run()
+
+    async def runner_factory():
+        return runner
+
+    request = MagicMock()
+    request.is_disconnected = AsyncMock(return_value=False)
+
+    response = await run_rag_workflow_runner_with_status(runner_factory, request)
+
+    body_iter = response.body_iterator
+    first = await body_iter.__anext__()
+    assert "data: " in (first if isinstance(first, str) else first.decode())
+
+    await body_iter.aclose()
+
+    assert inner_closed is True
+
+
+@pytest.mark.asyncio
+async def test_run_extractor_runner_with_status_emits_heartbeat_when_idle():
+    """When the runner is silent, heartbeat comments must be emitted so
+    Starlette calls send() and can detect disconnects.
+    """
+    import asyncio
+
+    from kiln_ai.utils.async_job_runner import Progress
+
+    import kiln_server.sse as sse_mod
+    from kiln_server.document_api import run_extractor_runner_with_status
+
+    async def slow_run():
+        await asyncio.sleep(0.25)
+        yield Progress(complete=1, total=1, errors=0)
+
+    extractor_runner = MagicMock()
+    extractor_runner.run.return_value = slow_run()
+
+    request = MagicMock()
+    request.is_disconnected = AsyncMock(return_value=False)
+
+    original = sse_mod.DEFAULT_HEARTBEAT_SECONDS
+    sse_mod.DEFAULT_HEARTBEAT_SECONDS = 0.05
+    try:
+        response = await run_extractor_runner_with_status(extractor_runner, request)
+        chunks: list[str] = []
+        async for chunk in response.body_iterator:
+            chunks.append(chunk if isinstance(chunk, str) else chunk.decode())
+    finally:
+        sse_mod.DEFAULT_HEARTBEAT_SECONDS = original
+
+    body = "".join(chunks)
+    assert ": keepalive" in body, f"expected heartbeat in body, got: {body!r}"
+    assert "data: complete" in body

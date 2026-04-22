@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import datetime
 import json
 import logging
@@ -92,6 +93,7 @@ from pydantic import BaseModel, Field, PositiveInt, model_validator
 
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
+from kiln_server.sse import stream_with_heartbeat
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
     DENY_AGENT,
@@ -157,22 +159,33 @@ def get_rag_config_from_id(project: Project, rag_config_id: str) -> RagConfig:
     return rag_config
 
 
+def _format_extractor_progress_sse(progress) -> str:
+    data = {
+        "progress": progress.complete,
+        "total": progress.total,
+        "errors": progress.errors,
+    }
+    return f"data: {json.dumps(data)}\n\n"
+
+
 async def run_extractor_runner_with_status(
     extractor_runner: ExtractorRunner,
+    request: Request,
 ) -> StreamingResponse:
     # Yields async messages designed to be used with server sent events (SSE)
     # https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events
     async def event_generator():
-        async for progress in extractor_runner.run():
-            data = {
-                "progress": progress.complete,
-                "total": progress.total,
-                "errors": progress.errors,
-            }
-            yield f"data: {json.dumps(data)}\n\n"
-
-        # Send the final complete message the app expects, and uses to stop listening
-        yield "data: complete\n\n"
+        hb = stream_with_heartbeat(
+            extractor_runner.run(),
+            _format_extractor_progress_sse,
+            is_disconnected=request.is_disconnected,
+        )
+        async with contextlib.aclosing(hb) as stream:
+            async for chunk in stream:
+                yield chunk
+        if not await request.is_disconnected():
+            # Send the final complete message the app expects, and uses to stop listening
+            yield "data: complete\n\n"
 
     return StreamingResponse(
         content=event_generator(),
@@ -182,6 +195,7 @@ async def run_extractor_runner_with_status(
 
 async def run_rag_workflow_runner_with_status(
     runner_factory: Callable[[], Awaitable[RagWorkflowRunner]],
+    request: Request,
 ) -> StreamingResponse:
     async def event_generator():
         latest_progress = RagProgress()
@@ -213,14 +227,23 @@ async def run_rag_workflow_runner_with_status(
             }
             return data
 
+        def format_rag_progress(progress: RagProgress) -> str:
+            nonlocal latest_progress
+            latest_progress = progress.model_copy()
+            return f"data: {json.dumps(serialize_progress(progress))}\n\n"
+
         try:
             # we initialize the runner inside the wrapper to surface errors to the frontend via logging UI
             # we do it via a factory to allow for easier mocking in tests
             runner = await runner_factory()
-            async for progress in runner.run():
-                latest_progress = progress.model_copy()
-                data = serialize_progress(progress)
-                yield f"data: {json.dumps(data)}\n\n"
+            hb = stream_with_heartbeat(
+                runner.run(),
+                format_rag_progress,
+                is_disconnected=request.is_disconnected,
+            )
+            async with contextlib.aclosing(hb) as stream:
+                async for chunk in stream:
+                    yield chunk
         except asyncio.TimeoutError:
             logger.info("RAG workflow runner cancelled")
             latest_progress.logs = [
@@ -245,8 +268,9 @@ async def run_rag_workflow_runner_with_status(
             data = serialize_progress(latest_progress)
             yield f"data: {json.dumps(data)}\n\n"
 
-        # Send the final complete message the app expects, and uses to stop listening
-        yield "data: complete\n\n"
+        if not await request.is_disconnected():
+            # Send the final complete message the app expects, and uses to stop listening
+            yield "data: complete\n\n"
 
     return StreamingResponse(
         content=event_generator(),
@@ -1445,7 +1469,7 @@ def connect_document_api(app: FastAPI):
                 save_context=save_context,
             )
 
-            return await run_extractor_runner_with_status(extractor_runner)
+            return await run_extractor_runner_with_status(extractor_runner, request)
 
     @app.get(
         "/api/projects/{project_id}/documents/{document_id}/extractions",
@@ -1797,7 +1821,7 @@ def connect_document_api(app: FastAPI):
             save_context=save_context,
         )
 
-        return await run_extractor_runner_with_status(extractor_runner)
+        return await run_extractor_runner_with_status(extractor_runner, request)
 
     @app.delete(
         "/api/projects/{project_id}/documents/{document_id}/extractions/{extraction_id}",
@@ -2409,7 +2433,7 @@ def connect_document_api(app: FastAPI):
             )
 
         # the workflow runner handles locking
-        return await run_rag_workflow_runner_with_status(runner_factory)
+        return await run_rag_workflow_runner_with_status(runner_factory, request)
 
     @no_write_lock
     @app.post(

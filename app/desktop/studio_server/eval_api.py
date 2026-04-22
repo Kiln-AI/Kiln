@@ -1,3 +1,4 @@
+import contextlib
 import json
 from collections import defaultdict
 from typing import Annotated, Any, Dict, List, Set, Tuple
@@ -31,6 +32,7 @@ from kiln_ai.datamodel.task import RunConfigProperties, TaskRunConfig
 from kiln_ai.datamodel.task_output import normalize_rating
 from kiln_ai.utils.name_generator import generate_memorable_name
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
+from kiln_server.sse import stream_with_heartbeat
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -123,20 +125,37 @@ def task_run_config_from_id(
     )
 
 
-async def run_eval_runner_with_status(eval_runner: EvalRunner) -> StreamingResponse:
+def _format_progress_sse(progress) -> str:
+    data = {
+        "progress": progress.complete,
+        "total": progress.total,
+        "errors": progress.errors,
+    }
+    return f"data: {json.dumps(data)}\n\n"
+
+
+async def run_eval_runner_with_status(
+    eval_runner: EvalRunner, request: Request
+) -> StreamingResponse:
     # Yields async messages designed to be used with server sent events (SSE)
     # https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events
     async def event_generator():
-        async for progress in eval_runner.run():
-            data = {
-                "progress": progress.complete,
-                "total": progress.total,
-                "errors": progress.errors,
-            }
-            yield f"data: {json.dumps(data)}\n\n"
-
-        # Send the final complete message the app expects, and uses to stop listening
-        yield "data: complete\n\n"
+        # aclosing ensures prompt cleanup: when event_generator is cancelled
+        # (client disconnect → Starlette aclose's the body iterator → GeneratorExit
+        # here), hb.aclose() fires, which runs stream_with_heartbeat's finally,
+        # which aclose's the runner, which runs AsyncJobRunner's finally and
+        # cancels its workers.
+        hb = stream_with_heartbeat(
+            eval_runner.run(),
+            _format_progress_sse,
+            is_disconnected=request.is_disconnected,
+        )
+        async with contextlib.aclosing(hb) as stream:
+            async for chunk in stream:
+                yield chunk
+        if not await request.is_disconnected():
+            # Send the final complete message the app expects, and uses to stop listening
+            yield "data: complete\n\n"
 
     return StreamingResponse(
         content=event_generator(),
@@ -939,7 +958,7 @@ def connect_evals_api(app: FastAPI):
             save_context=build_save_context(request),
         )
 
-        return await run_eval_runner_with_status(eval_runner)
+        return await run_eval_runner_with_status(eval_runner, request)
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/set_current_eval_config/{eval_config_id}",
@@ -1017,7 +1036,7 @@ def connect_evals_api(app: FastAPI):
             save_context=build_save_context(request),
         )
 
-        return await run_eval_runner_with_status(eval_runner)
+        return await run_eval_runner_with_status(eval_runner, request)
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/results",

@@ -10,6 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Match
+from starlette.types import Receive, Scope, Send
 
 from app.desktop.git_sync.config import get_git_sync_config, project_path_from_id
 from app.desktop.git_sync.errors import (
@@ -70,6 +71,65 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
     For non-mutating requests and non-auto-sync routes,
     passes through without buffering (preserves streaming responses).
     """
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:  # type: ignore[override]
+        # BaseHTTPMiddleware wraps the request receive channel in its own anyio
+        # task group, which breaks disconnect propagation to StreamingResponse
+        # endpoints: the task-group-owned receive never delivers http.disconnect
+        # to the downstream generator, so SSE jobs (evals, extractions) can't
+        # detect a browser hard-refresh and keep running. For self-managed
+        # (@no_write_lock) endpoints we bypass BaseHTTPMiddleware entirely and
+        # hand the real ASGI receive/send to the endpoint.
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope)
+        endpoint = self._resolve_endpoint(request)
+        if endpoint is not None and getattr(endpoint, "_git_sync_no_write_lock", False):
+            await self._handle_self_managed(scope, receive, send, request)
+            return
+
+        await super().__call__(scope, receive, send)
+
+    async def _handle_self_managed(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+        request: Request,
+    ) -> None:
+        """Pure-ASGI pass-through for @no_write_lock endpoints.
+
+        Mirrors the self-managed branch of dispatch() without going through
+        BaseHTTPMiddleware. Each self-managed endpoint builds its own
+        save_context per write inside its worker loop.
+        """
+        manager = self._get_manager_for_request(request)
+        if manager is None:
+            await self.app(scope, receive, send)
+            return
+
+        try:
+            await manager.ensure_fresh_for_read()
+        except GitSyncError as e:
+            status, message = self._map_error(e)
+            response = Response(
+                content=json.dumps({"detail": message}, ensure_ascii=False),
+                status_code=status,
+                media_type="application/json",
+            )
+            await response(scope, receive, send)
+            return
+
+        self._notify_background_sync(manager)
+        # Attach the manager via scope["state"] so build_save_context(request)
+        # can find it via request.state.git_sync_manager.
+        if "state" not in scope:
+            scope["state"] = {}
+        scope["state"]["git_sync_manager"] = manager
+
+        await self.app(scope, receive, send)
 
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
         manager = self._get_manager_for_request(request)

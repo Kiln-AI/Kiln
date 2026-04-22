@@ -945,3 +945,130 @@ def test_unresolved_endpoint_no_warning_in_prod_mode(git_repos, monkeypatch, cap
         if r.levelno == logging.WARNING and "could not resolve endpoint" in r.message
     ]
     assert len(warning_records) == 0
+
+
+# --- @no_write_lock pure-ASGI bypass ---
+
+
+def test_no_write_lock_bypasses_base_http_middleware_dispatch(git_repos, monkeypatch):
+    """@no_write_lock endpoints must skip BaseHTTPMiddleware.dispatch() so SSE
+    streams see the real ASGI receive/send and disconnects propagate.
+    """
+    local_path, _ = git_repos
+    config = _auto_config(str(local_path))
+
+    @no_write_lock
+    def bypass_endpoint():
+        return {"ok": True}
+
+    app = _build_app(get_endpoint=bypass_endpoint)
+
+    dispatch_called = False
+    original_dispatch = GitSyncMiddleware.dispatch
+
+    async def tracking_dispatch(self, request, call_next):
+        nonlocal dispatch_called
+        dispatch_called = True
+        return await original_dispatch(self, request, call_next)
+
+    monkeypatch.setattr(GitSyncMiddleware, "dispatch", tracking_dispatch)
+
+    with mock_git_sync_config(config):
+        client = TestClient(app)
+        resp = client.get(f"/api/projects/{PROJECT_ID}/items")
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    assert dispatch_called is False, (
+        "dispatch() should not be called for @no_write_lock endpoints — "
+        "bypass must route around BaseHTTPMiddleware to preserve SSE disconnect "
+        "propagation."
+    )
+
+
+def test_no_write_lock_bypass_still_attaches_manager_to_state(git_repos):
+    """The bypass path must still attach the git sync manager to request.state
+    so build_save_context(request) can find it inside the endpoint.
+    """
+    local_path, _ = git_repos
+    config = _auto_config(str(local_path))
+
+    captured_manager = {}
+
+    @no_write_lock
+    def endpoint(request: FastAPIRequest):
+        captured_manager["value"] = getattr(
+            request.state, "git_sync_manager", "MISSING"
+        )
+        return {"ok": True}
+
+    app = _build_app(get_endpoint=endpoint)
+
+    with mock_git_sync_config(config):
+        client = TestClient(app)
+        resp = client.get(f"/api/projects/{PROJECT_ID}/items")
+
+    assert resp.status_code == 200
+    assert captured_manager["value"] != "MISSING"
+    assert captured_manager["value"] is not None
+
+
+@pytest.mark.asyncio
+async def test_no_write_lock_bypass_delivers_http_disconnect_to_endpoint(git_repos):
+    """The bypass must hand the real ASGI receive to the endpoint, so
+    http.disconnect messages reach the endpoint's receive channel directly.
+    Under the old BaseHTTPMiddleware path, the middleware's wrapped receive
+    masked disconnects, so the endpoint never saw them.
+    """
+    local_path, _ = git_repos
+    config = _auto_config(str(local_path))
+
+    observed = {"messages": []}
+
+    @no_write_lock
+    async def endpoint(request: FastAPIRequest):
+        # Consume the ASGI receive channel directly to prove the endpoint
+        # gets the real receive under the bypass.
+        for _ in range(2):
+            msg = await request.receive()
+            observed["messages"].append(msg["type"])
+            if msg["type"] == "http.disconnect":
+                break
+        return {"ok": True}
+
+    app = _build_app(get_endpoint=endpoint)
+
+    sent_request_once = {"done": False}
+
+    async def receive():
+        if not sent_request_once["done"]:
+            sent_request_once["done"] = True
+            return {"type": "http.request", "body": b"", "more_body": False}
+        return {"type": "http.disconnect"}
+
+    sent: list[dict] = []
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": f"/api/projects/{PROJECT_ID}/items",
+        "raw_path": f"/api/projects/{PROJECT_ID}/items".encode(),
+        "query_string": b"",
+        "headers": [],
+        "asgi": {"version": "3.0", "spec_version": "2.4"},
+        "http_version": "1.1",
+        "scheme": "http",
+        "server": ("testserver", 80),
+        "client": ("testclient", 12345),
+        "app": app,
+    }
+
+    with mock_git_sync_config(config):
+        await app(scope, receive, send)
+
+    # The endpoint must see the real http.disconnect — proving the bypass
+    # handed it the unwrapped ASGI receive channel.
+    assert "http.disconnect" in observed["messages"]

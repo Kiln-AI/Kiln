@@ -1,3 +1,4 @@
+import asyncio
 import json
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
@@ -3075,3 +3076,145 @@ async def test_eval_results_summary_dataset_ids_cached_per_filter(client):
 
     assert response.status_code == 200
     assert runs_call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_run_eval_runner_with_status_cancels_on_client_disconnect():
+    """Regression: aclose() on the body iterator must propagate to the runner
+    so AsyncJobRunner's finally block cancels its workers.
+    """
+    from unittest.mock import AsyncMock
+
+    from app.desktop.studio_server.eval_api import run_eval_runner_with_status
+    from kiln_ai.utils.async_job_runner import Progress
+
+    inner_closed = False
+
+    async def fake_run():
+        nonlocal inner_closed
+        try:
+            for i in range(10):
+                yield Progress(complete=i, total=10, errors=0)
+        finally:
+            inner_closed = True
+
+    eval_runner = MagicMock()
+    eval_runner.run.return_value = fake_run()
+
+    request = MagicMock()
+    request.is_disconnected = AsyncMock(return_value=False)
+
+    response = await run_eval_runner_with_status(eval_runner, request)
+
+    body_iter = response.body_iterator
+    first = await body_iter.__anext__()
+    assert "data: " in (first if isinstance(first, str) else first.decode())
+
+    await body_iter.aclose()
+
+    assert inner_closed is True
+
+
+@pytest.mark.asyncio
+async def test_run_eval_runner_with_status_exits_when_is_disconnected():
+    """When is_disconnected() returns True, the stream must exit promptly and
+    the runner generator's finally must run (workers cancelled).
+    """
+    from app.desktop.studio_server.eval_api import run_eval_runner_with_status
+    from kiln_ai.utils.async_job_runner import Progress
+
+    inner_closed = False
+
+    async def fake_run():
+        nonlocal inner_closed
+        try:
+            for i in range(100):
+                yield Progress(complete=i, total=100, errors=0)
+        finally:
+            inner_closed = True
+
+    eval_runner = MagicMock()
+    eval_runner.run.return_value = fake_run()
+
+    poll_count = {"n": 0}
+
+    async def is_disconnected():
+        poll_count["n"] += 1
+        return poll_count["n"] >= 3
+
+    request = MagicMock()
+    request.is_disconnected = is_disconnected
+
+    response = await run_eval_runner_with_status(eval_runner, request)
+
+    chunks: list[str] = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk if isinstance(chunk, str) else chunk.decode())
+
+    body = "".join(chunks)
+    assert inner_closed is True
+    assert "data: complete" not in body
+
+
+@pytest.mark.asyncio
+async def test_run_eval_runner_with_status_completes_when_connected():
+    """Happy path: progress events and a final 'complete' sentinel are emitted."""
+    from unittest.mock import AsyncMock
+
+    from app.desktop.studio_server.eval_api import run_eval_runner_with_status
+    from kiln_ai.utils.async_job_runner import Progress
+
+    async def fake_run():
+        for i in range(3):
+            yield Progress(complete=i, total=3, errors=0)
+
+    eval_runner = MagicMock()
+    eval_runner.run.return_value = fake_run()
+
+    request = MagicMock()
+    request.is_disconnected = AsyncMock(return_value=False)
+
+    response = await run_eval_runner_with_status(eval_runner, request)
+
+    chunks: list[bytes] = []
+    async for chunk in response.body_iterator:
+        chunks.append(chunk if isinstance(chunk, bytes) else chunk.encode())
+
+    body = b"".join(chunks).decode()
+
+    assert body.count("data: ") == 4  # 3 progress + 1 complete
+    assert "data: complete" in body
+
+
+@pytest.mark.asyncio
+async def test_run_eval_runner_with_status_emits_heartbeat_when_idle():
+    """When the runner is silent, heartbeat comments must be emitted."""
+    from unittest.mock import AsyncMock
+
+    import kiln_server.sse as sse_mod
+    from app.desktop.studio_server.eval_api import run_eval_runner_with_status
+    from kiln_ai.utils.async_job_runner import Progress
+
+    async def slow_run():
+        await asyncio.sleep(0.25)
+        yield Progress(complete=1, total=1, errors=0)
+
+    eval_runner = MagicMock()
+    eval_runner.run.return_value = slow_run()
+
+    request = MagicMock()
+    request.is_disconnected = AsyncMock(return_value=False)
+
+    original = sse_mod.DEFAULT_HEARTBEAT_SECONDS
+    sse_mod.DEFAULT_HEARTBEAT_SECONDS = 0.05
+    try:
+        response = await run_eval_runner_with_status(eval_runner, request)
+        chunks: list[str] = []
+        async for chunk in response.body_iterator:
+            chunks.append(chunk if isinstance(chunk, str) else chunk.decode())
+    finally:
+        sse_mod.DEFAULT_HEARTBEAT_SECONDS = original
+
+    body = "".join(chunks)
+    assert ": keepalive" in body, f"expected heartbeat in body, got: {body!r}"
+    assert "data: complete" in body
