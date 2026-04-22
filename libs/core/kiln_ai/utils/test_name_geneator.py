@@ -51,7 +51,7 @@ def test_word_lists_are_single_capitalized_words():
     """Test that each entry is a single capitalized word with no whitespace."""
     for word in ADJECTIVES:
         assert word and word[0].isupper()
-        assert " " not in word
+        assert not any(ch.isspace() for ch in word)
     for word in NOUNS:
         assert word and word[0].isupper()
-        assert " " not in word
+        assert not any(ch.isspace() for ch in word)
