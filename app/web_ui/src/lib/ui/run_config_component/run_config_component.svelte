@@ -395,6 +395,11 @@
     if (!current_task?.id) {
       throw new Error("Cannot save run config: no task selected")
     }
+    // Regenerate if the name field is hidden, to avoid collisions on repeated saves.
+    // If visible, we respect the current value to avoid overwriting user input.
+    if (!show_name_field) {
+      run_config_name = generate_memorable_name()
+    }
     const saved_config = await save_new_task_run_config(
       project_id,
       current_task.id,
