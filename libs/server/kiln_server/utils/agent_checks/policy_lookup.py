@@ -1,4 +1,5 @@
 import json
+import warnings
 from pathlib import Path
 
 from kiln_server.utils.agent_checks.policy import AgentPolicy
@@ -36,6 +37,7 @@ class AgentPolicyLookup:
             stacklevel=2,
         )
         self.preload()
+
     def get_policy(self, method: str, path: str) -> AgentPolicy:
         if self._cache is None:
             self.preload()
