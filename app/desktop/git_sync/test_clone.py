@@ -1,11 +1,14 @@
 import json
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import pygit2
 import pytest
 
 from app.desktop.git_sync.clone import (
+    _WINDOWS_RENAME_BASE_DELAY,
+    _WINDOWS_RENAME_MAX_RETRIES,
+    _rename_with_retry,
     compute_clone_path,
     compute_temp_clone_path,
     list_remote_branches,
@@ -304,3 +307,132 @@ class TestListRemoteBranches:
             mock.return_value = refs
             branches, _ = list_remote_branches("https://github.com/org/repo.git")
             assert branches == ["main"]
+
+
+class TestRenameWithRetry:
+    def test_succeeds_on_first_attempt(self, tmp_path: Path):
+        src = tmp_path / "src"
+        src.mkdir()
+        dst = tmp_path / "dst"
+
+        with patch("app.desktop.git_sync.clone.time.sleep") as mock_sleep:
+            _rename_with_retry(src, dst)
+
+        assert dst.exists()
+        assert not src.exists()
+        mock_sleep.assert_not_called()
+
+    def test_succeeds_after_transient_permission_errors(self, tmp_path: Path):
+        src = tmp_path / "src"
+        src.mkdir()
+        dst = tmp_path / "dst"
+
+        import os as real_os
+
+        real_rename = real_os.rename
+        call_count = 0
+
+        def flaky_rename(s, d):
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                raise PermissionError("[WinError 5] Access is denied")
+            real_rename(s, d)
+
+        with (
+            patch("app.desktop.git_sync.clone.os.rename", side_effect=flaky_rename),
+            patch("app.desktop.git_sync.clone.time.sleep") as mock_sleep,
+        ):
+            _rename_with_retry(src, dst)
+
+        assert call_count == 3
+        assert mock_sleep.call_count == 2
+        mock_sleep.assert_has_calls(
+            [
+                call(_WINDOWS_RENAME_BASE_DELAY),
+                call(_WINDOWS_RENAME_BASE_DELAY * 2),
+            ]
+        )
+
+    def test_raises_after_all_retries_exhausted(self, tmp_path: Path):
+        src = tmp_path / "src"
+        src.mkdir()
+        dst = tmp_path / "dst"
+
+        with (
+            patch(
+                "app.desktop.git_sync.clone.os.rename",
+                side_effect=PermissionError("[WinError 5] Access is denied"),
+            ),
+            patch("app.desktop.git_sync.clone.time.sleep"),
+            pytest.raises(PermissionError, match="Access is denied"),
+        ):
+            _rename_with_retry(src, dst)
+
+    def test_non_permission_errors_propagate_immediately(self, tmp_path: Path):
+        src = tmp_path / "src"
+        src.mkdir()
+        dst = tmp_path / "dst"
+
+        with (
+            patch(
+                "app.desktop.git_sync.clone.os.rename",
+                side_effect=OSError("disk full"),
+            ),
+            patch("app.desktop.git_sync.clone.time.sleep") as mock_sleep,
+            pytest.raises(OSError, match="disk full"),
+        ):
+            _rename_with_retry(src, dst)
+
+        mock_sleep.assert_not_called()
+
+    def test_exponential_backoff_delays(self, tmp_path: Path):
+        src = tmp_path / "src"
+        src.mkdir()
+        dst = tmp_path / "dst"
+
+        with (
+            patch(
+                "app.desktop.git_sync.clone.os.rename",
+                side_effect=PermissionError("[WinError 5] Access is denied"),
+            ),
+            patch("app.desktop.git_sync.clone.time.sleep") as mock_sleep,
+            pytest.raises(PermissionError),
+        ):
+            _rename_with_retry(src, dst)
+
+        expected_delays = [
+            _WINDOWS_RENAME_BASE_DELAY * (2**i)
+            for i in range(_WINDOWS_RENAME_MAX_RETRIES - 1)
+        ]
+        mock_sleep.assert_has_calls([call(d) for d in expected_delays])
+
+
+class TestRenameCloneToFinalPathWindows:
+    def test_uses_retry_on_windows(self, tmp_path: Path):
+        src = tmp_path / "src"
+        src.mkdir()
+        dst = tmp_path / "dst"
+
+        with (
+            patch("app.desktop.git_sync.clone.sys.platform", "win32"),
+            patch("app.desktop.git_sync.clone._rename_with_retry") as mock_retry,
+        ):
+            rename_clone_to_final_path(src, dst)
+
+        mock_retry.assert_called_once_with(src, dst)
+
+    def test_skips_retry_on_non_windows(self, tmp_path: Path):
+        src = tmp_path / "src"
+        src.mkdir()
+        dst = tmp_path / "dst"
+
+        with (
+            patch("app.desktop.git_sync.clone.sys.platform", "linux"),
+            patch("app.desktop.git_sync.clone.os.rename") as mock_rename,
+            patch("app.desktop.git_sync.clone._rename_with_retry") as mock_retry,
+        ):
+            rename_clone_to_final_path(src, dst)
+
+        mock_retry.assert_not_called()
+        mock_rename.assert_called_once_with(src, dst)
