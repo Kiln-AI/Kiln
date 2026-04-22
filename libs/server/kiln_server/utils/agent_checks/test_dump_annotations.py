@@ -42,7 +42,7 @@ def test_normalize_endpoint_filename(method: str, path: str, expected: str) -> N
 
 def _make_spec(paths: dict, components_schemas: dict | None = None) -> dict:
     spec: dict = {
-        "openapi": "3.0.0",
+        "openapi": "3.1.0",
         "info": {"title": "Test", "version": "1.0"},
         "paths": paths,
     }
@@ -119,7 +119,7 @@ def invalid_policy_spec() -> dict:
 
 
 def test_load_from_file(tmp_path: Path) -> None:
-    spec = {"openapi": "3.0.0", "paths": {}}
+    spec = {"openapi": "3.1.0", "paths": {}}
     filepath = os.path.join(str(tmp_path), "spec.json")
     with open(filepath, "w") as f:
         json.dump(spec, f)
@@ -128,7 +128,7 @@ def test_load_from_file(tmp_path: Path) -> None:
 
 
 def test_load_from_url() -> None:
-    spec = {"openapi": "3.0.0", "paths": {}}
+    spec = {"openapi": "3.1.0", "paths": {}}
     mock_response = MagicMock()
     mock_response.json.return_value = spec
 
@@ -644,7 +644,7 @@ def test_dump_request_body_required_flag_propagates(
     assert data["request_body"]["required"] is required
 
 
-def test_dump_request_body_missing_content_emits_null(
+def test_dump_request_body_empty_content_emits_null(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     spec = _make_spec(
@@ -652,7 +652,7 @@ def test_dump_request_body_missing_content_emits_null(
             "/api/items": {
                 "post": {
                     "x-agent-policy": _ALLOW,
-                    "requestBody": {"required": True},
+                    "requestBody": {"required": True, "content": {}},
                 }
             }
         }

@@ -7,6 +7,14 @@ from typing import Any
 
 import httpx
 from kiln_server.utils.agent_checks.policy import AgentPolicy
+from openapi_pydantic import (
+    OpenAPI,
+    Operation,
+    Parameter,
+    ParameterLocation,
+    PathItem,
+    Reference,
+)
 from pydantic import ValidationError
 
 logger = logging.getLogger(__name__)
@@ -110,87 +118,99 @@ def _inline_with_defs(schema: Any, components_schemas: dict) -> Any:
 
 
 def _extract_request_body(
-    operation: dict,
+    operation: Operation,
+    raw_operation: dict,
     components_schemas: dict,
     method: str,
     path: str,
 ) -> dict | None:
-    """Extract inlined JSON request body schema, or None if absent/unusable."""
-    request_body = operation.get("requestBody")
+    """Extract inlined JSON request body schema, or None if absent/unusable.
+
+    Pydantic models drive structural decisions; the schema payload itself
+    comes from the raw spec dict to preserve key ordering verbatim.
+    """
+    request_body = operation.requestBody
     if request_body is None:
         return None
-    if "$ref" in request_body:
+    if isinstance(request_body, Reference):
         logger.warning(
             f"Top-level requestBody $ref not supported on {method.upper()} {path}; "
             "skipping request body schema"
         )
         return None
-    content = request_body.get("content")
-    if not content:
+    if not request_body.content:
         logger.warning(
             f"requestBody has no content on {method.upper()} {path}; "
             "skipping request body schema"
         )
         return None
-    json_entry = content.get("application/json")
+    json_entry = request_body.content.get("application/json")
     if json_entry is None:
         logger.warning(
             f"requestBody has no application/json content on {method.upper()} {path}; "
             "skipping request body schema"
         )
         return None
-    raw_schema = json_entry.get("schema")
-    if raw_schema is None:
+    if json_entry.media_type_schema is None:
         logger.warning(
             f"application/json requestBody has no schema on {method.upper()} {path}; "
             "skipping request body schema"
         )
         return None
+    raw_schema = raw_operation["requestBody"]["content"]["application/json"]["schema"]
     inlined = _inline_with_defs(raw_schema, components_schemas)
     return {
-        "required": bool(request_body.get("required", False)),
+        "required": request_body.required,
         "content_type": "application/json",
         "schema": inlined,
     }
 
 
+_SUPPORTED_LOCATIONS = (ParameterLocation.PATH, ParameterLocation.QUERY)
+
+
 def _extract_parameters(
-    operation: dict,
-    path_item: dict,
+    operation: Operation,
+    path_item: PathItem,
+    raw_operation: dict,
+    raw_path_item: dict,
     components_schemas: dict,
     method: str,
     path: str,
 ) -> dict[str, dict[str, dict]]:
-    """Extract path/query parameter schemas, keyed by name within each group."""
+    """Extract path/query parameter schemas, keyed by name within each group.
+
+    Pydantic-parsed Parameter objects are zipped with the raw parameter dicts
+    (order-preserved by pydantic) so we can look up schemas without reordering
+    their keys via a model_dump round-trip.
+    """
     result: dict[str, dict[str, dict]] = {"path": {}, "query": {}}
 
-    merged: dict[tuple[str, str], dict] = {}
-    for param in path_item.get("parameters", []) or []:
-        if not isinstance(param, dict):
-            continue
-        name = param.get("name")
-        location = param.get("in")
-        if isinstance(name, str) and isinstance(location, str):
-            merged[(name, location)] = param
-    for param in operation.get("parameters", []) or []:
-        if not isinstance(param, dict):
-            continue
-        name = param.get("name")
-        location = param.get("in")
-        if isinstance(name, str) and isinstance(location, str):
-            merged[(name, location)] = param
+    typed_params: list[Parameter | Reference] = list(path_item.parameters or []) + list(
+        operation.parameters or []
+    )
+    raw_params: list[Any] = list(raw_path_item.get("parameters") or []) + list(
+        raw_operation.get("parameters") or []
+    )
 
-    for (name, location), param in merged.items():
-        if location not in ("path", "query"):
-            continue
-        if "$ref" in param:
+    # Operation-level parameters override path-item ones with the same (name, in).
+    merged: dict[tuple[str, ParameterLocation], dict] = {}
+    for typed, raw in zip(typed_params, raw_params):
+        if isinstance(typed, Reference):
             logger.warning(
                 f"Parameter $ref not supported on {method.upper()} {path} "
-                f"(parameter {name!r}); emitting empty schema"
+                f"(parameter {typed.ref!r}); skipping"
             )
-            result[location][name] = {}
             continue
-        raw_schema = param.get("schema")
+        if typed.param_in not in _SUPPORTED_LOCATIONS:
+            continue
+        if not isinstance(raw, dict):
+            continue
+        merged[(typed.name, typed.param_in)] = raw
+
+    for (name, param_in), raw in merged.items():
+        location = param_in.value
+        raw_schema = raw.get("schema")
         if raw_schema is None:
             logger.warning(
                 f"Parameter {name!r} ({location}) has no schema on "
@@ -203,23 +223,36 @@ def _extract_parameters(
     return result
 
 
+_METHODS = ("get", "post", "put", "patch", "delete")
+
+
 def dump_annotations(source: str, target_folder: str) -> int:
     """Main logic. Returns exit code (0 = success, 2 = unannotated endpoints)."""
-    spec = load_openapi_spec(source)
+    spec_dict = load_openapi_spec(source)
+    parsed = OpenAPI.model_validate(spec_dict)
     os.makedirs(target_folder, exist_ok=True)
 
-    components_schemas = spec.get("components", {}).get("schemas", {})
+    components_schemas: dict = {}
+    raw_components = spec_dict.get("components")
+    if isinstance(raw_components, dict):
+        raw_schemas = raw_components.get("schemas")
+        if isinstance(raw_schemas, dict):
+            components_schemas = raw_schemas
+
     unannotated: list[str] = []
     count = 0
 
-    for path, path_item in spec.get("paths", {}).items():
-        for method in ("get", "post", "put", "patch", "delete"):
-            operation = path_item.get(method)
+    raw_paths = spec_dict.get("paths") or {}
+    for path, path_item in (parsed.paths or {}).items():
+        raw_path_item = raw_paths.get(path) or {}
+        for method in _METHODS:
+            operation: Operation | None = getattr(path_item, method)
             if operation is None:
                 continue
+            raw_operation = raw_path_item.get(method) or {}
 
             count += 1
-            policy_data = operation.get("x-agent-policy")
+            policy_data = (operation.model_extra or {}).get("x-agent-policy")
 
             if policy_data is not None:
                 try:
@@ -233,7 +266,7 @@ def dump_annotations(source: str, target_folder: str) -> int:
 
             try:
                 request_body = _extract_request_body(
-                    operation, components_schemas, method, path
+                    operation, raw_operation, components_schemas, method, path
                 )
             except _SchemaResolutionError as e:
                 logger.warning(
@@ -243,7 +276,13 @@ def dump_annotations(source: str, target_folder: str) -> int:
 
             try:
                 parameters = _extract_parameters(
-                    operation, path_item, components_schemas, method, path
+                    operation,
+                    path_item,
+                    raw_operation,
+                    raw_path_item,
+                    components_schemas,
+                    method,
+                    path,
                 )
             except _SchemaResolutionError as e:
                 logger.warning(
