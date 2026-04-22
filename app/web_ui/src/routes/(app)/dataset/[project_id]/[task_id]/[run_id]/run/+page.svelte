@@ -407,6 +407,7 @@
     load_error = null
     run_id = new_run_id
     run = null
+    loading = true
     goto(`/dataset/${project_id}/${task_id}/${run_id}/run`, {
       state: { list_page: list_page },
     })
