@@ -55,7 +55,7 @@ async def delete_project(
 - Inconsistent path naming for the same resource type
 - Wordy or filler-padded docstrings ("This endpoint allows you to...")
 - Docstrings containing code artifacts, raw `Args:` blocks, or formatting that doesn't read as clean prose in OpenAPI
-- SSE endpoints should have `@no_write_lock` annotation (which allows direct streaming). SSE endpoints missing it won't stream.
+- SSE endpoints should have 1) `@no_write_lock` annotation (which allows direct streaming). SSE endpoints missing it won't stream. 2) return a CancellableStreamingResponse - needed or closing the browser won't stop the background job (unless a comment says using a StreamingResponse is desired in this case).
 - Pydantic models used in API request/response types (nested included) missing a class docstring, if the class name alone isn't obvious
 - Custom string types with validator-based constraints that don't surface in the OpenAPI schema. Use `StringConstraints` in the `Annotated` type definition so `minLength`/`maxLength` appear automatically (see `FilenameString`, `SkillNameString` for examples). Don't duplicate constraints in individual `Field()` calls.
 - **Git sync URL contract.** Any POST/PUT/PATCH/DELETE endpoint that writes to project files (anything under a project's `.kiln` directory) MUST have its path under `/api/projects/{project_id}/...`. `GitSyncMiddleware` only matches that prefix; routes outside it silently bypass git commit/push and will leave the repo dirty. Exceptions are only allowed for endpoints that write to non-project paths (e.g. tmp files, downloads). When reviewing new routes, grep for the route path and confirm it matches the prefix, or confirm the handler writes nothing that belongs in the synced repo.

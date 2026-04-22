@@ -90,6 +90,7 @@ from kiln_ai.utils.mime_type import guess_mime_type
 from kiln_ai.utils.name_generator import generate_memorable_name
 from pydantic import BaseModel, Field, PositiveInt, model_validator
 
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.project_api import project_from_id
 from kiln_server.utils.agent_checks.policy import (
@@ -174,7 +175,7 @@ async def run_extractor_runner_with_status(
         # Send the final complete message the app expects, and uses to stop listening
         yield "data: complete\n\n"
 
-    return StreamingResponse(
+    return CancellableStreamingResponse(
         content=event_generator(),
         media_type="text/event-stream",
     )
@@ -248,7 +249,7 @@ async def run_rag_workflow_runner_with_status(
         # Send the final complete message the app expects, and uses to stop listening
         yield "data: complete\n\n"
 
-    return StreamingResponse(
+    return CancellableStreamingResponse(
         content=event_generator(),
         media_type="text/event-stream",
     )
