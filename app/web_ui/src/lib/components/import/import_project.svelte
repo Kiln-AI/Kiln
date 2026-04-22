@@ -13,7 +13,6 @@
   import { replaceState } from "$app/navigation"
   import { tick, onMount, onDestroy } from "svelte"
   import posthog from "posthog-js"
-  import { isGitHubUrl, isGitLabUrl } from "$lib/git_sync/api"
   import {
     sync_url_query_param,
     read_url_query_param,
@@ -212,18 +211,7 @@
     set_step("complete")
   }
 
-  function git_host_label(url: string): string {
-    if (isGitHubUrl(url)) return "github"
-    if (isGitLabUrl(url)) return "gitlab"
-    return "other"
-  }
-
   function on_wizard_complete(project_id: string) {
-    posthog.capture("import_project", {
-      method: "git_sync",
-      git_host: git_host_label(git_url ?? ""),
-      auth_mode: auth_mode,
-    })
     clear_wizard_store()
     on_complete(project_id)
   }
