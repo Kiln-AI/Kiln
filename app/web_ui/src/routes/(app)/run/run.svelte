@@ -250,8 +250,23 @@
       },
     )
   }
-  // Load ratings anytime the run or rating requirements change
-  $: load_server_ratings(run, rating_requirements)
+  // Seed the ratings from the server run on navigation (new run.id), and once
+  // more when the task's rating options finish loading so requirement_ratings
+  // can be populated - we should not re-load on every Run mutation because if a
+  // PATCH is slow (as is the case for git-sync projects), it would reset the
+  // user's in progress input (e.g. Repair UI)
+  let seeded_ratings_for_run_id: string | null = null
+  let seeded_ratings_with_options = false
+  $: {
+    const options_loaded = !!$current_task_rating_options
+    const on_new_run = !!run?.id && run.id !== seeded_ratings_for_run_id
+    const options_just_loaded = options_loaded && !seeded_ratings_with_options
+    if (run?.id && (on_new_run || options_just_loaded)) {
+      load_server_ratings(run, rating_requirements)
+      seeded_ratings_for_run_id = run.id
+      seeded_ratings_with_options = options_loaded
+    }
+  }
 
   async function patch_run(
     patch_body: Record<string, unknown>,
