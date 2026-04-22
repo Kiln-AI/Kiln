@@ -3,9 +3,7 @@ import logging
 import os
 import re
 import shutil
-import sys
 import tempfile
-import time
 from pathlib import Path
 from typing import Any
 
@@ -268,10 +266,6 @@ def compute_temp_clone_path(base_dir: Path) -> Path:
     return Path(tempfile.mkdtemp(prefix="kiln_clone_", dir=base_dir))
 
 
-_WINDOWS_RENAME_MAX_RETRIES = 5
-_WINDOWS_RENAME_BASE_DELAY = 0.5
-
-
 def rename_clone_to_final_path(
     current_path: Path,
     final_path: Path,
@@ -281,9 +275,6 @@ def rename_clone_to_final_path(
     The caller is responsible for computing final_path (via compute_clone_path)
     and validating it before calling this function.
 
-    On Windows, retries with exponential backoff when PermissionError occurs
-    (commonly caused by antivirus or lingering file handles from the clone).
-
     Returns the final path.
 
     Raises ValueError if current_path does not exist.
@@ -292,37 +283,9 @@ def rename_clone_to_final_path(
         raise ValueError(f"Clone path does not exist: {current_path}")
 
     final_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if sys.platform == "win32":
-        _rename_with_retry(current_path, final_path)
-    else:
-        os.rename(current_path, final_path)
+    os.rename(current_path, final_path)
 
     return final_path
-
-
-def _rename_with_retry(current_path: Path, final_path: Path) -> None:
-    """Rename with retry and exponential backoff for Windows PermissionError.
-
-    Windows Defender and other processes can briefly lock files in a freshly
-    cloned git repository, causing os.rename to fail with PermissionError.
-    A short retry loop resolves this in the vast majority of cases.
-    """
-    for attempt in range(_WINDOWS_RENAME_MAX_RETRIES):
-        try:
-            os.rename(current_path, final_path)
-            return
-        except PermissionError:
-            if attempt == _WINDOWS_RENAME_MAX_RETRIES - 1:
-                raise
-            delay = _WINDOWS_RENAME_BASE_DELAY * (2**attempt)
-            logger.info(
-                "Rename attempt %d/%d failed with PermissionError, retrying in %.1fs",
-                attempt + 1,
-                _WINDOWS_RENAME_MAX_RETRIES,
-                delay,
-            )
-            time.sleep(delay)
 
 
 def clone_repo(
@@ -332,11 +295,13 @@ def clone_repo(
     pat_token: str | None = None,
     auth_mode: AuthMode = "system_keys",
     oauth_token: str | None = None,
-) -> pygit2.Repository:
+) -> None:
     """Clone a repository into the given path.
 
     Sets up the clone with the specified branch and adds a .gitignore
-    for common OS artifacts.
+    for common OS artifacts. The pygit2 Repository is freed before returning
+    to release libgit2 file handles (required on Windows to allow subsequent
+    rename/move of the clone directory).
     """
     callbacks = make_credentials(pat_token, auth_mode, oauth_token=oauth_token)
 
@@ -347,9 +312,12 @@ def clone_repo(
         callbacks=callbacks,
     )
 
-    _ensure_gitignore(repo, clone_path, pat_token, auth_mode, oauth_token=oauth_token)
-
-    return repo
+    try:
+        _ensure_gitignore(
+            repo, clone_path, pat_token, auth_mode, oauth_token=oauth_token
+        )
+    finally:
+        repo.free()
 
 
 def _ensure_gitignore(
@@ -417,8 +385,12 @@ def test_write_access(
 ) -> tuple[bool, str]:
     """Test write access by pushing an empty commit.
 
+    The pygit2 Repository is freed before returning to release libgit2
+    file handles (required on Windows).
+
     Returns (success, message).
     """
+    repo: pygit2.Repository | None = None
     try:
         repo = pygit2.Repository(str(clone_path))
         sig = pygit2.Signature(get_committer_name(), get_committer_email())
@@ -456,6 +428,9 @@ def test_write_access(
         return False, f"Write access check failed: {e}"
     except Exception as e:
         return False, f"Write access check failed: {e}"
+    finally:
+        if repo is not None:
+            repo.free()
 
 
 def scan_for_projects(clone_path: Path) -> list[dict[str, str]]:

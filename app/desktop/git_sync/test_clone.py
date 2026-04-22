@@ -1,14 +1,12 @@
 import json
 from pathlib import Path
-from unittest.mock import call, patch
+from unittest.mock import MagicMock, patch
 
 import pygit2
 import pytest
 
 from app.desktop.git_sync.clone import (
-    _WINDOWS_RENAME_BASE_DELAY,
-    _WINDOWS_RENAME_MAX_RETRIES,
-    _rename_with_retry,
+    clone_repo,
     compute_clone_path,
     compute_temp_clone_path,
     list_remote_branches,
@@ -16,6 +14,7 @@ from app.desktop.git_sync.clone import (
     scan_for_projects,
 )
 from app.desktop.git_sync.clone import test_remote_access as check_remote_access
+from app.desktop.git_sync.clone import test_write_access as check_write_access
 
 
 class TestComputeClonePath:
@@ -309,130 +308,100 @@ class TestListRemoteBranches:
             assert branches == ["main"]
 
 
-class TestRenameWithRetry:
-    def test_succeeds_on_first_attempt(self, tmp_path: Path):
-        src = tmp_path / "src"
-        src.mkdir()
-        dst = tmp_path / "dst"
-
-        with patch("app.desktop.git_sync.clone.time.sleep") as mock_sleep:
-            _rename_with_retry(src, dst)
-
-        assert dst.exists()
-        assert not src.exists()
-        mock_sleep.assert_not_called()
-
-    def test_succeeds_after_transient_permission_errors(self, tmp_path: Path):
-        src = tmp_path / "src"
-        src.mkdir()
-        dst = tmp_path / "dst"
-
-        import os as real_os
-
-        real_rename = real_os.rename
-        call_count = 0
-
-        def flaky_rename(s, d):
-            nonlocal call_count
-            call_count += 1
-            if call_count <= 2:
-                raise PermissionError("[WinError 5] Access is denied")
-            real_rename(s, d)
-
+class TestCloneRepoFreesRepository:
+    def test_frees_repo_on_success(self):
+        mock_repo = MagicMock()
         with (
-            patch("app.desktop.git_sync.clone.os.rename", side_effect=flaky_rename),
-            patch("app.desktop.git_sync.clone.time.sleep") as mock_sleep,
+            patch("app.desktop.git_sync.clone.make_credentials"),
+            patch(
+                "app.desktop.git_sync.clone.pygit2.clone_repository",
+                return_value=mock_repo,
+            ),
+            patch("app.desktop.git_sync.clone._ensure_gitignore"),
         ):
-            _rename_with_retry(src, dst)
+            clone_repo(
+                "https://github.com/org/repo.git",
+                Path("/tmp/clone"),
+                "main",
+            )
 
-        assert call_count == 3
-        assert mock_sleep.call_count == 2
-        mock_sleep.assert_has_calls(
-            [
-                call(_WINDOWS_RENAME_BASE_DELAY),
-                call(_WINDOWS_RENAME_BASE_DELAY * 2),
-            ]
-        )
+        mock_repo.free.assert_called_once()
 
-    def test_raises_after_all_retries_exhausted(self, tmp_path: Path):
-        src = tmp_path / "src"
-        src.mkdir()
-        dst = tmp_path / "dst"
+    def test_frees_repo_when_ensure_gitignore_raises(self):
+        mock_repo = MagicMock()
+        with (
+            patch("app.desktop.git_sync.clone.make_credentials"),
+            patch(
+                "app.desktop.git_sync.clone.pygit2.clone_repository",
+                return_value=mock_repo,
+            ),
+            patch(
+                "app.desktop.git_sync.clone._ensure_gitignore",
+                side_effect=RuntimeError("push failed"),
+            ),
+            pytest.raises(RuntimeError, match="push failed"),
+        ):
+            clone_repo(
+                "https://github.com/org/repo.git",
+                Path("/tmp/clone"),
+                "main",
+            )
 
+        mock_repo.free.assert_called_once()
+
+
+class TestTestWriteAccessFreesRepository:
+    def _make_mock_repo(self) -> MagicMock:
+        mock_repo = MagicMock()
+        mock_repo.head.target = "abc123"
+        mock_repo.head.name = "refs/heads/main"
+        mock_repo.head.shorthand = "main"
+        mock_repo.index.write_tree.return_value = "tree_oid"
+        mock_repo.create_commit.return_value = "commit_oid"
+        return mock_repo
+
+    def test_frees_repo_on_success(self):
+        mock_repo = self._make_mock_repo()
         with (
             patch(
-                "app.desktop.git_sync.clone.os.rename",
-                side_effect=PermissionError("[WinError 5] Access is denied"),
+                "app.desktop.git_sync.clone.pygit2.Repository",
+                return_value=mock_repo,
             ),
-            patch("app.desktop.git_sync.clone.time.sleep"),
-            pytest.raises(PermissionError, match="Access is denied"),
+            patch("app.desktop.git_sync.clone.pygit2.Signature"),
+            patch("app.desktop.git_sync.clone.make_credentials"),
+            patch("app.desktop.git_sync.clone.make_push_callbacks"),
         ):
-            _rename_with_retry(src, dst)
+            success, msg = check_write_access(Path("/tmp/clone"))
 
-    def test_non_permission_errors_propagate_immediately(self, tmp_path: Path):
-        src = tmp_path / "src"
-        src.mkdir()
-        dst = tmp_path / "dst"
+        assert success is True
+        mock_repo.free.assert_called_once()
 
+    def test_frees_repo_on_git_error(self):
+        mock_repo = self._make_mock_repo()
+        mock_repo.index.write_tree.side_effect = pygit2.GitError("401 unauthorized")
         with (
             patch(
-                "app.desktop.git_sync.clone.os.rename",
-                side_effect=OSError("disk full"),
+                "app.desktop.git_sync.clone.pygit2.Repository",
+                return_value=mock_repo,
             ),
-            patch("app.desktop.git_sync.clone.time.sleep") as mock_sleep,
-            pytest.raises(OSError, match="disk full"),
+            patch("app.desktop.git_sync.clone.pygit2.Signature"),
         ):
-            _rename_with_retry(src, dst)
+            success, msg = check_write_access(Path("/tmp/clone"))
 
-        mock_sleep.assert_not_called()
+        assert success is False
+        mock_repo.free.assert_called_once()
 
-    def test_exponential_backoff_delays(self, tmp_path: Path):
-        src = tmp_path / "src"
-        src.mkdir()
-        dst = tmp_path / "dst"
-
+    def test_frees_repo_on_unexpected_error(self):
+        mock_repo = self._make_mock_repo()
+        mock_repo.index.write_tree.side_effect = RuntimeError("unexpected")
         with (
             patch(
-                "app.desktop.git_sync.clone.os.rename",
-                side_effect=PermissionError("[WinError 5] Access is denied"),
+                "app.desktop.git_sync.clone.pygit2.Repository",
+                return_value=mock_repo,
             ),
-            patch("app.desktop.git_sync.clone.time.sleep") as mock_sleep,
-            pytest.raises(PermissionError),
+            patch("app.desktop.git_sync.clone.pygit2.Signature"),
         ):
-            _rename_with_retry(src, dst)
+            success, msg = check_write_access(Path("/tmp/clone"))
 
-        expected_delays = [
-            _WINDOWS_RENAME_BASE_DELAY * (2**i)
-            for i in range(_WINDOWS_RENAME_MAX_RETRIES - 1)
-        ]
-        mock_sleep.assert_has_calls([call(d) for d in expected_delays])
-
-
-class TestRenameCloneToFinalPathWindows:
-    def test_uses_retry_on_windows(self, tmp_path: Path):
-        src = tmp_path / "src"
-        src.mkdir()
-        dst = tmp_path / "dst"
-
-        with (
-            patch("app.desktop.git_sync.clone.sys.platform", "win32"),
-            patch("app.desktop.git_sync.clone._rename_with_retry") as mock_retry,
-        ):
-            rename_clone_to_final_path(src, dst)
-
-        mock_retry.assert_called_once_with(src, dst)
-
-    def test_skips_retry_on_non_windows(self, tmp_path: Path):
-        src = tmp_path / "src"
-        src.mkdir()
-        dst = tmp_path / "dst"
-
-        with (
-            patch("app.desktop.git_sync.clone.sys.platform", "linux"),
-            patch("app.desktop.git_sync.clone.os.rename") as mock_rename,
-            patch("app.desktop.git_sync.clone._rename_with_retry") as mock_retry,
-        ):
-            rename_clone_to_final_path(src, dst)
-
-        mock_retry.assert_not_called()
-        mock_rename.assert_called_once_with(src, dst)
+        assert success is False
+        mock_repo.free.assert_called_once()
