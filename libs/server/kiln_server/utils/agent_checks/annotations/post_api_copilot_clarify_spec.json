@@ -5,5 +5,100 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Run Copilot spec clarification?"
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "target_task_info": {
+          "properties": {
+            "task_prompt": {
+              "type": "string",
+              "title": "Task Prompt",
+              "description": "The task's prompt."
+            },
+            "task_input_schema": {
+              "type": "string",
+              "title": "Task Input Schema",
+              "description": "The task's input JSON schema."
+            },
+            "task_output_schema": {
+              "type": "string",
+              "title": "Task Output Schema",
+              "description": "The task's output JSON schema."
+            }
+          },
+          "type": "object",
+          "required": [
+            "task_prompt",
+            "task_input_schema",
+            "task_output_schema"
+          ],
+          "title": "TaskInfoApi",
+          "description": "Task information for copilot API calls."
+        },
+        "target_specification": {
+          "type": "string",
+          "title": "Target Specification"
+        },
+        "num_samples_per_topic": {
+          "type": "integer",
+          "title": "Num Samples Per Topic"
+        },
+        "num_topics": {
+          "type": "integer",
+          "title": "Num Topics"
+        },
+        "providers": {
+          "items": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "groq",
+              "amazon_bedrock",
+              "ollama",
+              "openrouter",
+              "fireworks_ai",
+              "kiln_fine_tune",
+              "kiln_custom_registry",
+              "openai_compatible",
+              "anthropic",
+              "gemini_api",
+              "azure_openai",
+              "huggingface",
+              "vertex",
+              "together_ai",
+              "siliconflow_cn",
+              "cerebras",
+              "docker_model_runner"
+            ],
+            "title": "ModelProviderName",
+            "description": "Enumeration of supported AI model providers."
+          },
+          "type": "array",
+          "title": "Providers"
+        },
+        "num_exemplars": {
+          "type": "integer",
+          "title": "Num Exemplars",
+          "default": 10
+        }
+      },
+      "type": "object",
+      "required": [
+        "target_task_info",
+        "target_specification",
+        "num_samples_per_topic",
+        "num_topics",
+        "providers"
+      ],
+      "title": "ClarifySpecApiInput",
+      "description": "Input for clarifying a spec with copilot."
+    }
+  },
+  "parameters": {
+    "path": {},
+    "query": {}
   }
 }

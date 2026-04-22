@@ -4,5 +4,99 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name",
+          "description": "The name of the eval config."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "g_eval",
+            "llm_as_judge"
+          ],
+          "title": "EvalConfigType",
+          "description": "The type of eval configuration, determining how scores are generated."
+        },
+        "properties": {
+          "additionalProperties": true,
+          "type": "object",
+          "title": "Properties",
+          "description": "Properties for the eval config, specific to the type."
+        },
+        "model_name": {
+          "type": "string",
+          "title": "Model Name",
+          "description": "The model to use for evaluation."
+        },
+        "provider": {
+          "type": "string",
+          "enum": [
+            "openai",
+            "groq",
+            "amazon_bedrock",
+            "ollama",
+            "openrouter",
+            "fireworks_ai",
+            "kiln_fine_tune",
+            "kiln_custom_registry",
+            "openai_compatible",
+            "anthropic",
+            "gemini_api",
+            "azure_openai",
+            "huggingface",
+            "vertex",
+            "together_ai",
+            "siliconflow_cn",
+            "cerebras",
+            "docker_model_runner"
+          ],
+          "title": "ModelProviderName",
+          "description": "Enumeration of supported AI model providers."
+        }
+      },
+      "type": "object",
+      "required": [
+        "type",
+        "properties",
+        "model_name",
+        "provider"
+      ],
+      "title": "CreateEvalConfigRequest",
+      "description": "Request to create a new eval configuration."
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      },
+      "eval_id": {
+        "type": "string",
+        "description": "The unique identifier of the eval.",
+        "title": "Eval Id"
+      }
+    },
+    "query": {}
   }
 }

@@ -4,5 +4,40 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "Name",
+          "description": "Name for the OpenAI compatible provider."
+        },
+        "base_url": {
+          "type": "string",
+          "title": "Base Url",
+          "description": "Base URL for the OpenAI compatible API."
+        },
+        "api_key": {
+          "type": "string",
+          "title": "Api Key",
+          "description": "API key for authentication."
+        }
+      },
+      "type": "object",
+      "required": [
+        "name",
+        "base_url",
+        "api_key"
+      ],
+      "title": "OpenAICompatibleProviderConfig",
+      "description": "Configuration for an OpenAI compatible provider."
+    }
+  },
+  "parameters": {
+    "path": {},
+    "query": {}
   }
 }

@@ -4,5 +4,16 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {},
+    "query": {
+      "project_path": {
+        "type": "string",
+        "description": "File path to the project.kiln file to import.",
+        "title": "Project Path"
+      }
+    }
   }
 }

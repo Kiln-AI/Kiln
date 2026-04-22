@@ -4,5 +4,180 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "Name",
+          "description": "The name of the evaluator."
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Description",
+          "description": "The description of the evaluator."
+        },
+        "template": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "kiln_requirements",
+                "desired_behaviour",
+                "kiln_issue",
+                "tool_call",
+                "toxicity",
+                "bias",
+                "maliciousness",
+                "factual_correctness",
+                "jailbreak",
+                "rag"
+              ],
+              "title": "EvalTemplateId",
+              "description": "An eval template is a pre-defined eval that can be used as a starting point for a new eval."
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The eval template to use."
+        },
+        "output_scores": {
+          "items": {
+            "properties": {
+              "name": {
+                "type": "string",
+                "maxLength": 32,
+                "minLength": 1,
+                "title": "Name",
+                "description": "The name of the score. Will be provided to the model so use a descriptive name. Should align to the model's TaskRequirement name if you want to use human evals to evaluate the evaluator's performance."
+              },
+              "instruction": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Instruction",
+                "description": "A description of the score, used to help the model understand the goal of the score. Will be provided to evaluator models, so should be written for the model, not the team/user."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "five_star",
+                  "pass_fail",
+                  "pass_fail_critical",
+                  "custom"
+                ],
+                "title": "TaskOutputRatingType",
+                "description": "Defines the types of rating systems available for task outputs."
+              }
+            },
+            "type": "object",
+            "required": [
+              "name",
+              "type"
+            ],
+            "title": "EvalOutputScore",
+            "description": "A definition of a score that an evaluator will produce.\n\nVery similar to TaskRequirement, but conceptually different keeping in a separate models."
+          },
+          "type": "array",
+          "title": "Output Scores",
+          "description": "The scores this evaluator should produce."
+        },
+        "eval_set_filter_id": {
+          "type": "string",
+          "title": "Eval Set Filter Id",
+          "description": "The dataset filter for the eval set."
+        },
+        "eval_configs_filter_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Eval Configs Filter Id",
+          "description": "The dataset filter for comparing eval configs."
+        },
+        "template_properties": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Template Properties",
+          "description": "Template-specific properties."
+        },
+        "evaluation_data_type": {
+          "type": "string",
+          "enum": [
+            "final_answer",
+            "full_trace",
+            "reference_answer"
+          ],
+          "title": "EvalDataType",
+          "description": "The type of task output data to evaluate."
+        }
+      },
+      "type": "object",
+      "required": [
+        "name",
+        "output_scores",
+        "eval_set_filter_id",
+        "evaluation_data_type"
+      ],
+      "title": "CreateEvaluatorRequest",
+      "description": "Request to create a new evaluator."
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      }
+    },
+    "query": {}
   }
 }

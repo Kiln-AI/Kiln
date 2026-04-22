@@ -4,5 +4,59 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {},
+    "query": {
+      "provider_type": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Provider type: 'builtin' for built-in providers, 'custom' for OpenAI-compatible.",
+        "title": "Provider Type"
+      },
+      "provider_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "The provider identifier (e.g., 'openai', 'anthropic', or custom provider name).",
+        "title": "Provider Id"
+      },
+      "model_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "The model identifier to delete.",
+        "title": "Model Id"
+      },
+      "id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Unique ID of the model entry in user_model_registry (preferred deletion method).",
+        "title": "Id"
+      }
+    }
   }
 }

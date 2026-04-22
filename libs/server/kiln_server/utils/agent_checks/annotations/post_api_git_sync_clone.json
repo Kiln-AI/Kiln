@@ -4,5 +4,69 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "git_url": {
+          "type": "string",
+          "title": "Git Url",
+          "description": "The git remote URL to clone."
+        },
+        "branch": {
+          "type": "string",
+          "title": "Branch",
+          "description": "The branch to check out after cloning."
+        },
+        "pat_token": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pat Token",
+          "description": "Optional personal access token for authentication."
+        },
+        "oauth_token": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Oauth Token",
+          "description": "Optional OAuth token for authentication."
+        },
+        "auth_mode": {
+          "type": "string",
+          "enum": [
+            "system_keys",
+            "pat_token",
+            "github_oauth"
+          ],
+          "title": "Auth Mode",
+          "description": "Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.",
+          "default": "system_keys"
+        }
+      },
+      "type": "object",
+      "required": [
+        "git_url",
+        "branch"
+      ],
+      "title": "CloneRequest",
+      "description": "Request to clone a git repository into a temporary directory."
+    }
+  },
+  "parameters": {
+    "path": {},
+    "query": {}
   }
 }
