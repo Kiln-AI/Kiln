@@ -80,7 +80,7 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
         request = Request(scope)
         endpoint = self._resolve_endpoint(request)
 
-        if not getattr(endpoint, "_git_sync_no_write_lock", False):
+        if endpoint is None or not getattr(endpoint, "_git_sync_no_write_lock", False):
             await super().__call__(scope, receive, send)
             return
 
