@@ -26,6 +26,7 @@
   let display_project_name = project_name
   let display_project_path = project_path
   let display_branch = branch
+  let display_project_id = project_id
 
   let saving = true
   let error: KilnError | null = null
@@ -123,7 +124,7 @@
     <div class="flex flex-row gap-4 mt-4">
       <button
         class="btn btn-primary btn-wide"
-        on:click={() => on_complete(project_id)}
+        on:click={() => on_complete(display_project_id)}
       >
         Done
       </button>
