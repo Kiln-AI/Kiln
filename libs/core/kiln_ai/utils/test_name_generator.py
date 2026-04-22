@@ -18,9 +18,9 @@ def test_generate_memorable_name_randomness():
     """Test that the function generates different names."""
     names = {generate_memorable_name() for _ in range(100)}
 
-    # With 50 adjectives and 50 nouns, we should get multiple unique combinations
-    # in 100 tries. Using 50 as a reasonable lower bound.
-    assert len(names) > 50
+    # With hundreds of adjectives and nouns, 100 draws should produce close to
+    # 100 unique names. Keep a conservative lower bound to tolerate randomness.
+    assert len(names) > 90
 
 
 def test_generate_memorable_name_string_type():
@@ -45,3 +45,13 @@ def test_word_lists_no_duplicates():
     """Test that word lists don't contain duplicates."""
     assert len(ADJECTIVES) == len(set(ADJECTIVES))
     assert len(NOUNS) == len(set(NOUNS))
+
+
+def test_word_lists_are_single_capitalized_words():
+    """Test that each entry is a single capitalized word with no whitespace."""
+    for word in ADJECTIVES:
+        assert word and word[0].isupper()
+        assert not any(ch.isspace() for ch in word)
+    for word in NOUNS:
+        assert word and word[0].isupper()
+        assert not any(ch.isspace() for ch in word)
