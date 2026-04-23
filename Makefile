@@ -1,5 +1,7 @@
 .PHONY: dev ui schema annotations check package
 
+SHELL := /bin/bash
+
 # Shell snippet that loads nvm and selects the Node version from app/web_ui/.nvmrc.
 # Use in recipes that invoke npm/npx/node. $(CURDIR) keeps the path valid after any `cd`.
 NVM_USE = export NVM_DIR="$${NVM_DIR:-$$HOME/.nvm}" && . "$$NVM_DIR/nvm.sh" && nvm use "$$(cat $(CURDIR)/app/web_ui/.nvmrc)"
