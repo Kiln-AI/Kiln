@@ -66,6 +66,7 @@ from kiln_ai.tools.skill_tool import SkillTool
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
+from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 
 if TYPE_CHECKING:
@@ -204,9 +205,10 @@ class BaseAdapter(metaclass=ABCMeta):
         input_source: DataSource | None = None,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
         parent_task_run: TaskRun | None = None,
+        save_context: SaveContext | None = None,
     ) -> TaskRun:
         task_run, _ = await self.invoke_returning_run_output(
-            input, input_source, prior_trace, parent_task_run
+            input, input_source, prior_trace, parent_task_run, save_context=save_context
         )
         return task_run
 
@@ -216,6 +218,7 @@ class BaseAdapter(metaclass=ABCMeta):
         input_source: DataSource | None = None,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
         parent_task_run: TaskRun | None = None,
+        save_context: SaveContext | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         prior_trace = self._normalize_prior_trace(prior_trace)
         self._reject_multiturn_with_structured_input(prior_trace)
@@ -300,7 +303,8 @@ class BaseAdapter(metaclass=ABCMeta):
             and Config.shared().autosave_runs
             and self.task.path is not None
         ):
-            run.save_to_file()
+            async with (save_context or default_save_context)():
+                run.save_to_file()
         else:
             # Clear the ID to indicate it's not persisted
             run.id = None
@@ -313,6 +317,7 @@ class BaseAdapter(metaclass=ABCMeta):
         input_source: DataSource | None = None,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
         parent_task_run: TaskRun | None = None,
+        save_context: SaveContext | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         # Determine if this is the root agent (no existing run context)
         is_root_agent = get_agent_run_id() is None
@@ -323,7 +328,11 @@ class BaseAdapter(metaclass=ABCMeta):
 
         try:
             return await self._run_returning_run_output(
-                input, input_source, prior_trace, parent_task_run
+                input,
+                input_source,
+                prior_trace,
+                parent_task_run,
+                save_context=save_context,
             )
         finally:
             if is_root_agent:
@@ -340,6 +349,7 @@ class BaseAdapter(metaclass=ABCMeta):
         input_source: DataSource | None = None,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
         parent_task_run: TaskRun | None = None,
+        save_context: SaveContext | None = None,
     ) -> OpenAIStreamResult:
         """Stream raw OpenAI-protocol chunks for the task execution.
 
@@ -352,7 +362,7 @@ class BaseAdapter(metaclass=ABCMeta):
         ``invoke_ai_sdk_stream`` if you need tool-call events.
         """
         return OpenAIStreamResult(
-            self, input, input_source, prior_trace, parent_task_run
+            self, input, input_source, prior_trace, parent_task_run, save_context
         )
 
     def invoke_ai_sdk_stream(
@@ -361,6 +371,7 @@ class BaseAdapter(metaclass=ABCMeta):
         input_source: DataSource | None = None,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
         parent_task_run: TaskRun | None = None,
+        save_context: SaveContext | None = None,
     ) -> AiSdkStreamResult:
         """Stream AI SDK protocol events for the task execution.
 
@@ -370,7 +381,7 @@ class BaseAdapter(metaclass=ABCMeta):
         ``TaskRun`` is available via the ``.task_run`` property.
         """
         return AiSdkStreamResult(
-            self, input, input_source, prior_trace, parent_task_run
+            self, input, input_source, prior_trace, parent_task_run, save_context
         )
 
     def _prepare_stream(
@@ -397,12 +408,13 @@ class BaseAdapter(metaclass=ABCMeta):
 
         return self._create_run_stream(formatted_input, prior_trace)
 
-    def _finalize_stream(
+    async def _finalize_stream(
         self,
         adapter_stream: AdapterStream,
         input: InputType,
         input_source: DataSource | None,
         parent_task_run: TaskRun | None = None,
+        save_context: SaveContext | None = None,
     ) -> TaskRun:
         """Streaming invocations are only concerned with passing through events as they come in.
         At the end of the stream, we still need to validate the output, create a run and everything
@@ -467,7 +479,8 @@ class BaseAdapter(metaclass=ABCMeta):
             and Config.shared().autosave_runs
             and self.task.path is not None
         ):
-            run.save_to_file()
+            async with (save_context or default_save_context)():
+                run.save_to_file()
         else:
             run.id = None
 
@@ -778,12 +791,14 @@ class OpenAIStreamResult:
         input_source: DataSource | None,
         prior_trace: list[ChatCompletionMessageParam] | None,
         parent_task_run: TaskRun | None = None,
+        save_context: SaveContext | None = None,
     ) -> None:
         self._adapter = adapter
         self._input = input
         self._input_source = input_source
         self._prior_trace = prior_trace
         self._parent_task_run = parent_task_run
+        self._save_context = save_context
         self._task_run: TaskRun | None = None
 
     @property
@@ -810,8 +825,12 @@ class OpenAIStreamResult:
                 if isinstance(event, ModelResponseStream):
                     yield event
 
-            self._task_run = self._adapter._finalize_stream(
-                adapter_stream, self._input, self._input_source, self._parent_task_run
+            self._task_run = await self._adapter._finalize_stream(
+                adapter_stream,
+                self._input,
+                self._input_source,
+                self._parent_task_run,
+                save_context=self._save_context,
             )
         finally:
             if is_root_agent:
@@ -841,12 +860,14 @@ class AiSdkStreamResult:
         input_source: DataSource | None,
         prior_trace: list[ChatCompletionMessageParam] | None,
         parent_task_run: TaskRun | None = None,
+        save_context: SaveContext | None = None,
     ) -> None:
         self._adapter = adapter
         self._input = input
         self._input_source = input_source
         self._prior_trace = prior_trace
         self._parent_task_run = parent_task_run
+        self._save_context = save_context
         self._task_run: TaskRun | None = None
 
     @property
@@ -893,8 +914,12 @@ class AiSdkStreamResult:
 
             yield FinishStepEvent()
 
-            self._task_run = self._adapter._finalize_stream(
-                adapter_stream, self._input, self._input_source, self._parent_task_run
+            self._task_run = await self._adapter._finalize_stream(
+                adapter_stream,
+                self._input,
+                self._input_source,
+                self._parent_task_run,
+                save_context=self._save_context,
             )
 
             if self._task_run.is_toolcall_pending:

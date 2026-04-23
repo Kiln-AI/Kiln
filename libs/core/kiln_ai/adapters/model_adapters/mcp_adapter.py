@@ -21,6 +21,7 @@ from kiln_ai.run_context import (
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionMessageParam,
@@ -87,6 +88,7 @@ class MCPAdapter(BaseAdapter):
         input_source: DataSource | None = None,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
         parent_task_run: TaskRun | None = None,
+        save_context: SaveContext | None = None,
     ) -> TaskRun:
         if prior_trace or parent_task_run is not None:
             raise NotImplementedError(
@@ -95,7 +97,7 @@ class MCPAdapter(BaseAdapter):
             )
 
         run_output, _ = await self.invoke_returning_run_output(
-            input, input_source, prior_trace, parent_task_run
+            input, input_source, prior_trace, parent_task_run, save_context=save_context
         )
         return run_output
 
@@ -105,6 +107,7 @@ class MCPAdapter(BaseAdapter):
         input_source: DataSource | None = None,
         prior_trace: list[ChatCompletionMessageParam] | None = None,
         parent_task_run: TaskRun | None = None,
+        save_context: SaveContext | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         """
         Runs the task and returns both the persisted TaskRun and raw RunOutput.
@@ -124,7 +127,7 @@ class MCPAdapter(BaseAdapter):
 
         try:
             return await self._run_and_validate_output(
-                input, input_source, parent_task_run
+                input, input_source, parent_task_run, save_context=save_context
             )
         finally:
             if is_root_agent:
@@ -140,6 +143,7 @@ class MCPAdapter(BaseAdapter):
         input: InputType,
         input_source: DataSource | None,
         parent_task_run: TaskRun | None = None,
+        save_context: SaveContext | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
         """
         Run the MCP task and validate the output.
@@ -187,7 +191,8 @@ class MCPAdapter(BaseAdapter):
             and Config.shared().autosave_runs
             and self.task.path is not None
         ):
-            run.save_to_file()
+            async with (save_context or default_save_context)():
+                run.save_to_file()
         else:
             run.id = None
 

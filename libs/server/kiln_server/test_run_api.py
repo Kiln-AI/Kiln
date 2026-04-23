@@ -1854,3 +1854,51 @@ async def test_run_task_adapter_sanity_math_tools(
     assert response4.status_code == 200
     res4 = response4.json()
     _assert_math_tools_response(res4, "7")
+
+
+# --- /run endpoint self-manages the git-sync write lock ---
+
+
+def _find_endpoint_by_path(app, path_suffix: str):
+    """Locate the endpoint function for a route ending with path_suffix."""
+    for route in app.routes:
+        if getattr(route, "path", "").endswith(path_suffix):
+            return route.endpoint  # type: ignore[attr-defined]
+    raise AssertionError(f"Route ending in {path_suffix} not found")
+
+
+def test_run_task_has_no_write_lock(app):
+    endpoint = _find_endpoint_by_path(app, "/tasks/{task_id}/run")
+    assert getattr(endpoint, "_git_sync_no_write_lock", False) is True
+
+
+@pytest.mark.asyncio
+async def test_run_task_passes_save_context_to_adapter(client, task_run_setup):
+    """The endpoint must forward build_save_context(request) into adapter.invoke
+    so the write lock wraps only the fs write, not the whole LLM call."""
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    run_task_request = task_run_setup["run_task_request"]
+
+    sentinel_save_context = object()
+
+    with (
+        patch("kiln_server.run_api.task_from_id") as mock_task_from_id,
+        patch.object(LiteLlmAdapter, "invoke", new_callable=AsyncMock) as mock_invoke,
+        patch(
+            "kiln_server.run_api.build_save_context",
+            return_value=sentinel_save_context,
+        ) as mock_build_save_context,
+        patch("kiln_ai.utils.config.Config.shared") as MockConfig,
+    ):
+        mock_task_from_id.return_value = task
+        mock_invoke.return_value = task_run_setup["task_run"]
+        MockConfig.return_value.ollama_base_url = "http://localhost:11434/v1"
+
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/run", json=run_task_request
+        )
+
+    assert response.status_code == 200
+    mock_build_save_context.assert_called_once()
+    assert mock_invoke.call_args.kwargs["save_context"] is sentinel_save_context

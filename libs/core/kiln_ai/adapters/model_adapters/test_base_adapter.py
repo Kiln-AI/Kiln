@@ -1395,7 +1395,7 @@ class TestStreamMethods:
                 "_prepare_stream",
                 return_value=FakeAdapterStream(),
             ),
-            patch.object(stream_adapter, "_finalize_stream"),
+            patch.object(stream_adapter, "_finalize_stream", new_callable=AsyncMock),
         ):
             events = []
             async for event in stream_adapter.invoke_ai_sdk_stream("test input"):
@@ -1437,7 +1437,12 @@ class TestStreamMethods:
                 "_prepare_stream",
                 return_value=FakeAdapterStream(),
             ),
-            patch.object(stream_adapter, "_finalize_stream", return_value=expected_run),
+            patch.object(
+                stream_adapter,
+                "_finalize_stream",
+                new_callable=AsyncMock,
+                return_value=expected_run,
+            ),
         ):
             stream = stream_adapter.invoke_openai_stream("test input")
 
@@ -1476,7 +1481,12 @@ class TestStreamMethods:
                 "_prepare_stream",
                 return_value=FakeAdapterStream(),
             ),
-            patch.object(stream_adapter, "_finalize_stream", return_value=expected_run),
+            patch.object(
+                stream_adapter,
+                "_finalize_stream",
+                new_callable=AsyncMock,
+                return_value=expected_run,
+            ),
         ):
             stream = stream_adapter.invoke_ai_sdk_stream("test input")
 
@@ -1518,14 +1528,16 @@ class TestFinalizeStream:
         )
         return stream
 
-    def test_finalize_stream_plain_text(self, finalize_adapter):
+    async def test_finalize_stream_plain_text(self, finalize_adapter):
         provider = MagicMock()
         provider.parser = None
         provider.reasoning_capable = False
         finalize_adapter.model_provider = MagicMock(return_value=provider)
 
         adapter_stream = self._make_adapter_stream("Hello world")
-        run = finalize_adapter._finalize_stream(adapter_stream, "test input", None)
+        run = await finalize_adapter._finalize_stream(
+            adapter_stream, "test input", None
+        )
 
         assert isinstance(run, TaskRun)
         assert run.output.output == "Hello world"
@@ -1544,7 +1556,7 @@ class TestFinalizeStream:
         )
         return adapter
 
-    def test_finalize_stream_structured_output(self, base_task):
+    async def test_finalize_stream_structured_output(self, base_task):
         schema = '{"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}'
         adapter = self._make_structured_adapter(base_task, schema)
 
@@ -1554,12 +1566,12 @@ class TestFinalizeStream:
         adapter.model_provider = MagicMock(return_value=provider)
 
         adapter_stream = self._make_adapter_stream({"name": "test"})
-        run = adapter._finalize_stream(adapter_stream, "test input", None)
+        run = await adapter._finalize_stream(adapter_stream, "test input", None)
 
         assert isinstance(run, TaskRun)
         assert '"name"' in run.output.output
 
-    def test_finalize_stream_structured_output_from_json_string(self, base_task):
+    async def test_finalize_stream_structured_output_from_json_string(self, base_task):
         schema = '{"type": "object", "properties": {"val": {"type": "integer"}}, "required": ["val"]}'
         adapter = self._make_structured_adapter(base_task, schema)
 
@@ -1569,10 +1581,10 @@ class TestFinalizeStream:
         adapter.model_provider = MagicMock(return_value=provider)
 
         adapter_stream = self._make_adapter_stream('{"val": 42}')
-        run = adapter._finalize_stream(adapter_stream, "test input", None)
+        run = await adapter._finalize_stream(adapter_stream, "test input", None)
         assert isinstance(run, TaskRun)
 
-    def test_finalize_stream_structured_output_not_dict_raises(self, base_task):
+    async def test_finalize_stream_structured_output_not_dict_raises(self, base_task):
         schema = '{"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x"]}'
         adapter = self._make_structured_adapter(base_task, schema)
 
@@ -1583,9 +1595,11 @@ class TestFinalizeStream:
 
         adapter_stream = self._make_adapter_stream(42)
         with pytest.raises(RuntimeError, match="structured response is not a dict"):
-            adapter._finalize_stream(adapter_stream, "test input", None)
+            await adapter._finalize_stream(adapter_stream, "test input", None)
 
-    def test_finalize_stream_non_structured_non_string_raises(self, finalize_adapter):
+    async def test_finalize_stream_non_structured_non_string_raises(
+        self, finalize_adapter
+    ):
         provider = MagicMock()
         provider.parser = None
         provider.reasoning_capable = False
@@ -1593,9 +1607,11 @@ class TestFinalizeStream:
 
         adapter_stream = self._make_adapter_stream({"unexpected": "dict"})
         with pytest.raises(RuntimeError, match="not a string for non-structured"):
-            finalize_adapter._finalize_stream(adapter_stream, "test input", None)
+            await finalize_adapter._finalize_stream(adapter_stream, "test input", None)
 
-    def test_finalize_stream_reasoning_required_but_missing(self, finalize_adapter):
+    async def test_finalize_stream_reasoning_required_but_missing(
+        self, finalize_adapter
+    ):
         provider = MagicMock()
         provider.parser = None
         provider.reasoning_capable = True
@@ -1604,9 +1620,9 @@ class TestFinalizeStream:
 
         adapter_stream = self._make_adapter_stream("output")
         with pytest.raises(RuntimeError, match="Reasoning is required"):
-            finalize_adapter._finalize_stream(adapter_stream, "test input", None)
+            await finalize_adapter._finalize_stream(adapter_stream, "test input", None)
 
-    def test_finalize_stream_reasoning_not_required_with_tool_calls(
+    async def test_finalize_stream_reasoning_not_required_with_tool_calls(
         self, finalize_adapter
     ):
         provider = MagicMock()
@@ -1620,10 +1636,12 @@ class TestFinalizeStream:
             {"role": "tool", "content": "result", "tool_call_id": "call_1"},
         ]
         adapter_stream = self._make_adapter_stream("output", trace=trace)
-        run = finalize_adapter._finalize_stream(adapter_stream, "test input", None)
+        run = await finalize_adapter._finalize_stream(
+            adapter_stream, "test input", None
+        )
         assert isinstance(run, TaskRun)
 
-    def test_finalize_stream_saves_when_allowed(self, tmp_path):
+    async def test_finalize_stream_saves_when_allowed(self, tmp_path):
         project_path = tmp_path / "proj" / "project.kiln"
         project_path.parent.mkdir()
         project = Project(name="test", path=project_path)
@@ -1653,7 +1671,7 @@ class TestFinalizeStream:
         ) as mock_config:
             mock_config.shared.return_value.autosave_runs = True
             mock_config.shared.return_value.user_id = "test_user"
-            run = adapter._finalize_stream(adapter_stream, "test input", None)
+            run = await adapter._finalize_stream(adapter_stream, "test input", None)
         assert run.id is not None
 
 

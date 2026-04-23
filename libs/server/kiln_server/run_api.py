@@ -7,7 +7,7 @@ from asyncio import Lock
 from datetime import datetime
 from typing import Annotated, Any, Dict
 
-from fastapi import Body, FastAPI, File, Form, HTTPException, Path, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, Path, Request, UploadFile
 from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
 from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
@@ -24,6 +24,7 @@ from kiln_ai.utils.dataset_import import (
 )
 from pydantic import BaseModel, ConfigDict, Field
 
+from kiln_server.git_sync_decorators import build_save_context, no_write_lock
 from kiln_server.task_api import task_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
@@ -379,7 +380,9 @@ def connect_run_api(app: FastAPI):
         tags=["Runs"],
         openapi_extra=agent_policy_require_approval("Run task with LLM?"),
     )
+    @no_write_lock
     async def run_task(
+        http_request: Request,
         project_id: Annotated[
             str, Path(description="The unique identifier of the project.")
         ],
@@ -411,7 +414,9 @@ def connect_run_api(app: FastAPI):
                 detail="No input provided. Ensure your provided the proper format (plaintext or structured).",
             )
 
-        return await adapter.invoke(input)
+        return await adapter.invoke(
+            input, save_context=build_save_context(http_request)
+        )
 
     @app.patch(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
