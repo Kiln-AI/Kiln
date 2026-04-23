@@ -59,12 +59,13 @@
   async function calculate_subtask_usage(
     trace: Trace | null | undefined,
     visited: Set<string> = new Set(),
-  ): Promise<{ cost: number; tokens: number }> {
-    if (!trace) return { cost: 0, tokens: 0 }
+  ): Promise<{ cost: number; tokens: number; latency_ms: number }> {
+    if (!trace) return { cost: 0, tokens: 0, latency_ms: 0 }
 
     const references = extract_subtask_references(trace)
     let total_cost = 0
     let total_tokens = 0
+    let total_llm_latency_ms = 0
 
     for (const ref of references) {
       const key = `${ref.project_id}:${ref.task_id}:${ref.run_id}`
@@ -88,12 +89,14 @@
         if (!response.error && response.data) {
           total_cost += response.data.usage?.cost ?? 0
           total_tokens += response.data.usage?.total_tokens ?? 0
+          total_llm_latency_ms += response.data.usage?.total_llm_latency_ms ?? 0
           const subtask_usage = await calculate_subtask_usage(
             response.data.trace,
             visited,
           )
           total_cost += subtask_usage.cost
           total_tokens += subtask_usage.tokens
+          total_llm_latency_ms += subtask_usage.latency_ms
         }
       } catch (error) {
         console.warn(
@@ -108,11 +111,16 @@
       }
     }
 
-    return { cost: total_cost, tokens: total_tokens }
+    return {
+      cost: total_cost,
+      tokens: total_tokens,
+      latency_ms: total_llm_latency_ms,
+    }
   }
 
   let subtask_cost: number | null = null
   let subtask_tokens: number | null = null
+  let subtask_latency_ms: number | null = null
   let subtask_usage_loading = false
   // Counter to prevent race conditions: when run changes rapidly, multiple async requests
   // may be in flight. We only update state if this request is still the latest one.
@@ -126,6 +134,7 @@
       if (request_id === subtask_usage_request_id) {
         subtask_cost = null
         subtask_tokens = null
+        subtask_latency_ms = null
         subtask_usage_loading = false
       }
       return
@@ -137,11 +146,13 @@
       if (request_id === subtask_usage_request_id) {
         subtask_cost = usage.cost
         subtask_tokens = usage.tokens
+        subtask_latency_ms = usage.latency_ms
       }
     } catch {
       if (request_id === subtask_usage_request_id) {
         subtask_cost = null
         subtask_tokens = null
+        subtask_latency_ms = null
       }
     } finally {
       if (request_id === subtask_usage_request_id) {
@@ -515,16 +526,23 @@
     )
   }
 
+  function formatLatency(ms: number): string {
+    if (ms < 1000) return `${Math.round(ms)}ms`
+    return `${(ms / 1000).toFixed(1)}s`
+  }
+
   function get_usage_properties(
     run: TaskRun | null,
     subtask_cost: number | null,
     subtask_usage_loading: boolean,
     subtask_tokens: number | null,
+    subtask_latency_ms: number | null,
   ) {
     let properties = []
 
     const run_cost = run?.usage?.cost ?? 0
     const run_tokens = run?.usage?.total_tokens ?? 0
+    const run_latency = run?.usage?.total_llm_latency_ms ?? 0
 
     if (subtask_usage_loading) {
       properties.push({
@@ -580,6 +598,33 @@
       })
     }
 
+    if (subtask_usage_loading) {
+      properties.push({
+        name: "Total Latency",
+        value: "Loading...",
+      })
+    } else {
+      const total_latency = run_latency + (subtask_latency_ms ?? 0)
+      if (total_latency > 0) {
+        properties.push({
+          name: "Total Latency",
+          value: formatLatency(total_latency),
+        })
+      }
+    }
+
+    if (subtask_usage_loading) {
+      properties.push({
+        name: "Subtasks Latency",
+        value: "Loading...",
+      })
+    } else if (subtask_latency_ms && subtask_latency_ms > 0) {
+      properties.push({
+        name: "Subtasks Latency",
+        value: formatLatency(subtask_latency_ms),
+      })
+    }
+
     return properties
   }
 
@@ -589,6 +634,7 @@
     subtask_cost,
     subtask_usage_loading,
     subtask_tokens,
+    subtask_latency_ms,
   )
 
   // Feedback

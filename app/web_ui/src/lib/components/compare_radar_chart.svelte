@@ -34,12 +34,13 @@
   // Chart instance
   let chartInstance: echarts.ECharts | null = null
 
-  // Cost key that should be included in radar chart (inverted, lower is better)
+  // Keys that should be included in radar chart where lower is better
   const COST_KEY = "cost::mean_cost"
+  const LATENCY_KEY = "cost::mean_total_llm_latency_ms"
 
-  // Check if a key is the cost metric (where lower is better)
-  function isCostMetric(key: string): boolean {
-    return key === COST_KEY
+  // Check if a key is a lower-is-better metric
+  function isLowerIsBetterMetric(key: string): boolean {
+    return key === COST_KEY || key === LATENCY_KEY
   }
 
   export function costToScore(
@@ -81,14 +82,18 @@
     ...comparisonFeatures
       .filter((f) => f.eval_id !== "kiln_cost_section")
       .flatMap((f) => f.items.map((item) => item.key)),
-    COST_KEY, // Add cost at the end
+    COST_KEY,
+    LATENCY_KEY,
   ]
 
   // Get labels for radar indicators
   function getKeyLabel(dataKey: string): string {
-    // Special handling for cost metric
+    // Special handling for lower-is-better metrics
     if (dataKey === COST_KEY) {
       return "Cost Efficiency"
+    }
+    if (dataKey === LATENCY_KEY) {
+      return "Speed"
     }
     for (const feature of comparisonFeatures) {
       const item = feature.items.find((i) => i.key === dataKey)
@@ -132,7 +137,10 @@
   }
 
   // Build full tooltip HTML for a run config (reused by chart tooltip and legend tooltip)
-  function buildRunConfigTooltip(name: string, allCosts: number[]): string {
+  function buildRunConfigTooltip(
+    name: string,
+    lowerIsBetterValues: Record<string, number[]>,
+  ): string {
     const config = run_configs.find((c) => getSeriesDisplayName(c) === name)
 
     let html = `<div style="font-weight: bold; margin-bottom: 4px;">${name}</div>`
@@ -159,9 +167,22 @@
       const rawValue = config?.id ? getModelValueRaw(config.id, key) : null
       if (rawValue === null) {
         html += `<div>${label}: N/A</div>`
-      } else if (isCostMetric(key)) {
-        const displayValue = costToScore(rawValue, allCosts)
+      } else if (key === COST_KEY) {
+        const displayValue = costToScore(
+          rawValue,
+          lowerIsBetterValues[key] || [],
+        )
         html += `<div>${label}: ${displayValue.toFixed(1)} <span style="color: #888;">(Mean Cost: $${rawValue.toFixed(6)})</span></div>`
+      } else if (key === LATENCY_KEY) {
+        const displayValue = costToScore(
+          rawValue,
+          lowerIsBetterValues[key] || [],
+        )
+        const formatted =
+          rawValue < 1000
+            ? `${Math.round(rawValue)}ms`
+            : `${(rawValue / 1000).toFixed(1)}s`
+        html += `<div>${label}: ${displayValue.toFixed(1)} <span style="color: #888;">(Mean Latency: ${formatted})</span></div>`
       } else {
         html += `<div>${label}: ${rawValue.toFixed(3)}</div>`
       }
@@ -174,15 +195,15 @@
     indicators: { name: string; max: number }[]
     series: { value: number[]; name: string }[]
     legend: string[]
-    allCosts: number[]
+    lowerIsBetterValues: Record<string, number[]>
   } {
     const indicators: { name: string; max: number }[] = []
     const series: { value: number[]; name: string }[] = []
     const legend: string[] = []
-    const allCosts: number[] = []
+    const lowerIsBetterValues: Record<string, number[]> = {}
 
     if (dataKeys.length === 0 || selectedRunConfigIds.length === 0) {
-      return { indicators, series, legend, allCosts }
+      return { indicators, series, legend, lowerIsBetterValues }
     }
 
     // Calculate max values for each data key across all selected run configs
@@ -195,19 +216,20 @@
         if (value !== null && value > max) {
           max = value
         }
-        if (value !== null && isCostMetric(key)) {
-          allCosts.push(value)
+        if (value !== null && isLowerIsBetterMetric(key)) {
+          if (!lowerIsBetterValues[key]) lowerIsBetterValues[key] = []
+          lowerIsBetterValues[key].push(value)
         }
       }
       // Add 10% padding to max for better visualization
       maxValues[key] = max > 0 ? max * 1.1 : 1
     }
 
-    // Build indicators with actual max values (except cost which uses 0-100 scale)
+    // Build indicators with actual max values (lower-is-better metrics use 0-100 scale)
     for (const key of dataKeys) {
       indicators.push({
         name: getKeyLabel(key),
-        max: isCostMetric(key) ? 100 : maxValues[key],
+        max: isLowerIsBetterMetric(key) ? 100 : maxValues[key],
       })
     }
 
@@ -224,8 +246,8 @@
         let displayValue: number
         if (rawValue === null) {
           displayValue = 0
-        } else if (isCostMetric(key)) {
-          displayValue = costToScore(rawValue, allCosts)
+        } else if (isLowerIsBetterMetric(key)) {
+          displayValue = costToScore(rawValue, lowerIsBetterValues[key] || [])
         } else {
           displayValue = rawValue
         }
@@ -241,7 +263,7 @@
       }
     }
 
-    return { indicators, series, legend, allCosts }
+    return { indicators, series, legend, lowerIsBetterValues }
   }
 
   // Check if there's data to display (reactive, depends on dataKeys and selectedRunConfigIds)
@@ -261,7 +283,8 @@
       return
     }
 
-    const { indicators, series, legend, allCosts } = generateChartData()
+    const { indicators, series, legend, lowerIsBetterValues } =
+      generateChartData()
 
     const legendFormatter = buildLegendFormatter()
 
@@ -270,7 +293,7 @@
         tooltip: {
           trigger: "item",
           formatter: (params: { name: string }) =>
-            buildRunConfigTooltip(params.name, allCosts),
+            buildRunConfigTooltip(params.name, lowerIsBetterValues),
         },
         legend: {
           data: legend,
@@ -282,7 +305,7 @@
           tooltip: {
             show: true,
             formatter: (params: { name: string }) =>
-              buildRunConfigTooltip(params.name, allCosts),
+              buildRunConfigTooltip(params.name, lowerIsBetterValues),
           },
           textStyle: {
             lineHeight: 16,

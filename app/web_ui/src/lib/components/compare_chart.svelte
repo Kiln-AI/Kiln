@@ -122,6 +122,10 @@
     if (dataKey.includes("mean_cost")) {
       return `$${value.toFixed(6)}`
     }
+    if (dataKey.includes("latency")) {
+      if (value < 1000) return `${Math.round(value)}ms`
+      return `${(value / 1000).toFixed(1)}s`
+    }
     if (dataKey.includes("tokens")) {
       return value.toFixed(0)
     }

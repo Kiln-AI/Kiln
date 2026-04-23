@@ -394,10 +394,11 @@
       { label: "Output Tokens", key: "cost::mean_output_tokens" },
       { label: "Total Tokens", key: "cost::mean_total_tokens" },
       { label: "Cost (USD)", key: "cost::mean_cost" },
+      { label: "Latency", key: "cost::mean_total_llm_latency_ms" },
     ]
 
     features.push({
-      category: "Average Usage & Cost",
+      category: "Average Usage, Cost & Latency",
       items: costItems,
       has_default_eval_config: undefined,
       eval_id: "kiln_cost_section",
@@ -463,6 +464,8 @@
           return meanUsage.mean_total_tokens ?? null
         case "mean_cost":
           return meanUsage.mean_cost ?? null
+        case "mean_total_llm_latency_ms":
+          return meanUsage.mean_total_llm_latency_ms ?? null
       }
       return null
     }
@@ -489,10 +492,13 @@
 
     const [category, scoreKey] = dataKey.split("::")
 
-    // Format cost with currency symbol, tokens as whole numbers, others as decimals
+    // Format cost with currency symbol, latency with ms/s, tokens as whole numbers, others as decimals
     if (category === "cost") {
       if (scoreKey === "mean_cost") {
         return `$${value.toFixed(7)}`
+      } else if (scoreKey === "mean_total_llm_latency_ms") {
+        if (value < 1000) return `${Math.round(value)}ms`
+        return `${(value / 1000).toFixed(1)}s`
       } else {
         return value.toFixed(1)
       }
