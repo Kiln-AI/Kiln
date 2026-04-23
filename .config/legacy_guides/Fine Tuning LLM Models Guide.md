@@ -51,7 +51,7 @@ https://github.com/user-attachments/assets/5a7ed956-a797-4d8e-9ed9-2a9d98973e86
 
 To fine tune, you’ll need a dataset to learn from.
 
-Kiln offers a interactive UI for quickly and easily building synthetic datasets. In the video below we use it to generate 920 training examples in 9 minutes of hands-on work. See our [data gen guide](https://github.com/Kiln-AI/Kiln/blob/main/guides/Synthetic%20Data%20Generation.md) for more details.
+Kiln offers a interactive UI for quickly and easily building synthetic datasets. In the video below we use it to generate 920 training examples in 9 minutes of hands-on work. See our [data gen guide](https://github.com/Kiln-AI/Kiln/blob/main/.config/legacy_guides/Synthetic%20Data%20Generation.md) for more details.
 
 Kiln includes topic trees to generate diverse content, a range of models/prompting strategies, interactive guidance and interactive UI for curation/correction.
 

@@ -66,7 +66,7 @@ Build better AI systems through iteration. Kiln brings evals and optimization to
 
 <kbd>
 <a href="https://kiln.tech#demo">
-<img alt="Kiln Preview" src="guides/kiln_preview.gif">
+<img alt="Kiln Preview" src=".config/legacy_guides/kiln_preview.gif">
 </a>
 </kbd>
 

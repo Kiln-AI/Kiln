@@ -76,7 +76,7 @@ Phases are ordered by risk (low → high) and by what unblocks later phases (e.g
     - `uv run pytest -q -n auto .` passes; test count matches pre-phase baseline.
     - `rg -n 'test_data_dir|mock_file_factory|mock_attachment_factory'` shows only the expected definitions and 9 consumer files.
 
-- [ ] **Phase 10: Move `guides/` → `.config/legacy_guides/`**
+- [x] **Phase 10: Move `guides/` → `.config/legacy_guides/`**
   - `git mv guides .config/legacy_guides`.
   - Delete `.config/legacy_guides/kiln_preview.avif` (unused).
   - Update self-link inside `.config/legacy_guides/Fine Tuning LLM Models Guide.md:54`.
