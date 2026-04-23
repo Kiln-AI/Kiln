@@ -2502,8 +2502,9 @@ class TestLatencyTracking:
     async def test_run_model_turn_accumulates_latency_across_tool_calls(
         self, adapter, provider
     ):
-        """Latency should accumulate across multiple tool-call iterations."""
-        tool_response = ModelResponse(
+        """Latency should accumulate across multiple LLM calls in a tool-call loop."""
+        # First LLM call: model requests a regular tool (not task_response)
+        tool_call_response = ModelResponse(
             model="test-model",
             choices=[
                 {
@@ -2514,8 +2515,8 @@ class TestLatencyTracking:
                                 "id": "call_1",
                                 "type": "function",
                                 "function": {
-                                    "name": "task_response",
-                                    "arguments": '{"test": "result"}',
+                                    "name": "some_tool",
+                                    "arguments": '{"arg": "val"}',
                                 },
                             }
                         ],
@@ -2523,23 +2524,53 @@ class TestLatencyTracking:
                 }
             ],
         )
+        # Second LLM call: model returns final content
+        final_response = ModelResponse(
+            model="test-model",
+            choices=[
+                {
+                    "message": {
+                        "content": "Final answer",
+                    }
+                }
+            ],
+        )
 
-        monotonic_values = [0.0, 0.3]  # 300ms
+        # monotonic: start1, end1 (200ms), start2, end2 (300ms)
+        monotonic_values = [0.0, 0.2, 0.2, 0.5]
         with patch.object(adapter, "build_completion_kwargs", return_value={}):
             with patch.object(
                 adapter,
                 "acompletion_checking_response",
-                return_value=(tool_response, tool_response.choices[0]),
+                side_effect=[
+                    (tool_call_response, tool_call_response.choices[0]),
+                    (final_response, final_response.choices[0]),
+                ],
             ):
-                with patch(
-                    "kiln_ai.adapters.model_adapters.litellm_adapter.time.monotonic",
-                    side_effect=monotonic_values,
+                with patch.object(
+                    adapter,
+                    "process_tool_calls",
+                    return_value=(
+                        None,
+                        [
+                            {
+                                "role": "tool",
+                                "content": "tool result",
+                                "tool_call_id": "call_1",
+                            }
+                        ],
+                    ),
                 ):
-                    result = await adapter._run_model_turn(
-                        provider, [{"role": "user", "content": "Hi"}], None, False
-                    )
+                    with patch(
+                        "kiln_ai.adapters.model_adapters.litellm_adapter.time.monotonic",
+                        side_effect=monotonic_values,
+                    ):
+                        result = await adapter._run_model_turn(
+                            provider, [{"role": "user", "content": "Hi"}], None, False
+                        )
 
-        assert result.usage.total_llm_latency_ms == 300
+        # 200ms + 300ms = 500ms total
+        assert result.usage.total_llm_latency_ms == 500
 
     def test_litellm_message_to_trace_message_includes_latency(self, adapter):
         """litellm_message_to_trace_message should include latency_ms when _latency_ms is set."""
