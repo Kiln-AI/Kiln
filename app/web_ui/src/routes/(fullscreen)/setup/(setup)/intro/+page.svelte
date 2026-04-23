@@ -1,5 +1,11 @@
 <script lang="ts">
   import Tutorial from "./tutorial.svelte"
+  import { agentInfo } from "$lib/agent"
+
+  agentInfo.set({
+    name: "Setup: Introduction",
+    description: "Onboarding introduction and tutorial for new Kiln users.",
+  })
 
   let completed: boolean = false
 </script>

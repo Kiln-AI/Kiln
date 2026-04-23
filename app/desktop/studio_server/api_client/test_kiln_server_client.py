@@ -1,9 +1,10 @@
 import os
-from importlib.metadata import version
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
+from app.desktop.studio_server._version import __version__
 from app.desktop.studio_server.api_client.kiln_ai_server_client.api.health import (
     ping_ping_get,
 )
@@ -18,7 +19,7 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
     server_client,
 )
 
-APP_VERSION = version("kiln-studio-desktop")
+APP_VERSION = __version__
 
 
 class TestGetKilnServerClient:
@@ -56,14 +57,28 @@ class TestGetKilnServerClient:
         assert httpx_client.headers["User-Agent"] == f"KilnDesktopApp/{APP_VERSION}"
         assert httpx_client.headers["Kiln-Desktop-App-Version"] == APP_VERSION
 
-    def test_fetching_version_from_metadata(self):
-        """Verify the client is configured with a valid version from metadata."""
+    def test_version_is_valid(self):
+        """Verify the version string has a valid format."""
         version = _get_desktop_app_version()
         assert APP_VERSION == version
-        assert version != "unknown"
         assert "." in version
         for digits in version.split("."):
             assert digits.isdigit()
+
+    def test_version_matches_pyproject(self):
+        """Verify _version.py stays in sync with pyproject.toml."""
+        pyproject_path = Path(__file__).parents[2] / "pyproject.toml"
+        content = pyproject_path.read_text()
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("version") and "=" in stripped:
+                pyproject_version = stripped.split("=", 1)[1].strip().strip('"')
+                break
+        else:
+            pytest.fail("Could not find version in pyproject.toml")
+        assert _get_desktop_app_version() == pyproject_version, (
+            f"_version.py ({_get_desktop_app_version()}) and pyproject.toml ({pyproject_version}) are out of sync"
+        )
 
 
 class TestMockedPingRequest:

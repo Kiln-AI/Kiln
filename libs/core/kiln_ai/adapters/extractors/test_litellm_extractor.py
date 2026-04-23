@@ -22,8 +22,8 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.extraction import ExtractorType
+from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
 from kiln_ai.utils.filesystem_cache import FilesystemCache
-from libs.core.conftest import MockFileFactoryMimeType
 
 PROMPTS_FOR_KIND: dict[str, str] = {
     "document": "prompt for documents",

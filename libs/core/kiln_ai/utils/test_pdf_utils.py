@@ -5,12 +5,12 @@ from pathlib import Path
 import pytest
 from pypdf import PdfReader
 
+from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
 from kiln_ai.utils.pdf_utils import (
     _convert_pdf_to_images_sync,
     convert_pdf_to_images,
     split_pdf_into_pages,
 )
-from libs.core.conftest import MockFileFactoryMimeType
 
 
 async def test_split_pdf_into_pages_success(mock_file_factory):

@@ -21,6 +21,7 @@
   import TagPicker from "$lib/ui/tag_picker.svelte"
   import {
     capitalize,
+    formatDate,
     formatPriority,
     formatSpecType,
     formatEvalConfigName,
@@ -44,12 +45,17 @@
   import { goto } from "$app/navigation"
   import SpecPropertiesDisplay from "../spec_properties_display.svelte"
   import posthog from "posthog-js"
+  import { agentInfo } from "$lib/agent"
 
   // ### Spec Details Page ###
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: spec_id = $page.params.spec_id!
+  $: agentInfo.set({
+    name: "Spec Detail",
+    description: `Spec detail for spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Spec name: ${spec?.name ?? "[loading]"}. Shows spec requirements, evals, and test cases.`,
+  })
 
   let spec: Spec | null = null
   let spec_error: KilnError | null = null
@@ -155,6 +161,13 @@
     } finally {
       updating_priorities = false
     }
+  }
+
+  async function toggleArchive() {
+    if (!spec) return
+    const newStatus: SpecStatus =
+      spec.status === "archived" ? "active" : "archived"
+    await updateSpecStatus(newStatus)
   }
 
   async function updateSpecStatus(newStatus: SpecStatus) {
@@ -416,6 +429,13 @@
     ]}
     action_buttons={[
       {
+        label: spec?.status === "archived" ? "Unarchive" : "Archive",
+        disabled: loading || error !== null,
+        handler: () => {
+          toggleArchive()
+        },
+      },
+      {
         label: "Edit",
         disabled: loading || error !== null,
         handler: () => {
@@ -516,6 +536,12 @@
                       evaluator?.eval_set_filter_id,
                     )
                   : undefined,
+              },
+              {
+                name: "Created At",
+                value: spec.created_at
+                  ? formatDate(spec.created_at)
+                  : "Unknown",
               },
             ]}
           >

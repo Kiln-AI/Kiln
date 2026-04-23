@@ -10,7 +10,7 @@ import pytest
 from pydantic import BaseModel, Field, SerializationInfo, field_serializer
 
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel, KilnBaseModel
-from libs.core.conftest import MockFileFactoryMimeType
+from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
 
 
 class ModelWithAttachment(KilnBaseModel):

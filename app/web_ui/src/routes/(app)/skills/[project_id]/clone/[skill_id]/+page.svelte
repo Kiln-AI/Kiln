@@ -3,8 +3,13 @@
   import SkillForm from "../../../skill_form.svelte"
   import { page } from "$app/stores"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: skill_id = $page.params.skill_id!
+  $: agentInfo.set({
+    name: "Clone Skill",
+    description: `Clone skill ID ${skill_id} in project ID ${project_id}. Create a new skill using an existing skill as a template.`,
+  })
 </script>
 
 <div class="max-w-2xl">

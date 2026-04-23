@@ -17,12 +17,16 @@
   import Warning from "$lib/ui/warning.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import { selected_tool_for_task } from "$lib/stores/tools_store"
-  import TableButton from "../../../../generate/[project_id]/[task_id]/table_button.svelte"
-  import Float from "$lib/ui/float.svelte"
+  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import ErrorDetailsBlock from "$lib/ui/error_details_block.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: tool_server_id = $page.params.tool_server_id!
+  $: agentInfo.set({
+    name: "Tool Server Detail",
+    description: `Tool server detail for server ID ${tool_server_id} in project ID ${project_id}. Server name: ${tool_server?.name ?? "[loading]"}. Shows server properties, tools, status, and configuration.`,
+  })
   $: is_archived = tool_server?.properties?.is_archived ?? false
 
   let tool_server: ExternalToolServerApiDescription | null = null
@@ -617,32 +621,19 @@
                     </td>
                     {#if tool_server?.type === "remote_mcp" || tool_server?.type === "local_mcp"}
                       <td class="p-0">
-                        <div class="dropdown dropdown-end dropdown-hover">
-                          <TableButton />
-                          <Float>
-                            <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-                            <ul
-                              tabindex="0"
-                              class="dropdown-content menu bg-base-100 rounded-box z-[1] w-64 p-2 shadow"
-                            >
-                              <li>
-                                <button
-                                  on:click={() =>
-                                    open_tool_action_dialog(tool.name)}
-                                >
-                                  Run Task with Tool
-                                </button>
-                              </li>
-                              <li>
-                                <button
-                                  on:click={() => handleCreateTask(tool.name)}
-                                >
-                                  Create Task from Tool
-                                </button>
-                              </li>
-                            </ul>
-                          </Float>
-                        </div>
+                        <TableActionMenu
+                          width="w-64"
+                          items={[
+                            {
+                              label: "Run Task with Tool",
+                              onclick: () => open_tool_action_dialog(tool.name),
+                            },
+                            {
+                              label: "Create Task from Tool",
+                              onclick: () => handleCreateTask(tool.name),
+                            },
+                          ]}
+                        />
                       </td>
                     {/if}
                   </tr>

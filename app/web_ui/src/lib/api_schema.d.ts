@@ -53,11 +53,7 @@ export interface paths {
         get: operations["get_project_api_projects__project_id__get"];
         put?: never;
         post?: never;
-        /**
-         * Delete Project
-         * @description Removes the project from Kiln but does not delete the files from disk.
-         */
-        delete: operations["delete_project_api_projects__project_id__delete"];
+        delete?: never;
         options?: never;
         head?: never;
         /** Update Project */
@@ -130,6 +126,29 @@ export interface paths {
          * @description Determines which rating options should be shown for a given dataset item.
          */
         get: operations["get_rating_options_api_projects__project_id__tasks__task_id__rating_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/task_summaries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Task Summaries (agent-tuned)
+         * @description Return a workspace-wide list of projects and their tasks, with truncated
+         *     task.instruction values. Unlike typical list endpoints, entries here are
+         *     intentionally lossy — the shape is tuned for LLM-agent context efficiency,
+         *     not for driving UIs that need the full Task model.
+         */
+        get: operations["task_summaries_api_task_summaries_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -373,6 +392,41 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Feedback */
+        get: operations["list_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback_get"];
+        put?: never;
+        /** Create Feedback */
+        post: operations["create_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/feedback/{feedback_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Feedback */
+        delete: operations["delete_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback__feedback_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1254,6 +1308,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/provider/create_kiln_copilot_api_key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Kiln Copilot API Key */
+        post: operations["create_kiln_copilot_api_key_api_provider_create_kiln_copilot_api_key_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/gen_prompt/{prompt_id}": {
         parameters: {
             query?: never;
@@ -1883,6 +1954,23 @@ export interface paths {
         };
         /** Get Run Config Score Summary */
         get: operations["get_eval_config_score_summary_api_projects__project_id__tasks__task_id__evals__eval_id__eval_config__eval_config_id__score_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/eval_results_summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Eval Results Summary */
+        get: operations["get_eval_results_summary_api_projects__project_id__tasks__task_id__eval_results_summary_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2576,10 +2664,661 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/git_sync/test_access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Git Remote Access */
+        post: operations["api_test_access_api_git_sync_test_access_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/list_branches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** List Remote Branches */
+        post: operations["api_list_branches_api_git_sync_list_branches_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Clone Repository */
+        post: operations["api_clone_api_git_sync_clone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/test_write_access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Write Access */
+        post: operations["api_test_write_access_api_git_sync_test_write_access_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/scan_projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Scan for Kiln Projects */
+        post: operations["api_scan_projects_api_git_sync_scan_projects_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/rename_clone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rename Clone to Final Path */
+        post: operations["api_rename_clone_api_git_sync_rename_clone_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/save_config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save Git Sync Config */
+        post: operations["api_save_config_api_git_sync_save_config_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/config/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Git Sync Config */
+        get: operations["api_get_config_api_git_sync_config__project_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Git Sync Config */
+        delete: operations["api_delete_config_api_git_sync_config__project_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Git Sync Config */
+        patch: operations["api_update_config_api_git_sync_config__project_id__patch"];
+        trace?: never;
+    };
+    "/api/git_sync/oauth/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start GitHub OAuth Flow */
+        post: operations["api_oauth_start_api_git_sync_oauth_start_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** OAuth Callback */
+        get: operations["api_oauth_callback_api_git_sync_oauth_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/oauth/authorize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GitHub App Install Complete */
+        get: operations["api_oauth_installed_api_git_sync_oauth_authorize_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/git_sync/oauth/status/{state}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** OAuth Flow Status */
+        get: operations["api_oauth_status_api_git_sync_oauth_status__state__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/delete_project/{project_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Project
+         * @description Removes the project from Kiln but does not delete the files from disk.
+         */
+        delete: operations["delete_project_api_delete_project__project_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/agent_overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agent Overview
+         * @description An overview of a task and all it's components, optimized for agents.
+         */
+        get: operations["agent_overview_api_projects__project_id__tasks__task_id__agent_overview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/execute-tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Execute approved client tools and continue chat stream
+         * @description Tool calls that require user approval are streamed to the client for approval, along with the
+         *     other toolcalls part of the same turn. The user must approve / reject all the approval-requiring
+         *     toolcalls in the UI, then send back the decisions through this endpoint, which will execute
+         *     the toolcalls and continue the chat stream.
+         */
+        post: operations["post_execute_tools_api_chat_execute_tools_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List chat sessions
+         * @description Proxy to Kiln Copilot ``GET /v1/chat/sessions``.
+         */
+        get: operations["list_chat_sessions_api_chat_sessions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/sessions/{session_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get chat session
+         * @description Proxy to Kiln Copilot ``GET /v1/chat/sessions/{session_id}``.
+         */
+        get: operations["get_chat_session_api_chat_sessions__session_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete chat session
+         * @description Proxy to Kiln Copilot ``DELETE /v1/chat/sessions/{session_id}``.
+         */
+        delete: operations["delete_chat_session_api_chat_sessions__session_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stream Chat
+         * @description Forward chat to Kiln Copilot and stream AI SDK events as Server-Sent Events.
+         */
+        post: operations["chat_api_chat_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AgentOverview */
+        AgentOverview: {
+            project: components["schemas"]["AgentOverviewProject"];
+            task: components["schemas"]["AgentOverviewTask"];
+            dataset: components["schemas"]["AgentOverviewDataset"];
+            docs: components["schemas"]["AgentOverviewDocs"];
+            search_tools: components["schemas"]["AgentOverviewSearchTools"];
+            prompts: components["schemas"]["AgentOverviewPrompts"];
+            specs: components["schemas"]["AgentOverviewSpecs"];
+            /** Evals */
+            evals: components["schemas"]["AgentOverviewEval"][];
+            tool_servers: components["schemas"]["AgentOverviewToolServers"];
+            run_configs: components["schemas"]["AgentOverviewRunConfigs"];
+            fine_tunes: components["schemas"]["AgentOverviewFineTunes"];
+            prompt_optimization_jobs: components["schemas"]["AgentOverviewPromptOptimizationJobs"];
+            skills: components["schemas"]["AgentOverviewSkills"];
+            /** Connected Providers */
+            connected_providers: {
+                [key: string]: {
+                    [key: string]: boolean;
+                };
+            };
+        };
+        /**
+         * AgentOverviewDataset
+         * @description Aggregate counts of dataset examples by tag, source type, and rating.
+         */
+        AgentOverviewDataset: {
+            /** Total Count */
+            total_count: number;
+            /** By Tag */
+            by_tag: {
+                [key: string]: number;
+            };
+            /**
+             * By Source
+             * @description Counts keyed by DataSourceType.
+             */
+            by_source: {
+                [key: string]: number;
+            };
+            /**
+             * By Rating
+             * @description Counts keyed by star rating (1-5) or 'unrated'.
+             */
+            by_rating: {
+                [key: string]: number;
+            };
+        };
+        /** AgentOverviewDocs */
+        AgentOverviewDocs: {
+            /** Doc Count */
+            doc_count: number;
+            /** By Tag */
+            by_tag: {
+                [key: string]: number;
+            };
+            /** By Kind */
+            by_kind: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * AgentOverviewEval
+         * @description An eval definition with its scoring configuration.
+         */
+        AgentOverviewEval: {
+            /** Eval Id */
+            eval_id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /**
+             * Template
+             * @description Eval template type, if template-based.
+             */
+            template: string | null;
+            /**
+             * Default Judge Config Id
+             * @description ID of the default judge run config for this eval.
+             */
+            default_judge_config_id: string | null;
+            /** Output Scores */
+            output_scores: components["schemas"]["AgentOverviewOutputScore"][];
+            /** Favourite */
+            favourite: boolean;
+        };
+        /** AgentOverviewFineTunes */
+        AgentOverviewFineTunes: {
+            /** Total Count */
+            total_count: number;
+        };
+        /** AgentOverviewOutputScore */
+        AgentOverviewOutputScore: {
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+        };
+        /** AgentOverviewProject */
+        AgentOverviewProject: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+        };
+        /**
+         * AgentOverviewPrompt
+         * @description A prompt available for use in run configs.
+         */
+        AgentOverviewPrompt: {
+            /**
+             * Id
+             * @description The prompt ID (e.g. 'id::...' or 'task_run_config::...').
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Type
+             * @description Type label (e.g. 'Custom', 'Frozen', 'Fine-Tune').
+             */
+            type: string;
+        };
+        /** AgentOverviewPromptOptimizationJobs */
+        AgentOverviewPromptOptimizationJobs: {
+            /** Total Count */
+            total_count: number;
+        };
+        /**
+         * AgentOverviewPrompts
+         * @description Available prompts, capped to the most recent entries.
+         */
+        AgentOverviewPrompts: {
+            /** Total */
+            total: number;
+            /**
+             * Showing
+             * @description Human-readable 'N of M' summary.
+             */
+            showing: string;
+            /**
+             * Generators From Task Instruction Count
+             * @description Number of built-in prompt generators that auto-generate from the task instruction.
+             */
+            generators_from_task_instruction_count: number;
+            /** Items */
+            items: components["schemas"]["AgentOverviewPrompt"][];
+        };
+        /**
+         * AgentOverviewRunConfig
+         * @description A run configuration defining model, prompt, and tool selections.
+         */
+        AgentOverviewRunConfig: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /**
+             * Type
+             * @description Run config type (e.g. 'agent', 'mcp').
+             */
+            type: string;
+            /** Model Name */
+            model_name: string | null;
+            /** Model Provider */
+            model_provider: string | null;
+            /**
+             * Prompt Id
+             * @description Prompt ID used by this config, matching AgentOverviewPrompt.id format.
+             */
+            prompt_id: string | null;
+            /**
+             * Tool Ids
+             * @description Tool IDs attached to this config, including skills (prefixed with 'kiln_tool::skill::').
+             */
+            tool_ids: string[];
+            /** Starred */
+            starred: boolean;
+        };
+        /**
+         * AgentOverviewRunConfigs
+         * @description Run configs with starred entries always included, capped to 5 total.
+         */
+        AgentOverviewRunConfigs: {
+            /** Default Run Config Id */
+            default_run_config_id: string | null;
+            /** Total */
+            total: number;
+            /**
+             * Showing
+             * @description Human-readable 'N of M' summary.
+             */
+            showing: string;
+            /** Items */
+            items: components["schemas"]["AgentOverviewRunConfig"][];
+        };
+        /** AgentOverviewSearchTool */
+        AgentOverviewSearchTool: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Tool Name */
+            tool_name: string;
+            /** Tool Description */
+            tool_description: string;
+            /** Description */
+            description: string | null;
+            /** Tags */
+            tags: string[] | null;
+        };
+        /** AgentOverviewSearchTools */
+        AgentOverviewSearchTools: {
+            /** Items */
+            items: components["schemas"]["AgentOverviewSearchTool"][];
+            /** Archived Search Tool Count */
+            archived_search_tool_count: number;
+        };
+        /** AgentOverviewSkill */
+        AgentOverviewSkill: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+        };
+        /** AgentOverviewSkills */
+        AgentOverviewSkills: {
+            /** Items */
+            items: components["schemas"]["AgentOverviewSkill"][];
+            /** Archived Skill Count */
+            archived_skill_count: number;
+        };
+        /**
+         * AgentOverviewSpec
+         * @description A non-archived eval spec with its priority and status.
+         */
+        AgentOverviewSpec: {
+            /**
+             * Eval Id
+             * @description The eval this spec belongs to.
+             */
+            eval_id: string | null;
+            /** Name */
+            name: string;
+            /** Spec Type */
+            spec_type: string;
+            /**
+             * Priority
+             * @description Priority level name (e.g. 'p0', 'p1', 'p2').
+             */
+            priority: string;
+            /** Status */
+            status: string;
+            /** Tags */
+            tags: string[];
+        };
+        /** AgentOverviewSpecs */
+        AgentOverviewSpecs: {
+            /** Items */
+            items: components["schemas"]["AgentOverviewSpec"][];
+            /** Archived Spec Count */
+            archived_spec_count: number;
+        };
+        /**
+         * AgentOverviewTask
+         * @description The task definition including schemas and truncated instruction.
+         */
+        AgentOverviewTask: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /**
+             * Instruction
+             * @description Task instruction, truncated with sentinel if over 70 words.
+             */
+            instruction: string;
+            /**
+             * Input Json Schema
+             * @description JSON Schema for task input, or null if plain text.
+             */
+            input_json_schema: unknown | null;
+            /**
+             * Output Json Schema
+             * @description JSON Schema for task output, or null if plain text.
+             */
+            output_json_schema: unknown | null;
+            /** Default Run Config Id */
+            default_run_config_id: string | null;
+        };
+        /** AgentOverviewToolServer */
+        AgentOverviewToolServer: {
+            /** Id */
+            id: string | null;
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+            /** Description */
+            description: string | null;
+        };
+        /** AgentOverviewToolServers */
+        AgentOverviewToolServers: {
+            /** Items */
+            items: components["schemas"]["AgentOverviewToolServer"][];
+            /** Archived Tool Server Count */
+            archived_tool_server_count: number;
+        };
         /** AnswerOption */
         AnswerOption: {
             /**
@@ -2649,6 +3388,11 @@ export interface components {
              * @description The prompt ID used to reference this prompt.
              */
             id: string;
+            /**
+             * Type
+             * @description The type label for this prompt (e.g. 'Custom', 'Fine-Tune', 'Frozen', 'Few-Shot').
+             */
+            type: string;
             /**
              * Created At
              * @description When the prompt was created.
@@ -3072,6 +3816,41 @@ export interface components {
             /** Name */
             name?: string;
         };
+        /** ChatRequest */
+        ChatRequest: {
+            /** Messages */
+            messages: components["schemas"]["ChatRequestMessage"][];
+            /** Trace Id */
+            trace_id?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ChatRequestMessage */
+        ChatRequestMessage: {
+            /** Role */
+            role: string;
+            /** Content */
+            content?: string | {
+                [key: string]: unknown;
+            }[] | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** ChatSessionListItem */
+        ChatSessionListItem: {
+            /** Id */
+            id: string;
+            /** Title */
+            title?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** ChatSessionSnapshot */
+        ChatSessionSnapshot: {
+            /** Id */
+            id: string;
+            task_run: components["schemas"]["TaskRunSnapshot"];
+        };
         /**
          * ChatStrategy
          * @description Strategy for how a chat is structured.
@@ -3122,7 +3901,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -3185,6 +3964,60 @@ export interface components {
             examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
             judge_result: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
             sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Output"];
+        };
+        /**
+         * CloneRequest
+         * @description Request to clone a git repository into a temporary directory.
+         */
+        CloneRequest: {
+            /**
+             * Git Url
+             * @description The git remote URL to clone.
+             */
+            git_url: string;
+            /**
+             * Branch
+             * @description The branch to check out after cloning.
+             */
+            branch: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+            /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
+        };
+        /**
+         * CloneResponse
+         * @description Result of a clone operation.
+         */
+        CloneResponse: {
+            /**
+             * Clone Path
+             * @description Filesystem path where the repo was cloned.
+             */
+            clone_path: string;
+            /**
+             * Success
+             * @description Whether the clone succeeded.
+             */
+            success: boolean;
+            /**
+             * Message
+             * @description Human-readable result message.
+             */
+            message: string;
         };
         /** CohereCompatibleProperties */
         CohereCompatibleProperties: {
@@ -3386,6 +4219,19 @@ export interface components {
             properties: components["schemas"]["LitellmExtractorConfigProperties"];
         };
         /**
+         * CreateFeedbackRequest
+         * @description Request body for creating feedback on a task run.
+         */
+        CreateFeedbackRequest: {
+            /**
+             * Feedback
+             * @description Free-form text feedback on the task run.
+             */
+            feedback: string;
+            /** @description Where this feedback originated. */
+            source: components["schemas"]["FeedbackSource"];
+        };
+        /**
          * CreateFinetuneRequest
          * @description Request to create a finetune
          */
@@ -3416,6 +4262,14 @@ export interface components {
             custom_thinking_instructions?: string | null;
             data_strategy: components["schemas"]["ChatStrategy"];
             run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
+        };
+        /** CreateKilnCopilotApiKeyRequest */
+        CreateKilnCopilotApiKeyRequest: {
+            /**
+             * Access Token
+             * @description Kinde OAuth access token.
+             */
+            access_token: string;
         };
         /**
          * CreateMcpRunConfigRequest
@@ -3894,7 +4748,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -3961,6 +4815,17 @@ export interface components {
          * @enum {string}
          */
         DatasetSplitType: "train_val" | "train_test" | "train_test_val" | "train_test_val_80" | "all";
+        /**
+         * DeleteConfigResponse
+         * @description Confirmation that a git sync configuration was deleted.
+         */
+        DeleteConfigResponse: {
+            /**
+             * Message
+             * @description Human-readable confirmation message.
+             */
+            message: string;
+        };
         /** DesiredBehaviourProperties */
         DesiredBehaviourProperties: {
             /**
@@ -4010,7 +4875,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -4079,7 +4944,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -4208,7 +5073,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -4300,7 +5165,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -4502,6 +5367,90 @@ export interface components {
             dataset_size: number;
         };
         /**
+         * EvalResultsSummaryEvalInfo
+         * @description Metadata for a single eval within eval results summary.
+         */
+        EvalResultsSummaryEvalInfo: {
+            /**
+             * Name
+             * @description The eval name.
+             */
+            name: string;
+            /**
+             * Default Judge Config Id
+             * @description The default judge config ID for this eval, if any.
+             */
+            default_judge_config_id: string | null;
+            /**
+             * Dataset Size
+             * @description Total size of the eval dataset.
+             */
+            dataset_size: number;
+            /**
+             * Output Score Keys
+             * @description The output score keys for this eval.
+             */
+            output_score_keys: string[];
+        };
+        /**
+         * EvalResultsSummaryResponse
+         * @description Aggregated eval results across all evals for a task.
+         */
+        EvalResultsSummaryResponse: {
+            /**
+             * Evals By Id
+             * @description Eval metadata keyed by eval ID.
+             */
+            evals_by_id: {
+                [key: string]: components["schemas"]["EvalResultsSummaryEvalInfo"];
+            };
+            /**
+             * Run Configs By Id
+             * @description Run config metadata keyed by run config ID.
+             */
+            run_configs_by_id: {
+                [key: string]: components["schemas"]["EvalResultsSummaryRunConfigInfo"];
+            };
+            /**
+             * Scores By Run Config By Eval
+             * @description Results keyed by run config ID then eval ID.
+             */
+            scores_by_run_config_by_eval: {
+                [key: string]: {
+                    [key: string]: components["schemas"]["EvalResultsSummaryResultCell"];
+                };
+            };
+        };
+        /**
+         * EvalResultsSummaryResultCell
+         * @description Results for a single (eval, run_config) cell.
+         */
+        EvalResultsSummaryResultCell: {
+            /**
+             * Mean Scores
+             * @description Mean scores keyed by output_score_key.
+             */
+            mean_scores: {
+                [key: string]: number;
+            };
+            /**
+             * Percent Complete
+             * @description Percent of dataset processed for this run config.
+             */
+            percent_complete: number;
+        };
+        /**
+         * EvalResultsSummaryRunConfigInfo
+         * @description Metadata for a run config within eval results summary.
+         */
+        EvalResultsSummaryRunConfigInfo: {
+            /**
+             * Name
+             * @description The run config name.
+             */
+            name: string;
+        };
+        /**
          * EvalRun
          * @description The results of running an eval on a single dataset item.
          *
@@ -4531,7 +5480,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -4633,6 +5582,17 @@ export interface components {
             /** User Feedback */
             user_feedback?: string | null;
         };
+        /** ExecuteToolsRequest */
+        ExecuteToolsRequest: {
+            /** Trace Id */
+            trace_id: string;
+            /** Tool Calls */
+            tool_calls: components["schemas"]["ToolCallInfo"][];
+            /** Decisions */
+            decisions: {
+                [key: string]: boolean;
+            };
+        };
         /**
          * ExternalToolApiDescription
          * @description This class is a wrapper of MCP's Tool / KilnTaskTool objects to be displayed in the UI under tool_server/[tool_server_id].
@@ -4678,7 +5638,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -4848,7 +5808,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -4950,6 +5910,62 @@ export interface components {
             /** Factually Inaccurate Examples */
             factually_inaccurate_examples: string;
         };
+        /**
+         * Feedback
+         * @description Feedback on a task run.
+         *
+         *     Supports multi-source feedback: different users, automated systems, and
+         *     different locations in the UI can each contribute independent feedback
+         *     entries on the same task run.
+         */
+        Feedback: {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /**
+             * Feedback
+             * @description Free-form text feedback on the task run.
+             */
+            feedback: string;
+            /** @description Where this feedback originated, e.g. 'run-page' or 'spec-feedback'. */
+            source: components["schemas"]["FeedbackSource"];
+            /** Model Type */
+            readonly model_type: string;
+        };
+        /**
+         * FeedbackSource
+         * @description Where a piece of feedback originated.
+         *
+         *     This is an append-only enum: new sources can be added freely, but existing
+         *     values must never be removed or renamed so that older persisted data
+         *     continues to load.
+         * @enum {string}
+         */
+        FeedbackSource: "run-page" | "spec-feedback";
         /**
          * FewShotExample
          * @description An input/output example for few-shot prompting.
@@ -5072,7 +6088,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -5386,6 +6402,57 @@ export interface components {
              */
             rag_config_ids?: string[] | null;
         };
+        /**
+         * GitSyncConfigResponse
+         * @description Current git sync configuration for a project (PAT redacted).
+         */
+        GitSyncConfigResponse: {
+            /**
+             * Sync Mode
+             * @description Sync mode: 'auto' or 'manual'.
+             * @enum {string}
+             */
+            sync_mode: "auto" | "manual";
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
+            /**
+             * Remote Name
+             * @description Git remote name.
+             */
+            remote_name: string;
+            /**
+             * Branch
+             * @description Branch name being synced.
+             */
+            branch: string;
+            /**
+             * Clone Path
+             * @description Local filesystem path of the clone.
+             */
+            clone_path?: string | null;
+            /**
+             * Git Url
+             * @description The git remote URL.
+             */
+            git_url?: string | null;
+            /**
+             * Has Pat Token
+             * @description Whether a PAT token is configured (token not shown).
+             * @default false
+             */
+            has_pat_token: boolean;
+            /**
+             * Has Oauth Token
+             * @description Whether an OAuth token is configured (token not shown).
+             * @default false
+             */
+            has_oauth_token: boolean;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -5535,7 +6602,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -5722,6 +6789,50 @@ export interface components {
              * @description The number of results to return from the vector store.
              */
             similarity_top_k: number;
+        };
+        /**
+         * ListBranchesRequest
+         * @description Request to list branches on a git remote.
+         */
+        ListBranchesRequest: {
+            /**
+             * Git Url
+             * @description The git remote URL to list branches from.
+             */
+            git_url: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+            /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
+        };
+        /**
+         * ListBranchesResponse
+         * @description List of branches available on the remote.
+         */
+        ListBranchesResponse: {
+            /**
+             * Branches
+             * @description Branch names available on the remote.
+             */
+            branches: string[];
+            /**
+             * Default Branch
+             * @description The HEAD branch of the remote, if detected.
+             */
+            default_branch?: string | null;
         };
         /** LitellmExtractorConfigProperties */
         LitellmExtractorConfigProperties: {
@@ -5996,6 +7107,79 @@ export interface components {
             /** Nsfw Examples */
             nsfw_examples: string;
         };
+        /**
+         * OAuthStartRequest
+         * @description Request to start a GitHub OAuth flow.
+         */
+        OAuthStartRequest: {
+            /**
+             * Git Url
+             * @description The git remote URL to authenticate against.
+             */
+            git_url: string;
+        };
+        /**
+         * OAuthStartResponse
+         * @description Response from starting a GitHub OAuth flow.
+         */
+        OAuthStartResponse: {
+            /**
+             * Authorize Url
+             * @description GitHub OAuth authorization URL to open in the browser.
+             */
+            authorize_url: string;
+            /**
+             * Install Url
+             * @description GitHub App installation URL (used if app not yet installed on repo).
+             */
+            install_url: string;
+            /**
+             * State
+             * @description OAuth state parameter for polling.
+             */
+            state: string;
+            /**
+             * Owner Name
+             * @description Parsed owner name from git URL.
+             */
+            owner_name: string;
+            /**
+             * Repo Name
+             * @description Parsed repo name from git URL.
+             */
+            repo_name: string;
+            /**
+             * Owner Pre Selected
+             * @description Whether the owner was pre-selected in the install URL.
+             */
+            owner_pre_selected: boolean;
+            /**
+             * Repo Pre Selected
+             * @description Whether the repo was pre-selected in the install URL.
+             */
+            repo_pre_selected: boolean;
+        };
+        /**
+         * OAuthStatusResponse
+         * @description Status of an in-progress OAuth flow.
+         */
+        OAuthStatusResponse: {
+            /**
+             * Complete
+             * @description Whether the OAuth flow has completed.
+             */
+            complete: boolean;
+            /**
+             * Oauth Token
+             * @description The OAuth token, if flow completed successfully.
+             */
+            oauth_token?: string | null;
+            /**
+             * Error
+             * @description Error message, if flow failed.
+             */
+            error?: string | null;
+        };
         /** OllamaConnection */
         OllamaConnection: {
             /** Message */
@@ -6116,7 +7300,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -6162,7 +7346,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -6184,64 +7368,31 @@ export interface components {
             readonly model_type: string;
         };
         /**
-         * Prompt
-         * @description A prompt for a task. This is the custom prompt parented by a task.
+         * ProjectInfo
+         * @description Metadata about a discovered Kiln project.
          */
-        Prompt: {
+        ProjectInfo: {
+            /**
+             * Path
+             * @description Relative path to the project.kiln file.
+             */
+            path: string;
             /**
              * Name
-             * @description The name of the prompt.
+             * @description Project name from the project file.
              */
             name: string;
             /**
              * Description
-             * @description A more detailed description of the prompt.
+             * @description Project description from the project file.
              */
-            description?: string | null;
-            /**
-             * Generator Id
-             * @description The id of the generator that created this prompt.
-             */
-            generator_id?: string | null;
-            /**
-             * Prompt
-             * @description The prompt for the task.
-             */
-            prompt: string;
-            /**
-             * Chain Of Thought Instructions
-             * @description Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting. COT will not be used unless this is provided.
-             */
-            chain_of_thought_instructions?: string | null;
-            /**
-             * V
-             * @description Schema version for migration support.
-             * @default 1
-             */
-            v: number;
+            description: string;
             /**
              * Id
-             * @description Unique identifier for this record.
+             * @description Unique project identifier.
+             * @default
              */
-            id?: string | null;
-            /**
-             * Path
-             * @description File system path where the record is stored.
-             */
-            path?: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             * @description Timestamp when the model was created.
-             */
-            created_at?: string;
-            /**
-             * Created By
-             * @description User ID of the creator.
-             */
-            created_by?: string;
-            /** Model Type */
-            readonly model_type: string;
+            id: string;
         };
         /** PromptApiResponse */
         PromptApiResponse: {
@@ -6348,7 +7499,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -6558,7 +7709,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -6862,6 +8013,48 @@ export interface components {
             is_archived: boolean;
         };
         /**
+         * RenameCloneRequest
+         * @description Request to rename a temp clone directory to its final path.
+         */
+        RenameCloneRequest: {
+            /**
+             * Clone Path
+             * @description Current filesystem path of the cloned repo (typically in .tmp/).
+             */
+            clone_path: string;
+            /**
+             * Project Name
+             * @description Human-readable project name for the final directory.
+             */
+            project_name: string;
+            /**
+             * Project Id
+             * @description Unique project identifier used in the final path.
+             */
+            project_id: string;
+        };
+        /**
+         * RenameCloneResponse
+         * @description Result of renaming a clone directory.
+         */
+        RenameCloneResponse: {
+            /**
+             * New Clone Path
+             * @description The new filesystem path of the renamed clone.
+             */
+            new_clone_path: string;
+            /**
+             * Success
+             * @description Whether the rename succeeded.
+             */
+            success: boolean;
+            /**
+             * Message
+             * @description Human-readable result message.
+             */
+            message: string;
+        };
+        /**
          * RepairRunPost
          * @description Request to save a repair for a task run.
          */
@@ -6919,7 +8112,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -7128,6 +8321,67 @@ export interface components {
             /** Output */
             output: string;
         };
+        /**
+         * SaveConfigRequest
+         * @description Request to save a complete git sync configuration for a project.
+         */
+        SaveConfigRequest: {
+            /**
+             * Project Id
+             * @description Unique project identifier.
+             */
+            project_id: string;
+            /**
+             * Project Path
+             * @description Relative path to the project.kiln file within the clone.
+             */
+            project_path: string;
+            /**
+             * Git Url
+             * @description The git remote URL.
+             */
+            git_url: string;
+            /**
+             * Clone Path
+             * @description Local filesystem path of the clone.
+             */
+            clone_path: string;
+            /**
+             * Branch
+             * @description Branch name to sync.
+             */
+            branch: string;
+            /**
+             * Remote Name
+             * @description Git remote name.
+             * @default origin
+             */
+            remote_name: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+            /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode detected during setup: 'system_keys', 'pat_token', or 'github_oauth'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
+            /**
+             * Sync Mode
+             * @description Sync mode: 'auto' or 'manual'.
+             * @default auto
+             * @enum {string}
+             */
+            sync_mode: "auto" | "manual";
+        };
         /** SaveQnaPairInput */
         SaveQnaPairInput: {
             /**
@@ -7155,6 +8409,28 @@ export interface components {
              * @description Optional tags
              */
             tags?: string[] | null;
+        };
+        /**
+         * ScanProjectsRequest
+         * @description Request to scan a cloned repo for Kiln project files.
+         */
+        ScanProjectsRequest: {
+            /**
+             * Clone Path
+             * @description Local filesystem path of the cloned repo.
+             */
+            clone_path: string;
+        };
+        /**
+         * ScanProjectsResponse
+         * @description Projects discovered inside a cloned repository.
+         */
+        ScanProjectsResponse: {
+            /**
+             * Projects
+             * @description List of discovered projects.
+             */
+            projects: components["schemas"]["ProjectInfo"][];
         };
         /**
          * ScoreSummary
@@ -7351,7 +8627,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -7662,7 +8938,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -7775,7 +9051,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -7820,7 +9096,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -7869,7 +9145,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -7928,7 +9204,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -8032,7 +9308,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -8055,11 +9331,6 @@ export interface components {
              * @description Instructions for fixing the output. Should define what is wrong, and how to fix it. Will be used by models for both generating a fixed output, and evaluating future models.
              */
             repair_instructions?: string | null;
-            /**
-             * User Feedback
-             * @description User feedback from the spec review process explaining why the output passes or fails a requirement.
-             */
-            user_feedback?: string | null;
             /** @description An version of the output with issues fixed. This must be a 'fixed' version of the existing output, and not an entirely new output. If you wish to generate an ideal curatorial output for this task unrelated to this output, generate a new TaskOutput with type 'human' instead of using this field. */
             repaired_output?: components["schemas"]["TaskOutput-Input"] | null;
             /**
@@ -8115,7 +9386,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -8137,11 +9408,6 @@ export interface components {
              * @description Instructions for fixing the output. Should define what is wrong, and how to fix it. Will be used by models for both generating a fixed output, and evaluating future models.
              */
             repair_instructions?: string | null;
-            /**
-             * User Feedback
-             * @description User feedback from the spec review process explaining why the output passes or fails a requirement.
-             */
-            user_feedback?: string | null;
             /** @description An version of the output with issues fixed. This must be a 'fixed' version of the existing output, and not an entirely new output. If you wish to generate an ideal curatorial output for this task unrelated to this output, generate a new TaskOutput with type 'human' instead of using this field. */
             repaired_output?: components["schemas"]["TaskOutput-Output"] | null;
             /**
@@ -8200,7 +9466,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -8234,6 +9500,13 @@ export interface components {
             /** Model Type */
             readonly model_type: string;
         };
+        /** TaskRunSnapshot */
+        TaskRunSnapshot: {
+            /** Trace */
+            trace?: components["schemas"]["TraceMessage"][] | null;
+        } & {
+            [key: string]: unknown;
+        };
         /**
          * TaskSample
          * @description An example task input/output pair used to demonstrate expected behavior.
@@ -8249,6 +9522,33 @@ export interface components {
              * @description The expected output for the task.
              */
             output: string;
+        };
+        /** TaskSummariesProject */
+        TaskSummariesProject: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Tasks */
+            tasks: components["schemas"]["TaskSummary"][];
+        };
+        /** TaskSummariesResponse */
+        TaskSummariesResponse: {
+            /** Projects */
+            projects: components["schemas"]["TaskSummariesProject"][];
+        };
+        /** TaskSummary */
+        TaskSummary: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Instruction */
+            instruction: string;
         };
         /**
          * TaskToolCompatibility
@@ -8276,6 +9576,89 @@ export interface components {
              */
             incompatibility_reason?: string | null;
         };
+        /**
+         * TestAccessRequest
+         * @description Request to test read access to a git remote.
+         */
+        TestAccessRequest: {
+            /**
+             * Git Url
+             * @description The git remote URL to test access against.
+             */
+            git_url: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+            /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
+        };
+        /**
+         * TestAccessResponse
+         * @description Result of a git remote access test.
+         */
+        TestAccessResponse: {
+            /**
+             * Success
+             * @description Whether access to the remote succeeded.
+             */
+            success: boolean;
+            /**
+             * Message
+             * @description Human-readable result message.
+             */
+            message: string;
+            /**
+             * Auth Required
+             * @description True when the failure is due to missing authentication.
+             * @default false
+             */
+            auth_required: boolean;
+            /**
+             * Auth Method
+             * @description Auth method that succeeded: 'system_keys', 'pat_token', or 'github_oauth'. Null on failure.
+             */
+            auth_method?: string | null;
+        };
+        /**
+         * TestWriteAccessRequest
+         * @description Request to test push/write access to a cloned repo's remote.
+         */
+        TestWriteAccessRequest: {
+            /**
+             * Clone Path
+             * @description Local filesystem path of the cloned repo.
+             */
+            clone_path: string;
+            /**
+             * Pat Token
+             * @description Optional personal access token for authentication.
+             */
+            pat_token?: string | null;
+            /**
+             * Oauth Token
+             * @description Optional OAuth token for authentication.
+             */
+            oauth_token?: string | null;
+            /**
+             * Auth Mode
+             * @description Auth mode: 'system_keys', 'pat_token', or 'github_oauth'.
+             * @default system_keys
+             * @enum {string}
+             */
+            auth_mode: "system_keys" | "pat_token" | "github_oauth";
+        };
         /** ToneProperties */
         ToneProperties: {
             /**
@@ -8300,6 +9683,19 @@ export interface components {
             name: string;
             /** Description */
             description: string | null;
+        };
+        /** ToolCallInfo */
+        ToolCallInfo: {
+            /** Toolcallid */
+            toolCallId: string;
+            /** Toolname */
+            toolName: string;
+            /** Input */
+            input: {
+                [key: string]: unknown;
+            };
+            /** Requiresapproval */
+            requiresApproval: boolean;
         };
         /**
          * ToolDefinitionResponse
@@ -8341,7 +9737,7 @@ export interface components {
          * ToolSetType
          * @enum {string}
          */
-        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill";
+        ToolSetType: "search" | "mcp" | "kiln_task" | "demo" | "skill" | "builtin";
         /**
          * ToolsRunConfig
          * @description A config describing which tools are available to a task.
@@ -8364,6 +9760,67 @@ export interface components {
             core_requirement: string;
             /** Toxicity Examples */
             toxicity_examples: string;
+        };
+        /** TraceMessage */
+        TraceMessage: {
+            /** Role */
+            role: string;
+            /** Content */
+            content?: string | {
+                [key: string]: unknown;
+            }[] | null;
+            /** Tool Calls */
+            tool_calls?: components["schemas"]["TraceToolCall"][] | null;
+            /** Tool Call Id */
+            tool_call_id?: string | null;
+            /** Reasoning Content */
+            reasoning_content?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        /** TraceToolCall */
+        TraceToolCall: {
+            /** Id */
+            id: string;
+            /**
+             * Type
+             * @default function
+             */
+            type: string;
+            function: components["schemas"]["TraceToolCallFunction"];
+        };
+        /** TraceToolCallFunction */
+        TraceToolCallFunction: {
+            /** Name */
+            name: string;
+            /** Arguments */
+            arguments: string;
+        };
+        /**
+         * UpdateConfigRequest
+         * @description Request to partially update a git sync configuration.
+         */
+        UpdateConfigRequest: {
+            /**
+             * Sync Mode
+             * @description New sync mode, if changing.
+             */
+            sync_mode?: ("auto" | "manual") | null;
+            /**
+             * Pat Token
+             * @description New personal access token, if changing.
+             */
+            pat_token?: string | null;
+            /**
+             * Oauth Token
+             * @description New OAuth token, if changing.
+             */
+            oauth_token?: string | null;
+            /**
+             * Auth Mode
+             * @description New auth mode, if changing.
+             */
+            auth_mode?: ("system_keys" | "pat_token" | "github_oauth") | null;
         };
         /**
          * UpdateEvalRequest
@@ -8499,6 +9956,11 @@ export interface components {
              * @description The cost of the task run in US dollars, saved at runtime (prices can change over time).
              */
             cost?: number | null;
+            /**
+             * Cached Tokens
+             * @description Number of tokens served from prompt cache. None if not reported.
+             */
+            cached_tokens?: number | null;
         };
         /**
          * UserModelEntry
@@ -8571,7 +10033,7 @@ export interface components {
             /**
              * Created At
              * Format: date-time
-             * @description Timestamp when the model was created.
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
              */
             created_at?: string;
             /**
@@ -8706,40 +10168,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Project-Output"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_project_api_projects__project_id__delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description The unique identifier of the project. */
-                project_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
                 };
             };
             /** @description Validation Error */
@@ -9035,6 +10463,26 @@ export interface operations {
             };
         };
     };
+    task_summaries_api_task_summaries_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskSummariesResponse"];
+                };
+            };
+        };
+    };
     get_prompts_api_projects__project_id__tasks__task_id__prompts_get: {
         parameters: {
             query?: never;
@@ -9093,7 +10541,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Prompt"];
+                    "application/json": components["schemas"]["ApiPrompt"];
                 };
             };
             /** @description Validation Error */
@@ -9800,6 +11248,120 @@ export interface operations {
                     "application/json": {
                         [key: string]: number;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the task run. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Feedback"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the task run. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Feedback"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_feedback_api_projects__project_id__tasks__task_id__runs__run_id__feedback__feedback_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the task run. */
+                run_id: string;
+                /** @description The unique identifier of the feedback. */
+                feedback_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -11688,6 +13250,39 @@ export interface operations {
             };
         };
     };
+    create_kiln_copilot_api_key_api_provider_create_kiln_copilot_api_key_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateKilnCopilotApiKeyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     generate_prompt_api_projects__project_id__tasks__task_id__gen_prompt__prompt_id__get: {
         parameters: {
             query?: never;
@@ -13219,6 +14814,40 @@ export interface operations {
             };
         };
     };
+    get_eval_results_summary_api_projects__project_id__tasks__task_id__eval_results_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EvalResultsSummaryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_eval_configs_score_summary_api_projects__project_id__tasks__task_id__evals__eval_id__eval_configs_score_summary_get: {
         parameters: {
             query?: never;
@@ -14623,6 +16252,690 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Spec"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_test_access_api_git_sync_test_access_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestAccessRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestAccessResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_list_branches_api_git_sync_list_branches_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListBranchesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListBranchesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_clone_api_git_sync_clone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloneResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_test_write_access_api_git_sync_test_write_access_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestWriteAccessRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestAccessResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_scan_projects_api_git_sync_scan_projects_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScanProjectsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScanProjectsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_rename_clone_api_git_sync_rename_clone_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameCloneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RenameCloneResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_save_config_api_git_sync_save_config_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitSyncConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_get_config_api_git_sync_config__project_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitSyncConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_delete_config_api_git_sync_config__project_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_update_config_api_git_sync_config__project_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GitSyncConfigResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_oauth_start_api_git_sync_oauth_start_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OAuthStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthStartResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_oauth_callback_api_git_sync_oauth_callback_get: {
+        parameters: {
+            query?: {
+                /** @description OAuth state parameter linking the callback to a pending flow. */
+                state?: string;
+                /** @description Authorization code from GitHub to exchange for an access token. */
+                code?: string;
+                /** @description Error code returned by GitHub if authorization was denied. */
+                error?: string;
+                /** @description Human-readable description of the error from GitHub. */
+                error_description?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    api_oauth_installed_api_git_sync_oauth_authorize_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    api_oauth_status_api_git_sync_oauth_status__state__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The OAuth state parameter to check. */
+                state: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OAuthStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_project_api_delete_project__project_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    agent_overview_api_projects__project_id__tasks__task_id__agent_overview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentOverview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_execute_tools_api_chat_execute_tools_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecuteToolsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_chat_sessions_api_chat_sessions_get: {
+        parameters: {
+            query?: {
+                /** @description Maximum number of sessions to return */
+                limit?: number;
+                /** @description Number of sessions to skip */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSessionListItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chat_session_api_chat_sessions__session_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Chat session id (same as trace id for continuation). */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSessionSnapshot"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_chat_session_api_chat_sessions__session_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Chat session id to delete. */
+                session_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    chat_api_chat_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

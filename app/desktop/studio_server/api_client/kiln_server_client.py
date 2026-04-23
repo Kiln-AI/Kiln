@@ -1,7 +1,7 @@
 import os
-from importlib.metadata import version
 
 import httpx
+from app.desktop.studio_server._version import __version__
 from app.desktop.studio_server.api_client.kiln_ai_server_client.client import (
     AuthenticatedClient,
 )
@@ -12,10 +12,7 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.client import (
 
 def _get_desktop_app_version() -> str:
     """Get the version of the kiln-studio-desktop package."""
-    try:
-        return version("kiln-studio-desktop")
-    except Exception:
-        return "unknown"
+    return __version__
 
 
 def _get_base_url() -> str:
@@ -45,6 +42,20 @@ def get_authenticated_client(api_key: str) -> AuthenticatedClient:
     return AuthenticatedClient(
         base_url=_get_base_url(),
         token=api_key,
+        headers=_get_common_headers(),
+        timeout=httpx.Timeout(timeout=900.0, connect=30.0),
+    )
+
+
+def get_oauth_authenticated_client(access_token: str) -> AuthenticatedClient:
+    """Get a client authenticated with a Kinde OAuth access token.
+
+    Used for pre-API-key flows like signup, where the user has authenticated
+    with Kinde but does not yet have a Kiln API key.
+    """
+    return AuthenticatedClient(
+        base_url=_get_base_url(),
+        token=access_token,
         headers=_get_common_headers(),
         timeout=httpx.Timeout(timeout=900.0, connect=30.0),
     )

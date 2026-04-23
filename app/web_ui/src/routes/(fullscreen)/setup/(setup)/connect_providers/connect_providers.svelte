@@ -15,6 +15,7 @@
   import { get_provider_image } from "$lib/ui/provider_image"
   import posthog from "posthog-js"
   import { goto } from "$app/navigation"
+  import { setCopilotConnected } from "$lib/stores/copilot_connection_store"
 
   export let onboarding = false
   export let highlight_finetune = false
@@ -96,9 +97,9 @@
       description: "Open models (Llama, Phi), plus the ability to fine-tune.",
       pill_text: highlight_finetune ? "Tuneable" : undefined,
       api_key_steps: [
-        "Go to https://fireworks.ai/account/api-keys",
+        "Go to https://app.fireworks.ai/settings/users/api-keys",
         "Create a new API Key and paste it below",
-        "Go to https://fireworks.ai/account/profile",
+        "Go to https://app.fireworks.ai/settings/account",
         "Copy the Account ID, paste it below, and click 'Connect'",
       ],
       featured: false,
@@ -417,6 +418,10 @@
       })
 
       status[provider.id].connected = false
+
+      if (provider.id === "kiln_copilot") {
+        setCopilotConnected(false)
+      }
 
       // Clear the available models list
       available_tuning_models.set(null)

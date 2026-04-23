@@ -8,14 +8,14 @@ actions:
 
   - name: "all_python_tests"
     description: "Run all python tests in the project"
-    command: "uv run python -m pytest --benchmark-quiet -q ."
+    command: "uv run python -m pytest --benchmark-quiet -q -n auto ."
 
   - name: "lint_python"
     description: "Lint the python source code, checking for errors and warnings"
     command: "uv run ruff check"
 
   - name: "lint_fix_python"
-    description: "Lint the pythong source code, fixing errors and warnings which it can fix. Not all errors can be fixed automatically."
+    description: "Lint the python source code, fixing errors and warnings which it can fix. Not all errors can be fixed automatically."
     command: "uv run ruff check --fix"
 
   - name: "check_format_python"
@@ -75,10 +75,13 @@ actions:
     command: "npm run build_quiet"
     run_path: "app/web_ui"
 
-  - name: "update_api_types"
-    description: "Update typescript API definition for the frontend to use, from the latest FastAPI server code."
-    command: "npx openapi-typescript http://localhost:8757/openapi.json -o api_schema.d.ts"
-    run_path: "app/web_ui/src/lib/"
+  - name: "check_schema"
+    description: "Check if the OpenAPI TypeScript schema is up to date with the FastAPI server code. Fails if generate_schema needs to be run."
+    command: "app/web_ui/src/lib/check_schema.sh"
+
+  - name: "generate_schema"
+    description: "Regenerate the OpenAPI TypeScript schema from the FastAPI server code. Run this when check_schema fails."
+    command: "app/web_ui/src/lib/generate_schema.sh"
 
 prompts:
   - name: "AGENTS.md"

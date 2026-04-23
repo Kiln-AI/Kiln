@@ -18,6 +18,7 @@
     sortRagConfigs,
     getProjectRagStateStore,
   } from "$lib/stores/rag_progress_store"
+  import { agentInfo } from "$lib/agent"
 
   $: projectStateStore = getProjectRagStateStore(project_id)
   $: progressState = $projectStateStore
@@ -36,6 +37,10 @@
   }
 
   $: project_id = $page.params.project_id!
+  $: agentInfo.set({
+    name: "Search Tools (RAG)",
+    description: `List of RAG search tool configurations for project ID ${project_id}. Shows available search tools for document retrieval.`,
+  })
   $: current_task_id = $ui_state.current_task_id
   $: evals_href = current_task_id
     ? `/specs/${project_id}/${current_task_id}/select_template?template_id=rag`

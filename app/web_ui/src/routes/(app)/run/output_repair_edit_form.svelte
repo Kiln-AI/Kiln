@@ -30,6 +30,18 @@
   let post_repair_error: KilnError | null = null
   let post_repair_submitting = false
   async function handle_submit() {
+    if (!repair_run) {
+      post_repair_error = new KilnError("No repair to edit", null)
+      return
+    }
+    if (!task.id || !run.id) {
+      post_repair_error = new KilnError(
+        "This task run isn't saved. Enable Auto-save. You can't edit repairs for unsaved runs.",
+        null,
+      )
+      return
+    }
+
     repair_run = {
       ...repair_run,
       output: {
@@ -49,15 +61,6 @@
     post_repair_submitting = true
 
     try {
-      if (!repair_run) {
-        throw new KilnError("No repair to edit", null)
-      }
-      if (!task.id || !run.id) {
-        throw new KilnError(
-          "This task run isn't saved. Enable Auto-save. You can't edit repairs for unsaved runs.",
-          null,
-        )
-      }
       const {
         data, // only present if 2XX response
         error: fetch_error, // only present if 4XX or 5XX response
@@ -102,7 +105,7 @@
     <FormElement
       id={"repair_manual_output"}
       label="Manual Repair"
-      info_description="Provide a improvement or correction to the task's output"
+      info_description="Provide an improvement or correction to the task's output"
       inputType="textarea"
       height="large"
       bind:value={repair_output_edited}
@@ -118,6 +121,7 @@
     {/if}
 
     <button
+      type="button"
       class="link text-gray-500 text-sm text-right"
       on:click={handle_cancel}>Cancel</button
     >

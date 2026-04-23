@@ -1,3 +1,13 @@
+<script lang="ts">
+  import { agentInfo } from "$lib/agent"
+
+  agentInfo.set({
+    name: "Welcome",
+    description:
+      "Welcome screen for new Kiln users. Entry point to begin setup.",
+  })
+</script>
+
 <div class="min-h-screen p-4 flex flex-col items-center">
   <div class="grow"></div>
   <img

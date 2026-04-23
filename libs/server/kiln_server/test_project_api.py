@@ -8,6 +8,7 @@ from fastapi.exceptions import HTTPException
 from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project
 from kiln_ai.utils.config import Config
+from kiln_ai.utils.project_utils import DuplicateProjectError
 
 from kiln_server.custom_errors import connect_custom_errors
 from kiln_server.project_api import (
@@ -223,6 +224,47 @@ def test_import_project_load_error(client):
     }
 
 
+def test_import_project_duplicate_same_path(client):
+    mock_project = Project(
+        name="Imported Project", description="An imported project", id="dup-id"
+    )
+    with (
+        patch("os.path.exists", return_value=True),
+        patch("kiln_ai.datamodel.Project.load_from_file", return_value=mock_project),
+        patch(
+            "kiln_server.project_api.check_duplicate_project_id",
+            side_effect=DuplicateProjectError(
+                "This project is already imported.", same_path=True
+            ),
+        ),
+    ):
+        response = client.post("/api/import_project?project_path=/path/to/project.kiln")
+
+    assert response.status_code == 409
+    assert response.json()["message"] == "This project is already imported."
+
+
+def test_import_project_duplicate_different_path(client):
+    mock_project = Project(
+        name="Imported Project", description="An imported project", id="dup-id"
+    )
+    with (
+        patch("os.path.exists", return_value=True),
+        patch("kiln_ai.datamodel.Project.load_from_file", return_value=mock_project),
+        patch(
+            "kiln_server.project_api.check_duplicate_project_id",
+            side_effect=DuplicateProjectError(
+                'You already have a project with this ID. You must remove project "Existing" before adding this.',
+                same_path=False,
+            ),
+        ),
+    ):
+        response = client.post("/api/import_project?project_path=/path/to/project.kiln")
+
+    assert response.status_code == 409
+    assert "remove project" in response.json()["message"]
+
+
 def test_import_project_missing_path(client):
     response = client.post("/api/import_project")
 
@@ -367,41 +409,6 @@ def test_get_projects_with_one_exception(client, mock_projects):
     assert len(result) == 1
     assert result[0]["name"] == "Project 2"
     assert result[0]["description"] == "Description 2"
-
-
-def test_delete_project_success(client):
-    mock_project = MagicMock(path="/path/to/project.kiln")
-    with (
-        patch(
-            "kiln_server.project_api.project_from_id",
-            return_value=mock_project,
-        ),
-        patch.object(Config, "shared") as mock_config,
-    ):
-        mock_config.return_value.projects = [
-            "/path/to/project.kiln",
-            "/path/to/other_project.kiln",
-        ]
-        mock_config.return_value.save_setting = MagicMock()
-
-        response = client.delete("/api/projects/test-id")
-
-    assert response.status_code == 200
-    assert response.json() == {"message": "Project removed. ID: test-id"}
-    mock_config.return_value.save_setting.assert_called_once_with(
-        "projects", ["/path/to/other_project.kiln"]
-    )
-
-
-def test_delete_project_not_found(client):
-    with patch(
-        "kiln_server.project_api.project_from_id",
-        side_effect=HTTPException(status_code=404, detail="Project not found"),
-    ):
-        response = client.delete("/api/projects/non-existent-id")
-
-    assert response.status_code == 404
-    assert response.json() == {"message": "Project not found"}
 
 
 def test_update_project_success(client, tmp_path):

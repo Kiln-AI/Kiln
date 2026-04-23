@@ -1,8 +1,11 @@
-from unittest.mock import AsyncMock
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from kiln_ai.adapters.extractors.extractor_runner import ExtractorRunner
+from kiln_ai.adapters.extractors.base_extractor import BaseExtractor, ExtractionOutput
+from kiln_ai.adapters.extractors.extractor_runner import ExtractorJob, ExtractorRunner
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
 from kiln_ai.datamodel.extraction import (
     Document,
@@ -15,7 +18,8 @@ from kiln_ai.datamodel.extraction import (
     OutputFormat,
 )
 from kiln_ai.datamodel.project import Project
-from libs.core.conftest import MockFileFactoryMimeType
+from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
+from kiln_ai.utils.git_sync_protocols import default_save_context
 
 
 @pytest.fixture
@@ -181,3 +185,254 @@ def test_collect_jobs_multiple_extractor_configs(
         second_config.id,
         mock_extractor_config.id,
     }
+
+
+class _RecordingSaveContext:
+    """Records enter/exit events and exception info for assertion in tests."""
+
+    def __init__(self):
+        self.enter_count = 0
+        self.exit_count = 0
+        self.last_exit_exc_type: type | None = None
+        self.last_save_called_before_exit: bool | None = None
+
+    def __call__(self):
+        @asynccontextmanager
+        async def cm() -> AsyncIterator[None]:
+            self.enter_count += 1
+            try:
+                yield
+            except BaseException as exc:
+                self.last_exit_exc_type = type(exc)
+                self.exit_count += 1
+                raise
+            else:
+                self.exit_count += 1
+
+        return cm()
+
+
+def test_extractor_runner_defaults_to_default_save_context(
+    mock_extractor_config, mock_document
+):
+    runner = ExtractorRunner(
+        documents=[mock_document],
+        extractor_configs=[mock_extractor_config],
+    )
+    assert runner._save_context is default_save_context
+
+
+def test_extractor_runner_accepts_custom_save_context(
+    mock_extractor_config, mock_document
+):
+    recorder = _RecordingSaveContext()
+    runner = ExtractorRunner(
+        documents=[mock_document],
+        extractor_configs=[mock_extractor_config],
+        save_context=recorder,
+    )
+    assert runner._save_context is recorder
+
+
+def _make_extractor_job(mock_document, mock_extractor_config) -> ExtractorJob:
+    return ExtractorJob(doc=mock_document, extractor_config=mock_extractor_config)
+
+
+@pytest.mark.asyncio
+async def test_run_job_default_save_context_saves_extraction(
+    mock_extractor_runner, mock_document, mock_extractor_config
+):
+    fake_extractor = MagicMock(spec=BaseExtractor)
+    fake_extractor.extract = AsyncMock(
+        return_value=ExtractionOutput(
+            content="hello world",
+            content_format=OutputFormat.TEXT,
+            is_passthrough=False,
+        )
+    )
+
+    with (
+        patch(
+            "kiln_ai.adapters.extractors.extractor_runner.extractor_adapter_from_type",
+            return_value=fake_extractor,
+        ),
+        patch(
+            "kiln_ai.adapters.extractors.extractor_runner.Extraction"
+        ) as mock_extraction_class,
+    ):
+        mock_extraction = MagicMock()
+        mock_extraction_class.return_value = mock_extraction
+
+        job = _make_extractor_job(mock_document, mock_extractor_config)
+        result = await mock_extractor_runner.run_job(job)
+
+    assert result is True
+    mock_extraction.save_to_file.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_run_job_custom_save_context_wraps_save(
+    mock_extractor_config, mock_document
+):
+    recorder = _RecordingSaveContext()
+    runner = ExtractorRunner(
+        documents=[mock_document],
+        extractor_configs=[mock_extractor_config],
+        save_context=recorder,
+    )
+
+    fake_extractor = MagicMock(spec=BaseExtractor)
+    fake_extractor.extract = AsyncMock(
+        return_value=ExtractionOutput(
+            content="hello world",
+            content_format=OutputFormat.TEXT,
+            is_passthrough=False,
+        )
+    )
+
+    with (
+        patch(
+            "kiln_ai.adapters.extractors.extractor_runner.extractor_adapter_from_type",
+            return_value=fake_extractor,
+        ),
+        patch(
+            "kiln_ai.adapters.extractors.extractor_runner.Extraction"
+        ) as mock_extraction_class,
+    ):
+        mock_extraction = MagicMock()
+
+        def check_context_open_at_save(*args, **kwargs):
+            # Assert the context was entered by the time save is called.
+            assert recorder.enter_count == 1
+            assert recorder.exit_count == 0
+
+        mock_extraction.save_to_file.side_effect = check_context_open_at_save
+        mock_extraction_class.return_value = mock_extraction
+
+        job = _make_extractor_job(mock_document, mock_extractor_config)
+        result = await runner.run_job(job)
+
+    assert result is True
+    assert recorder.enter_count == 1
+    assert recorder.exit_count == 1
+    assert recorder.last_exit_exc_type is None
+
+
+@pytest.mark.asyncio
+async def test_run_job_save_context_sees_save_exception(
+    mock_extractor_config, mock_document
+):
+    recorder = _RecordingSaveContext()
+    runner = ExtractorRunner(
+        documents=[mock_document],
+        extractor_configs=[mock_extractor_config],
+        save_context=recorder,
+    )
+
+    fake_extractor = MagicMock(spec=BaseExtractor)
+    fake_extractor.extract = AsyncMock(
+        return_value=ExtractionOutput(
+            content="hello world",
+            content_format=OutputFormat.TEXT,
+            is_passthrough=False,
+        )
+    )
+
+    with (
+        patch(
+            "kiln_ai.adapters.extractors.extractor_runner.extractor_adapter_from_type",
+            return_value=fake_extractor,
+        ),
+        patch(
+            "kiln_ai.adapters.extractors.extractor_runner.Extraction"
+        ) as mock_extraction_class,
+    ):
+        mock_extraction = MagicMock()
+        mock_extraction.save_to_file.side_effect = RuntimeError("disk full")
+        mock_extraction_class.return_value = mock_extraction
+
+        job = _make_extractor_job(mock_document, mock_extractor_config)
+        result = await runner.run_job(job)
+
+    # The outer try/except swallows and returns False, but the save_context must
+    # have seen the exception so it can roll back.
+    assert result is False
+    assert recorder.enter_count == 1
+    assert recorder.exit_count == 1
+    assert recorder.last_exit_exc_type is RuntimeError
+
+
+@pytest.mark.asyncio
+async def test_other_jobs_unaffected_by_save_context_rollback(
+    mock_extractor_config, mock_document
+):
+    recorder = _RecordingSaveContext()
+    runner = ExtractorRunner(
+        documents=[mock_document],
+        extractor_configs=[mock_extractor_config],
+        save_context=recorder,
+    )
+
+    fake_extractor = MagicMock(spec=BaseExtractor)
+    fake_extractor.extract = AsyncMock(
+        return_value=ExtractionOutput(
+            content="hello world",
+            content_format=OutputFormat.TEXT,
+            is_passthrough=False,
+        )
+    )
+
+    call_count = {"n": 0}
+
+    def fail_first_save(*args, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise RuntimeError("disk full")
+
+    with (
+        patch(
+            "kiln_ai.adapters.extractors.extractor_runner.extractor_adapter_from_type",
+            return_value=fake_extractor,
+        ),
+        patch(
+            "kiln_ai.adapters.extractors.extractor_runner.Extraction"
+        ) as mock_extraction_class,
+    ):
+        mock_extraction = MagicMock()
+        mock_extraction.save_to_file.side_effect = fail_first_save
+        mock_extraction_class.return_value = mock_extraction
+
+        job1 = _make_extractor_job(mock_document, mock_extractor_config)
+        job2 = _make_extractor_job(mock_document, mock_extractor_config)
+        result1 = await runner.run_job(job1)
+        result2 = await runner.run_job(job2)
+
+    assert result1 is False
+    assert result2 is True
+    # Two fresh contexts were opened and both closed; the second job's success
+    # proves rollback from the first did not leak into the second's context.
+    assert recorder.enter_count == 2
+    assert recorder.exit_count == 2
+
+
+@pytest.mark.asyncio
+async def test_run_job_logs_with_exc_info_on_failure(
+    mock_extractor_runner, mock_document, mock_extractor_config
+):
+    fake_extractor = MagicMock(spec=BaseExtractor)
+    fake_extractor.extract = AsyncMock(side_effect=ValueError("something broke"))
+
+    with (
+        patch(
+            "kiln_ai.adapters.extractors.extractor_runner.extractor_adapter_from_type",
+            return_value=fake_extractor,
+        ),
+        patch("kiln_ai.adapters.extractors.extractor_runner.logger") as mock_logger,
+    ):
+        job = _make_extractor_job(mock_document, mock_extractor_config)
+        result = await mock_extractor_runner.run_job(job)
+
+    assert result is False
+    mock_logger.error.assert_called_once()
+    _, kwargs = mock_logger.error.call_args
+    assert kwargs.get("exc_info") is True

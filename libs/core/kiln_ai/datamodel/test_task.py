@@ -723,7 +723,7 @@ def test_is_toolcall_pending_false_when_only_task_response_tool_calls():
     )
 
 
-def test_is_toolcall_pending_true_when_task_response_mixed_with_external_tools():
+def test_is_toolcall_pending_true_when_task_response_mixed_with_unmanaged_tools():
     trace = [
         {"role": "user", "content": "hello"},
         {
@@ -739,8 +739,8 @@ def test_is_toolcall_pending_true_when_task_response_mixed_with_external_tools()
                     "type": "function",
                 },
                 {
-                    "id": "call_ext",
-                    "function": {"name": "add", "arguments": "{}"},
+                    "id": "call_unmanaged",
+                    "function": {"name": "unmanaged_do", "arguments": "{}"},
                     "type": "function",
                 },
             ],

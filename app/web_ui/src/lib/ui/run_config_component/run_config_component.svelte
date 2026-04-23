@@ -59,7 +59,7 @@
   export let run_config_name: string = generate_memorable_name()
   export let show_name_field: boolean = true
 
-  export let model: string = $ui_state.selected_model
+  export let model: string | null = $ui_state.selected_model
   export let prompt_method: string = "simple_prompt_builder"
   export let tools: string[] = []
   export let skills: string[] = []
@@ -394,6 +394,11 @@
   export async function save_new_run_config(): Promise<TaskRunConfig> {
     if (!current_task?.id) {
       throw new Error("Cannot save run config: no task selected")
+    }
+    // Regenerate if the name field is hidden, to avoid collisions on repeated saves.
+    // If visible, we respect the current value to avoid overwriting user input.
+    if (!show_name_field) {
+      run_config_name = generate_memorable_name()
     }
     const saved_config = await save_new_task_run_config(
       project_id,

@@ -37,11 +37,12 @@
   import Warning from "$lib/ui/warning.svelte"
   import { checkKilnCopilotAvailable } from "$lib/utils/copilot_utils"
   import { checkPromptOptimizationAccess } from "$lib/utils/entitlement_utils"
-  import CopilotRequiredCard from "$lib/ui/kiln_copilot/copilot_required_card.svelte"
+  import PromptOptimizationCopilotRequired from "../prompt_optimization_copilot_required.svelte"
   import EntitlementRequiredCard from "$lib/ui/kiln_copilot/entitlement_required_card.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
-  import TableButton from "../../../../generate/[project_id]/[task_id]/table_button.svelte"
+  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import posthog from "posthog-js"
+  import { agentInfo } from "$lib/agent"
 
   function tagFromFilterId(filter_id: string): string | undefined {
     if (filter_id.startsWith("tag::")) {
@@ -52,6 +53,10 @@
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Create Prompt Optimization Job",
+    description: `Create a new prompt optimization job for project ID ${project_id}, task ID ${task_id}. Configure target run config and optimization parameters.`,
+  })
 
   let target_run_config_id: string | null = null
 
@@ -768,7 +773,7 @@
         </div>
       </div>
     {:else if kiln_copilot_connected === false}
-      <CopilotRequiredCard />
+      <PromptOptimizationCopilotRequired />
     {:else if has_prompt_optimization_entitlement === false}
       <EntitlementRequiredCard feature_name="Prompt Optimization" />
     {:else if created_job}
@@ -1133,28 +1138,17 @@
                               {formatDate(evalItem.created_at || undefined)}
                             </td>
                             <td class="p-0" on:click|stopPropagation>
-                              {#if eval_url}
-                                <div
-                                  class="dropdown dropdown-end dropdown-hover"
-                                >
-                                  <TableButton />
-                                  <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-                                  <ul
-                                    tabindex="0"
-                                    class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
-                                  >
-                                    <li>
-                                      <a
-                                        href={eval_url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                      >
-                                        View Eval
-                                      </a>
-                                    </li>
-                                  </ul>
-                                </div>
-                              {/if}
+                              <TableActionMenu
+                                items={[
+                                  {
+                                    label: "View Eval",
+                                    href: eval_url,
+                                    target: "_blank",
+                                    rel: "noopener noreferrer",
+                                    hidden: !eval_url,
+                                  },
+                                ]}
+                              />
                             </td>
                           </tr>
                         {/each}

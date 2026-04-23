@@ -1,0 +1,8 @@
+{
+  "method": "get",
+  "path": "/api/task_summaries",
+  "agent_policy": {
+    "permission": "allow",
+    "requires_approval": false
+  }
+}

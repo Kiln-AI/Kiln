@@ -33,13 +33,13 @@
     split_tool_and_skill_ids,
   } from "$lib/stores/tools_store"
   import { goto } from "$app/navigation"
-  import TableButton from "../../../generate/[project_id]/[task_id]/table_button.svelte"
+  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import { client } from "$lib/api_client"
   import StarIcon from "$lib/ui/icons/star_icon.svelte"
-  import Float from "$lib/ui/float.svelte"
   import BadgeList from "$lib/ui/badge_list.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: optimizers = get_optimizers(project_id, task_id)
@@ -127,6 +127,11 @@
     $run_configs_by_task_composite_id[
       get_task_composite_id(project_id, task_id)
     ] || []
+
+  $: agentInfo.set({
+    name: "Optimize",
+    description: `Optimization home for project ID ${project_id}, task ID ${task_id}. Shows available optimization options like prompts, evals, fine-tuning, skills, and tools. Includes a list of all Run Configurations for this task (total count ${run_configs.length}).`,
+  })
 
   $: default_run_config_id = task?.default_run_config_id
 
@@ -257,13 +262,11 @@
     }
   }
 
-  function handleClone(config: TaskRunConfig, event: Event) {
-    event.stopPropagation()
+  function handleClone(config: TaskRunConfig) {
     create_run_config_dialog?.showClone(config)
   }
 
-  async function handleSetDefault(config: TaskRunConfig, event: Event) {
-    event.stopPropagation()
+  async function handleSetDefault(config: TaskRunConfig) {
     if (!config.id) return
     try {
       await update_task_default_run_config(project_id, task_id, config.id)
@@ -517,37 +520,21 @@
                     {formatDate(config.created_at)}
                   </td>
                   <td class="p-0" on:click|stopPropagation>
-                    {#if !is_mcp || !is_default}
-                      <div class="dropdown dropdown-end dropdown-hover">
-                        <TableButton />
-                        <Float>
-                          <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-                          <ul
-                            tabindex="0"
-                            class="dropdown-content menu bg-base-100 rounded-box z-[1] w-56 p-2 shadow"
-                          >
-                            {#if !is_mcp}
-                              <li>
-                                <button
-                                  on:click={(e) => handleClone(config, e)}
-                                >
-                                  Clone
-                                </button>
-                              </li>
-                            {/if}
-                            {#if !is_default}
-                              <li>
-                                <button
-                                  on:click={(e) => handleSetDefault(config, e)}
-                                >
-                                  Set as Task Default
-                                </button>
-                              </li>
-                            {/if}
-                          </ul>
-                        </Float>
-                      </div>
-                    {/if}
+                    <TableActionMenu
+                      width="w-56"
+                      items={[
+                        {
+                          label: "Clone",
+                          onclick: () => handleClone(config),
+                          hidden: is_mcp,
+                        },
+                        {
+                          label: "Set as Task Default",
+                          onclick: () => handleSetDefault(config),
+                          hidden: is_default,
+                        },
+                      ]}
+                    />
                   </td>
                 </tr>
               {/each}

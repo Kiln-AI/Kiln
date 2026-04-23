@@ -177,6 +177,18 @@ class Config:
                 env_var="ENABLE_DEMO_TOOLS",
                 default=False,
             ),
+            "kiln_local_api_host": ConfigProperty(
+                str,
+                env_var="KILN_LOCAL_API_HOST",
+                default="127.0.0.1",
+                in_memory=True,
+            ),
+            "kiln_local_api_port": ConfigProperty(
+                int,
+                env_var="KILN_LOCAL_API_PORT",
+                default=8757,
+                in_memory=True,
+            ),
             # Allow the user to set the path to lookup MCP server commands, like npx.
             "custom_mcp_path": ConfigProperty(
                 str,
@@ -186,6 +198,11 @@ class Config:
             MCP_SECRETS_KEY: ConfigProperty(
                 dict[str, str],
                 sensitive=True,
+            ),
+            "git_sync_projects": ConfigProperty(
+                dict,
+                default_lambda=lambda: {},
+                sensitive_keys=["pat_token", "oauth_token"],
             ),
             # has the user indicated it's for personal or work use?
             "user_type": ConfigProperty(
@@ -216,6 +233,9 @@ class Config:
             return self.__getattr__(name)
         except AttributeError:
             return None
+
+    def kiln_local_api_base_url(self) -> str:
+        return f"http://{self.kiln_local_api_host}:{self.kiln_local_api_port}"
 
     def __getattr__(self, name: str) -> Any:
         if name == "_properties":
@@ -297,14 +317,20 @@ class Config:
             else copy.deepcopy(v)
             for k, v in combined.items()
         }
-        # Hide sensitive keys in lists. Could generalize this if we every have more types, but right not it's only needed for root elements of lists
+        # Hide sensitive keys in nested structures (lists of dicts, or dicts of dicts)
         for key, value in settings.items():
             if key in self._properties and self._properties[key].sensitive_keys:
                 sensitive_keys = self._properties[key].sensitive_keys or []
                 for sensitive_key in sensitive_keys:
                     if isinstance(value, list):
                         for item in value:
-                            if sensitive_key in item:
+                            if isinstance(item, dict) and sensitive_key in item:
+                                item[sensitive_key] = "[hidden]"
+                    elif isinstance(value, dict):
+                        if sensitive_key in value:
+                            value[sensitive_key] = "[hidden]"
+                        for item in value.values():
+                            if isinstance(item, dict) and sensitive_key in item:
                                 item[sensitive_key] = "[hidden]"
 
         return settings

@@ -1,11 +1,50 @@
 <script lang="ts">
   import AppPage from "../../app_page.svelte"
   import { projects, load_projects } from "$lib/stores"
+  import { agentInfo } from "$lib/agent"
   import type { Project } from "$lib/types"
   import { client } from "$lib/api_client"
-  import TableButton from "../../generate/[project_id]/[task_id]/table_button.svelte"
+  import TableActionMenu from "$lib/ui/table_action_menu.svelte"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import { goto } from "$app/navigation"
   import { formatDate } from "$lib/utils/formatters"
+  import { getConfig } from "$lib/git_sync/api"
+
+  let git_urls: Record<string, string | null> = {}
+
+  async function load_git_url(project_id: string) {
+    if (project_id in git_urls) return
+    git_urls = { ...git_urls, [project_id]: null }
+    try {
+      const config = await getConfig(project_id)
+      if (config?.git_url) {
+        git_urls = { ...git_urls, [project_id]: config.git_url }
+      }
+    } catch {
+      // Non-fatal: tooltip will just show without URL
+    }
+  }
+
+  $: if ($projects?.projects) {
+    for (const project of $projects.projects) {
+      if (project.id && is_git_managed_project(project)) {
+        load_git_url(project.id)
+      }
+    }
+  }
+
+  function is_git_managed_project(project: Project): boolean {
+    return project.path
+      ? project.path.includes("Kiln Projects/.git-projects/") ||
+          project.path.includes("Kiln Projects\\.git-projects\\")
+      : false
+  }
+
+  agentInfo.set({
+    name: "Manage Projects",
+    description:
+      "Manage all projects. Create new projects, edit existing ones, or remove projects.",
+  })
 
   async function remove_project(project: Project) {
     try {
@@ -19,7 +58,7 @@
       ) {
         const {
           error, // only present if 4XX or 5XX response
-        } = await client.DELETE("/api/projects/{project_id}", {
+        } = await client.DELETE("/api/delete_project/{project_id}", {
           params: {
             path: {
               project_id: project.id,
@@ -65,10 +104,7 @@
   breadcrumbs={[{ label: "Settings", href: "/settings" }]}
   action_buttons={[
     { label: "Create Project", href: "/settings/create_project" },
-    {
-      label: "Import Project",
-      href: "/settings/create_project?import=true",
-    },
+    { label: "Import Project", href: "/settings/import_project" },
   ]}
 >
   {#if $projects == null}
@@ -80,7 +116,7 @@
   {:else if $projects.projects.length == 0}
     <div class="p-16">No projects found</div>
   {:else}
-    <div class="rounded-lg border">
+    <div class="overflow-x-auto rounded-lg border">
       <table class="table">
         <thead>
           <tr>
@@ -98,6 +134,7 @@
                   .replace("/project.kiln", "")
                   .replace("\\project.kiln", "")
               : "Unknown"}
+            {@const is_git_managed = is_git_managed_project(project)}
             <tr>
               <td class="font-medium">{project.name}</td>
               <td>{project.description || "N/A"}</td>
@@ -105,47 +142,52 @@
                 {formatDate(project.created_at)}
               </td>
               <td>
-                <button
-                  class="link text-gray-500"
-                  on:click={() => open_project_folder(project)}
-                >
-                  {path.length > 64 ? path.slice(0, 64) + "..." : path}
-                </button>
+                {#if is_git_managed}
+                  {@const url = project.id ? git_urls[project.id] : undefined}
+                  <span class="text-gray-500 inline-flex items-center gap-0.5"
+                    >Git Auto Sync<InfoTooltip
+                      tooltip_text={url
+                        ? `This project is automatically synced to the git repository ${url}`
+                        : "This project is automatically synced to a git repository"}
+                      no_pad
+                    /></span
+                  >
+                {:else}
+                  <button
+                    class="link text-gray-500"
+                    on:click={() => open_project_folder(project)}
+                  >
+                    {path.length > 64 ? path.slice(0, 64) + "..." : path}
+                  </button>
+                {/if}
               </td>
               <td class="p-0">
-                <div class="dropdown dropdown-end dropdown-hover">
-                  <TableButton />
-                  <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-                  <ul
-                    tabindex="0"
-                    class="dropdown-content menu bg-base-100 rounded-box z-[1] w-52 p-2 shadow"
-                  >
-                    <li>
-                      <button
-                        on:click={() =>
-                          goto(`/settings/create_task/${project.id}`)}
-                        >Add Task</button
-                      >
-                    </li>
-                    <li>
-                      <button
-                        on:click={() =>
-                          goto(`/settings/edit_project/${project.id}`)}
-                        >Edit Project</button
-                      >
-                    </li>
-                    <li>
-                      <button on:click={() => remove_project(project)}
-                        >Remove Project</button
-                      >
-                    </li>
-                    <li>
-                      <button on:click={() => open_project_folder(project)}
-                        >Open Folder</button
-                      >
-                    </li>
-                  </ul>
-                </div>
+                <TableActionMenu
+                  items={[
+                    {
+                      label: "Add Task",
+                      onclick: () =>
+                        goto(`/settings/create_task/${project.id}`),
+                    },
+                    {
+                      label: "Edit Project",
+                      onclick: () =>
+                        goto(`/settings/edit_project/${project.id}`),
+                    },
+                    {
+                      label: "Remove Project",
+                      onclick: () => remove_project(project),
+                    },
+                    ...(!is_git_managed
+                      ? [
+                          {
+                            label: "Open Folder",
+                            onclick: () => open_project_folder(project),
+                          },
+                        ]
+                      : []),
+                  ]}
+                />
               </td>
             </tr>
           {/each}

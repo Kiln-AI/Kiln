@@ -40,6 +40,7 @@
   export let gap: number = 6
   export let focus_on_mount = true
   export let compact_button = false
+  export let submitting_status: string = ""
   $: ui_saved_indicator = update_ui_saved_indicator(saved)
 
   function update_ui_saved_indicator(saved: boolean): boolean {
@@ -228,6 +229,9 @@
           </span>
         {:else}
           <span class="loading loading-spinner loading-md"></span>
+          {#if submitting_status}
+            <span class="truncate max-w-48">{submitting_status}</span>
+          {/if}
         {/if}
       </button>
     </div>

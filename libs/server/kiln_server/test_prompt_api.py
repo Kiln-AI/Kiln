@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from kiln_ai.datamodel import Project, Prompt, PromptGenerators, Task
 
 from kiln_server.custom_errors import connect_custom_errors
-from kiln_server.prompt_api import _prompt_generators, connect_prompt_api
+from kiln_server.prompt_api import connect_prompt_api, prompt_generators
 
 
 @pytest.fixture
@@ -114,17 +114,12 @@ def test_get_prompts_task_not_found(client):
 
 def test_prompt_generators_content():
     """Test that our predefined prompt generators have the expected structure"""
-    from kiln_server.prompt_api import _prompt_generators
-
-    # Test a few key generators
-    basic = next(g for g in _prompt_generators if g.id == "simple_prompt_builder")
+    basic = next(g for g in prompt_generators if g.id == "simple_prompt_builder")
     assert basic.chain_of_thought is False
     assert "zero-shot" in basic.description.lower()
 
     cot = next(
-        g
-        for g in _prompt_generators
-        if g.id == "simple_chain_of_thought_prompt_builder"
+        g for g in prompt_generators if g.id == "simple_chain_of_thought_prompt_builder"
     )
     assert cot.chain_of_thought is True
     assert "Chain of Thought" in cot.name
@@ -133,7 +128,7 @@ def test_prompt_generators_content():
 # Check our nice UI list with descriptions covers all our generators
 def test_all_ids_are_covered():
     generators = [e.value for e in PromptGenerators]
-    api_list = [g.id for g in _prompt_generators]
+    api_list = [g.id for g in prompt_generators]
 
     assert set(api_list) == set(generators)
 

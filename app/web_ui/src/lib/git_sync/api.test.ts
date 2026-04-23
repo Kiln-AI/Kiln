@@ -1,0 +1,529 @@
+import { describe, it, expect, vi, beforeEach } from "vitest"
+import {
+  isGitHubUrl,
+  isGitLabUrl,
+  gitHubClassicPatDeepLink,
+  gitHubFineGrainedPatDeepLink,
+  gitLabPatDeepLink,
+  gitHostname,
+  gitOwnerFromUrl,
+  gitRepoNameFromUrl,
+  testAccess,
+  listBranches,
+  cloneRepo,
+  renameClone,
+  testWriteAccess,
+  scanProjects,
+  saveConfig,
+  getConfig,
+  updateConfig,
+  deleteConfig,
+  oauthStart,
+  oauthStatus,
+} from "./api"
+
+const mockFetch = vi.fn()
+global.fetch = mockFetch
+
+function jsonResponse(data: unknown, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status === 200 ? "OK" : "Error",
+    json: () => Promise.resolve(data),
+  }
+}
+
+beforeEach(() => {
+  mockFetch.mockReset()
+})
+
+describe("isGitHubUrl", () => {
+  it("returns true for GitHub URLs", () => {
+    expect(isGitHubUrl("https://github.com/org/repo.git")).toBe(true)
+    expect(isGitHubUrl("https://github.com/org/repo")).toBe(true)
+    expect(isGitHubUrl("https://www.github.com/org/repo")).toBe(true)
+    expect(isGitHubUrl("git@github.com:org/repo.git")).toBe(true)
+  })
+
+  it("returns false for non-GitHub URLs", () => {
+    expect(isGitHubUrl("https://gitlab.com/org/repo.git")).toBe(false)
+    expect(isGitHubUrl("https://bitbucket.org/org/repo")).toBe(false)
+  })
+
+  it("returns false for spoofed GitHub-like hostnames", () => {
+    expect(isGitHubUrl("https://github.com.evil.example/org/repo")).toBe(false)
+    expect(isGitHubUrl("https://notgithub.com/org/repo")).toBe(false)
+  })
+
+  it("returns false for invalid URLs", () => {
+    expect(isGitHubUrl("not-a-url")).toBe(false)
+    expect(isGitHubUrl("")).toBe(false)
+  })
+})
+
+describe("isGitLabUrl", () => {
+  it("returns true for GitLab URLs", () => {
+    expect(isGitLabUrl("https://gitlab.com/org/repo.git")).toBe(true)
+    expect(isGitLabUrl("https://gitlab.example.com/org/repo.git")).toBe(true)
+    expect(isGitLabUrl("git@gitlab.com:org/repo.git")).toBe(true)
+  })
+
+  it("returns false for non-GitLab URLs", () => {
+    expect(isGitLabUrl("https://github.com/org/repo.git")).toBe(false)
+    expect(isGitLabUrl("https://bitbucket.org/org/repo")).toBe(false)
+    expect(isGitLabUrl("https://notgitlab.com/org/repo")).toBe(false)
+    expect(isGitLabUrl("https://example.com/gitlab.backup/repo")).toBe(false)
+  })
+
+  it("rejects hostname spoofing attempts", () => {
+    expect(isGitLabUrl("https://gitlab.com.evil.example/org/repo")).toBe(false)
+    expect(isGitLabUrl("https://fakegitlab.com/org/repo")).toBe(false)
+  })
+
+  it("handles invalid input", () => {
+    expect(isGitLabUrl("not-a-url")).toBe(false)
+    expect(isGitLabUrl("")).toBe(false)
+  })
+})
+
+describe("gitHostname", () => {
+  it("extracts hostname from HTTPS URLs", () => {
+    expect(gitHostname("https://gitlab.com/org/repo.git")).toBe("gitlab.com")
+    expect(gitHostname("https://gitlab.example.com/org/repo.git")).toBe(
+      "gitlab.example.com",
+    )
+  })
+
+  it("extracts hostname from SSH URLs", () => {
+    expect(gitHostname("git@gitlab.com:org/repo.git")).toBe("gitlab.com")
+    expect(gitHostname("git@gitlab.example.com:org/repo.git")).toBe(
+      "gitlab.example.com",
+    )
+  })
+
+  it("returns null for invalid URLs", () => {
+    expect(gitHostname("not-a-url")).toBeNull()
+  })
+})
+
+describe("gitOwnerFromUrl", () => {
+  it("extracts owner from HTTPS GitHub URLs", () => {
+    expect(gitOwnerFromUrl("https://github.com/Kiln-AI/sync_test")).toBe(
+      "Kiln-AI",
+    )
+    expect(gitOwnerFromUrl("https://github.com/Kiln-AI/sync_test.git")).toBe(
+      "Kiln-AI",
+    )
+  })
+
+  it("extracts owner from HTTPS GitLab URLs", () => {
+    expect(gitOwnerFromUrl("https://gitlab.com/my-org/repo.git")).toBe("my-org")
+    expect(gitOwnerFromUrl("https://gitlab.example.com/my-org/repo.git")).toBe(
+      "my-org",
+    )
+  })
+
+  it("extracts owner from SSH URLs", () => {
+    expect(gitOwnerFromUrl("git@github.com:Kiln-AI/repo.git")).toBe("Kiln-AI")
+    expect(gitOwnerFromUrl("git@gitlab.com:my-org/repo.git")).toBe("my-org")
+  })
+
+  it("returns null for invalid URLs", () => {
+    expect(gitOwnerFromUrl("not-a-url")).toBeNull()
+  })
+
+  it("handles owners with dots and dashes", () => {
+    expect(gitOwnerFromUrl("https://github.com/my.org-name/repo.git")).toBe(
+      "my.org-name",
+    )
+    expect(gitOwnerFromUrl("git@github.com:my.org-name/repo.git")).toBe(
+      "my.org-name",
+    )
+  })
+
+  it("returns null for URLs with no path segments", () => {
+    expect(gitOwnerFromUrl("https://github.com")).toBeNull()
+    expect(gitOwnerFromUrl("https://github.com/")).toBeNull()
+  })
+})
+
+describe("gitRepoNameFromUrl", () => {
+  it("extracts repo name from HTTPS URL", () => {
+    expect(gitRepoNameFromUrl("https://github.com/Kiln-AI/kiln.git")).toBe(
+      "kiln",
+    )
+  })
+
+  it("extracts repo name from SSH URL", () => {
+    expect(gitRepoNameFromUrl("git@github.com:Kiln-AI/kiln.git")).toBe("kiln")
+  })
+
+  it("handles URL without .git suffix", () => {
+    expect(gitRepoNameFromUrl("https://github.com/Kiln-AI/kiln")).toBe("kiln")
+  })
+
+  it("handles repo names with dots and dashes", () => {
+    expect(gitRepoNameFromUrl("https://github.com/owner/my-repo.v2.git")).toBe(
+      "my-repo.v2",
+    )
+    expect(gitRepoNameFromUrl("https://github.com/owner/my-repo.v2")).toBe(
+      "my-repo.v2",
+    )
+    expect(gitRepoNameFromUrl("git@github.com:owner/my-repo.v2.git")).toBe(
+      "my-repo.v2",
+    )
+    expect(gitRepoNameFromUrl("git@github.com:owner/my-repo.v2")).toBe(
+      "my-repo.v2",
+    )
+  })
+
+  it("returns null for invalid URL", () => {
+    expect(gitRepoNameFromUrl("not-a-url")).toBeNull()
+  })
+})
+
+describe("gitHubClassicPatDeepLink", () => {
+  it("returns GitHub classic token creation URL with repo name", () => {
+    const link = gitHubClassicPatDeepLink("https://github.com/Kiln-AI/kiln.git")
+    expect(link).toContain("github.com/settings/tokens/new")
+    expect(link).toContain("scopes=repo")
+    expect(link).toContain("Kiln%20AI%20for%20kiln")
+  })
+
+  it("falls back when repo name unavailable", () => {
+    const link = gitHubClassicPatDeepLink("")
+    expect(link).toContain("description=Kiln%20AI")
+    expect(link).not.toContain("for%20")
+  })
+})
+
+describe("gitHubFineGrainedPatDeepLink", () => {
+  it("returns GitHub fine-grained token creation URL with repo name", () => {
+    const link = gitHubFineGrainedPatDeepLink(
+      "https://github.com/Kiln-AI/kiln.git",
+    )
+    expect(link).toContain("github.com/settings/personal-access-tokens/new")
+    expect(link).toContain("contents=write")
+    expect(link).toContain("Kiln%20AI%20for%20kiln")
+    expect(link).toContain("auto%20sync%20for%20kiln")
+  })
+
+  it("falls back when repo name unavailable", () => {
+    const link = gitHubFineGrainedPatDeepLink("")
+    expect(link).toContain("name=Kiln%20AI")
+    expect(link).not.toContain("for%20")
+  })
+})
+
+describe("gitLabPatDeepLink", () => {
+  it("returns GitLab token creation URL with correct scopes and repo name", () => {
+    const link = gitLabPatDeepLink("https://gitlab.com/org/repo.git")
+    expect(link).toContain("gitlab.com/-/user_settings/personal_access_tokens")
+    expect(link).toContain("scopes=write_repository")
+    expect(link).toContain("Kiln%20AI%20for%20repo")
+  })
+
+  it("uses self-hosted hostname", () => {
+    const link = gitLabPatDeepLink("https://gitlab.example.com/org/repo.git")
+    expect(link).toContain("gitlab.example.com/-/user_settings")
+  })
+
+  it("handles SSH URLs", () => {
+    const link = gitLabPatDeepLink("git@gitlab.myco.com:org/repo.git")
+    expect(link).toContain("gitlab.myco.com/-/user_settings")
+  })
+
+  it("falls back to gitlab.com for invalid URLs", () => {
+    const link = gitLabPatDeepLink("not-a-url")
+    expect(link).toContain("gitlab.com/-/user_settings")
+  })
+})
+
+describe("testAccess", () => {
+  it("sends correct request", async () => {
+    const response = { success: true, message: "OK", auth_required: false }
+    mockFetch.mockResolvedValue(jsonResponse(response))
+
+    const result = await testAccess("https://github.com/org/repo.git", "token")
+    expect(result).toEqual(response)
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body.git_url).toBe("https://github.com/org/repo.git")
+    expect(body.pat_token).toBe("token")
+    expect(body.auth_mode).toBe("system_keys")
+    expect(body.oauth_token).toBeNull()
+  })
+
+  it("sends null pat_token by default", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ success: true, message: "OK", auth_required: false }),
+    )
+
+    await testAccess("https://github.com/org/repo.git")
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body.pat_token).toBeNull()
+    expect(body.oauth_token).toBeNull()
+  })
+
+  it("sends oauth_token and auth_mode when provided", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ success: true, message: "OK", auth_required: false }),
+    )
+
+    await testAccess(
+      "https://github.com/org/repo.git",
+      null,
+      "github_oauth",
+      "ghu_abc123",
+    )
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body.pat_token).toBeNull()
+    expect(body.auth_mode).toBe("github_oauth")
+    expect(body.oauth_token).toBe("ghu_abc123")
+  })
+})
+
+describe("listBranches", () => {
+  it("returns branches and default", async () => {
+    const response = { branches: ["main", "dev"], default_branch: "main" }
+    mockFetch.mockResolvedValue(jsonResponse(response))
+
+    const result = await listBranches("https://github.com/org/repo.git")
+    expect(result.branches).toEqual(["main", "dev"])
+    expect(result.default_branch).toBe("main")
+  })
+})
+
+describe("cloneRepo", () => {
+  it("sends all parameters", async () => {
+    const response = {
+      clone_path: "/tmp/clone",
+      success: true,
+      message: "OK",
+    }
+    mockFetch.mockResolvedValue(jsonResponse(response))
+
+    const result = await cloneRepo(
+      "https://github.com/org/repo.git",
+      "main",
+      "token",
+      "pat_token",
+    )
+    expect(result.success).toBe(true)
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body.git_url).toBe("https://github.com/org/repo.git")
+    expect(body.branch).toBe("main")
+    expect(body.pat_token).toBe("token")
+    expect(body.auth_mode).toBe("pat_token")
+  })
+})
+
+describe("renameClone", () => {
+  it("sends correct request", async () => {
+    const response = {
+      new_clone_path: "/tmp/proj_123 - My Project",
+      success: true,
+      message: "OK",
+    }
+    mockFetch.mockResolvedValue(jsonResponse(response))
+
+    const result = await renameClone("/tmp/clone_abc", "My Project", "proj_123")
+    expect(result.success).toBe(true)
+    expect(result.new_clone_path).toBe("/tmp/proj_123 - My Project")
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body.clone_path).toBe("/tmp/clone_abc")
+    expect(body.project_name).toBe("My Project")
+    expect(body.project_id).toBe("proj_123")
+  })
+})
+
+describe("testWriteAccess", () => {
+  it("sends correct request", async () => {
+    const response = {
+      success: true,
+      message: "OK",
+      auth_required: false,
+    }
+    mockFetch.mockResolvedValue(jsonResponse(response))
+
+    const result = await testWriteAccess("/tmp/clone", "token")
+    expect(result.success).toBe(true)
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body.clone_path).toBe("/tmp/clone")
+    expect(body.pat_token).toBe("token")
+  })
+})
+
+describe("scanProjects", () => {
+  it("returns projects with id", async () => {
+    const response = {
+      projects: [
+        {
+          path: "project.kiln",
+          name: "Test",
+          description: "desc",
+          id: "proj_abc",
+        },
+      ],
+    }
+    mockFetch.mockResolvedValue(jsonResponse(response))
+
+    const result = await scanProjects("/tmp/clone")
+    expect(result.projects).toHaveLength(1)
+    expect(result.projects[0].id).toBe("proj_abc")
+  })
+})
+
+describe("saveConfig", () => {
+  it("sends config with all fields", async () => {
+    const response = {
+      sync_mode: "auto",
+      remote_name: "origin",
+      branch: "main",
+      clone_path: "/tmp/clone",
+      git_url: "https://github.com/org/repo.git",
+      has_pat_token: true,
+    }
+    mockFetch.mockResolvedValue(jsonResponse(response))
+
+    const result = await saveConfig({
+      project_id: "proj_1",
+      project_path: "project.kiln",
+      git_url: "https://github.com/org/repo.git",
+      clone_path: "/tmp/clone",
+      branch: "main",
+      pat_token: "token",
+    })
+    expect(result.sync_mode).toBe("auto")
+    expect(result.has_pat_token).toBe(true)
+  })
+})
+
+describe("getConfig", () => {
+  it("fetches config by project id", async () => {
+    const response = {
+      sync_mode: "auto",
+      remote_name: "origin",
+      branch: "main",
+      clone_path: null,
+      git_url: null,
+      has_pat_token: false,
+    }
+    mockFetch.mockResolvedValue(jsonResponse(response))
+
+    const result = await getConfig("proj_1")
+    expect(result?.sync_mode).toBe("auto")
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/git_sync/config/proj_1"),
+    )
+  })
+})
+
+describe("updateConfig", () => {
+  it("sends update request", async () => {
+    const response = {
+      sync_mode: "manual",
+      remote_name: "origin",
+      branch: "main",
+      clone_path: null,
+      git_url: null,
+      has_pat_token: false,
+    }
+    mockFetch.mockResolvedValue(jsonResponse(response))
+
+    const result = await updateConfig("proj_1", { sync_mode: "manual" })
+    expect(result.sync_mode).toBe("manual")
+  })
+})
+
+describe("deleteConfig", () => {
+  it("sends DELETE request", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ message: "Config deleted" }))
+
+    const result = await deleteConfig("proj_1")
+    expect(result.message).toBe("Config deleted")
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/git_sync/config/proj_1"),
+      expect.objectContaining({ method: "DELETE" }),
+    )
+  })
+
+  it("throws on error response", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ detail: "Not found" }, 404))
+
+    await expect(deleteConfig("nonexistent")).rejects.toThrow("Not found")
+  })
+})
+
+describe("oauthStart", () => {
+  it("sends correct POST request", async () => {
+    const response = {
+      authorize_url:
+        "https://github.com/login/oauth/authorize?client_id=xyz&state=abc123",
+      install_url: "https://github.com/apps/kiln-ai/installations/new",
+      state: "abc123",
+      owner_name: "Kiln-AI",
+      repo_name: "kiln",
+      owner_pre_selected: true,
+      repo_pre_selected: true,
+    }
+    mockFetch.mockResolvedValue(jsonResponse(response))
+
+    const result = await oauthStart("https://github.com/Kiln-AI/kiln.git")
+    expect(result.state).toBe("abc123")
+    expect(result.install_url).toContain("github.com")
+    expect(result.authorize_url).toContain("github.com/login/oauth/authorize")
+    expect(result.authorize_url).toContain("state=abc123")
+    expect(result.owner_name).toBe("Kiln-AI")
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+    expect(body.git_url).toBe("https://github.com/Kiln-AI/kiln.git")
+  })
+
+  it("throws on error response", async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({ detail: "Not a GitHub URL" }, 400),
+    )
+
+    await expect(
+      oauthStart("https://gitlab.com/org/repo.git"),
+    ).rejects.toThrow()
+  })
+})
+
+describe("oauthStatus", () => {
+  it("sends correct GET request", async () => {
+    const response = {
+      complete: true,
+      oauth_token: "ghu_token123",
+      error: null,
+    }
+    mockFetch.mockResolvedValue(jsonResponse(response))
+
+    const result = await oauthStatus("state_abc")
+    expect(result.complete).toBe(true)
+    expect(result.oauth_token).toBe("ghu_token123")
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/git_sync/oauth/status/state_abc"),
+    )
+  })
+
+  it("returns pending status", async () => {
+    const response = { complete: false, oauth_token: null, error: null }
+    mockFetch.mockResolvedValue(jsonResponse(response))
+
+    const result = await oauthStatus("state_xyz")
+    expect(result.complete).toBe(false)
+    expect(result.oauth_token).toBeNull()
+  })
+
+  it("throws on network error", async () => {
+    mockFetch.mockResolvedValue(jsonResponse({}, 500))
+
+    await expect(oauthStatus("bad_state")).rejects.toThrow(
+      "Failed to check OAuth status",
+    )
+  })
+})

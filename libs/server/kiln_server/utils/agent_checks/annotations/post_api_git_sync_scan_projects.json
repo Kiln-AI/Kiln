@@ -1,0 +1,8 @@
+{
+  "method": "post",
+  "path": "/api/git_sync/scan_projects",
+  "agent_policy": {
+    "permission": "deny",
+    "requires_approval": false
+  }
+}
