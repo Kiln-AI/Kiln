@@ -43,7 +43,7 @@
     return key === COST_KEY || key === LATENCY_KEY
   }
 
-  export function costToScore(
+  export function lowerIsBetterToScore(
     cost: number,
     costs: number[],
     {
@@ -168,13 +168,13 @@
       if (rawValue === null) {
         html += `<div>${label}: N/A</div>`
       } else if (key === COST_KEY) {
-        const displayValue = costToScore(
+        const displayValue = lowerIsBetterToScore(
           rawValue,
           lowerIsBetterValues[key] || [],
         )
         html += `<div>${label}: ${displayValue.toFixed(1)} <span style="color: #888;">(Mean Cost: $${rawValue.toFixed(6)})</span></div>`
       } else if (key === LATENCY_KEY) {
-        const displayValue = costToScore(
+        const displayValue = lowerIsBetterToScore(
           rawValue,
           lowerIsBetterValues[key] || [],
         )
@@ -247,7 +247,7 @@
         if (rawValue === null) {
           displayValue = 0
         } else if (isLowerIsBetterMetric(key)) {
-          displayValue = costToScore(rawValue, lowerIsBetterValues[key] || [])
+          displayValue = lowerIsBetterToScore(rawValue, lowerIsBetterValues[key] || [])
         } else {
           displayValue = rawValue
         }
