@@ -13,7 +13,7 @@
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
   import EditIcon from "$lib/ui/icons/edit_icon.svelte"
   import FolderIcon from "$lib/ui/icons/folder_icon.svelte"
-  import DatabaseIcon from "$lib/ui/icons/database_icon.svelte"
+  import FoldersIcon from "$lib/ui/icons/folders_icon.svelte"
   import KeyIcon from "$lib/ui/icons/key_icon.svelte"
   import CubeIcon from "$lib/ui/icons/cube_icon.svelte"
   import TerminalIcon from "$lib/ui/icons/terminal_icon.svelte"
@@ -63,7 +63,7 @@
         },
         {
           label: "Manage Projects",
-          icon: DatabaseIcon,
+          icon: FoldersIcon,
           detail:
             project_count > 0
               ? `${project_count} project${project_count === 1 ? "" : "s"}`
@@ -135,7 +135,7 @@
         class="card card-bordered border-primary/30 bg-primary/5 shadow-sm rounded-md"
         data-testid="update-available-callout"
       >
-        <div class="flex flex-row items-center gap-4 p-4">
+        <div class="flex flex-row items-start sm:items-center gap-4 p-4">
           <div
             class="flex-shrink-0 w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center"
           >
@@ -143,18 +143,22 @@
               <ArrowUpIcon />
             </div>
           </div>
-          <div class="flex-grow min-w-0">
-            <div class="font-medium text-primary">Update Available</div>
-            <div class="text-sm font-light text-gray-500">
-              A new version of Kiln is ready to install.
-            </div>
-          </div>
-          <a
-            href="/settings/check_for_update"
-            class="btn btn-primary btn-sm flex-shrink-0"
+          <div
+            class="flex-grow min-w-0 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4"
           >
-            View Update
-          </a>
+            <div class="flex-grow min-w-0">
+              <div class="font-medium text-primary">Update Available</div>
+              <div class="text-sm font-light text-gray-500">
+                A new version of Kiln is ready to install.
+              </div>
+            </div>
+            <a
+              href="/settings/check_for_update"
+              class="btn btn-primary btn-sm flex-shrink-0 self-start sm:self-auto"
+            >
+              View Update
+            </a>
+          </div>
         </div>
       </div>
     {/if}
