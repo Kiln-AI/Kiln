@@ -64,7 +64,7 @@ Phases are ordered by risk (low → high) and by what unblocks later phases (e.g
     - Invoke one MCP prompt (`AGENTS.md` prompt) and verify it returns the file's content.
     - Run `check_all` via MCP and confirm it executes `checks.sh` from repo root successfully.
 
-- [ ] **Phase 9: Move `tests/assets/` → `libs/core/tests/assets/`**
+- [x] **Phase 9: Move `tests/assets/` → `libs/core/tests/assets/`**
   - `git mv tests/assets libs/core/tests/assets`.
   - Create `libs/core/conftest.py` with moved fixtures.
   - Create `libs/server/conftest.py` that re-exports the two factory fixtures (fall back to inline copy if the import path fails).
