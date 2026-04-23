@@ -1029,3 +1029,21 @@ class TestMockedFlows:
         assert len(tool_outputs) == 1
         assert tool_outputs[0]["toolCallId"] == "tc_shape"
         assert tool_outputs[0]["output"] == "15"
+
+
+def _find_endpoint_by_path(app, path: str):
+    """Locate the endpoint function for a route with exact path match."""
+    for route in app.routes:
+        if getattr(route, "path", None) == path:
+            return route.endpoint  # type: ignore[attr-defined]
+    raise AssertionError(f"Route with path {path} not found")
+
+
+def test_chat_stream_has_no_write_lock(app):
+    endpoint = _find_endpoint_by_path(app, "/api/chat")
+    assert getattr(endpoint, "_git_sync_no_write_lock", False) is True
+
+
+def test_execute_tools_has_no_write_lock(app):
+    endpoint = _find_endpoint_by_path(app, "/api/chat/execute-tools")
+    assert getattr(endpoint, "_git_sync_no_write_lock", False) is True

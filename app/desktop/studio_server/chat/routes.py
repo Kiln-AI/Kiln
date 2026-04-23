@@ -27,6 +27,7 @@ from app.desktop.studio_server.chat.stream_session import (
 from app.desktop.studio_server.utils.copilot_utils import get_copilot_api_key
 from fastapi import FastAPI, HTTPException, Path, Query
 from fastapi.responses import StreamingResponse
+from kiln_server.git_sync_decorators import no_write_lock
 from kiln_server.utils.agent_checks.policy import DENY_AGENT
 from pydantic import BaseModel, ConfigDict
 
@@ -123,6 +124,7 @@ def connect_chat_api(app: FastAPI) -> None:
         tags=["Copilot"],
         openapi_extra=DENY_AGENT,
     )
+    @no_write_lock
     async def post_execute_tools(body: ExecuteToolsRequest) -> StreamingResponse:
         """
         Tool calls that require user approval are streamed to the client for approval, along with the
@@ -248,6 +250,7 @@ def connect_chat_api(app: FastAPI) -> None:
         tags=["Copilot"],
         openapi_extra=DENY_AGENT,
     )
+    @no_write_lock
     async def chat(body: ChatRequest) -> StreamingResponse:
         """Forward chat to Kiln Copilot and stream AI SDK events as Server-Sent Events."""
         api_key = get_copilot_api_key()
