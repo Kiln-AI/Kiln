@@ -49,8 +49,9 @@
   }
 
   export function open() {
+    if (!historyDialog) return
+    historyDialog.show()
     posthog.capture("chat_history_opened")
-    historyDialog?.show()
     void loadSessionList()
   }
 

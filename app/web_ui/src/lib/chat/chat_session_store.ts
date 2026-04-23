@@ -135,7 +135,7 @@ export function createChatSessionStore(
     }))
   }
 
-  function beginStreaming(text: string) {
+  function beginStreaming(text: string, isRetry = false) {
     removeErrors()
     const currentMessages = get(persisted).messages
     const traceId =
@@ -167,12 +167,12 @@ export function createChatSessionStore(
     }))
 
     posthog.capture("chat_message_sent", {
-      is_new_conversation: !traceId,
+      is_new_conversation: !traceId && !isRetry,
       message_length: text.length,
       has_app_context_header: !!header,
       message_count: currentMessages.length,
     })
-    if (!traceId) {
+    if (!traceId && !isRetry) {
       posthog.capture("chat_conversation_started")
     }
 
@@ -317,7 +317,7 @@ export function createChatSessionStore(
       ...p,
       messages: p.messages.slice(0, lastUserIdx),
     }))
-    beginStreaming(userText)
+    beginStreaming(userText, true)
   }
 
   function reset(): void {
