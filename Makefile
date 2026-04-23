@@ -1,16 +1,20 @@
 .PHONY: dev ui schema annotations check package
 
+# Shell snippet that loads nvm and selects the Node version from app/web_ui/.nvmrc.
+# Use in recipes that invoke npm/npx/node. $(CURDIR) keeps the path valid after any `cd`.
+NVM_USE = export NVM_DIR="$${NVM_DIR:-$$HOME/.nvm}" && . "$$NVM_DIR/nvm.sh" && nvm use "$$(cat $(CURDIR)/app/web_ui/.nvmrc)"
+
 # Run the development API server (desktop dev server with hot reload on port 8757).
 dev:
 	uv run python -m app.desktop.dev_server
 
-# Run the Vite dev server for the web UI (http://localhost:5173 by default).
+# Run the Vite dev server for the web UI (http://localhost:5173 by default). Uses Node version from app/web_ui/.nvmrc via nvm.
 ui:
-	cd app/web_ui && npm run dev --
+	cd app/web_ui && $(NVM_USE) && npm run dev --
 
 # Regenerate api_schema.d.ts from the running server's OpenAPI spec (server must be up on :8757).
 schema:
-	cd app/web_ui/src/lib && ./generate_schema.sh
+	cd app/web_ui/src/lib && $(NVM_USE) && ./generate_schema.sh
 
 # Dump agent-check annotation JSON files from the running server's OpenAPI (server must be up on :8757).
 annotations:
@@ -18,7 +22,7 @@ annotations:
 
 # Run formatting, linting, typechecking, tests, and builds via the repo checks script.
 check:
-	uv run ./checks.sh
+	$(NVM_USE) && uv run ./checks.sh
 
 # Package a project to a zip via kiln_ai package_project. Example: make package ARGS='~/KilnProjects/demo/project.kiln --all-tasks -o ./kiln_export.zip'
 package:
