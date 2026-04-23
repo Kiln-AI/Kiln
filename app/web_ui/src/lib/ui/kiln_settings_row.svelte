@@ -7,7 +7,7 @@
   export let status: "warn" | undefined = undefined
   export let is_last: boolean = false
 
-  $: row_class = `flex items-center w-full text-left gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors no-underline ${is_last ? "" : "border-b border-gray-100"}`
+  $: row_class = `flex items-center w-full text-left gap-3 px-3 py-2.5 hover:bg-gray-50 focus:outline-none focus-visible:bg-gray-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary transition-colors no-underline ${is_last ? "" : "border-b border-gray-100"}`
 </script>
 
 <!--
@@ -32,19 +32,30 @@
       <slot name="icon" />
     </span>
   </span>
-  <span class="text-[13px] font-medium text-gray-900 truncate">{label}</span>
-  {#if status === "warn"}
-    <span
-      class="inline-block w-2 h-2 rounded-full flex-shrink-0"
-      style="background-color: #F4B544;"
-      aria-hidden="true"
-    ></span>
-  {/if}
-  <span class="flex-1"></span>
-  {#if detail}
-    <span class="text-xs text-gray-500 truncate max-w-[380px] hidden sm:inline">
-      {detail}
+  <span
+    class="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center sm:gap-3"
+  >
+    <span class="flex items-center gap-2 min-w-0">
+      <span class="text-[13px] font-medium text-gray-900 truncate">{label}</span
+      >
+      {#if status === "warn"}
+        <span
+          class="inline-block w-2 h-2 rounded-full flex-shrink-0"
+          style="background-color: #F4B544;"
+          role="img"
+          aria-label="Warning"
+        ></span>
+      {/if}
     </span>
+    <span class="hidden sm:block sm:flex-1" aria-hidden="true"></span>
+    {#if detail}
+      <span class="text-xs text-gray-500 truncate sm:max-w-[380px]">
+        {detail}
+      </span>
+    {/if}
+  </span>
+  {#if href && is_external}
+    <span class="sr-only">(opens in new tab)</span>
   {/if}
   <span class="text-gray-400 flex-shrink-0 w-3 h-3 flex items-center">
     {#if href && is_external}
