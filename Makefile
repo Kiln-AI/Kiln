@@ -1,4 +1,4 @@
-.PHONY: dev ui schema annotations check package nvm
+.PHONY: dev ui schema annotations check package
 
 # Shell snippet that loads nvm and selects the Node version from app/web_ui/.nvmrc.
 # Use in recipes that invoke npm/npx/node. $(CURDIR) keeps the path valid after any `cd`.
