@@ -13,6 +13,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: "app/web_ui/.nvmrc"
+          cache: "npm"
+          cache-dependency-path: "app/web_ui/package-lock.json"
+
       - name: NPM install
         run: npm install .
 
