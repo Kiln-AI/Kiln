@@ -236,6 +236,10 @@ class MeanUsage(BaseModel):
     mean_cost: float | None = Field(
         default=None, description="Average cost per run in USD."
     )
+    mean_total_llm_latency_ms: float | None = Field(
+        default=None,
+        description="Average total LLM latency per run in milliseconds.",
+    )
 
 
 class EvalRunResult(BaseModel):
@@ -1422,10 +1426,12 @@ def connect_evals_api(app: FastAPI):
         total_output_tokens = 0.0
         total_total_tokens = 0.0
         total_cost = 0.0
+        total_llm_latency_ms_sum = 0.0
         input_tokens_count = 0
         output_tokens_count = 0
         total_tokens_count = 0
         cost_count = 0
+        latency_ms_count = 0
         total_eval_runs = 0
 
         for eval in evals:
@@ -1506,6 +1512,9 @@ def connect_evals_api(app: FastAPI):
                     if usage.cost is not None:
                         total_cost += usage.cost
                         cost_count += 1
+                    if usage.total_llm_latency_ms is not None:
+                        total_llm_latency_ms_sum += usage.total_llm_latency_ms
+                        latency_ms_count += 1
 
                 incomplete = False
                 for output_score in eval.output_scores:
@@ -1576,6 +1585,9 @@ def connect_evals_api(app: FastAPI):
                 if total_tokens_count >= threshold
                 else None,
                 mean_cost=total_cost / cost_count if cost_count >= threshold else None,
+                mean_total_llm_latency_ms=total_llm_latency_ms_sum / latency_ms_count
+                if latency_ms_count >= threshold
+                else None,
             )
 
         return RunConfigEvalScoresSummary(
