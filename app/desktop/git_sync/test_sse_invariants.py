@@ -1,3 +1,4 @@
+import logging
 import os
 import tempfile
 import types
@@ -10,6 +11,8 @@ from starlette.responses import StreamingResponse
 
 from app.desktop.desktop_server import make_app
 from app.desktop.git_sync.middleware import PROJECT_ID_PATTERN
+
+logger = logging.getLogger(__name__)
 
 
 def _contains_streaming_response(tp: type) -> bool:
@@ -24,7 +27,14 @@ def _contains_streaming_response(tp: type) -> bool:
 def _return_type_is_streaming(fn: typing.Callable) -> bool:
     try:
         hints = get_type_hints(fn)
-    except Exception:
+    except (TypeError, NameError) as e:
+        # Surface resolution failures so a broken forward-ref doesn't
+        # silently exclude an endpoint from the @no_write_lock invariant.
+        logger.warning(
+            "Could not resolve return type for %s: %s — skipping in invariant check",
+            getattr(fn, "__qualname__", repr(fn)),
+            e,
+        )
         return False
     ret = hints.get("return")
     if ret is None:

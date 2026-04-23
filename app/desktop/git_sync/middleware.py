@@ -124,6 +124,12 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
         await self.app(scope, receive, send)
 
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        # Note: unlike _no_write_lock_asgi, this path does NOT attach the
+        # manager to request.state. Today no non-@no_write_lock endpoint
+        # reads request.state.git_sync_manager (build_save_context callers
+        # are all @no_write_lock). If you're adding build_save_context to a
+        # regular read endpoint, add @no_write_lock to route it through the
+        # ASGI bypass instead.
         manager = self._get_manager_for_request(request)
 
         if manager is None:

@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from starlette.responses import JSONResponse, StreamingResponse
 
 from app.desktop.git_sync.config import GitSyncProjectConfig
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from app.desktop.git_sync.errors import (
     CorruptRepoError,
     RemoteUnreachableError,
@@ -1189,20 +1190,22 @@ async def test_sse_cancels_on_client_disconnect():
             try:
                 yield b"data: started\n\n"
                 await asyncio.sleep(3600)
-            except (asyncio.CancelledError, GeneratorExit):
-                raise
             finally:
                 finally_ran.set()
 
-        return StreamingResponse(gen(), media_type="text/event-stream")
+        return CancellableStreamingResponse(gen(), media_type="text/event-stream")
 
     app = FastAPI()
     app.add_middleware(GitSyncMiddleware)
     app.get(f"/api/projects/{PROJECT_ID}/stream")(sse_endpoint)
 
+    # spec_version "2.4" matches production uvicorn; under plain
+    # StreamingResponse this would skip listen_for_disconnect entirely,
+    # so this scope proves CancellableStreamingResponse + the ASGI bypass
+    # together restore cancellation.
     scope = {
         "type": "http",
-        "asgi": {"version": "3.0"},
+        "asgi": {"version": "3.0", "spec_version": "2.4"},
         "http_version": "1.1",
         "method": "GET",
         "path": f"/api/projects/{PROJECT_ID}/stream",
