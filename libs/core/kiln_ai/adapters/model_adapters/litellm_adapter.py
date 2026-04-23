@@ -2,6 +2,7 @@ import asyncio
 import copy
 import json
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
@@ -134,13 +135,18 @@ class LiteLlmAdapter(BaseAdapter):
                 skip_response_format,
             )
 
-            # Make the completion call
+            # Make the completion call (timed)
+            start = time.monotonic()
             model_response, response_choice = await self.acompletion_checking_response(
                 **completion_kwargs
             )
+            call_latency_ms = int((time.monotonic() - start) * 1000)
 
             # count the usage
             usage += self.usage_from_response(model_response)
+            usage.total_llm_latency_ms = (
+                usage.total_llm_latency_ms or 0
+            ) + call_latency_ms
 
             # Extract content and tool calls
             if not hasattr(response_choice, "message"):
@@ -153,6 +159,7 @@ class LiteLlmAdapter(BaseAdapter):
                 )
 
             # Add message to messages, so it can be used in the next turn
+            response_choice.message._latency_ms = call_latency_ms  # type: ignore[attr-defined]
             messages.append(response_choice.message)
 
             # Process tool calls if any
@@ -897,6 +904,10 @@ class LiteLlmAdapter(BaseAdapter):
                 )
             if len(open_ai_tool_calls) > 0:
                 message["tool_calls"] = open_ai_tool_calls
+
+        latency_ms = getattr(raw_message, "_latency_ms", None)
+        if latency_ms is not None:
+            message["latency_ms"] = latency_ms
 
         if not message.get("content") and not message.get("tool_calls"):
             raise ValueError(
