@@ -353,20 +353,25 @@
   })
 
   async function load_run() {
+    // Snapshot run_id so we can detect if it changes during the await
+    // (e.g. user hits arrow again) and discard this stale response.
+    const requested_run_id = run_id
     try {
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
         {
           params: {
-            path: { project_id, task_id, run_id: run_id },
+            path: { project_id, task_id, run_id: requested_run_id },
           },
         },
       )
+      if (requested_run_id !== run_id) return
       if (error) {
         throw error
       }
       run = data
     } catch (error) {
+      if (requested_run_id !== run_id) return
       if (error instanceof Error && error.message.includes("Load failed")) {
         load_error = new KilnError(
           "Could not load run. It may belong to a project you don't have access to.",
@@ -376,7 +381,9 @@
         load_error = createKilnError(error)
       }
     } finally {
-      loading = false
+      if (requested_run_id === run_id) {
+        loading = false
+      }
     }
   }
 
@@ -407,6 +414,7 @@
     load_error = null
     run_id = new_run_id
     run = null
+    loading = true
     goto(`/dataset/${project_id}/${task_id}/${run_id}/run`, {
       state: { list_page: list_page },
     })

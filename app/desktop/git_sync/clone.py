@@ -3,7 +3,9 @@ import logging
 import os
 import re
 import shutil
+import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +35,9 @@ ehthumbs.db
 """
 
 DEFAULT_REMOTE_NAME = "origin"
+
+_WINDOWS_RENAME_MAX_ATTEMPTS = 5
+_WINDOWS_RENAME_RETRY_DELAY = 2.0
 
 
 def make_push_callbacks(
@@ -275,6 +280,10 @@ def rename_clone_to_final_path(
     The caller is responsible for computing final_path (via compute_clone_path)
     and validating it before calling this function.
 
+    On Windows, retries on PermissionError up to 5 times with a 2-second delay
+    between attempts to handle transient file locks from antivirus or indexing
+    services.
+
     Returns the final path.
 
     Raises ValueError if current_path does not exist.
@@ -283,8 +292,25 @@ def rename_clone_to_final_path(
         raise ValueError(f"Clone path does not exist: {current_path}")
 
     final_path.parent.mkdir(parents=True, exist_ok=True)
-    os.rename(current_path, final_path)
 
+    if sys.platform == "win32":
+        for attempt in range(1, _WINDOWS_RENAME_MAX_ATTEMPTS + 1):
+            try:
+                os.rename(current_path, final_path)
+                return final_path
+            except PermissionError:
+                if attempt == _WINDOWS_RENAME_MAX_ATTEMPTS:
+                    raise
+                logger.warning(
+                    "Rename attempt %d/%d failed with PermissionError, "
+                    "retrying in %.1fs",
+                    attempt,
+                    _WINDOWS_RENAME_MAX_ATTEMPTS,
+                    _WINDOWS_RENAME_RETRY_DELAY,
+                )
+                time.sleep(_WINDOWS_RENAME_RETRY_DELAY)
+
+    os.rename(current_path, final_path)
     return final_path
 
 
@@ -295,11 +321,13 @@ def clone_repo(
     pat_token: str | None = None,
     auth_mode: AuthMode = "system_keys",
     oauth_token: str | None = None,
-) -> pygit2.Repository:
+) -> None:
     """Clone a repository into the given path.
 
     Sets up the clone with the specified branch and adds a .gitignore
-    for common OS artifacts.
+    for common OS artifacts. The pygit2 Repository is freed before returning
+    to release libgit2 file handles (required on Windows to allow subsequent
+    rename/move of the clone directory).
     """
     callbacks = make_credentials(pat_token, auth_mode, oauth_token=oauth_token)
 
@@ -310,9 +338,12 @@ def clone_repo(
         callbacks=callbacks,
     )
 
-    _ensure_gitignore(repo, clone_path, pat_token, auth_mode, oauth_token=oauth_token)
-
-    return repo
+    try:
+        _ensure_gitignore(
+            repo, clone_path, pat_token, auth_mode, oauth_token=oauth_token
+        )
+    finally:
+        repo.free()
 
 
 def _ensure_gitignore(
@@ -380,8 +411,12 @@ def test_write_access(
 ) -> tuple[bool, str]:
     """Test write access by pushing an empty commit.
 
+    The pygit2 Repository is freed before returning to release libgit2
+    file handles (required on Windows).
+
     Returns (success, message).
     """
+    repo: pygit2.Repository | None = None
     try:
         repo = pygit2.Repository(str(clone_path))
         sig = pygit2.Signature(get_committer_name(), get_committer_email())
@@ -419,6 +454,9 @@ def test_write_access(
         return False, f"Write access check failed: {e}"
     except Exception as e:
         return False, f"Write access check failed: {e}"
+    finally:
+        if repo is not None:
+            repo.free()
 
 
 def scan_for_projects(clone_path: Path) -> list[dict[str, str]]:

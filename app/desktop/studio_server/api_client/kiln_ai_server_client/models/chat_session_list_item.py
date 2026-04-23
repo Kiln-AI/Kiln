@@ -2,43 +2,36 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import Any, TypeVar
 
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 from dateutil.parser import isoparse
-
-if TYPE_CHECKING:
-    from ..models.task_run import TaskRun
-
 
 T = TypeVar("T", bound="ChatSessionListItem")
 
 
 @_attrs_define
 class ChatSessionListItem:
-    """Session list row with derived ``updated_at`` and ``title`` for the chat sessions API.
+    """Session list row — metadata only, no trace.
 
-    Attributes:
-        id (str):
-        task_run (TaskRun): Represents a single execution of a Task.
+    Kept deliberately minimal so ``GET /chat/sessions`` never returns the full
+    conversation history per row. Clients fetch a specific trace via
+    ``GET /chat/sessions/{id}`` when they need it.
 
-            Contains the input used, its source, the output produced, and optional
-            repair information if the output needed correction.
-        updated_at (datetime.datetime):
-        title (str):
+        Attributes:
+            id (str):
+            updated_at (datetime.datetime):
+            title (str):
     """
 
     id: str
-    task_run: TaskRun
     updated_at: datetime.datetime
     title: str
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         id = self.id
-
-        task_run = self.task_run.to_dict()
 
         updated_at = self.updated_at.isoformat()
 
@@ -49,7 +42,6 @@ class ChatSessionListItem:
         field_dict.update(
             {
                 "id": id,
-                "task_run": task_run,
                 "updated_at": updated_at,
                 "title": title,
             }
@@ -59,12 +51,8 @@ class ChatSessionListItem:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.task_run import TaskRun
-
         d = dict(src_dict)
         id = d.pop("id")
-
-        task_run = TaskRun.from_dict(d.pop("task_run"))
 
         updated_at = isoparse(d.pop("updated_at"))
 
@@ -72,7 +60,6 @@ class ChatSessionListItem:
 
         chat_session_list_item = cls(
             id=id,
-            task_run=task_run,
             updated_at=updated_at,
             title=title,
         )
