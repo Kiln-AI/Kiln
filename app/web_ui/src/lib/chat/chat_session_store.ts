@@ -1,4 +1,5 @@
 import { writable, get, type Readable } from "svelte/store"
+import posthog from "posthog-js"
 import {
   streamChat,
   chatGenerateId,
@@ -165,6 +166,16 @@ export function createChatSessionStore(
       lastSentAppState: currentAppState,
     }))
 
+    posthog.capture("chat_message_sent", {
+      is_new_conversation: !traceId,
+      message_length: text.length,
+      has_app_context_header: !!header,
+      message_count: currentMessages.length,
+    })
+    if (!traceId) {
+      posthog.capture("chat_conversation_started")
+    }
+
     combined.update((s) => ({
       ...s,
       toolExecuting: false,
@@ -284,6 +295,7 @@ export function createChatSessionStore(
 
   function stop(): void {
     if (abortController) {
+      posthog.capture("chat_stopped")
       abortController.abort()
     }
   }
@@ -299,6 +311,7 @@ export function createChatSessionStore(
       }
     }
     if (lastUserIdx === -1) return
+    posthog.capture("chat_retry")
     const userText = msgs[lastUserIdx].content ?? ""
     persisted.update((p) => ({
       ...p,
@@ -390,8 +403,17 @@ export function createChatSessionStore(
     resolver(decisions)
   }
 
+  function toolNameForCallId(toolCallId: string): string | undefined {
+    return get(combined).toolApprovalWaiter?.payload.items.find(
+      (i) => i.toolCallId === toolCallId,
+    )?.toolName
+  }
+
   function applyToolApprovalRun(toolCallId: string): void {
     if (!get(combined).toolApprovalWaiter) return
+    posthog.capture("chat_tool_approval_run", {
+      tool_name: toolNameForCallId(toolCallId),
+    })
     combined.update((s) => ({
       ...s,
       toolApprovalPicks: { ...s.toolApprovalPicks, [toolCallId]: true },
@@ -401,6 +423,9 @@ export function createChatSessionStore(
 
   function applyToolApprovalSkip(toolCallId: string): void {
     if (!get(combined).toolApprovalWaiter) return
+    posthog.capture("chat_tool_approval_skip", {
+      tool_name: toolNameForCallId(toolCallId),
+    })
     combined.update((s) => ({
       ...s,
       toolApprovalPicks: { ...s.toolApprovalPicks, [toolCallId]: false },
