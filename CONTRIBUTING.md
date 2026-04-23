@@ -36,11 +36,10 @@ To run the API server, Studio server, and Studio Web UI with auto-reload for dev
    uv run python -m app.desktop.dev_server
    ```
 
-2. In a second terminal, navigate to the web UI directory and start the dev server:
+2. In a second terminal, start the web UI dev server:
 
    ```bash
-   cd app/web_ui
-   npm run dev --
+   make ui
    ```
 
 3. Open the app: http://localhost:5173/run
