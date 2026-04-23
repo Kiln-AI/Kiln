@@ -1,6 +1,6 @@
 # Byte-compiled / optimized / DLL files
 
-.cursor/commands/
+.cursor/
 .env
 .act_secrets
 __pycache__/
@@ -13,7 +13,6 @@ node_modules/
 conductor.json
 CLAUDE.md
 .claude/
-.cursor/skills/
 
 libs/core/docs
 libs/core/build

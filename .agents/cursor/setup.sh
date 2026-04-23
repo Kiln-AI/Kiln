@@ -14,4 +14,7 @@ if [ -d ".agents/skills" ]; then
     cp -r .agents/skills .cursor/skills
 fi
 
+# Copy MCP config to root (gitignored)
+cp .agents/mcp.json .mcp.json
+
 echo "Cursor setup complete"

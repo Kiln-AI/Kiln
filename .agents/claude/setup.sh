@@ -17,4 +17,7 @@ if [ -d ".agents/skills" ]; then
     cp -r .agents/skills .claude/skills
 fi
 
+# Copy MCP config to root (gitignored)
+cp .agents/mcp.json .mcp.json
+
 echo "Claude Code setup complete"
