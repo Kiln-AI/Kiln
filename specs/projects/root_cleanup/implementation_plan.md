@@ -53,7 +53,7 @@ Phases are ordered by risk (low → high) and by what unblocks later phases (e.g
     - Restart Cursor; confirm skills appear in the skill picker.
     - Restart Claude Code; confirm skills list populates and at least one skill (e.g., `kiln-add-model`) can be invoked.
 
-- [ ] **Phase 8: Move `hooks_mcp.yaml` → `.config/hooks_mcp.yaml`**
+- [x] **Phase 8: Move `hooks_mcp.yaml` → `.config/hooks_mcp.yaml`**
   - `git mv hooks_mcp.yaml .config/hooks_mcp.yaml`.
   - Rewrite every prompt `file:` path in the YAML with `../` prefix.
   - Update `.cursor/mcp.json` args: add positional `.config/hooks_mcp.yaml` before `--working-directory`.

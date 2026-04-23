@@ -2,7 +2,7 @@
   "mcpServers": {
     "HooksMCP": {
       "command": "uvx",
-      "args": ["hooks-mcp", "--working-directory", "."]
+      "args": ["hooks-mcp", ".config/hooks_mcp.yaml", "--working-directory", "."]
     }
   }
 }
