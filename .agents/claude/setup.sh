@@ -10,6 +10,9 @@ cd "$REPO_ROOT"
 # Copy AGENTS.md to CLAUDE.md
 cp AGENTS.md CLAUDE.md
 
+# Copy .worktreeinclude to repo root (worktrunk/Claude Code desktop require it there)
+cp .config/wt/.worktreeinclude .worktreeinclude
+
 # Copy skills from the canonical .agents/skills/ location
 if [ -d ".agents/skills" ]; then
     mkdir -p .claude
