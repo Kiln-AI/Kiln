@@ -6,7 +6,7 @@ We use [GitHub issues](https://github.com/Kiln-AI/Kiln/issues) for tracking issu
 
 ## Contributing
 
-New contributors must agree to the [contributor license agreement](CLA.md).
+New contributors must agree to the [contributor license agreement](.config/CLA.md).
 
 ## Development Environment Setup
 
