@@ -1722,6 +1722,36 @@ def test_legacy_custom_models_as_available():
         assert result == {}
 
 
+def test_legacy_custom_models_as_available_excludes_user_model_keys():
+    """Legacy entries that have been re-added via user_model_registry should
+    be hidden so the same model doesn't render twice (KIL-540)."""
+    with patch(
+        "app.desktop.studio_server.provider_api.get_legacy_custom_models"
+    ) as mock_get_legacy:
+        mock_get_legacy.return_value = [
+            ("openai", "model1"),
+            ("groq", "model2"),
+            ("openai", "kept_model"),
+        ]
+
+        result = legacy_custom_models_as_available(
+            exclude_keys={("openai", "model1"), ("groq", "model2")}
+        )
+
+        assert len(result) == 1
+        models = result["kiln_custom_registry"]
+        assert len(models) == 1
+        assert models[0].id == "openai::kept_model"
+
+    # All entries excluded -> empty dict
+    with patch(
+        "app.desktop.studio_server.provider_api.get_legacy_custom_models"
+    ) as mock_get_legacy:
+        mock_get_legacy.return_value = [("openai", "only")]
+        result = legacy_custom_models_as_available(exclude_keys={("openai", "only")})
+        assert result == {}
+
+
 @pytest.mark.asyncio
 async def test_save_openai_compatible_providers(client):
     with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:

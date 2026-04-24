@@ -357,8 +357,16 @@ def connect_provider_api(app: FastAPI):
         # but merged the same way (by provider key).
         models_to_merge: Dict[str, List[ModelDetails]] = {}
 
+        # Skip legacy entries already covered by user_model_registry to avoid
+        # the same model rendering under both "Custom Models" and its real provider.
+        user_model_keys: set[tuple[str, str]] = {
+            (entry.provider_id, entry.model_id) for entry in get_all_user_models()
+        }
+
         # Legacy custom_models: keyed by kiln_custom_registry
-        for key, model_list in legacy_custom_models_as_available().items():
+        for key, model_list in legacy_custom_models_as_available(
+            exclude_keys=user_model_keys
+        ).items():
             models_to_merge.setdefault(key, []).extend(model_list)
 
         # New user_model_registry: keyed by provider_id (builtin) or provider name (custom)
@@ -1842,7 +1850,9 @@ def embedding_models_from_ollama_tag(
     return models
 
 
-def legacy_custom_models_as_available() -> Dict[str, List[ModelDetails]]:
+def legacy_custom_models_as_available(
+    exclude_keys: set[tuple[str, str]] | None = None,
+) -> Dict[str, List[ModelDetails]]:
     """
     Returns legacy custom_models keyed by "kiln_custom_registry" for merging
     into available_models.
@@ -1852,8 +1862,19 @@ def legacy_custom_models_as_available() -> Dict[str, List[ModelDetails]]:
     They appear under the "Custom Models" provider group.
 
     New custom models should use user_model_registry instead.
+
+    exclude_keys is a set of (provider_id, model_id) tuples already covered by
+    user_model_registry. Matching legacy entries are skipped so the same model
+    doesn't render twice (once under "Custom Models" and once under its real
+    provider). The legacy config is preserved so history/IDs remain valid.
     """
     legacy_models = get_legacy_custom_models()
+    if exclude_keys:
+        legacy_models = [
+            (provider_id, model_id)
+            for provider_id, model_id in legacy_models
+            if (provider_id, model_id) not in exclude_keys
+        ]
     if not legacy_models:
         return {}
 
