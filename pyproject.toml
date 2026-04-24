@@ -48,7 +48,7 @@ exclude = [".worktrees"]
 exclude = [".worktrees", "**/test_*.py", "app/desktop/build/**", "app/web_ui/**", "**/.venv", "**/kiln_ai_server_client/**"]
 
 [tool.ty.environment]
-extra-paths = ["./typings"]
+extra-paths = ["./libs/core/typings"]
 
 [tool.ty.rules]
 invalid-key = "ignore"
