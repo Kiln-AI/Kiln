@@ -1,34 +1,11 @@
 import shutil
 import uuid
-from enum import Enum
 from pathlib import Path
 from typing import Callable
 
 import pytest
 from kiln_ai.datamodel.basemodel import KilnAttachmentModel
-
-
-class MockFileFactoryMimeType(str, Enum):
-    # documents
-    PDF = "application/pdf"
-    CSV = "text/csv"
-    TXT = "text/plain"
-    HTML = "text/html"
-    MD = "text/markdown"
-
-    # images
-    PNG = "image/png"
-    JPG = "image/jpeg"
-    JPEG = "image/jpeg"
-
-    # audio
-    MP3 = "audio/mpeg"
-    WAV = "audio/wav"
-    OGG = "audio/ogg"
-
-    # video
-    MP4 = "video/mp4"
-    MOV = "video/quicktime"
+from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
 
 
 @pytest.fixture

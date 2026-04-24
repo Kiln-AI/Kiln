@@ -4,8 +4,7 @@ from pathlib import Path
 from typing import Callable
 
 import pytest
-
-from libs.core.conftest import MockFileFactoryMimeType
+from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
 
 
 @pytest.fixture

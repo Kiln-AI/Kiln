@@ -45,7 +45,6 @@ actions:
       - name: "TEST_PATH"
         type: "project_file_path"
         description: "Path to test file or directory"
-        default: "./tests"
       - name: "TEST_NAME"
         type: "insecure_string"
         description: "Name of the test to run"
