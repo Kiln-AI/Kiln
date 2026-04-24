@@ -282,8 +282,8 @@ class Config:
     @classmethod
     def settings_dir(cls, create=True) -> str:
         settings_dir = os.path.join(Path.home(), ".kiln_ai")
-        if create and not os.path.exists(settings_dir):
-            os.makedirs(settings_dir)
+        if create:
+            os.makedirs(settings_dir, exist_ok=True)
         return settings_dir
 
     @classmethod
