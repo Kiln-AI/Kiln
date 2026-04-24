@@ -11,7 +11,7 @@
   import { client } from "$lib/api_client"
   import Output from "$lib/ui/output.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { formatDate } from "$lib/utils/formatters"
+  import { formatDate, formatLatency } from "$lib/utils/formatters"
   import { bounceOut } from "svelte/easing"
   import { fly } from "svelte/transition"
   import { onMount } from "svelte"
@@ -524,11 +524,6 @@
         chain_of_thought: "Chain of Thought Output",
       }[name] || name
     )
-  }
-
-  function formatLatency(ms: number): string {
-    if (ms < 1000) return `${Math.round(ms)}ms`
-    return `${(ms / 1000).toFixed(1)}s`
   }
 
   function get_usage_properties(

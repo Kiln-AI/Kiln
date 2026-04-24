@@ -13,6 +13,7 @@
     getRunConfigPromptDisplayName,
   } from "$lib/utils/run_config_formatters"
   import ChartNoData from "./chart_no_data.svelte"
+  import { formatLatency } from "$lib/utils/formatters"
 
   // Type for comparison features (same as parent page)
   type ComparisonFeature = {
@@ -123,8 +124,7 @@
       return `$${value.toFixed(6)}`
     }
     if (dataKey.includes("latency")) {
-      if (value < 1000) return `${Math.round(value)}ms`
-      return `${(value / 1000).toFixed(1)}s`
+      return formatLatency(value)
     }
     if (dataKey.includes("tokens")) {
       return value.toFixed(0)

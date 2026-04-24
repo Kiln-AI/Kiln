@@ -176,6 +176,8 @@ class AdapterStream:
                 yield chunk
                 # Reset timer after yield returns — excludes consumer processing time
                 chunk_wait_start = time.monotonic()
+            # Capture the terminal wait (final __anext__ that raises StopAsyncIteration)
+            call_latency_seconds += time.monotonic() - chunk_wait_start
 
             call_latency_ms = int(call_latency_seconds * 1000)
 
