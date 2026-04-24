@@ -27,6 +27,7 @@
   let loading = true
   let loading_error: KilnError | null = null
   let archive_error: KilnError | null = null
+  let open_folder_error: KilnError | null = null
 
   onMount(async () => {
     await fetch_skill()
@@ -73,6 +74,25 @@
     return props
   }
 
+  async function open_enclosing_folder() {
+    try {
+      open_folder_error = null
+      const { error: open_error } = await client.POST(
+        "/api/projects/{project_id}/skills/{skill_id}/open_enclosing_folder",
+        {
+          params: {
+            path: { project_id, skill_id },
+          },
+        },
+      )
+      if (open_error) {
+        throw open_error
+      }
+    } catch (e) {
+      open_folder_error = createKilnError(e)
+    }
+  }
+
   async function update_archive(is_archived: boolean) {
     try {
       archive_error = null
@@ -116,6 +136,10 @@
     action_buttons={skill && !loading && !loading_error
       ? [
           {
+            icon: "/images/folder.svg",
+            handler: () => open_enclosing_folder(),
+          },
+          {
             label: "Clone",
             handler: () => goto(`/skills/${project_id}/clone/${skill_id}`),
           },
@@ -130,6 +154,15 @@
       <Warning
         warning_message={archive_error.getMessage() ||
           "An unknown error occurred"}
+        large_icon={true}
+        warning_color="error"
+        outline={true}
+      />
+    {/if}
+    {#if open_folder_error}
+      <Warning
+        warning_message={open_folder_error.getMessage() ||
+          "Failed to open the skill folder"}
         large_icon={true}
         warning_color="error"
         outline={true}

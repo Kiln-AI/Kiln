@@ -5,7 +5,7 @@
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
-  import { prompt_generator_categories } from "../prompt_generators/prompt_generators"
+  import { prompt_generator_categories } from "$lib/prompt_generators"
   import { generate_memorable_name } from "$lib/utils/name_generator"
   import PromptForm from "../prompt_form.svelte"
 
@@ -20,6 +20,7 @@
   let generator_name = ""
   let initial_prompt_name = generate_memorable_name()
   let initial_prompt = ""
+  let initial_chain_of_thought_instructions: string | null = null
   let loading_error: KilnError | null = null
 
   let generator_id: string | null = null
@@ -48,11 +49,14 @@
           throw get_error
         }
         initial_prompt = prompt_response.prompt
+        initial_chain_of_thought_instructions =
+          prompt_response.chain_of_thought_instructions ?? null
 
         const template = prompt_generator_categories
           .flatMap((c) => c.templates)
           .find((t) => t.generator_id === generator_id)
         generator_name = template?.name || generator_id
+        initial_prompt_name = `${generate_memorable_name()} - ${generator_name}`
       } catch (e) {
         loading_error = createKilnError(e)
       }
@@ -101,6 +105,7 @@
         show_chain_of_thought={is_custom}
         {initial_prompt_name}
         {initial_prompt}
+        {initial_chain_of_thought_instructions}
         redirect_from={$page.url.searchParams.get("from")}
       />
     {/if}

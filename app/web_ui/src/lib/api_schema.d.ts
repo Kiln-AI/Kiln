@@ -2402,6 +2402,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/skills/{skill_id}/open_enclosing_folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open Skill Enclosing Folder */
+        post: operations["open_skill_enclosing_folder_api_projects__project_id__skills__skill_id__open_enclosing_folder_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs/check_run_config": {
         parameters: {
             query?: never;
@@ -7400,6 +7417,8 @@ export interface components {
             prompt: string;
             /** Prompt Id */
             prompt_id: string;
+            /** Chain Of Thought Instructions */
+            chain_of_thought_instructions?: string | null;
         };
         /**
          * PromptCreateRequest
@@ -15800,6 +15819,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillContentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_skill_enclosing_folder_api_projects__project_id__skills__skill_id__open_enclosing_folder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the skill. */
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenFileResponse"];
                 };
             };
             /** @description Validation Error */

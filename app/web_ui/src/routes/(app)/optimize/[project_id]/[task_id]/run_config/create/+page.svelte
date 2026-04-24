@@ -30,6 +30,7 @@
 
   let prompt_id: string | undefined = undefined
   let model: string | undefined = undefined // e.g. "openrouter/gpt_5_nano"
+  let pending_skill_id: string | null = null
 
   let prompt_info: PromptInfo | undefined = undefined
 
@@ -46,6 +47,7 @@
     try {
       model = $page.url.searchParams.get("model") || undefined
       prompt_id = $page.url.searchParams.get("prompt_id") || undefined
+      pending_skill_id = $page.url.searchParams.get("skill_id")
       if (prompt_id) {
         await load_task_prompts(project_id, task_id)
         const found_prompt = $prompts_by_task_composite_id[
@@ -136,6 +138,7 @@
             }}
             hide_prompt_selector={!!prompt_info}
             {model}
+            {pending_skill_id}
             prompt_method={prompt_info
               ? prompt_info.id
               : "simple_prompt_builder"}
