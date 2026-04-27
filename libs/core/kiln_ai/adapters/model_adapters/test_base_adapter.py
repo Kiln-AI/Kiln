@@ -35,7 +35,7 @@ from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 class MockAdapter(BaseAdapter):
     """Concrete implementation of BaseAdapter for testing"""
 
-    async def _run(self, input, **kwargs):
+    async def _run(self, input, messages, **kwargs):
         return None, None
 
     def adapter_name(self) -> str:
@@ -249,7 +249,7 @@ async def test_input_formatting(
         # Mock the _run method to capture the input
         captured_input = None
 
-        async def mock_run(input, **kwargs):
+        async def mock_run(input, messages=None, **kwargs):
             nonlocal captured_input
             captured_input = input
             return RunOutput(output="test output", intermediate_outputs={}), None
@@ -529,7 +529,7 @@ async def test_invoke_returning_run_output_passes_prior_trace_to_run(
 
     captured_prior_trace = None
 
-    async def mock_run(input, **kwargs):
+    async def mock_run(input, messages=None, **kwargs):
         nonlocal captured_prior_trace
         captured_prior_trace = kwargs.get("prior_trace")
         return RunOutput(output="ok", intermediate_outputs=None, trace=trace), None
@@ -1058,7 +1058,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method
-        async def mock_run(input, **kwargs):
+        async def mock_run(input, messages=None, **kwargs):
             # Check that run ID is set during _run
             run_id = get_agent_run_id()
             assert run_id is not None
@@ -1098,7 +1098,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method
-        async def mock_run(input, **kwargs):
+        async def mock_run(input, messages=None, **kwargs):
             return RunOutput(output="test output", intermediate_outputs={}), None
 
         adapter._run = mock_run
@@ -1136,7 +1136,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.run_context import get_agent_run_id
 
         # Mock the _run method to raise an error
-        async def mock_run(input, **kwargs):
+        async def mock_run(input, messages=None, **kwargs):
             # Run ID should be set even when error occurs
             run_id = get_agent_run_id()
             assert run_id is not None
@@ -1156,8 +1156,14 @@ class TestAgentRunContextLifecycle:
                 "kiln_ai.adapters.model_adapters.base_adapter.request_formatter_from_id"
             ),
         ):
-            with pytest.raises(ValueError, match="Test error"):
+            # Runtime failures from `_run` are wrapped in KilnRunError; the
+            # underlying ValueError is available via `.original`.
+            from kiln_ai.adapters.errors import KilnRunError
+
+            with pytest.raises(KilnRunError) as ei:
                 await adapter.invoke_returning_run_output({"test": "input"})
+            assert isinstance(ei.value.original, ValueError)
+            assert str(ei.value.original) == "Test error"
 
             # After error, run ID should be cleared
             assert get_agent_run_id() is None
@@ -1173,7 +1179,7 @@ class TestAgentRunContextLifecycle:
         set_agent_run_id(parent_run_id)
 
         # Mock the _run method to check inherited run ID
-        async def mock_run(input, **kwargs):
+        async def mock_run(input, messages=None, **kwargs):
             # Sub-agent should see parent's run ID
             run_id = get_agent_run_id()
             assert run_id == parent_run_id
@@ -1222,7 +1228,7 @@ class TestAgentRunContextLifecycle:
         run_id_during_run = None
 
         # Mock the _run method to capture run ID
-        async def mock_run(input, **kwargs):
+        async def mock_run(input, messages=None, **kwargs):
             nonlocal run_id_during_run
             run_id_during_run = get_agent_run_id()
             return RunOutput(output="test output", intermediate_outputs={}), None
@@ -1262,7 +1268,7 @@ class TestAgentRunContextLifecycle:
         from kiln_ai.adapters.run_output import RunOutput
 
         # Mock the _run method
-        async def mock_run(input, **kwargs):
+        async def mock_run(input, messages=None, **kwargs):
             return RunOutput(output="test output", intermediate_outputs={}), None
 
         adapter._run = mock_run

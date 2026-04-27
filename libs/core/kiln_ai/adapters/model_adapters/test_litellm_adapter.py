@@ -1715,13 +1715,13 @@ async def test_run_with_prior_trace_uses_multiturn_formatter(mock_task):
     adapter.build_chat_formatter = capturing_build
 
     async def mock_run_model_turn(
-        provider, prior_messages, top_logprobs, skip_response_format
+        provider, messages, top_logprobs, skip_response_format
     ):
-        extended = list(prior_messages)
-        extended.append({"role": "assistant", "content": "How can I help?"})
+        # Match the real contract: mutate the caller's list in place.
+        messages.append({"role": "assistant", "content": "How can I help?"})
         return ModelTurnResult(
             assistant_message="How can I help?",
-            all_messages=extended,
+            all_messages=messages,
             model_response=None,
             model_choice=None,
             usage=Usage(),
@@ -1729,7 +1729,7 @@ async def test_run_with_prior_trace_uses_multiturn_formatter(mock_task):
 
     adapter._run_model_turn = mock_run_model_turn
 
-    run_output, _ = await adapter._run("follow-up", prior_trace=prior_trace)
+    run_output, _ = await adapter._run("follow-up", [], prior_trace=prior_trace)
 
     assert len(build_chat_formatter_calls) == 1
     assert build_chat_formatter_calls[0][0] == "follow-up"
@@ -1808,14 +1808,14 @@ async def test_run_with_prior_trace_preserves_tool_calls(mock_task):
     captured_messages = []
 
     async def mock_run_model_turn(
-        provider, prior_messages, top_logprobs, skip_response_format
+        provider, messages, top_logprobs, skip_response_format
     ):
-        captured_messages.extend(prior_messages)
-        extended = list(prior_messages)
-        extended.append({"role": "assistant", "content": '{"test": "response"}'})
+        captured_messages.extend(messages)
+        # Match the real contract: mutate the caller's list in place.
+        messages.append({"role": "assistant", "content": '{"test": "response"}'})
         return ModelTurnResult(
             assistant_message='{"test": "response"}',
-            all_messages=extended,
+            all_messages=messages,
             model_response=None,
             model_choice=None,
             usage=Usage(),
@@ -1823,7 +1823,7 @@ async def test_run_with_prior_trace_preserves_tool_calls(mock_task):
 
     adapter._run_model_turn = mock_run_model_turn
 
-    run_output, _ = await adapter._run("what else?", prior_trace=prior_trace)
+    run_output, _ = await adapter._run("what else?", [], prior_trace=prior_trace)
 
     assert run_output.trace is not None
     # 7 prior trace messages + 1 new user + 1 new assistant = 9
@@ -1892,13 +1892,13 @@ async def test_structured_output_with_return_on_tool_call_and_resume(
     call_count = 0
 
     async def mock_run_model_turn(
-        provider, prior_messages, top_logprobs, skip_response_format
+        provider, messages, top_logprobs, skip_response_format
     ):
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            extended = list(prior_messages)
-            extended.append(
+            # Mutate the caller's list in place per the _run_model_turn contract.
+            messages.append(
                 {
                     "role": "assistant",
                     "content": None,
@@ -1916,7 +1916,7 @@ async def test_structured_output_with_return_on_tool_call_and_resume(
             )
             return ModelTurnResult(
                 assistant_message="",
-                all_messages=extended,
+                all_messages=messages,
                 model_response=None,
                 model_choice=None,
                 usage=Usage(),
@@ -1924,11 +1924,10 @@ async def test_structured_output_with_return_on_tool_call_and_resume(
             )
         else:
             json_response = '{"test": "structured_response"}'
-            extended = list(prior_messages)
-            extended.append({"role": "assistant", "content": json_response})
+            messages.append({"role": "assistant", "content": json_response})
             return ModelTurnResult(
                 assistant_message=json_response,
-                all_messages=extended,
+                all_messages=messages,
                 model_response=None,
                 model_choice=None,
                 usage=Usage(),
@@ -2227,8 +2226,7 @@ async def test_unmanaged_tools_only_return_on_tool_call_and_resume_mocked(
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            extended = list(prior_messages)
-            extended.append(
+            prior_messages.append(
                 {
                     "role": "assistant",
                     "content": None,
@@ -2246,18 +2244,17 @@ async def test_unmanaged_tools_only_return_on_tool_call_and_resume_mocked(
             )
             return ModelTurnResult(
                 assistant_message="",
-                all_messages=extended,
+                all_messages=prior_messages,
                 model_response=None,
                 model_choice=None,
                 usage=Usage(),
                 interrupted_by_tool_calls=[tool_call],
             )
         json_response = '{"test": "structured_response"}'
-        extended = list(prior_messages)
-        extended.append({"role": "assistant", "content": json_response})
+        prior_messages.append({"role": "assistant", "content": json_response})
         return ModelTurnResult(
             assistant_message=json_response,
-            all_messages=extended,
+            all_messages=prior_messages,
             model_response=None,
             model_choice=None,
             usage=Usage(),
