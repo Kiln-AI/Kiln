@@ -16,6 +16,7 @@
 ### Python specific guide
 - Code should be "Pythonic"
 - We use `asyncio` where ever possible. Avoid threads unless there's a good reason we can't use async.
+- `@pytest.mark.asyncio` is never required on async tests: `pytest.ini` sets `asyncio_mode=auto`.
 - Python json.dumps should always set `ensure_ascii=False`
 
 ### SDK
@@ -30,8 +31,8 @@ The SDK in `/libs/core` is a SDK/library we expose to third parties. We code rev
 
 If the change contains UI changes read:
 
- - `./frontend_design_guide.md`
- - `./frontend_controls.md`
+ - `.agents/frontend_design_guide.md`
+ - `.agents/frontend_controls.md`
 
 ### FastAPI / OpenAPI Standards
 
