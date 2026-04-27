@@ -632,7 +632,7 @@
     }
 
     const data_strategies_labels: Record<ChatStrategy, string> = {
-      final_only: "Disabled - (Recommended)",
+      final_only: "Final Response Only (Recommended)",
       two_message_cot: "Thinking - Learn both thinking and final response",
       final_and_intermediate:
         "Thinking - Learn both thinking and final response (Legacy Format)",
