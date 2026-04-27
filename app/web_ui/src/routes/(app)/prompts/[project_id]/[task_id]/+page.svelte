@@ -13,12 +13,16 @@
   import { onMount } from "svelte"
   import type { Task, ApiPrompt } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import { getPromptType } from "./prompt_generators/prompt_generators"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Banner from "$lib/ui/banner.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Prompts",
+    description: `Prompts list for project ID ${project_id}, task ID ${task_id}. Shows saved prompts, base prompt, and prompt generation options.`,
+  })
 
   let loading = true
   let error: KilnError | null = null
@@ -66,8 +70,8 @@
           bValue = (b.name || "").toLowerCase()
           break
         case "type":
-          aValue = getPromptType(a.id, a.generator_id).toLowerCase()
-          bValue = getPromptType(b.id, b.generator_id).toLowerCase()
+          aValue = (a.type || "").toLowerCase()
+          bValue = (b.type || "").toLowerCase()
           break
         case "created_at":
           aValue = a.created_at ? new Date(a.created_at).getTime() : 0
@@ -271,7 +275,7 @@
                         {prompt.name}
                       </td>
                       <td class="whitespace-nowrap">
-                        {getPromptType(prompt.id, prompt.generator_id)}
+                        {prompt.type}
                       </td>
                       <td>
                         <div class="truncate w-0 min-w-full">

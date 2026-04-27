@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from litellm.types.utils import Choices, ModelResponse
 
-from conftest import MockFileFactoryMimeType
 from kiln_ai.adapters.extractors.base_extractor import ExtractionInput, OutputFormat
 from kiln_ai.adapters.extractors.encoding import to_base64_url
 from kiln_ai.adapters.extractors.extractor_registry import extractor_adapter_from_type
@@ -23,6 +22,7 @@ from kiln_ai.adapters.ml_model_list import (
 from kiln_ai.adapters.provider_tools import LiteLlmCoreConfig
 from kiln_ai.datamodel.datamodel_enums import ModelProviderName
 from kiln_ai.datamodel.extraction import ExtractorType
+from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
 from kiln_ai.utils.filesystem_cache import FilesystemCache
 
 PROMPTS_FOR_KIND: dict[str, str] = {

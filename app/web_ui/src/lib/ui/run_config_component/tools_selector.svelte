@@ -150,7 +150,13 @@
     }
   }
 
-  const tool_set_order: ToolSetType[] = ["search", "kiln_task", "mcp", "demo"]
+  const tool_set_order: ToolSetType[] = [
+    "builtin",
+    "search",
+    "kiln_task",
+    "mcp",
+    "demo",
+  ]
 
   function get_tool_options(
     available_tool_sets: ToolSetApiDescription[] | undefined,

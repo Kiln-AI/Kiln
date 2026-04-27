@@ -35,6 +35,10 @@
   import type { ToolsSelectorSettings } from "./tools_selector_settings"
   import type { SkillsSelectorSettings } from "./skills_selector_settings"
   import { generate_memorable_name } from "$lib/utils/name_generator"
+  import {
+    filename_string_validator_default,
+    normalize_filename_string,
+  } from "$lib/utils/input_validators"
   import { split_tool_and_skill_ids } from "$lib/stores/tools_store"
 
   // Props
@@ -53,13 +57,14 @@
   export let requires_structured_output: boolean = false
   export let hide_model_selector: boolean = false
   export let pending_tool_id: string | null = null
+  export let pending_skill_id: string | null = null
   export let pending_run_config_id: string | null = null
   // Model-specific suggested run config, such as fine-tuned models. If a model like that is selected, this will be set to the run config ID.
   export let selected_model_specific_run_config_id: string | null = null
   export let run_config_name: string = generate_memorable_name()
   export let show_name_field: boolean = true
 
-  export let model: string = $ui_state.selected_model
+  export let model: string | null = $ui_state.selected_model
   export let prompt_method: string = "simple_prompt_builder"
   export let tools: string[] = []
   export let skills: string[] = []
@@ -395,6 +400,12 @@
     if (!current_task?.id) {
       throw new Error("Cannot save run config: no task selected")
     }
+    // Regenerate if the name field is hidden, to avoid collisions on repeated saves.
+    // If visible, we respect the current value to avoid overwriting user input.
+    if (!show_name_field) {
+      run_config_name = generate_memorable_name()
+    }
+    run_config_name = normalize_filename_string(run_config_name)
     const saved_config = await save_new_task_run_config(
       project_id,
       current_task.id,
@@ -481,6 +492,7 @@
       id="run_config_name"
       bind:value={run_config_name}
       max_length={120}
+      validator={filename_string_validator_default}
     />
   {/if}
   {#if is_mcp}
@@ -502,6 +514,8 @@
         bind:prompt_method
         info_description="Choose a prompt. Learn more on the 'Prompts' tab."
         bind:linked_model_selection={model}
+        {project_id}
+        task_id={current_task?.id ?? null}
       />
     {/if}
     {#if !show_tools_selector_in_advanced}
@@ -518,6 +532,7 @@
           {project_id}
           task_id={current_task?.id ?? null}
           settings={skills_selector_settings}
+          {pending_skill_id}
         />
       {/if}
       <Collapse title="Advanced Options">

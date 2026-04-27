@@ -8,7 +8,7 @@
 
 ## Contributor License Agreement
 
-I, @<your-github-username>, confirm that I have read and agree to the [Contributors License Agreement](https://github.com/Kiln-AI/Kiln/blob/main/CLA.md).
+I, @<your-github-username>, confirm that I have read and agree to the [Contributors License Agreement](https://github.com/Kiln-AI/Kiln/blob/main/.config/CLA.md).
 
 ## Checklists
 

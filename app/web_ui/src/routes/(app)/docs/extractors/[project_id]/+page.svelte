@@ -11,6 +11,8 @@
   import { extractorProgressStore } from "$lib/stores/extractor_progress_store"
   import TableExtractorRow from "./table_extractor_row.svelte"
 
+  import { agentInfo } from "$lib/agent"
+
   let extractor_configs: ExtractorConfig[] | null = null
   let error: KilnError | null = null
   let loading = true
@@ -26,6 +28,10 @@
   }
 
   $: project_id = $page.params.project_id!
+  $: agentInfo.set({
+    name: "Extractors",
+    description: `Document extractors list for project ID ${project_id}. Shows configured extractors for processing documents.`,
+  })
 
   onMount(async () => {
     get_extractor_configs()

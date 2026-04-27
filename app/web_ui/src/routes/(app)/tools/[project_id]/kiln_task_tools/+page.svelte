@@ -10,7 +10,12 @@
   import { formatDate } from "$lib/utils/formatters"
   import { ui_state } from "$lib/stores"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
+  $: agentInfo.set({
+    name: "Kiln Task Tools",
+    description: `Kiln task tools list for project ID ${project_id}. Shows tools that run Kiln tasks as tool calls.`,
+  })
 
   let kiln_task_tools: KilnTaskToolDescription[] | null = null
   let loading = true

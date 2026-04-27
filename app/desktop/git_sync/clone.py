@@ -1,0 +1,496 @@
+import json
+import logging
+import os
+import re
+import shutil
+import sys
+import tempfile
+import time
+from pathlib import Path
+from typing import Any
+
+import pygit2
+
+from app.desktop.git_sync.config import AuthMode
+from app.desktop.git_sync.git_sync_manager import (
+    get_committer_email,
+    get_committer_name,
+)
+
+logger = logging.getLogger(__name__)
+
+OS_GITIGNORE = """\
+# macOS
+.DS_Store
+._*
+
+# Windows
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# Linux
+*~
+.directory
+"""
+
+DEFAULT_REMOTE_NAME = "origin"
+
+_WINDOWS_RENAME_MAX_ATTEMPTS = 5
+_WINDOWS_RENAME_RETRY_DELAY = 2.0
+
+
+def make_push_callbacks(
+    cred_callbacks: pygit2.RemoteCallbacks,
+    push_errors: list[str],
+) -> pygit2.RemoteCallbacks:
+    """Create RemoteCallbacks that capture push rejection messages.
+
+    Reuses credentials from *cred_callbacks* and appends any push-rejection
+    messages to *push_errors*.
+    """
+
+    class _PushCallbacks(pygit2.RemoteCallbacks):
+        def push_update_reference(self, refname: str, message: str | None) -> None:
+            if message is not None:
+                push_errors.append(f"Push rejected for {refname}: {message}")
+
+    return _PushCallbacks(credentials=cred_callbacks.credentials)  # type: ignore[arg-type]
+
+
+def make_credentials(
+    pat_token: str | None,
+    auth_mode: AuthMode = "system_keys",
+    oauth_token: str | None = None,
+) -> pygit2.RemoteCallbacks:
+    """Create pygit2 RemoteCallbacks using the specified auth strategy.
+
+    auth_mode="system_keys": Use SSH keys from ~/.ssh/ (id_ed25519, id_rsa, id_ecdsa).
+    auth_mode="pat_token": Use PAT token for HTTPS auth.
+    auth_mode="github_oauth": Use GitHub OAuth token for HTTPS auth.
+
+    This prevents pygit2 from falling through to system credential
+    helpers which may prompt on stdin (fatal for a headless server).
+    """
+
+    called = False
+
+    def credentials_callback(
+        url: str,
+        username_from_url: str | None,
+        allowed_types: int,
+    ) -> Any:
+        nonlocal called
+        if called:
+            raise pygit2.GitError(
+                "Authentication failed. Credentials were rejected by the server."
+            )
+        called = True
+
+        if auth_mode == "system_keys":
+            if allowed_types & pygit2.enums.CredentialType.SSH_KEY:
+                username = username_from_url or "git"
+                ssh_dir = os.path.expanduser("~/.ssh")
+                for key_name in ("id_ed25519", "id_rsa", "id_ecdsa"):
+                    priv = os.path.join(ssh_dir, key_name)
+                    pub = priv + ".pub"
+                    if os.path.isfile(priv) and os.path.isfile(pub):
+                        return pygit2.Keypair(username, pub, priv, "")  # type: ignore[attr-defined]
+            if allowed_types & pygit2.enums.CredentialType.USERNAME:
+                return pygit2.Username("git")
+
+        token = (
+            pat_token
+            if auth_mode == "pat_token"
+            else oauth_token
+            if auth_mode == "github_oauth"
+            else None
+        )
+        if token is not None:
+            if allowed_types & pygit2.enums.CredentialType.USERPASS_PLAINTEXT:
+                return pygit2.UserPass(username="x-token", password=token)  # type: ignore[attr-defined]
+            if allowed_types & pygit2.enums.CredentialType.USERNAME:
+                return pygit2.Username("x-token")
+
+        raise pygit2.GitError(
+            "Authentication failed: no credentials available. "
+            f"auth_mode={auth_mode}. "
+            "Configure a Personal Access Token (PAT) for this repository."
+        )
+
+    callbacks = pygit2.RemoteCallbacks(credentials=credentials_callback)  # type: ignore[arg-type]
+    return callbacks
+
+
+def _ls_remote_pygit2(
+    git_url: str,
+    pat_token: str | None = None,
+    auth_mode: AuthMode = "system_keys",
+    oauth_token: str | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch remote references using pygit2 (no system git required).
+
+    Creates a temporary bare repo and uses Remote.ls_remotes() to list
+    refs from the remote URL with proper auth callbacks.
+
+    Returns list of ref dicts with keys: name, oid, symref_target, etc.
+    Raises pygit2.GitError on failure.
+    """
+    callbacks = make_credentials(pat_token, auth_mode, oauth_token=oauth_token)
+    tmpdir = tempfile.mkdtemp(prefix="kiln_ls_remote_")
+    try:
+        repo = pygit2.init_repository(tmpdir, bare=True)
+        remote = repo.remotes.create("probe", git_url)
+        return remote.ls_remotes(callbacks=callbacks)
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def test_remote_access(
+    git_url: str,
+    pat_token: str | None = None,
+    auth_mode: AuthMode | None = None,
+    oauth_token: str | None = None,
+) -> tuple[bool, str, str | None]:
+    """Test access to a remote by listing references via pygit2.
+
+    If auth_mode is provided, tests with that specific mode.
+    If auth_mode is None, infers mode from the provided token: uses
+    "pat_token" when pat_token is set, "github_oauth" when oauth_token
+    is set, or "system_keys" otherwise.
+
+    Returns (success, message, auth_mode_used).
+    auth_mode_used is set on success to indicate which mode worked.
+    """
+    if auth_mode is not None:
+        mode = auth_mode
+    elif pat_token is not None:
+        mode = "pat_token"
+    elif oauth_token is not None:
+        mode = "github_oauth"
+    else:
+        mode = "system_keys"
+
+    try:
+        _ls_remote_pygit2(git_url, pat_token, mode, oauth_token=oauth_token)
+        return True, "Access successful", mode
+    except pygit2.GitError as e:
+        error_lower = str(e).lower()
+        if (
+            "401" in error_lower
+            or "403" in error_lower
+            or "auth" in error_lower
+            or "credentials" in error_lower
+        ):
+            return False, "Authentication failed", None
+        return False, f"Cannot access remote: {e}", None
+    except Exception as e:
+        return False, f"Cannot access remote: {e}", None
+
+
+def list_remote_branches(
+    git_url: str,
+    pat_token: str | None = None,
+    auth_mode: AuthMode = "system_keys",
+    oauth_token: str | None = None,
+) -> tuple[list[str], str | None]:
+    """List branches from a remote using pygit2.
+
+    Returns (branches, default_branch). default_branch is the HEAD symref target
+    if available, otherwise None.
+    """
+    ref_list = _ls_remote_pygit2(git_url, pat_token, auth_mode, oauth_token=oauth_token)
+
+    branches: list[str] = []
+    head_target: str | None = None
+
+    for ref_dict in ref_list:
+        name = ref_dict.get("name", "")
+        symref_target = ref_dict.get("symref_target")
+
+        if name.startswith("refs/heads/"):
+            branches.append(name.removeprefix("refs/heads/"))
+
+        if name == "HEAD" and symref_target:
+            symref = str(symref_target)
+            if symref.startswith("refs/heads/"):
+                head_target = symref.removeprefix("refs/heads/")
+
+    branches.sort()
+
+    if head_target is None:
+        if "main" in branches:
+            head_target = "main"
+        elif "master" in branches:
+            head_target = "master"
+
+    return branches, head_target
+
+
+def compute_clone_path(base_dir: Path, project_name: str, project_id: str) -> Path:
+    """Compute a unique clone path under .git-projects/.
+
+    Format: .git-projects/[ID] - [projectname][N]
+    where N is a counter suffix added only if the name collides.
+    """
+    git_projects_dir = base_dir / ".git-projects"
+    git_projects_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_name = re.sub(r"[^\w\s-]", "", project_name).strip()
+    if not safe_name:
+        safe_name = "project"
+
+    safe_id = re.sub(r"[^\w\s-]", "", project_id).strip() if project_id else ""
+    if safe_id:
+        base_name = f"{safe_id} - {safe_name}"
+    else:
+        base_name = safe_name
+    candidate = git_projects_dir / base_name
+
+    if not candidate.exists():
+        return candidate
+
+    counter = 2
+    while True:
+        candidate = git_projects_dir / f"{base_name}{counter}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
+
+
+def compute_temp_clone_path(base_dir: Path) -> Path:
+    """Create a temporary directory for cloning on the same filesystem as the destination.
+
+    The temp directory is created under *base_dir* so that the later
+    rename_clone_to_final_path() call (which uses os.rename) is always a
+    same-filesystem operation.  *base_dir* should be the project root
+    (e.g. default_project_path()) — the same directory that contains the
+    .git-projects/ folder where the clone will eventually live.
+    """
+    base_dir.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix="kiln_clone_", dir=base_dir))
+
+
+def rename_clone_to_final_path(
+    current_path: Path,
+    final_path: Path,
+) -> Path:
+    """Move a cloned repo from its current (temp) location to its final path.
+
+    The caller is responsible for computing final_path (via compute_clone_path)
+    and validating it before calling this function.
+
+    On Windows, retries on PermissionError up to 5 times with a 2-second delay
+    between attempts to handle transient file locks from antivirus or indexing
+    services.
+
+    Returns the final path.
+
+    Raises ValueError if current_path does not exist.
+    """
+    if not current_path.exists():
+        raise ValueError(f"Clone path does not exist: {current_path}")
+
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if sys.platform == "win32":
+        for attempt in range(1, _WINDOWS_RENAME_MAX_ATTEMPTS + 1):
+            try:
+                os.rename(current_path, final_path)
+                return final_path
+            except PermissionError:
+                if attempt == _WINDOWS_RENAME_MAX_ATTEMPTS:
+                    raise
+                logger.warning(
+                    "Rename attempt %d/%d failed with PermissionError, "
+                    "retrying in %.1fs",
+                    attempt,
+                    _WINDOWS_RENAME_MAX_ATTEMPTS,
+                    _WINDOWS_RENAME_RETRY_DELAY,
+                )
+                time.sleep(_WINDOWS_RENAME_RETRY_DELAY)
+
+    os.rename(current_path, final_path)
+    return final_path
+
+
+def clone_repo(
+    git_url: str,
+    clone_path: Path,
+    branch: str,
+    pat_token: str | None = None,
+    auth_mode: AuthMode = "system_keys",
+    oauth_token: str | None = None,
+) -> None:
+    """Clone a repository into the given path.
+
+    Sets up the clone with the specified branch and adds a .gitignore
+    for common OS artifacts. The pygit2 Repository is freed before returning
+    to release libgit2 file handles (required on Windows to allow subsequent
+    rename/move of the clone directory).
+    """
+    callbacks = make_credentials(pat_token, auth_mode, oauth_token=oauth_token)
+
+    repo = pygit2.clone_repository(
+        git_url,
+        str(clone_path),
+        checkout_branch=branch,
+        callbacks=callbacks,
+    )
+
+    try:
+        _ensure_gitignore(
+            repo, clone_path, pat_token, auth_mode, oauth_token=oauth_token
+        )
+    finally:
+        repo.free()
+
+
+def _ensure_gitignore(
+    repo: pygit2.Repository,
+    clone_path: Path,
+    pat_token: str | None = None,
+    auth_mode: AuthMode = "system_keys",
+    oauth_token: str | None = None,
+) -> None:
+    """Ensure the clone has a .gitignore covering common OS artifacts."""
+    gitignore_path = clone_path / ".gitignore"
+
+    if gitignore_path.exists():
+        content = gitignore_path.read_text()
+        missing_patterns = []
+        for line in OS_GITIGNORE.strip().splitlines():
+            if line.startswith("#") or not line.strip():
+                continue
+            if line.strip() not in content:
+                missing_patterns.append(line.strip())
+
+        if not missing_patterns:
+            return
+
+        with open(gitignore_path, "a") as f:
+            f.write("\n# Added by Kiln AI\n")
+            for pattern in missing_patterns:
+                f.write(f"{pattern}\n")
+    else:
+        gitignore_path.write_text(OS_GITIGNORE)
+
+    index = repo.index
+    index.add(".gitignore")
+    index.write()
+
+    tree = index.write_tree()
+    sig = pygit2.Signature(get_committer_name(), get_committer_email())
+    parents = [repo.head.target]
+    repo.create_commit(
+        repo.head.name,
+        sig,
+        sig,
+        "[Kiln] Add .gitignore for OS artifacts",
+        tree,
+        parents,
+    )
+
+    cred_callbacks = make_credentials(pat_token, auth_mode, oauth_token=oauth_token)
+    remote = repo.remotes[DEFAULT_REMOTE_NAME]
+    branch_name = repo.head.shorthand
+
+    push_errors: list[str] = []
+    push_cb = make_push_callbacks(cred_callbacks, push_errors)
+    remote.push([f"refs/heads/{branch_name}"], callbacks=push_cb)
+
+    if push_errors:
+        logger.warning("Gitignore push failed: %s", "; ".join(push_errors))
+
+
+def test_write_access(
+    clone_path: Path,
+    pat_token: str | None = None,
+    auth_mode: AuthMode = "system_keys",
+    oauth_token: str | None = None,
+) -> tuple[bool, str]:
+    """Test write access by pushing an empty commit.
+
+    The pygit2 Repository is freed before returning to release libgit2
+    file handles (required on Windows).
+
+    Returns (success, message).
+    """
+    repo: pygit2.Repository | None = None
+    try:
+        repo = pygit2.Repository(str(clone_path))
+        sig = pygit2.Signature(get_committer_name(), get_committer_email())
+
+        pre_commit_head = repo.head.target
+        tree = repo.index.write_tree()
+        parents = [repo.head.target]
+        repo.create_commit(
+            repo.head.name,
+            sig,
+            sig,
+            "Empty commit: checking write access for Kiln AI Git Auto Sync setup",
+            tree,
+            parents,
+        )
+
+        cred_callbacks = make_credentials(pat_token, auth_mode, oauth_token=oauth_token)
+        remote = repo.remotes[DEFAULT_REMOTE_NAME]
+        branch_name = repo.head.shorthand
+
+        push_errors: list[str] = []
+        push_cb = make_push_callbacks(cred_callbacks, push_errors)
+
+        remote.push([f"refs/heads/{branch_name}"], callbacks=push_cb)
+
+        if push_errors:
+            repo.reset(pre_commit_head, pygit2.enums.ResetMode.HARD)
+            return False, "; ".join(push_errors)
+
+        return True, "Write access confirmed"
+    except pygit2.GitError as e:
+        error_str = str(e).lower()
+        if "401" in error_str or "403" in error_str or "auth" in error_str:
+            return False, "Authentication failed - check your token permissions"
+        return False, f"Write access check failed: {e}"
+    except Exception as e:
+        return False, f"Write access check failed: {e}"
+    finally:
+        if repo is not None:
+            repo.free()
+
+
+def scan_for_projects(clone_path: Path) -> list[dict[str, str]]:
+    """Scan a cloned repo for project.kiln files.
+
+    Returns a list of dicts with 'path' (relative), 'name', and 'description'.
+    """
+    results: list[dict[str, str]] = []
+    for kiln_file in clone_path.rglob("project.kiln"):
+        if any(
+            part.startswith(".")
+            for part in kiln_file.relative_to(clone_path).parts[:-1]
+        ):
+            continue
+        rel_path = str(kiln_file.relative_to(clone_path))
+        name = ""
+        description = ""
+        project_id = ""
+        try:
+            data = json.loads(kiln_file.read_text())
+            name = data.get("name", "")
+            description = data.get("description", "")
+            project_id = data.get("id", "")
+        except Exception:
+            pass
+
+        results.append(
+            {
+                "path": rel_path,
+                "name": name or rel_path,
+                "description": description,
+                "id": project_id,
+            }
+        )
+
+    results.sort(key=lambda r: r["path"])
+    return results

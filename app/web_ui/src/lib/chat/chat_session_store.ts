@@ -1,0 +1,438 @@
+import { writable, get, type Readable } from "svelte/store"
+import {
+  streamChat,
+  chatGenerateId,
+  traceIdForNextChatRequest,
+  type ChatMessage,
+  type ToolCallsPendingPayload,
+} from "./streaming_chat"
+import { sessionStorageStore } from "$lib/stores/local_storage_store"
+import { base_url } from "$lib/api_client"
+import {
+  getCurrentAppState,
+  buildContextHeader,
+  type AppState,
+} from "$lib/agent"
+import { chat_cost_disclaimer_acknowledged } from "$lib/stores"
+
+const CHAT_API_URL = `${base_url}/api/chat`
+const SESSION_STORAGE_KEY = "kiln_chat_session"
+
+export interface PersistedChatSession {
+  messages: ChatMessage[]
+  collapsedPartKeys: Record<string, boolean>
+  lastSentAppState: AppState | null
+}
+
+export interface ToolApprovalWaiter {
+  payload: ToolCallsPendingPayload
+}
+
+export interface ChatSessionState extends PersistedChatSession {
+  status: "ready" | "submitted" | "streaming"
+  abortController: AbortController | null
+  toolApprovalWaiter: ToolApprovalWaiter | null
+  toolApprovalPicks: Record<string, boolean | undefined>
+  toolExecuting: boolean
+  showActivityIndicator: boolean
+}
+
+export interface ChatSessionStore extends Readable<ChatSessionState> {
+  sendMessage(text: string): Promise<boolean>
+  stop(): void
+  retryLastRequest(): void
+  reset(): void
+  loadSession(messages: ChatMessage[], continuationTraceId: string): void
+  togglePartCollapsed(key: string, currentlyCollapsed: boolean): void
+  applyToolApprovalRun(toolCallId: string): void
+  applyToolApprovalSkip(toolCallId: string): void
+  onConsentNeeded: (() => Promise<boolean>) | null
+}
+
+const EMPTY_PERSISTED: PersistedChatSession = {
+  messages: [],
+  collapsedPartKeys: {},
+  lastSentAppState: null,
+}
+
+export function createChatSessionStore(
+  sessionStorageKey?: string,
+): ChatSessionStore {
+  const persisted = sessionStorageKey
+    ? sessionStorageStore<PersistedChatSession>(sessionStorageKey, {
+        ...EMPTY_PERSISTED,
+      })
+    : writable<PersistedChatSession>({ ...EMPTY_PERSISTED })
+
+  let status: ChatSessionState["status"] = "ready"
+  let abortController: AbortController | null = null
+  let continuationTraceId: string | undefined = undefined
+  let generation = 0
+  let toolApprovalResolver:
+    | ((decisions: Record<string, boolean>) => void)
+    | null = null
+
+  const combined = writable<ChatSessionState>({
+    ...get(persisted),
+    status,
+    abortController,
+    toolApprovalWaiter: null,
+    toolApprovalPicks: {},
+    toolExecuting: false,
+    showActivityIndicator: false,
+  })
+
+  // Intentionally never unsubscribed — this store is a module-level singleton
+  // that lives for the lifetime of the app. Do not use createChatSessionStore
+  // for short-lived contexts.
+  persisted.subscribe(($persisted) => {
+    combined.update((s) => ({
+      ...s,
+      messages: $persisted.messages,
+      collapsedPartKeys: $persisted.collapsedPartKeys,
+      lastSentAppState: $persisted.lastSentAppState,
+    }))
+  })
+
+  function setRuntimeState(
+    newStatus: ChatSessionState["status"],
+    newAbort: AbortController | null,
+  ) {
+    status = newStatus
+    abortController = newAbort
+    combined.update((s) => ({
+      ...s,
+      status,
+      abortController,
+    }))
+  }
+
+  function updateMessages(updater: (messages: ChatMessage[]) => ChatMessage[]) {
+    persisted.update((p) => ({
+      ...p,
+      messages: updater(p.messages),
+    }))
+  }
+
+  function updateLastAssistant(update: (draft: ChatMessage) => void) {
+    persisted.update((p) => {
+      const msgs = p.messages
+      const last = msgs[msgs.length - 1]
+      if (last?.role === "assistant") {
+        const draft = { ...last, parts: last.parts ? [...last.parts] : [] }
+        update(draft)
+        return { ...p, messages: [...msgs.slice(0, -1), draft] }
+      }
+      return p
+    })
+  }
+
+  function removeErrors() {
+    persisted.update((p) => ({
+      ...p,
+      messages: p.messages.filter((m) => m.role !== "error"),
+    }))
+  }
+
+  function beginStreaming(text: string) {
+    removeErrors()
+    const currentMessages = get(persisted).messages
+    const traceId =
+      traceIdForNextChatRequest(currentMessages) ?? continuationTraceId
+    const userMessage: ChatMessage = {
+      id: chatGenerateId(),
+      role: "user",
+      content: text,
+    }
+    const assistantMessage: ChatMessage = {
+      id: chatGenerateId(),
+      role: "assistant",
+      parts: [],
+    }
+    updateMessages((msgs) => [...msgs, userMessage, assistantMessage])
+
+    const currentAppState = getCurrentAppState()
+    const header = buildContextHeader(
+      currentAppState,
+      get(persisted).lastSentAppState,
+    )
+    let apiMessage = userMessage
+    if (header) {
+      apiMessage = { ...userMessage, content: header + "\n" + text }
+    }
+    persisted.update((p) => ({
+      ...p,
+      lastSentAppState: currentAppState,
+    }))
+
+    combined.update((s) => ({
+      ...s,
+      toolExecuting: false,
+      showActivityIndicator: false,
+    }))
+
+    const controller = new AbortController()
+    setRuntimeState("submitted", controller)
+
+    const thisGeneration = ++generation
+
+    const isStale = () => thisGeneration !== generation
+
+    streamChat({
+      apiUrl: CHAT_API_URL,
+      messages: [apiMessage],
+      traceId,
+      onToolCallsPending: (payload) => {
+        if (isStale()) return Promise.resolve({})
+        return handleToolCallsPending(payload)
+      },
+      onToolExecutionStart: () => {
+        if (isStale()) return
+        combined.update((s) => ({
+          ...s,
+          toolExecuting: true,
+        }))
+      },
+      onToolExecutionEnd: () => {
+        if (isStale()) return
+        combined.update((s) => ({
+          ...s,
+          toolExecuting: false,
+        }))
+      },
+      onShowActivityIndicator: (show) => {
+        if (isStale()) return
+        combined.update((s) => ({
+          ...s,
+          showActivityIndicator: show,
+        }))
+      },
+      onAssistantMessage: (update) => {
+        if (isStale()) return
+        if (status !== "streaming") {
+          setRuntimeState("streaming", controller)
+        }
+        updateLastAssistant(update)
+      },
+      onChatTrace: (traceId) => {
+        if (isStale()) return
+        persisted.update((p) => {
+          const msgs = p.messages
+          const last = msgs[msgs.length - 1]
+          if (last?.role === "assistant") {
+            return {
+              ...p,
+              messages: [...msgs.slice(0, -1), { ...last, traceId }],
+            }
+          }
+          return p
+        })
+      },
+      onInlineError: (message, traceId, code) => {
+        if (isStale()) return
+        const errorMsg: ChatMessage = {
+          id: chatGenerateId(),
+          role: "error",
+          content: message,
+          traceId,
+          errorCode: code,
+        }
+        updateMessages((msgs) => [...msgs, errorMsg])
+        setRuntimeState("ready", null)
+      },
+      onFinish: () => {
+        if (isStale()) return
+        combined.update((s) => ({
+          ...s,
+          toolExecuting: false,
+          showActivityIndicator: false,
+        }))
+        setRuntimeState("ready", null)
+      },
+      onError: (err) => {
+        if (isStale()) return
+        combined.update((s) => ({
+          ...s,
+          toolExecuting: false,
+          showActivityIndicator: false,
+        }))
+        const errorMsg: ChatMessage = {
+          id: chatGenerateId(),
+          role: "error",
+          content: err.message,
+        }
+        updateMessages((msgs) => [...msgs, errorMsg])
+        setRuntimeState("ready", null)
+      },
+      signal: controller.signal,
+    })
+  }
+
+  let onConsentNeeded: (() => Promise<boolean>) | null = null
+
+  async function sendMessage(text: string): Promise<boolean> {
+    const trimmed = text.trim()
+    if (!trimmed || status !== "ready") return false
+    if (!get(chat_cost_disclaimer_acknowledged)) {
+      if (!onConsentNeeded) return false
+      const approved = await onConsentNeeded()
+      if (!approved || status !== "ready") return false
+    }
+    beginStreaming(trimmed)
+    return true
+  }
+
+  function stop(): void {
+    if (abortController) {
+      abortController.abort()
+    }
+  }
+
+  function retryLastRequest(): void {
+    if (status !== "ready") return
+    const msgs = get(persisted).messages
+    let lastUserIdx = -1
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === "user") {
+        lastUserIdx = i
+        break
+      }
+    }
+    if (lastUserIdx === -1) return
+    const userText = msgs[lastUserIdx].content ?? ""
+    persisted.update((p) => ({
+      ...p,
+      messages: p.messages.slice(0, lastUserIdx),
+    }))
+    beginStreaming(userText)
+  }
+
+  function reset(): void {
+    if (abortController) {
+      abortController.abort()
+    }
+    clearToolApprovalState()
+    continuationTraceId = undefined
+    persisted.set({
+      messages: [],
+      collapsedPartKeys: {},
+      lastSentAppState: null,
+    })
+    combined.update((s) => ({
+      ...s,
+      toolExecuting: false,
+      showActivityIndicator: false,
+    }))
+    setRuntimeState("ready", null)
+  }
+
+  function loadSession(messages: ChatMessage[], traceId: string): void {
+    if (abortController) {
+      abortController.abort()
+    }
+    clearToolApprovalState()
+    continuationTraceId = traceId
+    persisted.set({ messages, collapsedPartKeys: {}, lastSentAppState: null })
+    combined.update((s) => ({
+      ...s,
+      toolExecuting: false,
+      showActivityIndicator: false,
+    }))
+    setRuntimeState("ready", null)
+  }
+
+  function handleToolCallsPending(
+    payload: ToolCallsPendingPayload,
+  ): Promise<Record<string, boolean>> {
+    const approvalOnly = payload.items.filter((i) => i.requiresApproval)
+    if (approvalOnly.length === 0) {
+      return Promise.resolve({})
+    }
+    return new Promise((resolve) => {
+      toolApprovalResolver = resolve
+      const picks: Record<string, boolean | undefined> = {}
+      for (const it of approvalOnly) {
+        picks[it.toolCallId] = undefined
+      }
+      combined.update((s) => ({
+        ...s,
+        toolApprovalWaiter: { payload: { items: approvalOnly } },
+        toolApprovalPicks: picks,
+      }))
+    })
+  }
+
+  function clearToolApprovalState(resolveWithEmpty = true): void {
+    if (resolveWithEmpty && toolApprovalResolver) {
+      toolApprovalResolver({})
+    }
+    toolApprovalResolver = null
+    combined.update((s) => ({
+      ...s,
+      toolApprovalWaiter: null,
+      toolApprovalPicks: {},
+    }))
+  }
+
+  function maybeFinishToolApproval(): void {
+    const state = get(combined)
+    if (!state.toolApprovalWaiter || !toolApprovalResolver) return
+    const allDone = state.toolApprovalWaiter.payload.items.every(
+      (it) => state.toolApprovalPicks[it.toolCallId] !== undefined,
+    )
+    if (!allDone) return
+    const decisions: Record<string, boolean> = {}
+    for (const it of state.toolApprovalWaiter.payload.items) {
+      decisions[it.toolCallId] = state.toolApprovalPicks[it.toolCallId] ?? false
+    }
+    const resolver = toolApprovalResolver
+    clearToolApprovalState(false)
+    resolver(decisions)
+  }
+
+  function applyToolApprovalRun(toolCallId: string): void {
+    if (!get(combined).toolApprovalWaiter) return
+    combined.update((s) => ({
+      ...s,
+      toolApprovalPicks: { ...s.toolApprovalPicks, [toolCallId]: true },
+    }))
+    maybeFinishToolApproval()
+  }
+
+  function applyToolApprovalSkip(toolCallId: string): void {
+    if (!get(combined).toolApprovalWaiter) return
+    combined.update((s) => ({
+      ...s,
+      toolApprovalPicks: { ...s.toolApprovalPicks, [toolCallId]: false },
+    }))
+    maybeFinishToolApproval()
+  }
+
+  function togglePartCollapsed(key: string, currentlyCollapsed: boolean): void {
+    persisted.update((p) => ({
+      ...p,
+      collapsedPartKeys: { ...p.collapsedPartKeys, [key]: !currentlyCollapsed },
+    }))
+  }
+
+  return {
+    subscribe: combined.subscribe,
+    sendMessage,
+    stop,
+    retryLastRequest,
+    reset,
+    loadSession,
+    togglePartCollapsed,
+    applyToolApprovalRun,
+    applyToolApprovalSkip,
+    get onConsentNeeded() {
+      return onConsentNeeded
+    },
+    set onConsentNeeded(fn: (() => Promise<boolean>) | null) {
+      onConsentNeeded = fn
+    },
+  }
+}
+
+export const chatSessionStore: ChatSessionStore =
+  createChatSessionStore(SESSION_STORAGE_KEY)

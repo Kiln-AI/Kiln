@@ -13,7 +13,12 @@
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import { ui_state } from "$lib/stores"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
+  $: agentInfo.set({
+    name: "Skills",
+    description: `Skills list for project ID ${project_id}. Reusable instructions for agents, loaded into context when needed.`,
+  })
 
   let skills: Skill[] = []
   let loading = true

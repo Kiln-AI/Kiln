@@ -597,6 +597,20 @@ describe("input_validators", () => {
         const result = tool_name_validator("a".repeat(65))
         expect(result).toBe("Must be less than 65 characters long")
       })
+
+      it("should reject reserved name 'skill'", () => {
+        const result = tool_name_validator("skill")
+        expect(result).toBe(
+          '"skill" is a reserved name — please choose a different tool name',
+        )
+      })
+
+      it("should reject reserved name 'skill' in skill_name_validator", () => {
+        const result = skill_name_validator("skill")
+        expect(result).toBe(
+          '"skill" is a reserved name — please choose a different skill name',
+        )
+      })
     })
 
     describe("skill_name_validator", () => {

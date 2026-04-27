@@ -4,6 +4,12 @@
   import { ui_state } from "$lib/stores"
   import AppPage from "../../../../app_page.svelte"
   import CreateExtractorForm from "./create_extractor_form.svelte"
+  import { agentInfo } from "$lib/agent"
+
+  $: agentInfo.set({
+    name: "Create Extractor",
+    description: `Create a new document extractor for project ID ${$page.params.project_id}. Configure extraction settings for processing documents.`,
+  })
 </script>
 
 <AppPage

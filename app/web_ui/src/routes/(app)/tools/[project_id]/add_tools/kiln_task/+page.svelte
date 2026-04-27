@@ -3,6 +3,12 @@
   import AddKilnTaskTool from "./add_kiln_task_tool.svelte"
   import { page } from "$app/stores"
   import { ui_state } from "$lib/stores"
+  import { agentInfo } from "$lib/agent"
+
+  $: agentInfo.set({
+    name: "Add Kiln Task Tool",
+    description: `Create a tool from a Kiln task for project ID ${$page.params.project_id}. Allow tasks to call another Kiln task as a tool (aka subtask). These subtasks have their own context, with the parent only receiving the output of the subtask.`,
+  })
 </script>
 
 <AppPage

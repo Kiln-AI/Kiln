@@ -7,8 +7,13 @@
   import { checkDefaultRunConfigHasTools } from "../spec_utils"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Select Eval Workflow",
+    description: `Select an eval workflow as part of the eval creation process for project ID ${project_id}, task ID ${task_id}. Choose between guided and advanced eval creation.`,
+  })
 
   let loading = true
   let default_run_config_has_tools = false

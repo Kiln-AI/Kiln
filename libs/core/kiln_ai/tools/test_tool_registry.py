@@ -19,6 +19,7 @@ from kiln_ai.datamodel.tool_id import (
     kiln_task_server_id_from_tool_id,
     mcp_server_and_tool_name_from_id,
 )
+from kiln_ai.tools.built_in_tools.kiln_api_call_tool import KilnApiCallTool
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
     DivideTool,
@@ -65,6 +66,13 @@ class TestToolRegistry:
         assert isinstance(tool, DivideTool)
         assert await tool.id() == KilnBuiltInToolId.DIVIDE_NUMBERS
         assert await tool.name() == "divide"
+
+    async def test_tool_from_id_call_kiln_api(self):
+        tool = tool_from_id(KilnBuiltInToolId.CALL_KILN_API)
+
+        assert isinstance(tool, KilnApiCallTool)
+        assert await tool.id() == KilnBuiltInToolId.CALL_KILN_API
+        assert await tool.name() == "call_kiln_api"
 
     async def test_tool_from_id_with_string_values(self):
         """Test that tool_from_id works with string values of enum members."""

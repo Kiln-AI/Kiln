@@ -15,6 +15,7 @@ from kiln_ai.datamodel.eval import EvalConfig, EvalDataType, EvalRun, EvalScores
 from kiln_ai.datamodel.task import TaskRunConfig
 from kiln_ai.datamodel.task_run import TaskRun, Usage
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress, RetryableError
+from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ class EvalRunner:
         eval_configs: List[EvalConfig],
         run_configs: List[TaskRunConfig] | None,
         eval_run_type: Literal["eval_config_eval", "task_run_eval"],
+        save_context: SaveContext | None = None,
     ):
         if len(eval_configs) == 0:
             raise ValueError("Eval runner requires at least one eval config")
@@ -81,6 +83,7 @@ class EvalRunner:
         self.task = target_task
         self.eval = target_eval
         self._skills: SkillsDict = self._preload_skills()
+        self._save_context: SaveContext = save_context or default_save_context
 
     def collect_tasks(self) -> List[EvalJob]:
         if self.eval_run_type == "eval_config_eval":
@@ -245,22 +248,23 @@ class EvalRunner:
                     reference_answer = job.item.output.output
 
             # Save the job result
-            eval_run = EvalRun(
-                parent=job.eval_config,
-                task_run_config_id=job.task_run_config.id
-                if job.task_run_config
-                else None,
-                dataset_id=job.item.id,
-                eval_config_eval=job.type == "eval_config_eval",
-                scores=scores,
-                input=job.item.input,
-                output=task_output,
-                reference_answer=reference_answer,
-                intermediate_outputs=intermediate_outputs,
-                task_run_trace=trace,
-                task_run_usage=task_run_usage,
-            )
-            eval_run.save_to_file()
+            async with self._save_context():
+                eval_run = EvalRun(
+                    parent=job.eval_config,
+                    task_run_config_id=job.task_run_config.id
+                    if job.task_run_config
+                    else None,
+                    dataset_id=job.item.id,
+                    eval_config_eval=job.type == "eval_config_eval",
+                    scores=scores,
+                    input=job.item.input,
+                    output=task_output,
+                    reference_answer=reference_answer,
+                    intermediate_outputs=intermediate_outputs,
+                    task_run_trace=trace,
+                    task_run_usage=task_run_usage,
+                )
+                eval_run.save_to_file()
 
             return True
         except Exception as e:

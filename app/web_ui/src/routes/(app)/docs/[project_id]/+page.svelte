@@ -4,7 +4,12 @@
   import { ui_state } from "$lib/stores"
   import MultiIntro from "$lib/ui/multi_intro.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
+  $: agentInfo.set({
+    name: "Documents & Search",
+    description: `Documents and search home page for project ID ${project_id}. Provides access to document library, extractors, and search tool (RAG) configuration.`,
+  })
 </script>
 
 <AppPage

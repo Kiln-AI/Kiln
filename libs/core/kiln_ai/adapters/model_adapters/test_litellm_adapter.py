@@ -23,7 +23,10 @@ from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     McpRunConfigProperties,
     MCPToolReference,
+    ToolsRunConfig,
 )
+from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
+from kiln_ai.tools.base_tool import UnmanagedKilnTool
 from kiln_ai.tools.built_in_tools.math_tools import (
     AddTool,
     DivideTool,
@@ -825,6 +828,39 @@ async def test_build_completion_kwargs(
             None,
             Usage(input_tokens=10, output_tokens=20, total_tokens=30, cost=0.5),
         ),
+        # Cached tokens present
+        (
+            litellm.types.utils.Usage(
+                prompt_tokens=100,
+                completion_tokens=20,
+                total_tokens=120,
+                prompt_tokens_details={"cached_tokens": 80},
+            ),
+            None,
+            Usage(
+                input_tokens=100,
+                output_tokens=20,
+                total_tokens=120,
+                cached_tokens=80,
+            ),
+        ),
+        # Cached tokens with cost
+        (
+            litellm.types.utils.Usage(
+                prompt_tokens=100,
+                completion_tokens=20,
+                total_tokens=120,
+                prompt_tokens_details={"cached_tokens": 80},
+            ),
+            0.5,
+            Usage(
+                input_tokens=100,
+                output_tokens=20,
+                total_tokens=120,
+                cost=0.5,
+                cached_tokens=80,
+            ),
+        ),
     ],
 )
 def test_usage_from_response(config, mock_task, litellm_usage, cost, expected_usage):
@@ -852,9 +888,40 @@ def test_usage_from_response(config, mock_task, litellm_usage, cost, expected_us
         assert result.output_tokens == expected_usage.output_tokens
         assert result.total_tokens == expected_usage.total_tokens
         assert result.cost == expected_usage.cost
+        assert result.cached_tokens == expected_usage.cached_tokens
 
     # Verify the response was queried correctly
     response.get.assert_called_once_with("usage", None)
+
+
+def test_usage_from_response_prompt_details_without_cached_tokens(config, mock_task):
+    """Test that a warning is logged when prompt_tokens_details lacks cached_tokens attribute"""
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    # Create a usage object with prompt_tokens_details that lacks cached_tokens
+    usage = litellm.types.utils.Usage(
+        prompt_tokens=100,
+        completion_tokens=20,
+        total_tokens=120,
+    )
+    # Manually set prompt_tokens_details to a truthy object without cached_tokens attr
+    usage.prompt_tokens_details = Mock(spec=[])  # spec=[] means no attributes
+
+    response = Mock(spec=ModelResponse)
+    response.get.return_value = usage
+    response._hidden_params = {"response_cost": None}
+
+    with patch("kiln_ai.adapters.model_adapters.litellm_adapter.logger") as mock_logger:
+        result = adapter.usage_from_response(response)
+
+    assert result.input_tokens == 100
+    assert result.output_tokens == 20
+    assert result.total_tokens == 120
+    assert result.cached_tokens is None
+    mock_logger.warning.assert_called_once()
+    assert "prompt_tokens_details has unexpected type" in str(
+        mock_logger.warning.call_args
+    )
 
 
 @pytest.fixture
@@ -1904,6 +1971,364 @@ async def test_structured_output_with_return_on_tool_call_and_resume(
         "Final message must not have pending tool_calls"
     )
     assert final_msg.get("content"), "Final message must have non-empty content"
+
+
+def _lookup_weather_unmanaged_tool(name: str = "lookup_weather") -> UnmanagedKilnTool:
+    return UnmanagedKilnTool(
+        tool_id="kiln_unmanaged::lookup_weather",
+        name=name,
+        description="Look up weather for a location",
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "City name"},
+            },
+            "required": ["location"],
+        },
+    )
+
+
+def _sdk_unmanaged_multiply_tool() -> UnmanagedKilnTool:
+    return UnmanagedKilnTool(
+        tool_id="kiln_unmanaged::sdk_unmanaged_multiply",
+        name="sdk_unmanaged_multiply",
+        description="Multiply two numbers. Use for all arithmetic.",
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "a": {"type": "number"},
+                "b": {"type": "number"},
+            },
+            "required": ["a", "b"],
+        },
+    )
+
+
+def test_unmanaged_tools_invalid_type_raises(mock_task, config):
+    with pytest.raises(TypeError, match="must be a KilnToolInterface instance"):
+        LiteLlmAdapter(
+            config=config,
+            kiln_task=mock_task,
+            base_adapter_config=AdapterConfig(
+                return_on_tool_call=True,
+                unmanaged_tools=[object()],  # type: ignore[list-item]
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_litellm_tools_raises_when_duplicate_unmanaged_tool_names(
+    mock_task, config
+):
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(
+            return_on_tool_call=True,
+            unmanaged_tools=[
+                _lookup_weather_unmanaged_tool("dup"),
+                UnmanagedKilnTool(
+                    tool_id="kiln_unmanaged::lookup_weather_2",
+                    name="dup",
+                    description="other",
+                    parameters_schema={
+                        "type": "object",
+                        "properties": {"x": {"type": "string"}},
+                        "required": ["x"],
+                    },
+                ),
+            ],
+        ),
+    )
+    with pytest.raises(ValueError, match="Duplicate tool name"):
+        await adapter.litellm_tools()
+
+
+@pytest.mark.asyncio
+async def test_litellm_tools_merges_unmanaged_definitions(mock_task, config):
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(
+            return_on_tool_call=True,
+            unmanaged_tools=[_lookup_weather_unmanaged_tool()],
+        ),
+    )
+    with patch.object(adapter, "available_tools", return_value=[]):
+        tools = await adapter.litellm_tools()
+    assert len(tools) == 1
+    assert tools[0]["function"]["name"] == "lookup_weather"
+
+
+@pytest.mark.asyncio
+async def test_litellm_tools_raises_when_unmanaged_collides_with_registry(
+    mock_task, config
+):
+    config.run_config_properties = KilnAgentRunConfigProperties(
+        model_name="test-model",
+        model_provider_name="openrouter",
+        prompt_id="simple_prompt_builder",
+        structured_output_mode=StructuredOutputMode.json_schema,
+        tools_config=ToolsRunConfig(tools=[KilnBuiltInToolId.ADD_NUMBERS]),
+    )
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(
+            return_on_tool_call=True,
+            unmanaged_tools=[_lookup_weather_unmanaged_tool("add")],
+        ),
+    )
+    with pytest.raises(ValueError, match="Duplicate tool name"):
+        await adapter.litellm_tools()
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_includes_unmanaged_tools(mock_task, config):
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(
+            return_on_tool_call=True,
+            unmanaged_tools=[_lookup_weather_unmanaged_tool()],
+        ),
+    )
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=[]),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    assert "tools" in kwargs
+    names = [t["function"]["name"] for t in kwargs["tools"]]
+    assert "lookup_weather" in names
+    assert kwargs["tool_choice"] == "auto"
+
+
+@pytest.mark.asyncio
+async def test_litellm_tools_merges_registry_then_unmanaged_order(
+    mock_task, config, mock_math_tools
+):
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(
+            return_on_tool_call=True,
+            unmanaged_tools=[_lookup_weather_unmanaged_tool("extra_client_tool")],
+        ),
+    )
+    with patch.object(adapter, "available_tools", return_value=mock_math_tools):
+        tools = await adapter.litellm_tools()
+    names = [t["function"]["name"] for t in tools]
+    assert names == ["add", "subtract", "multiply", "divide", "extra_client_tool"]
+
+
+@pytest.mark.asyncio
+async def test_litellm_tools_unmanaged_toolcall_definitions_are_fresh_each_call(
+    mock_task, config
+):
+    ext = _lookup_weather_unmanaged_tool()
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(
+            return_on_tool_call=True,
+            unmanaged_tools=[ext],
+        ),
+    )
+    with patch.object(adapter, "available_tools", return_value=[]):
+        first = await adapter.litellm_tools()
+    first[0]["function"]["name"] = "mutated_name"
+    with patch.object(adapter, "available_tools", return_value=[]):
+        second = await adapter.litellm_tools()
+    assert second[0]["function"]["name"] == "lookup_weather"
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_json_schema_allows_unmanaged_with_registry_tools(
+    mock_task, config, mock_math_tools
+):
+    config.run_config_properties.structured_output_mode = (
+        StructuredOutputMode.json_schema
+    )
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(
+            return_on_tool_call=True,
+            unmanaged_tools=[_lookup_weather_unmanaged_tool("client_only_tool")],
+        ),
+    )
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "available_tools", return_value=mock_math_tools),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    names = [t["function"]["name"] for t in kwargs["tools"]]
+    assert set(names) == {
+        "add",
+        "subtract",
+        "multiply",
+        "divide",
+        "client_only_tool",
+    }
+    assert "response_format" in kwargs
+
+
+@pytest.mark.asyncio
+async def test_unmanaged_tools_only_return_on_tool_call_and_resume_mocked(
+    mock_task,
+):
+    """Unmanaged-only KilnTool instances (no registry tools): interrupt then resume, fully mocked."""
+    config = LiteLlmConfig(
+        run_config_properties=KilnAgentRunConfigProperties(
+            model_name="test-model",
+            model_provider_name="openai_compatible",
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        ),
+        default_headers={"X-Test": "test"},
+        additional_body_options={"api_key": "test_key"},
+    )
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(
+            return_on_tool_call=True,
+            unmanaged_tools=[_sdk_unmanaged_multiply_tool()],
+        ),
+    )
+
+    tool_call = ChatCompletionMessageToolCall(
+        id="call_sdk_unmanaged_multiply",
+        type="function",
+        function=Function(name="sdk_unmanaged_multiply", arguments='{"a": 3, "b": 7}'),
+    )
+
+    call_count = 0
+
+    async def mock_run_model_turn(
+        provider, prior_messages, top_logprobs, skip_response_format
+    ):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            extended = list(prior_messages)
+            extended.append(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_sdk_unmanaged_multiply",
+                            "function": {
+                                "arguments": '{"a": 3, "b": 7}',
+                                "name": "sdk_unmanaged_multiply",
+                            },
+                            "type": "function",
+                        }
+                    ],
+                }
+            )
+            return ModelTurnResult(
+                assistant_message="",
+                all_messages=extended,
+                model_response=None,
+                model_choice=None,
+                usage=Usage(),
+                interrupted_by_tool_calls=[tool_call],
+            )
+        json_response = '{"test": "structured_response"}'
+        extended = list(prior_messages)
+        extended.append({"role": "assistant", "content": json_response})
+        return ModelTurnResult(
+            assistant_message=json_response,
+            all_messages=extended,
+            model_response=None,
+            model_choice=None,
+            usage=Usage(),
+        )
+
+    adapter._run_model_turn = mock_run_model_turn
+
+    with patch.object(adapter, "available_tools", return_value=[]):
+        task_run = await adapter.invoke(input="3 * 7 = ?")
+
+    assert task_run.is_toolcall_pending
+    assert task_run.trace is not None
+    last = task_run.trace[-1]
+    assert last.get("tool_calls") is not None
+    assert last["tool_calls"][0]["function"]["name"] == "sdk_unmanaged_multiply"
+
+    with patch.object(adapter, "available_tools", return_value=[]):
+        task_run2 = await adapter.invoke(
+            input={
+                "tool_call_id": "call_sdk_unmanaged_multiply",
+                "content": "21",
+            },
+            prior_trace=task_run.trace,
+        )
+
+    assert not task_run2.is_toolcall_pending
+    assert json.loads(task_run2.output.output) == {"test": "structured_response"}
+
+
+async def test_build_completion_kwargs_no_caching_by_default(config, mock_task):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        kwargs = await adapter.build_completion_kwargs(
+            mock_provider, messages, top_logprobs=None
+        )
+
+    assert "cache_control_injection_points" not in kwargs
+
+
+async def test_build_completion_kwargs_with_automatic_prompt_caching(config, mock_task):
+    adapter = LiteLlmAdapter(
+        config=config,
+        kiln_task=mock_task,
+        base_adapter_config=AdapterConfig(automatic_prompt_caching=True),
+    )
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [{"role": "user", "content": "Hello"}]
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        kwargs = await adapter.build_completion_kwargs(
+            mock_provider, messages, top_logprobs=None
+        )
+
+    assert kwargs["cache_control_injection_points"] == [
+        {"location": "message", "index": -1}
+    ]
 
 
 @pytest.mark.asyncio

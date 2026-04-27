@@ -6,6 +6,12 @@
   } from "$lib/utils/update"
   import AppPage from "../../app_page.svelte"
   import { onMount } from "svelte"
+  import { agentInfo } from "$lib/agent"
+
+  agentInfo.set({
+    name: "Check for Update",
+    description: "Check if a newer version of Kiln is available.",
+  })
 
   onMount(() => {
     update_update_store()

@@ -32,7 +32,7 @@ os.environ["NLTK_DATA"] = os.path.join(Config.settings_dir(), "cache", "nltk_dat
 
 
 class DesktopApp:
-    def __init__(self, port: int = 8757):
+    def __init__(self, port: int):
         self.port = port
         # TK without a window, to get dock events on MacOS
         self.root = tk.Tk()
@@ -167,11 +167,13 @@ class DesktopServer(ThreadedServer):
 if __name__ == "__main__":
     setup_resource_limits()
 
-    app = DesktopApp()
+    host = Config.shared().kiln_local_api_host
+    port = Config.shared().kiln_local_api_port
+    app = DesktopApp(port=port)
 
     # Create and run the server
     # run the server in a thread, and shut down server when main thread (tk mainloop) exits
-    config = server_config(tk_root=app.root, port=app.port)
+    config = server_config(port=port, host=host, tk_root=app.root)
     uni_server = DesktopServer(app=app, config=config)
     with uni_server.run_in_thread():
         if not uni_server.running():

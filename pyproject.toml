@@ -7,6 +7,7 @@ requires-python = ">=3.10"
 
 dependencies = [
     "certifi>=2024.8.30",
+    "jq>=1.11.0",
     "kiln-ai==0.5.3",
     "kiln-server",
     "kiln-studio-desktop",
@@ -18,6 +19,7 @@ dev = [
     "isort>=5.13.2",
     "pytest-asyncio>=0.24.0",
     "pytest>=8.3.3",
+    "respx>=0.22.0",
     "pytest-xdist>=3.5",
     "python-dotenv>=1.0.1",
     "ruff>=0.15.0",
@@ -45,6 +47,9 @@ exclude = [".worktrees"]
 [tool.ty.src]
 exclude = [".worktrees", "**/test_*.py", "app/desktop/build/**", "app/web_ui/**", "**/.venv", "**/kiln_ai_server_client/**"]
 
+[tool.ty.environment]
+extra-paths = ["./libs/core/typings"]
+
 [tool.ty.rules]
 invalid-key = "ignore"
 
@@ -59,6 +64,31 @@ extend-select = ["I","F401","RUF","FAST","TID"]
 "typing.cast" = { msg = "Avoid using typing.cast; prefer safer alternatives." }
 
 [tool.pytest.ini_options]
- addopts="-n auto"
+addopts = "-n auto"
+asyncio_mode = "auto"
+# Needed to silence warning. See https://github.com/pytest-dev/pytest-asyncio/issues/924
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "paid: marks tests as requring paid APIs. Not run by default, run with '--runpaid' option.",
+    "slow: marks tests as slow. Not run by default, run with '--runslow' option.",
+    "ollama: marks tests as requring ollama server. Not run by default, run with '--ollama' option.",
+]
+# pydantic deprecation warnings come from dependencies (not our code).
+# The benchmark fixture "not used at all" warning is a false-positive from pytest-benchmark.
+# File system timestamp warning is an intentional Kiln warning.
+filterwarnings = [
+    "ignore:File system does not support fine-grained timestamps",
+    "ignore::pydantic.PydanticDeprecatedSince20",
+    "ignore:Benchmark fixture was not used at all in this test",
+    "ignore::DeprecationWarning:websockets.legacy",
+    "ignore::DeprecationWarning:websockets.server",
+    "ignore:.*WebSocketServerProtocol is deprecated:DeprecationWarning:uvicorn.protocols.websockets.websockets_impl",
+]
 
-
+[tool.coverage.run]
+omit = [
+    "**/test_*.py",
+    "libs/core/kiln_ai/adapters/ml_model_list.py",
+    "**/conftest.py",
+    "*/kiln_ai_server_client/*",
+]

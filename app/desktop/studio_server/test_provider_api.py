@@ -1955,18 +1955,18 @@ def test_openai_compatible_provider_cache_is_stale():
     assert cache.is_stale() is True
 
     # Test within time window
-    cache.last_updated = datetime.now()
+    cache.last_updated = datetime.now().astimezone()
     cache.openai_compat_config_when_cached = ["provider1"]
     with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
         mock_config.return_value.openai_compatible_providers = ["provider1"]
         assert cache.is_stale() is False
 
     # Test expired time window
-    cache.last_updated = datetime.now() - timedelta(minutes=61)
+    cache.last_updated = datetime.now().astimezone() - timedelta(minutes=61)
     assert cache.is_stale() is True
 
     # Test config change
-    cache.last_updated = datetime.now()
+    cache.last_updated = datetime.now().astimezone()
     cache.openai_compat_config_when_cached = ["provider1"]
     with patch("app.desktop.studio_server.provider_api.Config.shared") as mock_config:
         mock_config.return_value.openai_compatible_providers = ["provider2"]
@@ -2017,7 +2017,7 @@ def test_openai_compatible_providers():
                     ],
                 ),
             ],
-            last_updated=datetime.now(),
+            last_updated=datetime.now().astimezone(),
             openai_compat_config_when_cached=mock_provider_config,
         )
 

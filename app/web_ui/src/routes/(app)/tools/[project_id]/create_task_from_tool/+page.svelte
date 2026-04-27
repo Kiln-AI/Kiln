@@ -15,7 +15,12 @@
   import type { ExternalToolApiDescription } from "$lib/types"
   import posthog from "posthog-js"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
+  $: agentInfo.set({
+    name: "Create Task from Tool",
+    description: `Create a new task from an existing tool in project ID ${project_id}. Generate a task definition based on a tool's schema. Targeting the tool ID ${tool_id}.`,
+  })
   $: tool_id = $page.url.searchParams.get("tool_id")
 
   let tool: ExternalToolApiDescription | null = null

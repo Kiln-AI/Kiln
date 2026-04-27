@@ -106,7 +106,7 @@ def test_created_atby():
     model = KilnBaseModel()
     assert model.created_at is not None
     # Check it's within 2 seconds of now
-    now = datetime.datetime.now()
+    now = datetime.datetime.now().astimezone()
     assert abs((model.created_at - now).total_seconds()) < 2
 
     # Created by
@@ -1371,3 +1371,60 @@ def test_all_children_of_parent_path_single_parent_type(tmp_path):
     assert len(children) == 2
     names = {child.name for child in children}
     assert names == {"Child1", "Child2"}
+
+
+def test_created_at_is_timezone_aware():
+    model = KilnBaseModel()
+    assert model.created_at.tzinfo is not None
+
+
+def test_created_at_roundtrip_preserves_offset(tmp_path):
+    model = KilnBaseModel(path=tmp_path / "test.kiln")
+    model.save_to_file()
+
+    raw_json = json.loads(model.path.read_text())
+    raw_ts = raw_json["created_at"]
+    assert raw_ts.endswith("Z") or "+" in raw_ts or "-" in raw_ts[10:]
+
+    loaded = KilnBaseModel.load_from_file(model.path)
+    assert loaded.created_at.tzinfo is not None
+    assert loaded.created_at == model.created_at
+
+
+def test_legacy_naive_json_loads_as_aware(tmp_path):
+    model = KilnBaseModel(path=tmp_path / "test.kiln")
+    model.save_to_file()
+
+    raw_json = json.loads(model.path.read_text())
+    raw_json["created_at"] = "2025-06-09T13:33:35.276927"
+    model.path.write_text(json.dumps(raw_json))
+
+    loaded = KilnBaseModel.load_from_file(model.path)
+    assert loaded.created_at.tzinfo is not None
+    assert loaded.created_at.year == 2025
+    assert loaded.created_at.month == 6
+    assert loaded.created_at.second == 35
+
+
+def test_naive_assignment_normalized_via_validate_assignment():
+    model = KilnBaseModel()
+    naive = datetime.datetime(2024, 3, 15, 10, 30, 0)
+    model.created_at = naive
+    assert model.created_at.tzinfo is not None
+    assert model.created_at.year == 2024
+    assert model.created_at.month == 3
+    assert model.created_at.hour == 10
+
+
+def test_aware_datetime_preserved_on_load(tmp_path):
+    model = KilnBaseModel(path=tmp_path / "test.kiln")
+    model.save_to_file()
+
+    raw_json = json.loads(model.path.read_text())
+    raw_json["created_at"] = "2026-04-16T09:26:04.806292-04:00"
+    model.path.write_text(json.dumps(raw_json))
+
+    loaded = KilnBaseModel.load_from_file(model.path)
+    assert loaded.created_at.tzinfo is not None
+    assert loaded.created_at.utcoffset().total_seconds() == -4 * 3600
+    assert loaded.created_at.hour == 9

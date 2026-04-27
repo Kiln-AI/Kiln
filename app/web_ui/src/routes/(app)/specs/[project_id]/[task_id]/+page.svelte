@@ -24,11 +24,16 @@
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import Banner from "$lib/ui/banner.svelte"
   import posthog from "posthog-js"
+  import { agentInfo } from "$lib/agent"
 
   // ### Spec Table ###
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Specs & Evals",
+    description: `Specs and evals list for project ID ${project_id}, task ID ${task_id}. Shows all specifications and their associated evaluations.`,
+  })
 
   let specs: Spec[] | null = null
   let specs_error: KilnError | null = null

@@ -38,6 +38,7 @@ from kiln_ai.datamodel.vector_store import VectorStoreConfig
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, AsyncJobRunnerObserver
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_ai.utils.filesystem_cache import FilesystemCache
+from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 from kiln_ai.utils.lock import shared_async_lock_manager
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -122,7 +123,11 @@ class RagWorkflowStepNames(str, Enum):
     INDEXING = "indexing"
 
 
-async def execute_extractor_job(job: ExtractorJob, extractor: BaseExtractor) -> bool:
+async def execute_extractor_job(
+    job: ExtractorJob,
+    extractor: BaseExtractor,
+    save_context: SaveContext | None = None,
+) -> bool:
     if job.doc.path is None:
         raise ValueError("Document path is not set")
 
@@ -133,23 +138,29 @@ async def execute_extractor_job(job: ExtractorJob, extractor: BaseExtractor) -> 
         )
     )
 
-    extraction = Extraction(
-        parent=job.doc,
-        extractor_config_id=job.extractor_config.id,
-        output=KilnAttachmentModel.from_data(
-            data=output.content,
-            mime_type=output.content_format,
-        ),
-        source=ExtractionSource.PASSTHROUGH
-        if output.is_passthrough
-        else ExtractionSource.PROCESSED,
-    )
-    extraction.save_to_file()
+    save_ctx = save_context or default_save_context
+    async with save_ctx():
+        extraction = Extraction(
+            parent=job.doc,
+            extractor_config_id=job.extractor_config.id,
+            output=KilnAttachmentModel.from_data(
+                data=output.content,
+                mime_type=output.content_format,
+            ),
+            source=ExtractionSource.PASSTHROUGH
+            if output.is_passthrough
+            else ExtractionSource.PROCESSED,
+        )
+        extraction.save_to_file()
 
     return True
 
 
-async def execute_chunker_job(job: ChunkerJob, chunker: BaseChunker) -> bool:
+async def execute_chunker_job(
+    job: ChunkerJob,
+    chunker: BaseChunker,
+    save_context: SaveContext | None = None,
+) -> bool:
     extraction_output_content = await job.extraction.output_content()
     if extraction_output_content is None:
         raise ValueError("Extraction output content is not set")
@@ -160,25 +171,29 @@ async def execute_chunker_job(job: ChunkerJob, chunker: BaseChunker) -> bool:
     if chunking_result is None:
         raise ValueError("Chunking result is not set")
 
-    chunked_document = ChunkedDocument(
-        parent=job.extraction,
-        chunker_config_id=job.chunker_config.id,
-        chunks=[
-            Chunk(
-                content=KilnAttachmentModel.from_data(
-                    data=chunk.text,
-                    mime_type="text/plain",
-                ),
-            )
-            for chunk in chunking_result.chunks
-        ],
-    )
-    chunked_document.save_to_file()
+    save_ctx = save_context or default_save_context
+    async with save_ctx():
+        chunked_document = ChunkedDocument(
+            parent=job.extraction,
+            chunker_config_id=job.chunker_config.id,
+            chunks=[
+                Chunk(
+                    content=KilnAttachmentModel.from_data(
+                        data=chunk.text,
+                        mime_type="text/plain",
+                    ),
+                )
+                for chunk in chunking_result.chunks
+            ],
+        )
+        chunked_document.save_to_file()
     return True
 
 
 async def execute_embedding_job(
-    job: EmbeddingJob, embedding_adapter: BaseEmbeddingAdapter
+    job: EmbeddingJob,
+    embedding_adapter: BaseEmbeddingAdapter,
+    save_context: SaveContext | None = None,
 ) -> bool:
     chunks_text = await job.chunked_document.load_chunks_text()
 
@@ -195,18 +210,20 @@ async def execute_embedding_job(
             f"Failed to generate embeddings for chunked document: {job.chunked_document.id}"
         )
 
-    chunk_embeddings = ChunkEmbeddings(
-        parent=job.chunked_document,
-        embedding_config_id=job.embedding_config.id,
-        embeddings=[
-            Embedding(
-                vector=embedding.vector,
-            )
-            for embedding in chunk_embedding_result.embeddings
-        ],
-    )
+    save_ctx = save_context or default_save_context
+    async with save_ctx():
+        chunk_embeddings = ChunkEmbeddings(
+            parent=job.chunked_document,
+            embedding_config_id=job.embedding_config.id,
+            embeddings=[
+                Embedding(
+                    vector=embedding.vector,
+                )
+                for embedding in chunk_embedding_result.embeddings
+            ],
+        )
 
-    chunk_embeddings.save_to_file()
+        chunk_embeddings.save_to_file()
     return True
 
 
@@ -232,6 +249,7 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
         concurrency: int = 10,
         rag_config: RagConfig | None = None,
         filesystem_cache: FilesystemCache | None = None,
+        save_context: SaveContext | None = None,
     ):
         self.project = project
         self.extractor_config = extractor_config
@@ -239,6 +257,7 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
         self.concurrency = concurrency
         self.rag_config = rag_config
         self.filesystem_cache = filesystem_cache
+        self._save_context: SaveContext = save_context or default_save_context
 
     def stage(self) -> RagWorkflowStepNames:
         return RagWorkflowStepNames.EXTRACTING
@@ -289,9 +308,12 @@ class RagExtractionStepRunner(AbstractRagStepRunner):
             )
 
             observer = GenericErrorCollector()
+            save_ctx = self._save_context
             runner = AsyncJobRunner(
                 jobs=jobs,
-                run_job_fn=lambda job: execute_extractor_job(job, extractor),
+                run_job_fn=lambda job: execute_extractor_job(
+                    job, extractor, save_context=save_ctx
+                ),
                 concurrency=self.concurrency,
                 observers=[observer],
             )
@@ -325,6 +347,7 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
         chunker_config: ChunkerConfig,
         concurrency: int = 10,
         rag_config: RagConfig | None = None,
+        save_context: SaveContext | None = None,
     ):
         self.project = project
         self.extractor_config = extractor_config
@@ -332,6 +355,7 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
         self.lock_key = f"docs:chunk:{self.chunker_config.id}"
         self.concurrency = concurrency
         self.rag_config = rag_config
+        self._save_context: SaveContext = save_context or default_save_context
 
     def stage(self) -> RagWorkflowStepNames:
         return RagWorkflowStepNames.CHUNKING
@@ -385,9 +409,12 @@ class RagChunkingStepRunner(AbstractRagStepRunner):
                 self.chunker_config,
             )
             observer = GenericErrorCollector()
+            save_ctx = self._save_context
             runner = AsyncJobRunner(
                 jobs=jobs,
-                run_job_fn=lambda job: execute_chunker_job(job, chunker),
+                run_job_fn=lambda job: execute_chunker_job(
+                    job, chunker, save_context=save_ctx
+                ),
                 concurrency=self.concurrency,
                 observers=[observer],
             )
@@ -422,6 +449,7 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
         embedding_config: EmbeddingConfig,
         concurrency: int = 10,
         rag_config: RagConfig | None = None,
+        save_context: SaveContext | None = None,
     ):
         self.project = project
         self.extractor_config = extractor_config
@@ -430,6 +458,7 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
         self.concurrency = concurrency
         self.rag_config = rag_config
         self.lock_key = f"docs:embedding:{self.embedding_config.id}"
+        self._save_context: SaveContext = save_context or default_save_context
 
     def stage(self) -> RagWorkflowStepNames:
         return RagWorkflowStepNames.EMBEDDING
@@ -493,9 +522,12 @@ class RagEmbeddingStepRunner(AbstractRagStepRunner):
             )
 
             observer = GenericErrorCollector()
+            save_ctx = self._save_context
             runner = AsyncJobRunner(
                 jobs=jobs,
-                run_job_fn=lambda job: execute_embedding_job(job, embedding_adapter),
+                run_job_fn=lambda job: execute_embedding_job(
+                    job, embedding_adapter, save_context=save_ctx
+                ),
                 concurrency=self.concurrency,
                 observers=[observer],
             )

@@ -3,6 +3,10 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import {
+    filename_string_validator_default,
+    normalize_filename_string,
+  } from "$lib/utils/input_validators"
   import { load_available_prompts } from "$lib/stores"
   import { goto } from "$app/navigation"
   import posthog from "posthog-js"
@@ -19,6 +23,10 @@
 
   let prompt_name = initial_prompt_name
   let prompt = initial_prompt
+  // Generator-backed prompts with thinking instructions always use CoT —
+  // hide the toggle and show an editable CoT field instead.
+  $: has_generator_cot =
+    !show_chain_of_thought && !!initial_chain_of_thought_instructions
   let is_chain_of_thought = !!initial_chain_of_thought_instructions
   let chain_of_thought_instructions =
     initial_chain_of_thought_instructions ||
@@ -27,10 +35,16 @@
   let submitting = false
   let complete = false
 
+  $: cot_field_visible =
+    (show_chain_of_thought && is_chain_of_thought) || has_generator_cot
+  $: cot_enabled_for_submit =
+    (show_chain_of_thought && is_chain_of_thought) || has_generator_cot
+
   async function handleSubmit() {
     try {
       submitting = true
       error = null
+      prompt_name = normalize_filename_string(prompt_name)
       const { data, error: api_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/prompts",
         {
@@ -44,10 +58,9 @@
             generator_id: generator_id,
             name: prompt_name,
             prompt: prompt,
-            chain_of_thought_instructions:
-              show_chain_of_thought && is_chain_of_thought
-                ? chain_of_thought_instructions
-                : null,
+            chain_of_thought_instructions: cot_enabled_for_submit
+              ? chain_of_thought_instructions
+              : null,
           },
         },
       )
@@ -86,7 +99,12 @@
     !complete &&
     (prompt !== initial_prompt ||
       prompt_name !== initial_prompt_name ||
-      (show_chain_of_thought && is_chain_of_thought))
+      (cot_field_visible &&
+        chain_of_thought_instructions !==
+          (initial_chain_of_thought_instructions ||
+            "Think step by step, explaining your reasoning.")) ||
+      (show_chain_of_thought &&
+        is_chain_of_thought !== !!initial_chain_of_thought_instructions))
 </script>
 
 <div class="max-w-[800px]">
@@ -103,6 +121,7 @@
       bind:value={prompt_name}
       description="A name to identify this prompt."
       max_length={120}
+      validator={filename_string_validator_default}
     />
 
     <FormElement
@@ -126,15 +145,15 @@
           [true, "Enabled"],
         ]}
       />
-      {#if is_chain_of_thought}
-        <FormElement
-          label="Chain of Thought Instructions"
-          id="chain_of_thought_instructions"
-          bind:value={chain_of_thought_instructions}
-          inputType="textarea"
-          description="Instructions for the model's 'thinking' prior to answering. Required for chain of thought prompting."
-        />
-      {/if}
+    {/if}
+    {#if cot_field_visible}
+      <FormElement
+        label="Chain of Thought Instructions"
+        id="chain_of_thought_instructions"
+        bind:value={chain_of_thought_instructions}
+        inputType="textarea"
+        description="Instructions for the model's 'thinking' prior to answering. Required for chain of thought prompting."
+      />
     {/if}
   </FormContainer>
 </div>

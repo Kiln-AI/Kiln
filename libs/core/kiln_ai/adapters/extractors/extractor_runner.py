@@ -14,6 +14,7 @@ from kiln_ai.datamodel.extraction import (
     ExtractorConfig,
 )
 from kiln_ai.utils.async_job_runner import AsyncJobRunner, Progress
+from kiln_ai.utils.git_sync_protocols import SaveContext, default_save_context
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +30,14 @@ class ExtractorRunner:
         self,
         documents: List[Document],
         extractor_configs: List[ExtractorConfig],
+        save_context: SaveContext | None = None,
     ):
         if len(extractor_configs) == 0:
             raise ValueError("Extractor runner requires at least one extractor config")
 
         self.documents = documents
         self.extractor_configs = extractor_configs
+        self._save_context: SaveContext = save_context or default_save_context
 
     def collect_jobs(self) -> List[ExtractorJob]:
         jobs = []
@@ -91,22 +94,24 @@ class ExtractorRunner:
                 )
             )
 
-            extraction = Extraction(
-                parent=job.doc,
-                extractor_config_id=job.extractor_config.id,
-                output=KilnAttachmentModel.from_data(
-                    data=output.content,
-                    mime_type=output.content_format,
-                ),
-                source=ExtractionSource.PASSTHROUGH
-                if output.is_passthrough
-                else ExtractionSource.PROCESSED,
-            )
-            extraction.save_to_file()
+            async with self._save_context():
+                extraction = Extraction(
+                    parent=job.doc,
+                    extractor_config_id=job.extractor_config.id,
+                    output=KilnAttachmentModel.from_data(
+                        data=output.content,
+                        mime_type=output.content_format,
+                    ),
+                    source=ExtractionSource.PASSTHROUGH
+                    if output.is_passthrough
+                    else ExtractionSource.PROCESSED,
+                )
+                extraction.save_to_file()
 
             return True
         except Exception as e:
             logger.error(
-                f"Error running extraction job for dataset item {job.doc.id}: {e}"
+                f"Error running extraction job for dataset item {job.doc.id}: {e}",
+                exc_info=True,
             )
             return False

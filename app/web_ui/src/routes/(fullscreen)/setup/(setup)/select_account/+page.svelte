@@ -8,6 +8,13 @@
     redirect_to_work,
     redirect_after_registration,
   } from "../registration_helpers"
+  import { agentInfo } from "$lib/agent"
+
+  agentInfo.set({
+    name: "Setup: Select Account Type",
+    description:
+      "Onboarding step to choose between personal and work account types.",
+  })
 
   async function selectAccountType(type: "personal" | "work") {
     try {

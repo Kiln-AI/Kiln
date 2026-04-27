@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pypdf import PdfReader
 
-from conftest import MockFileFactoryMimeType
+from kiln_ai.pytest_mock_files import MockFileFactoryMimeType
 from kiln_ai.utils.pdf_utils import (
     _convert_pdf_to_images_sync,
     convert_pdf_to_images,

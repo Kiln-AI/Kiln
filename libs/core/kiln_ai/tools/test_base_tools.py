@@ -1,6 +1,11 @@
 import pytest
 
-from kiln_ai.tools.base_tool import KilnTool, KilnToolInterface, ToolCallResult
+from kiln_ai.tools.base_tool import (
+    KilnTool,
+    KilnToolInterface,
+    ToolCallResult,
+    UnmanagedKilnTool,
+)
 
 
 class TestKilnToolInterface:
@@ -10,6 +15,41 @@ class TestKilnToolInterface:
         """Test that KilnToolInterface cannot be instantiated directly."""
         with pytest.raises(TypeError):
             KilnToolInterface()  # type: ignore
+
+
+class TestUnmanagedKilnTool:
+    """Tests for UnmanagedKilnTool (SDK-injected tools)."""
+
+    async def test_toolcall_definition(self):
+        tool = UnmanagedKilnTool(
+            tool_id="kiln_unmanaged::my_tool",
+            name="my_fn",
+            description="Does something",
+            parameters_schema={
+                "type": "object",
+                "properties": {"q": {"type": "string"}},
+                "required": ["q"],
+            },
+        )
+        assert await tool.id() == "kiln_unmanaged::my_tool"
+        assert await tool.name() == "my_fn"
+        defn = await tool.toolcall_definition()
+        assert defn["type"] == "function"
+        assert defn["function"]["name"] == "my_fn"
+
+    async def test_run_raises(self):
+        tool = UnmanagedKilnTool(
+            tool_id="kiln_unmanaged::my_tool",
+            name="my_fn",
+            description="d",
+            parameters_schema={
+                "type": "object",
+                "properties": {"q": {"type": "string"}},
+                "required": ["q"],
+            },
+        )
+        with pytest.raises(RuntimeError, match="unmanaged KilnTool"):
+            await tool.run()
 
 
 class ConcreteTestTool(KilnTool):

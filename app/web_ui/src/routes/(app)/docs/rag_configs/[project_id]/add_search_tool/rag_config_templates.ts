@@ -182,7 +182,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     notice_tooltip:
       "GPT-5.4 does not support extracting audio or video files. We suggest using Gemini if you require audio or video support.",
     extractor: {
-      config_name: "GPT-5.4 w Default Prompts",
+      config_name: "GPT-5p4 w Default Prompts",
       description: "GPT-5.4",
       model_provider_name: "openai",
       model_name: "gpt_5_4",
@@ -196,7 +196,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     },
     vector_store: default_vector_store,
     reranker: null,
-    rag_config_name: "OpenAI Based - GPT-5.4 Hybrid Search",
+    rag_config_name: "OpenAI Based - GPT-5p4 Hybrid Search",
   },
 }
 

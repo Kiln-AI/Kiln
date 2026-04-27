@@ -23,10 +23,15 @@
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import { tagFromFilterId, linkFromFilterId } from "../../spec_utils"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: spec_id = $page.params.spec_id!
   $: eval_id = $page.params.eval_id!
+  $: agentInfo.set({
+    name: "Eval Detail",
+    description: `Eval detail for eval ID ${eval_id}, spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Eval name: ${evaluator?.name ?? "[loading]"}. Shows eval configurations and run results.`,
+  })
   $: is_legacy_eval = spec_id === "legacy"
 
   let spec: Spec | null = null

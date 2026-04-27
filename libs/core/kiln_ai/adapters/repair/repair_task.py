@@ -2,7 +2,11 @@ import json
 
 from pydantic import BaseModel, Field
 
-from kiln_ai.adapters.prompt_builders import BasePromptBuilder, prompt_builder_from_id
+from kiln_ai.adapters.prompt_builders import (
+    BasePromptBuilder,
+    SimplePromptBuilder,
+    prompt_builder_from_id,
+)
 from kiln_ai.datamodel import Priority, Project, Task, TaskRequirement, TaskRun
 
 
@@ -41,19 +45,27 @@ feedback describing what should be improved. Your job is to understand the evalu
 
     @classmethod
     def _original_prompt(cls, run: TaskRun, task: Task) -> str:
-        if run.output.source is None or run.output.source.properties is None:
-            raise ValueError("No source properties found")
-
         # Get the prompt builder id. Need the second check because we used to store this in a prompt_builder_name field, so loading legacy runs will need this.
-        prompt_id = run.output.source.properties.get(
-            "prompt_id"
-        ) or run.output.source.properties.get("prompt_builder_name", None)
+        source_properties = (
+            run.output.source.properties
+            if run.output.source and run.output.source.properties
+            else {}
+        )
+        prompt_id = source_properties.get("prompt_id") or source_properties.get(
+            "prompt_builder_name", None
+        )
         if prompt_id is not None and isinstance(prompt_id, str):
-            prompt_builder = prompt_builder_from_id(prompt_id, task)
+            try:
+                prompt_builder = prompt_builder_from_id(prompt_id, task)
+            except ValueError:
+                # Unknown/legacy prompt_id — fall through to fallback below
+                prompt_builder = None
             if isinstance(prompt_builder, BasePromptBuilder):
                 return prompt_builder.build_prompt(include_json_instructions=False)
 
-        raise ValueError(f"Prompt builder '{prompt_id}' is not a valid prompt builder")
+        # Fallback to simple prompt builder if prompt_id is missing, unknown, or source/properties are absent (e.g. legacy runs)
+        fallback_builder = SimplePromptBuilder(task)
+        return fallback_builder.build_prompt(include_json_instructions=False)
 
     @classmethod
     def build_repair_task_input(

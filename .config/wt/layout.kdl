@@ -25,7 +25,7 @@ layout {
     }
     tab name="webui" cwd="app/web_ui" {
         pane command="bash" start_suspended=false {
-            args "-c" "npm run dev -- --host --port $KILN_FRONTEND_PORT"
+            args "-c" "export NVM_DIR=\"${NVM_DIR:-$HOME/.nvm}\" && . \"$NVM_DIR/nvm.sh\" && nvm use && npm run dev -- --host --port $KILN_FRONTEND_PORT"
         }
     }
 }

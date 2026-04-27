@@ -2,6 +2,13 @@
   import AppPage from "../../app_page.svelte"
   import ConnectProviders from "../../../(fullscreen)/setup/(setup)/connect_providers/connect_providers.svelte"
   import { page } from "$app/stores"
+  import { agentInfo } from "$lib/agent"
+
+  agentInfo.set({
+    name: "AI Providers",
+    description:
+      "Manage AI provider connections. Connect to providers like Ollama, OpenRouter, Together, OpenAI, and more.",
+  })
 </script>
 
 <AppPage

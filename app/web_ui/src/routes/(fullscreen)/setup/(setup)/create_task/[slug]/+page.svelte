@@ -2,7 +2,12 @@
   import { page } from "$app/stores"
   import EditTask from "../edit_task.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.slug!
+  $: agentInfo.set({
+    name: "Setup: Create Task",
+    description: `Onboarding step to create the first task in project ID ${project_id}.`,
+  })
 </script>
 
 <div class="grow"></div>

@@ -4,6 +4,8 @@
   import { base_url } from "$lib/api_client"
   import posthog from "posthog-js"
   import { env } from "$env/dynamic/public"
+  import { setCopilotConnected } from "$lib/stores/copilot_connection_store"
+  import CheckmarkIcon from "$lib/ui/icons/checkmark_icon.svelte"
 
   export let onSuccess: () => void
   export let showCheckmark = false
@@ -106,6 +108,7 @@
       provider_id: "kiln_copilot",
     })
 
+    setCopilotConnected(true)
     onSuccess()
   }
 
@@ -117,28 +120,32 @@
   })
 </script>
 
-<h1 class="text-xl font-medium flex-none text-center">Connect Kiln Copilot</h1>
-
 {#if showCheckmark}
-  <div class="flex justify-center my-4">
-    <img src="/images/circle-check.svg" class="size-8" alt="Connected" />
+  <div class="h-12 w-12 mx-auto mb-2 text-success">
+    <CheckmarkIcon />
   </div>
+  <h1 class="text-xl font-medium flex-none text-center">Connected</h1>
 {:else if errorMessage}
-  <p class="text-error text-center mx-8 my-4">{errorMessage}</p>
+  <h1 class="text-xl font-medium flex-none text-center">Error Connecting</h1>
+  <p class="text-error text-center mx-8 my-4 text-sm">{errorMessage}</p>
   <div class="flex justify-center">
     <button
-      class="btn min-w-[130px]"
+      class="btn btn-primary btn-wide"
       on:click={tokenExchangeFailed ? createApiKeyFromToken : openSignup}
       >Try Again</button
     >
   </div>
 {:else}
-  <p class="text-center text-gray-700 mx-8 my-4">
-    Sign in or create an account to get started.
-  </p>
+  <div class="h-12 w-12 mx-auto mb-4">
+    <img src="/images/animated_logo.svg" alt="Kiln logo" />
+  </div>
+  <h1 class="text-xl font-medium flex-none text-center">
+    Connect Kiln Copilot
+  </h1>
+  <p class="text-center font-light mx-8 mb-8">Sign in or create an account.</p>
   <div class="flex justify-center">
     <button
-      class="btn min-w-[130px]"
+      class="btn btn-primary btn-wide"
       on:click={openSignup}
       disabled={connecting}
     >

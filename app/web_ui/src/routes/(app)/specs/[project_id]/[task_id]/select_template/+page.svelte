@@ -10,11 +10,16 @@
   import ToolsSelector from "$lib/ui/run_config_component/tools_selector.svelte"
   import type { SpecTemplateData } from "./spec_templates"
   import { tool_id_to_function_name } from "$lib/stores/tools_store"
+  import { agentInfo } from "$lib/agent"
 
   // ### Spec Template Select ###
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Select Eval Template",
+    description: `Select an eval template as part of the eval creation process for project ID ${project_id}, task ID ${task_id}. Choose from available eval workflow templates.`,
+  })
 
   let current_params = new URLSearchParams()
 

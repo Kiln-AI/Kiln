@@ -1,6 +1,13 @@
 <script lang="ts">
   import { goto } from "$app/navigation"
   import ConnectKilnCopilot from "./connect_kiln_copilot.svelte"
+  import { agentInfo } from "$lib/agent"
+
+  agentInfo.set({
+    name: "Setup: Kiln Copilot",
+    description:
+      "Onboarding step to connect Kiln Copilot for AI-assisted features.",
+  })
 </script>
 
 <div class="grow"></div>

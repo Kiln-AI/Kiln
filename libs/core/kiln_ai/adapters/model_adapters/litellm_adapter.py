@@ -63,6 +63,14 @@ MAX_TOOL_CALLS_PER_TURN = 30
 logger = logging.getLogger(__name__)
 
 
+def _validate_unmanaged_tools(tools: list[KilnToolInterface]) -> None:
+    for i, tool in enumerate(tools):
+        if not isinstance(tool, KilnToolInterface):
+            raise TypeError(
+                f"unmanaged_tools[{i}] must be a KilnToolInterface instance, got {type(tool).__name__}"
+            )
+
+
 @dataclass
 class ModelTurnResult:
     assistant_message: str
@@ -94,6 +102,10 @@ class LiteLlmAdapter(BaseAdapter):
             run_config=config.run_config_properties,
             config=base_adapter_config,
         )
+
+        unmanaged_tools = self.base_adapter_config.unmanaged_tools
+        if unmanaged_tools:
+            _validate_unmanaged_tools(unmanaged_tools)
 
     async def _run_model_turn(
         self,
@@ -475,8 +487,7 @@ class LiteLlmAdapter(BaseAdapter):
         # Don't love having this logic here. But it's worth the usability improvement
         # so better to keep it than exclude it. Should figure out how I want to isolate
         # this sort of logic so it's config driven and can be overridden
-
-        extra_body = {}
+        extra_body: dict[str, Any] = {}
         provider_options = {}
 
         run_config = as_kiln_agent_run_config(self.run_config)
@@ -639,6 +650,14 @@ class LiteLlmAdapter(BaseAdapter):
             **self._additional_body_options,
         }
 
+        if self.base_adapter_config.automatic_prompt_caching:
+            # Mark the last message for cache control. Litellm's AnthropicCacheControlHook
+            # handles provider-specific injection. Providers auto-cache matching prefixes,
+            # so marking the last message is sufficient for multi-turn conversations.
+            completion_kwargs["cache_control_injection_points"] = [
+                {"location": "message", "index": -1}
+            ]
+
         tool_calls = await self.litellm_tools()
         has_tools = len(tool_calls) > 0
         if has_tools:
@@ -703,6 +722,13 @@ class LiteLlmAdapter(BaseAdapter):
             usage.input_tokens = litellm_usage.get("prompt_tokens", None)
             usage.output_tokens = litellm_usage.get("completion_tokens", None)
             usage.total_tokens = litellm_usage.get("total_tokens", None)
+            prompt_details = litellm_usage.get("prompt_tokens_details", None)
+            if prompt_details and hasattr(prompt_details, "cached_tokens"):
+                usage.cached_tokens = prompt_details.cached_tokens
+            elif prompt_details:
+                logger.warning(
+                    f"prompt_tokens_details has unexpected type {type(prompt_details)}, cached_tokens not extracted"
+                )
         else:
             logger.warning(
                 f"Unexpected usage format from litellm: {litellm_usage}. Expected Usage object, got {type(litellm_usage)}"
@@ -723,11 +749,32 @@ class LiteLlmAdapter(BaseAdapter):
             self._cached_available_tools = await self.available_tools()
         return self._cached_available_tools
 
+    async def _tools_for_execution(self) -> list[KilnToolInterface]:
+        """Registry-resolved tools plus :attr:`AdapterConfig.unmanaged_tools` (same order as ``litellm_tools``)."""
+        registry = await self.cached_available_tools()
+        unmanaged = self.base_adapter_config.unmanaged_tools or []
+        return registry + unmanaged
+
     async def litellm_tools(self) -> list[ToolCallDefinition]:
         available_tools = await self.cached_available_tools()
 
-        # LiteLLM takes the standard OpenAI-compatible tool call format
-        return [await tool.toolcall_definition() for tool in available_tools]
+        registry_defs = [await tool.toolcall_definition() for tool in available_tools]
+        unmanaged = self.base_adapter_config.unmanaged_tools
+        unmanaged_defs = (
+            [await t.toolcall_definition() for t in unmanaged] if unmanaged else []
+        )
+
+        merged = registry_defs + unmanaged_defs
+        seen_names: set[str] = set()
+        for d in merged:
+            name = d["function"]["name"]
+            if name in seen_names:
+                raise ValueError(
+                    f"Duplicate tool name {name!r}: unmanaged and registry tools must have unique names."
+                )
+            seen_names.add(name)
+
+        return merged
 
     async def process_tool_calls(
         self, tool_calls: list[ChatCompletionMessageToolCall] | None
@@ -749,7 +796,7 @@ class LiteLlmAdapter(BaseAdapter):
             # Process normal tool calls (not the "task_response" tool)
             tool_name = tool_call.function.name
             tool = None
-            for tool_option in await self.cached_available_tools():
+            for tool_option in await self._tools_for_execution():
                 if await tool_option.name() == tool_name:
                     tool = tool_option
                     break

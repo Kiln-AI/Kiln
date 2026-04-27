@@ -1,0 +1,16 @@
+export enum Section {
+  Dataset,
+  Documents,
+  Settings,
+  Prompts,
+  Specs,
+  Generate,
+  Run,
+  FineTune,
+  Models,
+  Tools,
+  Skills,
+  Optimize,
+  Chat,
+  None,
+}

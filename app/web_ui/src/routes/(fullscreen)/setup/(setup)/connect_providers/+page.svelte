@@ -1,5 +1,11 @@
 <script lang="ts">
   import ConnectProviders from "./connect_providers.svelte"
+  import { agentInfo } from "$lib/agent"
+
+  agentInfo.set({
+    name: "Setup: Connect Providers",
+    description: "Onboarding step to connect AI provider API keys.",
+  })
 
   let has_connected_providers = false
   let intermediate_step = false
@@ -37,6 +43,6 @@
     href="/setup/create_project"
     class="flex-none {next_visible ? '' : 'hidden'}"
   >
-    <button class="btn btn-primary w-full min-w-[130px]"> Continue </button>
+    <button class="btn btn-primary w-full btn-wide"> Continue </button>
   </a>
 </div>

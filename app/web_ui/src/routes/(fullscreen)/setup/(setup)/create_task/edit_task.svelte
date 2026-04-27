@@ -4,6 +4,10 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import FormList from "$lib/utils/form_list.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
+  import {
+    filename_string_validator_default,
+    normalize_filename_string,
+  } from "$lib/utils/input_validators"
   import SchemaSection from "./schema_section.svelte"
   import {
     current_project,
@@ -121,6 +125,7 @@
         )
         return
       }
+      task.name = normalize_filename_string(task.name)
       let body: Record<string, unknown> = {
         name: task.name,
         description: task.description,
@@ -185,9 +190,8 @@
       // Make this the current task
       ui_state.set({
         ...get(ui_state),
-        current_task_id: data.id,
-        current_project_id: target_project_id,
-        current_task_rating_options: null,
+        current_task_id: data.id ?? null,
+        current_project_id: target_project_id ?? null,
       })
       saved = true
       reset_initial_values()
@@ -315,6 +319,7 @@
       description="A description for you and your team, not used by the model."
       bind:value={task.name}
       max_length={120}
+      validator={filename_string_validator_default}
     />
 
     <FormElement

@@ -10,6 +10,8 @@ from uvicorn import Config as UvicornConfig
 import app.desktop.desktop_server as desktop_server
 from app.desktop.desktop import DesktopApp, DesktopServer
 
+TEST_PORT = 8123
+
 
 @pytest.fixture(autouse=True)
 def mock_gui_modules():
@@ -64,7 +66,7 @@ class TestDesktopApp:
 
     def test_init(self, mock_tk_root):
         """Test DesktopApp initialization."""
-        app = DesktopApp()
+        app = DesktopApp(port=TEST_PORT)
 
         assert app.root == mock_tk_root
         assert app.tray is None
@@ -73,7 +75,7 @@ class TestDesktopApp:
 
     def test_start(self, mock_tk_root, mock_kiln_tray):
         """Test app start method."""
-        app = DesktopApp()
+        app = DesktopApp(port=TEST_PORT)
 
         # Mock the mainloop to prevent hanging
         mock_tk_root.mainloop = Mock()
@@ -100,7 +102,7 @@ class TestDesktopApp:
 
     def test_quit_app_with_tray_and_root(self, mock_tk_root, mock_kiln_tray):
         """Test quit_app when both tray and root exist."""
-        app = DesktopApp()
+        app = DesktopApp(port=TEST_PORT)
         app.tray = mock_kiln_tray
 
         app.quit_app()
@@ -110,7 +112,7 @@ class TestDesktopApp:
 
     def test_quit_app_no_tray(self, mock_tk_root):
         """Test quit_app when tray is None."""
-        app = DesktopApp()
+        app = DesktopApp(port=TEST_PORT)
         app.tray = None
 
         app.quit_app()
@@ -120,7 +122,7 @@ class TestDesktopApp:
 
     def test_on_quit_with_root(self, mock_tk_root):
         """Test on_quit when root exists."""
-        app = DesktopApp()
+        app = DesktopApp(port=TEST_PORT)
 
         with patch.object(app, "quit_app") as mock_quit_app:
             app.on_quit()
@@ -130,7 +132,7 @@ class TestDesktopApp:
 
     def test_on_quit_without_root(self, mock_tk_root):
         """Test on_quit when root is None."""
-        app = DesktopApp()
+        app = DesktopApp(port=TEST_PORT)
 
         with patch.object(app, "quit_app") as mock_quit_app:
             with patch.object(app, "root", None):
@@ -141,15 +143,15 @@ class TestDesktopApp:
 
     def test_show_studio(self, mock_tk_root, mock_webbrowser):
         """Test show_studio opens the correct URL."""
-        app = DesktopApp()
+        app = DesktopApp(port=TEST_PORT)
 
         app.show_studio()
 
-        mock_webbrowser.open.assert_called_once_with("http://localhost:8757")
+        mock_webbrowser.open.assert_called_once_with(f"http://localhost:{TEST_PORT}")
 
     def test_resource_path_with_meipass(self, mock_tk_root):
         """Test resource_path when running from PyInstaller bundle."""
-        app = DesktopApp()
+        app = DesktopApp(port=TEST_PORT)
 
         with patch.object(sys, "_MEIPASS", "/bundled/path", create=True):
             result = app.resource_path("icon.png")
@@ -159,7 +161,7 @@ class TestDesktopApp:
 
     def test_resource_path_without_meipass(self, mock_tk_root):
         """Test resource_path when running from source."""
-        app = DesktopApp()
+        app = DesktopApp(port=TEST_PORT)
 
         # Ensure _MEIPASS doesn't exist
         if hasattr(sys, "_MEIPASS"):
@@ -174,7 +176,7 @@ class TestDesktopApp:
         self, mock_tk_root, mock_image, mock_kiln_tray, mock_kiln_menu_item
     ):
         """Test run_tray when tray doesn't exist yet."""
-        app = DesktopApp()
+        app = DesktopApp(port=TEST_PORT)
 
         with patch.object(app, "resource_path", return_value="taskbar.png"):
             app.run_tray()
@@ -197,7 +199,7 @@ class TestDesktopApp:
 
     def test_run_tray_already_exists(self, mock_tk_root, mock_kiln_tray):
         """Test run_tray when tray already exists."""
-        app = DesktopApp()
+        app = DesktopApp(port=TEST_PORT)
         app.tray = mock_kiln_tray
 
         with patch.object(app, "resource_path") as mock_resource_path:
@@ -211,7 +213,7 @@ class TestDesktopApp:
         self, mock_tk_root, mock_image, mock_kiln_tray, mock_kiln_menu_item
     ):
         """Test run_tray sets default=True on Windows."""
-        app = DesktopApp()
+        app = DesktopApp(port=TEST_PORT)
 
         with patch.object(app, "resource_path", return_value="taskbar.png"):
             app.run_tray()
@@ -225,7 +227,7 @@ class TestDesktopApp:
         self, mock_tk_root, mock_image, mock_kiln_tray, mock_kiln_menu_item
     ):
         """Test run_tray sets default=False on macOS."""
-        app = DesktopApp()
+        app = DesktopApp(port=TEST_PORT)
 
         with patch.object(app, "resource_path", return_value="taskbar.png"):
             app.run_tray()
@@ -236,7 +238,7 @@ class TestDesktopApp:
 
     def test_close_splash_with_pyi_splash(self, mock_tk_root):
         """Test close_splash when pyi_splash is available."""
-        app = DesktopApp()
+        app = DesktopApp(port=TEST_PORT)
 
         mock_pyi_splash = Mock()
         with patch.dict("sys.modules", {"pyi_splash": mock_pyi_splash}):
@@ -246,7 +248,7 @@ class TestDesktopApp:
 
     def test_close_splash_without_pyi_splash(self, mock_tk_root):
         """Test close_splash when pyi_splash is not available."""
-        app = DesktopApp()
+        app = DesktopApp(port=TEST_PORT)
 
         # Should not raise an exception
         app.close_splash()
@@ -257,7 +259,7 @@ class TestDesktopServer:
 
     def test_init(self, mock_tk_root):
         """Test DesktopServer initialization."""
-        app = DesktopApp()
+        app = DesktopApp(port=TEST_PORT)
         config = Mock(spec=UvicornConfig)
 
         server = DesktopServer(app, config)
@@ -267,7 +269,7 @@ class TestDesktopServer:
 
     def test_run_in_thread_calls_app_on_quit(self, mock_tk_root):
         """Test that run_in_thread calls app.on_quit when context exits."""
-        app = DesktopApp()
+        app = DesktopApp(port=TEST_PORT)
         config = Mock(spec=UvicornConfig)
         server = DesktopServer(app, config)
 
@@ -290,7 +292,7 @@ def test_desktop_app_server():
     """Test the desktop app server integration (existing test)."""
     # random port between 9000 and 12000
     port = random.randint(9000, 12000)
-    config = desktop_server.server_config(port=port)
+    config = desktop_server.server_config(port=port, host="127.0.0.1")
     uni_server = desktop_server.ThreadedServer(config=config)
     with uni_server.run_in_thread():
         r = requests.get("http://127.0.0.1:{}/ping".format(port))

@@ -7,13 +7,18 @@
   import {
     prompt_generator_categories,
     type PromptGeneratorTemplate,
-  } from "./prompt_generators"
+  } from "$lib/prompt_generators"
   import { client } from "$lib/api_client"
   import { onMount } from "svelte"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Prompt Generators",
+    description: `Choose a prompt generation method for project ID ${project_id}, task ID ${task_id}. Options include manual, AI-generated, and optimization-based approaches.`,
+  })
 
   let has_rated_data = false
   let has_repair_data = false
@@ -40,7 +45,9 @@
             run.rating.value !== null &&
             run.rating.value !== undefined,
         )
-        has_repair_data = data.some((run) => run.repair_state === "repaired")
+        has_repair_data = data.some(
+          (run) => run.repair_state?.toLowerCase() === "repaired",
+        )
       }
     } catch (e) {
       error = createKilnError(e)

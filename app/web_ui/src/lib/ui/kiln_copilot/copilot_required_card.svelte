@@ -1,29 +1,52 @@
 <script lang="ts">
   import Intro from "../intro.svelte"
+
+  export let title: string = "Kiln Copilot Required"
+  export let description_markdown: string
+  export let auth_href: string
+  export let learn_more_label: string | null = null
+  export let learn_more_href: string | null = null
+  export let compact: boolean = false
+  export let connect_button_label: string = "Connect Kiln Copilot"
+  export let icon: "logo" | "chat" = "logo"
 </script>
 
-<div class="flex flex-col items-center justify-center min-h-[60vh]">
+<div
+  class="flex flex-col items-center justify-center {compact
+    ? 'flex-1 min-h-0 min-w-0 overflow-y-auto py-3'
+    : 'min-h-[60vh]'}"
+>
   <Intro
-    title="Kiln Copilot Required"
-    description_markdown="Automatically optimize your prompts with state-of-the-art techniques.\n**Prompt optimization requires a Kiln Copilot paid plan.**"
+    {title}
+    {description_markdown}
     action_buttons={[
       {
-        label: "Connect Kiln Copilot",
-        href: "/prompt_optimization/copilot_auth",
+        label: connect_button_label,
+        href: auth_href,
         is_primary: true,
       },
-      {
-        label: "Learn More",
-        href: "https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer",
-        is_primary: false,
-        new_tab: true,
-      },
+      ...(learn_more_label && learn_more_href
+        ? [
+            {
+              label: learn_more_label,
+              href: learn_more_href,
+              is_primary: false,
+              new_tab: true,
+            },
+          ]
+        : []),
     ]}
   >
     <div slot="icon">
-      <div class="h-12 w-12">
-        <img src="/images/animated_logo.svg" alt="Kiln Copilot" />
-      </div>
+      {#if icon === "logo"}
+        <div class="h-12 w-12">
+          <img src="/images/animated_logo.svg" alt="Kiln logo" />
+        </div>
+      {:else if icon === "chat"}
+        <div class="w-16">
+          <img src="/images/chat_icon.svg" alt="Kiln chat icon" />
+        </div>
+      {/if}
     </div>
   </Intro>
 </div>

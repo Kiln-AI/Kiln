@@ -1,8 +1,168 @@
-import { describe, it, expect } from "vitest"
-import { formatSize, mime_type_to_string, capitalize } from "./formatters"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
+import {
+  formatDate,
+  formatSize,
+  mime_type_to_string,
+  capitalize,
+} from "./formatters"
 
 import type { StructuredOutputMode } from "$lib/types"
 import { structuredOutputModeToString } from "./formatters"
+
+describe("formatDate", () => {
+  // Pin "now" to 2026-04-16T13:26:04.806Z for all tests.
+  // This is a fixed UTC instant; the local representation depends on the
+  // runner's TZ, but relative-time math is TZ-independent since both
+  // Date.now() and Date.parse() return epoch-ms.
+  const FAKE_NOW = new Date("2026-04-16T13:26:04.806Z")
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(FAKE_NOW)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  // -- edge cases --
+
+  it('returns "Unknown" for undefined', () => {
+    expect(formatDate(undefined)).toBe("Unknown")
+  })
+
+  it('returns "Unknown" for empty string', () => {
+    expect(formatDate("")).toBe("Unknown")
+  })
+
+  // -- "just now" (< 60 s ago) --
+
+  it('returns "just now" for UTC Z timestamp within last minute', () => {
+    expect(formatDate("2026-04-16T13:25:30.000Z")).toBe("just now")
+  })
+
+  it('returns "just now" for negative-offset timestamp within last minute', () => {
+    // Same instant as 13:25:30Z expressed in UTC-4
+    expect(formatDate("2026-04-16T09:25:30.000-04:00")).toBe("just now")
+  })
+
+  it('returns "just now" for positive-offset timestamp within last minute', () => {
+    // Same instant as 13:25:30Z expressed in UTC+8
+    expect(formatDate("2026-04-16T21:25:30.000+08:00")).toBe("just now")
+  })
+
+  // -- "1 minute ago" (60-119 s) --
+
+  it('returns "1 minute ago" for UTC Z timestamp ~90 s ago', () => {
+    // 90 seconds before FAKE_NOW
+    expect(formatDate("2026-04-16T13:24:34.806Z")).toBe("1 minute ago")
+  })
+
+  it('returns "1 minute ago" for offset timestamp ~90 s ago', () => {
+    expect(formatDate("2026-04-16T09:24:34.806-04:00")).toBe("1 minute ago")
+  })
+
+  // -- "N minutes ago" (2-59 min) --
+
+  it('returns "N minutes ago" for UTC Z timestamp 10 min ago', () => {
+    expect(formatDate("2026-04-16T13:16:04.806Z")).toBe("10 minutes ago")
+  })
+
+  it('returns "N minutes ago" for positive-offset timestamp 25 min ago', () => {
+    // 25 min before FAKE_NOW = 13:01:04.806Z = 21:01:04.806+08:00
+    expect(formatDate("2026-04-16T21:01:04.806+08:00")).toBe("25 minutes ago")
+  })
+
+  it('returns "N minutes ago" for negative-offset timestamp 25 min ago', () => {
+    // 25 min before FAKE_NOW = 13:01:04.806Z = 09:01:04.806-04:00
+    expect(formatDate("2026-04-16T09:01:04.806-04:00")).toBe("25 minutes ago")
+  })
+
+  // -- "today" (same calendar day in local TZ, > 1 hour ago) --
+
+  it('returns time + "today" for a timestamp earlier today', () => {
+    // 2 hours before FAKE_NOW in UTC. Whether this counts as "today" depends
+    // on the runner's local TZ (the function compares date.toDateString() to
+    // new Date().toDateString()). We compute the expected value the same way
+    // the function does so the test is TZ-independent.
+    const twoHoursAgo = new Date(FAKE_NOW.getTime() - 2 * 60 * 60 * 1000)
+    const sameDayLocally =
+      twoHoursAgo.toDateString() === FAKE_NOW.toDateString()
+
+    const result = formatDate(twoHoursAgo.toISOString())
+
+    if (sameDayLocally) {
+      expect(result).toContain("today")
+    } else {
+      // Near midnight in local TZ the 2-hour-ago timestamp might fall on the
+      // previous calendar day. In that case we get a full date string, which
+      // is also correct behavior.
+      expect(result).not.toBe("Unknown")
+      expect(result).not.toContain("minutes ago")
+    }
+  })
+
+  // -- older date (different calendar day) --
+
+  it("returns full formatted date for a timestamp from yesterday (Z)", () => {
+    const result = formatDate("2026-04-15T10:00:00.000Z")
+    expect(result).not.toBe("Unknown")
+    expect(result).not.toContain("ago")
+    // Should contain year, date digits, and am/pm
+    expect(result).toMatch(/2026/)
+  })
+
+  it("returns full formatted date for an offset timestamp from yesterday", () => {
+    const result = formatDate("2026-04-15T06:00:00.000-04:00")
+    expect(result).not.toBe("Unknown")
+    expect(result).not.toContain("ago")
+    expect(result).toMatch(/2026/)
+  })
+
+  // -- legacy naive ISO (no offset, no Z) --
+  // JS Date parses naive ISO as local time, which matches the legacy
+  // assumption that the writer and reader share the same TZ.
+
+  it('returns "just now" for a legacy naive ISO string within last minute', () => {
+    // Build a naive ISO string that represents "30 seconds ago" in the
+    // runner's local TZ. We derive it from FAKE_NOW so the test is
+    // deterministic regardless of which TZ the runner uses.
+    const thirtySecsAgo = new Date(FAKE_NOW.getTime() - 30_000)
+    const pad = (n: number) => String(n).padStart(2, "0")
+    const naive =
+      `${thirtySecsAgo.getFullYear()}-${pad(thirtySecsAgo.getMonth() + 1)}-${pad(thirtySecsAgo.getDate())}` +
+      `T${pad(thirtySecsAgo.getHours())}:${pad(thirtySecsAgo.getMinutes())}:${pad(thirtySecsAgo.getSeconds())}.000`
+
+    expect(formatDate(naive)).toBe("just now")
+  })
+
+  it('returns "N minutes ago" for a legacy naive ISO string 15 min ago', () => {
+    const fifteenMinAgo = new Date(FAKE_NOW.getTime() - 15 * 60_000)
+    const pad = (n: number) => String(n).padStart(2, "0")
+    const naive =
+      `${fifteenMinAgo.getFullYear()}-${pad(fifteenMinAgo.getMonth() + 1)}-${pad(fifteenMinAgo.getDate())}` +
+      `T${pad(fifteenMinAgo.getHours())}:${pad(fifteenMinAgo.getMinutes())}:${pad(fifteenMinAgo.getSeconds())}.000`
+
+    expect(formatDate(naive)).toBe("15 minutes ago")
+  })
+
+  // -- equivalence: same instant in different formats --
+
+  it("produces identical output for the same instant in Z, +offset, and -offset", () => {
+    // All represent the same UTC instant: 10 minutes before FAKE_NOW
+    const utcZ = "2026-04-16T13:16:04.806Z"
+    const plusEight = "2026-04-16T21:16:04.806+08:00"
+    const minusFour = "2026-04-16T09:16:04.806-04:00"
+
+    const resultZ = formatDate(utcZ)
+    const resultPlus = formatDate(plusEight)
+    const resultMinus = formatDate(minusFour)
+
+    expect(resultZ).toBe(resultPlus)
+    expect(resultZ).toBe(resultMinus)
+    expect(resultZ).toBe("10 minutes ago")
+  })
+})
 
 describe("formatters", () => {
   describe("formatSize", () => {

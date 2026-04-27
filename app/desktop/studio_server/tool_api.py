@@ -185,6 +185,7 @@ class ToolSetType(Enum):
     KILN_TASK = "kiln_task"
     DEMO = "demo"
     SKILL = "skill"
+    BUILTIN = "builtin"
 
 
 class ToolSetApiDescription(BaseModel):
@@ -404,6 +405,21 @@ def connect_tool_servers_api(app: FastAPI):
                     ],
                 )
             )
+
+        tool_sets.insert(
+            0,
+            ToolSetApiDescription(
+                type=ToolSetType.BUILTIN,
+                set_name="Kiln built-in tools",
+                tools=[
+                    ToolApiDescription(
+                        id=KilnBuiltInToolId.CALL_KILN_API.value,
+                        name="Call Kiln API",
+                        description="HTTP requests to the local Kiln API (paths under /api/...).",
+                    ),
+                ],
+            ),
+        )
 
         return tool_sets
 

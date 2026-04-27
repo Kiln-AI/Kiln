@@ -38,6 +38,7 @@
   import { indexedDBStore } from "$lib/stores/index_db_store"
   import { writable, type Writable } from "svelte/store"
   import { load_task_run_configs } from "$lib/stores/run_configs_store"
+  import { agentInfo } from "$lib/agent"
   let finetune_description = ""
   let finetune_name = ""
   const disabled_header = "disabled_header"
@@ -49,6 +50,10 @@
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Create Fine-Tune",
+    description: `Create a new fine-tuning job for project ID ${project_id}, task ID ${task_id}. Configure model, data strategy, and training parameters.`,
+  })
 
   let run_config_component: RunConfigComponent | null = null
 

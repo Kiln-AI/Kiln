@@ -9,6 +9,13 @@
     redirect_to_personal,
     redirect_after_registration,
   } from "../registration_helpers"
+  import { agentInfo } from "$lib/agent"
+
+  agentInfo.set({
+    name: "Setup: Work Registration",
+    description:
+      "Onboarding step to register a work account with name, email, and organization.",
+  })
 
   let email = ""
   let full_name = ""

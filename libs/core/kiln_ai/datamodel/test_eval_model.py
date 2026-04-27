@@ -1897,7 +1897,7 @@ def test_eval_upgrade_old_reference_answer_eval_config(mock_task, tmp_path):
         config_type=EvalConfigType.g_eval,
         properties={"eval_steps": ["step1"]},
     )
-    config1.created_at = datetime.now()
+    config1.created_at = datetime.now().astimezone()
     config1.save_to_file()
 
     config2 = EvalConfig(
@@ -1908,7 +1908,7 @@ def test_eval_upgrade_old_reference_answer_eval_config(mock_task, tmp_path):
         config_type=EvalConfigType.g_eval,
         properties={"eval_steps": ["step1"]},
     )
-    config2.created_at = datetime.now() + timedelta(seconds=1)
+    config2.created_at = datetime.now().astimezone() + timedelta(seconds=1)
     config2.save_to_file()
 
     # Load from file - should set the first (oldest) config as default

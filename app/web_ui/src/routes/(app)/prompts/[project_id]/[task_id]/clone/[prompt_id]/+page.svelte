@@ -10,9 +10,14 @@
   import { onMount } from "svelte"
   import PromptForm from "../../prompt_form.svelte"
 
+  import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: prompt_id = $page.params.prompt_id!
+  $: agentInfo.set({
+    name: "Clone Prompt",
+    description: `Clone prompt ID ${prompt_id} for project ID ${project_id}, task ID ${task_id}.`,
+  })
 
   let initial_prompt_name = ""
   let initial_prompt = ""

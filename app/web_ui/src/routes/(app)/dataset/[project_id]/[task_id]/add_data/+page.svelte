@@ -11,6 +11,7 @@
     get_splits_subtitle,
   } from "$lib/utils/splits_util"
   import { onMount, tick } from "svelte"
+  import { agentInfo } from "$lib/agent"
 
   const validReasons = ["generic", "eval", "fine_tune"] as const
   type Reason = (typeof validReasons)[number]
@@ -30,6 +31,11 @@
     name,
     value,
   }))
+
+  $: agentInfo.set({
+    name: "Add Data",
+    description: `Add data to dataset for project ID ${$page.params.project_id}, task ID ${$page.params.task_id}. Options include manual entry, file upload, synthetic generation, and eval-based generation.`,
+  })
 
   $: dataset_link = `/dataset/${$page.params.project_id}/${$page.params.task_id}`
   $: reason = validReasons.includes(

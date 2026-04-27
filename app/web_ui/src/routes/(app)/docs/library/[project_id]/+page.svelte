@@ -20,6 +20,7 @@
 
   import { ragProgressStore } from "$lib/stores/rag_progress_store"
   import TagPicker from "$lib/ui/tag_picker.svelte"
+  import { agentInfo } from "$lib/agent"
 
   let upload_file_dialog: UploadFileDialog | null = null
 
@@ -55,6 +56,19 @@
   }
 
   $: project_id = $page.params.project_id!
+  $: {
+    let desc = `Document library for project ID ${project_id}.`
+    if (filter_tags.length > 0) {
+      desc += ` Filtered by tags: ${filter_tags.join(", ")}.`
+    }
+    if (sortColumn !== "created_at" || sortDirection !== "desc") {
+      desc += ` Sorted by ${sortColumn} ${sortDirection}.`
+    }
+    agentInfo.set({
+      name: "Document Library",
+      description: desc,
+    })
+  }
 
   const columns = [
     { key: "kind", label: "Type" },

@@ -182,6 +182,41 @@ def test_build_repair_task_input_with_invalid_input(invalid_input):
         RepairTaskRun.build_repair_task_input(invalid_input)
 
 
+def test_build_repair_task_input_falls_back_when_prompt_id_unknown(
+    sample_task, sample_task_run
+):
+    # Simulate a legacy run whose prompt_id no longer resolves
+    assert sample_task_run.output.source is not None
+    assert sample_task_run.output.source.properties is not None
+    sample_task_run.output.source.properties["prompt_id"] = "no_such_prompt_builder_xyz"
+
+    result = RepairTaskRun.build_repair_task_input(
+        original_task=sample_task,
+        task_run=sample_task_run,
+        evaluator_feedback="Some feedback",
+    )
+
+    assert isinstance(result, RepairTaskInput)
+    # SimplePromptBuilder uses the task's instruction as the prompt
+    assert sample_task.instruction in result.original_prompt
+
+
+def test_build_repair_task_input_falls_back_when_source_missing(
+    sample_task, sample_task_run
+):
+    # Simulate a legacy run with no output source/properties at all
+    sample_task_run.output.source = None
+
+    result = RepairTaskRun.build_repair_task_input(
+        original_task=sample_task,
+        task_run=sample_task_run,
+        evaluator_feedback="Some feedback",
+    )
+
+    assert isinstance(result, RepairTaskInput)
+    assert sample_task.instruction in result.original_prompt
+
+
 @pytest.mark.paid
 async def test_live_run(sample_task, sample_task_run, sample_repair_data):
     if os.getenv("GROQ_API_KEY") is None:

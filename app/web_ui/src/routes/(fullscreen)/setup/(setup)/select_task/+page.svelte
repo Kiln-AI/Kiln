@@ -1,5 +1,11 @@
 <script lang="ts">
   import SelectTasksMenu from "../../../../(app)/select_tasks_menu.svelte"
+  import { agentInfo } from "$lib/agent"
+
+  agentInfo.set({
+    name: "Setup: Select Task",
+    description: "Onboarding step to select a project and task to get started.",
+  })
 </script>
 
 <div class="grow"></div>
