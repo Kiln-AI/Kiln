@@ -21,6 +21,7 @@ from uvicorn import Config as UvicornConfig
 
 from app.desktop.custom_tray import KilnMenuItem, KilnTray
 from app.desktop.desktop_server import ThreadedServer, server_config
+from app.desktop.studio_server._sentry_config import SENTRY_ENV, SENTRY_RELEASE
 from app.desktop.studio_server._version import __version__
 from app.desktop.util.resource_limits import setup_resource_limits
 
@@ -167,6 +168,8 @@ class DesktopServer(ThreadedServer):
 
 
 def desktop_release_name() -> str:
+    if SENTRY_RELEASE:
+        return SENTRY_RELEASE
     if not __version__:
         logger.warning("__version__ is not set, using unknown version")
         return "kiln-studio-desktop@unknown"
@@ -180,6 +183,7 @@ if __name__ == "__main__":
         sentry_sdk.init(
             dsn="https://772eb4a3e07a8c15616b6187e034f158@o4511151852224512.ingest.de.sentry.io/4511151853731920",
             release=desktop_release_name(),
+            environment=SENTRY_ENV,
             send_default_pii=False,
             traces_sample_rate=1.0,
         )

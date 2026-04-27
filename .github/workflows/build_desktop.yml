@@ -12,6 +12,9 @@ jobs:
   build:
     name: Build Desktop Apps
     runs-on: ${{ matrix.os }}
+    env:
+      SENTRY_ENV_NAME: ${{ github.event_name == 'release' && 'production' || 'staging' }}
+      SENTRY_RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
     strategy:
       fail-fast: false
       matrix:
@@ -48,8 +51,10 @@ jobs:
           SENTRY_ORG: kiln-oy
           SENTRY_PROJECT: frontend
           VITE_KILN_ENABLE_SENTRY: "1"
-          VITE_KILN_SENTRY_ENV: ${{ github.event_name == 'release' && 'production' || 'staging' }}
-          VITE_KILN_SENTRY_RELEASE: ${{ github.event_name == 'release' && format('kiln-studio-web@{0}', github.event.release.tag_name) || format('kiln-studio-web@{0}', github.sha) }}
+          VITE_KILN_SENTRY_ENV: ${{ env.SENTRY_ENV_NAME }}
+          VITE_KILN_SENTRY_RELEASE: kiln-studio-web@${{ env.SENTRY_RELEASE_TAG }}
+          KILN_SENTRY_ENV: ${{ env.SENTRY_ENV_NAME }}
+          KILN_SENTRY_RELEASE: kiln-studio-desktop@${{ env.SENTRY_RELEASE_TAG }}
         run: uv run bash ./app/desktop/build_desktop_app.sh
 
       - name: Build Windows Installer

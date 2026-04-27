@@ -7,6 +7,9 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      SENTRY_ENV_NAME: production
+      SENTRY_RELEASE_TAG: ${{ github.event.release.tag_name }}
 
     steps:
       - uses: actions/checkout@v4
@@ -33,8 +36,10 @@ jobs:
           SENTRY_ORG: kiln-oy
           SENTRY_PROJECT: frontend
           VITE_KILN_ENABLE_SENTRY: "1"
-          VITE_KILN_SENTRY_ENV: production
-          VITE_KILN_SENTRY_RELEASE: kiln-studio-web@${{ github.event.release.tag_name }}
+          VITE_KILN_SENTRY_ENV: ${{ env.SENTRY_ENV_NAME }}
+          VITE_KILN_SENTRY_RELEASE: kiln-studio-web@${{ env.SENTRY_RELEASE_TAG }}
+          KILN_SENTRY_ENV: ${{ env.SENTRY_ENV_NAME }}
+          KILN_SENTRY_RELEASE: kiln-studio-desktop@${{ env.SENTRY_RELEASE_TAG }}
         run: uv run bash ./app/desktop/build_desktop_app.sh --build-bootloader
 
       - name: Sign internal files with Trusted Signing
