@@ -508,38 +508,23 @@ def test_task_data_guide():
     from kiln_ai.datamodel.task import TaskDataGuide
 
     guide = TaskDataGuide(
-        requirements="If cholesterol is high, never have low LDL",
-        examples="A typical patient record includes age, weight, cholesterol levels",
-        guide_run_ids=["run1", "run2"],
+        guide="If cholesterol is high, never have low LDL\n\n## Reference Examples\nExample 1:\nInput: test\nOutput: result",
     )
-    assert guide.requirements == "If cholesterol is high, never have low LDL"
-    assert (
-        guide.examples
-        == "A typical patient record includes age, weight, cholesterol levels"
-    )
-    assert guide.guide_run_ids == ["run1", "run2"]
-
-    # Defaults
-    guide_minimal = TaskDataGuide(requirements="Some rules")
-    assert guide_minimal.examples is None
-    assert guide_minimal.guide_run_ids == []
+    assert "cholesterol" in guide.guide
 
     # Serializes correctly
     data = guide.model_dump()
-    assert data["requirements"] == "If cholesterol is high, never have low LDL"
-    assert data["guide_run_ids"] == ["run1", "run2"]
+    assert "cholesterol" in data["guide"]
 
     # Deserializes correctly
     restored = TaskDataGuide.model_validate(data)
-    assert restored.requirements == guide.requirements
-    assert restored.examples == guide.examples
-    assert restored.guide_run_ids == guide.guide_run_ids
+    assert restored.guide == guide.guide
 
-    # Requirements is required and must be non-empty
+    # Guide is required and must be non-empty
     import pytest
 
     with pytest.raises(Exception):
-        TaskDataGuide(requirements="")
+        TaskDataGuide(guide="")
 
 
 def test_task_run_tags_validation():

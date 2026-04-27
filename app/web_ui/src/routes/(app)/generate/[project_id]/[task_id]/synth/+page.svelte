@@ -42,9 +42,7 @@
   const selected_template = guidance_data.selected_template
 
   type DataGuide = {
-    requirements: string
-    examples: string | null
-    guide_run_ids: string[]
+    guide: string
   }
   let data_guide: DataGuide | null = null
   let guide_loading = true

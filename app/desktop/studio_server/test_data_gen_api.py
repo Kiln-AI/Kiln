@@ -696,16 +696,12 @@ def test_save_and_get_data_gen_guide(
     response = client.put(
         "/api/projects/test_project/tasks/test_task/data_gen_guide",
         json={
-            "requirements": "If cholesterol is high, never have low LDL",
-            "examples": "Typical patient record example",
-            "guide_run_ids": ["run1", "run2"],
+            "guide": "If cholesterol is high, never have low LDL",
         },
     )
     assert response.status_code == 200
     result = response.json()
-    assert result["requirements"] == "If cholesterol is high, never have low LDL"
-    assert result["examples"] == "Typical patient record example"
-    assert result["guide_run_ids"] == ["run1", "run2"]
+    assert result["guide"] == "If cholesterol is high, never have low LDL"
 
     # Verify it's persisted via GET
     get_response = client.get(
@@ -713,35 +709,15 @@ def test_save_and_get_data_gen_guide(
     )
     assert get_response.status_code == 200
     get_result = get_response.json()
-    assert get_result["requirements"] == "If cholesterol is high, never have low LDL"
-    assert get_result["examples"] == "Typical patient record example"
+    assert get_result["guide"] == "If cholesterol is high, never have low LDL"
 
     # Verify task was actually saved to disk
     reloaded_task = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
     assert reloaded_task is not None
     assert reloaded_task.data_guide is not None
     assert (
-        reloaded_task.data_guide.requirements
-        == "If cholesterol is high, never have low LDL"
+        reloaded_task.data_guide.guide == "If cholesterol is high, never have low LDL"
     )
-
-
-def test_save_data_gen_guide_minimal(
-    mock_task_from_id,
-    test_task,
-    client,
-):
-    response = client.put(
-        "/api/projects/test_project/tasks/test_task/data_gen_guide",
-        json={
-            "requirements": "Some requirements",
-        },
-    )
-    assert response.status_code == 200
-    result = response.json()
-    assert result["requirements"] == "Some requirements"
-    assert result["examples"] is None
-    assert result["guide_run_ids"] == []
 
 
 def test_delete_data_gen_guide(
@@ -752,7 +728,7 @@ def test_delete_data_gen_guide(
     # First save a guide
     client.put(
         "/api/projects/test_project/tasks/test_task/data_gen_guide",
-        json={"requirements": "Some rules"},
+        json={"guide": "Some rules"},
     )
 
     # Delete it
@@ -776,13 +752,13 @@ def test_save_data_gen_guide_overwrites_previous(
     # Save first guide
     client.put(
         "/api/projects/test_project/tasks/test_task/data_gen_guide",
-        json={"requirements": "First version"},
+        json={"guide": "First version"},
     )
 
     # Overwrite with second
     response = client.put(
         "/api/projects/test_project/tasks/test_task/data_gen_guide",
-        json={"requirements": "Second version", "examples": "New examples"},
+        json={"guide": "Second version with examples"},
     )
     assert response.status_code == 200
 
@@ -790,5 +766,4 @@ def test_save_data_gen_guide_overwrites_previous(
         "/api/projects/test_project/tasks/test_task/data_gen_guide"
     )
     result = get_response.json()
-    assert result["requirements"] == "Second version"
-    assert result["examples"] == "New examples"
+    assert result["guide"] == "Second version with examples"

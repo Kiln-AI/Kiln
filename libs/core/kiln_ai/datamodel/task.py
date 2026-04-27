@@ -62,17 +62,9 @@ class TaskRequirement(BaseModel):
 class TaskDataGuide(BaseModel):
     """Persistent guidance for synthetic data generation, stored on a Task."""
 
-    requirements: str = Field(
+    guide: str = Field(
         min_length=1,
-        description="Rules, constraints, and structure for generated task inputs.",
-    )
-    examples: str | None = Field(
-        default=None,
-        description="Optional freeform text describing what good task inputs look like.",
-    )
-    guide_run_ids: list[str] = Field(
-        default=[],
-        description="IDs of TaskRuns saved as guide examples from the builder loop.",
+        description="The data guide prompt: a markdown string appended to future synthetic data generation to improve quality.",
     )
 
 

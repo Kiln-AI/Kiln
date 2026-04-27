@@ -96,7 +96,6 @@ The user message will contain the following:
 def generate_sample_generation_prompt(
     gen_type: Literal["training", "eval"],
     guidance: str | None = None,
-    guide_examples: list[tuple[str, str | None]] | None = None,
 ) -> str:
     """
     Generate a prompt for generating samples.
@@ -128,27 +127,6 @@ Example generated inputs: {"generated_samples": ["New iPhone looks amazing! I ne
 
 Note how the output of this task is data to input into the system prompt, not the expected output of the system prompt.
 
-"""
-
-    if guide_examples:
-        prompt += """
-## Guide Examples
-
-Below are examples of high-quality input/output pairs for this task. Use these to understand the expected format, style, and content. Your generated inputs should be similar in structure but diverse in content.
-
-"""
-        for i, (example_input, example_output) in enumerate(guide_examples, 1):
-            prompt += f"""<guide_example_{i}>
-<input>
-{example_input}
-</input>
-"""
-            if example_output:
-                prompt += f"""<output>
-{example_output}
-</output>
-"""
-            prompt += f"""</guide_example_{i}>
 """
 
     if guidance:
@@ -297,40 +275,29 @@ When generating Q&A pairs, focus on generating queries and answers that are rele
 
 def generate_guidance_refinement_prompt(
     task_instruction: str,
-    current_requirements: str,
-    current_examples: str | None,
+    current_guide: str,
     preview_samples: list[tuple[str, str]],
     feedback: str,
 ) -> str:
-    """Generate a prompt for refining Task Data Guide requirements based on user feedback."""
+    """Generate a prompt for refining a Task Data Guide based on user feedback."""
 
-    prompt = f"""You are an expert at writing guidance for synthetic data generation. Your job is to refine guidance that controls the structure, format, and content of generated **task inputs**. The outputs are handled separately by the task itself — you should only focus on improving input generation.
+    prompt = f"""You are an expert at writing guidance for synthetic data generation. Your job is to refine a data guide that controls the structure, format, and content of generated synthetic data — both inputs and outputs.
 
 ## Context
 
-A user is generating synthetic inputs for the following task:
+A user is generating synthetic data for the following task:
 <task_instruction>
 {task_instruction}
 </task_instruction>
 
-They wrote the following requirements to describe what generated inputs should look like — their structure, format, domain rules, and constraints:
-<current_requirements>
-{current_requirements}
-</current_requirements>
-"""
+Their current data guide (a prompt appended to future synthetic data generation) is:
+<current_guide>
+{current_guide}
+</current_guide>
 
-    if current_examples:
-        prompt += f"""
-They also provided these descriptions of what good inputs look like:
-<current_examples>
-{current_examples}
-</current_examples>
-"""
-
-    prompt += """
 ## Generated Samples
 
-The following samples were generated using the current requirements. The output column is shown for context only — the user's feedback is about the inputs, not the outputs:
+The following samples were generated using the current guide:
 
 """
     for i, (sample_input, sample_output) in enumerate(preview_samples, 1):
@@ -343,21 +310,20 @@ The following samples were generated using the current requirements. The output 
     prompt += f"""
 ## User Feedback
 
-The user's feedback on what's wrong with the generated inputs:
+The user's feedback on what's wrong with the generated data:
 <feedback>
 {feedback}
 </feedback>
 
 ## Your Task
 
-Rewrite the requirements so that future generated inputs address the user's feedback. Focus on:
-1. The structure and format of task inputs (e.g. JSON fields, required properties, value ranges)
-2. Domain-specific rules and constraints about the input data (e.g. "cholesterol and LDL must correlate")
-3. Input quality issues (e.g. "values should be realistic", "include edge cases")
-4. Keep existing rules that are still valid
+Rewrite the data guide so that future generated data addresses the user's feedback. Focus on:
+1. The structure and format of inputs and outputs (e.g. JSON fields, required properties, value ranges)
+2. Domain-specific rules and constraints (e.g. "cholesterol and LDL must correlate")
+3. Data quality issues (e.g. "values should be realistic", "include edge cases")
+4. Output quality and style (e.g. tone, format, level of detail)
+5. Keep existing guidance that is still valid, including any reference examples
 
-The requirements should be clear, specific instructions that guide an LLM generating synthetic task inputs — not instructions about the task's output behavior.
-
-Only refine the examples if they exist and need changes based on the feedback. If the examples are fine as-is, return them unchanged. If no examples were provided, leave examples as null."""
+The guide should be clear, specific instructions that guide an LLM generating synthetic data for this task."""
 
     return prompt

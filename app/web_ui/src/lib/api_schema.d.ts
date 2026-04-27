@@ -6526,15 +6526,10 @@ export interface components {
         /** GuidePreviewInput */
         GuidePreviewInput: {
             /**
-             * Requirements
-             * @description Domain rules and constraints for generation
+             * Guide
+             * @description The data guide prompt string
              */
-            requirements: string;
-            /**
-             * Examples
-             * @description Optional freeform text describing data examples
-             */
-            examples?: string | null;
+            guide: string;
             /** @description The model config to use for preview generation */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
             /**
@@ -6560,15 +6555,10 @@ export interface components {
         /** GuideRefineInput */
         GuideRefineInput: {
             /**
-             * Current Requirements
-             * @description The current requirements text
+             * Current Guide
+             * @description The current data guide prompt string
              */
-            current_requirements: string;
-            /**
-             * Current Examples
-             * @description The current examples text
-             */
-            current_examples?: string | null;
+            current_guide: string;
             /**
              * Feedback
              * @description User feedback on what's wrong with preview samples
@@ -6585,15 +6575,10 @@ export interface components {
         /** GuideRefineResponse */
         GuideRefineResponse: {
             /**
-             * Refined Requirements
-             * @description The refined requirements text
+             * Refined Guide
+             * @description The refined data guide prompt string
              */
-            refined_requirements: string;
-            /**
-             * Refined Examples
-             * @description The refined examples text
-             */
-            refined_examples?: string | null;
+            refined_guide: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -8557,27 +8542,10 @@ export interface components {
         /** SaveTaskDataGuideInput */
         SaveTaskDataGuideInput: {
             /**
-             * Requirements
-             * @description Rules, constraints, and structure for generated task inputs
+             * Guide
+             * @description The data guide prompt string to persist
              */
-            requirements: string;
-            /**
-             * Examples
-             * @description Optional freeform text describing what good task inputs look like
-             */
-            examples?: string | null;
-            /**
-             * Guide Run Ids
-             * @description IDs of existing TaskRuns to use as guide examples
-             * @default []
-             */
-            guide_run_ids: string[];
-            /**
-             * Approved Samples
-             * @description Approved preview samples to save as TaskRuns and add to guide_run_ids
-             * @default []
-             */
-            approved_samples: components["schemas"]["GuidePreviewSample"][];
+            guide: string;
         };
         /**
          * ScanProjectsRequest
@@ -9167,21 +9135,10 @@ export interface components {
          */
         TaskDataGuide: {
             /**
-             * Requirements
-             * @description Rules, constraints, and structure for generated task inputs.
+             * Guide
+             * @description The data guide prompt: a markdown string appended to future synthetic data generation to improve quality.
              */
-            requirements: string;
-            /**
-             * Examples
-             * @description Optional freeform text describing what good task inputs look like.
-             */
-            examples?: string | null;
-            /**
-             * Guide Run Ids
-             * @description IDs of TaskRuns saved as guide examples from the builder loop.
-             * @default []
-             */
-            guide_run_ids: string[];
+            guide: string;
         };
         /**
          * TaskInfoApi

@@ -7,7 +7,7 @@
   import { createEventDispatcher, onMount } from "svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
-  import { KilnError } from "$lib/utils/error_handlers"
+  import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type { TaskRun, KilnAgentRunConfigProperties } from "$lib/types"
   import { isKilnAgentRunConfig } from "$lib/types"
   import {
@@ -32,10 +32,33 @@
   // Rules list
   export let guide_rules: GuideRule[] = []
 
-  // Build requirements markdown from rules
-  export function build_requirements_markdown(): string {
-    if (guide_rules.length === 0) return ""
-    return guide_rules.map((r) => `## ${r.name}\n${r.content}`).join("\n\n")
+  // Build the complete guide prompt from examples + rules
+  function build_guide_markdown(): string {
+    const parts: string[] = []
+
+    const valid_examples = guide_examples.filter(
+      (e) => e.input.trim() || e.output.trim(),
+    )
+    if (valid_examples.length > 0) {
+      const example_text = valid_examples
+        .map(
+          (e, i) =>
+            `## Example ${i + 1}\n**Input:**\n${e.input}\n\n**Output:**\n${e.output}`,
+        )
+        .join("\n\n")
+      parts.push(`# Reference Examples\n\n${example_text}`)
+    }
+
+    if (guide_rules.length > 0) {
+      const rules_text = guide_rules
+        .map((r) => `## ${r.name}\n${r.content}`)
+        .join("\n\n")
+      parts.push(`# Rules & Guidelines\n\n${rules_text}`)
+    }
+
+    return (
+      parts.join("\n\n") || "Generate diverse, realistic inputs for this task."
+    )
   }
 
   // --- Example management ---
@@ -152,7 +175,21 @@
   let run_config_component: RunConfigComponent | null = null
 
   function open_generate_dialog() {
-    generate_dialog?.show()
+    try {
+      dialog_submitting = true
+      const valid_examples = guide_examples.filter(
+        (e) => e.input.trim() || e.output.trim(),
+      )
+      if (valid_examples.length === 0) {
+        throw new KilnError("At least one example is required.")
+      }
+      dialog_error = null
+      generate_dialog?.show()
+    } catch (e) {
+      dialog_error = createKilnError(e)
+    } finally {
+      dialog_submitting = false
+    }
   }
 
   function handle_generate_submit() {
@@ -170,9 +207,8 @@
       return
     }
     generate_dialog?.close()
-    const all_examples = get_all_examples()
     dispatch("generate_preview", {
-      selected_examples: all_examples,
+      guide: build_guide_markdown(),
       run_config,
     })
   }
@@ -180,14 +216,10 @@
   // --- Events ---
   const dispatch = createEventDispatcher<{
     generate_preview: {
-      selected_examples: GuideSample[]
+      guide: string
       run_config: KilnAgentRunConfigProperties
     }
   }>()
-
-  export function get_all_examples(): GuideSample[] {
-    return guide_examples.filter((e) => e.input.trim() || e.output.trim())
-  }
 
   // --- Expandable rows ---
   let expanded_examples: boolean[] = []
@@ -216,11 +248,11 @@
       <div>
         <div class="font-medium">Example Data</div>
         <div class="text-sm text-gray-500">
-          Provide examples of real task data to guide synthetic generation.
+          Provide examples of real task data to guide synthetic data generation.
         </div>
       </div>
       <button
-        class="btn btn-sm btn-outline"
+        class="btn btn-sm btn-outline btn-primary"
         on:click={open_add_example_dialog}
         type="button">+ Add Example</button
       >
@@ -289,13 +321,14 @@
   <div class="flex flex-col gap-2">
     <div class="flex items-center justify-between">
       <div>
-        <div class="font-medium">Rules & Descriptions</div>
+        <div class="font-medium">Rules & Guidelines</div>
         <div class="text-sm text-gray-500">
-          Define rules, constraints, and structure for generated task inputs.
+          Define the rules, constraints, and format for generated inputs and
+          outputs.
         </div>
       </div>
       <button
-        class="btn btn-sm btn-outline"
+        class="btn btn-sm btn-outline btn-primary"
         on:click={open_add_rule_dialog}
         type="button">+ Add Rule</button
       >
@@ -306,8 +339,8 @@
         <table class="table table-fixed">
           <thead>
             <tr>
-              <th style="width: 200px">Name</th>
-              <th>Content</th>
+              <th style="width: 200px">Title</th>
+              <th>Description</th>
               <th style="width: 50px"></th>
             </tr>
           </thead>
@@ -322,26 +355,15 @@
                 </td>
                 <td class="py-2 p-0">
                   <div class="dropdown dropdown-end dropdown-hover">
-                    <TableButton />
-                    <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-                    <ul
-                      tabindex="0"
-                      class="dropdown-content menu bg-base-100 rounded-box z-[1] w-40 p-2 shadow"
-                    >
-                      <li>
-                        <button
-                          on:click|stopPropagation={() =>
-                            open_edit_rule_dialog(i)}
-                        >
-                          Edit
-                        </button>
-                      </li>
-                      <li>
-                        <button on:click|stopPropagation={() => remove_rule(i)}>
-                          Remove
-                        </button>
-                      </li>
-                    </ul>
+                    <TableActionMenu
+                      items={[
+                        {
+                          label: "Edit",
+                          onclick: () => open_edit_rule_dialog(i),
+                        },
+                        { label: "Remove", onclick: () => remove_rule(i) },
+                      ]}
+                    />
                   </div>
                 </td>
               </tr>
@@ -364,13 +386,14 @@
   bind:this={example_dialog}
   width="wide"
   title={example_mode === "edit" ? "Edit Example" : "Add Example"}
+  sub_subtitle="Provide a real example of task data to guide generation."
 >
   {#if example_mode === "add" && example_add_method === null}
     <!-- Method selection -->
-    <div class="flex flex-col gap-4 mt-4">
+    <div class="flex flex-col gap-4 mt-8">
       {#if available_runs.length > 0}
         <button
-          class="btn btn-outline"
+          class="btn btn-outline mb-2"
           on:click={() => (example_add_method = "manual")}
           type="button"
         >
@@ -381,12 +404,12 @@
       {#if !loading_runs && available_runs.length > 0}
         <div class="flex items-center gap-2">
           <div class="flex-1 border-t border-base-300"></div>
-          <span class="text-sm text-gray-400">or</span>
+          <span class="text-sm text-gray-400">or Select Existing</span>
           <div class="flex-1 border-t border-base-300"></div>
         </div>
 
         <!-- Select from existing runs -->
-        <div class="mt-4">
+        <div class="flex flex-col mt-2 gap-2">
           {#if loading_runs}
             <div class="text-sm text-gray-400">Loading existing samples...</div>
           {:else}
@@ -434,7 +457,8 @@
 <Dialog
   bind:this={rule_dialog}
   width="wide"
-  title={rule_mode === "edit" ? "Edit Rule" : "Add Rule / Description"}
+  title={rule_mode === "edit" ? "Edit Rule" : "Add Rule or Guideline"}
+  sub_subtitle="Specify how inputs and outputs should behave."
 >
   <FormContainer
     submit_label={rule_mode === "edit" ? "Save" : "Add"}
@@ -443,12 +467,18 @@
     bind:submitting={dialog_submitting}
     compact_button={true}
   >
-    <FormElement label="Name" id="rule_name" bind:value={editing_rule_name} />
     <FormElement
-      label="Content"
+      label="Title"
+      id="rule_name"
+      bind:value={editing_rule_name}
+      placeholder="e.g. Realistic User Scenarios"
+    />
+    <FormElement
+      label="Description"
       id="rule_content"
       inputType="textarea"
       height="medium"
+      placeholder="e.g. Include realistic user scenarios in the input to help the model generate more relevant outputs."
       bind:value={editing_rule_content}
     />
   </FormContainer>
@@ -457,11 +487,11 @@
 <!-- Generate Preview Modal -->
 <Dialog
   bind:this={generate_dialog}
-  title="Test Guide"
-  sub_subtitle="Generate synthetic examples to preview how your guide performs."
+  title="Test Data Guide"
+  sub_subtitle="Generate synthetic examples to preview how your task data guide will perform."
 >
   <FormContainer
-    submit_label="Generate"
+    submit_label="Continue"
     on:submit={handle_generate_submit}
     bind:error={dialog_error}
     bind:submitting={dialog_submitting}

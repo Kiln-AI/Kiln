@@ -3,14 +3,15 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
   import type { KilnError } from "$lib/utils/error_handlers"
-  import type { GuideSample, GuideRule } from "./guide_setup_form.svelte"
+  import Warning from "$lib/ui/warning.svelte"
+  import Output from "$lib/ui/output.svelte"
 
   type GuidePreviewSample = { input: string; output: string }
 
   export let preview_samples: GuidePreviewSample[] = []
-  export let guide_rules: GuideRule[] = []
-  export let guide_examples: GuideSample[] = []
+  export let guide: string = ""
   export let error: KilnError | null = null
   export let submitting: boolean = false
 
@@ -29,6 +30,27 @@
 
   let general_feedback: string = ""
 
+  // --- Edit guide dialog ---
+  let edit_dialog: Dialog
+  let editing_guide: string = ""
+
+  function open_edit_dialog() {
+    editing_guide = guide
+    edit_dialog?.show()
+  }
+
+  function reset_guide() {
+    editing_guide = guide
+  }
+
+  function save_guide_edit() {
+    guide = editing_guide
+    edit_dialog?.close()
+    dispatch("regenerate")
+  }
+
+  $: guide_has_changes = editing_guide !== guide
+
   function set_looks_good(index: number, value: boolean, event: Event) {
     event.stopPropagation()
     reviewed_samples[index] = {
@@ -46,16 +68,22 @@
   )
 
   $: has_sufficient_feedback =
-    needs_improvement_samples.length === 0 ||
-    general_feedback.trim().length > 0
+    needs_improvement_samples.length === 0 || general_feedback.trim().length > 0
 
-  $: submit_label = all_look_good ? "Looks Good, Save" : "Refine with Feedback"
   $: submit_disabled =
     !all_reviewed || (!all_look_good && !has_sufficient_feedback)
+
+  $: submit_label =
+    submit_disabled && !has_any_failed
+      ? "Save Data Guide"
+      : all_look_good
+        ? "Save Data Guide"
+        : "Refine with Feedback"
 
   const dispatch = createEventDispatcher<{
     refine: { feedback: string }
     save: void
+    regenerate: void
   }>()
 
   function handle_submit() {
@@ -85,7 +113,7 @@
   <div class="flex flex-col">
     <div class="font-medium">Review Example Data</div>
     <div class="font-light text-gray-500 text-sm">
-      Is synthetic data working as expected? Mark each input as "Pass" or
+      Is synthetic data working as expected? Mark each example as "Pass" or
       "Fail". If any fail, provide feedback below and we'll refine the guide.
     </div>
   </div>
@@ -96,7 +124,7 @@
           <tr>
             <th>Input</th>
             <th>Output</th>
-            <th style="width: 180px">Input Quality</th>
+            <th style="width: 180px">Quality</th>
           </tr>
         </thead>
         <tbody>
@@ -145,53 +173,59 @@
       inputType="textarea"
       height="base"
       bind:value={general_feedback}
-      optional={true}
-      placeholder="e.g. All inputs are missing the required 'patient_id' field, values should be more realistic..."
+      placeholder="e.g. Some inputs are missing the required 'patient_id' field, and all values should be more realistic."
     />
   {/if}
 
-  {#if all_look_good}
-    <div class="flex justify-end">
-      <div
-        class="text-sm text-success flex items-center gap-1 font-medium bg-success/10 px-3 py-1.5 rounded-lg"
-      >
-        All inputs look good. Your guide is ready to save.
+  <Collapse title="Task Data Guide" small={true}>
+    <div class="flex flex-col gap-2">
+      <Output raw_output={guide} show_border={true} background_color="white" />
+      <div class="flex justify-end">
+        <button
+          class="btn btn-sm btn-outline"
+          on:click={open_edit_dialog}
+          type="button">Edit</button
+        >
       </div>
     </div>
-  {/if}
+  </Collapse>
 
-  {#if guide_rules.length > 0 || guide_examples.length > 0}
-    <Collapse title="Current Data Guide" small={true}>
-      {#if guide_examples.length > 0}
-        <div class="mb-3">
-          <div class="text-xs text-gray-500 uppercase font-medium mb-1">
-            Examples ({guide_examples.length})
-          </div>
-          {#each guide_examples as example, i}
-            <div class="text-sm text-gray-600 mb-1">
-              <span class="font-medium">Example {i + 1}:</span>
-              {example.input.slice(0, 80)}{example.input.length > 80
-                ? "..."
-                : ""}
-            </div>
-          {/each}
-        </div>
-      {/if}
-      {#if guide_rules.length > 0}
-        <div>
-          <div class="text-xs text-gray-500 uppercase font-medium mb-1">
-            Rules ({guide_rules.length})
-          </div>
-          {#each guide_rules as rule}
-            <div class="text-sm text-gray-600 mb-1">
-              <span class="font-medium">{rule.name}:</span>
-              {rule.content.slice(0, 100)}{rule.content.length > 100
-                ? "..."
-                : ""}
-            </div>
-          {/each}
-        </div>
-      {/if}
-    </Collapse>
+  {#if all_look_good}
+    <div class="flex justify-end">
+      <Warning
+        warning_message="Synthetic data generation is working as expected. Your guide is ready to save."
+        warning_color="success"
+        warning_icon="check"
+        tight
+      />
+    </div>
   {/if}
 </FormContainer>
+
+<!-- Edit Guide Dialog -->
+<Dialog
+  bind:this={edit_dialog}
+  title="Edit Task Data Guide"
+  sub_subtitle="Manually update the guide that will be used in synthetic data generation. Updating will regenerate new examples for review."
+  width="wide"
+>
+  <FormContainer
+    submit_label="Save and Continue"
+    submit_disabled={!guide_has_changes}
+    on:submit={save_guide_edit}
+    warn_before_unload={guide_has_changes}
+    compact_button={true}
+  >
+    <FormElement
+      label="Data Guide"
+      hide_label={true}
+      id="edit_guide_text"
+      inputType="textarea"
+      height="xl"
+      bind:value={editing_guide}
+      inline_action={guide_has_changes
+        ? { handler: reset_guide, label: "Reset" }
+        : undefined}
+    />
+  </FormContainer>
+</Dialog>

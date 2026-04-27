@@ -71,20 +71,7 @@ class DataGenSampleApiInput(BaseModel):
 
 
 class SaveTaskDataGuideInput(BaseModel):
-    requirements: str = Field(
-        description="Rules, constraints, and structure for generated task inputs"
-    )
-    examples: str | None = Field(
-        description="Optional freeform text describing what good task inputs look like",
-        default=None,
-    )
-    guide_run_ids: list[str] = Field(
-        description="IDs of existing TaskRuns to use as guide examples", default=[]
-    )
-    approved_samples: list["GuidePreviewSample"] = Field(
-        description="Approved preview samples to save as TaskRuns and add to guide_run_ids",
-        default=[],
-    )
+    guide: str = Field(description="The data guide prompt string to persist")
 
 
 class GuidePreviewSample(BaseModel):
@@ -93,10 +80,7 @@ class GuidePreviewSample(BaseModel):
 
 
 class GuidePreviewInput(BaseModel):
-    requirements: str = Field(description="Domain rules and constraints for generation")
-    examples: str | None = Field(
-        description="Optional freeform text describing data examples", default=None
-    )
+    guide: str = Field(description="The data guide prompt string")
     run_config_properties: KilnAgentRunConfigProperties = Field(
         description="The model config to use for preview generation"
     )
@@ -106,10 +90,7 @@ class GuidePreviewInput(BaseModel):
 
 
 class GuideRefineInput(BaseModel):
-    current_requirements: str = Field(description="The current requirements text")
-    current_examples: str | None = Field(
-        description="The current examples text", default=None
-    )
+    current_guide: str = Field(description="The current data guide prompt string")
     feedback: str = Field(
         description="User feedback on what's wrong with preview samples"
     )
@@ -124,18 +105,11 @@ class GuideRefineInput(BaseModel):
 class GuideRefineOutput(BaseModel):
     """Structured output schema for the LLM refinement task."""
 
-    requirements: str = Field(description="The refined input requirements text")
-    examples: str | None = Field(
-        description="The refined input examples text, or null if not needed",
-        default=None,
-    )
+    guide: str = Field(description="The refined data guide prompt string")
 
 
 class GuideRefineResponse(BaseModel):
-    refined_requirements: str = Field(description="The refined requirements text")
-    refined_examples: str | None = Field(
-        description="The refined examples text", default=None
-    )
+    refined_guide: str = Field(description="The refined data guide prompt string")
 
 
 class DataGenSaveSamplesApiInput(BaseModel):
@@ -258,14 +232,12 @@ def connect_data_gen_api(app: FastAPI):
         project = project_from_id(project_id)
         task = task_from_id(project_id, task_id)
 
-        guide_examples = _load_guide_examples(task)
         combined_guidance = _combine_guidance(task, input.guidance)
         sample_task = DataGenSampleTask(
             target_task=task,
             gen_type=input.gen_type,
             parent_project=project,
             guidance=combined_guidance,
-            guide_examples=guide_examples,
         )
 
         task_input = DataGenSampleTaskInput.from_task(
@@ -558,41 +530,7 @@ The topic path for this sample is:
     ) -> TaskDataGuide:
         task = task_from_id(project_id, task_id)
 
-        # Save approved preview samples as TaskRuns and collect their IDs
-        saved_run_ids = list(input.guide_run_ids)
-        for sample in input.approved_samples:
-            task_run = TaskRun(
-                input=sample.input,
-                input_source=DataSource(
-                    type=DataSourceType.synthetic,
-                    properties={
-                        "model_name": "data_gen_guide",
-                        "model_provider": "data_gen_guide",
-                        "adapter_name": "data_gen_guide_preview",
-                    },
-                ),
-                output=TaskOutput(
-                    output=sample.output,
-                    source=DataSource(
-                        type=DataSourceType.synthetic,
-                        properties={
-                            "model_name": "data_gen_guide",
-                            "model_provider": "data_gen_guide",
-                            "adapter_name": "data_gen_guide_preview",
-                        },
-                    ),
-                ),
-                tags=["data_guide_example"],
-            )
-            task_run.parent = task
-            task_run.save_to_file()
-            saved_run_ids.append(task_run.id)
-
-        guide = TaskDataGuide(
-            requirements=input.requirements,
-            examples=input.examples,
-            guide_run_ids=saved_run_ids,
-        )
+        guide = TaskDataGuide(guide=input.guide)
         task.data_guide = guide
         task.save_to_file()
         return guide
@@ -637,13 +575,11 @@ The topic path for this sample is:
         project = project_from_id(project_id)
         task = task_from_id(project_id, task_id)
 
-        guidance = _build_guidance_text(input.requirements, input.examples)
-
         sample_task = DataGenSampleTask(
             target_task=task,
             gen_type="eval",
             parent_project=project,
-            guidance=guidance,
+            guidance=input.guide,
         )
 
         task_input = DataGenSampleTaskInput.from_task(
@@ -694,9 +630,7 @@ The topic path for this sample is:
             output_adapter = adapter_for_task(
                 task_copy,
                 run_config_properties=output_run_config,
-                base_adapter_config=AdapterConfig(
-                    allow_saving=False, skills=skills
-                ),
+                base_adapter_config=AdapterConfig(allow_saving=False, skills=skills),
             )
             output_run = await output_adapter.invoke(input=sample_input_str)
             output_text = (
@@ -736,8 +670,7 @@ The topic path for this sample is:
 
         system_prompt = generate_guidance_refinement_prompt(
             task_instruction=task.instruction,
-            current_requirements=input.current_requirements,
-            current_examples=input.current_examples,
+            current_guide=input.current_guide,
             preview_samples=[(s.input, s.output) for s in input.preview_samples],
             feedback=input.feedback,
         )
@@ -748,9 +681,7 @@ The topic path for this sample is:
         refine_task = Task(
             name="guidance_refinement",
             instruction=system_prompt,
-            output_json_schema=json.dumps(
-                GuideRefineOutput.model_json_schema()
-            ),
+            output_json_schema=json.dumps(GuideRefineOutput.model_json_schema()),
         )
 
         adapter = adapter_for_task(
@@ -768,39 +699,17 @@ The topic path for this sample is:
 
         parsed = json.loads(refine_run.output.output)
         return GuideRefineResponse(
-            refined_requirements=parsed.get("requirements", input.current_requirements),
-            refined_examples=parsed.get("examples"),
+            refined_guide=parsed.get("guide", input.current_guide),
         )
-
-
-def _build_guidance_text(requirements: str, examples: str | None) -> str:
-    parts = [requirements]
-    if examples:
-        parts.append(f"\n## Data Examples\n{examples}")
-    return "\n".join(parts)
 
 
 def _combine_guidance(task: Task, session_guidance: str | None) -> str | None:
     parts: list[str] = []
     if task.data_guide:
-        parts.append(
-            _build_guidance_text(task.data_guide.requirements, task.data_guide.examples)
-        )
+        parts.append(task.data_guide.guide)
     if session_guidance:
         parts.append(session_guidance)
     return "\n\n".join(parts) if parts else None
-
-
-def _load_guide_examples(task: Task) -> list[tuple[str, str | None]] | None:
-    if not task.data_guide or not task.data_guide.guide_run_ids:
-        return None
-    examples: list[tuple[str, str | None]] = []
-    for run_id in task.data_guide.guide_run_ids:
-        run = TaskRun.from_id_and_parent_path(run_id, task.path)
-        if run:
-            output = run.output.output if run.output else None
-            examples.append((run.input, output))
-    return examples if examples else None
 
 
 def topic_path_to_string(topic_path: list[str]) -> str | None:

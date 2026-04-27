@@ -643,38 +643,15 @@ def test_generate_sample_generation_prompt_with_none_guidance():
     assert "The guidance is:" not in prompt
 
 
-def test_generate_sample_generation_prompt_with_guide_examples():
-    """Test generate_sample_generation_prompt with guide examples"""
-    examples = [
-        ("What is the capital of France?", "The capital of France is Paris."),
-        ("What is 2+2?", "4"),
-    ]
-
+def test_generate_sample_generation_prompt_with_guide_text():
+    """Test generate_sample_generation_prompt includes guide text in guidance"""
     prompt = generate_sample_generation_prompt(
         gen_type="training",
-        guide_examples=examples,
+        guidance="Generate inputs about geography questions",
     )
 
-    assert "## Guide Examples" in prompt
-    assert "<guide_example_1>" in prompt
-    assert "<guide_example_2>" in prompt
-    assert "What is the capital of France?" in prompt
-    assert "The capital of France is Paris." in prompt
-    assert "What is 2+2?" in prompt
-
-
-def test_generate_sample_generation_prompt_with_guide_example_input_only():
-    """Test generate_sample_generation_prompt with guide example without output"""
-    examples = [("What is the capital of France?", None)]
-
-    prompt = generate_sample_generation_prompt(
-        gen_type="training",
-        guide_examples=examples,
-    )
-
-    assert "## Guide Examples" in prompt
-    assert "What is the capital of France?" in prompt
-    assert "<output>" not in prompt
+    assert "### Custom Guidance" in prompt
+    assert "Generate inputs about geography questions" in prompt
 
 
 def test_generate_qna_generation_prompt_without_guidance():

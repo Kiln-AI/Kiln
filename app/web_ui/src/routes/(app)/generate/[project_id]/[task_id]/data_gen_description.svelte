@@ -8,9 +8,7 @@
   export let guidance_data: SynthDataGuidanceDataModel
 
   type DataGuide = {
-    requirements: string
-    examples: string | null
-    guide_run_ids: string[]
+    guide: string
   }
   export let data_guide: DataGuide | null = null
   export let project_id: string = ""
@@ -22,29 +20,11 @@
     guide_view_dialog?.show()
   }
 
-  // Parse requirements markdown into rules for display
-  type ParsedRule = { name: string; content: string }
-  function parse_rules(req: string): ParsedRule[] {
-    if (!req.trim()) return []
-    const rules: ParsedRule[] = []
-    const sections = req.split(/^## /m).filter((s) => s.trim())
-    for (const section of sections) {
-      const newline_index = section.indexOf("\n")
-      if (newline_index === -1) {
-        rules.push({ name: section.trim(), content: "" })
-      } else {
-        rules.push({
-          name: section.slice(0, newline_index).trim(),
-          content: section.slice(newline_index + 1).trim(),
-        })
-      }
-    }
-    return rules
-  }
-
-  $: parsed_rules = data_guide ? parse_rules(data_guide.requirements) : []
-  $: guide_example_count = data_guide?.guide_run_ids?.length ?? 0
-  $: guide_rule_count = parsed_rules.length
+  $: guide_preview = data_guide
+    ? data_guide.guide.length > 80
+      ? data_guide.guide.slice(0, 80) + "..."
+      : data_guide.guide
+    : ""
   $: selected_template = guidance_data.selected_template
   // reactive
   const splits = guidance_data.splits
@@ -236,15 +216,7 @@
               class="hover:underline text-left truncate block max-w-full"
               on:click={show_guide_dialog}
             >
-              {#if guide_example_count > 0 && guide_rule_count > 0}
-                {guide_example_count} example{guide_example_count !== 1 ? "s" : ""}, {guide_rule_count} rule{guide_rule_count !== 1 ? "s" : ""}
-              {:else if guide_example_count > 0}
-                {guide_example_count} example{guide_example_count !== 1 ? "s" : ""}
-              {:else if guide_rule_count > 0}
-                {guide_rule_count} rule{guide_rule_count !== 1 ? "s" : ""}
-              {:else}
-                View guide
-              {/if}
+              {guide_preview || "View guide"}
             </button>
           </div>
         </div>
@@ -258,43 +230,11 @@
   bind:this={guide_view_dialog}
   title="Task Data Guide"
   width="wide"
-  action_buttons={[
-    { label: "Close", isCancel: true },
-  ]}
+  action_buttons={[{ label: "Close", isCancel: true }]}
 >
   {#if data_guide}
-    {#if parsed_rules.length > 0}
-      <div class="mb-4">
-        <div class="text-sm font-medium mb-2">Rules & Descriptions</div>
-        {#each parsed_rules as rule}
-          <div class="mb-3">
-            <div class="text-sm font-medium text-gray-700">{rule.name}</div>
-            <div class="text-sm text-gray-600 whitespace-pre-wrap">
-              {rule.content}
-            </div>
-          </div>
-        {/each}
-      </div>
-    {:else if data_guide.requirements}
-      <div class="mb-4">
-        <div class="text-sm font-medium mb-2">Requirements</div>
-        <pre
-          class="whitespace-pre-wrap break-words text-sm text-gray-600">{data_guide.requirements}</pre>
-      </div>
-    {/if}
-    {#if data_guide.guide_run_ids && data_guide.guide_run_ids.length > 0}
-      <div>
-        <div class="text-sm font-medium mb-1">
-          Examples ({data_guide.guide_run_ids.length})
-        </div>
-        <div class="text-sm text-gray-500">
-          {data_guide.guide_run_ids.length} saved example{data_guide
-            .guide_run_ids.length !== 1
-            ? "s"
-            : ""} linked to this guide.
-        </div>
-      </div>
-    {/if}
+    <pre
+      class="whitespace-pre-wrap break-words text-sm text-gray-600">{data_guide.guide}</pre>
   {/if}
 </Dialog>
 
