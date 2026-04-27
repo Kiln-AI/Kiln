@@ -403,7 +403,7 @@
         : selected_model_suggested_data_gen
           ? "success"
           : "warning"}
-      warning_message="For data gen we suggest using a high quality model such as GPT 4.1, Sonnet, Gemini Pro or R1."
+      warning_message={`For data gen we suggest using one of the models marked "Recommended" in the dropdown.`}
     />
   {:else if settings.suggested_mode === "uncensored_data_gen"}
     <Warning
@@ -417,7 +417,7 @@
         : selected_model_suggested_uncensored_data_gen
           ? "success"
           : "warning"}
-      warning_message="For this data gen template we suggest a large uncensored model like Grok 4."
+      warning_message={`For this data gen template we suggest using one of the models marked "Recommended" in the dropdown.`}
     />
   {:else if settings.suggested_mode === "evals"}
     <Warning
@@ -431,7 +431,7 @@
         : selected_model_suggested_evals
           ? "success"
           : "warning"}
-      warning_message="For evals we suggest using a high quality model such as GPT 4.1, Sonnet, Gemini Pro or R1."
+      warning_message={`For evals we suggest using one of the models marked "Recommended" in the dropdown.`}
     />
   {:else if settings.suggested_mode === "doc_extraction"}
     <Warning
@@ -445,7 +445,7 @@
         : selected_model_suggested_doc_extraction
           ? "success"
           : "warning"}
-      warning_message="For doc extraction, we recommend using a high quality multimodal model like Gemini Pro."
+      warning_message={`For doc extraction we suggest using one of the models marked "Recommended" in the dropdown.`}
     />
   {/if}
 </div>
