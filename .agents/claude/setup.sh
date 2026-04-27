@@ -11,6 +11,7 @@ cd "$REPO_ROOT"
 cp AGENTS.md CLAUDE.md
 
 # Copy .worktreeinclude to repo root (worktrunk/Claude Code desktop require it there)
+rm -f .worktreeinclude
 cp .config/wt/.worktreeinclude .worktreeinclude
 
 # Copy skills from the canonical .agents/skills/ location
