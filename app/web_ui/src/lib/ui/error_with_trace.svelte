@@ -13,12 +13,17 @@
   $: trace_for_viewer = (error.trace ?? []) as TraceType
 </script>
 
-{#if error.trace && error.trace.length > 0}
-  <Trace trace={trace_for_viewer} />
-{/if}
+<div class="flex flex-col gap-6">
+  {#if error.trace && error.trace.length > 0}
+    <div>
+      <div class="text-xl font-bold mb-2">Message Trace</div>
+      <Trace trace={trace_for_viewer} />
+    </div>
+  {/if}
 
-<ErrorDetailsBlock
-  title={error_title}
-  error_messages={[error.message]}
-  {troubleshooting_steps}
-/>
+  <ErrorDetailsBlock
+    title={error_title}
+    error_messages={[error.message]}
+    {troubleshooting_steps}
+  />
+</div>
