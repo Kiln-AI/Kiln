@@ -1,7 +1,12 @@
 # Sentry — web UI
 
 Frontend errors flow to Sentry project `kiln-oy/frontend`. This doc covers how
-the wiring works and how to drive it manually.
+the wiring works and how to drive it manually. The desktop server side is
+documented separately in
+[`app/desktop/docs/sentry.md`](../../desktop/docs/sentry.md); both sides
+share the same `SENTRY_ENV_NAME` / `SENTRY_RELEASE_TAG` job-level env vars in
+CI so a single build lands under matching environment + release tags across
+the two Sentry projects.
 
 ## Files involved
 
@@ -66,14 +71,14 @@ The token lives in the GitHub repo secret `SENTRY_AUTH_TOKEN`.
 
 ### Dev server
 
-`npm run dev` does not initialize Sentry — the client-side `Sentry.init` is
-gated on `VITE_KILN_ENABLE_SENTRY=1` which is not set in dev. Errors stay
-local; nothing is uploaded.
+`npm run dev` does not initialize Sentry — `Sentry.init` is gated on
+`VITE_KILN_SENTRY_DSN` being set, and the dev environment leaves it unset.
+Errors stay local; nothing is uploaded.
 
-If you ever need it on (rare), run dev with the flag set:
+If you ever need it on (rare), run dev with the DSN set:
 
 ```
-VITE_KILN_ENABLE_SENTRY=1 npm run dev
+VITE_KILN_SENTRY_DSN=https://...@o.../... npm run dev
 ```
 
 But note: dev builds have no debug IDs, so any events sent will have minified traces.
@@ -82,14 +87,14 @@ But note: dev builds have no debug IDs, so any events sent will have minified tr
 
 Set on the build steps in both workflow files:
 
-| Variable                   | Source                      | Purpose                                           |
-| -------------------------- | --------------------------- | ------------------------------------------------- |
-| `SENTRY_AUTH_TOKEN`        | repo secret                 | Authenticates source map upload                   |
-| `SENTRY_ORG`               | hardcoded `kiln-oy`         | Sentry org slug                                   |
-| `SENTRY_PROJECT`           | hardcoded `frontend`        | Sentry project slug                               |
-| `VITE_KILN_ENABLE_SENTRY`  | hardcoded `1`               | Turns on `Sentry.init` in the client bundle       |
-| `VITE_KILN_SENTRY_ENV`     | `production` or `staging`   | Sentry environment tag                            |
-| `VITE_KILN_SENTRY_RELEASE` | `kiln-studio-web@<tag/sha>` | Sentry release name (must match upload + runtime) |
+| Variable                   | Source                      | Purpose                                             |
+| -------------------------- | --------------------------- | --------------------------------------------------- |
+| `SENTRY_AUTH_TOKEN`        | repo secret                 | Authenticates source map upload                     |
+| `SENTRY_ORG`               | hardcoded `kiln-oy`         | Sentry org slug                                     |
+| `SENTRY_PROJECT`           | hardcoded `frontend`        | Sentry project slug                                 |
+| `VITE_KILN_SENTRY_DSN`     | hardcoded DSN               | Gates `Sentry.init` — unset = no-op, no events sent |
+| `VITE_KILN_SENTRY_ENV`     | `production` or `staging`   | Sentry environment tag                              |
+| `VITE_KILN_SENTRY_RELEASE` | `kiln-studio-web@<tag/sha>` | Sentry release name (must match upload + runtime)   |
 
 ## Running with Sentry locally
 
@@ -103,7 +108,7 @@ workflow env blocks, and you want to verify the wiring before pushing.
 
    ```
    SENTRY_AUTH_TOKEN='sntrys_...' SENTRY_ORG=kiln-oy SENTRY_PROJECT=frontend \
-     VITE_KILN_ENABLE_SENTRY=1 \
+     VITE_KILN_SENTRY_DSN='https://...@o.../...' \
      VITE_KILN_SENTRY_ENV=local \
      VITE_KILN_SENTRY_RELEASE="kiln-studio-web@local-$(git rev-parse --short HEAD)" \
      npm run build --prefix app/web_ui && \

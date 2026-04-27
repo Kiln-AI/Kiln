@@ -21,7 +21,11 @@ from uvicorn import Config as UvicornConfig
 
 from app.desktop.custom_tray import KilnMenuItem, KilnTray
 from app.desktop.desktop_server import ThreadedServer, server_config
-from app.desktop.studio_server._sentry_config import SENTRY_ENV, SENTRY_RELEASE
+from app.desktop.studio_server._sentry_config import (
+    SENTRY_DSN,
+    SENTRY_ENV,
+    SENTRY_RELEASE,
+)
 from app.desktop.studio_server._version import __version__
 from app.desktop.util.resource_limits import setup_resource_limits
 
@@ -177,11 +181,11 @@ def desktop_release_name() -> str:
 
 
 if __name__ == "__main__":
-    # Only initialize Sentry in packaged/release builds (e.g. pyinstaller),
-    # not when running from source during development.
-    if getattr(sys, "frozen", False) or os.environ.get("KILN_ENABLE_SENTRY") == "1":
+    # Sentry is gated on DSN presence: CI bakes it into _sentry_config.py for
+    # release builds, dev/test builds leave it None and init is skipped.
+    if SENTRY_DSN:
         sentry_sdk.init(
-            dsn="https://772eb4a3e07a8c15616b6187e034f158@o4511151852224512.ingest.de.sentry.io/4511151853731920",
+            dsn=SENTRY_DSN,
             release=desktop_release_name(),
             environment=SENTRY_ENV,
             send_default_pii=False,
