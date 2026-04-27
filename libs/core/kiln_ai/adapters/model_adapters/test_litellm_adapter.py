@@ -2226,8 +2226,7 @@ async def test_unmanaged_tools_only_return_on_tool_call_and_resume_mocked(
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            extended = list(prior_messages)
-            extended.append(
+            prior_messages.append(
                 {
                     "role": "assistant",
                     "content": None,
@@ -2245,18 +2244,17 @@ async def test_unmanaged_tools_only_return_on_tool_call_and_resume_mocked(
             )
             return ModelTurnResult(
                 assistant_message="",
-                all_messages=extended,
+                all_messages=prior_messages,
                 model_response=None,
                 model_choice=None,
                 usage=Usage(),
                 interrupted_by_tool_calls=[tool_call],
             )
         json_response = '{"test": "structured_response"}'
-        extended = list(prior_messages)
-        extended.append({"role": "assistant", "content": json_response})
+        prior_messages.append({"role": "assistant", "content": json_response})
         return ModelTurnResult(
             assistant_message=json_response,
-            all_messages=extended,
+            all_messages=prior_messages,
             model_response=None,
             model_choice=None,
             usage=Usage(),
