@@ -64,6 +64,7 @@ class ModelName(str, Enum):
     llama_3_3_70b = "llama_3_3_70b"
     llama_4_maverick = "llama_4_maverick"
     llama_4_scout = "llama_4_scout"
+    gpt_5_5 = "gpt_5_5"
     gpt_5_4 = "gpt_5_4"
     gpt_5_4_pro = "gpt_5_4_pro"
     gpt_5_4_mini = "gpt_5_4_mini"
@@ -517,6 +518,37 @@ CLAUDE_OPUS_4_7_ANTHROPIC_THINKING_LEVELS = {
 
 
 built_in_models: List[KilnModel] = [
+    # GPT 5.5
+    KilnModel(
+        family=ModelFamily.gpt,
+        name=ModelName.gpt_5_5,
+        friendly_name="GPT-5.5",
+        featured_rank=1,
+        editorial_notes="OpenAI's most capable GPT model. Powerful reasoning and multimodal.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openai,
+                model_id="gpt-5.5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
+                default_thinking_level="none",
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
+        ],
+    ),
     # GPT 5.4
     KilnModel(
         family=ModelFamily.gpt,
