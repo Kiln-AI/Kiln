@@ -387,13 +387,13 @@
   const disconnect_provider = async (provider: Provider) => {
     if (provider.id === "ollama") {
       alert(
-        "Ollama automatically connects to the localhost Ollama instance when it is running. It can't be manually disconnected. To change your preferred Ollama URL, turn of your localhost Ollama instance then return to this screen.",
+        "Ollama automatically connects to the localhost Ollama instance when it is running. It can't be manually disconnected. To change your preferred Ollama URL, turn off your Ollama instance, then return to this screen.",
       )
       return
     }
     if (
       !confirm(
-        "Are you sure you want to disconnect this provider? Your connection details will be deleted and can not be recovered.",
+        "Are you sure you want to disconnect this provider? Your connection details will be deleted and cannot be recovered.",
       )
     ) {
       return
@@ -1084,7 +1084,7 @@
     <FormElement
       id="ollama_url"
       label="Ollama URL"
-      info_description="It should included the http prefix, and the port number. For example, http://localhost:11434"
+      info_description="It should include the http prefix and the port number. For example, http://localhost:11434"
       bind:value={custom_ollama_url}
       placeholder="http://localhost:11434"
     />
@@ -1165,7 +1165,7 @@
 
     <h3 class="text-lg font-bold flex flex-row gap-4">Connect Custom APIs</h3>
     <p class="text-sm font-light mb-8">
-      Connect any any OpenAI compatible API by adding a base URL and API key.
+      Connect any OpenAI-compatible API by adding a base URL and API key.
     </p>
     {#if custom_openai_compatible_providers.length > 0}
       <div class="flex flex-col gap-2">
@@ -1200,7 +1200,7 @@
           label="API Name"
           bind:value={new_provider_name}
           placeholder="My home server"
-          info_description="A name for this endpoint for you use. Example: 'My home server'"
+          info_description="A name for this endpoint for you to use. Example: 'My home server'"
         />
         <FormElement
           id="base_url"

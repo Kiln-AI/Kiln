@@ -330,7 +330,7 @@ See our docs for more information, including how to add these from the UI:
 You can also add these from code. The kiln_ai.utils.Config class helps you manage the Kiln config file (stored at `~/.kiln_ai/settings.yaml`):
 
 ```python
-# Addding an OpenAI compatible provider
+# Adding an OpenAI compatible provider
 name = "CustomOllama"
 base_url = "http://localhost:1234/api/v1"
 api_key = "12345"

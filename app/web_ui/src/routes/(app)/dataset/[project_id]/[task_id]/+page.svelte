@@ -68,7 +68,7 @@
 
   const columns = [
     { key: "rating", label: "Rating" },
-    { key: "repairState", label: "Repair State" },
+    { key: "repairState", label: "Feedback" },
     { key: "source", label: "Source" },
     { key: "model", label: "Model" },
     { key: "created_at", label: "Created At" },

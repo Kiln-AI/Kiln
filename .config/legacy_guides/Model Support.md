@@ -35,7 +35,7 @@ Included models include common models like Claude, GPT-4, Llama, and many more. 
 
 Any Ollama model you have installed on your server will be available to use in Kiln. To add models, simply install them with the Ollama CLI `ollama pull <model_name>`.
 
-Some Ollama models are included/tested, and will automtically appear in the model dropdown. Any untested Ollama models will still appear in the dropdown, but in the "Untested" section.
+Some Ollama models are included/tested, and will automatically appear in the model dropdown. Any untested Ollama models will still appear in the dropdown, but in the "Untested" section.
 
 ## Custom Models from Existing Providers
 
