@@ -567,6 +567,10 @@ built_in_models: List[KilnModel] = [
                 structured_output_mode=StructuredOutputMode.json_schema,
                 available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
                 default_thinking_level="none",
+                # OpenAI rejects reasoning_effort + tools on /v1/chat/completions
+                # for gpt-5.4 direct. Disable function calling until Kiln routes
+                # these models to /v1/responses. The OpenRouter route is unaffected.
+                supports_function_calling=False,
                 suggested_for_evals=True,
                 suggested_for_data_gen=True,
                 supports_doc_extraction=True,
