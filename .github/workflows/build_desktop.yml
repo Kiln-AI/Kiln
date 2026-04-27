@@ -43,6 +43,13 @@ jobs:
 
       # Compress MacOS app param ignored on other platforms
       - name: Build Desktop App
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: kiln-oy
+          SENTRY_PROJECT: frontend
+          VITE_KILN_ENABLE_SENTRY: "1"
+          VITE_KILN_SENTRY_ENV: ${{ github.event_name == 'release' && 'production' || 'staging' }}
+          VITE_KILN_SENTRY_RELEASE: ${{ github.event_name == 'release' && format('kiln-studio-web@{0}', github.event.release.tag_name) || format('kiln-studio-web@{0}', github.sha) }}
         run: uv run bash ./app/desktop/build_desktop_app.sh
 
       - name: Build Windows Installer
