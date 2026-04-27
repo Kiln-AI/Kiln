@@ -5,6 +5,7 @@
   import { goto } from "$app/navigation"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import { formatLatency } from "$lib/utils/formatters"
   import type { Task, TaskRunConfig, Eval } from "$lib/types"
   import type { components } from "$lib/api_schema"
   import CompareChart from "$lib/components/compare_chart.svelte"
@@ -394,10 +395,11 @@
       { label: "Output Tokens", key: "cost::mean_output_tokens" },
       { label: "Total Tokens", key: "cost::mean_total_tokens" },
       { label: "Cost (USD)", key: "cost::mean_cost" },
+      { label: "Latency", key: "cost::mean_total_llm_latency_ms" },
     ]
 
     features.push({
-      category: "Average Usage & Cost",
+      category: "Average Usage, Cost & Latency",
       items: costItems,
       has_default_eval_config: undefined,
       eval_id: "kiln_cost_section",
@@ -463,6 +465,8 @@
           return meanUsage.mean_total_tokens ?? null
         case "mean_cost":
           return meanUsage.mean_cost ?? null
+        case "mean_total_llm_latency_ms":
+          return meanUsage.mean_total_llm_latency_ms ?? null
       }
       return null
     }
@@ -489,10 +493,12 @@
 
     const [category, scoreKey] = dataKey.split("::")
 
-    // Format cost with currency symbol, tokens as whole numbers, others as decimals
+    // Format cost with currency symbol, latency with ms/s, tokens as whole numbers, others as decimals
     if (category === "cost") {
       if (scoreKey === "mean_cost") {
         return `$${value.toFixed(7)}`
+      } else if (scoreKey === "mean_total_llm_latency_ms") {
+        return formatLatency(value)
       } else {
         return value.toFixed(1)
       }
@@ -592,25 +598,10 @@
     goto(`/dataset/${project_id}/${task_id}/add_data?${params.toString()}`)
   }
 
-  function getPercentageDifference(
-    baseValue: string,
-    compareValue: string,
+  function getPercentageDifferenceRaw(
+    base: number | null,
+    compare: number | null,
   ): string {
-    // Return empty if either value is unavailable
-    if (baseValue === "—" || compareValue === "—") return ""
-
-    // Parse numeric values, handling currency formatting
-    const parseValue = (val: string): number | null => {
-      if (val === "—") return null
-      // Remove currency symbol and parse
-      const cleaned = val.replace(/^\$/, "")
-      const parsed = parseFloat(cleaned)
-      return isNaN(parsed) ? null : parsed
-    }
-
-    const base = parseValue(baseValue)
-    const compare = parseValue(compareValue)
-
     if (base === null || compare === null) return ""
 
     // Handle division by zero
@@ -980,17 +971,17 @@
                               {getModelValue(selectedModels[i], item.key)}
                             </span>
                             {#if i > 0 && selectedModels[0] !== null}
-                              {@const baseValue = getModelValue(
+                              {@const baseRaw = getModelValueRaw(
                                 selectedModels[0],
                                 item.key,
                               )}
-                              {@const currentValue = getModelValue(
+                              {@const currentRaw = getModelValueRaw(
                                 selectedModels[i],
                                 item.key,
                               )}
-                              {@const percentDiff = getPercentageDifference(
-                                baseValue,
-                                currentValue,
+                              {@const percentDiff = getPercentageDifferenceRaw(
+                                baseRaw,
+                                currentRaw,
                               )}
                               {#if percentDiff}
                                 <span class="text-xs text-gray-500 mt-1">

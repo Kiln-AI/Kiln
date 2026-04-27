@@ -972,3 +972,46 @@ def test_usage_addition_immutability():
     assert result.output_tokens == 125
     assert result.total_tokens == 425
     assert result.cost == 0.015
+
+
+def test_usage_total_llm_latency_ms_field():
+    """Test total_llm_latency_ms field validation."""
+    usage = Usage(total_llm_latency_ms=500)
+    assert usage.total_llm_latency_ms == 500
+
+    usage_none = Usage()
+    assert usage_none.total_llm_latency_ms is None
+
+    usage_zero = Usage(total_llm_latency_ms=0)
+    assert usage_zero.total_llm_latency_ms == 0
+
+    with pytest.raises(ValidationError):
+        Usage(total_llm_latency_ms=-1)
+
+
+@pytest.mark.parametrize(
+    "latency1,latency2,expected",
+    [
+        (None, None, None),
+        (None, 300, 300),
+        (200, None, 200),
+        (200, 300, 500),
+        (0, 100, 100),
+    ],
+)
+def test_usage_addition_with_latency(latency1, latency2, expected):
+    """Test Usage.__add__ handles total_llm_latency_ms correctly."""
+    u1 = Usage(total_llm_latency_ms=latency1)
+    u2 = Usage(total_llm_latency_ms=latency2)
+    result = u1 + u2
+    assert result.total_llm_latency_ms == expected
+
+
+def test_usage_backwards_compat_without_latency():
+    """Test that old Usage JSON without total_llm_latency_ms deserializes as None."""
+    old_json = (
+        '{"input_tokens": 100, "output_tokens": 50, "total_tokens": 150, "cost": 0.01}'
+    )
+    usage = Usage.model_validate_json(old_json)
+    assert usage.total_llm_latency_ms is None
+    assert usage.input_tokens == 100

@@ -326,3 +326,9 @@ export function formatEvalConfigName(
       ]
   return eval_config.name + " — " + parts.join(", ")
 }
+
+export function formatLatency(ms: number): string {
+  const roundedMs = Math.round(ms)
+  if (roundedMs < 1000) return `${roundedMs}ms`
+  return `${(ms / 1000).toFixed(1)}s`
+}

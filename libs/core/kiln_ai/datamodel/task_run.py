@@ -46,6 +46,11 @@ class Usage(BaseModel):
         description="Number of tokens served from prompt cache. None if not reported.",
         ge=0,
     )
+    total_llm_latency_ms: int | None = Field(
+        default=None,
+        description="Total time spent waiting on LLM API calls in milliseconds. Sum of per-call latencies, excludes tool execution time.",
+        ge=0,
+    )
 
     def __add__(self, other: "Usage") -> "Usage":
         """Add two Usage objects together, handling None values gracefully.
@@ -82,6 +87,9 @@ class Usage(BaseModel):
             total_tokens=_add_optional_int(self.total_tokens, other.total_tokens),
             cost=_add_optional_float(self.cost, other.cost),
             cached_tokens=_add_optional_int(self.cached_tokens, other.cached_tokens),
+            total_llm_latency_ms=_add_optional_int(
+                self.total_llm_latency_ms, other.total_llm_latency_ms
+            ),
         )
 
 

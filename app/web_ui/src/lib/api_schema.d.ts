@@ -3677,6 +3677,8 @@ export interface components {
             refusal?: string | null;
             /** Tool Calls */
             tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
+            /** Latency Ms */
+            latency_ms?: number | null;
         };
         /**
          * ChatCompletionAssistantMessageParamWrapper
@@ -3705,6 +3707,8 @@ export interface components {
             refusal?: string | null;
             /** Tool Calls */
             tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
+            /** Latency Ms */
+            latency_ms?: number | null;
         };
         /** ChatCompletionContentPartImageParam */
         ChatCompletionContentPartImageParam: {
@@ -7036,6 +7040,11 @@ export interface components {
              * @description Average cost per run in USD.
              */
             mean_cost?: number | null;
+            /**
+             * Mean Total Llm Latency Ms
+             * @description Average total LLM latency per run in milliseconds.
+             */
+            mean_total_llm_latency_ms?: number | null;
         };
         /** ModelDetails */
         ModelDetails: {
@@ -9980,6 +9989,11 @@ export interface components {
              * @description Number of tokens served from prompt cache. None if not reported.
              */
             cached_tokens?: number | null;
+            /**
+             * Total Llm Latency Ms
+             * @description Total time spent waiting on LLM API calls in milliseconds. Sum of per-call latencies, excludes tool execution time.
+             */
+            total_llm_latency_ms?: number | null;
         };
         /**
          * UserModelEntry

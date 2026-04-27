@@ -41,6 +41,10 @@ def test_assistant_message_param_properties_match():
     assert "reasoning_content" in kiln_properties, "Kiln should have reasoning_content"
     kiln_properties.remove("reasoning_content")
 
+    # latency_ms is a Kiln-added property for LLM call timing. Confirm it's there and remove it.
+    assert "latency_ms" in kiln_properties, "Kiln should have latency_ms"
+    kiln_properties.remove("latency_ms")
+
     assert openai_properties == kiln_properties, (
         f"Property names don't match. "
         f"OpenAI has: {openai_properties}, "
