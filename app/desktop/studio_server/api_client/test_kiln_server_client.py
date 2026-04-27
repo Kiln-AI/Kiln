@@ -21,6 +21,8 @@ from app.desktop.studio_server.api_client.kiln_server_client import (
 
 APP_VERSION = __version__
 
+APP_DIR = Path(__file__).parents[3]
+
 
 class TestGetKilnServerClient:
     """Tests for the get_kiln_server_client factory function."""
@@ -67,7 +69,7 @@ class TestGetKilnServerClient:
 
     def test_version_matches_pyproject(self):
         """Verify _version.py stays in sync with pyproject.toml."""
-        pyproject_path = Path(__file__).parents[2] / "pyproject.toml"
+        pyproject_path = APP_DIR / "desktop" / "pyproject.toml"
         content = pyproject_path.read_text()
         for line in content.splitlines():
             stripped = line.strip()
@@ -78,6 +80,14 @@ class TestGetKilnServerClient:
             pytest.fail("Could not find version in pyproject.toml")
         assert _get_desktop_app_version() == pyproject_version, (
             f"_version.py ({_get_desktop_app_version()}) and pyproject.toml ({pyproject_version}) are out of sync"
+        )
+
+    def test_version_matches_web_ui(self):
+        """Verify the web UI's version file stays in sync with _version.py."""
+        web_ui_version_path = APP_DIR / "web_ui" / "src" / "lib" / "version"
+        web_ui_version = web_ui_version_path.read_text().strip()
+        assert _get_desktop_app_version() == web_ui_version, (
+            f"_version.py ({_get_desktop_app_version()}) and {web_ui_version_path} ({web_ui_version}) are out of sync"
         )
 
 

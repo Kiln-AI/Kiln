@@ -28,6 +28,13 @@ jobs:
         run: uv sync
 
       - name: Build Desktop App, including custom build of pyinstaller bootloader
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: kiln-oy
+          SENTRY_PROJECT: frontend
+          VITE_KILN_ENABLE_SENTRY: "1"
+          VITE_KILN_SENTRY_ENV: production
+          VITE_KILN_SENTRY_RELEASE: kiln-studio-web@${{ github.event.release.tag_name }}
         run: uv run bash ./app/desktop/build_desktop_app.sh --build-bootloader
 
       - name: Sign internal files with Trusted Signing
