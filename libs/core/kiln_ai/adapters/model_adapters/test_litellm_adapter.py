@@ -2476,10 +2476,10 @@ class TestLatencyTracking:
         assert result.usage.total_llm_latency_ms == 500
 
     @pytest.mark.asyncio
-    async def test_run_model_turn_sets_latency_on_trace_message(
+    async def test_run_model_turn_sets_latency_on_message_latency_dict(
         self, adapter, simple_response, provider
     ):
-        """_run_model_turn() should attach _latency_ms to the response message."""
+        """_run_model_turn() should record latency in the message_latency dict."""
         monotonic_values = [0.0, 0.25]  # 250ms
         with patch.object(adapter, "build_completion_kwargs", return_value={}):
             with patch.object(
@@ -2495,8 +2495,9 @@ class TestLatencyTracking:
                         provider, [{"role": "user", "content": "Hi"}], None, False
                     )
 
+        assert result.message_latency is not None
         assistant_msg = result.all_messages[-1]
-        assert getattr(assistant_msg, "_latency_ms", None) == 250
+        assert result.message_latency[id(assistant_msg)] == 250
 
     @pytest.mark.asyncio
     async def test_run_model_turn_accumulates_latency_across_tool_calls(
@@ -2573,17 +2574,17 @@ class TestLatencyTracking:
         assert result.usage.total_llm_latency_ms == 500
 
     def test_litellm_message_to_trace_message_includes_latency(self, adapter):
-        """litellm_message_to_trace_message should include latency_ms when _latency_ms is set."""
+        """litellm_message_to_trace_message should include latency_ms when message_latency dict is provided."""
         from litellm.types.utils import Message as LiteLLMMessage
 
         msg = LiteLLMMessage(role="assistant", content="Hello")
-        msg._latency_ms = 123  # type: ignore[attr-defined]
+        message_latency = {id(msg): 123}
 
-        trace_msg = adapter.litellm_message_to_trace_message(msg)
+        trace_msg = adapter.litellm_message_to_trace_message(msg, message_latency)
         assert trace_msg["latency_ms"] == 123
 
     def test_litellm_message_to_trace_message_no_latency(self, adapter):
-        """litellm_message_to_trace_message should omit latency_ms when _latency_ms is not set."""
+        """litellm_message_to_trace_message should omit latency_ms when no message_latency provided."""
         from litellm.types.utils import Message as LiteLLMMessage
 
         msg = LiteLLMMessage(role="assistant", content="Hello")

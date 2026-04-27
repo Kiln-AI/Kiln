@@ -67,6 +67,7 @@ class AdapterStream:
         self._top_logprobs = top_logprobs
         self._result: AdapterStreamResult | None = None
         self._iterated = False
+        self._message_latency: dict[int, int] = {}
 
     @property
     def result(self) -> AdapterStreamResult:
@@ -139,7 +140,9 @@ class AdapterStream:
         if not isinstance(prior_output, str):
             raise RuntimeError(f"assistant message is not a string: {prior_output}")
 
-        trace = self._adapter.all_messages_to_trace(self._messages)
+        trace = self._adapter.all_messages_to_trace(
+            self._messages, self._message_latency
+        )
         self._result = AdapterStreamResult(
             run_output=RunOutput(
                 output=prior_output,
@@ -194,7 +197,7 @@ class AdapterStream:
                     "Model returned an assistant message, but no content or tool calls. This is not supported."
                 )
 
-            response_choice.message._latency_ms = call_latency_ms  # type: ignore[attr-defined]
+            self._message_latency[id(response_choice.message)] = call_latency_ms
             self._messages.append(response_choice.message)
 
             if tool_calls and len(tool_calls) > 0:
