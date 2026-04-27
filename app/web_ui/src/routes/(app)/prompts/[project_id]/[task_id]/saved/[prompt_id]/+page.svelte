@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from "$app/stores"
-  import { current_task, current_task_prompts } from "$lib/stores"
+  import { get_task_composite_id } from "$lib/stores"
+  import { prompts_by_task_composite_id } from "$lib/stores/prompts_store"
   import AppPage from "../../../../../app_page.svelte"
   import Output from "$lib/ui/output.svelte"
   import { formatDate } from "$lib/utils/formatters"
@@ -15,9 +16,10 @@
     description: `Saved prompt detail for prompt ID ${prompt_id} in project ID ${project_id}, task ID ${task_id}. Prompt name: ${prompt_model?.name ?? "[loading]"}. Shows prompt content, version history, and options to clone or edit.`,
   })
 
-  $: prompt_model = $current_task_prompts?.prompts.find(
-    (prompt) => prompt.id === prompt_id,
-  )
+  $: prompt_model =
+    $prompts_by_task_composite_id[
+      get_task_composite_id(project_id, task_id)
+    ]?.prompts.find((p) => p.id === prompt_id) ?? null
 
   let prompt_props: Record<string, string | undefined | null> = {}
   $: {
@@ -72,17 +74,7 @@
         : []),
     ]}
   >
-    {#if !$current_task_prompts}
-      <div class="w-full min-h-[50vh] flex justify-center items-center">
-        <div class="loading loading-spinner loading-lg"></div>
-      </div>
-    {:else if $current_task?.id != task_id}
-      <div class="text-error">
-        This link is to another task's prompt. Either select that task in the
-        sidebar, or click 'Prompts' in the sidebar to load the current task's
-        prompts.
-      </div>
-    {:else if prompt_model}
+    {#if prompt_model}
       <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
         <div class="grow">
           <div class="text-xl font-bold mb-2">Prompt</div>
