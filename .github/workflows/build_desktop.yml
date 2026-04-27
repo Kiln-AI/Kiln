@@ -3,7 +3,7 @@ name: Build Desktop Apps
 on:
   workflow_dispatch:
   release:
-    types: [created]
+    types: [ created ]
   push:
     branches:
       - main
@@ -13,8 +13,9 @@ jobs:
     name: Build Desktop Apps
     runs-on: ${{ matrix.os }}
     env:
-      SENTRY_ENV_NAME: ${{ github.event_name == 'release' && 'production' || 'staging' }}
-      SENTRY_RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
+      SENTRY_ENV_NAME: ${{ github.event_name == 'release' && 'production' || 'development' }}
+      SENTRY_RELEASE_TAG: ${{ github.event_name == 'release' &&
+        github.event.release.tag_name || github.sha }}
     strategy:
       fail-fast: false
       matrix:
@@ -69,13 +70,15 @@ jobs:
 
       - name: Copy Windows Installer
         if: matrix.os == 'windows-latest'
-        run: cp ./app/desktop/Output/kilnsetup.exe ./app/desktop/build/dist/Kiln.Windows.Installer.exe
+        run: cp ./app/desktop/Output/kilnsetup.exe
+          ./app/desktop/build/dist/Kiln.Windows.Installer.exe
 
       # Print checksums, so anyone can verify the build
 
       - name: Checksums (macOS)
         if: runner.os == 'macOS'
-        run: find ./app/desktop/build/dist/Kiln.app -type f -not -path "*/Contents/Resources/botocore/data/*" -exec md5 {} \;
+        run: find ./app/desktop/build/dist/Kiln.app -type f -not -path
+          "*/Contents/Resources/botocore/data/*" -exec md5 {} \;
 
       - name: Checksums (Linux)
         if: runner.os == 'Linux'
