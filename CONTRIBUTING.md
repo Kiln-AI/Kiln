@@ -6,7 +6,7 @@ We use [GitHub issues](https://github.com/Kiln-AI/Kiln/issues) for tracking issu
 
 ## Contributing
 
-New contributors must agree to the [contributor license agreement](CLA.md).
+New contributors must agree to the [contributor license agreement](.config/CLA.md).
 
 ## Development Environment Setup
 
@@ -36,11 +36,10 @@ To run the API server, Studio server, and Studio Web UI with auto-reload for dev
    uv run python -m app.desktop.dev_server
    ```
 
-2. In a second terminal, navigate to the web UI directory and start the dev server:
+2. In a second terminal, start the web UI dev server:
 
    ```bash
-   cd app/web_ui
-   npm run dev --
+   make ui
    ```
 
 3. Open the app: http://localhost:5173/run
@@ -70,7 +69,7 @@ uv run ./checks.sh
 In your base Kiln directory, run the following command to setup a pre-commit hook which will run the Kiln checks locally before each commit.
 
 ```bash
-cp utils/pre-commit-hook .git/hooks/pre-commit
+cp .config/utils/pre-commit-hook .git/hooks/pre-commit
 ```
 
 5. Spec Skill
@@ -110,7 +109,7 @@ We suggest the following extensions for VSCode/Cursor. With them, you'll get com
 
 ### HooksMCP
 
-We have a [hooks_mcp.yaml](./hooks_mcp.yaml) file, which defines how coding agents can interact with our developer tools (formatting, linting, etc).
+We have a [hooks_mcp.yaml](./.config/hooks_mcp.yaml) file, which defines how coding agents can interact with our developer tools (formatting, linting, etc).
 
 To use it, [setup HooksMCP](https://github.com/scosman/hooks_mcp?tab=readme-ov-file#running-hooksmcp) for your agents.
 

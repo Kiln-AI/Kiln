@@ -142,7 +142,7 @@ def test_data_dir() -> Path:
     """
     The directory that contains test files with various mime types.
     """
-    return Path(__file__).parent / "tests" / "assets"
+    return Path(__file__).parent / "libs" / "core" / "tests" / "assets"
 
 
 @pytest.fixture

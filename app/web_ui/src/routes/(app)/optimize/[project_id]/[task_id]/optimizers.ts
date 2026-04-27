@@ -102,7 +102,9 @@ export function get_optimizers(
         [METRIC_EASE]: 2,
       },
       on_click: () => {
-        goto(`/skills/${project_id}`)
+        goto(
+          `/skills/${project_id}/create?from=optimize&task_id=${encodeURIComponent(task_id)}`,
+        )
       },
     },
   ]

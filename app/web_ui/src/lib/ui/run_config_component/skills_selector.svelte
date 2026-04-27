@@ -15,6 +15,7 @@
   export let task_id: string | null = null
   export let skills: string[] = []
   export let settings: Partial<SkillsSelectorSettings> = {}
+  export let pending_skill_id: string | null = null
 
   let default_settings: SkillsSelectorSettings = {
     mandatory_skills: null,
@@ -59,15 +60,48 @@
       skills_store_loaded_task_id = null
     } else if (task_id !== skills_store_loaded_task_id) {
       await skills_store_initialized
-      const existing_skills =
-        $skills_store.selected_skill_ids_by_task_id[task_id] || []
-      const combined = [
-        ...(resolved.mandatory_skills || []),
-        ...existing_skills,
-      ]
-      skills = [...new Set(combined)]
+      // When the user is arriving from a fresh skill-creation flow, start
+      // with just the pending skill (plus any mandatory) and drop any
+      // lingering selections from a previous abandoned attempt — otherwise
+      // each new skill would pile on top of the old ones.
+      if (pending_skill_id) {
+        skills = [...(resolved.mandatory_skills || [])]
+      } else {
+        const existing_skills =
+          $skills_store.selected_skill_ids_by_task_id[task_id] || []
+        const combined = [
+          ...(resolved.mandatory_skills || []),
+          ...existing_skills,
+        ]
+        skills = [...new Set(combined)]
+      }
       skills_store_loaded_task_id = task_id
     }
+
+    apply_pending_skill()
+  }
+
+  function is_skill_available(skill_id: string, project_id: string): boolean {
+    const available = $available_tools[project_id]
+    if (!available) return false
+    return available.some(
+      (ts) => ts.type === "skill" && ts.tools.some((t) => t.id === skill_id),
+    )
+  }
+
+  function apply_pending_skill() {
+    if (
+      pending_skill_id &&
+      !skills.includes(pending_skill_id) &&
+      is_skill_available(pending_skill_id, project_id)
+    ) {
+      skills = [...new Set([...skills, pending_skill_id])]
+    }
+  }
+
+  // If skills load after initial render, re-apply pending skill
+  $: if (pending_skill_id && $available_tools[project_id]) {
+    apply_pending_skill()
   }
 
   $: if (task_id && skills && skills_store_loaded_task_id === task_id) {

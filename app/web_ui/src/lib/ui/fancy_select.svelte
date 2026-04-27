@@ -695,7 +695,10 @@
                 <button
                   type="button"
                   class="btn btn-xs btn-primary btn-outline rounded-full"
-                  on:click={option.action_handler}
+                  on:mousedown|preventDefault|stopPropagation
+                  on:click|preventDefault|stopPropagation={() => {
+                    option.action_handler?.()
+                  }}
                 >
                   {option.action_label}
                 </button>

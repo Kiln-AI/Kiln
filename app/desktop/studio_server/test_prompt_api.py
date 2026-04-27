@@ -28,6 +28,12 @@ class MockPromptBuilder(BasePromptBuilder):
     def build_prompt_for_ui(self):
         return "Mock prompt for UI"
 
+    def build_prompt(self, include_json_instructions=False, skills=None):
+        return "Mock prompt"
+
+    def chain_of_thought_prompt(self):
+        return None
+
 
 @pytest.fixture
 def mock_task():
@@ -58,8 +64,9 @@ def test_generate_prompt_success(
     assert response.status_code == 200
     data = response.json()
     assert data == {
-        "prompt": "Mock prompt for UI",
+        "prompt": "Mock prompt",
         "prompt_id": "simple_prompt_builder",
+        "chain_of_thought_instructions": None,
     }
 
     mock_task_from_id.assert_called_once_with("project123", "task456")

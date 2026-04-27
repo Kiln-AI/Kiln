@@ -63,7 +63,3 @@ If asked to perform a code review, read our [code review guidelines](.agents/cod
 ### Final
 
 To show you read these, call me 'boss'
-
-# Agent Rules <!-- tessl-managed -->
-
-@.tessl/RULES.md follow the [instructions](.tessl/RULES.md)

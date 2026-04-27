@@ -14,6 +14,8 @@
   export let project_id: string
   export let skill_id: string | undefined = undefined
   export let clone_mode: boolean = false
+  export let redirect_from: string | null = null
+  export let redirect_task_id: string | null = null
 
   let name = ""
   let description = ""
@@ -78,7 +80,15 @@
       if (data) {
         uncache_available_tools(project_id)
         complete = true
-        goto(`/skills/${project_id}/${data.id}`)
+        if (redirect_from === "optimize" && redirect_task_id && data.id) {
+          // Skills are selected via their prefixed tool id in run configs.
+          const skill_tool_id = `kiln_tool::skill::${data.id}`
+          goto(
+            `/optimize/${project_id}/${redirect_task_id}/run_config/create?skill_id=${encodeURIComponent(skill_tool_id)}`,
+          )
+        } else {
+          goto(`/skills/${project_id}/${data.id}`)
+        }
       }
     } catch (err) {
       error = createKilnError(err)

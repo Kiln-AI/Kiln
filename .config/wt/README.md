@@ -4,7 +4,7 @@ We use [Worktrunk](https://worktrunk.dev/) to manage git worktrees for parallel 
 
 ## Setup
 
-Run `utils/setup_env.sh` — it installs project dependencies and optionally sets up workspaces (worktrunk, Zellij, and config).
+Run `.config/utils/setup_env.sh` — it installs project dependencies and optionally sets up workspaces (worktrunk, Zellij, and config).
 
 Or manually:
 
@@ -167,3 +167,5 @@ keybinds clear-defaults=true {
 - `.config/wt/bin/web` — opens the worktree's web UI in a browser (type `web` in the terminal tab)
 - `.config/wt/user_settings.sh` — per-user overrides (gitignored); copy from `user_settings.sh.example`
 - `.config/wt/config.toml` — worktrunk user config (worktree path template)
+- `.agents/claude/setup.sh` — Claude bootstrap: regenerates `CLAUDE.md` from `AGENTS.md` and `.claude/skills/` from `.agents/skills/` (run automatically by `wt` post-create)
+- `.agents/cursor/setup.sh` — Cursor bootstrap: regenerates `.cursor/skills/` from `.agents/skills/` (run manually after cloning or creating a worktree)
