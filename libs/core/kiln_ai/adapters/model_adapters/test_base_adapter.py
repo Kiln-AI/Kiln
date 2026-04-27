@@ -35,7 +35,7 @@ from kiln_ai.utils.open_ai_types import ChatCompletionMessageParam
 class MockAdapter(BaseAdapter):
     """Concrete implementation of BaseAdapter for testing"""
 
-    async def _run(self, input, messages=None, **kwargs):
+    async def _run(self, input, messages, **kwargs):
         return None, None
 
     def adapter_name(self) -> str:

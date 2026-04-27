@@ -129,51 +129,35 @@ class TestFormatUserMessage:
             == "The run exceeded the maximum number of tool calls in one turn."
         )
 
-    def test_tool_not_available(self):
-        exc = RuntimeError(
-            "A tool named 'foo' was invoked by a model, but was not available."
-        )
-        assert (
-            format_error_message(exc)
-            == "The model tried to call a tool that isn't available on this task."
-        )
+    def test_tool_not_available_passes_through(self):
+        msg = "A tool named 'foo' was invoked by a model, but was not available."
+        exc = RuntimeError(msg)
+        assert format_error_message(exc) == msg
 
-    def test_parse_arguments(self):
-        exc = RuntimeError(
-            "Failed to parse arguments for tool 'foo' (should be JSON): blah"
-        )
-        assert (
-            format_error_message(exc)
-            == "The model produced invalid arguments for a tool call."
-        )
+    def test_parse_arguments_passes_through(self):
+        msg = "Failed to parse arguments for tool 'foo' (should be JSON): blah"
+        exc = RuntimeError(msg)
+        assert format_error_message(exc) == msg
 
-    def test_validate_arguments(self):
-        exc = RuntimeError(
+    def test_validate_arguments_passes_through(self):
+        msg = (
             "Failed to validate arguments for tool 'foo'. The arguments didn't match..."
         )
-        assert (
-            format_error_message(exc)
-            == "The model's tool call arguments didn't match the tool's schema."
-        )
+        exc = RuntimeError(msg)
+        assert format_error_message(exc) == msg
 
-    def test_reasoning_required(self):
-        exc = RuntimeError(
-            "Reasoning is required for this model, but no reasoning was returned."
-        )
-        assert (
-            format_error_message(exc)
-            == "The model should have returned reasoning but didn't."
-        )
+    def test_reasoning_required_passes_through(self):
+        msg = "Reasoning is required for this model, but no reasoning was returned."
+        exc = RuntimeError(msg)
+        assert format_error_message(exc) == msg
 
-    def test_schema_mismatch_value_error(self):
-        exc = ValueError(
+    def test_schema_mismatch_value_error_passes_through(self):
+        msg = (
             "This task requires a specific output schema. While the model produced JSON, "
             "that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information."
         )
-        assert (
-            format_error_message(exc)
-            == "The model's output didn't match the task's output schema."
-        )
+        exc = ValueError(msg)
+        assert format_error_message(exc) == msg
 
     def test_unknown_exception_uses_generic_message(self):
         exc = KeyError("missing_key")
@@ -186,13 +170,13 @@ class TestFormatUserMessage:
         exc = WeirdError("something odd")
         assert format_error_message(exc) == "An unexpected error occurred."
 
-    def test_runtime_error_without_known_prefix_uses_generic_message(self):
+    def test_runtime_error_without_known_prefix_passes_through(self):
         exc = RuntimeError("something random happened")
-        assert format_error_message(exc) == "An unexpected error occurred."
+        assert format_error_message(exc) == "something random happened"
 
-    def test_value_error_without_schema_hint_uses_generic_message(self):
+    def test_value_error_without_schema_hint_passes_through(self):
         exc = ValueError("just a regular value error")
-        assert format_error_message(exc) == "An unexpected error occurred."
+        assert format_error_message(exc) == "just a regular value error"
 
     def test_survives_broken_str(self):
         class BrokenStrError(Exception):
@@ -203,9 +187,9 @@ class TestFormatUserMessage:
         # Should not raise; should return the generic fallback.
         assert format_error_message(exc) == "An unexpected error occurred."
 
-    def test_empty_message_falls_back_to_generic(self):
+    def test_empty_runtime_error_falls_back_to_class_name(self):
         exc = RuntimeError("")
-        assert format_error_message(exc) == "An unexpected error occurred."
+        assert format_error_message(exc) == "RuntimeError"
 
     def test_empty_message_custom_class_uses_generic(self):
         class WeirdError(Exception):

@@ -299,7 +299,7 @@ async def test_mcp_adapter_runtime_failure_wrapped_in_kiln_run_error(
 
     assert isinstance(ei.value.original, RuntimeError)
     assert ei.value.partial_trace is None
-    assert str(ei.value) == "An unexpected error occurred."
+    assert str(ei.value) == "mcp tool blew up"
     assert ei.value.error_type == "RuntimeError"
 
 

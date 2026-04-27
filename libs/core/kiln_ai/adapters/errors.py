@@ -101,21 +101,15 @@ def format_error_message(exc: Exception) -> str:
                 return "The run exceeded the maximum number of turns."
             if msg.startswith("Too many tool calls"):
                 return "The run exceeded the maximum number of tool calls in one turn."
-            if "was invoked by a model, but was not available" in msg:
-                return (
-                    "The model tried to call a tool that isn't available on this task."
-                )
-            if msg.startswith("Failed to parse arguments"):
-                return "The model produced invalid arguments for a tool call."
-            if msg.startswith("Failed to validate arguments"):
-                return "The model's tool call arguments didn't match the tool's schema."
-            if msg.startswith("Reasoning is required"):
-                return "The model should have returned reasoning but didn't."
+            # Other RuntimeErrors (tool not found, arg parse/validate failures,
+            # reasoning required) already have user-friendly messages with
+            # useful context (e.g., tool names), so pass them through.
+            return msg
 
         if isinstance(exc, ValueError):
-            msg = _safe_str(exc)
-            if "specific output schema" in msg or "didn't meet the schema" in msg:
-                return "The model's output didn't match the task's output schema."
+            # ValueError messages from the adapter (schema mismatches, etc.)
+            # are already user-readable and include helpful detail.
+            return _safe_str(exc)
 
         return _GENERIC_FALLBACK_MESSAGE
     except Exception:
