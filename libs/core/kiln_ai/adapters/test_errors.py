@@ -9,7 +9,7 @@ import pytest
 from kiln_ai.adapters.errors import (
     ErrorWithTrace,
     KilnRunError,
-    format_user_message,
+    format_error_message,
 )
 
 
@@ -59,21 +59,21 @@ class TestFormatUserMessage:
     def test_rate_limit_error(self):
         exc = _make_litellm_error(litellm.RateLimitError)
         assert (
-            format_user_message(exc)
+            format_error_message(exc)
             == "Rate limit exceeded. Wait a moment and try again."
         )
 
     def test_authentication_error(self):
         exc = _make_litellm_error(litellm.AuthenticationError)
         assert (
-            format_user_message(exc)
+            format_error_message(exc)
             == "Authentication with the model provider failed. Check your API key."
         )
 
     def test_api_connection_error(self):
         exc = _make_litellm_error(litellm.APIConnectionError)
         assert (
-            format_user_message(exc)
+            format_error_message(exc)
             == "Could not connect to the model provider. Check your network connection."
         )
 
@@ -88,7 +88,7 @@ class TestFormatUserMessage:
     def test_service_unavailable_family(self, cls):
         exc = _make_litellm_error(cls)
         assert (
-            format_user_message(exc)
+            format_error_message(exc)
             == "The model provider is currently unavailable. Try again in a moment."
         )
 
@@ -108,7 +108,7 @@ class TestFormatUserMessage:
             )
             Exception.__init__(exc, "schema mismatch")
         assert (
-            format_user_message(exc)
+            format_error_message(exc)
             == "The model's output didn't match the expected format."
         )
 
@@ -117,7 +117,7 @@ class TestFormatUserMessage:
             "Too many turns (11). Stopping iteration to avoid using too many tokens."
         )
         assert (
-            format_user_message(exc) == "The run exceeded the maximum number of turns."
+            format_error_message(exc) == "The run exceeded the maximum number of turns."
         )
 
     def test_too_many_tool_calls(self):
@@ -125,7 +125,7 @@ class TestFormatUserMessage:
             "Too many tool calls (31). Stopping iteration to avoid using too many tokens."
         )
         assert (
-            format_user_message(exc)
+            format_error_message(exc)
             == "The run exceeded the maximum number of tool calls in one turn."
         )
 
@@ -134,7 +134,7 @@ class TestFormatUserMessage:
             "A tool named 'foo' was invoked by a model, but was not available."
         )
         assert (
-            format_user_message(exc)
+            format_error_message(exc)
             == "The model tried to call a tool that isn't available on this task."
         )
 
@@ -143,7 +143,7 @@ class TestFormatUserMessage:
             "Failed to parse arguments for tool 'foo' (should be JSON): blah"
         )
         assert (
-            format_user_message(exc)
+            format_error_message(exc)
             == "The model produced invalid arguments for a tool call."
         )
 
@@ -152,7 +152,7 @@ class TestFormatUserMessage:
             "Failed to validate arguments for tool 'foo'. The arguments didn't match..."
         )
         assert (
-            format_user_message(exc)
+            format_error_message(exc)
             == "The model's tool call arguments didn't match the tool's schema."
         )
 
@@ -161,7 +161,7 @@ class TestFormatUserMessage:
             "Reasoning is required for this model, but no reasoning was returned."
         )
         assert (
-            format_user_message(exc)
+            format_error_message(exc)
             == "The model should have returned reasoning but didn't."
         )
 
@@ -171,29 +171,28 @@ class TestFormatUserMessage:
             "that JSON didn't meet the schema. Search 'Troubleshooting Structured Data Issues' in our docs for more information."
         )
         assert (
-            format_user_message(exc)
+            format_error_message(exc)
             == "The model's output didn't match the task's output schema."
         )
 
-    def test_unknown_exception_falls_back_to_str(self):
+    def test_unknown_exception_uses_generic_message(self):
         exc = KeyError("missing_key")
-        # KeyError's str() wraps in quotes; just assert the key name is present
-        assert "missing_key" in format_user_message(exc)
+        assert format_error_message(exc) == "An unexpected error occurred."
 
-    def test_unknown_exception_type_falls_back_to_str(self):
+    def test_unknown_exception_type_uses_generic_message(self):
         class WeirdError(Exception):
             pass
 
         exc = WeirdError("something odd")
-        assert format_user_message(exc) == "something odd"
+        assert format_error_message(exc) == "An unexpected error occurred."
 
-    def test_runtime_error_without_known_prefix_falls_back(self):
+    def test_runtime_error_without_known_prefix_uses_generic_message(self):
         exc = RuntimeError("something random happened")
-        assert format_user_message(exc) == "something random happened"
+        assert format_error_message(exc) == "An unexpected error occurred."
 
-    def test_value_error_without_schema_hint_falls_back(self):
+    def test_value_error_without_schema_hint_uses_generic_message(self):
         exc = ValueError("just a regular value error")
-        assert format_user_message(exc) == "just a regular value error"
+        assert format_error_message(exc) == "An unexpected error occurred."
 
     def test_survives_broken_str(self):
         class BrokenStrError(Exception):
@@ -202,20 +201,18 @@ class TestFormatUserMessage:
 
         exc = BrokenStrError("hidden")
         # Should not raise; should return the generic fallback.
-        assert format_user_message(exc) == "An unexpected error occurred."
+        assert format_error_message(exc) == "An unexpected error occurred."
 
-    def test_empty_message_falls_back_to_class_name(self):
+    def test_empty_message_falls_back_to_generic(self):
         exc = RuntimeError("")
-        # RuntimeError with no recognised prefix and empty string → class name
-        # (more useful to the user than a totally generic message).
-        assert format_user_message(exc) == "RuntimeError"
+        assert format_error_message(exc) == "An unexpected error occurred."
 
-    def test_empty_message_custom_class_uses_class_name(self):
+    def test_empty_message_custom_class_uses_generic(self):
         class WeirdError(Exception):
             pass
 
         exc = WeirdError("")
-        assert format_user_message(exc) == "WeirdError"
+        assert format_error_message(exc) == "An unexpected error occurred."
 
 
 class TestKilnRunError:

@@ -7,10 +7,9 @@
   export let error_title: string = "Error"
   export let troubleshooting_steps: string[] = []
 
-  // The generated ErrorWithTrace["trace"] uses the "-Output" variants of the
-  // chat message schemas while the shared `Trace` alias uses the "-Input"
-  // variants. Shapes are render-compatible; cast once here so trace.svelte's
-  // prop typing is satisfied.
+  // The API response and UI component use slightly different TypeScript types
+  // for chat messages (same structure, different type names). Cast once here
+  // to satisfy the Trace component's prop typing.
   $: trace_for_viewer = (error.trace ?? []) as TraceType
 </script>
 

@@ -13,7 +13,7 @@ from kiln_ai.adapters.chat.chat_formatter import (
     MultiturnFormatter,
     get_chat_formatter,
 )
-from kiln_ai.adapters.errors import KilnRunError, format_user_message
+from kiln_ai.adapters.errors import KilnRunError, format_error_message
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     StructuredOutputMode,
@@ -287,8 +287,8 @@ class BaseAdapter(metaclass=ABCMeta):
                     for message in parsed_output.trace
                 )
 
-                # Validate reasoning content is present and required
-                # We don't require reasoning when using tools as models tend not to return any on the final turn (both Sonnet and Gemini).
+                # Validate reasoning content is present if required.
+                # Models often skip reasoning on the final turn when tools are involved, so we don't require it then.
                 if (
                     provider.reasoning_capable
                     and (
@@ -343,7 +343,7 @@ class BaseAdapter(metaclass=ABCMeta):
                 except Exception:
                     partial_trace = None
             raise KilnRunError(
-                message=format_user_message(e),
+                message=format_error_message(e),
                 partial_trace=partial_trace,
                 original=e,
             ) from e

@@ -299,8 +299,7 @@ async def test_mcp_adapter_runtime_failure_wrapped_in_kiln_run_error(
 
     assert isinstance(ei.value.original, RuntimeError)
     assert ei.value.partial_trace is None
-    # format_user_message falls back to str() for unrecognised RuntimeError.
-    assert str(ei.value) == "mcp tool blew up"
+    assert str(ei.value) == "An unexpected error occurred."
     assert ei.value.error_type == "RuntimeError"
 
 
@@ -313,8 +312,7 @@ async def test_mcp_adapter_output_schema_mismatch_wrapped_in_kiln_run_error(
     project_with_local_mcp_server,
     local_mcp_tool_id,
 ):
-    """Post-run output schema validation failures are also runtime failures
-    in scope for Phase 1 and should surface as KilnRunError."""
+    """Post-run output schema validation failures should surface as KilnRunError."""
     from kiln_ai.adapters.errors import KilnRunError
 
     project, _ = project_with_local_mcp_server

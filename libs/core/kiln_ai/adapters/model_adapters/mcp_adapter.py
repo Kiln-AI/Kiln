@@ -1,7 +1,7 @@
 import json
 from typing import Tuple
 
-from kiln_ai.adapters.errors import KilnRunError, format_user_message
+from kiln_ai.adapters.errors import KilnRunError, format_error_message
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig, BaseAdapter
 from kiln_ai.adapters.parsers.json_parser import parse_json_string
 from kiln_ai.adapters.run_output import RunOutput
@@ -214,7 +214,7 @@ class MCPAdapter(BaseAdapter):
             raise
         except Exception as e:
             raise KilnRunError(
-                message=format_user_message(e),
+                message=format_error_message(e),
                 partial_trace=None,
                 original=e,
             ) from e

@@ -380,11 +380,10 @@ def connect_run_api(app: FastAPI):
         tags=["Runs"],
         openapi_extra=agent_policy_require_approval("Run task with LLM?"),
         responses={
-            # Only KilnRunError produces this ErrorWithTrace body so the client
-            # can render the partial conversation trace alongside the error.
-            # Un-wrapped exceptions fall through to the generic handler with
-            # the {message, raw_error} shape. Pre-run errors (400/404/422) keep
-            # the plain HTTPException shape.
+            # Adapter failures (e.g., LLM rate limit, tool crash) return
+            # ErrorWithTrace with the partial conversation trace so the UI
+            # can show what happened before the error. Other 500s and 4xx
+            # errors use the standard error shape.
             500: {"model": ErrorWithTrace},
         },
     )

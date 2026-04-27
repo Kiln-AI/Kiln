@@ -1,10 +1,9 @@
 """Integration tests for /run endpoint error handling.
 
 Verifies the interaction between the `/run` endpoint, the adapter's
-`KilnRunError` wrapping (Phase 1), and the FastAPI exception handler
-(Phase 2). The handler must turn `KilnRunError` into a 500 `ErrorWithTrace`
-body while leaving unrelated error paths (pre-run validation, generic
-fallback) unchanged.
+`KilnRunError` wrapping, and the FastAPI exception handler. The handler
+must turn `KilnRunError` into a 500 `ErrorWithTrace` body while leaving
+unrelated error paths (pre-run validation, generic fallback) unchanged.
 
 Note: the `client` fixture uses `raise_server_exceptions=False` so the
 registered exception handlers actually dispatch (otherwise the test client

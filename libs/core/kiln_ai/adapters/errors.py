@@ -5,7 +5,7 @@ Provides:
 - `KilnRunError`: the exception thrown by the adapter that carries the partial
   conversation trace across the exception boundary so the API layer can return
   it to the client.
-- `format_user_message`: maps known exceptions to user-friendly text.
+- `format_error_message`: maps known exceptions to user-friendly text.
 """
 
 from __future__ import annotations
@@ -66,11 +66,11 @@ def _safe_str(exc: Exception) -> str:
     return result
 
 
-def format_user_message(exc: Exception) -> str:
+def format_error_message(exc: Exception) -> str:
     """Map an exception to a user-friendly message.
 
-    Known exception types get custom messages. Unknown types fall back to
-    str(exc). Never returns a stack trace or internal details.
+    Known exception types get custom messages. Unknown types get a generic
+    fallback to avoid leaking provider internals to the client.
     """
     try:
         # Order matters: several litellm error classes inherit from each
@@ -117,6 +117,6 @@ def format_user_message(exc: Exception) -> str:
             if "specific output schema" in msg or "didn't meet the schema" in msg:
                 return "The model's output didn't match the task's output schema."
 
-        return _safe_str(exc)
+        return _GENERIC_FALLBACK_MESSAGE
     except Exception:
         return _GENERIC_FALLBACK_MESSAGE

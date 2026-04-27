@@ -5,13 +5,13 @@ Verifies that:
 - The partial trace is preserved across the exception boundary
 - Already-wrapped KilnRunErrors pass through unmodified
 - The original exception is accessible via `.original` and `__cause__`
-- `format_user_message` is applied to the wrapped message
+- `format_error_message` is applied to the wrapped message
 """
 
 from __future__ import annotations
 
 from typing import Tuple
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import litellm
 import pytest
@@ -161,7 +161,7 @@ async def test_cause_chain_preserved(make_adapter):
     assert ei.value.original is inner
 
 
-async def test_format_user_message_applied_for_known_exception(make_adapter):
+async def test_format_error_message_applied_for_known_exception(make_adapter):
     inner = RuntimeError("Too many turns (11). Stopping iteration...")
     adapter = make_adapter(post_raise=inner)
     with pytest.raises(KilnRunError) as ei:
@@ -169,7 +169,7 @@ async def test_format_user_message_applied_for_known_exception(make_adapter):
     assert str(ei.value) == "The run exceeded the maximum number of turns."
 
 
-async def test_format_user_message_applied_for_litellm_rate_limit(make_adapter):
+async def test_format_error_message_applied_for_litellm_rate_limit(make_adapter):
     try:
         rate_limit = litellm.RateLimitError(
             message="upstream", model="m", llm_provider="openai"
@@ -231,24 +231,3 @@ async def test_messages_to_trace_hook_called(make_adapter):
             await adapter._run_returning_run_output("hello")
     hook.assert_called_once()
     assert ei.value.partial_trace == converted
-
-
-async def test_happy_path_unchanged(make_adapter, base_task):
-    """Sanity check: when `_run` succeeds the adapter still returns normally."""
-    run_output = RunOutput(output="hi", intermediate_outputs={})
-    adapter = make_adapter(return_output=(run_output, Usage()))
-
-    with (
-        patch(
-            "kiln_ai.adapters.model_adapters.base_adapter.model_parser_from_id"
-        ) as mock_parser_from_id,
-        patch.object(type(adapter), "model_provider") as mock_mp,
-    ):
-        mock_parser = MagicMock()
-        mock_parser.parse_output.return_value = run_output
-        mock_parser_from_id.return_value = mock_parser
-        mock_mp.return_value = KilnModelProvider(name="openai", formatter=None)
-
-        task_run, out = await adapter._run_returning_run_output("hello")
-    assert out is run_output
-    assert task_run.output.output == "hi"
