@@ -3,7 +3,7 @@ name: Build Desktop Apps
 on:
   workflow_dispatch:
   release:
-    types: [created]
+    types: [ created ]
   push:
     branches:
       - main
@@ -12,6 +12,10 @@ jobs:
   build:
     name: Build Desktop Apps
     runs-on: ${{ matrix.os }}
+    env:
+      SENTRY_ENV_NAME: ${{ github.event_name == 'release' && 'production' || 'staging' }}
+      SENTRY_RELEASE_TAG: ${{ github.event_name == 'release' &&
+        github.event.release.tag_name || github.sha }}
     strategy:
       fail-fast: false
       matrix:
@@ -43,6 +47,19 @@ jobs:
 
       # Compress MacOS app param ignored on other platforms
       - name: Build Desktop App
+        env:
+          # SENTRY_AUTH_TOKEN/ORG/PROJECT are consumed only by sentrySvelteKit
+          # for source-map upload (web bundle). The desktop python bundle
+          # reports to a different Sentry project and uses no auth token.
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: kiln-oy
+          SENTRY_PROJECT: frontend
+          VITE_KILN_SENTRY_DSN: https://667db4eeb7ae7f46e960fee790d836a8@o4511151852224512.ingest.de.sentry.io/4511276081545296
+          VITE_KILN_SENTRY_ENV: ${{ env.SENTRY_ENV_NAME }}
+          VITE_KILN_SENTRY_RELEASE: kiln-studio-web@${{ env.SENTRY_RELEASE_TAG }}
+          KILN_SENTRY_DSN: https://772eb4a3e07a8c15616b6187e034f158@o4511151852224512.ingest.de.sentry.io/4511151853731920
+          KILN_SENTRY_ENV: ${{ env.SENTRY_ENV_NAME }}
+          KILN_SENTRY_RELEASE: kiln-studio-desktop@${{ env.SENTRY_RELEASE_TAG }}
         run: uv run bash ./app/desktop/build_desktop_app.sh
 
       - name: Build Windows Installer
@@ -53,13 +70,15 @@ jobs:
 
       - name: Copy Windows Installer
         if: matrix.os == 'windows-latest'
-        run: cp ./app/desktop/Output/kilnsetup.exe ./app/desktop/build/dist/Kiln.Windows.Installer.exe
+        run: cp ./app/desktop/Output/kilnsetup.exe
+          ./app/desktop/build/dist/Kiln.Windows.Installer.exe
 
       # Print checksums, so anyone can verify the build
 
       - name: Checksums (macOS)
         if: runner.os == 'macOS'
-        run: find ./app/desktop/build/dist/Kiln.app -type f -not -path "*/Contents/Resources/botocore/data/*" -exec md5 {} \;
+        run: find ./app/desktop/build/dist/Kiln.app -type f -not -path
+          "*/Contents/Resources/botocore/data/*" -exec md5 {} \;
 
       - name: Checksums (Linux)
         if: runner.os == 'Linux'
