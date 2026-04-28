@@ -13,7 +13,7 @@ jobs:
     name: Build Desktop Apps
     runs-on: ${{ matrix.os }}
     env:
-      SENTRY_ENV_NAME: ${{ github.event_name == 'release' && 'production' || 'development' }}
+      SENTRY_ENV_NAME: ${{ github.event_name == 'release' && 'production' || 'staging' }}
       SENTRY_RELEASE_TAG: ${{ github.event_name == 'release' &&
         github.event.release.tag_name || github.sha }}
     strategy:
