@@ -171,18 +171,10 @@ class AdapterStream:
             )
 
             stream = StreamingCompletion(**completion_kwargs)
-            call_latency_seconds = 0.0
-            chunk_wait_start = time.monotonic()
+            start = time.monotonic()
             async for chunk in stream:
-                # Accumulate time spent waiting on the LLM for this chunk
-                call_latency_seconds += time.monotonic() - chunk_wait_start
                 yield chunk
-                # Reset timer after yield returns — excludes consumer processing time
-                chunk_wait_start = time.monotonic()
-            # Capture the terminal wait (final __anext__ that raises StopAsyncIteration)
-            call_latency_seconds += time.monotonic() - chunk_wait_start
-
-            call_latency_ms = int(call_latency_seconds * 1000)
+            call_latency_ms = int((time.monotonic() - start) * 1000)
 
             response, response_choice = _validate_response(stream.response)
             usage += self._adapter.usage_from_response(response)
