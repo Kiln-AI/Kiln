@@ -467,3 +467,133 @@ class TestAssets:
         skill = make_skill()
         with pytest.raises(ValueError, match="Skill must be saved"):
             skill.assets_dir()
+
+
+class TestCountFileLines:
+    @pytest.mark.parametrize(
+        "content,expected",
+        [
+            ("", 0),
+            ("one line", 1),
+            ("one line\n", 1),
+            ("first\nsecond", 2),
+            ("first\nsecond\n", 2),
+            ("a\nb\nc\nd\n", 4),
+            ("a\n\nc", 3),
+            ("\n", 1),
+            ("\n\n\n", 3),
+        ],
+    )
+    def test_count_file_lines(self, mock_project, content, expected):
+        skill = save_skill_with_body(mock_project)
+        (skill.references_dir() / "f.md").write_text(content, encoding="utf-8")
+        assert skill.count_file_lines("references", "f.md") == expected
+
+    def test_count_file_lines_assets_root(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        (skill.assets_dir() / "data.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+        assert skill.count_file_lines("assets", "data.csv") == 2
+
+    def test_count_file_lines_unknown_root(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        with pytest.raises(ValueError, match="Unknown resource root"):
+            skill.count_file_lines("secrets", "f.md")
+
+    def test_count_file_lines_path_traversal(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        with pytest.raises(ValueError, match="Path traversal"):
+            skill.count_file_lines("references", "../../etc/passwd")
+
+    def test_count_file_lines_missing_file(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        with pytest.raises(FileNotFoundError, match="Resource file not found"):
+            skill.count_file_lines("references", "missing.md")
+
+    def test_count_file_lines_binary_rejected(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        (skill.references_dir() / "image.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00")
+        with pytest.raises(ValueError, match="not a readable text file"):
+            skill.count_file_lines("references", "image.png")
+
+
+class TestIterMarkdownReferences:
+    def test_yields_markdown_only(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        ref_dir = skill.references_dir()
+        (ref_dir / "a.md").write_text("A\n", encoding="utf-8")
+        (ref_dir / "b.txt").write_text("not md", encoding="utf-8")
+        (ref_dir / "c.md").write_text("C\n", encoding="utf-8")
+        results = list(skill.iter_markdown_references())
+        rel_paths = [rel for rel, _ in results]
+        assert rel_paths == ["a.md", "c.md"]
+        assert dict(results)["a.md"] == "A\n"
+
+    def test_recurses_into_subdirectories(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        ref_dir = skill.references_dir()
+        (ref_dir / "top.md").write_text("top", encoding="utf-8")
+        sub = ref_dir / "knowledge" / "nested"
+        sub.mkdir(parents=True)
+        (sub / "deep.md").write_text("deep", encoding="utf-8")
+        rel_paths = [rel for rel, _ in skill.iter_markdown_references()]
+        assert "top.md" in rel_paths
+        assert "knowledge/nested/deep.md" in rel_paths
+
+    def test_scoped_by_prefix(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        ref_dir = skill.references_dir()
+        (ref_dir / "top.md").write_text("top", encoding="utf-8")
+        (ref_dir / "knowledge").mkdir()
+        (ref_dir / "knowledge" / "rag.md").write_text("rag", encoding="utf-8")
+        rel_paths = [rel for rel, _ in skill.iter_markdown_references("knowledge")]
+        assert rel_paths == ["knowledge/rag.md"]
+
+    def test_scoped_by_prefix_trailing_slash(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        (skill.references_dir() / "knowledge").mkdir()
+        (skill.references_dir() / "knowledge" / "x.md").write_text(
+            "x", encoding="utf-8"
+        )
+        rel_paths = [rel for rel, _ in skill.iter_markdown_references("knowledge/")]
+        assert rel_paths == ["knowledge/x.md"]
+
+    def test_path_traversal_rejected(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        with pytest.raises(ValueError, match="Path traversal"):
+            list(skill.iter_markdown_references("../../etc"))
+
+    def test_missing_prefix_yields_empty(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        assert list(skill.iter_markdown_references("does_not_exist")) == []
+
+    def test_prefix_points_to_file_yields_empty(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        (skill.references_dir() / "a.md").write_text("A", encoding="utf-8")
+        assert list(skill.iter_markdown_references("a.md")) == []
+
+    def test_skips_bad_utf8(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        ref_dir = skill.references_dir()
+        (ref_dir / "ok.md").write_text("ok", encoding="utf-8")
+        (ref_dir / "bad.md").write_bytes(b"\xff\xfe\xff\xbad utf8")
+        rel_paths = [rel for rel, _ in skill.iter_markdown_references()]
+        assert rel_paths == ["ok.md"]
+
+    def test_empty_references_yields_nothing(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        assert list(skill.iter_markdown_references()) == []
+
+    def test_no_references_dir_yields_nothing(self, mock_project):
+        skill = make_skill(parent=mock_project)
+        skill.save_to_file()
+        # references_dir() returns a Path but dir is not created until save_skill_md
+        assert not skill.references_dir().exists()
+        assert list(skill.iter_markdown_references()) == []
+
+    def test_yields_sorted(self, mock_project):
+        skill = save_skill_with_body(mock_project)
+        ref_dir = skill.references_dir()
+        for name in ("zeta.md", "alpha.md", "mid.md"):
+            (ref_dir / name).write_text(name, encoding="utf-8")
+        rel_paths = [rel for rel, _ in skill.iter_markdown_references()]
+        assert rel_paths == ["alpha.md", "mid.md", "zeta.md"]

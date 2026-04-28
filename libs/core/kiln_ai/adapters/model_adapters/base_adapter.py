@@ -51,7 +51,12 @@ from kiln_ai.datamodel.run_config import (
 )
 from kiln_ai.datamodel.skill import Skill
 from kiln_ai.datamodel.task import RunConfigProperties
-from kiln_ai.datamodel.tool_id import SKILL_TOOL_ID_PREFIX, skill_id_from_tool_id
+from kiln_ai.datamodel.tool_id import (
+    SKILL_SEARCH_TOOL_ID_PREFIX,
+    SKILL_TOOL_ID_PREFIX,
+    skill_id_from_skill_search_tool_id,
+    skill_id_from_tool_id,
+)
 
 # Import agent run context for run lifecycle management
 from kiln_ai.run_context import (
@@ -62,6 +67,7 @@ from kiln_ai.run_context import (
 )
 from kiln_ai.tools import KilnToolInterface
 from kiln_ai.tools.mcp_session_manager import MCPSessionManager
+from kiln_ai.tools.skill_search_tool import SkillSearchTool
 from kiln_ai.tools.skill_tool import SkillTool
 from kiln_ai.tools.tool_registry import tool_from_id
 from kiln_ai.utils.config import Config
@@ -158,6 +164,7 @@ class BaseAdapter(metaclass=ABCMeta):
             self.prompt_builder = None
         self._model_provider: KilnModelProvider | None = None
         self._resolved_skills: list[Skill] | None = None
+        self._resolved_skill_search_skills: list[Skill] | None = None
 
         self.output_schema = task.output_json_schema
         self.input_schema = task.input_json_schema
@@ -509,9 +516,13 @@ class BaseAdapter(metaclass=ABCMeta):
             == StructuredOutputMode.json_instruction_and_object
         )
 
+        skill_tool_skills = self._resolve_skills()
+        skill_search_skills = self._resolve_skill_search_tool_skills()
+        combined_skills = self._merge_skills(skill_tool_skills, skill_search_skills)
         return self.prompt_builder.build_prompt(
             include_json_instructions=add_json_instructions,
-            skills=self._resolve_skills(),
+            skills=combined_skills,
+            skill_search_enabled=bool(skill_search_skills),
         )
 
     def _resolve_skills(self) -> list[Skill]:
@@ -565,6 +576,73 @@ class BaseAdapter(metaclass=ABCMeta):
 
         self._resolved_skills = skills
         return self._resolved_skills
+
+    def _resolve_skill_search_tool_skills(self) -> list[Skill]:
+        """Resolve skills referenced by ``skill_search`` tool IDs.
+
+        Mirrors :meth:`_resolve_skills` but filters by
+        ``SKILL_SEARCH_TOOL_ID_PREFIX``. Cached separately so a run config that
+        enables both tools resolves each once.
+        """
+        if self._resolved_skill_search_skills is not None:
+            return self._resolved_skill_search_skills
+
+        if self.run_config.type != "kiln_agent":
+            self._resolved_skill_search_skills = []
+            return self._resolved_skill_search_skills
+
+        tool_config = as_kiln_agent_run_config(self.run_config).tools_config
+        if tool_config is None or tool_config.tools is None:
+            self._resolved_skill_search_skills = []
+            return self._resolved_skill_search_skills
+
+        search_tool_ids = [
+            tid
+            for tid in tool_config.tools
+            if tid.startswith(SKILL_SEARCH_TOOL_ID_PREFIX)
+        ]
+        if not search_tool_ids:
+            self._resolved_skill_search_skills = []
+            return self._resolved_skill_search_skills
+
+        injected = self.base_adapter_config.skills
+        if injected is None:
+            raise ValueError(
+                "Run config references skills but no skills dict was provided via "
+                "AdapterConfig(skills=...). Use load_skills_for_task() to pre-load "
+                "skills and pass them to the adapter."
+            )
+
+        skills: list[Skill] = []
+        seen: set[str] = set()
+        for tool_id in search_tool_ids:
+            sid = skill_id_from_skill_search_tool_id(tool_id)
+            if sid not in injected:
+                raise ValueError(
+                    f"Skill {sid} referenced in run config but not found in the "
+                    "injected skills dict."
+                )
+            if sid in seen:
+                continue
+            seen.add(sid)
+            skills.append(injected[sid])
+
+        self._resolved_skill_search_skills = skills
+        return self._resolved_skill_search_skills
+
+    @staticmethod
+    def _merge_skills(
+        skill_tool_skills: list[Skill], skill_search_skills: list[Skill]
+    ) -> list[Skill]:
+        """Union two skill lists, preserving order and de-duplicating by id."""
+        merged: list[Skill] = []
+        seen: set[str | None] = set()
+        for s in list(skill_tool_skills) + list(skill_search_skills):
+            if s.id in seen:
+                continue
+            seen.add(s.id)
+            merged.append(s)
+        return merged
 
     def build_chat_formatter(
         self,
@@ -734,7 +812,10 @@ class BaseAdapter(metaclass=ABCMeta):
             return []
 
         non_skill_tool_ids = [
-            tid for tid in tool_config.tools if not tid.startswith(SKILL_TOOL_ID_PREFIX)
+            tid
+            for tid in tool_config.tools
+            if not tid.startswith(SKILL_TOOL_ID_PREFIX)
+            and not tid.startswith(SKILL_SEARCH_TOOL_ID_PREFIX)
         ]
 
         tools: list[KilnToolInterface] = [
@@ -751,6 +832,21 @@ class BaseAdapter(metaclass=ABCMeta):
                     )
                 seen_names.add(skill.name)
             tools.append(SkillTool(f"{SKILL_TOOL_ID_PREFIX}_combined", skills))
+
+        search_skills = self._resolve_skill_search_tool_skills()
+        if search_skills:
+            seen_names = set()
+            for skill in search_skills:
+                if skill.name in seen_names:
+                    raise ValueError(
+                        f"Duplicate skill name '{skill.name}'. Each skill must have a unique name."
+                    )
+                seen_names.add(skill.name)
+            tools.append(
+                SkillSearchTool(
+                    f"{SKILL_SEARCH_TOOL_ID_PREFIX}_combined", search_skills
+                )
+            )
 
         tool_names = [await tool.name() for tool in tools]
         if len(tool_names) != len(set(tool_names)):
