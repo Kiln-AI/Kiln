@@ -5,5 +5,69 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Allow agent to edit document? Ensure you backup your project before allowing agentic edits."
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "name_override": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name Override",
+          "description": "A name for this document."
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Description",
+          "description": "The description of the document"
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Tags",
+          "description": "Tags for the document"
+        }
+      },
+      "type": "object",
+      "title": "PatchDocumentRequest"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "document_id": {
+        "type": "string",
+        "description": "The unique identifier of the document.",
+        "title": "Document Id"
+      }
+    },
+    "query": {}
   }
 }

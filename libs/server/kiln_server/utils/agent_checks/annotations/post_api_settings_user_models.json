@@ -4,5 +4,68 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "provider_type": {
+          "type": "string",
+          "enum": [
+            "builtin",
+            "custom"
+          ],
+          "title": "Provider Type"
+        },
+        "provider_id": {
+          "type": "string",
+          "title": "Provider Id"
+        },
+        "model_id": {
+          "type": "string",
+          "title": "Model Id"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name"
+        },
+        "overrides": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Overrides"
+        },
+        "id": {
+          "type": "string",
+          "title": "Id"
+        }
+      },
+      "type": "object",
+      "required": [
+        "provider_type",
+        "provider_id",
+        "model_id"
+      ],
+      "title": "UserModelEntry",
+      "description": "A user-defined custom model entry.\n\nAttributes:\n    id: Unique identifier for this entry (auto-generated if not provided)\n    provider_type: \"builtin\" for ModelProviderName enum providers, \"custom\" for openai_compatible\n    provider_id: For builtin: enum value like \"openai\". For custom: the custom provider name\n    model_id: The model ID to use with the provider's API\n    name: Display name (optional, defaults to model_id)\n    overrides: Property overrides from KilnModelProvider (optional)\n\nNote on overrides:\n    The overrides field accepts any keys for forward compatibility. When a UserModelEntry\n    is converted to a KilnModelProvider via user_model_to_provider(), only valid\n    KilnModelProvider fields are applied. Unknown fields are silently ignored.\n    This allows new fields to be added to KilnModelProvider without breaking existing\n    UserModelEntry data."
+    }
+  },
+  "parameters": {
+    "path": {},
+    "query": {}
   }
 }

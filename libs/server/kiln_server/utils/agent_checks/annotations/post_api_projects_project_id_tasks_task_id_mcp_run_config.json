@@ -4,5 +4,63 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name",
+          "description": "The name of the run config."
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Description",
+          "description": "The description of the run config."
+        },
+        "tool_id": {
+          "type": "string",
+          "title": "Tool Id",
+          "description": "The MCP tool ID to use."
+        }
+      },
+      "type": "object",
+      "required": [
+        "tool_id"
+      ],
+      "title": "CreateMcpRunConfigRequest",
+      "description": "Request to create a run config from an MCP tool."
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      }
+    },
+    "query": {}
   }
 }

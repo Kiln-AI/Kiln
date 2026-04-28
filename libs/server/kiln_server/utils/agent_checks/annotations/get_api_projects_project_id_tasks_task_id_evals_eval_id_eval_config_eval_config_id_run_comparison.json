@@ -5,5 +5,47 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Run eval comparison?"
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      },
+      "eval_id": {
+        "type": "string",
+        "description": "The unique identifier of the eval.",
+        "title": "Eval Id"
+      },
+      "eval_config_id": {
+        "type": "string",
+        "description": "The unique identifier of the eval configuration.",
+        "title": "Eval Config Id"
+      }
+    },
+    "query": {
+      "run_config_ids": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "The list of run configuration IDs to evaluate.",
+        "default": [],
+        "title": "Run Config Ids"
+      },
+      "all_run_configs": {
+        "type": "boolean",
+        "description": "Whether to evaluate all run configurations for the task.",
+        "default": false,
+        "title": "All Run Configs"
+      }
+    }
   }
 }

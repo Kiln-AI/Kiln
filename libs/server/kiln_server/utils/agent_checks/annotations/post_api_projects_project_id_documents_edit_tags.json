@@ -4,5 +4,66 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "document_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Document Ids",
+          "description": "List of document IDs to modify tags for."
+        },
+        "add_tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Add Tags",
+          "description": "Tags to add to the documents."
+        },
+        "remove_tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Remove Tags",
+          "description": "Tags to remove from the documents."
+        }
+      },
+      "type": "object",
+      "required": [
+        "document_ids"
+      ],
+      "title": "Body_edit_tags_api_projects__project_id__documents_edit_tags_post"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      }
+    },
+    "query": {}
   }
 }

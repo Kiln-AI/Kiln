@@ -4,5 +4,96 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 120,
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name",
+          "description": "A name for this entity."
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Description",
+          "description": "The description of the embedding config"
+        },
+        "model_provider_name": {
+          "type": "string",
+          "enum": [
+            "openai",
+            "groq",
+            "amazon_bedrock",
+            "ollama",
+            "openrouter",
+            "fireworks_ai",
+            "kiln_fine_tune",
+            "kiln_custom_registry",
+            "openai_compatible",
+            "anthropic",
+            "gemini_api",
+            "azure_openai",
+            "huggingface",
+            "vertex",
+            "together_ai",
+            "siliconflow_cn",
+            "cerebras",
+            "docker_model_runner"
+          ],
+          "title": "ModelProviderName",
+          "description": "Enumeration of supported AI model providers."
+        },
+        "model_name": {
+          "type": "string",
+          "title": "Model Name",
+          "description": "The name of the embedding model"
+        },
+        "properties": {
+          "properties": {
+            "dimensions": {
+              "type": "integer",
+              "exclusiveMinimum": 0.0,
+              "title": "Dimensions"
+            }
+          },
+          "type": "object",
+          "title": "EmbeddingProperties"
+        }
+      },
+      "type": "object",
+      "required": [
+        "model_provider_name",
+        "model_name"
+      ],
+      "title": "CreateEmbeddingConfigRequest"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      }
+    },
+    "query": {}
   }
 }

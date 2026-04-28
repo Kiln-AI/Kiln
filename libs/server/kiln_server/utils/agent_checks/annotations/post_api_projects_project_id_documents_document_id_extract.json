@@ -5,5 +5,46 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Run document extraction? This processes the document and may take time."
+  },
+  "request_body": {
+    "required": false,
+    "content_type": "application/json",
+    "schema": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "List of extractor config IDs to run. If None, all non-archived extractor configs are used.",
+      "title": "Extractor Config Ids"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "document_id": {
+        "type": "string",
+        "description": "The unique identifier of the document.",
+        "title": "Document Id"
+      }
+    },
+    "query": {}
   }
 }

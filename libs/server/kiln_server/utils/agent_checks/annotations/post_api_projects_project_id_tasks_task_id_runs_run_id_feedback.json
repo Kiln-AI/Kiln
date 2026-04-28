@@ -4,5 +4,55 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "feedback": {
+          "type": "string",
+          "minLength": 1,
+          "title": "Feedback",
+          "description": "Free-form text feedback on the task run."
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "run-page",
+            "spec-feedback"
+          ],
+          "title": "FeedbackSource",
+          "description": "Where a piece of feedback originated.\n\nThis is an append-only enum: new sources can be added freely, but existing\nvalues must never be removed or renamed so that older persisted data\ncontinues to load."
+        }
+      },
+      "type": "object",
+      "required": [
+        "feedback",
+        "source"
+      ],
+      "title": "CreateFeedbackRequest",
+      "description": "Request body for creating feedback on a task run."
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      },
+      "run_id": {
+        "type": "string",
+        "description": "The unique identifier of the task run.",
+        "title": "Run Id"
+      }
+    },
+    "query": {}
   }
 }
