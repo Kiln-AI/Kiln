@@ -938,12 +938,8 @@ class LiteLlmAdapter(BaseAdapter):
         trace: list[ChatCompletionMessageParam] = []
         for i, message in enumerate(messages):
             if isinstance(message, LiteLLMMessage):
-                latency_ms = (
-                    message_latency.get(i) if message_latency else None
-                )
-                trace.append(
-                    self.litellm_message_to_trace_message(message, latency_ms)
-                )
+                latency_ms = message_latency.get(i) if message_latency else None
+                trace.append(self.litellm_message_to_trace_message(message, latency_ms))
             else:
                 trace.append(message)
         return trace
