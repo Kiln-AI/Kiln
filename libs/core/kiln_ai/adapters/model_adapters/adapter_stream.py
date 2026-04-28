@@ -189,8 +189,8 @@ class AdapterStream:
                     "Model returned an assistant message, but no content or tool calls. This is not supported."
                 )
 
-            self._message_latency[id(response_choice.message)] = call_latency_ms
             self._messages.append(response_choice.message)
+            self._message_latency[len(self._messages) - 1] = call_latency_ms
 
             if tool_calls and len(tool_calls) > 0:
                 # Check for return_on_tool_call BEFORE processing

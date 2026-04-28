@@ -125,7 +125,8 @@ class LiteLlmAdapter(BaseAdapter):
         usage = Usage()
         messages = list(prior_messages)
         tool_calls_count = 0
-        # Track latency per message by object identity — avoids monkeypatching LiteLLM objects
+        # LLM call latency in ms, keyed by index in the messages list.
+        # Kept separate because we don't own the LiteLLM message objects.
         message_latency: dict[int, int] = {}
 
         while tool_calls_count < MAX_TOOL_CALLS_PER_TURN:
@@ -162,8 +163,8 @@ class LiteLlmAdapter(BaseAdapter):
                 )
 
             # Add message to messages, so it can be used in the next turn
-            message_latency[id(response_choice.message)] = call_latency_ms
             messages.append(response_choice.message)
+            message_latency[len(messages) - 1] = call_latency_ms
 
             # Process tool calls if any
             if tool_calls and len(tool_calls) > 0:
@@ -877,7 +878,7 @@ class LiteLlmAdapter(BaseAdapter):
     def litellm_message_to_trace_message(
         self,
         raw_message: LiteLLMMessage,
-        message_latency: dict[int, int] | None = None,
+        latency_ms: int | None = None,
     ) -> ChatCompletionAssistantMessageParamWrapper:
         """
         Convert a LiteLLM Message object to an OpenAI compatible message, our ChatCompletionAssistantMessageParamWrapper
@@ -916,8 +917,8 @@ class LiteLlmAdapter(BaseAdapter):
             if len(open_ai_tool_calls) > 0:
                 message["tool_calls"] = open_ai_tool_calls
 
-        if message_latency and id(raw_message) in message_latency:
-            message["latency_ms"] = message_latency[id(raw_message)]
+        if latency_ms is not None:
+            message["latency_ms"] = latency_ms
 
         if not message.get("content") and not message.get("tool_calls"):
             raise ValueError(
@@ -935,10 +936,13 @@ class LiteLlmAdapter(BaseAdapter):
         Internally we allow LiteLLM Message objects, but for trace we need OpenAI compatible types. Replace LiteLLM Message objects with OpenAI compatible types.
         """
         trace: list[ChatCompletionMessageParam] = []
-        for message in messages:
+        for i, message in enumerate(messages):
             if isinstance(message, LiteLLMMessage):
+                latency_ms = (
+                    message_latency.get(i) if message_latency else None
+                )
                 trace.append(
-                    self.litellm_message_to_trace_message(message, message_latency)
+                    self.litellm_message_to_trace_message(message, latency_ms)
                 )
             else:
                 trace.append(message)
