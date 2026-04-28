@@ -61,7 +61,7 @@ def test_simple_prompt_builder(tmp_path):
 
 class MockAdapter(BaseAdapter):
     async def _run(
-        self, input: InputType, messages=None, **kwargs
+        self, input: InputType, messages, **kwargs
     ) -> tuple[RunOutput, Usage | None]:
         return RunOutput(output="mock response", intermediate_outputs=None), None
 

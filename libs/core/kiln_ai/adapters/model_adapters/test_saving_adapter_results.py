@@ -11,7 +11,7 @@ from kiln_ai.utils.config import Config
 
 class MockAdapter(BaseAdapter):
     async def _run(
-        self, input: InputType, messages=None, **kwargs
+        self, input: InputType, messages, **kwargs
     ) -> tuple[RunOutput, Usage | None]:
         return RunOutput(output="Test output", intermediate_outputs=None), None
 
@@ -248,7 +248,7 @@ async def test_invoke_continue_session(test_task, adapter):
             {"role": "assistant", "content": "Hi there!"},
         ]
 
-        async def mock_run(input, messages=None, **kwargs):
+        async def mock_run(input, messages, **kwargs):
             prior_trace = kwargs.get("prior_trace")
             if prior_trace is not None:
                 extended_trace = [

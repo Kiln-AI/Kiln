@@ -98,7 +98,7 @@ class MockAdapter(BaseAdapter):
         self.response = response
 
     async def _run(
-        self, input: str, messages=None, **kwargs
+        self, input: str, messages, **kwargs
     ) -> tuple[RunOutput, Usage | None]:
         return RunOutput(output=self.response, intermediate_outputs=None), None
 

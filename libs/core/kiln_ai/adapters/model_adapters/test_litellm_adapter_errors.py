@@ -41,7 +41,7 @@ def config():
     return LiteLlmConfig(
         base_url=None,
         run_config_properties=KilnAgentRunConfigProperties(
-            model_name="gpt-4o-mini",
+            model_name="gpt_4o_mini",
             model_provider_name=ModelProviderName.openai,
             prompt_id="simple_prompt_builder",
             structured_output_mode="json_schema",
