@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from "svelte"
+  import { get } from "svelte/store"
   import { fly } from "svelte/transition"
+  import posthog from "posthog-js"
   import ChatCostDisclaimer from "./chat_cost_disclaimer.svelte"
   import type { ChatMessage, ChatMessagePart } from "$lib/chat/streaming_chat"
   import { CHAT_CLIENT_VERSION_TOO_OLD } from "$lib/error_codes"
@@ -430,6 +432,9 @@
   }
 
   export function newChat() {
+    posthog.capture("chat_new_chat_clicked", {
+      had_messages: get(store).messages.length > 0,
+    })
     store.reset()
   }
 
