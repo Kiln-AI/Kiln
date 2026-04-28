@@ -165,6 +165,8 @@ class ModelName(str, Enum):
     qwen_2p5_vl_32b = "qwen_2p5_vl_32b"
     qwen_2p5_vl_72b = "qwen_2p5_vl_72b"
     qwq_32b = "qwq_32b"
+    deepseek_4_pro = "deepseek_4_pro"
+    deepseek_4_flash = "deepseek_4_flash"
     deepseek_3_2 = "deepseek_3_2"
     deepseek_3_1 = "deepseek_3_1"
     deepseek_3_1_terminus = "deepseek_3_1_terminus"
@@ -508,6 +510,15 @@ CLAUDE_ANTHROPIC_EFFORT_THINKING_LEVELS = {
 }
 
 CLAUDE_OPUS_4_7_ANTHROPIC_THINKING_LEVELS = {
+    "Low": "low",
+    "Medium": "medium",
+    "High": "high",
+    "Extra High": "xhigh",
+    "Max": "max",
+}
+
+DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS = {
+    "Off/None": "none",
     "Low": "low",
     "Medium": "medium",
     "High": "high",
@@ -4446,6 +4457,54 @@ built_in_models: List[KilnModel] = [
                 reasoning_optional_for_structured_output=True,
                 supports_data_gen=False,
                 supports_function_calling=False,
+            ),
+        ],
+    ),
+    # DeepSeek V4 Pro
+    KilnModel(
+        family=ModelFamily.deepseek,
+        name=ModelName.deepseek_4_pro,
+        friendly_name="DeepSeek V4 Pro",
+        featured_rank=4,
+        editorial_notes="Open source flagship with 1.6T params (49B activated). 1M context, configurable reasoning.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="deepseek/deepseek-v4-pro",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.fireworks_ai,
+                model_id="accounts/fireworks/models/deepseek-v4-pro",
+                structured_output_mode=StructuredOutputMode.json_instruction_and_object,
+                supports_data_gen=True,
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.together_ai,
+                model_id="deepseek-ai/DeepSeek-V4-Pro",
+                structured_output_mode=StructuredOutputMode.json_instructions,
+                supports_data_gen=True,
+            ),
+        ],
+    ),
+    # DeepSeek V4 Flash
+    KilnModel(
+        family=ModelFamily.deepseek,
+        name=ModelName.deepseek_4_flash,
+        friendly_name="DeepSeek V4 Flash",
+        featured_rank=6,
+        editorial_notes="Faster V4 variant with 284B params (13B activated). 1M context, same reasoning capabilities.",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="deepseek/deepseek-v4-flash",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                supports_data_gen=True,
+                available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
+                default_thinking_level="high",
             ),
         ],
     ),
