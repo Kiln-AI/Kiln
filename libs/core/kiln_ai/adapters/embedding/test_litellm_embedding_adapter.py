@@ -606,6 +606,59 @@ class TestLitellmEmbeddingAdapter:
         )
         assert adapter.embedding_config == mock_embedding_config
 
+    def test_apply_instructions_to_texts_no_instructions(self, mock_litellm_adapter):
+        """Test _apply_instructions_to_texts when no instructions are provided."""
+        input_texts = ["text1", "text2", "text3"]
+        result = mock_litellm_adapter._apply_instructions_to_texts(input_texts, None)
+        assert result == input_texts
+
+    def test_apply_instructions_to_texts_with_instructions(self, mock_litellm_adapter):
+        """Test _apply_instructions_to_texts when instructions are provided."""
+        input_texts = ["What is AI?", "How does ML work?"]
+        result = mock_litellm_adapter._apply_instructions_to_texts(
+            input_texts, "Use semantic similarity"
+        )
+
+        expected = [
+            "Instruct: Use semantic similarity\nQuery: What is AI?",
+            "Instruct: Use semantic similarity\nQuery: How does ML work?",
+        ]
+        assert result == expected
+
+    def test_apply_instructions_to_texts_empty_instructions(self, mock_litellm_adapter):
+        """Test _apply_instructions_to_texts when instructions are empty string."""
+        input_texts = ["text1", "text2"]
+        result = mock_litellm_adapter._apply_instructions_to_texts(input_texts, "")
+        # Empty instructions should be treated as no instructions
+        assert result == input_texts
+
+    @pytest.mark.paid
+    @pytest.mark.parametrize(
+        "provider,model_name",
+        get_all_embedding_models_and_providers(),
+    )
+    async def test_paid_generate_embeddings_with_custom_instructions_supported(
+        self, provider, model_name, mock_litellm_core_config
+    ):
+        model_provider = built_in_embedding_models_from_provider(provider, model_name)
+        assert model_provider is not None
+        if not model_provider.supports_instructions:
+            pytest.skip("Model does not support custom instructions. Skipping.")
+
+        # generate embedding with instructions
+        adapter = embedding_adapter_from_type(
+            EmbeddingConfig(
+                name="paid-embedding",
+                model_provider_name=provider,
+                model_name=model_name,
+                properties={"instructions": "Focus on the color being mentioned"},
+            )
+        )
+        text = ["Kiln is an open-source evaluation platform for LLMs."]
+        result = await adapter.generate_embeddings(text)
+        assert len(result.embeddings) == 1
+        assert isinstance(result.embeddings[0].vector, list)
+
     async def test_generate_embeddings_method_integration(self, mock_litellm_adapter):
         """Test the public embed method integration."""
         mock_response = AsyncMock(spec=EmbeddingResponse)
@@ -1085,6 +1138,66 @@ async def test_paid_generate_embeddings_with_custom_dimensions_supported(
     assert isinstance(result.embeddings[0].vector, list)
     assert len(result.embeddings[0].vector) == custom_dimensions
     assert all(isinstance(x, float) for x in result.embeddings[0].vector)
+
+
+@pytest.mark.paid
+@pytest.mark.parametrize(
+    "provider,model_name",
+    get_all_embedding_models_and_providers(),
+)
+@pytest.mark.asyncio
+async def test_paid_generate_embeddings_with_embedding_context(
+    provider, model_name, mock_litellm_core_config
+):
+    """
+    Test that EmbeddingContext parameter works correctly.
+    Instructions should only be applied when context=QUERY_SEARCH.
+    """
+
+    from kiln_ai.adapters.embedding.base_embedding_adapter import EmbeddingContext
+
+    model_provider = built_in_embedding_models_from_provider(provider, model_name)
+    assert model_provider is not None
+    if not model_provider.supports_instructions:
+        pytest.skip("Model does not support custom instructions")
+
+    adapter = embedding_adapter_from_type(
+        EmbeddingConfig(
+            name="paid-embedding",
+            model_provider_name=provider,
+            model_name=model_name,
+            properties={"instructions": "Focus on the main topic"},
+        )
+    )
+
+    text = ["Kiln is an open-source evaluation platform for LLMs."]
+
+    # Test with DOCUMENT_INDEXING context (instructions NOT applied)
+    result_without_instructions = await adapter.generate_embeddings(
+        text, context=EmbeddingContext.DOCUMENT_INDEXING
+    )
+    assert len(result_without_instructions.embeddings) == 1
+    assert isinstance(result_without_instructions.embeddings[0].vector, list)
+    assert (
+        len(result_without_instructions.embeddings[0].vector)
+        == model_provider.n_dimensions
+    )
+
+    # Test with QUERY_SEARCH context (instructions applied)
+    result_with_instructions = await adapter.generate_embeddings(
+        text, context=EmbeddingContext.QUERY_SEARCH
+    )
+    assert len(result_with_instructions.embeddings) == 1
+    assert isinstance(result_with_instructions.embeddings[0].vector, list)
+    assert (
+        len(result_with_instructions.embeddings[0].vector)
+        == model_provider.n_dimensions
+    )
+
+    # The embeddings should be different when instructions are applied vs not applied
+    assert all(
+        isinstance(x, float) for x in result_with_instructions.embeddings[0].vector
+    )
 
 
 def test_validate_map_to_embeddings():
