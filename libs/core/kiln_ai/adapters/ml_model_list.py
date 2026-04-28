@@ -551,6 +551,27 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.PNG,
                 ],
             ),
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="openai/gpt-5.5",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                available_thinking_levels=GPT_5_4_OPENAI_THINKING_LEVELS,
+                default_thinking_level="none",
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                supports_vision=True,
+                multimodal_capable=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.TXT,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+            ),
         ],
     ),
     # GPT 5.4
