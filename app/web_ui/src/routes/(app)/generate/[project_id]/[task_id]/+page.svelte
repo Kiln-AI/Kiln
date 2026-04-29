@@ -9,6 +9,7 @@
   import { createQnaStore, type QnaStore } from "./qna/qna_ui_store"
   import { DEFAULT_QNA_GUIDANCE } from "./qna/guidance"
   import { agentInfo } from "$lib/agent"
+  import { client } from "$lib/api_client"
 
   // watch out because query param value is not the same as gen_type
   type SynthReasonQueryParam = "eval" | "fine_tune" | "qna"
@@ -26,6 +27,11 @@
   let cachedQnaTaskId: string | null = null
   let cachedQnaInitialized = false
 
+  // Show the Data Guide action button only when one is already saved.
+  // For first-time users (no guide yet), the entry point is the "Set Up Data
+  // Guide" Intro inside the synth flow, not a top-bar shortcut.
+  let has_data_guide: boolean = false
+
   // we only need gen_type to do the routing, the type-specific data is handled by the
   // mode-specific pages we redirect to
   type SavedDataGenState = {
@@ -37,8 +43,20 @@
   })
 
   onMount(async () => {
-    await handle_routing()
+    await Promise.all([handle_routing(), check_data_guide()])
   })
+
+  async function check_data_guide() {
+    try {
+      const { data } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
+        { params: { path: { project_id, task_id } } },
+      )
+      has_data_guide = !!data?.guide?.trim()
+    } catch {
+      has_data_guide = false
+    }
+  }
 
   async function handle_routing() {
     loading = true
@@ -139,12 +157,14 @@
     no_y_padding
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/synthetic-data-generation"
-    action_buttons={[
-      {
-        label: "Data Guide",
-        href: `/generate/${project_id}/${task_id}/data_guide`,
-      },
-    ]}
+    action_buttons={has_data_guide
+      ? [
+          {
+            label: "Data Guide",
+            href: `/generate/${project_id}/${task_id}/data_guide`,
+          },
+        ]
+      : []}
   >
     {#if loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">

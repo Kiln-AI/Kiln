@@ -6,6 +6,7 @@
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import GuideSetupForm from "./guide_setup_form.svelte"
+  import GuideRefineView from "./guide_refine_view.svelte"
   import GuidePreview from "./guide_preview.svelte"
   import DataGenDescription from "../data_gen_description.svelte"
   import { SynthDataGuidanceDataModel } from "../synth_data_guidance_datamodel"
@@ -15,13 +16,21 @@
   import { current_task } from "$lib/stores"
 
   type GuideBuilderState =
+    | "loading"
     | "setup"
+    | "refine_existing"
     | "generating"
     | "preview"
     | "refining"
     | "saving"
 
-  let current_state: GuideBuilderState = "setup"
+  // Start in "loading" so we can decide between setup vs refine-existing once
+  // we know whether a guide is already saved. Without this we'd briefly flash
+  // the setup form before the GET resolves.
+  let current_state: GuideBuilderState = "loading"
+  // Tracks which entry view to fall back to when an async step (preview/refine)
+  // errors out, so refine-existing users don't get bounced into the setup form.
+  let entry_state: "setup" | "refine_existing" = "setup"
   let error: KilnError | null = null
   let submitting = false
 
@@ -82,7 +91,23 @@
         // Non-critical — output dialog will fall back to its defaults
       }
     }
+
+    // If a saved guide already exists, skip the build-from-examples setup form
+    // and drop the user into the refine flow. Otherwise start fresh.
+    entry_state = guide.trim() ? "refine_existing" : "setup"
+    current_state = entry_state
   })
+
+  function handle_restart_setup() {
+    // User opted to start from scratch instead of refining the saved guide.
+    // Reset everything we'd otherwise reuse and route to the setup form.
+    guide = ""
+    preview_samples = []
+    captured_input_run_config = null
+    captured_output_run_config = null
+    entry_state = "setup"
+    current_state = "setup"
+  }
 
   async function handle_generate_preview(
     event: CustomEvent<{
@@ -120,7 +145,7 @@
       current_state = "preview"
     } catch (e) {
       error = createKilnError(e)
-      current_state = "setup"
+      current_state = entry_state
     } finally {
       submitting = false
     }
@@ -207,7 +232,9 @@
       goto(`/generate/${project_id}/${task_id}/synth?session_continued=true`)
     } catch (e) {
       error = createKilnError(e)
-      current_state = "setup"
+      // Save failed — keep the reviewed samples on screen so the user can
+      // retry instead of bouncing back to the setup/refine entry view.
+      current_state = "preview"
     } finally {
       submitting = false
     }
@@ -250,7 +277,9 @@
 <!-- TODO: Update read the docs link to point to new data guide docs -->
 <div class="max-w-[1400px]">
   <AppPage
-    title="Set Up Data Guide"
+    title={entry_state === "refine_existing"
+      ? "Refine Data Guide"
+      : "Set Up Data Guide"}
     subtitle="Help us understand what your data looks like so we can generate high-quality synthetic data."
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/synthetic-data-generation"
@@ -263,12 +292,24 @@
   >
     <DataGenDescription bind:guidance_data />
 
-    {#if current_state === "setup"}
+    {#if current_state === "loading"}
+      <div class="flex flex-col items-center justify-center py-24 gap-4">
+        <span class="loading loading-spinner loading-lg text-primary" />
+      </div>
+    {:else if current_state === "setup"}
       <GuideSetupForm
         {project_id}
         {task_id}
         {task}
         on:generate_preview={handle_generate_preview}
+      />
+    {:else if current_state === "refine_existing"}
+      <GuideRefineView
+        {project_id}
+        {guide}
+        {task}
+        on:generate_preview={handle_generate_preview}
+        on:restart_setup={handle_restart_setup}
       />
     {:else if current_state === "generating"}
       <div class="flex flex-col items-center justify-center py-24 gap-4">

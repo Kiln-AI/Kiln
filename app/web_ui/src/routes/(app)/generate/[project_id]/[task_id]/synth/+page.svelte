@@ -827,12 +827,14 @@
               handler: clear_all_with_confirm,
             },
           ]
-        : [
-            {
-              label: "Data Guide",
-              href: `/generate/${project_id}/${task_id}/data_guide`,
-            },
-          ]),
+        : data_guide
+          ? [
+              {
+                label: "Data Guide",
+                href: `/generate/${project_id}/${task_id}/data_guide`,
+              },
+            ]
+          : []),
     ]}
   >
     {#if task_loading || synth_data_loading}

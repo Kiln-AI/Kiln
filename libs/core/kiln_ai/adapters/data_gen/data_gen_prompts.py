@@ -336,7 +336,7 @@ Produce a refined data guide that the user can use for future synthetic data gen
 
 ### How to use the ratings
 
-- **"Realistic" samples are an implicit positive signal.** They show the rules currently in effect are working for cases like that. Do not weaken or remove rules that are producing realistic samples; if anything, the refined rules should still produce samples like these. You generally should not need to add new rules just to address a Realistic sample.
+- **"Realistic" samples are an implicit positive signal.** They show the rules (or lack of rules) currently in effect are working for cases like that. Do not weaken or remove rules that are producing realistic samples; if anything, the refined rules should still produce samples like these. You generally should not need to add new rules just to address a Realistic sample at risk of overfitting.
 - **"Needs Work" samples plus the user's feedback are the primary signal for changes.** Identify what specifically is wrong (structure, values, realism, format, tone, constraints) and update the guide so future generations would produce something the user would have rated Realistic.
 - If the user's feedback is general (e.g. "values should be more realistic"), prefer updating or adding a rule in `# Guidelines & Rules` rather than adding a new example.
 - If the user's feedback points at a specific structural issue, prefer fixing or adding a precise rule (e.g. "patient_id must be a UUID v4 string").

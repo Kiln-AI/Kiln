@@ -19,40 +19,15 @@
     task_run_to_example,
   } from "$lib/utils/task_sample_example"
   import Dialog from "$lib/ui/dialog.svelte"
-  import Collapse from "$lib/ui/collapse.svelte"
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import TaskRunPicker from "$lib/utils/task_run_picker.svelte"
-  import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
-  import { available_models, load_available_models } from "$lib/stores"
-  import type { AvailableModels } from "$lib/types"
-
-  // Pick the first non-deprecated, structured-output-capable model that's flagged
-  // as recommended for data gen. Returns the "<provider_id>/<model_id>" string
-  // RunConfigComponent expects, or null if no match is available yet.
-  function pick_recommended_data_gen_model(
-    providers: AvailableModels[],
-  ): string | null {
-    for (const provider of providers) {
-      for (const m of provider.models) {
-        if (
-          m.suggested_for_data_gen &&
-          m.supports_structured_output &&
-          m.supports_data_gen &&
-          !m.deprecated &&
-          !m.untested_model
-        ) {
-          return `${provider.provider_id}/${m.id}`
-        }
-      }
-    }
-    return null
-  }
+  import RunOptionsTiles from "./run_options_tiles.svelte"
 
   export let project_id: string
   export let task_id: string
-  // Optional — used by the output run config dialog to mirror the SDG output flow
-  // (prompt + tools/skills at top level, requires_structured_output keyed off
-  // task.output_json_schema). Falls back to safe defaults if absent.
+  // Optional — forwarded to the output run config dialog so it can mirror the
+  // SDG output flow (prompt + tools/skills at top level, requires_structured_output
+  // keyed off task.output_json_schema). Falls back to safe defaults if absent.
   export let task: Task | null = null
 
   // Each FormContainer needs its own state so dialogs don't share spinners/errors
@@ -162,8 +137,6 @@
   }
 
   onMount(async () => {
-    // Required for picking the SDG-recommended default model.
-    load_available_models()
     try {
       const result = await fetch_task_sample_candidates(project_id, task_id)
       available_runs = result.available_runs.filter(
@@ -234,20 +207,9 @@
   }
 
   // --- Run options (per-stage) ---
-  // Two separate run configs because input gen and output gen can have different
-  // structured-output requirements / model preferences. The components are
-  // rendered inline in the Advanced collapse below.
-  let input_run_config_component: RunConfigComponent | null = null
-  let output_run_config_component: RunConfigComponent | null = null
-  // Initial recommended model passed into both RunConfigComponents. Without this
-  // RunConfigComponent falls back to ui_state.selected_model (the user's last
-  // pick anywhere in the app), which is not what we want for an SDG-defaulted
-  // page. Computed once available_models loads.
-  let recommended_data_gen_model: string | null = null
-  $: if (!recommended_data_gen_model && $available_models.length > 0) {
-    recommended_data_gen_model =
-      pick_recommended_data_gen_model($available_models)
-  }
+  // Bound to the shared RunOptionsTiles instance so we can pull the configured
+  // run configs at submit time.
+  let run_options_tiles: RunOptionsTiles | null = null
 
   function handle_continue() {
     // FormContainer flips submitting=true before dispatching submit, and expects
@@ -262,10 +224,8 @@
         page_error = new KilnError("At least one example is required.")
         return
       }
-      const input_run_config =
-        input_run_config_component?.run_options_as_run_config_properties()
-      const output_run_config =
-        output_run_config_component?.run_options_as_run_config_properties()
+      const input_run_config = run_options_tiles?.get_input_run_config()
+      const output_run_config = run_options_tiles?.get_output_run_config()
       if (!input_run_config || !output_run_config) {
         page_error = new KilnError(
           "Please select a model for input and output generation.",
@@ -462,60 +422,7 @@
     {/if}
   </div>
 
-  <!-- Run Options — rendered inline so the user can see the full run config
-       without an extra dialog. Collapsed by default; sensible defaults are
-       pre-selected. -->
-  <Collapse title="Generation Options" outlined={true}>
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div class="flex flex-col gap-3">
-        <FormElement
-          id="input_run_options"
-          label="Input Generation"
-          description="Run options used to generate example inputs."
-          inputType="header_only"
-          value={null}
-        />
-        <RunConfigComponent
-          bind:this={input_run_config_component}
-          model={recommended_data_gen_model}
-          {project_id}
-          requires_structured_output={true}
-          show_name_field={false}
-          hide_prompt_selector={true}
-          show_tools_selector_in_advanced={true}
-          model_dropdown_settings={{
-            requires_data_gen: true,
-            suggested_mode: "data_gen",
-          }}
-        />
-      </div>
-      <!-- Mirrors the SDG output flow: prompt + tools/skills selectors stay at
-           top level, and structured-output requirement keys off the task's
-           own output schema. -->
-      <div class="flex flex-col gap-3">
-        <FormElement
-          id="output_run_options"
-          label="Output Generation"
-          description="Run options used to generate example outputs."
-          inputType="header_only"
-          value={null}
-        />
-        <RunConfigComponent
-          bind:this={output_run_config_component}
-          model={recommended_data_gen_model}
-          {project_id}
-          current_task={task}
-          requires_structured_output={!!task?.output_json_schema}
-          show_name_field={false}
-          model_dropdown_settings={{
-            requires_structured_output: !!task?.output_json_schema,
-            requires_data_gen: true,
-            suggested_mode: "data_gen",
-          }}
-        />
-      </div>
-    </div>
-  </Collapse>
+  <RunOptionsTiles bind:this={run_options_tiles} {project_id} {task} />
 </FormContainer>
 
 <!-- Add/Edit Example Dialog -->

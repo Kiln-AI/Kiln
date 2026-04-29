@@ -34,6 +34,12 @@ from kiln_ai.adapters.ml_model_list import (
     StructuredOutputMode,
     built_in_models,
 )
+from kiln_ai.adapters.remote_config import (
+    SDGRecommendedModel,
+)
+from kiln_ai.adapters.remote_config import (
+    sdg_recommended_models as sdg_recommended_models_global,
+)
 from kiln_ai.adapters.ollama_tools import (
     OllamaConnection,
     ollama_base_url,
@@ -395,6 +401,22 @@ def connect_provider_api(app: FastAPI):
         models.extend(openai_compatible)
 
         return models
+
+    @app.get(
+        "/api/sdg_recommended_models",
+        summary="List SDG-Recommended Models",
+        tags=["Providers & Models"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_sdg_recommended_models() -> List[SDGRecommendedModel]:
+        """Priority list of (provider, model) pairs to use as the auto-selected
+        defaults in the data guide flow's input/output run options. Sourced
+        from the remote model config (`sdg_recommended_models` key), or derived
+        from the local model list as a fallback. The frontend should iterate
+        in order and pick the first entry whose provider is configured.
+        """
+        # Snapshot to avoid the caller seeing a mid-refresh mutation.
+        return list(sdg_recommended_models_global)
 
     @app.get(
         "/api/providers/embedding_models",

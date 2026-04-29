@@ -214,7 +214,9 @@ def connect_data_gen_api(app: FastAPI):
         project = project_from_id(project_id)
         task = task_from_id(project_id, task_id)
 
-        combined_guidance = _combine_guidance(task, input.guidance, input.data_guide)
+        combined_guidance = _combine_guidance(
+            task, input.guidance, "topics", input.data_guide
+        )
         categories_task = DataGenCategoriesTask(
             gen_type=input.gen_type,
             parent_project=project,
@@ -260,7 +262,9 @@ def connect_data_gen_api(app: FastAPI):
         project = project_from_id(project_id)
         task = task_from_id(project_id, task_id)
 
-        combined_guidance = _combine_guidance(task, input.guidance, input.data_guide)
+        combined_guidance = _combine_guidance(
+            task, input.guidance, "inputs", input.data_guide
+        )
         sample_task = DataGenSampleTask(
             target_task=task,
             gen_type=input.gen_type,
@@ -334,15 +338,10 @@ def connect_data_gen_api(app: FastAPI):
     ) -> TaskRun:
         task = task_from_id(project_id, task_id)
 
-        guidance_parts: list[str] = []
-        if sample.data_guide is not None:
-            if sample.data_guide.strip():
-                guidance_parts.append(sample.data_guide)
-        elif task.data_guide:
-            guidance_parts.append(task.data_guide.guide)
-        if sample.guidance:
-            guidance_parts.append(sample.guidance)
-        guidance = "\n\n".join(guidance_parts)
+        combined = (
+            _combine_guidance(task, sample.guidance, "outputs", sample.data_guide) or ""
+        )
+        guidance = combined
         if len(sample.topic_path) > 0:
             guidance += f"""
 ## Topic Path
@@ -743,17 +742,71 @@ The topic path for this sample is:
         )
 
 
+_DATA_GUIDE_STAGE_HINTS: dict[Literal["topics", "inputs", "outputs"], str] = {
+    "topics": (
+        "Since this stage generates topics, use the guide to inform the subject "
+        "areas and scenarios the task's data covers. Treat anything specifically "
+        "about input/output structure as background context, not as something to "
+        "reproduce in the topic strings."
+    ),
+    "inputs": (
+        "Since this stage generates task inputs, follow the guide's rules and "
+        "examples for what realistic inputs look like — structure, value ranges, "
+        "format. Rules about outputs are still useful context for understanding "
+        "what kind of inputs naturally pair with realistic outputs, but you are "
+        "not generating outputs in this step."
+    ),
+    "outputs": (
+        "Since this stage generates task outputs, follow the guide's rules and "
+        "examples for the expected output format, structure, and quality. Adhere "
+        "strictly to any rules about output shape; reference examples show the "
+        "kind of output you should produce."
+    ),
+}
+
+
+def _resolve_data_guide(task: Task, data_guide_override: str | None) -> str | None:
+    """Return the data guide content to use for this call.
+
+    Override semantics: an explicit override (even an empty string) replaces the
+    task's persisted guide. `None` means "no override provided" and falls back
+    to `task.data_guide.guide` if present.
+    """
+    if data_guide_override is not None:
+        return data_guide_override if data_guide_override.strip() else None
+    if task.data_guide:
+        return task.data_guide.guide
+    return None
+
+
 def _combine_guidance(
     task: Task,
     session_guidance: str | None,
+    stage: Literal["topics", "inputs", "outputs"],
     data_guide_override: str | None = None,
 ) -> str | None:
+    """Combine the task data guide with the per-call/template guidance.
+
+    The data guide is wrapped with a short framing paragraph + a stage-specific
+    hint so the LLM understands what it's reading and how to apply it for the
+    current generation stage. Without this wrapper, the model sees the user's
+    raw markdown with no context for where it came from or how to use it.
+    """
     parts: list[str] = []
-    if data_guide_override is not None:
-        if data_guide_override.strip():
-            parts.append(data_guide_override)
-    elif task.data_guide:
-        parts.append(task.data_guide.guide)
+    data_guide_content = _resolve_data_guide(task, data_guide_override)
+    if data_guide_content:
+        stage_hint = _DATA_GUIDE_STAGE_HINTS[stage]
+        parts.append(
+            "## Task Data Guide\n\n"
+            "The following describes what data for this task generally looks "
+            "like, including reference examples and any rules or constraints "
+            "the user has provided. Treat it as authoritative context for what "
+            "realistic task data looks like. "
+            f"{stage_hint}\n\n"
+            "<task_data_guide>\n"
+            f"{data_guide_content}\n"
+            "</task_data_guide>"
+        )
     if session_guidance:
         parts.append(session_guidance)
     return "\n\n".join(parts) if parts else None

@@ -1095,6 +1095,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sdg_recommended_models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List SDG-Recommended Models
+         * @description Priority list of (provider, model) pairs to use as the auto-selected
+         *     defaults in the data guide flow's input/output run options. Sourced
+         *     from the remote model config (`sdg_recommended_models` key), or derived
+         *     from the local model list as a fallback. The frontend should iterate
+         *     in order and pick the first entry whose provider is configured.
+         */
+        get: operations["get_sdg_recommended_models_api_sdg_recommended_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/providers/embedding_models": {
         parameters: {
             query?: never;
@@ -8476,6 +8500,21 @@ export interface components {
             tags?: string[] | null;
         };
         /**
+         * SDGRecommendedModel
+         * @description A pointer to a (provider, model) pair recommended for synthetic data
+         *     generation. Used to drive the auto-selected default model in the data
+         *     guide flow's input/output run options.
+         */
+        SDGRecommendedModel: {
+            /** @description Provider name. Must be a non-deprecated provider on the referenced model. */
+            provider_id: components["schemas"]["ModelProviderName"];
+            /**
+             * Model Id
+             * @description Provider-specific model id (matches KilnModelProvider.model_id).
+             */
+            model_id: string;
+        };
+        /**
          * SampleApi
          * @description A sample input/output pair.
          */
@@ -13044,6 +13083,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AvailableModels"][];
+                };
+            };
+        };
+    };
+    get_sdg_recommended_models_api_sdg_recommended_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SDGRecommendedModel"][];
                 };
             };
         };

@@ -25,6 +25,8 @@ from kiln_ai.adapters.ml_model_list import (
 )
 from kiln_ai.adapters.remote_config import (
     KilnRemoteConfig,
+    SDGRecommendedModel,
+    default_sdg_recommended_models,
     deserialize_config_at_path,
     dump_builtin_config,
     load_from_url,
@@ -1539,3 +1541,204 @@ async def test_refresh_model_list_uses_default_url():
     assert len(built_in_models) > 1
     assert len(built_in_embedding_models) > 1
     assert len(built_in_rerankers) > 1
+
+
+# --- SDG-recommended models ---
+
+
+def _model_with_providers(
+    name: ModelName,
+    family: ModelFamily,
+    providers: list[KilnModelProvider],
+) -> KilnModel:
+    return KilnModel(
+        family=family,
+        name=name,
+        friendly_name=str(name),
+        providers=providers,
+    )
+
+
+def test_default_sdg_recommended_models_orders_openai_first():
+    # Two models. One has providers in order [anthropic, openai], the other
+    # has [openai, openrouter]. Both providers are flagged as data-gen
+    # suggested, so we expect: all openai first, then anthropic, then
+    # openrouter.
+    models = [
+        _model_with_providers(
+            ModelName.gpt_4_1,
+            ModelFamily.gpt,
+            [
+                KilnModelProvider(
+                    name=ModelProviderName.anthropic,
+                    model_id="anth-1",
+                    suggested_for_data_gen=True,
+                ),
+                KilnModelProvider(
+                    name=ModelProviderName.openai,
+                    model_id="openai-1",
+                    suggested_for_data_gen=True,
+                ),
+            ],
+        ),
+        _model_with_providers(
+            ModelName.gpt_4o,
+            ModelFamily.gpt,
+            [
+                KilnModelProvider(
+                    name=ModelProviderName.openai,
+                    model_id="openai-2",
+                    suggested_for_data_gen=True,
+                ),
+                KilnModelProvider(
+                    name=ModelProviderName.openrouter,
+                    model_id="openrouter-1",
+                    suggested_for_data_gen=True,
+                ),
+            ],
+        ),
+    ]
+
+    result = default_sdg_recommended_models(models)
+    pairs = [(r.provider_id, r.model_id) for r in result]
+    assert pairs == [
+        (ModelProviderName.openai, "openai-1"),
+        (ModelProviderName.openai, "openai-2"),
+        (ModelProviderName.anthropic, "anth-1"),
+        (ModelProviderName.openrouter, "openrouter-1"),
+    ]
+
+
+def test_default_sdg_recommended_models_skips_unflagged_providers():
+    models = [
+        _model_with_providers(
+            ModelName.gpt_4_1,
+            ModelFamily.gpt,
+            [
+                KilnModelProvider(
+                    name=ModelProviderName.openai,
+                    model_id="openai-yes",
+                    suggested_for_data_gen=True,
+                ),
+                KilnModelProvider(
+                    name=ModelProviderName.anthropic,
+                    model_id="anth-no",
+                    # default suggested_for_data_gen=False
+                ),
+            ],
+        ),
+    ]
+
+    result = default_sdg_recommended_models(models)
+    assert [(r.provider_id, r.model_id) for r in result] == [
+        (ModelProviderName.openai, "openai-yes"),
+    ]
+
+
+def test_default_sdg_recommended_models_skips_blank_model_ids():
+    # Fine-tune-only providers can have empty model_id; those shouldn't end
+    # up in the recommended list because they can't actually be selected.
+    models = [
+        _model_with_providers(
+            ModelName.gpt_4_1,
+            ModelFamily.gpt,
+            [
+                KilnModelProvider(
+                    name=ModelProviderName.openai,
+                    model_id="",
+                    suggested_for_data_gen=True,
+                ),
+                KilnModelProvider(
+                    name=ModelProviderName.openai,
+                    model_id="real-id",
+                    suggested_for_data_gen=True,
+                ),
+            ],
+        ),
+    ]
+
+    result = default_sdg_recommended_models(models)
+    assert [(r.provider_id, r.model_id) for r in result] == [
+        (ModelProviderName.openai, "real-id"),
+    ]
+
+
+def test_round_trip_includes_sdg_recommended_models(tmp_path):
+    path = tmp_path / "models.json"
+    serialize_config(
+        built_in_models, built_in_embedding_models, built_in_rerankers, path
+    )
+    loaded = deserialize_config_at_path(path)
+    expected = default_sdg_recommended_models(built_in_models)
+    assert loaded.sdg_recommended_models == expected
+    raw = json.loads(path.read_text())
+    assert "sdg_recommended_models" in raw
+    assert len(raw["sdg_recommended_models"]) == len(expected)
+
+
+def test_serialize_with_explicit_sdg_recommended_models(tmp_path):
+    # Caller can pass an override list (e.g. for the public remote config that
+    # wants to curate ordering separately from the model definitions).
+    override = [
+        SDGRecommendedModel(provider_id=ModelProviderName.openai, model_id="custom-1"),
+    ]
+    path = tmp_path / "models.json"
+    serialize_config(
+        built_in_models,
+        built_in_embedding_models,
+        built_in_rerankers,
+        path,
+        sdg_recommended_models_list=override,
+    )
+    loaded = deserialize_config_at_path(path)
+    assert loaded.sdg_recommended_models == override
+
+
+def test_deserialize_falls_back_when_sdg_key_missing(tmp_path, mock_model):
+    # Older remote configs predate the sdg_recommended_models key. The client
+    # should fall back to deriving the list from the included model_list.
+    data = {
+        "model_list": [mock_model.model_dump(mode="json")],
+        "embedding_model_list": [],
+        "reranker_model_list": [],
+        # Note: no "sdg_recommended_models" key.
+    }
+    path = tmp_path / "no_sdg_key.json"
+    path.write_text(json.dumps(data))
+
+    loaded = deserialize_config_at_path(path)
+    # mock_model has no provider with suggested_for_data_gen=True, so the
+    # derived list is empty — but it still exists as an empty list rather
+    # than blowing up.
+    assert loaded.sdg_recommended_models == []
+
+
+def test_deserialize_skips_invalid_sdg_entries(tmp_path, caplog):
+    data = {
+        "model_list": [],
+        "embedding_model_list": [],
+        "reranker_model_list": [],
+        "sdg_recommended_models": [
+            {"provider_id": "openai", "model_id": "valid"},
+            {"provider_id": "not-a-real-provider", "model_id": "broken"},
+        ],
+    }
+    path = tmp_path / "bad_sdg.json"
+    path.write_text(json.dumps(data))
+    with caplog.at_level(logging.WARNING):
+        loaded = deserialize_config_at_path(path)
+    assert [r.model_id for r in loaded.sdg_recommended_models] == ["valid"]
+    assert "Failed to validate an sdg_recommended_models entry" in caplog.text
+
+
+def test_deserialize_rejects_non_list_sdg_key(tmp_path):
+    data = {
+        "model_list": [],
+        "embedding_model_list": [],
+        "reranker_model_list": [],
+        "sdg_recommended_models": "not a list",
+    }
+    path = tmp_path / "bad_type.json"
+    path.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="sdg_recommended_models"):
+        deserialize_config_at_path(path)
