@@ -47,7 +47,8 @@
             <td class="py-2">
               {#if expanded[i]}
                 <pre
-                  class="whitespace-pre-wrap break-words text-xs text-gray-600">{run.input ?? ""}</pre>
+                  class="whitespace-pre-wrap break-words text-xs text-gray-600">{run.input ??
+                    ""}</pre>
               {:else}
                 <div class="truncate text-xs text-gray-600">
                   {run.input ?? ""}
@@ -57,7 +58,8 @@
             <td class="py-2">
               {#if expanded[i]}
                 <pre
-                  class="whitespace-pre-wrap break-words text-xs text-gray-600">{run.output?.output ?? ""}</pre>
+                  class="whitespace-pre-wrap break-words text-xs text-gray-600">{run
+                    .output?.output ?? ""}</pre>
               {:else}
                 <div class="truncate text-xs text-gray-600">
                   {run.output?.output ?? ""}

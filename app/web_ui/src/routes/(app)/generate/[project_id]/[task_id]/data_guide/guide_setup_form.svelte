@@ -1,5 +1,9 @@
 <script lang="ts" context="module">
-  export type GuideSample = { input: string; output: string }
+  export type GuideSample = {
+    input: string
+    output: string
+    task_run_id?: string
+  }
   export type GuideRule = { name: string; content: string }
 </script>
 
@@ -8,24 +12,54 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import type { TaskRun, KilnAgentRunConfigProperties } from "$lib/types"
+  import type { TaskRun, Task, KilnAgentRunConfigProperties } from "$lib/types"
   import { isKilnAgentRunConfig } from "$lib/types"
   import {
     fetch_task_sample_candidates,
     task_run_to_example,
   } from "$lib/utils/task_sample_example"
   import Dialog from "$lib/ui/dialog.svelte"
+  import Collapse from "$lib/ui/collapse.svelte"
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import TaskRunPicker from "$lib/utils/task_run_picker.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
+  import { available_models, load_available_models } from "$lib/stores"
+  import type { AvailableModels } from "$lib/types"
 
-  export let error: KilnError | null = null
+  // Pick the first non-deprecated, structured-output-capable model that's flagged
+  // as recommended for data gen. Returns the "<provider_id>/<model_id>" string
+  // RunConfigComponent expects, or null if no match is available yet.
+  function pick_recommended_data_gen_model(
+    providers: AvailableModels[],
+  ): string | null {
+    for (const provider of providers) {
+      for (const m of provider.models) {
+        if (
+          m.suggested_for_data_gen &&
+          m.supports_structured_output &&
+          m.supports_data_gen &&
+          !m.deprecated &&
+          !m.untested_model
+        ) {
+          return `${provider.provider_id}/${m.id}`
+        }
+      }
+    }
+    return null
+  }
+
   export let project_id: string
   export let task_id: string
+  // Optional — used by the output run config dialog to mirror the SDG output flow
+  // (prompt + tools/skills at top level, requires_structured_output keyed off
+  // task.output_json_schema). Falls back to safe defaults if absent.
+  export let task: Task | null = null
 
-  // Local state for dialog FormContainers so they don't interfere with each other
-  let dialog_error: KilnError | null = null
-  let dialog_submitting: boolean = false
+  // Each FormContainer needs its own state so dialogs don't share spinners/errors
+  let page_error: KilnError | null = null
+  let page_submitting: boolean = false
+  let rule_error: KilnError | null = null
+  let rule_submitting: boolean = false
 
   // Unified examples list (manual + existing + saved golden)
   export let guide_examples: GuideSample[] = []
@@ -43,7 +77,7 @@
       const example_text = valid_examples
         .map(
           (e, i) =>
-            `## Example ${i + 1}\n**Input:**\n${e.input}\n\n**Output:**\n${e.output}`,
+            `## Example ${i + 1}\n\`\`\`Input\n${e.input}\n\`\`\`\n\n\`\`\`Output\n${e.output}\n\`\`\``,
         )
         .join("\n\n")
       parts.push(`# Reference Examples\n\n${example_text}`)
@@ -53,7 +87,7 @@
       const rules_text = guide_rules
         .map((r) => `## ${r.name}\n${r.content}`)
         .join("\n\n")
-      parts.push(`# Rules & Guidelines\n\n${rules_text}`)
+      parts.push(`# Guidelines & Rules\n\n${rules_text}`)
     }
 
     return (
@@ -88,9 +122,11 @@
   }
 
   function save_example() {
+    const existing = guide_examples[editing_example_index]
     const sample: GuideSample = {
       input: editing_example_input,
       output: editing_example_output,
+      task_run_id: example_mode === "edit" ? existing?.task_run_id : undefined,
     }
     if (example_mode === "edit" && editing_example_index >= 0) {
       guide_examples[editing_example_index] = sample
@@ -109,13 +145,25 @@
   let available_runs: TaskRun[] = []
   let loading_runs = true
 
+  $: added_run_ids = new Set(
+    guide_examples.map((e) => e.task_run_id).filter((id): id is string => !!id),
+  )
+  $: filtered_available_runs = available_runs.filter(
+    (r) => !r.id || !added_run_ids.has(r.id),
+  )
+
   function select_existing_run(run: TaskRun) {
     const ex = task_run_to_example(run)
-    guide_examples = [...guide_examples, { input: ex.input, output: ex.output }]
+    guide_examples = [
+      ...guide_examples,
+      { input: ex.input, output: ex.output, task_run_id: run.id ?? undefined },
+    ]
     example_dialog?.close()
   }
 
   onMount(async () => {
+    // Required for picking the SDG-recommended default model.
+    load_available_models()
     try {
       const result = await fetch_task_sample_candidates(project_id, task_id)
       available_runs = result.available_runs.filter(
@@ -135,12 +183,18 @@
   let editing_rule_index: number = -1
   let editing_rule_name: string = ""
   let editing_rule_content: string = ""
+  // Bumped each time the rule dialog opens so the FormContainer/FormElements
+  // remount with fresh state. Without this, FormElement's reactive validator
+  // fires when we reset values back to "" between opens and surfaces a stale
+  // "Title is required" error before the user has touched the field.
+  let rule_form_token: number = 0
 
   function open_add_rule_dialog() {
     rule_mode = "add"
     editing_rule_index = -1
     editing_rule_name = ""
     editing_rule_content = ""
+    rule_form_token++
     rule_dialog?.show()
   }
 
@@ -149,75 +203,102 @@
     editing_rule_index = index
     editing_rule_name = guide_rules[index].name
     editing_rule_content = guide_rules[index].content
+    rule_form_token++
     rule_dialog?.show()
   }
 
   function save_rule() {
-    const rule: GuideRule = {
-      name: editing_rule_name,
-      content: editing_rule_content,
+    // FormContainer sets rule_submitting=true before dispatching submit.
+    // This handler is synchronous, so we have to flip it back ourselves —
+    // otherwise the next time the dialog opens (with a fresh form via {#key}),
+    // the bound rule_submitting is still true and the Add button spins.
+    try {
+      const rule: GuideRule = {
+        name: editing_rule_name,
+        content: editing_rule_content,
+      }
+      if (rule_mode === "edit" && editing_rule_index >= 0) {
+        guide_rules[editing_rule_index] = rule
+        guide_rules = guide_rules
+      } else {
+        guide_rules = [...guide_rules, rule]
+      }
+      rule_dialog?.close()
+    } finally {
+      rule_submitting = false
     }
-    if (rule_mode === "edit" && editing_rule_index >= 0) {
-      guide_rules[editing_rule_index] = rule
-      guide_rules = guide_rules
-    } else {
-      guide_rules = [...guide_rules, rule]
-    }
-    rule_dialog?.close()
   }
 
   function remove_rule(index: number) {
     guide_rules = guide_rules.filter((_, i) => i !== index)
   }
 
-  // --- Generate modal ---
-  let generate_dialog: Dialog
-  let run_config_component: RunConfigComponent | null = null
+  // --- Run options (per-stage) ---
+  // Two separate run configs because input gen and output gen can have different
+  // structured-output requirements / model preferences. The components are
+  // rendered inline in the Advanced collapse below.
+  let input_run_config_component: RunConfigComponent | null = null
+  let output_run_config_component: RunConfigComponent | null = null
+  // Initial recommended model passed into both RunConfigComponents. Without this
+  // RunConfigComponent falls back to ui_state.selected_model (the user's last
+  // pick anywhere in the app), which is not what we want for an SDG-defaulted
+  // page. Computed once available_models loads.
+  let recommended_data_gen_model: string | null = null
+  $: if (!recommended_data_gen_model && $available_models.length > 0) {
+    recommended_data_gen_model =
+      pick_recommended_data_gen_model($available_models)
+  }
 
-  function open_generate_dialog() {
+  function handle_continue() {
+    // FormContainer flips submitting=true before dispatching submit, and expects
+    // us to flip it back if we don't proceed. Otherwise the Continue button
+    // keeps spinning after a synchronous validation failure.
+    page_error = null
     try {
-      dialog_submitting = true
       const valid_examples = guide_examples.filter(
         (e) => e.input.trim() || e.output.trim(),
       )
       if (valid_examples.length === 0) {
-        throw new KilnError("At least one example is required.")
+        page_error = new KilnError("At least one example is required.")
+        return
       }
-      dialog_error = null
-      generate_dialog?.show()
-    } catch (e) {
-      dialog_error = createKilnError(e)
+      const input_run_config =
+        input_run_config_component?.run_options_as_run_config_properties()
+      const output_run_config =
+        output_run_config_component?.run_options_as_run_config_properties()
+      if (!input_run_config || !output_run_config) {
+        page_error = new KilnError(
+          "Please select a model for input and output generation.",
+          null,
+        )
+        return
+      }
+      if (
+        !isKilnAgentRunConfig(input_run_config) ||
+        !isKilnAgentRunConfig(output_run_config)
+      ) {
+        page_error = new KilnError(
+          "Task Data Guide requires a kiln_agent run config.",
+          null,
+        )
+        return
+      }
+      dispatch("generate_preview", {
+        guide: build_guide_markdown(),
+        input_run_config,
+        output_run_config,
+      })
     } finally {
-      dialog_submitting = false
+      page_submitting = false
     }
-  }
-
-  function handle_generate_submit() {
-    const run_config =
-      run_config_component?.run_options_as_run_config_properties()
-    if (!run_config) {
-      error = new KilnError("Please select a model", null)
-      return
-    }
-    if (!isKilnAgentRunConfig(run_config)) {
-      error = new KilnError(
-        "Task Data Guide requires a kiln_agent run config",
-        null,
-      )
-      return
-    }
-    generate_dialog?.close()
-    dispatch("generate_preview", {
-      guide: build_guide_markdown(),
-      run_config,
-    })
   }
 
   // --- Events ---
   const dispatch = createEventDispatcher<{
     generate_preview: {
       guide: string
-      run_config: KilnAgentRunConfigProperties
+      input_run_config: KilnAgentRunConfigProperties
+      output_run_config: KilnAgentRunConfigProperties
     }
   }>()
 
@@ -236,10 +317,11 @@
 </script>
 
 <FormContainer
-  submit_label="Continue"
-  on:submit={open_generate_dialog}
-  bind:error={dialog_error}
-  bind:submitting={dialog_submitting}
+  submit_label="Generate & Review Examples"
+  on:submit={handle_continue}
+  bind:error={page_error}
+  bind:submitting={page_submitting}
+  submit_disabled={page_submitting || guide_examples.length === 0}
   compact_button={true}
 >
   <!-- Example Data Section -->
@@ -321,7 +403,7 @@
   <div class="flex flex-col gap-2">
     <div class="flex items-center justify-between">
       <div>
-        <div class="font-medium">Rules & Guidelines</div>
+        <div class="font-medium">Guidelines & Rules</div>
         <div class="text-sm text-gray-500">
           Define the rules, constraints, and format for generated inputs and
           outputs.
@@ -375,10 +457,65 @@
       <div
         class="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-400"
       >
-        No rules added yet.
+        No rules added yet. (Optional)
       </div>
     {/if}
   </div>
+
+  <!-- Run Options — rendered inline so the user can see the full run config
+       without an extra dialog. Collapsed by default; sensible defaults are
+       pre-selected. -->
+  <Collapse title="Generation Options" outlined={true}>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="flex flex-col gap-3">
+        <FormElement
+          id="input_run_options"
+          label="Input Generation"
+          description="Run options used to generate example inputs."
+          inputType="header_only"
+          value={null}
+        />
+        <RunConfigComponent
+          bind:this={input_run_config_component}
+          model={recommended_data_gen_model}
+          {project_id}
+          requires_structured_output={true}
+          show_name_field={false}
+          hide_prompt_selector={true}
+          show_tools_selector_in_advanced={true}
+          model_dropdown_settings={{
+            requires_data_gen: true,
+            suggested_mode: "data_gen",
+          }}
+        />
+      </div>
+      <!-- Mirrors the SDG output flow: prompt + tools/skills selectors stay at
+           top level, and structured-output requirement keys off the task's
+           own output schema. -->
+      <div class="flex flex-col gap-3">
+        <FormElement
+          id="output_run_options"
+          label="Output Generation"
+          description="Run options used to generate example outputs."
+          inputType="header_only"
+          value={null}
+        />
+        <RunConfigComponent
+          bind:this={output_run_config_component}
+          model={recommended_data_gen_model}
+          {project_id}
+          current_task={task}
+          requires_structured_output={!!task?.output_json_schema}
+          show_name_field={false}
+          model_dropdown_settings={{
+            requires_structured_output: !!task?.output_json_schema,
+            requires_data_gen: true,
+            suggested_mode: "data_gen",
+          }}
+        />
+      </div>
+    </div>
+  </Collapse>
 </FormContainer>
 
 <!-- Add/Edit Example Dialog -->
@@ -391,7 +528,7 @@
   {#if example_mode === "add" && example_add_method === null}
     <!-- Method selection -->
     <div class="flex flex-col gap-4 mt-8">
-      {#if available_runs.length > 0}
+      {#if filtered_available_runs.length > 0}
         <button
           class="btn btn-outline mb-2"
           on:click={() => (example_add_method = "manual")}
@@ -401,7 +538,7 @@
         </button>
       {/if}
 
-      {#if !loading_runs && available_runs.length > 0}
+      {#if !loading_runs && filtered_available_runs.length > 0}
         <div class="flex items-center gap-2">
           <div class="flex-1 border-t border-base-300"></div>
           <span class="text-sm text-gray-400">or Select Existing</span>
@@ -414,7 +551,7 @@
             <div class="text-sm text-gray-400">Loading existing samples...</div>
           {:else}
             <TaskRunPicker
-              {available_runs}
+              available_runs={filtered_available_runs}
               on:select={(e) => select_existing_run(e.detail)}
             />
           {/if}
@@ -422,15 +559,9 @@
       {/if}
     </div>
   {/if}
-  {#if available_runs.length === 0 || example_add_method === "manual"}
+  {#if filtered_available_runs.length === 0 || example_add_method === "manual"}
     <!-- Manual input/output form -->
-    <FormContainer
-      submit_label={example_mode === "edit" ? "Save" : "Add"}
-      on:submit={save_example}
-      bind:error={dialog_error}
-      bind:submitting={dialog_submitting}
-      compact_button={true}
-    >
+    <div class="flex flex-col gap-3">
       <FormElement
         label="Input"
         id="example_input"
@@ -449,7 +580,25 @@
         optional={true}
         hide_optional_badge={true}
       />
-    </FormContainer>
+      <div class="flex flex-row gap-2 justify-end mt-2">
+        {#if example_mode === "add" && filtered_available_runs.length > 0 && available_runs.length > 0}
+          <button
+            type="button"
+            class="btn btn-sm h-10 btn-outline min-w-24"
+            on:click={() => (example_add_method = null)}
+          >
+            Back
+          </button>
+        {/if}
+        <button
+          type="button"
+          class="btn btn-sm h-10 btn-primary min-w-24"
+          on:click={save_example}
+        >
+          {example_mode === "edit" ? "Save" : "Add"}
+        </button>
+      </div>
+    </div>
   {/if}
 </Dialog>
 
@@ -457,57 +606,31 @@
 <Dialog
   bind:this={rule_dialog}
   width="wide"
-  title={rule_mode === "edit" ? "Edit Rule" : "Add Rule or Guideline"}
+  title={rule_mode === "edit" ? "Edit Rule" : "Add Guideline or Rule"}
   sub_subtitle="Specify how inputs and outputs should behave."
 >
-  <FormContainer
-    submit_label={rule_mode === "edit" ? "Save" : "Add"}
-    on:submit={save_rule}
-    bind:error={dialog_error}
-    bind:submitting={dialog_submitting}
-    compact_button={true}
-  >
-    <FormElement
-      label="Title"
-      id="rule_name"
-      bind:value={editing_rule_name}
-      placeholder="e.g. Realistic User Scenarios"
-    />
-    <FormElement
-      label="Description"
-      id="rule_content"
-      inputType="textarea"
-      height="medium"
-      placeholder="e.g. Include realistic user scenarios in the input to help the model generate more relevant outputs."
-      bind:value={editing_rule_content}
-    />
-  </FormContainer>
-</Dialog>
-
-<!-- Generate Preview Modal -->
-<Dialog
-  bind:this={generate_dialog}
-  title="Test Data Guide"
-  sub_subtitle="Generate synthetic examples to preview how your task data guide will perform."
->
-  <FormContainer
-    submit_label="Continue"
-    on:submit={handle_generate_submit}
-    bind:error={dialog_error}
-    bind:submitting={dialog_submitting}
-    compact_button={true}
-  >
-    <RunConfigComponent
-      bind:this={run_config_component}
-      {project_id}
-      requires_structured_output={true}
-      show_name_field={false}
-      hide_prompt_selector={true}
-      show_tools_selector_in_advanced={true}
-      model_dropdown_settings={{
-        requires_data_gen: true,
-        suggested_mode: "data_gen",
-      }}
-    />
-  </FormContainer>
+  {#key rule_form_token}
+    <FormContainer
+      submit_label={rule_mode === "edit" ? "Save" : "Add"}
+      on:submit={save_rule}
+      bind:error={rule_error}
+      bind:submitting={rule_submitting}
+      compact_button={true}
+    >
+      <FormElement
+        label="Title"
+        id="rule_name"
+        bind:value={editing_rule_name}
+        placeholder="e.g. Realistic User Scenarios"
+      />
+      <FormElement
+        label="Description"
+        id="rule_content"
+        inputType="textarea"
+        height="medium"
+        placeholder="e.g. Include realistic user scenarios in the input to help the model generate more relevant outputs."
+        bind:value={editing_rule_content}
+      />
+    </FormContainer>
+  {/key}
 </Dialog>

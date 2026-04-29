@@ -16,6 +16,7 @@
   import DataGenIntro from "../data_gen_intro.svelte"
   import { SynthDataGuidanceDataModel } from "../synth_data_guidance_datamodel"
   import SynthDataGuidance from "../synth_data_guidance.svelte"
+  import SynthDataGuide from "../synth_data_guide.svelte"
   import { onDestroy } from "svelte"
   import { get_splits_from_url_param } from "$lib/utils/splits_util"
   import DataGenDescription from "../data_gen_description.svelte"
@@ -206,8 +207,12 @@
       saved_state = store
 
       // Special case: if we have some state (goal) but no root_node data, we should reset the state
-      // Cleaner to give the user a fresh UI since there's very little data saved, and the clean UI is about picking goal
+      // Cleaner to give the user a fresh UI since there's very little data saved, and the clean UI is about picking goal.
+      // Skip the reset when returning from a sub-flow (e.g. data guide setup) so the chosen goal/eval/template is preserved.
+      const session_continued =
+        $page.url.searchParams.get("session_continued") === "true"
       if (
+        !session_continued &&
         $saved_state.root_node.samples.length === 0 &&
         $saved_state.root_node.sub_topics.length === 0
       ) {
@@ -390,6 +395,7 @@
       gen_type,
       task,
       splits,
+      data_guide?.guide ?? "",
     )
     // Trigger reactivity
     guidance_data = guidance_data
@@ -681,6 +687,7 @@
         ? JSON.parse(sample.input)
         : sample.input
       const save_sample_guidance = guidance_data.guidance_for_type("outputs")
+      const session_data_guide = get(guidance_data.data_guide)
       // Get a random split tag, if splits are defined
       const split_tag = get_random_split_tag()
       const tags = split_tag ? [split_tag] : []
@@ -707,6 +714,7 @@
             run_config_properties: run_config_properties,
             topic_path: topic_path || [],
             guidance: save_sample_guidance ? save_sample_guidance : undefined, // clear empty string
+            data_guide: session_data_guide ?? "",
             tags,
           },
         },
@@ -821,7 +829,7 @@
           ]
         : [
             {
-              label: "Task Data Guide",
+              label: "Data Guide",
               href: `/generate/${project_id}/${task_id}/data_guide`,
             },
           ]),
@@ -842,12 +850,7 @@
         </div>
       </div>
     {:else if task}
-      <DataGenDescription
-        bind:guidance_data
-        {data_guide}
-        {project_id}
-        {task_id}
-      />
+      <DataGenDescription bind:guidance_data />
       {#if is_empty && is_setup && !data_guide && !guide_loading && !skip_data_guide}
         <div
           class="flex flex-col items-center justify-center min-h-[50vh] mt-12"
@@ -1270,6 +1273,9 @@
         </div>
         <div>
           <SynthDataGuidance guidance_type="outputs" {guidance_data} />
+        </div>
+        <div>
+          <SynthDataGuide {guidance_data} />
         </div>
         {#if task}
           <!-- Lock tools and skills whenever SDG inherits fine-tuning tool state, including the empty set. -->

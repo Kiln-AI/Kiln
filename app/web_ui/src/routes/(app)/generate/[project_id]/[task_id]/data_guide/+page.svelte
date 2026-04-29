@@ -10,7 +10,9 @@
   import DataGenDescription from "../data_gen_description.svelte"
   import { SynthDataGuidanceDataModel } from "../synth_data_guidance_datamodel"
   import { onDestroy } from "svelte"
-  import type { KilnAgentRunConfigProperties } from "$lib/types"
+  import type { KilnAgentRunConfigProperties, Task } from "$lib/types"
+  import { agentInfo } from "$lib/agent"
+  import { current_task } from "$lib/stores"
 
   type GuideBuilderState =
     | "setup"
@@ -29,8 +31,13 @@
   type PreviewSample = { input: string; output: string }
   let preview_samples: PreviewSample[] = []
 
-  // Captured from the generate modal event, reused for refine
-  let captured_run_config: KilnAgentRunConfigProperties | null = null
+  // Captured from the setup form so refine/regenerate can reuse them
+  let captured_input_run_config: KilnAgentRunConfigProperties | null = null
+  let captured_output_run_config: KilnAgentRunConfigProperties | null = null
+
+  // The task being edited. Needed by the output run config dialog so it can
+  // mirror the SDG output flow (prompt + tools/skills selectors at top level).
+  let task: Task | null = null
 
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
@@ -40,6 +47,10 @@
 
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
+  $: agentInfo.set({
+    name: "Set Up Data Guide",
+    description: `Setup the task data guide for project ${project_id}, task ${task_id}. The data guide describes the structure, rules, and examples for synthetic data generation.`,
+  })
 
   onMount(async () => {
     try {
@@ -53,12 +64,31 @@
     } catch {
       // No existing guide
     }
+
+    // Load the task so the output run config dialog can pass current_task and
+    // honor task.output_json_schema for structured output requirements.
+    if ($current_task?.id === task_id) {
+      task = $current_task
+    } else {
+      try {
+        const { data: task_data } = await client.GET(
+          "/api/projects/{project_id}/tasks/{task_id}",
+          { params: { path: { project_id, task_id } } },
+        )
+        if (task_data) {
+          task = task_data
+        }
+      } catch {
+        // Non-critical — output dialog will fall back to its defaults
+      }
+    }
   })
 
   async function handle_generate_preview(
     event: CustomEvent<{
       guide: string
-      run_config: KilnAgentRunConfigProperties
+      input_run_config: KilnAgentRunConfigProperties
+      output_run_config: KilnAgentRunConfigProperties
     }>,
   ) {
     error = null
@@ -66,8 +96,8 @@
     current_state = "generating"
 
     try {
-      const run_config = event.detail.run_config
-      captured_run_config = run_config
+      captured_input_run_config = event.detail.input_run_config
+      captured_output_run_config = event.detail.output_run_config
       guide = event.detail.guide
 
       const { data, error: api_error } = await client.POST(
@@ -76,7 +106,8 @@
           params: { path: { project_id, task_id } },
           body: {
             guide,
-            run_config_properties: run_config,
+            run_config_properties: captured_input_run_config,
+            output_run_config_properties: captured_output_run_config,
             num_samples: 5,
           },
         },
@@ -95,16 +126,20 @@
     }
   }
 
-  async function handle_refine(event: CustomEvent<{ feedback: string }>) {
+  async function handle_refine(
+    event: CustomEvent<{
+      feedback: string
+      rated_samples: { input: string; output: string; looks_good: boolean }[]
+    }>,
+  ) {
     error = null
     submitting = true
     current_state = "refining"
 
     try {
-      if (!captured_run_config) {
+      if (!captured_input_run_config || !captured_output_run_config) {
         throw new KilnError("No model configuration available", null)
       }
-      const run_config = captured_run_config
 
       const { data, error: api_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_refine",
@@ -113,8 +148,8 @@
           body: {
             current_guide: guide,
             feedback: event.detail.feedback,
-            preview_samples,
-            run_config_properties: run_config,
+            preview_samples: event.detail.rated_samples,
+            run_config_properties: captured_input_run_config,
           },
         },
       )
@@ -130,7 +165,8 @@
           params: { path: { project_id, task_id } },
           body: {
             guide,
-            run_config_properties: run_config,
+            run_config_properties: captured_input_run_config,
+            output_run_config_properties: captured_output_run_config,
             num_samples: 5,
           },
         },
@@ -178,7 +214,7 @@
   }
 
   async function handle_regenerate() {
-    if (!captured_run_config) return
+    if (!captured_input_run_config || !captured_output_run_config) return
     error = null
     submitting = true
     current_state = "generating"
@@ -190,7 +226,8 @@
           params: { path: { project_id, task_id } },
           body: {
             guide,
-            run_config_properties: captured_run_config,
+            run_config_properties: captured_input_run_config,
+            output_run_config_properties: captured_output_run_config,
             num_samples: 5,
           },
         },
@@ -213,7 +250,7 @@
 <!-- TODO: Update read the docs link to point to new data guide docs -->
 <div class="max-w-[1400px]">
   <AppPage
-    title="Create Data Guide"
+    title="Set Up Data Guide"
     subtitle="Help us understand what your data looks like so we can generate high-quality synthetic data."
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/synthetic-data-generation"
@@ -228,9 +265,9 @@
 
     {#if current_state === "setup"}
       <GuideSetupForm
-        bind:error
         {project_id}
         {task_id}
+        {task}
         on:generate_preview={handle_generate_preview}
       />
     {:else if current_state === "generating"}

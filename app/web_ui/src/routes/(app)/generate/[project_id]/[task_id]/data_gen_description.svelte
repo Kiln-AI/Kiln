@@ -3,28 +3,9 @@
   import Dialog from "$lib/ui/dialog.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import FileIcon from "$lib/ui/icons/file_icon.svelte"
-  import NotebookIcon from "$lib/ui/icons/notebook_icon.svelte"
 
   export let guidance_data: SynthDataGuidanceDataModel
 
-  type DataGuide = {
-    guide: string
-  }
-  export let data_guide: DataGuide | null = null
-  export let project_id: string = ""
-  export let task_id: string = ""
-
-  let guide_view_dialog: Dialog | null = null
-
-  function show_guide_dialog() {
-    guide_view_dialog?.show()
-  }
-
-  $: guide_preview = data_guide
-    ? data_guide.guide.length > 80
-      ? data_guide.guide.slice(0, 80) + "..."
-      : data_guide.guide
-    : ""
   $: selected_template = guidance_data.selected_template
   // reactive
   const splits = guidance_data.splits
@@ -199,44 +180,8 @@
         </div>
       </div>
     </div>
-    {#if data_guide}
-      <div
-        class="border-l border-gray-200 self-stretch mx-4 border-[0.5px]"
-      ></div>
-      <div class="flex flex-row items-center gap-3 flex-grow">
-        <div class="h-6 w-6 text-gray-500">
-          <NotebookIcon />
-        </div>
-        <div class="flex flex-col flex-grow min-w-0">
-          <div class="text-xs text-gray-500 uppercase font-medium">
-            Task Data Guide
-          </div>
-          <div>
-            <button
-              class="hover:underline text-left truncate block max-w-full"
-              on:click={show_guide_dialog}
-            >
-              {guide_preview || "View guide"}
-            </button>
-          </div>
-        </div>
-      </div>
-    {/if}
   </div>
 {/if}
-
-<!-- View Data Guide Dialog -->
-<Dialog
-  bind:this={guide_view_dialog}
-  title="Task Data Guide"
-  width="wide"
-  action_buttons={[{ label: "Close", isCancel: true }]}
->
-  {#if data_guide}
-    <pre
-      class="whitespace-pre-wrap break-words text-sm text-gray-600">{data_guide.guide}</pre>
-  {/if}
-</Dialog>
 
 <Dialog
   title="Edit Tag Assignments"

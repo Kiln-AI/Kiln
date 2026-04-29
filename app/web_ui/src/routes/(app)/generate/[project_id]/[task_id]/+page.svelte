@@ -141,8 +141,8 @@
     sub_subtitle_link="https://docs.kiln.tech/docs/synthetic-data-generation"
     action_buttons={[
       {
-        label: "Docs & Guide",
-        href: "https://docs.kiln.tech/docs/synthetic-data-generation",
+        label: "Data Guide",
+        href: `/generate/${project_id}/${task_id}/data_guide`,
       },
     ]}
   >

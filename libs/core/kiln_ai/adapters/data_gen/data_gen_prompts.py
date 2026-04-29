@@ -276,10 +276,15 @@ When generating Q&A pairs, focus on generating queries and answers that are rele
 def generate_guidance_refinement_prompt(
     task_instruction: str,
     current_guide: str,
-    preview_samples: list[tuple[str, str]],
+    preview_samples: list[tuple[str, str, bool]],
     feedback: str,
 ) -> str:
-    """Generate a prompt for refining a Task Data Guide based on user feedback."""
+    """Generate a prompt for refining a Task Data Guide based on user feedback.
+
+    Each preview sample is a tuple of (input, output, looks_good) where
+    looks_good=True means the user marked it Realistic and looks_good=False
+    means the user marked it Needs Work.
+    """
 
     prompt = f"""You are an expert at writing guidance for synthetic data generation. Your job is to refine a data guide that controls the structure, format, and content of generated synthetic data — both inputs and outputs.
 
@@ -290,18 +295,20 @@ A user is generating synthetic data for the following task:
 {task_instruction}
 </task_instruction>
 
-Their current data guide (a prompt appended to future synthetic data generation) is:
+Their current data guide is shown below. It uses a specific format with two top-level sections — `# Reference Examples` (containing one or more `## Example N` blocks with fenced ```Input and ```Output code fences) and `# Guidelines & Rules` (containing one or more `## <Title>` rule blocks with descriptions). Either section may be absent if the user has not authored any items yet.
+
 <current_guide>
 {current_guide}
 </current_guide>
 
-## Generated Samples
+## Rated Samples
 
-The following samples were generated using the current guide:
+The following samples were generated using the current guide. The user rated each one as either "Realistic" (the sample looks like real, correct task data) or "Needs Work" (the sample is wrong, unrealistic, or violates a constraint).
 
 """
-    for i, (sample_input, sample_output) in enumerate(preview_samples, 1):
-        prompt += f"""<sample_{i}>
+    for i, (sample_input, sample_output, looks_good) in enumerate(preview_samples, 1):
+        rating = "Realistic" if looks_good else "Needs Work"
+        prompt += f"""<sample_{i} rating="{rating}">
 <input>{sample_input}</input>
 <output>{sample_output}</output>
 </sample_{i}>
@@ -310,20 +317,32 @@ The following samples were generated using the current guide:
     prompt += f"""
 ## User Feedback
 
-The user's feedback on what's wrong with the generated data:
+The user's written feedback (focused on the "Needs Work" samples):
 <feedback>
 {feedback}
 </feedback>
 
 ## Your Task
 
-Rewrite the data guide so that future generated data addresses the user's feedback. Focus on:
-1. The structure and format of inputs and outputs (e.g. JSON fields, required properties, value ranges)
-2. Domain-specific rules and constraints (e.g. "cholesterol and LDL must correlate")
-3. Data quality issues (e.g. "values should be realistic", "include edge cases")
-4. Output quality and style (e.g. tone, format, level of detail)
-5. Keep existing guidance that is still valid, including any reference examples
+Produce a refined data guide that the user can use for future synthetic data generation.
 
-The guide should be clear, specific instructions that guide an LLM generating synthetic data for this task."""
+### Hard requirements
+
+1. **Preserve the format of the current guide.** Output a single markdown document. Use the same two top-level sections — `# Reference Examples` and `# Guidelines & Rules` — when content for them exists. Inside `# Reference Examples`, each example is a `## Example N` block followed by a fenced ```Input ... ``` block and a fenced ```Output ... ``` block. Inside `# Guidelines & Rules`, each rule is a `## <short title>` block followed by a one-or-more-sentence description. Do not introduce other top-level sections.
+
+2. **The refined guide is not append-only.** You may edit, reorder, split, merge, or remove existing examples and rules — but only when justified by the user's feedback or by a clear conflict with the rated samples.
+
+3. **Default to keeping existing examples and rules.** Carry forward every example and every rule from the current guide unless the user's feedback contradicts it, the rule is now redundant with another, or it is clearly causing a "Needs Work" sample. When in doubt, keep it.
+
+### How to use the ratings
+
+- **"Realistic" samples are an implicit positive signal.** They show the rules currently in effect are working for cases like that. Do not weaken or remove rules that are producing realistic samples; if anything, the refined rules should still produce samples like these. You generally should not need to add new rules just to address a Realistic sample.
+- **"Needs Work" samples plus the user's feedback are the primary signal for changes.** Identify what specifically is wrong (structure, values, realism, format, tone, constraints) and update the guide so future generations would produce something the user would have rated Realistic.
+- If the user's feedback is general (e.g. "values should be more realistic"), prefer updating or adding a rule in `# Guidelines & Rules` rather than adding a new example.
+- If the user's feedback points at a specific structural issue, prefer fixing or adding a precise rule (e.g. "patient_id must be a UUID v4 string").
+
+### Output
+
+Return only the refined guide as a single markdown string. Do not include commentary, headings outside the two allowed sections, or any explanation of your changes."""
 
     return prompt

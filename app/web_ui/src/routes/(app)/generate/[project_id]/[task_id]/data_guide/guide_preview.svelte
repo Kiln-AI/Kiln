@@ -80,8 +80,10 @@
         ? "Save Data Guide"
         : "Refine with Feedback"
 
+  type RatedSample = { input: string; output: string; looks_good: boolean }
+
   const dispatch = createEventDispatcher<{
-    refine: { feedback: string }
+    refine: { feedback: string; rated_samples: RatedSample[] }
     save: void
     regenerate: void
   }>()
@@ -90,7 +92,20 @@
     if (all_look_good) {
       dispatch("save")
     } else {
-      dispatch("refine", { feedback: general_feedback.trim() })
+      const rated_samples: RatedSample[] = reviewed_samples
+        .filter(
+          (s): s is ReviewedSample & { looks_good: boolean } =>
+            typeof s.looks_good === "boolean",
+        )
+        .map((s) => ({
+          input: s.input,
+          output: s.output,
+          looks_good: s.looks_good,
+        }))
+      dispatch("refine", {
+        feedback: general_feedback.trim(),
+        rated_samples,
+      })
     }
   }
 </script>
@@ -101,7 +116,7 @@
   submit_data_tip={!all_reviewed
     ? "Review all examples before continuing."
     : !has_sufficient_feedback
-      ? "Provide feedback for failed inputs."
+      ? "Provide feedback for examples that need work."
       : undefined}
   on:submit={handle_submit}
   bind:error
@@ -113,8 +128,9 @@
   <div class="flex flex-col">
     <div class="font-medium">Review Example Data</div>
     <div class="font-light text-gray-500 text-sm">
-      Is synthetic data working as expected? Mark each example as "Pass" or
-      "Fail". If any fail, provide feedback below and we'll refine the guide.
+      Is synthetic data working as expected? Mark each example as "Realistic" or
+      "Needs Work". If any need work, provide feedback below and we'll refine
+      the guide.
     </div>
   </div>
   <div class="flex flex-col gap-6">
@@ -124,7 +140,7 @@
           <tr>
             <th>Input</th>
             <th>Output</th>
-            <th style="width: 180px">Quality</th>
+            <th style="width: 220px">Rating</th>
           </tr>
         </thead>
         <tbody>
@@ -146,7 +162,7 @@
                       ? 'btn-secondary'
                       : 'text-base-content/40'}"
                     on:click={(e) => set_looks_good(i, true, e)}
-                    tabindex="0">Pass</button
+                    tabindex="0">Realistic</button
                   >
                   <button
                     class="btn btn-sm btn-outline hover:btn-warning {sample.looks_good ===
@@ -154,7 +170,7 @@
                       ? 'btn-secondary'
                       : 'text-base-content/40'}"
                     on:click={(e) => set_looks_good(i, false, e)}
-                    tabindex="0">Fail</button
+                    tabindex="0">Needs Work</button
                   >
                 </div>
               </td>
@@ -168,7 +184,7 @@
   {#if has_any_failed}
     <FormElement
       label="Feedback"
-      description="Describe what's wrong with the failed inputs so we can refine the guide."
+      description="Describe what needs work in the flagged examples so we can refine the guide."
       id="general_feedback"
       inputType="textarea"
       height="base"
@@ -177,7 +193,7 @@
     />
   {/if}
 
-  <Collapse title="Task Data Guide" small={true}>
+  <Collapse title="Preview Data Guide" small={true}>
     <div class="flex flex-col gap-2">
       <Output raw_output={guide} show_border={true} background_color="white" />
       <div class="flex justify-end">
@@ -205,8 +221,8 @@
 <!-- Edit Guide Dialog -->
 <Dialog
   bind:this={edit_dialog}
-  title="Edit Task Data Guide"
-  sub_subtitle="Manually update the guide that will be used in synthetic data generation. Updating will regenerate new examples for review."
+  title="Edit Data Guide"
+  sub_subtitle="Manually update the data guide that will be used in synthetic data generation. Updating will regenerate new examples for review."
   width="wide"
 >
   <FormContainer

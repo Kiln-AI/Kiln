@@ -46,6 +46,10 @@ class DataGenCategoriesApiInput(BaseModel):
         description="Optional human guidance for generation",
         default=None,
     )
+    data_guide: str | None = Field(
+        description="Optional per-run data guide override. Sent in addition to any human guidance.",
+        default=None,
+    )
     existing_topics: list[str] | None = Field(
         description="Optional list of existing topics to avoid",
         default=None,
@@ -65,6 +69,10 @@ class DataGenSampleApiInput(BaseModel):
         description="Optional custom guidance for generation",
         default=None,
     )
+    data_guide: str | None = Field(
+        description="Optional per-run data guide override. Replaces the task's persisted data guide for this run.",
+        default=None,
+    )
     run_config_properties: KilnAgentRunConfigProperties = Field(
         description="The run config properties to use for input generation"
     )
@@ -79,10 +87,25 @@ class GuidePreviewSample(BaseModel):
     output: str = Field(description="Generated sample output")
 
 
+class RatedGuidePreviewSample(BaseModel):
+    input: str = Field(description="Generated sample input")
+    output: str = Field(description="Generated sample output")
+    looks_good: bool = Field(
+        description="User rating: true if the sample looks realistic, false if it needs work"
+    )
+
+
 class GuidePreviewInput(BaseModel):
     guide: str = Field(description="The data guide prompt string")
     run_config_properties: KilnAgentRunConfigProperties = Field(
-        description="The model config to use for preview generation"
+        description="The model config to use for preview input generation"
+    )
+    output_run_config_properties: KilnAgentRunConfigProperties | None = Field(
+        description=(
+            "Optional model config to use for preview output generation. "
+            "Defaults to the input run config when not provided."
+        ),
+        default=None,
     )
     num_samples: int = Field(
         description="Number of preview samples to generate", default=5
@@ -94,8 +117,8 @@ class GuideRefineInput(BaseModel):
     feedback: str = Field(
         description="User feedback on what's wrong with preview samples"
     )
-    preview_samples: list[GuidePreviewSample] = Field(
-        description="The previewed samples the user is giving feedback on"
+    preview_samples: list[RatedGuidePreviewSample] = Field(
+        description="The previewed samples the user is giving feedback on, each rated by the user as realistic (true) or needs work (false)"
     )
     run_config_properties: KilnAgentRunConfigProperties = Field(
         description="The model config to use for refinement"
@@ -128,6 +151,10 @@ class DataGenSaveSamplesApiInput(BaseModel):
     )
     guidance: str | None = Field(
         description="Optional custom guidance for generation",
+        default=None,
+    )
+    data_guide: str | None = Field(
+        description="Optional per-run data guide override. Replaces the task's persisted data guide for this run.",
         default=None,
     )
     tags: list[str] | None = Field(
@@ -187,10 +214,11 @@ def connect_data_gen_api(app: FastAPI):
         project = project_from_id(project_id)
         task = task_from_id(project_id, task_id)
 
+        combined_guidance = _combine_guidance(task, input.guidance, input.data_guide)
         categories_task = DataGenCategoriesTask(
             gen_type=input.gen_type,
             parent_project=project,
-            guidance=input.guidance,
+            guidance=combined_guidance,
         )
 
         task_input = DataGenCategoriesTaskInput.from_task(
@@ -232,7 +260,7 @@ def connect_data_gen_api(app: FastAPI):
         project = project_from_id(project_id)
         task = task_from_id(project_id, task_id)
 
-        combined_guidance = _combine_guidance(task, input.guidance)
+        combined_guidance = _combine_guidance(task, input.guidance, input.data_guide)
         sample_task = DataGenSampleTask(
             target_task=task,
             gen_type=input.gen_type,
@@ -306,7 +334,15 @@ def connect_data_gen_api(app: FastAPI):
     ) -> TaskRun:
         task = task_from_id(project_id, task_id)
 
-        guidance = sample.guidance or ""
+        guidance_parts: list[str] = []
+        if sample.data_guide is not None:
+            if sample.data_guide.strip():
+                guidance_parts.append(sample.data_guide)
+        elif task.data_guide:
+            guidance_parts.append(task.data_guide.guide)
+        if sample.guidance:
+            guidance_parts.append(sample.guidance)
+        guidance = "\n\n".join(guidance_parts)
         if len(sample.topic_path) > 0:
             guidance += f"""
 ## Topic Path
@@ -615,7 +651,9 @@ The topic path for this sample is:
             )
 
         preview_samples: list[GuidePreviewSample] = []
-        output_run_config = input.run_config_properties.model_copy()
+        output_run_config = (
+            input.output_run_config_properties or input.run_config_properties
+        ).model_copy()
         output_run_config.prompt_id = PromptGenerators.SIMPLE
         for sample_input in generated_samples[: input.num_samples]:
             sample_input_str = (
@@ -671,7 +709,9 @@ The topic path for this sample is:
         system_prompt = generate_guidance_refinement_prompt(
             task_instruction=task.instruction,
             current_guide=input.current_guide,
-            preview_samples=[(s.input, s.output) for s in input.preview_samples],
+            preview_samples=[
+                (s.input, s.output, s.looks_good) for s in input.preview_samples
+            ],
             feedback=input.feedback,
         )
 
@@ -703,9 +743,16 @@ The topic path for this sample is:
         )
 
 
-def _combine_guidance(task: Task, session_guidance: str | None) -> str | None:
+def _combine_guidance(
+    task: Task,
+    session_guidance: str | None,
+    data_guide_override: str | None = None,
+) -> str | None:
     parts: list[str] = []
-    if task.data_guide:
+    if data_guide_override is not None:
+        if data_guide_override.strip():
+            parts.append(data_guide_override)
+    elif task.data_guide:
         parts.append(task.data_guide.guide)
     if session_guidance:
         parts.append(session_guidance)

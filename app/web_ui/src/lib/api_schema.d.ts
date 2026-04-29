@@ -4624,6 +4624,11 @@ export interface components {
              */
             guidance?: string | null;
             /**
+             * Data Guide
+             * @description Optional per-run data guide override. Sent in addition to any human guidance.
+             */
+            data_guide?: string | null;
+            /**
              * Existing Topics
              * @description Optional list of existing topics to avoid
              */
@@ -4688,6 +4693,11 @@ export interface components {
              * @description Optional custom guidance for generation
              */
             guidance?: string | null;
+            /**
+             * Data Guide
+             * @description Optional per-run data guide override. Replaces the task's persisted data guide for this run.
+             */
+            data_guide?: string | null;
             /** @description The run config properties to use for input generation */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
         };
@@ -4725,6 +4735,11 @@ export interface components {
              * @description Optional custom guidance for generation
              */
             guidance?: string | null;
+            /**
+             * Data Guide
+             * @description Optional per-run data guide override. Replaces the task's persisted data guide for this run.
+             */
+            data_guide?: string | null;
             /**
              * Tags
              * @description Tags to add to the sample
@@ -6530,8 +6545,10 @@ export interface components {
              * @description The data guide prompt string
              */
             guide: string;
-            /** @description The model config to use for preview generation */
+            /** @description The model config to use for preview input generation */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
+            /** @description Optional model config to use for preview output generation. Defaults to the input run config when not provided. */
+            output_run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
             /**
              * Num Samples
              * @description Number of preview samples to generate
@@ -6566,9 +6583,9 @@ export interface components {
             feedback: string;
             /**
              * Preview Samples
-             * @description The previewed samples the user is giving feedback on
+             * @description The previewed samples the user is giving feedback on, each rated by the user as realistic (true) or needs work (false)
              */
-            preview_samples: components["schemas"]["GuidePreviewSample"][];
+            preview_samples: components["schemas"]["RatedGuidePreviewSample"][];
             /** @description The model config to use for refinement */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
         };
@@ -8062,6 +8079,24 @@ export interface components {
              * @description The search results
              */
             results: components["schemas"]["SearchResult"][];
+        };
+        /** RatedGuidePreviewSample */
+        RatedGuidePreviewSample: {
+            /**
+             * Input
+             * @description Generated sample input
+             */
+            input: string;
+            /**
+             * Output
+             * @description Generated sample output
+             */
+            output: string;
+            /**
+             * Looks Good
+             * @description User rating: true if the sample looks realistic, false if it needs work
+             */
+            looks_good: boolean;
         };
         /**
          * RatingOption

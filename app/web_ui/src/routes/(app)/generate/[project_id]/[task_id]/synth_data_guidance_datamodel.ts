@@ -33,6 +33,10 @@ export class SynthDataGuidanceDataModel {
   public topic_guidance: Writable<string | null> = writable(null)
   public input_guidance: Writable<string | null> = writable(null)
   public output_guidance: Writable<string | null> = writable(null)
+  // Per-session data guide override. Initialized from the task's persisted data
+  // guide on load, but edits stay local and are sent per-call rather than
+  // persisted back to the task.
+  public data_guide: Writable<string> = writable("")
   public select_options: Writable<OptionGroup[]> = writable([])
   public loading_error: Writable<KilnError | null> = writable(null)
 
@@ -61,6 +65,7 @@ export class SynthDataGuidanceDataModel {
     gen_type: "training" | "eval",
     task: Task,
     splits: Record<string, number>,
+    data_guide: string = "",
   ): Promise<void> {
     this.eval_id = eval_id
     this.project_id = project_id
@@ -68,6 +73,7 @@ export class SynthDataGuidanceDataModel {
     this.gen_type = gen_type
     this.task = task
     this.splits.set(splits)
+    this.data_guide.set(data_guide)
 
     // Set the selected template if it exists in static. The other eval templates are set as part of the load_eval flow.
     if (template_id && static_templates.find((t) => t.id == template_id)) {
