@@ -1,4 +1,5 @@
 <script lang="ts">
+  import posthog from "posthog-js"
   import { chat_cost_disclaimer_acknowledged } from "$lib/stores"
   import Dialog from "$lib/ui/dialog.svelte"
 
@@ -9,6 +10,7 @@
 
   export function prompt(): Promise<boolean> {
     if (pendingPromise) return pendingPromise
+    posthog.capture("chat_cost_disclaimer_shown")
     pendingPromise = new Promise<boolean>((resolve) => {
       pendingResolve = resolve
       dialog.show()
@@ -17,6 +19,7 @@
   }
 
   function approve(): boolean {
+    posthog.capture("chat_cost_disclaimer_accepted")
     chat_cost_disclaimer_acknowledged.set(true)
     const resolve = pendingResolve
     pendingResolve = null
@@ -26,6 +29,8 @@
   }
 
   function dismiss() {
+    if (pendingResolve === null) return
+    posthog.capture("chat_cost_disclaimer_declined")
     const resolve = pendingResolve
     pendingResolve = null
     pendingPromise = null
