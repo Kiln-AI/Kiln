@@ -96,7 +96,10 @@ def litellm_core_provider_config(
         model_id = run_config_properties.model_name
         if "::" not in model_id:
             raise ValueError(f"Invalid openai compatible model ID: {model_id}")
-        openai_compatible_provider_name = model_id.split("::", 1)[0]
+        provider_part, model_part = model_id.split("::", 1)
+        if not provider_part or not model_part:
+            raise ValueError(f"Invalid openai compatible model ID: {model_id}")
+        openai_compatible_provider_name = provider_part
 
     config = lite_llm_core_config_for_provider(
         core_provider_name, openai_compatible_provider_name
