@@ -360,6 +360,8 @@
     : null
   $: if (repair_model_storage_key) {
     repair_model_override = load_repair_model_override(repair_model_storage_key)
+  } else {
+    repair_model_override = null
   }
 
   function load_repair_model_override(key: string): RepairModelOverride | null {
