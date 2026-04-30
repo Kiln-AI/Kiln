@@ -37,7 +37,7 @@
   export let inline_action: InlineAction | null = null
   export let optional: boolean = false
   export let hide_optional_badge: boolean = false
-  export let empty_label: string = "Select an option"
+  export let empty_label: string = "Select a model"
 
   let default_model_dropdown_settings: ModelDropdownSettings = {
     filter_models_predicate: (_) => true,
@@ -372,7 +372,6 @@
     on_select={confirm_model_select}
     bind:error_message
     fancy_select_options={model_options}
-    placeholder="Select a model"
   />
 
   {#if selected_model_untested}
