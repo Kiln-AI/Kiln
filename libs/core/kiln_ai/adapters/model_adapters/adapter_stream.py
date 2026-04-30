@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
@@ -66,6 +67,7 @@ class AdapterStream:
         self._top_logprobs = top_logprobs
         self._result: AdapterStreamResult | None = None
         self._iterated = False
+        self._message_latency: dict[int, int] = {}
 
     @property
     def result(self) -> AdapterStreamResult:
@@ -138,7 +140,9 @@ class AdapterStream:
         if not isinstance(prior_output, str):
             raise RuntimeError(f"assistant message is not a string: {prior_output}")
 
-        trace = self._adapter.all_messages_to_trace(self._messages)
+        trace = self._adapter.all_messages_to_trace(
+            self._messages, self._message_latency
+        )
         self._result = AdapterStreamResult(
             run_output=RunOutput(
                 output=prior_output,
@@ -167,11 +171,16 @@ class AdapterStream:
             )
 
             stream = StreamingCompletion(**completion_kwargs)
+            start = time.monotonic()
             async for chunk in stream:
                 yield chunk
+            call_latency_ms = int((time.monotonic() - start) * 1000)
 
             response, response_choice = _validate_response(stream.response)
             usage += self._adapter.usage_from_response(response)
+            usage.total_llm_latency_ms = (
+                usage.total_llm_latency_ms or 0
+            ) + call_latency_ms
 
             content = response_choice.message.content
             tool_calls = response_choice.message.tool_calls
@@ -181,6 +190,7 @@ class AdapterStream:
                 )
 
             self._messages.append(response_choice.message)
+            self._message_latency[len(self._messages) - 1] = call_latency_ms
 
             if tool_calls and len(tool_calls) > 0:
                 # Check for return_on_tool_call BEFORE processing
