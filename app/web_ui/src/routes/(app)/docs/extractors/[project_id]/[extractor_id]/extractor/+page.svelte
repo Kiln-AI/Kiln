@@ -21,6 +21,7 @@
 
   let loading: boolean = false
   let error: KilnError | null = null
+  let archive_loading: boolean = false
   let extractor_config: ExtractorConfig | null = null
 
   onMount(async () => {
@@ -54,49 +55,59 @@
   }
 
   async function archive_extractor_config() {
-    const { error: archive_extractor_error } = await client.PATCH(
-      "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
-      {
-        body: {
-          is_archived: true,
-        },
-        params: {
-          path: {
-            project_id,
-            extractor_config_id: extractor_id,
+    try {
+      archive_loading = true
+      const { error: archive_extractor_error } = await client.PATCH(
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
+        {
+          body: {
+            is_archived: true,
+          },
+          params: {
+            path: {
+              project_id,
+              extractor_config_id: extractor_id,
+            },
           },
         },
-      },
-    )
+      )
 
-    if (archive_extractor_error) {
-      throw createKilnError(archive_extractor_error)
+      if (archive_extractor_error) {
+        throw createKilnError(archive_extractor_error)
+      }
+
+      await get_extractor_config()
+    } finally {
+      archive_loading = false
     }
-
-    await get_extractor_config()
   }
 
   async function unarchive_extractor_config() {
-    const { error: unarchive_extractor_error } = await client.PATCH(
-      "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
-      {
-        body: {
-          is_archived: false,
-        },
-        params: {
-          path: {
-            project_id,
-            extractor_config_id: extractor_id,
+    try {
+      archive_loading = true
+      const { error: unarchive_extractor_error } = await client.PATCH(
+        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
+        {
+          body: {
+            is_archived: false,
+          },
+          params: {
+            path: {
+              project_id,
+              extractor_config_id: extractor_id,
+            },
           },
         },
-      },
-    )
+      )
 
-    if (unarchive_extractor_error) {
-      throw createKilnError(unarchive_extractor_error)
+      if (unarchive_extractor_error) {
+        throw createKilnError(unarchive_extractor_error)
+      }
+
+      await get_extractor_config()
+    } finally {
+      archive_loading = false
     }
-
-    await get_extractor_config()
   }
 
   function prompts(): Record<string, string | null> {
@@ -130,6 +141,7 @@
     {
       label: extractor_config?.is_archived ? "Unarchive" : "Archive",
       primary: extractor_config?.is_archived,
+      loading: archive_loading,
       handler: () => {
         if (extractor_config?.is_archived) {
           unarchive_extractor_config()

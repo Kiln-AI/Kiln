@@ -431,6 +431,7 @@
       {
         label: spec?.status === "archived" ? "Unarchive" : "Archive",
         disabled: loading || error !== null,
+        loading: updating_statuses,
         handler: () => {
           toggleArchive()
         },

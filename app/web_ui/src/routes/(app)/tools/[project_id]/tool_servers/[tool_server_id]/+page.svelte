@@ -36,6 +36,7 @@
   let loading_error: KilnError | null = null
   let archive_error: KilnError | null = null
   let unarchive_error: KilnError | null = null
+  let archive_loading = false
 
   onMount(async () => {
     await fetch_tool_server()
@@ -344,6 +345,7 @@
 
   async function update_archive(is_archived: boolean) {
     try {
+      archive_loading = true
       archive_error = null
       unarchive_error = null
 
@@ -404,6 +406,7 @@
       if (project_id) {
         load_available_tools(project_id, true)
       }
+      archive_loading = false
     }
   }
 </script>
@@ -432,6 +435,7 @@
       {
         label: is_archived ? "Unarchive" : "Archive",
         handler: is_archived ? unarchive : archive,
+        loading: archive_loading,
       },
     ]}
   >
