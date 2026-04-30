@@ -5,6 +5,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from kiln_server.custom_errors import connect_custom_errors
+from litellm.types.utils import ModelResponse
+from litellm.types.utils import Usage as LiteLlmUsage
+
+from kiln_ai.adapters.adapter_registry import adapter_for_task
+from kiln_ai.adapters.ml_model_list import ModelProviderName
+from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
@@ -13,6 +19,8 @@ from kiln_ai.datamodel import (
     TaskOutput,
     TaskRun,
 )
+from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
+from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.utils.config import Config
 
 from app.desktop.studio_server.repair_api import (
@@ -236,3 +244,93 @@ def test_repair_run_human_source(
     assert (
         repaired_output["source"]["properties"]["created_by"] == Config.shared().user_id
     )
+
+
+async def test_run_then_repair_legacy_openai_compatible_e2e(client, tmp_path):
+    """Integration: a Run on a custom OpenAI-compatible provider followed by a Repair.
+
+    Regression test for the bug where legacy "{provider}::{model_id}" slugs were
+    stripped in flight, persisted to disk without their prefix, then crashed Repair
+    when adapter_for_task tried to split the (now bare) name. We mock only the
+    litellm completion call; everything else (adapter wiring, persistence, repair
+    endpoint) runs for real.
+    """
+    project_path = tmp_path / "e2e_project" / "project.kiln"
+    project_path.parent.mkdir()
+    project = Project(name="E2E", path=str(project_path))
+    project.save_to_file()
+
+    task = Task(name="t", instruction="be brief", parent=project)
+    task.save_to_file()
+
+    canned_initial_output = "initial reply"
+    canned_repair_output = "repaired reply"
+    queued_outputs = [canned_initial_output, canned_repair_output]
+
+    async def mock_acompletion_checking_response(self, **kwargs):
+        content = queued_outputs.pop(0)
+        response = ModelResponse(
+            model="openai/openai/gpt-oss-safeguard-20b",
+            choices=[{"message": {"content": content, "tool_calls": None}}],
+            usage=LiteLlmUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+        return response, response.choices[0]
+
+    with (
+        patch("kiln_ai.utils.config.Config.shared") as cfg_shared,
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=mock_acompletion_checking_response,
+        ),
+    ):
+        cfg_shared.return_value.openai_compatible_providers = [
+            {
+                "name": "vllm local",
+                "base_url": "http://localhost:8000/v1",
+                "api_key": "",
+            }
+        ]
+        cfg_shared.return_value.user_id = "test_user"
+        cfg_shared.return_value.autosave_runs = True
+
+        run_config = KilnAgentRunConfigProperties(
+            model_name="vllm local::openai/gpt-oss-safeguard-20b",
+            model_provider_name=ModelProviderName.openai_compatible,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode=StructuredOutputMode.default,
+        )
+
+        # Step 1: original Run.
+        adapter = adapter_for_task(task, run_config)
+        run = await adapter.invoke("hello")
+        if run.path is None:
+            run.save_to_file()
+
+        # The full slug must round-trip into the persisted properties.
+        # Pre-fix this would have been the bare "openai/gpt-oss-safeguard-20b".
+        assert (
+            run.output.source.properties["model_name"]
+            == "vllm local::openai/gpt-oss-safeguard-20b"
+        )
+        assert run.output.source.properties["model_provider"] == "openai_compatible"
+        assert run.output.output == canned_initial_output
+
+        # Step 2: Repair, hitting the real endpoint with the persisted run.
+        with patch(
+            "app.desktop.studio_server.repair_api.task_and_run_from_id"
+        ) as mock_lookup:
+            mock_lookup.return_value = (task, run)
+            response = client.post(
+                f"/api/projects/{project.id}/tasks/{task.id}/runs/{run.id}/generate_repair",
+                json={"evaluator_feedback": "be more concise"},
+            )
+
+        assert response.status_code == 200, response.text
+        repaired = response.json()
+        assert repaired["output"]["output"] == canned_repair_output
+        # Repair preserves the slug too.
+        assert (
+            repaired["output"]["source"]["properties"]["model_name"]
+            == "vllm local::openai/gpt-oss-safeguard-20b"
+        )

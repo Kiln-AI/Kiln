@@ -90,16 +90,16 @@ def litellm_core_provider_config(
         run_config_properties.model_provider_name == ModelProviderName.openai_compatible
         and not run_config_properties.model_name.startswith("user_model::")
     ):
+        # Legacy openai_compatible model ids are "provider_name::model_id". We pull the
+        # provider name out for base_url lookup, but keep the full slug on the run config
+        # so it is faithfully persisted to disk and can be rehydrated later (e.g. on repair).
         model_id = run_config_properties.model_name
-        try:
-            openai_compatible_provider_name, model_id = model_id.split("::")
-        except Exception:
+        if "::" not in model_id:
             raise ValueError(f"Invalid openai compatible model ID: {model_id}")
-
-        # Update a copy of the run config properties to use the openai compatible provider
-        updated_run_config_properties = run_config_properties.model_copy(deep=True)
-        updated_run_config_properties.model_name = model_id
-        run_config_properties = updated_run_config_properties
+        provider_part, model_part = model_id.split("::", 1)
+        if not provider_part or not model_part:
+            raise ValueError(f"Invalid openai compatible model ID: {model_id}")
+        openai_compatible_provider_name = provider_part
 
     config = lite_llm_core_config_for_provider(
         core_provider_name, openai_compatible_provider_name
