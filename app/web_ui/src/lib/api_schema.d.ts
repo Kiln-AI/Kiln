@@ -8093,6 +8093,16 @@ export interface components {
              * @description Feedback from an evaluator on how to repair the task run.
              */
             evaluator_feedback: string;
+            /**
+             * Model Name
+             * @description Optional override for the model used to generate the repair. When omitted, the model from the original run's source properties is used.
+             */
+            model_name?: string | null;
+            /**
+             * Provider
+             * @description Optional override for the model provider used to generate the repair. Must be set together with model_name.
+             */
+            provider?: string | null;
         };
         /**
          * RequirementRating

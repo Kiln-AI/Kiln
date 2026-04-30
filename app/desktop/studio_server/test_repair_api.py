@@ -9,7 +9,6 @@ from litellm.types.utils import ModelResponse
 from litellm.types.utils import Usage as LiteLlmUsage
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
-from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
 from kiln_ai.datamodel import (
     DataSource,
@@ -19,7 +18,7 @@ from kiln_ai.datamodel import (
     TaskOutput,
     TaskRun,
 )
-from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
+from kiln_ai.datamodel.datamodel_enums import ModelProviderName, StructuredOutputMode
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.utils.config import Config
 
@@ -334,3 +333,88 @@ async def test_run_then_repair_legacy_openai_compatible_e2e(client, tmp_path):
             repaired["output"]["source"]["properties"]["model_name"]
             == "vllm local::openai/gpt-oss-safeguard-20b"
         )
+
+
+def test_repair_run_with_model_override(
+    mock_run_and_task,
+    client,
+    improvement_task,
+    mock_repair_task_run,
+):
+    """The caller can override which model generates the repair by sending model_name/provider."""
+    with patch("app.desktop.studio_server.repair_api.adapter_for_task") as mock:
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke = AsyncMock(return_value=mock_repair_task_run)
+        mock.return_value = mock_adapter
+
+        response = client.post(
+            "/api/projects/proj-ID/tasks/task-ID/runs/run-ID/generate_repair",
+            json={
+                "evaluator_feedback": "Fix this issue",
+                "model_name": "llama_3_1_8b",
+                "provider": "groq",
+            },
+        )
+
+        assert response.status_code == 200
+        # The run config that built the adapter must reflect the override, not the
+        # (mock) original run's "gpt_4o" / "openai".
+        run_config = mock.call_args.kwargs["run_config_properties"]
+        assert run_config.model_name == "llama_3_1_8b"
+        assert run_config.model_provider_name == "groq"
+
+
+def test_repair_run_override_requires_both_fields(
+    mock_run_and_task,
+    mock_langchain_adapter,
+    client,
+):
+    """Sending only one of model_name/provider is rejected."""
+    response = client.post(
+        "/api/projects/proj-ID/tasks/task-ID/runs/run-ID/generate_repair",
+        json={"evaluator_feedback": "Fix this issue", "model_name": "llama_3_1_8b"},
+    )
+    assert response.status_code == 422
+    assert "must be set together" in response.json()["message"]
+
+
+def test_repair_run_override_rederives_structured_output_mode(
+    mock_run_and_task,
+    client,
+    mock_repair_task_run,
+):
+    """When a different model is chosen, structured_output_mode should be derived
+    from the new model's defaults, not the original run's mode (which may be
+    incompatible with the new model)."""
+    # Original run was saved with json_schema mode.
+    mock_run_and_task.return_value[1].output.source.properties[
+        "structured_output_mode"
+    ] = "json_schema"
+
+    sentinel_mode = StructuredOutputMode.function_calling
+    with (
+        patch("app.desktop.studio_server.repair_api.adapter_for_task") as mock,
+        patch(
+            "app.desktop.studio_server.repair_api.default_structured_output_mode_for_model_provider",
+            return_value=sentinel_mode,
+        ) as mock_default_sdm,
+    ):
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke = AsyncMock(return_value=mock_repair_task_run)
+        mock.return_value = mock_adapter
+
+        response = client.post(
+            "/api/projects/proj-ID/tasks/task-ID/runs/run-ID/generate_repair",
+            json={
+                "evaluator_feedback": "Fix",
+                "model_name": "llama_3_1_8b",
+                "provider": "groq",
+            },
+        )
+        assert response.status_code == 200
+        # The lookup must be called with the override model/provider (not the
+        # original run's gpt_4o/openai), and its result must be the mode used —
+        # proving we didn't blindly forward the original "json_schema".
+        mock_default_sdm.assert_called_once_with("llama_3_1_8b", ModelProviderName.groq)
+        run_config = mock.call_args.kwargs["run_config_properties"]
+        assert run_config.structured_output_mode == sentinel_mode
