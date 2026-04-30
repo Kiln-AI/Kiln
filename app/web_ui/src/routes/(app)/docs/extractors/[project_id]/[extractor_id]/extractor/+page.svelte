@@ -22,6 +22,7 @@
   let loading: boolean = false
   let error: KilnError | null = null
   let archive_loading: boolean = false
+  let archive_error: KilnError | null = null
   let extractor_config: ExtractorConfig | null = null
 
   onMount(async () => {
@@ -54,14 +55,15 @@
     }
   }
 
-  async function archive_extractor_config() {
+  async function update_archive(is_archived: boolean) {
     try {
       archive_loading = true
+      archive_error = null
       const { error: archive_extractor_error } = await client.PATCH(
         "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
         {
           body: {
-            is_archived: true,
+            is_archived,
           },
           params: {
             path: {
@@ -73,38 +75,12 @@
       )
 
       if (archive_extractor_error) {
-        throw createKilnError(archive_extractor_error)
+        throw archive_extractor_error
       }
 
       await get_extractor_config()
-    } finally {
-      archive_loading = false
-    }
-  }
-
-  async function unarchive_extractor_config() {
-    try {
-      archive_loading = true
-      const { error: unarchive_extractor_error } = await client.PATCH(
-        "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
-        {
-          body: {
-            is_archived: false,
-          },
-          params: {
-            path: {
-              project_id,
-              extractor_config_id: extractor_id,
-            },
-          },
-        },
-      )
-
-      if (unarchive_extractor_error) {
-        throw createKilnError(unarchive_extractor_error)
-      }
-
-      await get_extractor_config()
+    } catch (e) {
+      archive_error = createKilnError(e)
     } finally {
       archive_loading = false
     }
@@ -142,13 +118,7 @@
       label: extractor_config?.is_archived ? "Unarchive" : "Archive",
       primary: extractor_config?.is_archived,
       loading: archive_loading,
-      handler: () => {
-        if (extractor_config?.is_archived) {
-          unarchive_extractor_config()
-        } else {
-          archive_extractor_config()
-        }
-      },
+      handler: () => update_archive(!extractor_config?.is_archived),
     },
   ]}
 >
@@ -158,6 +128,15 @@
     </div>
   {:else}
     <div>
+      {#if archive_error}
+        <Warning
+          warning_message={archive_error.getMessage() ||
+            "An unknown error occurred"}
+          large_icon={true}
+          warning_color="error"
+          outline={true}
+        />
+      {/if}
       {#if extractor_config?.is_archived}
         <Warning
           warning_message="This extractor is archived. You may unarchive it to use it again."

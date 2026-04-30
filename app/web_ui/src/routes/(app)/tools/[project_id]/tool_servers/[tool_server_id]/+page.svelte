@@ -402,11 +402,16 @@
         unarchive_error = createKilnError(e)
       }
     } finally {
-      fetch_tool_server()
-      if (project_id) {
-        load_available_tools(project_id, true)
+      try {
+        await Promise.all([
+          fetch_tool_server(),
+          project_id
+            ? load_available_tools(project_id, true)
+            : Promise.resolve(),
+        ])
+      } finally {
+        archive_loading = false
       }
-      archive_loading = false
     }
   }
 </script>

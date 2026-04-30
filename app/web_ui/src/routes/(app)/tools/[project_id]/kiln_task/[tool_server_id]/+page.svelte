@@ -286,10 +286,15 @@
         unarchive_error = createKilnError(e)
       }
     } finally {
-      fetch_tool_server()
-      // Re-load available tools to make sure archived tools aren't shown
-      load_available_tools(project_id, true)
-      archive_loading = false
+      try {
+        await Promise.all([
+          fetch_tool_server(),
+          // Re-load available tools to make sure archived tools aren't shown
+          load_available_tools(project_id, true),
+        ])
+      } finally {
+        archive_loading = false
+      }
     }
   }
 </script>
