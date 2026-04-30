@@ -1231,14 +1231,6 @@
   title="Repair Model"
   sub_subtitle="Override the model used to generate repairs for this task. Reset to use each run's original model."
   action_buttons={[
-    {
-      label: "Reset",
-      action: () => {
-        reset_repair_model_dialog()
-        return false // keep dialog open so Save still applies the cleared selection
-      },
-      hide: !dialog_combined_model,
-    },
     { label: "Cancel", isCancel: true },
     {
       label: "Save",
@@ -1254,6 +1246,15 @@
       bind:model={dialog_combined_model}
       bind:model_name={dialog_model_name}
       bind:provider_name={dialog_provider_name}
+      optional
+      hide_optional_badge
+      empty_label="Use the same model as the original run"
+      inline_action={dialog_combined_model
+        ? {
+            handler: reset_repair_model_dialog,
+            label: "Reset",
+          }
+        : null}
     />
   </div>
 </Dialog>

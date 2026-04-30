@@ -16,7 +16,9 @@
   } from "$lib/stores/recent_model_store"
   import type { AvailableModels, ProviderModels } from "$lib/types"
   import { onMount } from "svelte"
-  import FormElement from "$lib/utils/form_element.svelte"
+  import FormElement, {
+    type InlineAction,
+  } from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
   import { mime_type_to_string } from "$lib/utils/formatters"
@@ -32,6 +34,10 @@
   export let info_description: string | undefined = undefined
   export let settings: Partial<ModelDropdownSettings> = {}
   export let error_message: string | null = null
+  export let inline_action: InlineAction | null = null
+  export let optional: boolean = false
+  export let hide_optional_badge: boolean = false
+  export let empty_label: string = "Select an option"
 
   let default_model_dropdown_settings: ModelDropdownSettings = {
     filter_models_predicate: (_) => true,
@@ -356,6 +362,10 @@
     {label}
     {description}
     {info_description}
+    {inline_action}
+    {optional}
+    {hide_optional_badge}
+    {empty_label}
     bind:value={model}
     id="model"
     inputType="fancy_select"
