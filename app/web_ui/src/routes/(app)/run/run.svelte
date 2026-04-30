@@ -23,6 +23,8 @@
   import {
     rating_options_for_sample,
     current_task_rating_options,
+    model_info,
+    model_name as model_name_from_id,
   } from "$lib/stores"
   import posthog from "posthog-js"
   import TraceComponent from "$lib/ui/trace/trace.svelte"
@@ -30,6 +32,7 @@
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import OutputRepairEditForm from "./output_repair_edit_form.svelte"
+  import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
   import type { components } from "$lib/api_schema"
 
   type SubtaskReference = {
@@ -343,6 +346,62 @@
     }
   }
 
+  // Optional per-task override for which model generates the repair. Persisted in
+  // localStorage so the choice survives reloads. Useful when the original run's
+  // model can't be rehydrated (e.g. pre-fix legacy openai_compatible runs whose
+  // persisted model_name lost its "{provider}::" prefix on disk).
+  type RepairModelOverride = {
+    model_name: string
+    provider: string
+  }
+  let repair_model_override: RepairModelOverride | null = null
+  $: repair_model_storage_key = task?.id
+    ? `kiln_repair_model_override:${project_id}:${task.id}`
+    : null
+  $: if (repair_model_storage_key) {
+    repair_model_override = load_repair_model_override(repair_model_storage_key)
+  }
+
+  function load_repair_model_override(key: string): RepairModelOverride | null {
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) return null
+      const parsed = JSON.parse(raw)
+      if (
+        parsed &&
+        typeof parsed.model_name === "string" &&
+        typeof parsed.provider === "string"
+      ) {
+        return { model_name: parsed.model_name, provider: parsed.provider }
+      }
+    } catch {
+      // ignore corrupted entries
+    }
+    return null
+  }
+
+  // The original run's model (what produced the saved output). Treated as the
+  // canonical "default" for repair: the dialog preselects it and the Reset
+  // button snaps the selection back to it.
+  $: original_run_model_name =
+    typeof run?.output?.source?.properties?.model_name === "string"
+      ? (run.output.source.properties.model_name as string)
+      : null
+  $: original_run_provider =
+    typeof run?.output?.source?.properties?.model_provider === "string"
+      ? (run.output.source.properties.model_provider as string)
+      : null
+
+  // The model that will actually be used to generate the repair: override
+  // wins, otherwise we fall back to the original run's model.
+  $: effective_repair_model_name =
+    repair_model_override?.model_name ?? original_run_model_name
+  $: effective_repair_provider =
+    repair_model_override?.provider ?? original_run_provider
+  $: effective_repair_model_display = effective_repair_model_name
+    ? model_name_from_id(effective_repair_model_name, $model_info)
+    : null
+
   let repair_submitting = false
   let repair_error: KilnError | null = null
   async function attempt_repair() {
@@ -358,6 +417,8 @@
           null,
         )
       }
+      // Only send the override on the wire — when no override is set, the
+      // server reads the original run's persisted model from source_properties.
       const {
         data: repair_data, // only present if 2XX response
         error: fetch_error, // only present if 4XX or 5XX response
@@ -371,16 +432,15 @@
               run_id: run?.id,
             },
           },
-          body:
-            model_name && provider
-              ? {
-                  evaluator_feedback: trimmed_instructions,
-                  model_name: model_name,
-                  provider: provider,
-                }
-              : {
-                  evaluator_feedback: trimmed_instructions,
-                },
+          body: repair_model_override
+            ? {
+                evaluator_feedback: trimmed_instructions,
+                model_name: repair_model_override.model_name,
+                provider: repair_model_override.provider,
+              }
+            : {
+                evaluator_feedback: trimmed_instructions,
+              },
         },
       )
       if (fetch_error) {
@@ -476,6 +536,61 @@
   function retry_repair() {
     repair_run = null
     accept_repair_error = null
+  }
+
+  // Repair-model override dialog state
+  let repair_model_dialog: Dialog | null = null
+  let dialog_combined_model: string | null = null
+  let dialog_model_name: string | null = null
+  let dialog_provider_name: string | null = null
+
+  function open_repair_model_dialog() {
+    // Preselect the currently effective repair model (override > original run's model).
+    dialog_combined_model =
+      effective_repair_model_name && effective_repair_provider
+        ? `${effective_repair_provider}/${effective_repair_model_name}`
+        : null
+    repair_model_dialog?.show()
+  }
+
+  function reset_repair_model_dialog() {
+    // Reset = no override. Each run will fall back to whichever model originally
+    // produced it (which can vary across runs in the same task). Clear the dropdown
+    // visually; the actual override is cleared on Save (or stays as-is on Cancel).
+    dialog_combined_model = null
+  }
+
+  function save_repair_model_override(): boolean {
+    // Persist whatever is currently selected at the time Save is clicked.
+    // Empty selection = clear the override; per-run defaults take over.
+    if (!dialog_model_name || !dialog_provider_name) {
+      clear_repair_model_override()
+      return true
+    }
+    const next: RepairModelOverride = {
+      model_name: dialog_model_name,
+      provider: dialog_provider_name,
+    }
+    repair_model_override = next
+    if (repair_model_storage_key) {
+      try {
+        localStorage.setItem(repair_model_storage_key, JSON.stringify(next))
+      } catch {
+        // ignore quota/availability errors; in-memory state still applies
+      }
+    }
+    return true
+  }
+
+  function clear_repair_model_override() {
+    repair_model_override = null
+    if (repair_model_storage_key) {
+      try {
+        localStorage.removeItem(repair_model_storage_key)
+      } catch {
+        // ignore
+      }
+    }
   }
 
   let repair_edit_mode = false
@@ -797,7 +912,25 @@
 
       {#if repair_enabled_for_source && (should_offer_repair || repair_review_available || repair_complete)}
         <div class="grow mt-10">
-          <div class="text-xl font-bold mb-2">Repair Output</div>
+          <div class="flex items-baseline justify-between gap-4 flex-wrap mb-2">
+            <div class="text-xl font-bold">Repair Output</div>
+            {#if should_offer_repair}
+              <div class="text-xs text-gray-500">
+                {#if effective_repair_model_display}
+                  Repairing with <span class="font-medium text-gray-700"
+                    >{effective_repair_model_display}</span
+                  >
+                  ·
+                {/if}
+                <button
+                  type="button"
+                  class="link"
+                  on:click={open_repair_model_dialog}
+                  >Select different model</button
+                >
+              </div>
+            {/if}
+          </div>
           {#if should_offer_repair}
             <p class="text-sm text-gray-500 mb-4">
               Since the output isn't 5-star, provide instructions for the model
@@ -1089,6 +1222,38 @@
       />
     </FormContainer>
   {/if}
+</Dialog>
+
+<Dialog
+  bind:this={repair_model_dialog}
+  title="Repair Model"
+  sub_subtitle="Override the model used to generate repairs for this task. Reset to use each run's original model."
+  action_buttons={[
+    {
+      label: "Reset",
+      action: () => {
+        reset_repair_model_dialog()
+        return false // keep dialog open so Save still applies the cleared selection
+      },
+      hide: !dialog_combined_model,
+    },
+    { label: "Cancel", isCancel: true },
+    {
+      label: "Save",
+      isPrimary: true,
+      action: save_repair_model_override,
+    },
+  ]}
+>
+  <div class="pt-2">
+    <AvailableModelsDropdown
+      label="Repair Model"
+      description="Leave empty to use each run's original model. Pick a specific model to override."
+      bind:model={dialog_combined_model}
+      bind:model_name={dialog_model_name}
+      bind:provider_name={dialog_provider_name}
+    />
+  </div>
 </Dialog>
 
 <Dialog bind:this={view_feedback_dialog} title="All Feedback" width="wide">

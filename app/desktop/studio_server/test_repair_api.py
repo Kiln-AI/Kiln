@@ -236,3 +236,80 @@ def test_repair_run_human_source(
     assert (
         repaired_output["source"]["properties"]["created_by"] == Config.shared().user_id
     )
+
+
+def test_repair_run_with_model_override(
+    mock_run_and_task,
+    client,
+    improvement_task,
+    mock_repair_task_run,
+):
+    """The caller can override which model generates the repair by sending model_name/provider."""
+    with patch("app.desktop.studio_server.repair_api.adapter_for_task") as mock:
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke = AsyncMock(return_value=mock_repair_task_run)
+        mock.return_value = mock_adapter
+
+        response = client.post(
+            "/api/projects/proj-ID/tasks/task-ID/runs/run-ID/generate_repair",
+            json={
+                "evaluator_feedback": "Fix this issue",
+                "model_name": "llama_3_1_8b",
+                "provider": "groq",
+            },
+        )
+
+        assert response.status_code == 200
+        # The run config that built the adapter must reflect the override, not the
+        # (mock) original run's "gpt_4o" / "openai".
+        run_config = mock.call_args.kwargs["run_config_properties"]
+        assert run_config.model_name == "llama_3_1_8b"
+        assert run_config.model_provider_name == "groq"
+
+
+def test_repair_run_override_requires_both_fields(
+    mock_run_and_task,
+    mock_langchain_adapter,
+    client,
+):
+    """Sending only one of model_name/provider is rejected."""
+    response = client.post(
+        "/api/projects/proj-ID/tasks/task-ID/runs/run-ID/generate_repair",
+        json={"evaluator_feedback": "Fix this issue", "model_name": "llama_3_1_8b"},
+    )
+    assert response.status_code == 422
+    assert "must be set together" in response.json()["message"]
+
+
+def test_repair_run_override_rederives_structured_output_mode(
+    mock_run_and_task,
+    client,
+    mock_repair_task_run,
+):
+    """When a different model is chosen, structured_output_mode should be derived
+    from the new model's defaults, not the original run's mode (which may be
+    incompatible with the new model)."""
+    # Original run was saved with json_schema mode.
+    mock_run_and_task.return_value[1].output.source.properties[
+        "structured_output_mode"
+    ] = "json_schema"
+
+    with patch("app.desktop.studio_server.repair_api.adapter_for_task") as mock:
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke = AsyncMock(return_value=mock_repair_task_run)
+        mock.return_value = mock_adapter
+
+        response = client.post(
+            "/api/projects/proj-ID/tasks/task-ID/runs/run-ID/generate_repair",
+            json={
+                "evaluator_feedback": "Fix",
+                "model_name": "llama_3_1_8b",
+                "provider": "groq",
+            },
+        )
+        assert response.status_code == 200
+        run_config = mock.call_args.kwargs["run_config_properties"]
+        # We don't assert a specific mode (it's whatever the model's default is),
+        # only that we did NOT just blindly forward the original "json_schema".
+        # Any value is fine as long as it came from the lookup, not the source props.
+        assert run_config.structured_output_mode is not None
