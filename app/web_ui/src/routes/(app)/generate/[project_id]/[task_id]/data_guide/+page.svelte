@@ -5,7 +5,10 @@
   import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
-  import GuideSetupForm from "./guide_setup_form.svelte"
+  import GuideSetupForm, {
+    type GuideSample,
+    type GuideRule,
+  } from "./guide_setup_form.svelte"
   import GuideRefineView from "./guide_refine_view.svelte"
   import GuidePreview from "./guide_preview.svelte"
   import DataGenDescription from "../data_gen_description.svelte"
@@ -14,6 +17,8 @@
   import type { KilnAgentRunConfigProperties, Task } from "$lib/types"
   import { agentInfo } from "$lib/agent"
   import { current_task } from "$lib/stores"
+  import AnalyzingAnimation from "$lib/ui/animations/analyzing_animation.svelte"
+  import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
 
   type GuideBuilderState =
     | "loading"
@@ -22,7 +27,6 @@
     | "generating"
     | "preview"
     | "refining"
-    | "saving"
 
   // Start in "loading" so we can decide between setup vs refine-existing once
   // we know whether a guide is already saved. Without this we'd briefly flash
@@ -47,6 +51,13 @@
   // The task being edited. Needed by the output run config dialog so it can
   // mirror the SDG output flow (prompt + tools/skills selectors at top level).
   let task: Task | null = null
+
+  // Lifted out of GuideSetupForm so the user's examples/rules survive the
+  // setup → generating → setup unmount cycle that happens when a preview
+  // request fails. Without this, hitting an error wipes everything they
+  // entered.
+  let guide_examples: GuideSample[] = []
+  let guide_rules: GuideRule[] = []
 
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
@@ -97,17 +108,6 @@
     entry_state = guide.trim() ? "refine_existing" : "setup"
     current_state = entry_state
   })
-
-  function handle_restart_setup() {
-    // User opted to start from scratch instead of refining the saved guide.
-    // Reset everything we'd otherwise reuse and route to the setup form.
-    guide = ""
-    preview_samples = []
-    captured_input_run_config = null
-    captured_output_run_config = null
-    entry_state = "setup"
-    current_state = "setup"
-  }
 
   async function handle_generate_preview(
     event: CustomEvent<{
@@ -212,9 +212,12 @@
   }
 
   async function handle_save() {
+    // Stay in the "preview" state during the save — the PUT is essentially
+    // instantaneous, so the FormContainer's bind:submitting spinner on the
+    // Save Data Guide button is enough feedback. No need for a full-page
+    // saving spinner.
     error = null
     submitting = true
-    current_state = "saving"
 
     try {
       const { error: api_error } = await client.PUT(
@@ -232,12 +235,14 @@
       goto(`/generate/${project_id}/${task_id}/synth?session_continued=true`)
     } catch (e) {
       error = createKilnError(e)
-      // Save failed — keep the reviewed samples on screen so the user can
-      // retry instead of bouncing back to the setup/refine entry view.
-      current_state = "preview"
     } finally {
       submitting = false
     }
+  }
+
+  function handle_save_with_guide(event: CustomEvent<{ guide: string }>) {
+    guide = event.detail.guide
+    return handle_save()
   }
 
   async function handle_regenerate() {
@@ -301,6 +306,9 @@
         {project_id}
         {task_id}
         {task}
+        bind:guide_examples
+        bind:guide_rules
+        bind:page_error={error}
         on:generate_preview={handle_generate_preview}
       />
     {:else if current_state === "refine_existing"}
@@ -308,14 +316,15 @@
         {project_id}
         {guide}
         {task}
+        bind:page_error={error}
         on:generate_preview={handle_generate_preview}
-        on:restart_setup={handle_restart_setup}
+        on:save={handle_save_with_guide}
       />
     {:else if current_state === "generating"}
-      <div class="flex flex-col items-center justify-center py-24 gap-4">
-        <span class="loading loading-spinner loading-lg text-primary" />
-        <div class="text-gray-500">Generating synthetic examples...</div>
-      </div>
+      <AnalyzingAnimation
+        title="Generating Examples"
+        description="Kiln is generating synthetic examples using your data guide so you can review them. Hold tight!"
+      />
     {:else if current_state === "preview"}
       <GuidePreview
         {preview_samples}
@@ -327,15 +336,10 @@
         on:regenerate={handle_regenerate}
       />
     {:else if current_state === "refining"}
-      <div class="flex flex-col items-center justify-center py-24 gap-4">
-        <span class="loading loading-spinner loading-lg text-primary" />
-        <div class="text-gray-500">Refining and regenerating...</div>
-      </div>
-    {:else if current_state === "saving"}
-      <div class="flex flex-col items-center justify-center py-24 gap-4">
-        <span class="loading loading-spinner loading-lg text-primary" />
-        <div class="text-gray-500">Saving guide...</div>
-      </div>
+      <RefiningAnimation
+        title="Refining Data Guide"
+        description="Kiln is refining your data guide with the feedback you provided and generating fresh examples to review. Hold tight!"
+      />
     {/if}
   </AppPage>
 </div>

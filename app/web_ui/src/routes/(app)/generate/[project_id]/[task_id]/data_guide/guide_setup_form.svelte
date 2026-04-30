@@ -11,7 +11,7 @@
   import { createEventDispatcher, onMount } from "svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
-  import { createKilnError, KilnError } from "$lib/utils/error_handlers"
+  import { KilnError } from "$lib/utils/error_handlers"
   import type { TaskRun, Task, KilnAgentRunConfigProperties } from "$lib/types"
   import { isKilnAgentRunConfig } from "$lib/types"
   import {
@@ -30,8 +30,11 @@
   // keyed off task.output_json_schema). Falls back to safe defaults if absent.
   export let task: Task | null = null
 
-  // Each FormContainer needs its own state so dialogs don't share spinners/errors
-  let page_error: KilnError | null = null
+  // Each FormContainer needs its own state so dialogs don't share spinners/errors.
+  // page_error is exported so the parent can surface async errors (e.g. a
+  // failed preview API call) inline above the submit button instead of in a
+  // separate top-level banner. Cleared by handle_continue on each new attempt.
+  export let page_error: KilnError | null = null
   let page_submitting: boolean = false
   let rule_error: KilnError | null = null
   let rule_submitting: boolean = false
@@ -281,9 +284,15 @@
   on:submit={handle_continue}
   bind:error={page_error}
   bind:submitting={page_submitting}
-  submit_disabled={page_submitting || guide_examples.length === 0}
   compact_button={true}
+  submit_row_class="bg-base-200 rounded-lg p-3"
 >
+  <!-- Run option tiles live in the submit_left slot so they share a styled
+       row with the Generate & Review Examples button — visually tying the
+       run config choices to the action they apply to. -->
+  <svelte:fragment slot="submit_left">
+    <RunOptionsTiles bind:this={run_options_tiles} {project_id} {task} />
+  </svelte:fragment>
   <!-- Example Data Section -->
   <div class="flex flex-col gap-2">
     <div class="flex items-center justify-between">
@@ -421,8 +430,6 @@
       </div>
     {/if}
   </div>
-
-  <RunOptionsTiles bind:this={run_options_tiles} {project_id} {task} />
 </FormContainer>
 
 <!-- Add/Edit Example Dialog -->

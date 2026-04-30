@@ -30,6 +30,21 @@
 
   let general_feedback: string = ""
 
+  // --- "See all" expansion for long input/output cells ---
+  // Threshold chosen so a typical paragraph fits in the row but multi-paragraph
+  // bodies get truncated with a "See all" affordance. Mirrors the run_result
+  // page pattern (a fixed clipped height + fade gradient + button).
+  const SEE_ALL_CHAR_THRESHOLD = 600
+  let see_all_dialog: Dialog
+  let see_all_title: string = ""
+  let see_all_content: string = ""
+
+  function show_full_text(title: string, content: string) {
+    see_all_title = title
+    see_all_content = content
+    see_all_dialog?.show()
+  }
+
   // --- Edit guide dialog ---
   let edit_dialog: Dialog
   let editing_guide: string = ""
@@ -108,6 +123,10 @@
       })
     }
   }
+
+  function handle_save_without_refining() {
+    dispatch("save")
+  }
 </script>
 
 <FormContainer
@@ -145,14 +164,70 @@
         </thead>
         <tbody>
           {#each reviewed_samples as sample, i}
+            {@const input_long = sample.input.length > SEE_ALL_CHAR_THRESHOLD}
+            {@const output_long = sample.output.length > SEE_ALL_CHAR_THRESHOLD}
             <tr>
               <td class="py-2">
-                <pre
-                  class="whitespace-pre-wrap break-words">{sample.input}</pre>
+                {#if input_long}
+                  <div class="max-h-[140px] overflow-y-hidden relative">
+                    <pre
+                      class="whitespace-pre-wrap break-words">{sample.input}</pre>
+                    <div class="absolute bottom-0 left-0 w-full">
+                      <div
+                        class="h-16 bg-gradient-to-t from-white to-transparent"
+                      ></div>
+                      <div
+                        class="text-center bg-white font-medium text-sm text-gray-500"
+                      >
+                        <button
+                          type="button"
+                          class="text-gray-500 hover:text-gray-700 underline-offset-2 hover:underline"
+                          on:click={() =>
+                            show_full_text(
+                              `Input — Sample ${i + 1}`,
+                              sample.input,
+                            )}
+                        >
+                          See all
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                {:else}
+                  <pre
+                    class="whitespace-pre-wrap break-words">{sample.input}</pre>
+                {/if}
               </td>
               <td class="py-2">
-                <pre
-                  class="whitespace-pre-wrap break-words">{sample.output}</pre>
+                {#if output_long}
+                  <div class="max-h-[140px] overflow-y-hidden relative">
+                    <pre
+                      class="whitespace-pre-wrap break-words">{sample.output}</pre>
+                    <div class="absolute bottom-0 left-0 w-full">
+                      <div
+                        class="h-16 bg-gradient-to-t from-white to-transparent"
+                      ></div>
+                      <div
+                        class="text-center bg-white font-medium text-sm text-gray-500"
+                      >
+                        <button
+                          type="button"
+                          class="text-gray-500 hover:text-gray-700 underline-offset-2 hover:underline"
+                          on:click={() =>
+                            show_full_text(
+                              `Output — Sample ${i + 1}`,
+                              sample.output,
+                            )}
+                        >
+                          See all
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                {:else}
+                  <pre
+                    class="whitespace-pre-wrap break-words">{sample.output}</pre>
+                {/if}
               </td>
               <td class="py-2">
                 <div class="flex gap-1">
@@ -218,6 +293,23 @@
   {/if}
 </FormContainer>
 
+{#if has_any_failed}
+  <div class="flex flex-row gap-1 mt-4 justify-end">
+    <span class="text-sm text-gray-500">or</span>
+    <button
+      class="link underline text-sm text-gray-500"
+      disabled={submitting}
+      on:click={handle_save_without_refining}
+    >
+      {#if submitting}
+        <span class="loading loading-spinner loading-xs"></span>
+      {:else}
+        Save Without Refining Further
+      {/if}
+    </button>
+  </div>
+{/if}
+
 <!-- Edit Guide Dialog -->
 <Dialog
   bind:this={edit_dialog}
@@ -225,11 +317,14 @@
   sub_subtitle="Manually update the data guide that will be used in synthetic data generation. Updating will regenerate new examples for review."
   width="wide"
 >
+  <!-- No warn_before_unload here — the outer review-samples FormContainer
+       already registers a beforeNavigate handler. Each FormContainer registers
+       its own, so duplicating the flag here causes the user to see the unsaved
+       changes confirm() twice on navigation. -->
   <FormContainer
     submit_label="Save and Continue"
     submit_disabled={!guide_has_changes}
     on:submit={save_guide_edit}
-    warn_before_unload={guide_has_changes}
     compact_button={true}
   >
     <FormElement
@@ -244,4 +339,16 @@
         : undefined}
     />
   </FormContainer>
+</Dialog>
+
+<!-- See-all Dialog: shows the full text of an input/output cell that was
+     truncated in the table because it exceeded SEE_ALL_CHAR_THRESHOLD. -->
+<Dialog
+  bind:this={see_all_dialog}
+  title={see_all_title}
+  width="wide"
+  action_buttons={[{ label: "Close", isCancel: true }]}
+>
+  <pre
+    class="whitespace-pre-wrap break-words text-sm text-gray-600">{see_all_content}</pre>
 </Dialog>

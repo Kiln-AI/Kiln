@@ -1,14 +1,15 @@
 <script lang="ts">
   // Shared "Generation Options" block for the data guide setup + refine flows.
-  // Renders two clickable tiles (one per stage) inside an outlined Collapse,
-  // each opening a dialog with the full RunConfigComponent.
+  // Renders two compact clickable tiles (one per stage) inline — meant to live
+  // in the form's footer bar next to the submit button so it's clear they're
+  // tied to that action. Each tile opens a dialog with the full
+  // RunConfigComponent.
   //
   // Parents read the resulting configs via the exposed
   // get_input_run_config() / get_output_run_config() methods.
   import { onMount } from "svelte"
-  import type { Task, KilnAgentRunConfigProperties } from "$lib/types"
+  import type { Task } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
-  import Collapse from "$lib/ui/collapse.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import { client } from "$lib/api_client"
   import {
@@ -132,48 +133,48 @@
   }
 </script>
 
-<Collapse title="Generation Options" outlined={true}>
-  <div class="text-sm text-gray-500">
-    Choose the models used to test your data guide. Defaults to a recommended
-    model — click to customize other run options.
-  </div>
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-    <button
-      type="button"
-      class="text-left rounded-lg border p-4 hover:border-primary hover:shadow-sm transition-all"
-      on:click={open_input_config_dialog}
-    >
-      <div class="text-xs text-gray-500 uppercase font-medium">
-        Input Generation
-      </div>
-      <div class="mt-1 truncate">
-        {input_model_name
-          ? friendly_model_name(input_model_name, $model_info)
-          : "Select model"}
-      </div>
-    </button>
-    <button
-      type="button"
-      class="text-left rounded-lg border p-4 hover:border-primary hover:shadow-sm transition-all"
-      on:click={open_output_config_dialog}
-    >
-      <div class="text-xs text-gray-500 uppercase font-medium">
-        Output Generation
-      </div>
-      <div class="mt-1 truncate">
-        {output_model_name
-          ? friendly_model_name(output_model_name, $model_info)
-          : "Select model"}
-      </div>
-    </button>
-  </div>
-</Collapse>
+<!-- Two compact, inline tiles — laid out in a flex row so the parent footer
+     bar can put them next to the submit button. Each tile shows the
+     selected model with a "..." subtitle hinting at the rest of the run
+     config that's only revealed when the dialog opens. -->
+<div class="flex flex-row flex-wrap gap-2">
+  <button
+    type="button"
+    class="text-left rounded-md border bg-white px-3 py-2 hover:border-primary hover:shadow-sm transition-all min-w-[180px]"
+    on:click={open_input_config_dialog}
+  >
+    <div class="text-[10px] text-gray-500 uppercase font-medium tracking-wide">
+      Input Generation Options
+    </div>
+    <div class="mt-0.5 text-xs truncate">
+      Model: {input_model_name
+        ? friendly_model_name(input_model_name, $model_info)
+        : "—"}
+    </div>
+    <div class="text-xs text-gray-400 leading-none">…</div>
+  </button>
+  <button
+    type="button"
+    class="text-left rounded-md border bg-white px-3 py-2 hover:border-primary hover:shadow-sm transition-all min-w-[180px]"
+    on:click={open_output_config_dialog}
+  >
+    <div class="text-[10px] text-gray-500 uppercase font-medium tracking-wide">
+      Output Generation Options
+    </div>
+    <div class="mt-0.5 text-xs truncate">
+      Model: {output_model_name
+        ? friendly_model_name(output_model_name, $model_info)
+        : "—"}
+    </div>
+    <div class="text-xs text-gray-400 leading-none">…</div>
+  </button>
+</div>
 
 <!-- Input Generation Run Config Dialog -->
 <Dialog
   bind:this={input_config_dialog}
-  title="Input Generation Run Options"
-  sub_subtitle="Configure the model used to generate example inputs."
+  title="Input Generation Options"
+  sub_subtitle="Configure the run options used to generate example inputs."
   action_buttons={[{ label: "Done", isPrimary: true }]}
 >
   <RunConfigComponent
@@ -198,8 +199,8 @@
      keys off the task's own output schema. -->
 <Dialog
   bind:this={output_config_dialog}
-  title="Output Generation Run Options"
-  sub_subtitle="Configure the model used to generate example outputs."
+  title="Output Generation Options"
+  sub_subtitle="Configure the run options used to generate example outputs."
   action_buttons={[{ label: "Done", isPrimary: true }]}
 >
   <RunConfigComponent

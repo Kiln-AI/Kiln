@@ -278,22 +278,57 @@ def generate_guidance_refinement_prompt(
     current_guide: str,
     preview_samples: list[tuple[str, str, bool]],
     feedback: str,
+    task_description: str | None = None,
+    task_input_json_schema: str | None = None,
+    task_output_json_schema: str | None = None,
 ) -> str:
     """Generate a prompt for refining a Task Data Guide based on user feedback.
 
     Each preview sample is a tuple of (input, output, looks_good) where
     looks_good=True means the user marked it Realistic and looks_good=False
     means the user marked it Needs Work.
+
+    The optional task_description / task_input_json_schema /
+    task_output_json_schema args give the LLM extra grounding so refined rules
+    stay consistent with the task's actual purpose and shape.
     """
 
     prompt = f"""You are an expert at writing guidance for synthetic data generation. Your job is to refine a data guide that controls the structure, format, and content of generated synthetic data — both inputs and outputs.
 
 ## Context
 
-A user is generating synthetic data for the following task:
+A user is generating synthetic data for the following task. Read this task definition carefully — every rule you write should be consistent with what the task is actually for.
+
+The task's runtime system prompt:
 <task_instruction>
 {task_instruction}
-</task_instruction>
+</task_instruction>"""
+
+    if task_description and task_description.strip():
+        prompt += f"""
+
+A short human-facing description of the task:
+<task_description>
+{task_description}
+</task_description>"""
+
+    if task_input_json_schema and task_input_json_schema.strip():
+        prompt += f"""
+
+The task's input JSON schema (every rule about input structure must be consistent with this; do not invent fields the schema doesn't allow):
+<task_input_json_schema>
+{task_input_json_schema}
+</task_input_json_schema>"""
+
+    if task_output_json_schema and task_output_json_schema.strip():
+        prompt += f"""
+
+The task's output JSON schema (every rule about output structure must be consistent with this; do not invent fields the schema doesn't allow):
+<task_output_json_schema>
+{task_output_json_schema}
+</task_output_json_schema>"""
+
+    prompt += f"""
 
 Their current data guide is shown below. It uses a specific format with two top-level sections — `# Reference Examples` (containing one or more `## Example N` blocks with fenced ```Input and ```Output code fences) and `# Guidelines & Rules` (containing one or more `## <Title>` rule blocks with descriptions). Either section may be absent if the user has not authored any items yet.
 
@@ -333,6 +368,8 @@ Produce a refined data guide that the user can use for future synthetic data gen
 2. **The refined guide is not append-only.** You may edit, reorder, split, merge, or remove existing examples and rules — but only when justified by the user's feedback or by a clear conflict with the rated samples.
 
 3. **Default to keeping existing examples and rules.** Carry forward every example and every rule from the current guide unless the user's feedback contradicts it, the rule is now redundant with another, or it is clearly causing a "Needs Work" sample. When in doubt, keep it.
+
+4. **Stay consistent with the task definition above.** The refined rules and examples must respect the task's runtime system prompt and (when provided) its description and input/output JSON schemas. Do not invent fields, formats, or behaviors that contradict what the task is for. If the user's feedback would violate the task definition, follow the task definition and reflect the spirit of the feedback in a way that is compatible with it.
 
 ### How to use the ratings
 

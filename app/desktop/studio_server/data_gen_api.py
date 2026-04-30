@@ -650,18 +650,67 @@ The topic path for this sample is:
             )
 
         preview_samples: list[GuidePreviewSample] = []
+        # Use the user's run config as-is for output generation. Don't override
+        # prompt_id — this adapter runs the user's actual task (not a meta-task),
+        # so we want to mirror the real SDG /generate_sample flow which respects
+        # the chosen prompt template (few-shot, chain-of-thought, saved prompts).
+        # Forcing SIMPLE here strips that and can cause empty assistant responses
+        # on models that rely on the prompt structure (e.g. reasoning models).
         output_run_config = (
             input.output_run_config_properties or input.run_config_properties
         ).model_copy()
-        output_run_config.prompt_id = PromptGenerators.SIMPLE
+
+        # Condition the output generation on the (in-progress) data guide so
+        # the previewed outputs reflect what real SDG would produce with this
+        # guide saved — same wrapping that /generate_sample does at runtime.
+        # Pass `input.guide` as the override so we use the guide being tested,
+        # not whatever's currently persisted on the task.
+        output_combined_guidance = (
+            _combine_guidance(task, None, "outputs", input.guide) or ""
+        )
         for sample_input in generated_samples[: input.num_samples]:
+            # Always keep a string form for the response so the UI can display
+            # the input verbatim (matches what the user sees in the preview
+            # table).
             sample_input_str = (
                 json.dumps(sample_input)
-                if isinstance(sample_input, dict)
+                if isinstance(sample_input, (dict, list))
                 else str(sample_input)
             )
 
+            # But what we hand to the adapter depends on the task's input
+            # schema. Structured-input tasks must receive a parsed dict/list;
+            # passing a JSON string blows up jsonschema validation with
+            # "<json> is not of type 'object'". Plain-text tasks expect a
+            # string. This mirrors how the real SDG flow's frontend prepares
+            # the input before calling /generate_sample
+            # (synth/+page.svelte: `task.input_json_schema ? JSON.parse(...) : sample.input`).
+            adapter_input: str | dict | list
+            if task.input_json_schema:
+                if isinstance(sample_input, (dict, list)):
+                    adapter_input = sample_input
+                else:
+                    try:
+                        adapter_input = json.loads(str(sample_input))
+                    except json.JSONDecodeError:
+                        # Generator produced something that wasn't valid JSON
+                        # for a structured-input task. Skip this sample rather
+                        # than fail the whole preview.
+                        preview_samples.append(
+                            GuidePreviewSample(
+                                input=sample_input_str,
+                                output="[Skipped: generated input was not valid JSON for the task's input schema]",
+                            )
+                        )
+                        continue
+            else:
+                adapter_input = sample_input_str
+
             task_copy = task.model_copy(deep=True)
+            if output_combined_guidance.strip():
+                task_copy.instruction = wrap_task_with_guidance(
+                    task_copy.instruction, output_combined_guidance
+                )
 
             skills = load_skills_for_task(task_copy, output_run_config)
             output_adapter = adapter_for_task(
@@ -669,7 +718,7 @@ The topic path for this sample is:
                 run_config_properties=output_run_config,
                 base_adapter_config=AdapterConfig(allow_saving=False, skills=skills),
             )
-            output_run = await output_adapter.invoke(input=sample_input_str)
+            output_run = await output_adapter.invoke(input=adapter_input)
             output_text = (
                 output_run.output.output
                 if output_run.output and output_run.output.output
@@ -712,6 +761,9 @@ The topic path for this sample is:
                 (s.input, s.output, s.looks_good) for s in input.preview_samples
             ],
             feedback=input.feedback,
+            task_description=task.description,
+            task_input_json_schema=task.input_json_schema,
+            task_output_json_schema=task.output_json_schema,
         )
 
         run_config = input.run_config_properties.model_copy()
