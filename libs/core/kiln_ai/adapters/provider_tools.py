@@ -245,6 +245,11 @@ def kiln_model_provider_from(
 def lite_llm_provider_model(
     model_id: str,
 ) -> KilnModelProvider:
+    # Legacy openai_compatible model ids are "{provider_name}::{model_id}".
+    # litellm only needs the bare model id (it builds "openai/<model_id>"),
+    # so strip the provider prefix here. The full slug stays on run_config.model_name.
+    if "::" in model_id:
+        model_id = model_id.split("::", 1)[1]
     return KilnModelProvider(
         name=ModelProviderName.openai_compatible,
         model_id=model_id,
