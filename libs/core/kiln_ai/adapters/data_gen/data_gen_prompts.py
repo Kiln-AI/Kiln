@@ -293,7 +293,15 @@ def generate_guidance_refinement_prompt(
     stay consistent with the task's actual purpose and shape.
     """
 
-    prompt = f"""You are an expert at writing guidance for synthetic data generation. Your job is to refine a data guide that controls the structure, format, and content of generated synthetic data — both inputs and outputs.
+    prompt = f"""You are an expert at writing guidance for synthetic data generation. Your job is to refine the **rules half** of a Task Data Guide — the structural and semantic constraints that, together with the user's reference examples, control how synthetic data for this task is generated.
+
+A Data Guide has exactly three things:
+
+1. **Reference Examples** — concrete `(input, output)` pairs the user has authored. These are the user's ground truth. **They are passed to you for context only — you must NEVER modify or re-emit them. The system preserves them automatically.**
+2. **Structural rules** — *how* the data is shaped: format, length, sections, layout, formatting conventions, presentation. (How a sample looks.)
+3. **Semantic rules** — *what* the data means: fields, valid values, ranges, relationships between fields, domain constraints, plausibility. (What a sample is.)
+
+Examples ground; structural rules constrain shape; semantic rules constrain meaning. Every rule you write should fit cleanly into one of those two buckets. **Your output is the rules half only**, in the format described under "Output" below.
 
 ## Context
 
@@ -330,7 +338,9 @@ The task's output JSON schema (every rule about output structure must be consist
 
     prompt += f"""
 
-Their current data guide is shown below. It uses a specific format with two top-level sections — `# Reference Examples` (containing one or more `## Example N` blocks with fenced ```input and ```output code fences) and `# Guidelines & Rules` (containing one or more `## <Title>` rule blocks with descriptions). Either section may be absent if the user has not authored any items yet.
+The user's current guide is shown below for context. It uses two top-level sections — `# Reference Examples` (user-authored, immutable) and `# Guidelines & Rules` (the editable rules half — what you produce). Either section may be absent if the user has not authored any items yet.
+
+**Read the reference examples carefully — they are your primary signal for what realistic task data looks like — but DO NOT include them in your output.** Read the existing rules (if any) to understand what's already in place; your output will replace the rules half wholesale.
 
 <current_guide>
 {current_guide}
@@ -359,27 +369,27 @@ The user's written feedback (focused on the "Needs Work" samples):
 
 ## Your Task
 
-Produce a refined data guide that the user can use for future synthetic data generation.
+Produce a refined set of rules — both structural and semantic — that, combined with the user's existing reference examples, will steer the next round of synthetic data generation toward what the user wants.
 
 ### Hard requirements
 
-1. **Preserve the format of the current guide.** Output a single markdown document. Use the same two top-level sections — `# Reference Examples` and `# Guidelines & Rules` — when content for them exists. Inside `# Reference Examples`, each example is a `## Example N` block followed by a fenced ```input ... ``` block and a fenced ```output ... ``` block. Inside `# Guidelines & Rules`, each rule is a `## <short title>` block followed by a one-or-more-sentence description. Do not introduce other top-level sections.
+1. **Output the rules half only.** Do NOT output any reference examples, do NOT include the `# Guidelines & Rules` heading itself, and do NOT introduce any other top-level (`#`) headings. Each rule is a `## <short title>` block followed by a one-or-more-sentence description. The system will combine your output with the user's existing reference examples to form the full refined guide.
 
-2. **The refined guide is not append-only.** You may edit, reorder, split, merge, or remove existing examples and rules — but only when justified by the user's feedback or by a clear conflict with the rated samples.
+2. **Your output replaces the rules half wholesale.** You are not append-only — you may edit, reorder, split, merge, or remove existing rules — but only when justified by the user's feedback or by a clear conflict with the rated samples.
 
-3. **Default to keeping existing examples and rules.** Carry forward every example and every rule from the current guide unless the user's feedback contradicts it, the rule is now redundant with another, or it is clearly causing a "Needs Work" sample. When in doubt, keep it.
+3. **Default to keeping existing rules.** Carry forward every existing rule unless the user's feedback contradicts it, the rule is now redundant with another, or it is clearly causing a "Needs Work" sample. When in doubt, keep it.
 
-4. **Stay consistent with the task definition above.** The refined rules and examples must respect the task's runtime system prompt and (when provided) its description and input/output JSON schemas. Do not invent fields, formats, or behaviors that contradict what the task is for. If the user's feedback would violate the task definition, follow the task definition and reflect the spirit of the feedback in a way that is compatible with it.
+4. **Stay consistent with the task definition above.** The refined rules must respect the task's runtime system prompt and (when provided) its description and input/output JSON schemas. Do not invent fields, formats, or behaviors that contradict what the task is for. If the user's feedback would violate the task definition, follow the task definition and reflect the spirit of the feedback in a way that is compatible with it.
 
 ### How to use the ratings
 
-- **"Realistic" samples are an implicit positive signal.** They show the rules (or lack of rules) currently in effect are working for cases like that. Do not weaken or remove rules that are producing realistic samples; if anything, the refined rules should still produce samples like these. You generally should not need to add new rules just to address a Realistic sample at risk of overfitting.
-- **"Needs Work" samples plus the user's feedback are the primary signal for changes.** Identify what specifically is wrong (structure, values, realism, format, tone, constraints) and update the guide so future generations would produce something the user would have rated Realistic.
-- If the user's feedback is general (e.g. "values should be more realistic"), prefer updating or adding a rule in `# Guidelines & Rules` rather than adding a new example.
-- If the user's feedback points at a specific structural issue, prefer fixing or adding a precise rule (e.g. "patient_id must be a UUID v4 string").
+- **"Realistic" samples are an implicit positive signal.** They show that the rules (or lack of rules) currently in effect are working for cases like that. Do not weaken or remove rules that are producing realistic samples; if anything, the refined rules should still produce samples like these.
+- **"Needs Work" samples plus the user's feedback are the primary signal for changes.** Identify what specifically is wrong (structure, values, realism, format, tone, constraints) and add or update a rule that prevents that mistake.
+- If the user's feedback is general (e.g. "values should be more realistic"), prefer adding or sharpening a rule rather than encoding the fix as an example (you cannot add examples — those are user-owned).
+- If the user's feedback points at a specific structural issue, prefer fixing or adding a precise rule.
 
 ### Output
 
-Return only the refined guide as a single markdown string. Do not include commentary, headings outside the two allowed sections, or any explanation of your changes."""
+Return only the rules markdown — a sequence of `## <short title>` blocks each followed by a one-or-more-sentence description. Do NOT include the `# Reference Examples` section, do NOT include the `# Guidelines & Rules` heading itself, do NOT include any other top-level (`#`) headings, and do NOT include commentary or explanation of your changes. The system will stitch your output together with the user's existing reference examples to form the complete refined guide."""
 
     return prompt
