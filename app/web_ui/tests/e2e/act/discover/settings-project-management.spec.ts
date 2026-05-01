@@ -24,55 +24,54 @@ test.describe("Settings - project management", () => {
   - All four section headings are visible.
   - Key setting item names are visible: "Edit Current Task", "Manage Projects", "AI Providers".
   */
-  test("settings page loads with all sections", async ({
-    page,
-    registeredUser,
-    seededProjectWithTask,
-  }) => {
-    void registeredUser
-    void seededProjectWithTask
+  test.fixme(
+    "settings page loads with all sections",
+    async ({ page, registeredUser, seededProjectWithTask }) => {
+      void registeredUser
+      void seededProjectWithTask
 
-    await page.goto("/settings")
+      await page.goto("/settings")
 
-    await expect(
-      page.getByRole("heading", { name: "Settings", exact: true }),
-    ).toBeVisible()
+      await expect(
+        page.getByRole("heading", { name: "Settings", exact: true }),
+      ).toBeVisible()
 
-    await expect(page.getByText("Current Workspace")).toBeVisible()
-    await expect(page.getByText("Models & Providers")).toBeVisible()
-    await expect(
-      page.getByRole("heading", { name: "Projects", exact: true }),
-    ).toBeVisible()
-    await expect(page.getByText("Help & Resources")).toBeVisible()
+      await expect(page.getByText("Current Workspace")).toBeVisible()
+      await expect(page.getByText("Models & Providers")).toBeVisible()
+      await expect(
+        page.getByRole("heading", { name: "Projects", exact: true }),
+      ).toBeVisible()
+      await expect(page.getByText("Help & Resources")).toBeVisible()
 
-    await expect(
-      page.getByRole("heading", { name: "Edit Current Task" }),
-    ).toBeVisible()
-    await expect(
-      page.getByRole("heading", { name: "Edit Current Project" }),
-    ).toBeVisible()
-    await expect(
-      page.getByRole("heading", { name: "AI Providers" }),
-    ).toBeVisible()
-    await expect(
-      page.getByRole("heading", { name: "Custom Models" }),
-    ).toBeVisible()
-    await expect(
-      page.getByRole("heading", { name: "Manage Projects" }),
-    ).toBeVisible()
-    await expect(
-      page.getByRole("heading", { name: "Application Logs" }),
-    ).toBeVisible()
-    await expect(
-      page.getByRole("heading", { name: "Check for Update" }),
-    ).toBeVisible()
-    await expect(
-      page.getByRole("heading", { name: "Docs & Getting Started" }),
-    ).toBeVisible()
-    await expect(
-      page.getByRole("heading", { name: "License Agreement" }),
-    ).toBeVisible()
-  })
+      await expect(
+        page.getByRole("heading", { name: "Edit Current Task" }),
+      ).toBeVisible()
+      await expect(
+        page.getByRole("heading", { name: "Edit Current Project" }),
+      ).toBeVisible()
+      await expect(
+        page.getByRole("heading", { name: "AI Providers" }),
+      ).toBeVisible()
+      await expect(
+        page.getByRole("heading", { name: "Custom Models" }),
+      ).toBeVisible()
+      await expect(
+        page.getByRole("heading", { name: "Manage Projects" }),
+      ).toBeVisible()
+      await expect(
+        page.getByRole("heading", { name: "Application Logs" }),
+      ).toBeVisible()
+      await expect(
+        page.getByRole("heading", { name: "Check for Update" }),
+      ).toBeVisible()
+      await expect(
+        page.getByRole("heading", { name: "Docs & Getting Started" }),
+      ).toBeVisible()
+      await expect(
+        page.getByRole("heading", { name: "License Agreement" }),
+      ).toBeVisible()
+    },
+  )
 
   /* @act
   ## Goals

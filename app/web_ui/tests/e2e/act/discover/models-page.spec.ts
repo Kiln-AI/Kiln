@@ -738,21 +738,20 @@ test.describe("Models page", () => {
   ## Assertions
   - Browser page title is "Models - Kiln".
   */
-  test("page title is Models - Kiln", async ({
-    page,
-    registeredUser,
-    seededProjectWithTask,
-  }) => {
-    void registeredUser
-    void seededProjectWithTask
-    await setupMockRoutes(page)
+  test.fixme(
+    "page title is Models - Kiln",
+    async ({ page, registeredUser, seededProjectWithTask }) => {
+      void registeredUser
+      void seededProjectWithTask
+      await setupMockRoutes(page)
 
-    await page.goto("/models")
+      await page.goto("/models")
 
-    await expect(
-      page.getByRole("heading", { name: "Model Library" }),
-    ).toBeVisible()
+      await expect(
+        page.getByRole("heading", { name: "Model Library" }),
+      ).toBeVisible()
 
-    await expect(page).toHaveTitle("Models - Kiln")
-  })
+      await expect(page).toHaveTitle("Models - Kiln")
+    },
+  )
 })

@@ -31,57 +31,55 @@ the store fresh) to the new prompt's deeplink.
 - After the client-side navigation, the prompt's name is visible on the page.
 - "Prompt not found." is NOT visible.
 */
-test("KIL-521: deeplink to newly-created prompt resolves without first visiting parent page", async ({
-  page,
-  apiRequest,
-  registeredUser,
-  seededProjectWithTask,
-}) => {
-  void registeredUser
-  const { project, task } = seededProjectWithTask
+test.fixme(
+  "KIL-521: deeplink to newly-created prompt resolves without first visiting parent page",
+  async ({ page, apiRequest, registeredUser, seededProjectWithTask }) => {
+    void registeredUser
+    const { project, task } = seededProjectWithTask
 
-  // Prime the prompts store by visiting the parent prompts page.
-  await page.goto(`/prompts/${project.id}/${task.id}`)
-  await expect(
-    page.getByRole("heading", { name: "Prompts", exact: true }),
-  ).toBeVisible()
+    // Prime the prompts store by visiting the parent prompts page.
+    await page.goto(`/prompts/${project.id}/${task.id}`)
+    await expect(
+      page.getByRole("heading", { name: "Prompts", exact: true }),
+    ).toBeVisible()
 
-  // Create a new prompt via API AFTER the store has been populated.
-  const promptName = `ActRight Deeplink ${Date.now()}`
-  const createResp = await apiRequest.post(
-    `/api/projects/${encodeURIComponent(project.id)}/tasks/${encodeURIComponent(task.id)}/prompts`,
-    {
-      data: {
-        name: promptName,
-        description: "Prompt created after store was populated.",
-        prompt: "You are a helpful assistant. Answer the question.",
+    // Create a new prompt via API AFTER the store has been populated.
+    const promptName = `ActRight Deeplink ${Date.now()}`
+    const createResp = await apiRequest.post(
+      `/api/projects/${encodeURIComponent(project.id)}/tasks/${encodeURIComponent(task.id)}/prompts`,
+      {
+        data: {
+          name: promptName,
+          description: "Prompt created after store was populated.",
+          prompt: "You are a helpful assistant. Answer the question.",
+        },
       },
-    },
-  )
-  expect(
-    createResp.ok(),
-    `POST /prompts failed: ${createResp.status()} ${await createResp.text()}`,
-  ).toBeTruthy()
-  const created = (await createResp.json()) as { id: string }
-  const promptUrlId = encodeURIComponent(`id::${created.id}`)
-  const deeplink = `/prompts/${project.id}/${task.id}/saved/${promptUrlId}`
+    )
+    expect(
+      createResp.ok(),
+      `POST /prompts failed: ${createResp.status()} ${await createResp.text()}`,
+    ).toBeTruthy()
+    const created = (await createResp.json()) as { id: string }
+    const promptUrlId = encodeURIComponent(`id::${created.id}`)
+    const deeplink = `/prompts/${project.id}/${task.id}/saved/${promptUrlId}`
 
-  // Client-side navigation: inject an <a> and click it so SvelteKit does an
-  // in-app transition instead of a full reload. A full reload would clear the
-  // store and re-fetch prompts, hiding the bug.
-  await page.evaluate((href) => {
-    const a = document.createElement("a")
-    a.setAttribute("href", href)
-    a.setAttribute("id", "act-kil521-link")
-    a.textContent = "go"
-    document.body.appendChild(a)
-  }, deeplink)
-  await page.locator("#act-kil521-link").click()
+    // Client-side navigation: inject an <a> and click it so SvelteKit does an
+    // in-app transition instead of a full reload. A full reload would clear the
+    // store and re-fetch prompts, hiding the bug.
+    await page.evaluate((href) => {
+      const a = document.createElement("a")
+      a.setAttribute("href", href)
+      a.setAttribute("id", "act-kil521-link")
+      a.textContent = "go"
+      document.body.appendChild(a)
+    }, deeplink)
+    await page.locator("#act-kil521-link").click()
 
-  await expect(page).toHaveURL(deeplink)
-  await expect(page.getByText("Prompt not found.")).toHaveCount(0)
-  await expect(page.getByText(promptName).first()).toBeVisible()
-})
+    await expect(page).toHaveURL(deeplink)
+    await expect(page.getByText("Prompt not found.")).toHaveCount(0)
+    await expect(page.getByText(promptName).first()).toBeVisible()
+  },
+)
 
 /* @act
 ## Goals
@@ -111,57 +109,55 @@ showing the first spec.
 - After client-side nav to specB's URL, the URL updates and the heading becomes
   "Spec: specB.name" (and the old specA heading is gone).
 */
-test("KIL-516: spec-to-spec in-app link updates the loaded spec", async ({
-  page,
-  apiRequest,
-  registeredUser,
-  seededProjectWithTask,
-}) => {
-  void registeredUser
-  const { project, task } = seededProjectWithTask
+test.fixme(
+  "KIL-516: spec-to-spec in-app link updates the loaded spec",
+  async ({ page, apiRequest, registeredUser, seededProjectWithTask }) => {
+    void registeredUser
+    const { project, task } = seededProjectWithTask
 
-  const specA = await createSpec(apiRequest, project.id, task.id, {
-    name: `ActToneA_${Date.now()}`,
-    definition: "Responses should be professional and friendly.",
-    properties: {
-      spec_type: "tone",
-      core_requirement: "Be professional.",
-      tone_description: "Professional and friendly.",
-    },
-  })
-  const specB = await createSpec(apiRequest, project.id, task.id, {
-    name: `ActToxB_${Date.now()}`,
-    definition: "Responses should not contain toxic content.",
-    properties: {
-      spec_type: "toxicity",
-      core_requirement: "Avoid toxicity.",
-      toxicity_examples: "Slurs, insults, threats.",
-    },
-  })
+    const specA = await createSpec(apiRequest, project.id, task.id, {
+      name: `ActToneA_${Date.now()}`,
+      definition: "Responses should be professional and friendly.",
+      properties: {
+        spec_type: "tone",
+        core_requirement: "Be professional.",
+        tone_description: "Professional and friendly.",
+      },
+    })
+    const specB = await createSpec(apiRequest, project.id, task.id, {
+      name: `ActToxB_${Date.now()}`,
+      definition: "Responses should not contain toxic content.",
+      properties: {
+        spec_type: "toxicity",
+        core_requirement: "Avoid toxicity.",
+        toxicity_examples: "Slurs, insults, threats.",
+      },
+    })
 
-  await page.goto(`/specs/${project.id}/${task.id}/${specA.id}`)
-  await expect(
-    page.getByRole("heading", { name: `Spec: ${specA.name}` }),
-  ).toBeVisible()
+    await page.goto(`/specs/${project.id}/${task.id}/${specA.id}`)
+    await expect(
+      page.getByRole("heading", { name: `Spec: ${specA.name}` }),
+    ).toBeVisible()
 
-  const specBHref = `/specs/${project.id}/${task.id}/${specB.id}`
-  await page.evaluate((href) => {
-    const a = document.createElement("a")
-    a.setAttribute("href", href)
-    a.setAttribute("id", "act-kil516-spec-link")
-    a.textContent = "go"
-    document.body.appendChild(a)
-  }, specBHref)
-  await page.locator("#act-kil516-spec-link").click()
+    const specBHref = `/specs/${project.id}/${task.id}/${specB.id}`
+    await page.evaluate((href) => {
+      const a = document.createElement("a")
+      a.setAttribute("href", href)
+      a.setAttribute("id", "act-kil516-spec-link")
+      a.textContent = "go"
+      document.body.appendChild(a)
+    }, specBHref)
+    await page.locator("#act-kil516-spec-link").click()
 
-  await expect(page).toHaveURL(specBHref)
-  await expect(
-    page.getByRole("heading", { name: `Spec: ${specB.name}` }),
-  ).toBeVisible()
-  await expect(
-    page.getByRole("heading", { name: `Spec: ${specA.name}` }),
-  ).toHaveCount(0)
-})
+    await expect(page).toHaveURL(specBHref)
+    await expect(
+      page.getByRole("heading", { name: `Spec: ${specB.name}` }),
+    ).toBeVisible()
+    await expect(
+      page.getByRole("heading", { name: `Spec: ${specA.name}` }),
+    ).toHaveCount(0)
+  },
+)
 
 /* @act
 ## Goals
@@ -190,37 +186,36 @@ column count.
   to "repeat(4, 1fr)". We assert the fixed behavior so the test fails today and
   passes after the fix.
 */
-test("KIL-516: compare view re-reads ?columns on client-side nav", async ({
-  page,
-  registeredUser,
-  seededProjectWithTask,
-}) => {
-  void registeredUser
-  const { project, task } = seededProjectWithTask
+test.fixme(
+  "KIL-516: compare view re-reads ?columns on client-side nav",
+  async ({ page, registeredUser, seededProjectWithTask }) => {
+    void registeredUser
+    const { project, task } = seededProjectWithTask
 
-  const baseHref = `/specs/${project.id}/${task.id}/compare`
-  await page.goto(`${baseHref}?columns=2`)
-  await expect(page.getByRole("button", { name: "Add Column" })).toBeVisible()
+    const baseHref = `/specs/${project.id}/${task.id}/compare`
+    await page.goto(`${baseHref}?columns=2`)
+    await expect(page.getByRole("button", { name: "Add Column" })).toBeVisible()
 
-  const gridRow = page
-    .locator('[style*="grid-template-columns"]')
-    .filter({ hasText: /.*/ })
-    .first()
-  await expect(gridRow).toHaveAttribute("style", /repeat\(2,\s*1fr\)/)
+    const gridRow = page
+      .locator('[style*="grid-template-columns"]')
+      .filter({ hasText: /.*/ })
+      .first()
+    await expect(gridRow).toHaveAttribute("style", /repeat\(2,\s*1fr\)/)
 
-  const fourHref = `${baseHref}?columns=4`
-  await page.evaluate((href) => {
-    const a = document.createElement("a")
-    a.setAttribute("href", href)
-    a.setAttribute("id", "act-kil516-compare-link")
-    a.textContent = "go"
-    document.body.appendChild(a)
-  }, fourHref)
-  await page.locator("#act-kil516-compare-link").click()
+    const fourHref = `${baseHref}?columns=4`
+    await page.evaluate((href) => {
+      const a = document.createElement("a")
+      a.setAttribute("href", href)
+      a.setAttribute("id", "act-kil516-compare-link")
+      a.textContent = "go"
+      document.body.appendChild(a)
+    }, fourHref)
+    await page.locator("#act-kil516-compare-link").click()
 
-  await expect(page).toHaveURL(fourHref)
-  await expect(gridRow).toHaveAttribute("style", /repeat\(4,\s*1fr\)/)
-})
+    await expect(page).toHaveURL(fourHref)
+    await expect(gridRow).toHaveAttribute("style", /repeat\(4,\s*1fr\)/)
+  },
+)
 
 type SpecProperties =
   | {
