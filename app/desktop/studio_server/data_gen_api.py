@@ -862,7 +862,22 @@ The topic path for this sample is:
             return GuideRefineResponse(refined_guide=input.current_guide)
 
         if preserve_user_rules:
-            combined_rules_body = f"{existing_rules_body}\n\n{new_rules_body}".strip()
+            # Preserve ONLY the <user_authored> block(s) from the existing rules
+            # body, not the entire body. If a guide somehow has both
+            # <user_authored> content and other LLM-authored groups in its
+            # rules section (edge case — frontend draft only emits
+            # <user_authored>), we'd otherwise incorrectly preserve the LLM
+            # groups too. Extract just the user-authored content and stitch
+            # that with the LLM's new output.
+            user_authored_blocks = _USER_AUTHORED_BLOCK_RE.findall(existing_rules_body)
+            preserved_user_rules = "\n\n".join(
+                block.strip() for block in user_authored_blocks if block.strip()
+            )
+            combined_rules_body = (
+                f"{preserved_user_rules}\n\n{new_rules_body}".strip()
+                if preserved_user_rules
+                else new_rules_body
+            )
         else:
             combined_rules_body = new_rules_body
 
@@ -912,6 +927,9 @@ _DATA_GUIDE_STAGE_HINTS: dict[Literal["topics", "inputs", "outputs"], str] = {
 
 
 _GUIDELINES_HEADING_RE = re.compile(r"^# Guidelines & Rules\b.*$", re.MULTILINE)
+_USER_AUTHORED_BLOCK_RE = re.compile(
+    r"<user_authored>\s*.*?\s*</user_authored>", re.DOTALL
+)
 
 
 def _split_data_guide(guide: str) -> tuple[str, str]:

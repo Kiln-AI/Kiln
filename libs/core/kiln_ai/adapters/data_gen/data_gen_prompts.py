@@ -440,12 +440,15 @@ The user's written feedback (focused on the "Needs Work" samples):
 """
 
     is_bootstrap = not has_samples and not has_feedback
-    # Key off the <user_authored> provenance tag, not the # Guidelines & Rules
-    # heading. The heading exists for any saved guide (including ones whose
-    # rules section is entirely LLM-authored), so checking the heading would
-    # falsely preserve LLM rules if a saved guide ever flowed through bootstrap.
+    # Key off the <user_authored> provenance tag inside the rules section, not
+    # the whole guide. The heading exists for any saved guide (so we can't use
+    # it as a proxy), and the tag could in principle appear inside a reference
+    # example — we only want to fire bootstrap preservation when it appears in
+    # the rules body. Splitting on the rules heading keeps the check scoped
+    # correctly.
+    _, _, rules_body_for_check = current_guide.partition("# Guidelines & Rules")
     user_rules_present_in_bootstrap = is_bootstrap and (
-        "<user_authored>" in current_guide
+        "<user_authored>" in rules_body_for_check
     )
 
     if is_bootstrap:
