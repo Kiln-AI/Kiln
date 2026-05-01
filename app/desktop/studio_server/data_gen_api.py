@@ -862,6 +862,14 @@ The topic path for this sample is:
             return GuideRefineResponse(refined_guide=input.current_guide)
 
         if preserve_user_rules:
+            # Defensive: the bootstrap prompt explicitly tells the LLM not to
+            # re-emit <user_authored> in its output, but soft prompt guarantees
+            # fail occasionally. Strip any LLM-emitted <user_authored> blocks
+            # from new_rules_body before stitching, so we don't end up with
+            # duplicated or mutated user-authored content (which would then be
+            # treated as binding at runtime).
+            new_rules_body = _USER_AUTHORED_BLOCK_RE.sub("", new_rules_body).strip()
+
             # Preserve ONLY the <user_authored> block(s) from the existing rules
             # body, not the entire body. If a guide somehow has both
             # <user_authored> content and other LLM-authored groups in its
