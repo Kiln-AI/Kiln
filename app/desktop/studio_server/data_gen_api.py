@@ -633,11 +633,19 @@ The topic path for this sample is:
         project = project_from_id(project_id)
         task = task_from_id(project_id, task_id)
 
+        # Wrap the draft guide through `_combine_guidance` so the preview's
+        # input-generation pass receives the same Data Guide framing (definition,
+        # authority cascade, invariants, stage hint) that real `/generate_inputs`
+        # uses at runtime. Without this, previewed inputs are generated under
+        # different framing than saved inputs would be — defeating the purpose
+        # of iterating on the guide here.
+        input_combined_guidance = _combine_guidance(task, None, "inputs", input.guide)
+
         sample_task = DataGenSampleTask(
             target_task=task,
             gen_type="eval",
             parent_project=project,
-            guidance=input.guide,
+            guidance=input_combined_guidance,
         )
 
         task_input = DataGenSampleTaskInput.from_task(
