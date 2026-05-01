@@ -356,7 +356,12 @@ Each output must be answerable from the source material, not from the model's ou
 </output_semantic>
 ```
 
-There is also a 7th group, `<user_authored>`, used by the system to wrap rules the user typed by hand in the setup form. **Treat `<user_authored>` content as floor-level constraints and prefer to preserve it across modes** — re-emit its rules verbatim in your output unless the user's feedback specifically contradicts something inside it. Do not move user-authored rules into the scope+type groups; keep them inside `<user_authored>`.
+There is also a 7th group, `<user_authored>`, used by the system to wrap rules the user typed by hand in the setup form. **Treat `<user_authored>` content as floor-level constraints.** How you handle it in your output depends on which mode you're in:
+
+- **Bootstrap mode** — the system preserves `<user_authored>` content automatically and stitches it back. Do NOT re-emit it; your output must contain only NEW rules in the six scope+type groups. (This is reinforced in a dedicated bootstrap section below when applicable.)
+- **Maintenance / refinement mode** — the system does NOT auto-preserve. Re-emit the entire `<user_authored>` group verbatim in your output, keeping every rule inside it byte-for-byte, unless the user's feedback specifically contradicts a rule there. Without re-emitting, those user-typed rules are lost.
+
+In either mode, never move user-authored rules into the six scope+type groups — keep them inside `<user_authored>`.
 
 The runtime model uses the group tag to filter which rules apply to its current generation stage. Untagged rules from older guides (a `## Title` block sitting outside any group) are treated as `<both_semantic>`. **Always wrap every rule in the appropriate group tag.**
 
@@ -435,8 +440,12 @@ The user's written feedback (focused on the "Needs Work" samples):
 """
 
     is_bootstrap = not has_samples and not has_feedback
+    # Key off the <user_authored> provenance tag, not the # Guidelines & Rules
+    # heading. The heading exists for any saved guide (including ones whose
+    # rules section is entirely LLM-authored), so checking the heading would
+    # falsely preserve LLM rules if a saved guide ever flowed through bootstrap.
     user_rules_present_in_bootstrap = is_bootstrap and (
-        "# Guidelines & Rules" in current_guide
+        "<user_authored>" in current_guide
     )
 
     if is_bootstrap:
@@ -532,6 +541,6 @@ The rules you write will be applied downstream as **hard constraints**, not soft
 
 ### Output
 
-Return only the rules markdown — a sequence of XML group tags (`<input_structural>`, `<input_semantic>`, `<output_structural>`, `<output_semantic>`, `<both_structural>`, `<both_semantic>`), each containing one or more `## <short title>` rule blocks with descriptions. Use blank lines between rule blocks within a group, and a blank line between groups, for legibility. Only emit a group tag if it has at least one rule. Do NOT use a `[<Scope> · <Type>]` prefix in rule titles — the group tag carries that information. Do NOT include the `# Reference Examples` section, do NOT include the `# Guidelines & Rules` heading itself, do NOT include any other top-level (`#`) headings, and do NOT include commentary or explanation of your changes. The system will stitch your output together with the user's existing reference examples to form the complete refined guide."""
+Return only the rules markdown — a sequence of XML group tags, each containing one or more `## <short title>` rule blocks with descriptions. The valid output groups are the six scope+type groups (`<input_structural>`, `<input_semantic>`, `<output_structural>`, `<output_semantic>`, `<both_structural>`, `<both_semantic>`) plus the 7th `<user_authored>` group when you need to re-emit user-typed rules in maintenance mode (see "Rule grouping" above for when re-emit applies). Use blank lines between rule blocks within a group, and a blank line between groups, for legibility. Only emit a group tag if it has at least one rule. Do NOT use a `[<Scope> · <Type>]` prefix in rule titles — the group tag carries that information. Do NOT include the `# Reference Examples` section, do NOT include the `# Guidelines & Rules` heading itself, do NOT include any other top-level (`#`) headings, and do NOT include commentary or explanation of your changes. The system will stitch your output together with the user's existing reference examples to form the complete refined guide."""
 
     return prompt

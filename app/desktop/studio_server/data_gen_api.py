@@ -832,8 +832,10 @@ The topic path for this sample is:
         new_rules_body = (parsed.get("rules") or "").strip()
 
         # Defensive: if the LLM ignored the schema description and prefixed its
-        # output with the heading anyway, strip it so we don't double up.
-        new_rules_body = _GUIDELINES_HEADING_RE.sub("", new_rules_body, count=1).strip()
+        # output with the heading anyway, strip every occurrence so we don't
+        # double up. Use the default count (0 = unlimited) rather than count=1
+        # in case the LLM emits the heading more than once.
+        new_rules_body = _GUIDELINES_HEADING_RE.sub("", new_rules_body).strip()
 
         examples_block, existing_rules_body = _split_data_guide(input.current_guide)
 
@@ -910,10 +912,22 @@ def _split_data_guide(guide: str) -> tuple[str, str]:
     """Split a Data Guide markdown into (examples_block, rules_body).
 
     `examples_block` is everything before the `# Guidelines & Rules` heading
-    (typically the `# Reference Examples` section), returned verbatim with
-    surrounding whitespace stripped. `rules_body` is the markdown content
-    *under* the rules heading, with the heading itself removed — i.e. the
-    sequence of `## <title>` rule blocks. Either may be empty.
+    (typically the `# Reference Examples` section). `rules_body` is the
+    markdown content *under* the rules heading, with the heading itself
+    removed — i.e. the sequence of `## <title>` rule blocks. Either may be
+    empty.
+
+    Both blocks are content-preserving — surrounding whitespace is normalized
+    via `.strip()`, but the body of each block (examples, fenced code,
+    rule blocks) is returned verbatim. Internal whitespace is untouched.
+
+    If the guide has no `# Guidelines & Rules` heading, the entire input is
+    returned as `examples_block` and `rules_body` is empty. This means a
+    user who manually deletes the heading via the Edit dialog will, on the
+    next refinement, see the full guide treated as immutable examples and
+    only the LLM's new output written under a freshly-stitched `# Guidelines
+    & Rules` heading. Acceptable trade-off given that deleting the heading
+    is an explicit off-script action.
 
     The split exists so refinement can treat reference examples as immutable
     user input (preserved by the system) and have the LLM produce only the
