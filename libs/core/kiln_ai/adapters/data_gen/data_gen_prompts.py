@@ -301,7 +301,62 @@ A Data Guide has exactly three things:
 2. **Structural rules** — *how* the data is shaped: format, length, sections, layout, formatting conventions, presentation. (How a sample looks.)
 3. **Semantic rules** — *what* the data means: fields, valid values, ranges, relationships between fields, domain constraints, plausibility. (What a sample is.)
 
-Examples ground; structural rules constrain shape; semantic rules constrain meaning. Every rule you write should fit cleanly into one of those two buckets. **Your output is the rules half only**, in the format described under "Output" below.
+Examples ground; structural rules constrain shape; semantic rules constrain meaning.
+
+### Rule grouping: every rule sits in one of six XML-tagged groups
+
+A task generates inputs and outputs in **separate LLM calls** at runtime. A rule about output JSON shape has no bearing on the input-generation call, and vice versa. So every rule has both a **type** (Structural | Semantic) and a **scope** (Input | Output | Both).
+
+Group rules by scope+type using XML-style tags. The six valid groups are:
+
+- `<input_structural>` — how inputs are shaped (length, format, layout, casing, prose vs JSON)
+- `<input_semantic>` — what inputs mean (fields, valid values, plausibility, terminology)
+- `<output_structural>` — how outputs are shaped (length, format, formatting conventions, tone)
+- `<output_semantic>` — what outputs mean (fields, enums, dependencies, plausibility)
+- `<both_structural>` — structural rules that apply uniformly to inputs and outputs (e.g., universal formatting like ISO dates)
+- `<both_semantic>` — semantic rules that apply uniformly to inputs and outputs (e.g., domain terminology constraints)
+
+Inside each group, every rule is a `## <short title>` block followed by a one-or-more-sentence description. Only emit a group tag if it has at least one rule. Use blank lines between rule blocks within a group, and a blank line between groups, for human legibility.
+
+**Worked example of the output shape (illustrative — your task will differ):**
+
+```
+<input_structural>
+
+## Format
+Inputs are plain-text questions ending in a question mark, not JSON or markdown.
+
+## Length
+Inputs are 5-25 words.
+
+</input_structural>
+
+<input_semantic>
+
+## Topic grounding
+Each input asks about content covered in the task's source material; off-topic questions are unrealistic.
+
+</input_semantic>
+
+<output_structural>
+
+## Length
+Outputs are 1-3 sentences, 20-60 words.
+
+## Format
+Outputs are direct prose answers — no conversational preamble like "Sure!" or "The answer is...".
+
+</output_structural>
+
+<output_semantic>
+
+## Grounding
+Each output must be answerable from the source material, not from the model's outside knowledge.
+
+</output_semantic>
+```
+
+The runtime model uses the group tag to filter which rules apply to its current generation stage. Untagged rules from older guides (a `## Title` block sitting outside any group) are treated as `<both_semantic>`. **Always wrap every rule in the appropriate group tag.**
 
 ## Context
 
@@ -345,28 +400,39 @@ The user's current guide is shown below for context. It uses two top-level secti
 <current_guide>
 {current_guide}
 </current_guide>
+"""
 
+    has_samples = len(preview_samples) > 0
+    has_feedback = bool(feedback and feedback.strip())
+
+    if has_samples:
+        prompt += """
 ## Rated Samples
 
 The following samples were generated using the current guide. The user rated each one as either "Realistic" (the sample looks like real, correct task data) or "Needs Work" (the sample is wrong, unrealistic, or violates a constraint).
 
 """
-    for i, (sample_input, sample_output, looks_good) in enumerate(preview_samples, 1):
-        rating = "Realistic" if looks_good else "Needs Work"
-        prompt += f"""<sample_{i} rating="{rating}">
+        for i, (sample_input, sample_output, looks_good) in enumerate(
+            preview_samples, 1
+        ):
+            rating = "Realistic" if looks_good else "Needs Work"
+            prompt += f"""<sample_{i} rating="{rating}">
 <input>{sample_input}</input>
 <output>{sample_output}</output>
 </sample_{i}>
 """
 
-    prompt += f"""
+    if has_feedback:
+        prompt += f"""
 ## User Feedback
 
 The user's written feedback (focused on the "Needs Work" samples):
 <feedback>
 {feedback}
 </feedback>
+"""
 
+    prompt += """
 ## Your Task
 
 Produce a refined set of rules — both structural and semantic — that, combined with the user's existing reference examples, will steer the next round of synthetic data generation toward what the user wants.
@@ -377,19 +443,58 @@ Produce a refined set of rules — both structural and semantic — that, combin
 
 2. **Your output replaces the rules half wholesale.** You are not append-only — you may edit, reorder, split, merge, or remove existing rules — but only when justified by the user's feedback or by a clear conflict with the rated samples.
 
-3. **Default to keeping existing rules.** Carry forward every existing rule unless the user's feedback contradicts it, the rule is now redundant with another, or it is clearly causing a "Needs Work" sample. When in doubt, keep it.
+3. **Default to keeping existing rules; synthesize new ones when the guide is sparse.** Carry forward every existing rule unless the user's feedback contradicts it, the rule is now redundant with another, or it is clearly causing a "Needs Work" sample. When in doubt, keep it. **If the current guide has reference examples but few or no rules, treat creating an initial set of rules as your primary task** — extract the patterns implicit in the examples (covering both structural and semantic axes) and codify them as roughly 3-8 rules total, using the rated samples and feedback as confirmation/correction signal.
 
-4. **Stay consistent with the task definition above.** The refined rules must respect the task's runtime system prompt and (when provided) its description and input/output JSON schemas. Do not invent fields, formats, or behaviors that contradict what the task is for. If the user's feedback would violate the task definition, follow the task definition and reflect the spirit of the feedback in a way that is compatible with it.
+4. **Stay consistent with the task definition above, AND mine it for rules.** The refined rules must respect the task's runtime system prompt and (when provided) its description and input/output JSON schemas — do not invent fields, formats, or behaviors that contradict them. **But the task definition is also a source of rules, not just a constraint** — see the next section.
 
+### Mine rules from the task definition
+
+The task instruction, description, and JSON schemas already encode constraints the user wants enforced. Your job is to lift the load-bearing ones into explicit rules so the runtime model can't slip past them. In particular:
+
+- **Closed-set value constraints in the task instruction.** If the instruction says "the output is one of: yes, no, unclear," that's an `<output_semantic>` rule waiting to be written.
+- **Required fields and types from JSON schemas.** Every required field, type, enum, or pattern in `task_input_json_schema` belongs in `<input_semantic>`; same for `task_output_json_schema` → `<output_semantic>`. Don't restate the entire schema — pick the constraints that matter for realism and that the runtime model is likely to drift on (enums, formats, cross-field relationships).
+- **Format directives in the instruction.** Phrases like "respond in JSON," "answer in one sentence," "use bullet points" belong in `<output_structural>`.
+- **Input shape implied by the instruction.** If the instruction says "given a user's question," that points to an `<input_semantic>` rule about what fields or content a realistic input contains.
+
+The task instruction is visible to the runtime model at generation time, but rules in the guide reinforce the critical constraints, give them measurable bounds where appropriate, and survive prompt-template changes. Treat schema-derived and instruction-derived rules as floor-level — they should be present even before you look at the examples.
+
+### How to extract rules from sparse examples
+
+When the current guide has examples but no rules, the examples are your primary signal **alongside the task definition**. After mining the task definition (above), read each example carefully and look for patterns to codify across all four scope+type cells:
+
+- `<input_structural>` — input length, format, layout, casing, prose vs key-value vs JSON.
+- `<input_semantic>` — what fields appear in the input, plausible value ranges, relationships between input fields, terminology.
+- `<output_structural>` — output length, format, section ordering, tone, level of detail, formatting conventions (bullets vs prose, units, date formats).
+- `<output_semantic>` — what fields/values the output must contain, valid enums, dependencies between input and output fields, domain plausibility.
+
+When a rule genuinely applies to both halves (e.g., "all dates are ISO 8601"), put it in `<both_structural>` or `<both_semantic>` instead.
+
+- **Don't overfit to a single example.** A pattern echoed in only one example is a hypothesis; a pattern confirmed by a Realistic preview sample is a rule.
+- **Aim for coverage across the cells.** Five `<output_structural>` rules and nothing else is a sign you skipped three cells. Quickly scan all four before finalizing.
+"""
+
+    if has_samples:
+        prompt += """
 ### How to use the ratings
 
-- **"Realistic" samples are an implicit positive signal.** They show that the rules (or lack of rules) currently in effect are working for cases like that. Do not weaken or remove rules that are producing realistic samples; if anything, the refined rules should still produce samples like these.
+- **"Realistic" samples confirm patterns to lock in.** They show that the inferences currently being made (from examples and any existing rules) are working for cases like that. Don't weaken or remove rules that are producing realistic samples. Realistic samples are particularly valuable when synthesizing new rules: they identify which patterns implicit in the examples deserve to be made explicit. Avoid overfitting to a single Realistic sample, but a pattern echoed across multiple Realistic samples is worth codifying.
 - **"Needs Work" samples plus the user's feedback are the primary signal for changes.** Identify what specifically is wrong (structure, values, realism, format, tone, constraints) and add or update a rule that prevents that mistake.
 - If the user's feedback is general (e.g. "values should be more realistic"), prefer adding or sharpening a rule rather than encoding the fix as an example (you cannot add examples — those are user-owned).
-- If the user's feedback points at a specific structural issue, prefer fixing or adding a precise rule.
+- If the user's feedback points at a specific structural issue, prefer fixing or adding a precise rule (e.g. "id must be a UUID v4 string").
+"""
+
+    prompt += """
+### How to phrase rules
+
+The rules you write will be applied downstream as **hard constraints**, not soft suggestions. Phrase them accordingly:
+
+- **Always wrap every rule in the right group tag.** Use one of `<input_structural>`, `<input_semantic>`, `<output_structural>`, `<output_semantic>`, `<both_structural>`, `<both_semantic>` and put each rule's `## <short title>` block inside. Untagged rules will be treated as `<both_semantic>` at runtime, which is rarely what you want.
+- **Prefer specific, measurable rules over vague ones.** "Outputs are 3-5 sentences, 60-100 words" beats "Outputs are concise". "id must be a UUID v4 string" beats "id should look real". Where there is a natural numeric bound (length, sentence count, field count, value range, format pattern), name it.
+- **State rules as constraints, not preferences.** Write "Inputs must include a primary question" rather than "Inputs should usually include a primary question". If something is genuinely a soft preference, say so explicitly ("Prefer X when possible, but Y is acceptable").
+- **Keep scope and type pure within a single rule.** Don't mix an Input-side and an Output-side constraint in one rule, and don't mix a structural and a semantic constraint in one rule. Split it into two rules in the appropriate groups. Mixing blurs the constraint and makes it harder to enforce.
 
 ### Output
 
-Return only the rules markdown — a sequence of `## <short title>` blocks each followed by a one-or-more-sentence description. Do NOT include the `# Reference Examples` section, do NOT include the `# Guidelines & Rules` heading itself, do NOT include any other top-level (`#`) headings, and do NOT include commentary or explanation of your changes. The system will stitch your output together with the user's existing reference examples to form the complete refined guide."""
+Return only the rules markdown — a sequence of XML group tags (`<input_structural>`, `<input_semantic>`, `<output_structural>`, `<output_semantic>`, `<both_structural>`, `<both_semantic>`), each containing one or more `## <short title>` rule blocks with descriptions. Use blank lines between rule blocks within a group, and a blank line between groups, for legibility. Only emit a group tag if it has at least one rule. Do NOT use a `[<Scope> · <Type>]` prefix in rule titles — the group tag carries that information. Do NOT include the `# Reference Examples` section, do NOT include the `# Guidelines & Rules` heading itself, do NOT include any other top-level (`#`) headings, and do NOT include commentary or explanation of your changes. The system will stitch your output together with the user's existing reference examples to form the complete refined guide."""
 
     return prompt
