@@ -504,10 +504,10 @@ def test_task_output_source_validation(tmp_path):
         assert task_run.output.source is None
 
 
-def test_task_data_guide():
-    from kiln_ai.datamodel.task import TaskDataGuide
+def test_data_guide():
+    from kiln_ai.datamodel.data_guide import DataGuide
 
-    guide = TaskDataGuide(
+    guide = DataGuide(
         guide="If cholesterol is high, never have low LDL\n\n## Reference Examples\nExample 1:\nInput: test\nOutput: result",
     )
     assert "cholesterol" in guide.guide
@@ -517,14 +517,14 @@ def test_task_data_guide():
     assert "cholesterol" in data["guide"]
 
     # Deserializes correctly
-    restored = TaskDataGuide.model_validate(data)
+    restored = DataGuide.model_validate(data)
     assert restored.guide == guide.guide
 
     # Guide is required and must be non-empty
     import pytest
 
     with pytest.raises(Exception):
-        TaskDataGuide(guide="")
+        DataGuide(guide="")
 
 
 def test_task_run_tags_validation():

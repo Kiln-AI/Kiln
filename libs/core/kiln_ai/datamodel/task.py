@@ -10,6 +10,7 @@ from kiln_ai.datamodel.basemodel import (
     KilnParentedModel,
     KilnParentModel,
 )
+from kiln_ai.datamodel.data_guide import DataGuide
 from kiln_ai.datamodel.datamodel_enums import (
     Priority,
     StructuredOutputMode,
@@ -56,15 +57,6 @@ class TaskRequirement(BaseModel):
     type: TaskOutputRatingType = Field(
         default=TaskOutputRatingType.five_star,
         description="The rating type used to evaluate this requirement.",
-    )
-
-
-class TaskDataGuide(BaseModel):
-    """Persistent guidance for synthetic data generation, stored on a Task."""
-
-    guide: str = Field(
-        min_length=1,
-        description="The data guide prompt: a markdown string appended to future synthetic data generation to improve quality.",
     )
 
 
@@ -143,6 +135,7 @@ class Task(
         "evals": Eval,
         "specs": Spec,
         "run_configs": TaskRunConfig,
+        "data_guides": DataGuide,
     },
 ):
     """
@@ -176,11 +169,6 @@ class Task(
     thinking_instruction: str | None = Field(
         default=None,
         description="Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting.",
-    )
-
-    data_guide: TaskDataGuide | None = Field(
-        default=None,
-        description="Persistent Task Data Guide for synthetic data generation. Describes domain rules, constraints, and examples.",
     )
 
     default_run_config_id: ID_TYPE | None = Field(
@@ -220,6 +208,17 @@ class Task(
 
     def specs(self, readonly: bool = False) -> list[Spec]:
         return super().specs(readonly=readonly)  # type: ignore
+
+    def data_guides(self, readonly: bool = False) -> list[DataGuide]:
+        return super().data_guides(readonly=readonly)  # type: ignore
+
+    def current_data_guide(self, readonly: bool = False) -> DataGuide | None:
+        # By design there is at most one DataGuide per task — saves overwrite
+        # the existing one in place rather than creating a new file. If the
+        # folder somehow ends up with multiple (e.g. an older import), return
+        # the first; cleanup is up to the caller.
+        guides = self.data_guides(readonly=readonly)
+        return guides[0] if guides else None
 
     def prompt_optimization_jobs(
         self, readonly: bool = False

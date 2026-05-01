@@ -8,27 +8,25 @@
   import Warning from "$lib/ui/warning.svelte"
   import Output from "$lib/ui/output.svelte"
 
-  type GuidePreviewSample = { input: string; output: string }
-
-  export let preview_samples: GuidePreviewSample[] = []
-  export let guide: string = ""
-  export let error: KilnError | null = null
-  export let submitting: boolean = false
-
   type ReviewedSample = {
     input: string
     output: string
     looks_good: boolean | undefined
   }
 
-  let reviewed_samples: ReviewedSample[] = []
-  $: reviewed_samples = preview_samples.map((s, i) => ({
-    input: s.input,
-    output: s.output,
-    looks_good: reviewed_samples[i]?.looks_good,
-  }))
+  export let guide: string = ""
+  export let initial_guide: string = guide
+  export let error: KilnError | null = null
+  export let submitting: boolean = false
+  // Lifted to the parent so back/forward navigation can restore the user's
+  // ratings + feedback for past review screens (each forward refine pushes a
+  // new history entry; the parent snapshots these props before transitioning).
+  export let reviewed_samples: ReviewedSample[] = []
+  export let general_feedback: string = ""
 
-  let general_feedback: string = ""
+  // True iff the user edited the guide via the Edit dialog after this preview
+  // was generated. Drives the submit button label (Refine vs Save Data Guide).
+  $: guide_was_edited = guide !== initial_guide
 
   // --- "See all" expansion for long input/output cells ---
   // Threshold chosen so a typical paragraph fits in the row but multi-paragraph
@@ -37,10 +35,12 @@
   const SEE_ALL_CHAR_THRESHOLD = 600
   let see_all_dialog: Dialog
   let see_all_title: string = ""
+  let see_all_subtitle: string = ""
   let see_all_content: string = ""
 
-  function show_full_text(title: string, content: string) {
+  function show_full_text(title: string, subtitle: string, content: string) {
     see_all_title = title
+    see_all_subtitle = subtitle
     see_all_content = content
     see_all_dialog?.show()
   }
@@ -54,14 +54,27 @@
     edit_dialog?.show()
   }
 
+  // Reset reverts all edits made in this preview session, not just the
+  // unsaved-in-dialog ones. We compare against initial_guide (the guide
+  // string when this preview was generated) so reopening the dialog after a
+  // prior Save still lets the user undo back to the original.
   function reset_guide() {
-    editing_guide = guide
+    editing_guide = initial_guide
   }
+  $: editing_differs_from_initial = editing_guide !== initial_guide
 
+  // FormContainer flips edit_submitting=true before dispatching submit and
+  // expects an async handler to reset it. Our handler is sync, so we reset it
+  // ourselves — otherwise the next time the dialog opens the Save button is
+  // stuck rendering the spinner state.
+  let edit_submitting: boolean = false
   function save_guide_edit() {
-    guide = editing_guide
-    edit_dialog?.close()
-    dispatch("regenerate")
+    try {
+      guide = editing_guide
+      edit_dialog?.close()
+    } finally {
+      edit_submitting = false
+    }
   }
 
   $: guide_has_changes = editing_guide !== guide
@@ -85,26 +98,26 @@
   $: has_sufficient_feedback =
     needs_improvement_samples.length === 0 || general_feedback.trim().length > 0
 
+  // Whenever the user changed something the LLM should react to (rated some
+  // samples Needs Work, edited the guide text directly), switch the submit
+  // button to Refine. Save Data Guide stays as the happy-path label when the
+  // generated samples all looked good and the guide is unchanged.
+  $: needs_refine = has_any_failed || guide_was_edited
+
   $: submit_disabled =
     !all_reviewed || (!all_look_good && !has_sufficient_feedback)
 
-  $: submit_label =
-    submit_disabled && !has_any_failed
-      ? "Save Data Guide"
-      : all_look_good
-        ? "Save Data Guide"
-        : "Refine with Feedback"
+  $: submit_label = needs_refine ? "Continue" : "Save Data Guide"
 
   type RatedSample = { input: string; output: string; looks_good: boolean }
 
   const dispatch = createEventDispatcher<{
     refine: { feedback: string; rated_samples: RatedSample[] }
     save: void
-    regenerate: void
   }>()
 
   function handle_submit() {
-    if (all_look_good) {
+    if (!needs_refine) {
       dispatch("save")
     } else {
       const rated_samples: RatedSample[] = reviewed_samples
@@ -140,16 +153,15 @@
   on:submit={handle_submit}
   bind:error
   bind:submitting
-  warn_before_unload={true}
+  warn_before_unload={!submitting}
   focus_on_mount={false}
   compact_button={true}
 >
   <div class="flex flex-col">
-    <div class="font-medium">Review Example Data</div>
+    <div class="text-xl font-medium">Review Example Data</div>
     <div class="font-light text-gray-500 text-sm">
       Is synthetic data working as expected? Mark each example as "Realistic" or
-      "Needs Work". If any need work, provide feedback below and we'll refine
-      the guide.
+      "Needs Work".
     </div>
   </div>
   <div class="flex flex-col gap-6">
@@ -184,7 +196,8 @@
                           class="text-gray-500 hover:text-gray-700 underline-offset-2 hover:underline"
                           on:click={() =>
                             show_full_text(
-                              `Input — Sample ${i + 1}`,
+                              "Input",
+                              `Sample ${i + 1}`,
                               sample.input,
                             )}
                         >
@@ -215,7 +228,8 @@
                           class="text-gray-500 hover:text-gray-700 underline-offset-2 hover:underline"
                           on:click={() =>
                             show_full_text(
-                              `Output — Sample ${i + 1}`,
+                              "Output",
+                              `Sample ${i + 1}`,
                               sample.output,
                             )}
                         >
@@ -268,9 +282,13 @@
     />
   {/if}
 
-  <Collapse title="Preview Data Guide" small={true}>
+  <Collapse
+    title={guide_was_edited
+      ? "Preview Data Guide (edited)"
+      : "Preview Data Guide"}
+    small={true}
+  >
     <div class="flex flex-col gap-2">
-      <Output raw_output={guide} show_border={true} background_color="white" />
       <div class="flex justify-end">
         <button
           class="btn btn-sm btn-outline"
@@ -278,10 +296,11 @@
           type="button">Edit</button
         >
       </div>
+      <Output raw_output={guide} show_border={true} />
     </div>
   </Collapse>
 
-  {#if all_look_good}
+  {#if all_look_good && !guide_was_edited}
     <div class="flex justify-end">
       <Warning
         warning_message="Synthetic data generation is working as expected. Your guide is ready to save."
@@ -314,7 +333,7 @@
 <Dialog
   bind:this={edit_dialog}
   title="Edit Data Guide"
-  sub_subtitle="Manually update the data guide that will be used in synthetic data generation. Updating will regenerate new examples for review."
+  sub_subtitle="Manually update the data guide. Hit Refine on the main page to regenerate examples with your edits."
   width="wide"
 >
   <!-- No warn_before_unload here — the outer review-samples FormContainer
@@ -322,22 +341,38 @@
        its own, so duplicating the flag here causes the user to see the unsaved
        changes confirm() twice on navigation. -->
   <FormContainer
-    submit_label="Save and Continue"
+    submit_label="Save"
     submit_disabled={!guide_has_changes}
+    bind:submitting={edit_submitting}
     on:submit={save_guide_edit}
     compact_button={true}
   >
-    <FormElement
-      label="Data Guide"
-      hide_label={true}
-      id="edit_guide_text"
-      inputType="textarea"
-      height="xl"
-      bind:value={editing_guide}
-      inline_action={guide_has_changes
-        ? { handler: reset_guide, label: "Reset" }
-        : undefined}
-    />
+    <!-- FormElement.inline_action only renders next to the visible label, but
+         we hide the label here. Mimic the inline reset button manually so the
+         user can still revert their edits — same pattern as
+         guide_refine_view.svelte. -->
+    <div>
+      <div class="flex flex-row items-center pb-[4px] min-h-[1.25rem]">
+        <span class="grow"></span>
+        {#if editing_differs_from_initial}
+          <button
+            type="button"
+            class="link ml-4 text-xs text-gray-500 hover:text-gray-700"
+            on:click|stopPropagation={reset_guide}
+          >
+            Reset
+          </button>
+        {/if}
+      </div>
+      <FormElement
+        label="Data Guide"
+        hide_label={true}
+        id="edit_guide_text"
+        inputType="textarea"
+        height="xl"
+        bind:value={editing_guide}
+      />
+    </div>
   </FormContainer>
 </Dialog>
 
@@ -346,6 +381,7 @@
 <Dialog
   bind:this={see_all_dialog}
   title={see_all_title}
+  sub_subtitle={see_all_subtitle}
   width="wide"
   action_buttons={[{ label: "Close", isCancel: true }]}
 >

@@ -22,6 +22,7 @@ from kiln_ai.datamodel import (
     strict_mode,
 )
 from kiln_ai.datamodel.basemodel import generate_model_id
+from kiln_ai.datamodel.data_guide import DataGuide
 from kiln_ai.datamodel.datamodel_enums import (
     FeedbackSource,
     FineTuneStatusType,
@@ -42,7 +43,7 @@ from kiln_ai.datamodel.prompt_id import (
 )
 from kiln_ai.datamodel.prompt_optimization_job import PromptOptimizationJob
 from kiln_ai.datamodel.skill import Skill
-from kiln_ai.datamodel.task import Task, TaskDataGuide, TaskRequirement
+from kiln_ai.datamodel.task import Task, TaskRequirement
 from kiln_ai.datamodel.task_output import (
     DataSource,
     DataSourceProperty,
@@ -55,6 +56,7 @@ from kiln_ai.datamodel.task_run import TaskRun, Usage
 
 __all__ = [
     "BasePrompt",
+    "DataGuide",
     "DataSource",
     "DataSourceProperty",
     "DataSourceType",
@@ -75,7 +77,6 @@ __all__ = [
     "Skill",
     "StructuredOutputMode",
     "Task",
-    "TaskDataGuide",
     "TaskOutput",
     "TaskOutputRating",
     "TaskOutputRatingType",

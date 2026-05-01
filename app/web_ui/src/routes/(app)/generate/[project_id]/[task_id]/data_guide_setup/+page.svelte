@@ -1,23 +1,18 @@
 <script lang="ts">
-  // Refine flow: shown when the user already has a saved data guide and
-  // revisits to iterate on it. Sister of /data_guide_setup which handles the
-  // first-time creation flow. Components live in the data_guide_setup
-  // directory and are imported across.
   import AppPage from "../../../../app_page.svelte"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, onDestroy } from "svelte"
   import { page } from "$app/stores"
   import { goto, pushState } from "$app/navigation"
-  import GuideRefineView from "../data_guide_setup/guide_refine_view.svelte"
-  import GuidePreview from "../data_guide_setup/guide_preview.svelte"
+  import GuideSetupForm, {
+    type GuideSample,
+    type GuideRule,
+  } from "./guide_setup_form.svelte"
+  import GuidePreview from "./guide_preview.svelte"
   import DataGenDescription from "../data_gen_description.svelte"
   import { SynthDataGuidanceDataModel } from "../synth_data_guidance_datamodel"
-  import type {
-    KilnAgentRunConfigProperties,
-    Task,
-    DataGuide,
-  } from "$lib/types"
+  import type { KilnAgentRunConfigProperties, Task } from "$lib/types"
   import { agentInfo } from "$lib/agent"
   import { current_task } from "$lib/stores"
   import AnalyzingAnimation from "$lib/ui/animations/analyzing_animation.svelte"
@@ -25,20 +20,21 @@
 
   type GuideBuilderState =
     | "loading"
-    | "refine_existing"
+    | "setup"
     | "generating"
     | "preview"
     | "refining"
     | "regenerating"
 
-  // Start in "loading" so we can redirect away if no saved guide exists
-  // (the setup flow lives at /data_guide_setup).
+  // Start in "loading" so we can redirect away if a saved guide already exists
+  // (the refine flow lives at /data_guide). Without this we'd briefly flash
+  // the setup form before the GET resolves.
   let current_state: GuideBuilderState = "loading"
   let error: KilnError | null = null
   let submitting = false
 
+  // The single guide prompt string — the source of truth
   let guide: string = ""
-  let saved_data_guide: DataGuide | null = null
 
   type PreviewSample = { input: string; output: string }
   type ReviewedSample = {
@@ -51,20 +47,33 @@
   let reviewed_samples: ReviewedSample[] = []
   let general_feedback: string = ""
 
+  // Captured from the setup form so refine/regenerate can reuse them
   let captured_input_run_config: KilnAgentRunConfigProperties | null = null
   let captured_output_run_config: KilnAgentRunConfigProperties | null = null
+
+  // The task being edited. Needed by the output run config dialog so it can
+  // mirror the SDG output flow (prompt + tools/skills selectors at top level).
   let task: Task | null = null
-  // Bound so the AppPage's "Edit" action button can drive the dialog inside
-  // GuideRefineView without having to lift the dialog state up here.
-  let refine_view: GuideRefineView | null = null
+
+  // Lifted out of GuideSetupForm so the user's examples/rules survive the
+  // setup → generating → setup unmount cycle that happens when a preview
+  // request fails.
+  let guide_examples: GuideSample[] = []
+  let guide_rules: GuideRule[] = []
 
   // --- Wizard journey nav ---
-  // Same pattern as the setup page, minus the setup-form snapshot fields.
-  type StableState = "refine_existing" | "preview"
+  // Each "user-visible" step (setup form or preview screen) snapshots the
+  // page state and pushes a new history entry. popstate restores by index.
+  // Only stable states get snapshotted — "loading" / "generating" /
+  // "refining" / "regenerating" are transient and skipped.
+  // Memory-only: a hard refresh resets the journey.
+  type StableState = "setup" | "preview"
   type JourneySnapshot = {
     state: StableState
     guide: string
     preview_initial_guide: string
+    guide_examples: GuideSample[]
+    guide_rules: GuideRule[]
     preview_samples: PreviewSample[]
     reviewed_samples: ReviewedSample[]
     general_feedback: string
@@ -84,6 +93,8 @@
       state,
       guide,
       preview_initial_guide,
+      guide_examples: [...guide_examples],
+      guide_rules: [...guide_rules],
       preview_samples: [...preview_samples],
       reviewed_samples: reviewed_samples.map((s) => ({ ...s })),
       general_feedback,
@@ -106,6 +117,8 @@
     const s = journey[idx]
     guide = s.guide
     preview_initial_guide = s.preview_initial_guide
+    guide_examples = s.guide_examples
+    guide_rules = s.guide_rules
     preview_samples = s.preview_samples
     reviewed_samples = s.reviewed_samples
     general_feedback = s.general_feedback
@@ -126,11 +139,9 @@
       restore_snapshot(idx)
       return
     }
-    // No journey_index on the entry we're popping to — user backed out past
-    // our pushed entries (typical when hitting back during a transient
-    // generating/refining state, since those don't push their own history
-    // entry). Cancel the in-flight visual state by snapping back to the
-    // last stable snapshot.
+    // No journey_index — user backed out past our pushed entries while a
+    // transient generating/refining state was on screen. Snap back to the
+    // last stable snapshot so the loading animation clears.
     if (
       current_state === "generating" ||
       current_state === "refining" ||
@@ -152,28 +163,24 @@
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: agentInfo.set({
-    name: "Refine Data Guide",
-    description: `Refine the saved task data guide for project ${project_id}, task ${task_id}.`,
+    name: "Set Up Data Guide",
+    description: `Setup the task data guide for project ${project_id}, task ${task_id}. The data guide describes the structure, rules, and examples for synthetic data generation.`,
   })
 
   onMount(async () => {
+    // If a saved guide already exists, send the user to the refine page —
+    // setup is for first-time creation only.
     try {
       const { data } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
         { params: { path: { project_id, task_id } } },
       )
       if (data) {
-        guide = data.guide
-        saved_data_guide = data
+        goto(`/generate/${project_id}/${task_id}/data_guide`)
+        return
       }
     } catch {
       // No existing guide
-    }
-
-    // No saved guide → send them to the setup flow.
-    if (!guide.trim()) {
-      goto(`/generate/${project_id}/${task_id}/data_guide_setup`)
-      return
     }
 
     if ($current_task?.id === task_id) {
@@ -192,8 +199,8 @@
       }
     }
 
-    current_state = "refine_existing"
-    push_step("refine_existing")
+    current_state = "setup"
+    push_step("setup")
     window.addEventListener("popstate", handle_popstate)
   })
 
@@ -251,7 +258,7 @@
     } catch (e) {
       if (nav_token !== op_token) return
       error = createKilnError(e)
-      current_state = "refine_existing"
+      current_state = "setup"
     } finally {
       submitting = false
     }
@@ -343,7 +350,7 @@
     submitting = true
 
     try {
-      const { data: saved, error: api_error } = await client.PUT(
+      const { error: api_error } = await client.PUT(
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
         {
           params: { path: { project_id, task_id } },
@@ -355,34 +362,20 @@
 
       if (api_error) throw api_error
 
-      // Refine page: stay here after save and drop the user back on the
-      // saved-guide view with refreshed metadata. This is different from the
-      // setup page, which redirects to /synth on first save.
-      if (saved) {
-        saved_data_guide = saved
-        guide = saved.guide
-      }
-      current_state = "refine_existing"
-      push_step("refine_existing")
+      goto(`/generate/${project_id}/${task_id}/synth?session_continued=true`)
     } catch (e) {
       error = createKilnError(e)
     } finally {
       submitting = false
     }
   }
-
-  function handle_save_with_guide(event: CustomEvent<{ guide: string }>) {
-    guide = event.detail.guide
-    return handle_save()
-  }
 </script>
 
 <!-- TODO: Update read the docs link to point to new data guide docs -->
 <div class="max-w-[1400px]">
   <AppPage
-    title={current_state === "refine_existing" || current_state === "loading"
-      ? "Data Guide"
-      : "Refine Data Guide"}
+    title="Set Up Data Guide"
+    subtitle="Help us understand what your data looks like so we can generate high-quality synthetic data."
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/synthetic-data-generation"
     breadcrumbs={[
@@ -391,14 +384,6 @@
         href: `/generate/${project_id}/${task_id}/synth`,
       },
     ]}
-    action_buttons={current_state === "refine_existing"
-      ? [
-          {
-            label: "Edit",
-            handler: () => refine_view?.open_edit_dialog(),
-          },
-        ]
-      : []}
   >
     <DataGenDescription bind:guidance_data />
 
@@ -406,16 +391,15 @@
       <div class="flex flex-col items-center justify-center py-24 gap-4">
         <span class="loading loading-spinner loading-lg text-primary" />
       </div>
-    {:else if current_state === "refine_existing"}
-      <GuideRefineView
-        bind:this={refine_view}
+    {:else if current_state === "setup"}
+      <GuideSetupForm
         {project_id}
-        {guide}
+        {task_id}
         {task}
-        data_guide={saved_data_guide}
+        bind:guide_examples
+        bind:guide_rules
         bind:page_error={error}
         on:generate_preview={handle_generate_preview}
-        on:save={handle_save_with_guide}
       />
     {:else if current_state === "generating"}
       <AnalyzingAnimation

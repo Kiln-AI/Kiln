@@ -1095,30 +1095,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/sdg_recommended_models": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List SDG-Recommended Models
-         * @description Priority list of (provider, model) pairs to use as the auto-selected
-         *     defaults in the data guide flow's input/output run options. Sourced
-         *     from the remote model config (`sdg_recommended_models` key), or derived
-         *     from the local model list as a fallback. The frontend should iterate
-         *     in order and pick the first entry whose provider is configured.
-         */
-        get: operations["get_sdg_recommended_models_api_sdg_recommended_models_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/providers/embedding_models": {
         parameters: {
             query?: never;
@@ -4769,6 +4745,53 @@ export interface components {
              * @description Tags to add to the sample
              */
             tags?: string[] | null;
+        };
+        /**
+         * DataGuide
+         * @description Persistent data guide for synthetic data generation, stored as a child
+         *     of a Task. The guide is a markdown string describing structure, rules, and
+         *     examples used to steer synthetic data quality.
+         *
+         *     Metadata (id, created_at, created_by, path) is inherited from KilnBaseModel
+         *     via KilnParentedModel so each saved guide carries authorship + timestamps.
+         *     Tasks point at the active guide via `Task.current_data_guide_id`; older
+         *     guides remain on disk so the UI can surface guide history.
+         */
+        DataGuide: {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /**
+             * Guide
+             * @description The data guide markdown — appended to synthetic data generation prompts to improve sample quality.
+             */
+            guide: string;
+            /** Model Type */
+            readonly model_type: string;
         };
         /**
          * DataSource
@@ -8500,21 +8523,6 @@ export interface components {
             tags?: string[] | null;
         };
         /**
-         * SDGRecommendedModel
-         * @description A pointer to a (provider, model) pair recommended for synthetic data
-         *     generation. Used to drive the auto-selected default model in the data
-         *     guide flow's input/output run options.
-         */
-        SDGRecommendedModel: {
-            /** @description Provider name. Must be a non-deprecated provider on the referenced model. */
-            provider_id: components["schemas"]["ModelProviderName"];
-            /**
-             * Model Id
-             * @description Provider-specific model id (matches KilnModelProvider.model_id).
-             */
-            model_id: string;
-        };
-        /**
          * SampleApi
          * @description A sample input/output pair.
          */
@@ -9193,8 +9201,6 @@ export interface components {
              * @description Instructions for the model 'thinking' about the requirement prior to answering. Used for chain of thought style prompting.
              */
             thinking_instruction?: string | null;
-            /** @description Persistent Task Data Guide for synthetic data generation. Describes domain rules, constraints, and examples. */
-            data_guide?: components["schemas"]["TaskDataGuide"] | null;
             /**
              * Default Run Config Id
              * @description ID of the run config to use for this task by default. Must exist in saved run configs for this task.
@@ -9202,17 +9208,6 @@ export interface components {
             default_run_config_id?: string | null;
             /** Model Type */
             readonly model_type: string;
-        };
-        /**
-         * TaskDataGuide
-         * @description Persistent guidance for synthetic data generation, stored on a Task.
-         */
-        TaskDataGuide: {
-            /**
-             * Guide
-             * @description The data guide prompt: a markdown string appended to future synthetic data generation to improve quality.
-             */
-            guide: string;
         };
         /**
          * TaskInfoApi
@@ -13087,26 +13082,6 @@ export interface operations {
             };
         };
     };
-    get_sdg_recommended_models_api_sdg_recommended_models_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SDGRecommendedModel"][];
-                };
-            };
-        };
-    };
     get_providers_embedding_models_api_providers_embedding_models_get: {
         parameters: {
             query?: never;
@@ -14075,7 +14050,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TaskDataGuide"] | null;
+                    "application/json": components["schemas"]["DataGuide"] | null;
                 };
             };
             /** @description Validation Error */
@@ -14113,7 +14088,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TaskDataGuide"];
+                    "application/json": components["schemas"]["DataGuide"];
                 };
             };
             /** @description Validation Error */

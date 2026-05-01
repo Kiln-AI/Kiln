@@ -866,7 +866,7 @@
               {
                 label: "Set Up Data Guide",
                 is_primary: true,
-                href: `/generate/${project_id}/${task_id}/data_guide`,
+                href: `/generate/${project_id}/${task_id}/data_guide_setup`,
               },
               {
                 label: "Continue Without Data Guide",

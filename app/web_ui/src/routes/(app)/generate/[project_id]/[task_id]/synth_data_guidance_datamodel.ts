@@ -37,6 +37,12 @@ export class SynthDataGuidanceDataModel {
   // guide on load, but edits stay local and are sent per-call rather than
   // persisted back to the task.
   public data_guide: Writable<string> = writable("")
+  // The task's saved data guide text. Read-only here — surfaced by the
+  // SynthDataGuide toggle so it can render a "View data guide" link and
+  // populate `data_guide` when the toggle flips on. Kept on the datamodel so
+  // every place that renders SynthDataGuide (synth page, modal, node) sees
+  // the same value without each one having to fetch it independently.
+  public saved_guide_text: Writable<string> = writable("")
   public select_options: Writable<OptionGroup[]> = writable([])
   public loading_error: Writable<KilnError | null> = writable(null)
 
@@ -74,6 +80,7 @@ export class SynthDataGuidanceDataModel {
     this.task = task
     this.splits.set(splits)
     this.data_guide.set(data_guide)
+    this.saved_guide_text.set(data_guide)
 
     // Set the selected template if it exists in static. The other eval templates are set as part of the load_eval flow.
     if (template_id && static_templates.find((t) => t.id == template_id)) {

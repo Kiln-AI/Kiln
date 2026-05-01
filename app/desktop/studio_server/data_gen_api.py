@@ -12,10 +12,11 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
 from kiln_ai.adapters.data_gen.qna_gen_task import DataGenQnaTask, DataGenQnaTaskInput
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun, generate_model_id
+from kiln_ai.datamodel.data_guide import DataGuide
 from kiln_ai.datamodel.extraction import Document
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-from kiln_ai.datamodel.task import RunConfigProperties, Task, TaskDataGuide
+from kiln_ai.datamodel.task import RunConfigProperties, Task
 from kiln_ai.datamodel.task_output import TaskOutput
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
@@ -543,9 +544,9 @@ The topic path for this sample is:
             str,
             Path(description="The unique identifier of the task within the project."),
         ],
-    ) -> TaskDataGuide | None:
+    ) -> DataGuide | None:
         task = task_from_id(project_id, task_id)
-        return task.data_guide
+        return task.current_data_guide()
 
     @app.put(
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
@@ -562,12 +563,19 @@ The topic path for this sample is:
             Path(description="The unique identifier of the task within the project."),
         ],
         input: SaveTaskDataGuideInput,
-    ) -> TaskDataGuide:
+    ) -> DataGuide:
         task = task_from_id(project_id, task_id)
 
-        guide = TaskDataGuide(guide=input.guide)
-        task.data_guide = guide
-        task.save_to_file()
+        # By design there is at most one DataGuide per task. Reuse the existing
+        # file if present (so git history of the guide stays in one place);
+        # otherwise create the first one.
+        existing = task.current_data_guide()
+        if existing is not None:
+            existing.guide = input.guide
+            existing.save_to_file()
+            return existing
+        guide = DataGuide(parent=task, guide=input.guide)
+        guide.save_to_file()
         return guide
 
     @app.delete(
@@ -586,8 +594,9 @@ The topic path for this sample is:
         ],
     ) -> None:
         task = task_from_id(project_id, task_id)
-        task.data_guide = None
-        task.save_to_file()
+        existing = task.current_data_guide()
+        if existing is not None:
+            existing.delete()
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_preview",
@@ -822,12 +831,13 @@ def _resolve_data_guide(task: Task, data_guide_override: str | None) -> str | No
 
     Override semantics: an explicit override (even an empty string) replaces the
     task's persisted guide. `None` means "no override provided" and falls back
-    to `task.data_guide.guide` if present.
+    to the task's current DataGuide if one is set.
     """
     if data_guide_override is not None:
         return data_guide_override if data_guide_override.strip() else None
-    if task.data_guide:
-        return task.data_guide.guide
+    current = task.current_data_guide()
+    if current:
+        return current.guide
     return None
 
 

@@ -22,6 +22,8 @@
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import TaskRunPicker from "$lib/utils/task_run_picker.svelte"
   import RunOptionsTiles from "./run_options_tiles.svelte"
+  import Intro from "$lib/ui/intro.svelte"
+  import DatabaseIcon from "$lib/ui/icons/database_icon.svelte"
 
   export let project_id: string
   export let task_id: string
@@ -55,7 +57,7 @@
       const example_text = valid_examples
         .map(
           (e, i) =>
-            `## Example ${i + 1}\n\`\`\`Input\n${e.input}\n\`\`\`\n\n\`\`\`Output\n${e.output}\n\`\`\``,
+            `## Example ${i + 1}\n\`\`\`input\n${e.input}\n\`\`\`\n\n\`\`\`output\n${e.output}\n\`\`\``,
         )
         .join("\n\n")
       parts.push(`# Reference Examples\n\n${example_text}`)
@@ -112,6 +114,7 @@
     } else {
       guide_examples = [...guide_examples, sample]
     }
+    intro_dismissed = true
     example_dialog?.close()
   }
 
@@ -136,6 +139,7 @@
       ...guide_examples,
       { input: ex.input, output: ex.output, task_run_id: run.id ?? undefined },
     ]
+    intro_dismissed = true
     example_dialog?.close()
   }
 
@@ -150,8 +154,19 @@
     } finally {
       loading_runs = false
     }
-    open_add_example_dialog()
   })
+
+  // Intro state. We pin past the intro the moment the user actually adds an
+  // example or a rule — clicking the Intro's primary button just opens the
+  // modal so they can still cancel out and stay on the intro.
+  let intro_dismissed: boolean = false
+  $: has_examples = guide_examples.length > 0
+  $: has_rules = guide_rules.length > 0
+  $: show_intro = !intro_dismissed && !has_examples && !has_rules
+
+  function open_generation_options() {
+    run_options_tiles?.open_combined_dialog()
+  }
 
   // --- Rule management ---
   let rule_dialog: Dialog
@@ -279,158 +294,204 @@
   }
 </script>
 
-<FormContainer
-  submit_label="Generate & Review Examples"
-  on:submit={handle_continue}
-  bind:error={page_error}
-  bind:submitting={page_submitting}
-  compact_button={true}
-  submit_row_class="bg-base-200 rounded-lg p-3"
->
-  <!-- Run option tiles live in the submit_left slot so they share a styled
-       row with the Generate & Review Examples button — visually tying the
-       run config choices to the action they apply to. -->
-  <svelte:fragment slot="submit_left">
-    <RunOptionsTiles bind:this={run_options_tiles} {project_id} {task} />
-  </svelte:fragment>
-  <!-- Example Data Section -->
-  <div class="flex flex-col gap-2">
-    <div class="flex items-center justify-between">
-      <div>
-        <div class="font-medium">Example Data</div>
-        <div class="text-sm text-gray-500">
-          Provide examples of real task data to guide synthetic data generation.
-        </div>
+{#if show_intro}
+  <div class="flex flex-col items-center justify-center min-h-[40vh] mt-8">
+    <Intro
+      title="Help us understand your task data with examples"
+      description_paragraphs={[
+        "Examples will help us generate higher-quality synthetic data tailored to your task.",
+      ]}
+      action_buttons={[
+        {
+          label: "Add Examples",
+          onClick: open_add_example_dialog,
+          is_primary: true,
+        },
+        {
+          label: "Docs & Guide",
+          href: "https://docs.kiln.tech/docs/synthetic-data-generation",
+          new_tab: true,
+          is_primary: false,
+        },
+      ]}
+    >
+      <div slot="icon" class="w-12 h-12">
+        <DatabaseIcon />
       </div>
-      <button
-        class="btn btn-sm btn-outline btn-primary"
-        on:click={open_add_example_dialog}
-        type="button">+ Add Example</button
-      >
-    </div>
-
-    {#if guide_examples.length > 0}
-      <div class="rounded-lg border">
-        <table class="table table-fixed">
-          <thead>
-            <tr>
-              <th>Input</th>
-              <th>Output</th>
-              <th style="width: 50px"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each guide_examples as example, i}
-              <tr
-                on:click={() => toggle_example_expand(i)}
-                class="cursor-pointer"
-              >
-                <td class="py-2">
-                  {#if expanded_examples[i]}
-                    <pre
-                      class="whitespace-pre-wrap break-words">{example.input}</pre>
-                  {:else}
-                    <div class="truncate">{example.input}</div>
-                  {/if}
-                </td>
-                <td class="py-2">
-                  {#if expanded_examples[i]}
-                    <pre
-                      class="whitespace-pre-wrap break-words">{example.output}</pre>
-                  {:else}
-                    <div class="truncate">{example.output}</div>
-                  {/if}
-                </td>
-                <td class="py-2 p-0">
-                  <div class="dropdown dropdown-end dropdown-hover">
-                    <TableActionMenu
-                      items={[
-                        {
-                          label: "Edit",
-                          onclick: () => open_edit_example_dialog(i),
-                        },
-                        { label: "Remove", onclick: () => remove_example(i) },
-                      ]}
-                    />
-                  </div>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-    {:else}
-      <div
-        class="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-400"
-      >
-        No examples added yet.
-      </div>
-    {/if}
+    </Intro>
   </div>
-
-  <!-- Rules & Descriptions Section -->
-  <div class="flex flex-col gap-2">
-    <div class="flex items-center justify-between">
-      <div>
-        <div class="font-medium">Guidelines & Rules</div>
-        <div class="text-sm text-gray-500">
-          Define the rules, constraints, and format for generated inputs and
-          outputs.
+{:else}
+  <FormContainer
+    submit_label="Continue"
+    on:submit={handle_continue}
+    bind:error={page_error}
+    bind:submitting={page_submitting}
+    submit_visible={has_examples}
+    compact_button={true}
+    warn_before_unload={has_examples || has_rules}
+  >
+    <!-- Example Data Section -->
+    <div class="flex flex-col gap-2">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="font-medium">Example Data</div>
+          <div class="text-sm text-gray-500">
+            Provide examples of real task data to guide synthetic data
+            generation.
+          </div>
         </div>
+        <button
+          class="btn btn-sm {has_examples
+            ? 'btn-outline btn-primary'
+            : 'btn-primary'}"
+          on:click={open_add_example_dialog}
+          type="button">+ Add Example</button
+        >
       </div>
-      <button
-        class="btn btn-sm btn-outline btn-primary"
-        on:click={open_add_rule_dialog}
-        type="button">+ Add Rule</button
-      >
-    </div>
 
-    {#if guide_rules.length > 0}
-      <div class="rounded-lg border">
-        <table class="table table-fixed">
-          <thead>
-            <tr>
-              <th style="width: 200px">Title</th>
-              <th>Description</th>
-              <th style="width: 50px"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each guide_rules as rule, i}
+      {#if guide_examples.length > 0}
+        <div class="rounded-lg border">
+          <table class="table table-fixed">
+            <thead>
               <tr>
-                <td class="py-2">
-                  <div class="truncate font-medium">{rule.name}</div>
-                </td>
-                <td class="py-2">
-                  <div class="truncate">{rule.content}</div>
-                </td>
-                <td class="py-2 p-0">
-                  <div class="dropdown dropdown-end dropdown-hover">
-                    <TableActionMenu
-                      items={[
-                        {
-                          label: "Edit",
-                          onclick: () => open_edit_rule_dialog(i),
-                        },
-                        { label: "Remove", onclick: () => remove_rule(i) },
-                      ]}
-                    />
-                  </div>
-                </td>
+                <th>Input</th>
+                <th>Output</th>
+                <th style="width: 50px"></th>
               </tr>
-            {/each}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {#each guide_examples as example, i}
+                <tr
+                  on:click={() => toggle_example_expand(i)}
+                  class="cursor-pointer"
+                >
+                  <td class="py-2">
+                    {#if expanded_examples[i]}
+                      <pre
+                        class="whitespace-pre-wrap break-words">{example.input}</pre>
+                    {:else}
+                      <div class="truncate">{example.input}</div>
+                    {/if}
+                  </td>
+                  <td class="py-2">
+                    {#if expanded_examples[i]}
+                      <pre
+                        class="whitespace-pre-wrap break-words">{example.output}</pre>
+                    {:else}
+                      <div class="truncate">{example.output}</div>
+                    {/if}
+                  </td>
+                  <td class="py-2 p-0">
+                    <div class="dropdown dropdown-end dropdown-hover">
+                      <TableActionMenu
+                        items={[
+                          {
+                            label: "Edit",
+                            onclick: () => open_edit_example_dialog(i),
+                          },
+                          { label: "Remove", onclick: () => remove_example(i) },
+                        ]}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else}
+        <div
+          class="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-400"
+        >
+          No examples added yet.
+        </div>
+      {/if}
+    </div>
+
+    <!-- Rules & Descriptions Section -->
+    <div class="flex flex-col gap-2">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="font-medium">Guidelines & Rules</div>
+          <div class="text-sm text-gray-500">
+            Define the rules, constraints, and format for generated inputs and
+            outputs.
+          </div>
+        </div>
+        <button
+          class="btn btn-sm {has_examples
+            ? 'btn-outline btn-primary'
+            : 'btn-primary'}"
+          on:click={open_add_rule_dialog}
+          type="button">+ Add Rule</button
+        >
       </div>
-    {:else}
-      <div
-        class="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-400"
+
+      {#if guide_rules.length > 0}
+        <div class="rounded-lg border">
+          <table class="table table-fixed">
+            <thead>
+              <tr>
+                <th style="width: 200px">Title</th>
+                <th>Description</th>
+                <th style="width: 50px"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each guide_rules as rule, i}
+                <tr>
+                  <td class="py-2">
+                    <div class="truncate font-medium">{rule.name}</div>
+                  </td>
+                  <td class="py-2">
+                    <div class="truncate">{rule.content}</div>
+                  </td>
+                  <td class="py-2 p-0">
+                    <div class="dropdown dropdown-end dropdown-hover">
+                      <TableActionMenu
+                        items={[
+                          {
+                            label: "Edit",
+                            onclick: () => open_edit_rule_dialog(i),
+                          },
+                          { label: "Remove", onclick: () => remove_rule(i) },
+                        ]}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else}
+        <div
+          class="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-400"
+        >
+          No rules added yet. (Optional)
+        </div>
+      {/if}
+    </div>
+
+    <RunOptionsTiles
+      bind:this={run_options_tiles}
+      mode="link"
+      {project_id}
+      {task}
+    />
+  </FormContainer>
+  {#if has_examples}
+    <div class="flex justify-end mt-2">
+      <button
+        type="button"
+        class="link text-sm text-gray-500 hover:text-gray-700"
+        on:click={open_generation_options}
       >
-        No rules added yet. (Optional)
-      </div>
-    {/if}
-  </div>
-</FormContainer>
+        Generation options
+      </button>
+    </div>
+  {/if}
+{/if}
 
 <!-- Add/Edit Example Dialog -->
 <Dialog

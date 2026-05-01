@@ -714,10 +714,12 @@ def test_save_and_get_data_gen_guide(
     # Verify task was actually saved to disk
     reloaded_task = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
     assert reloaded_task is not None
-    assert reloaded_task.data_guide is not None
-    assert (
-        reloaded_task.data_guide.guide == "If cholesterol is high, never have low LDL"
-    )
+    current = reloaded_task.current_data_guide()
+    assert current is not None
+    assert current.guide == "If cholesterol is high, never have low LDL"
+    # Only one DataGuide should exist on disk — saves overwrite in place
+    # rather than accumulating new files.
+    assert len(reloaded_task.data_guides()) == 1
 
 
 def test_delete_data_gen_guide(
@@ -750,10 +752,11 @@ def test_save_data_gen_guide_overwrites_previous(
     client,
 ):
     # Save first guide
-    client.put(
+    first_response = client.put(
         "/api/projects/test_project/tasks/test_task/data_gen_guide",
         json={"guide": "First version"},
     )
+    first_id = first_response.json()["id"]
 
     # Overwrite with second
     response = client.put(
@@ -767,3 +770,10 @@ def test_save_data_gen_guide_overwrites_previous(
     )
     result = get_response.json()
     assert result["guide"] == "Second version with examples"
+
+    # Same file — second save reuses the first DataGuide rather than creating
+    # a new one. Keeps git history of the guide localized to one file.
+    assert result["id"] == first_id
+    reloaded_task = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
+    assert reloaded_task is not None
+    assert len(reloaded_task.data_guides()) == 1

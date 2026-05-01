@@ -4,12 +4,12 @@ import json
 import logging
 import os
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, List
 
 import httpx
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 
 from kiln_ai.adapters.ml_embedding_model_list import (
     KilnEmbeddingModel,
@@ -21,7 +21,7 @@ from kiln_ai.adapters.reranker_list import (
     KilnRerankerModelProvider,
     built_in_rerankers,
 )
-from kiln_ai.datamodel.datamodel_enums import KilnMimeType, ModelProviderName
+from kiln_ai.datamodel.datamodel_enums import KilnMimeType
 
 from .ml_model_list import KilnModel, KilnModelProvider, built_in_models
 
@@ -41,69 +41,11 @@ def should_skip_remote_model_list() -> bool:
     return os.environ.get("KILN_SKIP_REMOTE_MODEL_LIST") == "true"
 
 
-class SDGRecommendedModel(BaseModel):
-    """A pointer to a (provider, model) pair recommended for synthetic data
-    generation. Used to drive the auto-selected default model in the data
-    guide flow's input/output run options."""
-
-    provider_id: ModelProviderName = Field(
-        description="Provider name. Must be a non-deprecated provider on the referenced model."
-    )
-    model_id: str = Field(
-        description="Provider-specific model id (matches KilnModelProvider.model_id)."
-    )
-
-
-def default_sdg_recommended_models(
-    models: List[KilnModel],
-) -> List[SDGRecommendedModel]:
-    """Build the default SDG-recommended priority list from a model list.
-
-    Includes only (model, provider) pairs where the provider has
-    `suggested_for_data_gen=True`. Order: all OpenAI providers first (keeping
-    the model order from the source list), then the remaining providers grouped
-    in the order they first appear in the source list.
-    """
-    by_provider: dict[ModelProviderName, list[str]] = {}
-    for model in models:
-        for provider in model.providers:
-            if not provider.suggested_for_data_gen:
-                continue
-            if not provider.model_id:
-                continue
-            by_provider.setdefault(provider.name, []).append(provider.model_id)
-
-    result: List[SDGRecommendedModel] = []
-    # OpenAI gets first priority.
-    for model_id in by_provider.pop(ModelProviderName.openai, []):
-        result.append(
-            SDGRecommendedModel(provider_id=ModelProviderName.openai, model_id=model_id)
-        )
-    # Then everything else in source declaration order.
-    for provider_name, model_ids in by_provider.items():
-        for model_id in model_ids:
-            result.append(
-                SDGRecommendedModel(provider_id=provider_name, model_id=model_id)
-            )
-    return result
-
-
-# Module-level mutable global, refreshed alongside `built_in_models` when the
-# remote config is fetched. Bootstrapped from the local hard-coded model list
-# so cold-start (offline / before refresh) still has sensible defaults.
-sdg_recommended_models: list[SDGRecommendedModel] = default_sdg_recommended_models(
-    built_in_models
-)
-
-
 @dataclass
 class KilnRemoteConfig:
     model_list: List[KilnModel]
     embedding_model_list: List[KilnEmbeddingModel]
     reranker_model_list: List[KilnRerankerModel]
-    # SDG-recommended priority list. When the remote config omits this key we
-    # derive it from the model list so older configs keep working.
-    sdg_recommended_models: List[SDGRecommendedModel] = field(default_factory=list)
 
 
 def serialize_config(
@@ -111,17 +53,11 @@ def serialize_config(
     embedding_models: List[KilnEmbeddingModel],
     reranker_models: List[KilnRerankerModel],
     path: str | Path,
-    sdg_recommended_models_list: List[SDGRecommendedModel] | None = None,
 ) -> None:
-    if sdg_recommended_models_list is None:
-        sdg_recommended_models_list = default_sdg_recommended_models(models)
     data = {
         "model_list": [m.model_dump(mode="json") for m in models],
         "embedding_model_list": [m.model_dump(mode="json") for m in embedding_models],
         "reranker_model_list": [m.model_dump(mode="json") for m in reranker_models],
-        "sdg_recommended_models": [
-            m.model_dump(mode="json") for m in sdg_recommended_models_list
-        ],
     }
     Path(path).write_text(json.dumps(data, indent=2, sort_keys=True))
 
@@ -258,33 +194,10 @@ def deserialize_config_data(
                 e,
             )
 
-    sdg_models_data = config_data.get("sdg_recommended_models", [])
-    if not isinstance(sdg_models_data, list):
-        raise ValueError(
-            f"Remote config expected list of sdg_recommended_models, got {type(sdg_models_data)}"
-        )
-
-    sdg_recommended: List[SDGRecommendedModel] = []
-    for entry in sdg_models_data:
-        try:
-            sdg_recommended.append(SDGRecommendedModel.model_validate(entry))
-        except ValidationError as e:
-            logger.warning(
-                "Failed to validate an sdg_recommended_models entry from remote config. Upgrade Kiln to use this entry. Details %s: %s",
-                entry,
-                e,
-            )
-
-    # Back-compat: older remote configs pre-date this key. Fall back to the
-    # locally-derived default so the feature still has data to work with.
-    if not sdg_recommended:
-        sdg_recommended = default_sdg_recommended_models(models)
-
     return KilnRemoteConfig(
         model_list=models,
         embedding_model_list=embedding_models,
         reranker_model_list=reranker_models,
-        sdg_recommended_models=sdg_recommended,
     )
 
 
@@ -317,7 +230,6 @@ async def refresh_model_list(url: str = REMOTE_MODEL_LIST_URL) -> None:
         built_in_models[:] = models.model_list
         built_in_embedding_models[:] = models.embedding_model_list
         built_in_rerankers[:] = models.reranker_model_list
-        sdg_recommended_models[:] = models.sdg_recommended_models
 
 
 def refresh_model_list_background(

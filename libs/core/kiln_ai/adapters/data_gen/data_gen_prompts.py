@@ -330,7 +330,7 @@ The task's output JSON schema (every rule about output structure must be consist
 
     prompt += f"""
 
-Their current data guide is shown below. It uses a specific format with two top-level sections — `# Reference Examples` (containing one or more `## Example N` blocks with fenced ```Input and ```Output code fences) and `# Guidelines & Rules` (containing one or more `## <Title>` rule blocks with descriptions). Either section may be absent if the user has not authored any items yet.
+Their current data guide is shown below. It uses a specific format with two top-level sections — `# Reference Examples` (containing one or more `## Example N` blocks with fenced ```input and ```output code fences) and `# Guidelines & Rules` (containing one or more `## <Title>` rule blocks with descriptions). Either section may be absent if the user has not authored any items yet.
 
 <current_guide>
 {current_guide}
@@ -363,7 +363,7 @@ Produce a refined data guide that the user can use for future synthetic data gen
 
 ### Hard requirements
 
-1. **Preserve the format of the current guide.** Output a single markdown document. Use the same two top-level sections — `# Reference Examples` and `# Guidelines & Rules` — when content for them exists. Inside `# Reference Examples`, each example is a `## Example N` block followed by a fenced ```Input ... ``` block and a fenced ```Output ... ``` block. Inside `# Guidelines & Rules`, each rule is a `## <short title>` block followed by a one-or-more-sentence description. Do not introduce other top-level sections.
+1. **Preserve the format of the current guide.** Output a single markdown document. Use the same two top-level sections — `# Reference Examples` and `# Guidelines & Rules` — when content for them exists. Inside `# Reference Examples`, each example is a `## Example N` block followed by a fenced ```input ... ``` block and a fenced ```output ... ``` block. Inside `# Guidelines & Rules`, each rule is a `## <short title>` block followed by a one-or-more-sentence description. Do not introduce other top-level sections.
 
 2. **The refined guide is not append-only.** You may edit, reorder, split, merge, or remove existing examples and rules — but only when justified by the user's feedback or by a clear conflict with the rated samples.
 
