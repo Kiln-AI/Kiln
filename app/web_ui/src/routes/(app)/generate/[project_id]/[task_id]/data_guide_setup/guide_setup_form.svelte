@@ -206,12 +206,33 @@
     rule_dialog?.show()
   }
 
+  // <user_authored> is the reserved provenance tag the form wraps user-typed
+  // rules in (see build_guide_markdown). If a title or description contained
+  // either delimiter, it would break the wrapper and confuse downstream
+  // refinement. Reject up front rather than escape — easier for the user to
+  // understand and avoids leaking implementation detail into rule content.
+  function contains_user_authored_delimiter(value: string): boolean {
+    return (
+      value.includes("<user_authored>") || value.includes("</user_authored>")
+    )
+  }
+
   function save_rule() {
     // FormContainer sets rule_submitting=true before dispatching submit.
     // This handler is synchronous, so we have to flip it back ourselves —
     // otherwise the next time the dialog opens (with a fresh form via {#key}),
     // the bound rule_submitting is still true and the Add button spins.
     try {
+      if (
+        contains_user_authored_delimiter(editing_rule_name) ||
+        contains_user_authored_delimiter(editing_rule_content)
+      ) {
+        rule_error = new KilnError(
+          "Rule text cannot contain the reserved <user_authored> tags.",
+          null,
+        )
+        return
+      }
       const rule: GuideRule = {
         name: editing_rule_name,
         content: editing_rule_content,

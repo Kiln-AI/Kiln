@@ -848,7 +848,13 @@ The topic path for this sample is:
         # bootstrap (refinement after rated samples / feedback), the LLM owns
         # the rules half wholesale, so we replace existing rules entirely.
         is_bootstrap = len(input.preview_samples) == 0 and not input.feedback.strip()
-        preserve_user_rules = is_bootstrap and bool(existing_rules_body)
+        # Key preservation off the <user_authored> provenance tag, not just
+        # "is there anything in the rules section." This keeps the endpoint
+        # symmetric with the prompt-side bootstrap detection (which also
+        # checks for <user_authored>) and avoids falsely preserving LLM-
+        # authored rules if a guide containing them is ever passed through
+        # bootstrap.
+        preserve_user_rules = is_bootstrap and "<user_authored>" in existing_rules_body
 
         if not new_rules_body:
             # LLM returned nothing useful — preserve the existing guide rather
