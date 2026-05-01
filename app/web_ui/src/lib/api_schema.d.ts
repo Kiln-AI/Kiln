@@ -6625,14 +6625,15 @@ export interface components {
             current_guide: string;
             /**
              * Feedback
-             * @description User feedback on what's wrong with preview samples
+             * @description User feedback on what's wrong with preview samples. Leave empty for bootstrap synthesis (initial setup with no rated samples yet).
+             * @default
              */
             feedback: string;
             /**
              * Preview Samples
-             * @description The previewed samples the user is giving feedback on, each rated by the user as realistic (true) or needs work (false)
+             * @description The previewed samples the user is giving feedback on, each rated as realistic (true) or needs work (false). Leave empty for bootstrap synthesis (initial setup with no preview round yet).
              */
-            preview_samples: components["schemas"]["RatedGuidePreviewSample"][];
+            preview_samples?: components["schemas"]["RatedGuidePreviewSample"][];
             /** @description The model config to use for refinement */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
         };
