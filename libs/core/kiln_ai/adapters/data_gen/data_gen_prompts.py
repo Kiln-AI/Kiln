@@ -356,6 +356,8 @@ Each output must be answerable from the source material, not from the model's ou
 </output_semantic>
 ```
 
+There is also a 7th group, `<user_authored>`, used by the system to wrap rules the user typed by hand in the setup form. **Treat `<user_authored>` content as floor-level constraints and prefer to preserve it across modes** — re-emit its rules verbatim in your output unless the user's feedback specifically contradicts something inside it. Do not move user-authored rules into the scope+type groups; keep them inside `<user_authored>`.
+
 The runtime model uses the group tag to filter which rules apply to its current generation stage. Untagged rules from older guides (a `## Title` block sitting outside any group) are treated as `<both_semantic>`. **Always wrap every rule in the appropriate group tag.**
 
 ## Context

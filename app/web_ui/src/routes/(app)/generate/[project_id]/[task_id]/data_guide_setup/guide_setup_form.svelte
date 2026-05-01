@@ -64,10 +64,18 @@
     }
 
     if (guide_rules.length > 0) {
+      // Wrap user-typed rules in <user_authored> so they're visually grouped
+      // (same convention as the LLM's scope+type XML groups) and so the
+      // metaprompter can recognize them as user-typed at refinement time.
+      // Bootstrap preserves anything in this section verbatim already; the
+      // wrapper just makes the provenance explicit and keeps the saved guide
+      // visually consistent with the rest of the rule groups.
       const rules_text = guide_rules
         .map((r) => `## ${r.name}\n${r.content}`)
         .join("\n\n")
-      parts.push(`# Guidelines & Rules\n\n${rules_text}`)
+      parts.push(
+        `# Guidelines & Rules\n\n<user_authored>\n\n${rules_text}\n\n</user_authored>`,
+      )
     }
 
     return (
