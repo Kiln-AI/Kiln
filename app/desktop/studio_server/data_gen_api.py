@@ -1,3 +1,4 @@
+import re
 from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException, Path, Query
@@ -127,9 +128,22 @@ class GuideRefineInput(BaseModel):
 
 
 class GuideRefineOutput(BaseModel):
-    """Structured output schema for the LLM refinement task."""
+    """Structured output schema for the LLM refinement task.
 
-    guide: str = Field(description="The refined data guide prompt string")
+    The LLM only owns the rules half of the guide. Reference examples are
+    user-authored ground truth and are preserved by the endpoint; the LLM
+    receives them for context but never re-emits them.
+    """
+
+    rules: str = Field(
+        description=(
+            "Markdown body of the `# Guidelines & Rules` section — a sequence "
+            "of `## <title>` rule blocks with descriptions. Do NOT include the "
+            "`# Guidelines & Rules` heading itself, do NOT include any "
+            "`# Reference Examples` content, and do NOT include any other "
+            "top-level headings."
+        ),
+    )
 
 
 class GuideRefineResponse(BaseModel):
@@ -798,9 +812,25 @@ The topic path for this sample is:
             raise HTTPException(status_code=500, detail="Failed to refine guidance")
 
         parsed = json.loads(refine_run.output.output)
-        return GuideRefineResponse(
-            refined_guide=parsed.get("guide", input.current_guide),
+        new_rules_body = (parsed.get("rules") or "").strip()
+
+        # Defensive: if the LLM ignored the schema description and prefixed its
+        # output with the heading anyway, strip it so we don't double up.
+        new_rules_body = _GUIDELINES_HEADING_RE.sub("", new_rules_body, count=1).strip()
+
+        if not new_rules_body:
+            # LLM returned nothing useful — preserve the existing guide rather
+            # than blanking out the rules section.
+            return GuideRefineResponse(refined_guide=input.current_guide)
+
+        examples_block, _ = _split_data_guide(input.current_guide)
+        new_rules_block = f"# Guidelines & Rules\n\n{new_rules_body}"
+        refined_guide = (
+            f"{examples_block}\n\n{new_rules_block}"
+            if examples_block
+            else new_rules_block
         )
+        return GuideRefineResponse(refined_guide=refined_guide)
 
 
 _DATA_GUIDE_STAGE_HINTS: dict[Literal["topics", "inputs", "outputs"], str] = {
@@ -824,6 +854,30 @@ _DATA_GUIDE_STAGE_HINTS: dict[Literal["topics", "inputs", "outputs"], str] = {
         "kind of output you should produce."
     ),
 }
+
+
+_GUIDELINES_HEADING_RE = re.compile(r"^# Guidelines & Rules\b.*$", re.MULTILINE)
+
+
+def _split_data_guide(guide: str) -> tuple[str, str]:
+    """Split a Data Guide markdown into (examples_block, rules_body).
+
+    `examples_block` is everything before the `# Guidelines & Rules` heading
+    (typically the `# Reference Examples` section), returned verbatim with
+    surrounding whitespace stripped. `rules_body` is the markdown content
+    *under* the rules heading, with the heading itself removed — i.e. the
+    sequence of `## <title>` rule blocks. Either may be empty.
+
+    The split exists so refinement can treat reference examples as immutable
+    user input (preserved by the system) and have the LLM produce only the
+    rules portion of the guide.
+    """
+    match = _GUIDELINES_HEADING_RE.search(guide)
+    if not match:
+        return guide.strip(), ""
+    examples_block = guide[: match.start()].strip()
+    rules_body = guide[match.end() :].strip()
+    return examples_block, rules_body
 
 
 def _resolve_data_guide(task: Task, data_guide_override: str | None) -> str | None:
