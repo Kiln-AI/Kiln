@@ -117,10 +117,19 @@ class GuidePreviewInput(BaseModel):
 class GuideRefineInput(BaseModel):
     current_guide: str = Field(description="The current data guide prompt string")
     feedback: str = Field(
-        description="User feedback on what's wrong with preview samples"
+        default="",
+        description=(
+            "User feedback on what's wrong with preview samples. Leave empty "
+            "for bootstrap synthesis (initial setup with no rated samples yet)."
+        ),
     )
     preview_samples: list[RatedGuidePreviewSample] = Field(
-        description="The previewed samples the user is giving feedback on, each rated by the user as realistic (true) or needs work (false)"
+        default_factory=list,
+        description=(
+            "The previewed samples the user is giving feedback on, each rated "
+            "as realistic (true) or needs work (false). Leave empty for "
+            "bootstrap synthesis (initial setup with no preview round yet)."
+        ),
     )
     run_config_properties: KilnAgentRunConfigProperties = Field(
         description="The model config to use for refinement"
@@ -828,13 +837,30 @@ The topic path for this sample is:
         # in case the LLM emits the heading more than once.
         new_rules_body = _GUIDELINES_HEADING_RE.sub("", new_rules_body).strip()
 
+        examples_block, existing_rules_body = _split_data_guide(input.current_guide)
+
+        # Bootstrap mode (no rated samples + no feedback) is the first-preview
+        # synthesis pass. In this mode any rules already in `current_guide`
+        # were typed by the user in the setup form and must be preserved
+        # verbatim — same architectural treatment as reference examples. The
+        # metaprompter prompt instructs the LLM to emit ONLY augmenting rules
+        # in this mode, and we stitch user_rules + new_rules below. Outside
+        # bootstrap (refinement after rated samples / feedback), the LLM owns
+        # the rules half wholesale, so we replace existing rules entirely.
+        is_bootstrap = len(input.preview_samples) == 0 and not input.feedback.strip()
+        preserve_user_rules = is_bootstrap and bool(existing_rules_body)
+
         if not new_rules_body:
             # LLM returned nothing useful — preserve the existing guide rather
             # than blanking out the rules section.
             return GuideRefineResponse(refined_guide=input.current_guide)
 
-        examples_block, _ = _split_data_guide(input.current_guide)
-        new_rules_block = f"# Guidelines & Rules\n\n{new_rules_body}"
+        if preserve_user_rules:
+            combined_rules_body = f"{existing_rules_body}\n\n{new_rules_body}".strip()
+        else:
+            combined_rules_body = new_rules_body
+
+        new_rules_block = f"# Guidelines & Rules\n\n{combined_rules_body}"
         refined_guide = (
             f"{examples_block}\n\n{new_rules_block}"
             if examples_block

@@ -21,6 +21,7 @@
   type GuideBuilderState =
     | "loading"
     | "setup"
+    | "synthesizing_initial"
     | "generating"
     | "preview"
     | "refining"
@@ -143,6 +144,7 @@
     // transient generating/refining state was on screen. Snap back to the
     // last stable snapshot so the loading animation clears.
     if (
+      current_state === "synthesizing_initial" ||
       current_state === "generating" ||
       current_state === "refining" ||
       current_state === "regenerating"
@@ -218,13 +220,42 @@
     const op_token = nav_token
     error = null
     submitting = true
-    current_state = "generating"
 
     try {
       captured_input_run_config = event.detail.input_run_config
       captured_output_run_config = event.detail.output_run_config
       guide = event.detail.guide
 
+      // Bootstrap step: always run the metaprompter on first preview to
+      // mine the task definition (instruction, description, JSON schemas)
+      // and the user's reference examples for rules — even if the user has
+      // hand-authored some rules in the setup form. The metaprompter is
+      // instructed to carry their rules forward and only add new ones in
+      // gaps (uncovered scope+type cells, schema-derived constraints, format
+      // directives from the task instruction). Without this pass, the user's
+      // authored rules go to preview as-is and they miss the task-mined +
+      // schema-mined contributions until after a full rate/refine cycle.
+      current_state = "synthesizing_initial"
+      const { data: synth_data, error: synth_error } = await client.POST(
+        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_refine",
+        {
+          params: { path: { project_id, task_id } },
+          body: {
+            current_guide: guide,
+            feedback: "",
+            preview_samples: [],
+            run_config_properties: captured_input_run_config,
+          },
+        },
+      )
+
+      if (synth_error) throw synth_error
+      if (nav_token !== op_token) return
+      if (synth_data?.refined_guide) {
+        guide = synth_data.refined_guide
+      }
+
+      current_state = "generating"
       const { data, error: api_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_preview",
         {
@@ -400,6 +431,11 @@
         bind:guide_rules
         bind:page_error={error}
         on:generate_preview={handle_generate_preview}
+      />
+    {:else if current_state === "synthesizing_initial"}
+      <RefiningAnimation
+        title="Preparing Rules"
+        description="Kiln is mining the task definition and your reference examples for rules — drafting new ones and carrying yours forward — before generating preview examples. Hold tight!"
       />
     {:else if current_state === "generating"}
       <AnalyzingAnimation

@@ -432,10 +432,45 @@ The user's written feedback (focused on the "Needs Work" samples):
 </feedback>
 """
 
+    is_bootstrap = not has_samples and not has_feedback
+    user_rules_present_in_bootstrap = is_bootstrap and (
+        "# Guidelines & Rules" in current_guide
+    )
+
+    if is_bootstrap:
+        prompt += """
+## Initial Setup
+
+This is initial guide setup. There are no rated samples or user feedback yet — you are bootstrapping the rules from the task definition and the user's reference examples alone. Lean heavily on mining the task definition (instruction, description, JSON schemas) for structural and semantic constraints, and use the reference examples to ground patterns the task definition does not fully specify.
+"""
+
+    if user_rules_present_in_bootstrap:
+        prompt += """
+### User-authored rules — IMMUTABLE in bootstrap mode
+
+The `# Guidelines & Rules` section in `<current_guide>` above contains rules the user typed in the setup form. **Treat them exactly like the reference examples: they are user-authored ground truth, immutable, and you must NEVER re-emit, paraphrase, reorder, merge, split, or "correct" them.** The system preserves them automatically and stitches your output after them.
+
+**Your output in this mode must contain ONLY new rules that augment what the user wrote** — covering scope+type cells the user did not cover, lifting constraints from the task definition the user did not capture, and codifying patterns from the reference examples that are not already in the user's rules.
+
+If a user-authored rule looks wrong, incomplete, or contradicts something else, do not "fix" it by re-emitting a corrected version. The user will discover and address it via subsequent preview rounds. In this pass, augment only.
+
+If the user's rules already cover a cell well, you may emit zero new rules for that cell. Quality of additions matters more than count.
+"""
+
     prompt += """
 ## Your Task
 
 Produce a refined set of rules — both structural and semantic — that, combined with the user's existing reference examples, will steer the next round of synthetic data generation toward what the user wants.
+
+### Modes
+
+You may be in one of three contexts:
+
+- **Bootstrap mode** — the user has just authored the guide; there are no rated samples or feedback yet. Your only signals are the task definition (primary) and the user's reference examples (secondary). The "How to use the ratings" section below does not apply.
+- **Synthesis mode** — the guide has reference examples and rated samples, but few or no existing rules. Build the rules half by extracting patterns from examples, mining the task definition, and using the rated samples + feedback as confirmation/correction signal.
+- **Maintenance mode** — the guide already has rules. Refine what's there based on the rated samples + feedback. Default to keeping existing rules.
+
+The hard requirements below apply to all three.
 
 ### Hard requirements
 
@@ -458,7 +493,7 @@ The task instruction, description, and JSON schemas already encode constraints t
 
 The task instruction is visible to the runtime model at generation time, but rules in the guide reinforce the critical constraints, give them measurable bounds where appropriate, and survive prompt-template changes. Treat schema-derived and instruction-derived rules as floor-level — they should be present even before you look at the examples.
 
-### How to extract rules from sparse examples
+### How to extract rules from sparse examples (synthesis mode)
 
 When the current guide has examples but no rules, the examples are your primary signal **alongside the task definition**. After mining the task definition (above), read each example carefully and look for patterns to codify across all four scope+type cells:
 
@@ -477,7 +512,7 @@ When a rule genuinely applies to both halves (e.g., "all dates are ISO 8601"), p
         prompt += """
 ### How to use the ratings
 
-- **"Realistic" samples confirm patterns to lock in.** They show that the inferences currently being made (from examples and any existing rules) are working for cases like that. Don't weaken or remove rules that are producing realistic samples. Realistic samples are particularly valuable when synthesizing new rules: they identify which patterns implicit in the examples deserve to be made explicit. Avoid overfitting to a single Realistic sample, but a pattern echoed across multiple Realistic samples is worth codifying.
+- **"Realistic" samples confirm patterns to lock in.** They show that the inferences currently being made (from examples and any existing rules) are working for cases like that. Don't weaken or remove rules that are producing realistic samples. In synthesis mode, Realistic samples are particularly valuable: they identify which patterns implicit in the examples deserve to be made explicit as rules. Avoid overfitting to a single Realistic sample, but a pattern echoed across multiple Realistic samples is worth codifying.
 - **"Needs Work" samples plus the user's feedback are the primary signal for changes.** Identify what specifically is wrong (structure, values, realism, format, tone, constraints) and add or update a rule that prevents that mistake.
 - If the user's feedback is general (e.g. "values should be more realistic"), prefer adding or sharpening a rule rather than encoding the fix as an example (you cannot add examples — those are user-owned).
 - If the user's feedback points at a specific structural issue, prefer fixing or adding a precise rule (e.g. "id must be a UUID v4 string").
