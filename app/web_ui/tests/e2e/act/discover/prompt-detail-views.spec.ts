@@ -364,45 +364,47 @@ test.describe("Prompt detail views", () => {
   - The saved prompt page heading "Saved Prompt" is visible.
   - The cloned prompt name is visible on the saved page.
   */
-  test.fixme(
-    "clone prompt page submits and redirects to saved prompt",
-    async ({ page, apiRequest, registeredUser, seededProjectWithTask }) => {
-      void registeredUser
-      const { project, task } = seededProjectWithTask
+  test("clone prompt page submits and redirects to saved prompt", async ({
+    page,
+    apiRequest,
+    registeredUser,
+    seededProjectWithTask,
+  }) => {
+    void registeredUser
+    const { project, task } = seededProjectWithTask
 
-      const createResp = await apiRequest.post(
-        `/api/projects/${encodeURIComponent(project.id)}/tasks/${encodeURIComponent(task.id)}/prompts`,
-        {
-          data: {
-            name: "Original To Clone",
-            prompt: "Clone me please.",
-            chain_of_thought_instructions: null,
-          },
+    const createResp = await apiRequest.post(
+      `/api/projects/${encodeURIComponent(project.id)}/tasks/${encodeURIComponent(task.id)}/prompts`,
+      {
+        data: {
+          name: "Original To Clone",
+          prompt: "Clone me please.",
+          chain_of_thought_instructions: null,
         },
-      )
-      expect(createResp.ok(), "POST create source prompt").toBeTruthy()
-      const promptData = (await createResp.json()) as { id: string }
-      const promptId = promptData.id
+      },
+    )
+    expect(createResp.ok(), "POST create source prompt").toBeTruthy()
+    const promptData = (await createResp.json()) as { id: string }
+    const promptId = promptData.id
 
-      await page.goto(
-        `/prompts/${project.id}/${task.id}/clone/${encodeURIComponent(promptId)}`,
-      )
+    await page.goto(
+      `/prompts/${project.id}/${task.id}/clone/${encodeURIComponent(promptId)}`,
+    )
 
-      await expect(
-        page.getByRole("heading", { name: "Clone Prompt", exact: true }),
-      ).toBeVisible()
+    await expect(
+      page.getByRole("heading", { name: "Clone Prompt", exact: true }),
+    ).toBeVisible()
 
-      await page.locator("#prompt_name").fill("Cloned Version")
+    await page.locator("#prompt_name").fill("Cloned Version")
 
-      await page.getByRole("button", { name: "Clone Prompt" }).click()
+    await page.getByRole("button", { name: "Clone Prompt" }).click()
 
-      await page.waitForURL(`**/prompts/${project.id}/${task.id}/saved/**`)
+    await page.waitForURL(`**/prompts/${project.id}/${task.id}/saved/**`)
 
-      await expect(
-        page.getByRole("heading", { name: "Saved Prompt", exact: true }),
-      ).toBeVisible()
+    await expect(
+      page.getByRole("heading", { name: "Saved Prompt", exact: true }),
+    ).toBeVisible()
 
-      await expect(page.getByText("Cloned Version").first()).toBeVisible()
-    },
-  )
+    await expect(page.getByText("Cloned Version").first()).toBeVisible()
+  })
 })

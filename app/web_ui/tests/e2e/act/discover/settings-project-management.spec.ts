@@ -3,75 +3,87 @@ import { test, expect } from "../../fixtures"
 test.describe("Settings - project management", () => {
   /* @act
   ## Goals
-  The main settings page loads and displays all four category sections:
-  Current Workspace, Models & Providers, Projects, and Help & Resources,
-  along with their respective setting items.
+  The main settings page loads and displays its four category sections:
+  Workspace, Models & Providers, Application, and About — along with their
+  setting rows. The page was redesigned with denser KilnSettingsRow rows
+  grouped under section headers; "Manage Projects" is now folded into the
+  Workspace section rather than being its own section.
 
   ## Fixtures
   - registeredUser
   - seededProjectWithTask
 
   ## Hints
-  - Route is /settings
-  - Page title heading is "Settings"
-  - Sections: "Current Workspace", "Models & Providers", "Projects", "Help & Resources"
-  - Items include "Edit Current Task", "Edit Current Project", "AI Providers",
-    "Custom Models", "Manage Projects", "Application Logs", "Check for Update",
-    "Docs & Getting Started", "License Agreement"
+  - Route is /settings.
+  - Page title heading is "Settings" (h1 from AppPage).
+  - Section headings are h2 with exact text: "Workspace", "Models & Providers",
+    "Application", "About".
+  - Each row is a KilnSettingsRow. Rows render their label inside a styled
+    <span>, NOT a <h*> element, so use getByText(...) to assert row labels
+    rather than getByRole("heading", ...).
+  - Workspace rows: "Edit Current Task", "Edit Current Project", "Manage Projects".
+  - Models & Providers rows: "AI Providers", "Custom Models".
+  - Application rows: "Application Logs", "Check for Update".
+  - About rows: "Docs & Getting Started", "License Agreement".
 
   ## Assertions
   - Page heading "Settings" is visible.
   - All four section headings are visible.
-  - Key setting item names are visible: "Edit Current Task", "Manage Projects", "AI Providers".
+  - All nine row labels are visible.
   */
-  test.fixme(
-    "settings page loads with all sections",
-    async ({ page, registeredUser, seededProjectWithTask }) => {
-      void registeredUser
-      void seededProjectWithTask
+  test("settings page loads with all sections", async ({
+    page,
+    registeredUser,
+    seededProjectWithTask,
+  }) => {
+    void registeredUser
+    void seededProjectWithTask
 
-      await page.goto("/settings")
+    await page.goto("/settings")
 
-      await expect(
-        page.getByRole("heading", { name: "Settings", exact: true }),
-      ).toBeVisible()
+    await expect(
+      page.getByRole("heading", { name: "Settings", exact: true }),
+    ).toBeVisible()
 
-      await expect(page.getByText("Current Workspace")).toBeVisible()
-      await expect(page.getByText("Models & Providers")).toBeVisible()
-      await expect(
-        page.getByRole("heading", { name: "Projects", exact: true }),
-      ).toBeVisible()
-      await expect(page.getByText("Help & Resources")).toBeVisible()
+    // Section headings (h2)
+    await expect(
+      page.getByRole("heading", { name: "Workspace", exact: true }),
+    ).toBeVisible()
+    await expect(
+      page.getByRole("heading", { name: "Models & Providers", exact: true }),
+    ).toBeVisible()
+    await expect(
+      page.getByRole("heading", { name: "Application", exact: true }),
+    ).toBeVisible()
+    await expect(
+      page.getByRole("heading", { name: "About", exact: true }),
+    ).toBeVisible()
 
-      await expect(
-        page.getByRole("heading", { name: "Edit Current Task" }),
-      ).toBeVisible()
-      await expect(
-        page.getByRole("heading", { name: "Edit Current Project" }),
-      ).toBeVisible()
-      await expect(
-        page.getByRole("heading", { name: "AI Providers" }),
-      ).toBeVisible()
-      await expect(
-        page.getByRole("heading", { name: "Custom Models" }),
-      ).toBeVisible()
-      await expect(
-        page.getByRole("heading", { name: "Manage Projects" }),
-      ).toBeVisible()
-      await expect(
-        page.getByRole("heading", { name: "Application Logs" }),
-      ).toBeVisible()
-      await expect(
-        page.getByRole("heading", { name: "Check for Update" }),
-      ).toBeVisible()
-      await expect(
-        page.getByRole("heading", { name: "Docs & Getting Started" }),
-      ).toBeVisible()
-      await expect(
-        page.getByRole("heading", { name: "License Agreement" }),
-      ).toBeVisible()
-    },
-  )
+    // Row labels (rendered as text inside KilnSettingsRow)
+    await expect(
+      page.getByText("Edit Current Task", { exact: true }),
+    ).toBeVisible()
+    await expect(
+      page.getByText("Edit Current Project", { exact: true }),
+    ).toBeVisible()
+    await expect(
+      page.getByText("Manage Projects", { exact: true }),
+    ).toBeVisible()
+    await expect(page.getByText("AI Providers", { exact: true })).toBeVisible()
+    await expect(page.getByText("Custom Models", { exact: true })).toBeVisible()
+    await expect(
+      page.getByText("Application Logs", { exact: true }),
+    ).toBeVisible()
+    await expect(
+      page.getByText("Check for Update", { exact: true }),
+    ).toBeVisible()
+    await expect(
+      page.getByText("Docs & Getting Started", { exact: true }),
+    ).toBeVisible()
+    await expect(
+      page.getByText("License Agreement", { exact: true }),
+    ).toBeVisible()
+  })
 
   /* @act
   ## Goals

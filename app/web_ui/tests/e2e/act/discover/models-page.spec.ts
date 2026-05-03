@@ -726,32 +726,38 @@ test.describe("Models page", () => {
 
   /* @act
   ## Goals
-  The page title in the browser tab is "Models - Kiln".
+  The browser tab title on the models page is the universal app title "Kiln".
+  The models page deliberately does not set a page-specific title — only the
+  root layout's <title> applies. (Page-specific titles were removed
+  intentionally; the route's only branding is the in-page heading.)
 
   ## Fixtures
   - registeredUser
   - seededProjectWithTask
 
   ## Hints
-  - svelte:head sets title to "Models - Kiln"
+  - The models page has no <svelte:head><title>...</title></svelte:head>.
+  - The root layout sets <title> to VITE_BRANCH_NAME or "Kiln" (in e2e the
+    branch env is empty, so the title is "Kiln").
 
   ## Assertions
-  - Browser page title is "Models - Kiln".
+  - Browser page title is "Kiln".
   */
-  test.fixme(
-    "page title is Models - Kiln",
-    async ({ page, registeredUser, seededProjectWithTask }) => {
-      void registeredUser
-      void seededProjectWithTask
-      await setupMockRoutes(page)
+  test("page title is Kiln", async ({
+    page,
+    registeredUser,
+    seededProjectWithTask,
+  }) => {
+    void registeredUser
+    void seededProjectWithTask
+    await setupMockRoutes(page)
 
-      await page.goto("/models")
+    await page.goto("/models")
 
-      await expect(
-        page.getByRole("heading", { name: "Model Library" }),
-      ).toBeVisible()
+    await expect(
+      page.getByRole("heading", { name: "Model Library" }),
+    ).toBeVisible()
 
-      await expect(page).toHaveTitle("Models - Kiln")
-    },
-  )
+    await expect(page).toHaveTitle("Kiln")
+  })
 })
