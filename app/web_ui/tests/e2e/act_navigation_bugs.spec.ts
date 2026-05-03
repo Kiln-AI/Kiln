@@ -60,7 +60,7 @@ test.fixme(
       `POST /prompts failed: ${createResp.status()} ${await createResp.text()}`,
     ).toBeTruthy()
     const created = (await createResp.json()) as { id: string }
-    const promptUrlId = encodeURIComponent(`id::${created.id}`)
+    const promptUrlId = encodeURIComponent(created.id)
     const deeplink = `/prompts/${project.id}/${task.id}/saved/${promptUrlId}`
 
     // Client-side navigation: inject an <a> and click it so SvelteKit does an

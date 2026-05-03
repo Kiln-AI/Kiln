@@ -243,6 +243,6 @@ test.describe("Settings - providers and misc", () => {
       page.getByRole("heading", { name: "Check for Update", exact: true }),
     ).toBeVisible()
 
-    await expect(page.getByText("Current Version")).toBeVisible()
+    await expect(page.getByText("Current Version").first()).toBeVisible()
   })
 })
