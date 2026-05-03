@@ -50,7 +50,7 @@ test.describe("Prompt detail views", () => {
     const promptData = (await createResp.json()) as { id: string }
 
     await page.goto(
-      `/prompts/${project.id}/${task.id}/saved/${encodeURIComponent(`id::${promptData.id}`)}`,
+      `/prompts/${project.id}/${task.id}/saved/${encodeURIComponent(promptData.id)}`,
     )
 
     await expect(
@@ -113,7 +113,7 @@ test.describe("Prompt detail views", () => {
     const promptData = (await createResp.json()) as { id: string }
 
     await page.goto(
-      `/prompts/${project.id}/${task.id}/saved/${encodeURIComponent(`id::${promptData.id}`)}`,
+      `/prompts/${project.id}/${task.id}/saved/${encodeURIComponent(promptData.id)}`,
     )
 
     await expect(
@@ -167,7 +167,7 @@ test.describe("Prompt detail views", () => {
     )
     expect(createResp.ok(), "POST create prompt").toBeTruthy()
     const promptData = (await createResp.json()) as { id: string }
-    const promptId = `id::${promptData.id}`
+    const promptId = promptData.id
 
     await page.goto(
       `/prompts/${project.id}/${task.id}/saved/${encodeURIComponent(promptId)}`,
@@ -230,7 +230,7 @@ test.describe("Prompt detail views", () => {
     )
     expect(createResp.ok(), "POST create prompt").toBeTruthy()
     const promptData = (await createResp.json()) as { id: string }
-    const promptId = `id::${promptData.id}`
+    const promptId = promptData.id
 
     await page.goto(
       `/prompts/${project.id}/${task.id}/saved/${encodeURIComponent(promptId)}`,
@@ -318,7 +318,7 @@ test.describe("Prompt detail views", () => {
     )
     expect(createResp.ok(), "POST create source prompt").toBeTruthy()
     const promptData = (await createResp.json()) as { id: string }
-    const promptId = `id::${promptData.id}`
+    const promptId = promptData.id
 
     await page.goto(
       `/prompts/${project.id}/${task.id}/clone/${encodeURIComponent(promptId)}`,
@@ -385,7 +385,7 @@ test.describe("Prompt detail views", () => {
     )
     expect(createResp.ok(), "POST create source prompt").toBeTruthy()
     const promptData = (await createResp.json()) as { id: string }
-    const promptId = `id::${promptData.id}`
+    const promptId = promptData.id
 
     await page.goto(
       `/prompts/${project.id}/${task.id}/clone/${encodeURIComponent(promptId)}`,
