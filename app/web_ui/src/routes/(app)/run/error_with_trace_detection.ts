@@ -5,9 +5,7 @@ import type { ErrorWithTrace } from "$lib/types"
 // adapter-level failure. Plain HTTPException bodies (shape {detail: "..."})
 // and unparseable responses return false, letting the caller fall back to
 // the existing error-display path.
-export function looks_like_error_with_trace(
-  body: unknown,
-): body is ErrorWithTrace {
+export function is_error_with_trace(body: unknown): body is ErrorWithTrace {
   if (body === null || typeof body !== "object") {
     return false
   }

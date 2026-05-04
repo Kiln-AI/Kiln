@@ -17,7 +17,7 @@
   import { page } from "$app/stores"
   import ErrorWithTraceComponent from "$lib/ui/error_with_trace.svelte"
   import type { ErrorWithTrace } from "$lib/types"
-  import { looks_like_error_with_trace } from "./error_with_trace_detection"
+  import { is_error_with_trace } from "./error_with_trace_detection"
 
   $: agentInfo.set({
     name: "Run",
@@ -107,7 +107,7 @@
         // ErrorWithTrace shape (HTTP 500 from an adapter failure) or a plain
         // HTTPException. Calling response.json() here would throw because the
         // body stream has already been consumed during parsing.
-        if (looks_like_error_with_trace(fetch_error)) {
+        if (is_error_with_trace(fetch_error)) {
           error_with_trace = fetch_error
           return
         }

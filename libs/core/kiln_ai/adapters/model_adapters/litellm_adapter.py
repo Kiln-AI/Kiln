@@ -301,10 +301,6 @@ class LiteLlmAdapter(BaseAdapter):
                 message_latency.update(turn_result.message_latency)
 
             prior_output = turn_result.assistant_message
-            # `_run_model_turn` mutates `messages_internal` in place, so no
-            # reassignment is needed here. `turn_result.all_messages` is the
-            # same list object and is retained for external callers that
-            # still rely on it.
             final_choice = turn_result.model_choice
 
             # Check if we were interrupted by tool calls
