@@ -805,23 +805,20 @@ The topic path for this sample is:
 
 _DATA_GUIDE_STAGE_HINTS: dict[Literal["topics", "inputs", "outputs"], str] = {
     "topics": (
-        "Since this stage generates topics, use the guide to inform the subject "
-        "areas and scenarios the task's data covers. Treat anything specifically "
-        "about input/output structure as background context, not as something to "
-        "reproduce in the topic strings."
+        "You are generating topics. Use the guide to infer appropriate subject "
+        "areas, scenarios, and themes. Do not replicate input/output formats or "
+        "structures in the topic strings—those are background context only."
     ),
     "inputs": (
-        "Since this stage generates task inputs, follow the guide's rules and "
-        "examples for what realistic inputs look like — structure, value ranges, "
-        "format. Rules about outputs are still useful context for understanding "
-        "what kind of inputs naturally pair with realistic outputs, but you are "
-        "not generating outputs in this step."
+        "You are generating task inputs. Follow the guide's examples and rules "
+        "for structure, format, and value ranges. Use output-related details only "
+        "as context for what realistic inputs should lead to, but do not generate "
+        "outputs in this step."
     ),
     "outputs": (
-        "Since this stage generates task outputs, follow the guide's rules and "
-        "examples for the expected output format, structure, and quality. Adhere "
-        "strictly to any rules about output shape; reference examples show the "
-        "kind of output you should produce."
+        "You are generating task outputs. Follow the guide's examples and rules "
+        "for output format, structure, and quality. Strictly adhere to any "
+        "constraints on output shape. Use reference examples as the standard to match."
     ),
 }
 
@@ -859,11 +856,10 @@ def _combine_guidance(
     if data_guide_content:
         stage_hint = _DATA_GUIDE_STAGE_HINTS[stage]
         parts.append(
-            "## Task Data Guide\n\n"
-            "The following describes what data for this task generally looks "
-            "like, including reference examples and any rules or constraints "
-            "the user has provided. Treat it as authoritative context for what "
-            "realistic task data looks like. "
+            "# Task Data Guide\n\n"
+            "This guide defines what realistic data for this task looks like. It may include "
+            "reference examples, rules, and constraints. Treat it as "
+            "the source of truth for style, structure, and realism.\n\n"
             f"{stage_hint}\n\n"
             "<task_data_guide>\n"
             f"{data_guide_content}\n"

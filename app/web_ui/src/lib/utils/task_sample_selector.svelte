@@ -10,7 +10,6 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Output from "$lib/ui/output.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
-  import Dialog from "$lib/ui/dialog.svelte"
   import TaskRunPicker from "$lib/utils/task_run_picker.svelte"
 
   export let project_id: string
@@ -32,25 +31,6 @@
   let is_changing_selection: boolean = false
   let user_verification_desired: boolean = false // tracks if user should verify the selection before continuing (open collapse for them)
 
-  // Pagination
-  const PAGE_SIZE = 5
-  let current_page = 0
-  $: total_pages = Math.ceil(available_runs.length / PAGE_SIZE)
-  $: page_start = current_page * PAGE_SIZE
-  $: page_end = Math.min(page_start + PAGE_SIZE, available_runs.length)
-  $: paged_runs = available_runs.slice(page_start, page_end)
-
-  // Preview dialog
-  let preview_dialog: Dialog
-  let previewing_run: TaskRun | null = null
-
-  function show_preview(run: TaskRun, event: MouseEvent) {
-    // Don't show preview if clicking on a button
-    if ((event.target as HTMLElement).closest("button")) return
-    previewing_run = run
-    preview_dialog?.show()
-  }
-
   // Handle run selection
   function select_run(run: TaskRun) {
     selected_example = task_run_to_example(run)
@@ -63,7 +43,6 @@
   function start_changing_selection() {
     is_changing_selection = true
     show_manual_entry = false
-    current_page = 0
   }
 
   // Start manual entry from the selected example view
@@ -283,18 +262,3 @@
     {/if}
   </div>
 </Collapse>
-
-<Dialog bind:this={preview_dialog} title="Example" width="wide">
-  {#if previewing_run}
-    <div class="flex flex-col gap-4">
-      <div>
-        <div class="text-sm font-medium text-left mb-1">Input</div>
-        <Output raw_output={previewing_run.input} />
-      </div>
-      <div>
-        <div class="text-sm font-medium text-left mb-1">Output</div>
-        <Output raw_output={previewing_run.output?.output || ""} />
-      </div>
-    </div>
-  {/if}
-</Dialog>

@@ -31,6 +31,10 @@
   import Intro from "$lib/ui/intro.svelte"
   import NotebookIcon from "$lib/ui/icons/notebook_icon.svelte"
   import { agentInfo } from "$lib/agent"
+  import { goto } from "$app/navigation"
+  import AddExampleDialog from "../data_guide_setup/add_example_dialog.svelte"
+  import type { GuideSample } from "../data_guide_setup/guide_setup_form.svelte"
+  import { pending_data_guide_example } from "../data_guide_setup/pending_example_store"
 
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
@@ -67,6 +71,22 @@
   let task: Task | null = null
   let task_error: KilnError | null = null
   let task_loading = true
+
+  // Add-example dialog reused from the data_guide_setup flow. Lets the user
+  // start filling out their first example without leaving the synth page.
+  // After they submit, we stash the sample on a pending store and navigate
+  // to /data_guide_setup, where it gets seeded into the form.
+  let add_data_guide_example_dialog: AddExampleDialog
+  function handle_data_guide_example_added(
+    event: CustomEvent<{
+      sample: GuideSample
+      index: number
+      mode: "add" | "edit"
+    }>,
+  ) {
+    pending_data_guide_example.set(event.detail.sample)
+    goto(`/generate/${project_id}/${task_id}/data_guide_setup`)
+  }
 
   $: error = $loading_error || task_error
 
@@ -858,15 +878,15 @@
           class="flex flex-col items-center justify-center min-h-[50vh] mt-12"
         >
           <Intro
-            title="Create a Task Data Guide"
+            title="Create a Data Guide"
             description_paragraphs={[
-              "Define the structure, rules, and examples for generated task inputs so we can generate high-quality synthetic data.",
+              "Help us generate better synthetic data with examples.",
             ]}
             action_buttons={[
               {
                 label: "Set Up Data Guide",
                 is_primary: true,
-                href: `/generate/${project_id}/${task_id}/data_guide_setup`,
+                onClick: () => add_data_guide_example_dialog?.open_add(),
               },
               {
                 label: "Continue Without Data Guide",
@@ -881,6 +901,12 @@
               <NotebookIcon />
             </div>
           </Intro>
+          <AddExampleDialog
+            bind:this={add_data_guide_example_dialog}
+            {project_id}
+            {task_id}
+            on:submit={handle_data_guide_example_added}
+          />
         </div>
       {:else if is_empty}
         <div>

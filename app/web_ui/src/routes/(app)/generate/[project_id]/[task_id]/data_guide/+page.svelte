@@ -22,6 +22,8 @@
   import { current_task } from "$lib/stores"
   import AnalyzingAnimation from "$lib/ui/animations/analyzing_animation.svelte"
   import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
+  import DeleteDialog from "$lib/ui/delete_dialog.svelte"
+  import { isMacOS } from "$lib/utils/platform"
 
   type GuideBuilderState =
     | "loading"
@@ -375,6 +377,12 @@
     guide = event.detail.guide
     return handle_save()
   }
+
+  let delete_dialog: DeleteDialog | null = null
+  $: delete_url = `/api/projects/${project_id}/tasks/${task_id}/data_gen_guide`
+  function after_delete() {
+    goto(`/generate/${project_id}/${task_id}/synth`)
+  }
 </script>
 
 <!-- TODO: Update read the docs link to point to new data guide docs -->
@@ -393,6 +401,11 @@
     ]}
     action_buttons={current_state === "refine_existing"
       ? [
+          {
+            icon: "/images/delete.svg",
+            handler: () => delete_dialog?.show(),
+            shortcut: isMacOS() ? "Backspace" : "Delete",
+          },
           {
             label: "Edit",
             handler: () => refine_view?.open_edit_dialog(),
@@ -420,19 +433,25 @@
     {:else if current_state === "generating"}
       <AnalyzingAnimation
         title="Generating Examples"
-        description="Kiln is generating synthetic examples using your data guide so you can review them. Hold tight!"
+        description="Generating synthetic data to test your data guide."
       />
     {:else if current_state === "preview"}
-      <GuidePreview
-        initial_guide={preview_initial_guide}
-        bind:guide
-        bind:error
-        bind:submitting
-        bind:reviewed_samples
-        bind:general_feedback
-        on:refine={handle_refine}
-        on:save={handle_save}
-      />
+      <!-- {#key} forces a clean remount when the journey index changes so
+           back/forward through preview snapshots rebuilds the table and
+           dialog state from the restored snapshot rather than reusing stale
+           component state. -->
+      {#key journey_index}
+        <GuidePreview
+          initial_guide={preview_initial_guide}
+          bind:guide
+          bind:error
+          bind:submitting
+          bind:reviewed_samples
+          bind:general_feedback
+          on:refine={handle_refine}
+          on:save={handle_save}
+        />
+      {/key}
     {:else if current_state === "refining"}
       <RefiningAnimation
         title="Refining Data Guide"
@@ -446,3 +465,10 @@
     {/if}
   </AppPage>
 </div>
+
+<DeleteDialog
+  name="Data Guide"
+  bind:this={delete_dialog}
+  {delete_url}
+  {after_delete}
+/>

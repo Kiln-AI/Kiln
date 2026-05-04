@@ -1,12 +1,8 @@
 <script lang="ts">
-  import Dialog from "$lib/ui/dialog.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
-  import Output from "$lib/ui/output.svelte"
   import { SynthDataGuidanceDataModel } from "./synth_data_guidance_datamodel"
 
   export let guidance_data: SynthDataGuidanceDataModel
-
-  let view_dialog: Dialog | null = null
 
   // Read the canonical saved guide text from the datamodel (kept in sync by
   // the synth page on load) rather than taking it as a prop, so every place
@@ -31,8 +27,15 @@
   let enabled_value: boolean = enabled
   $: enabled_value = enabled
 
-  function show_view_dialog() {
-    view_dialog?.show()
+  function open_data_guide_in_new_tab() {
+    const project_id = guidance_data.project_id
+    const task_id = guidance_data.task_id
+    if (!project_id || !task_id) return
+    window.open(
+      `/generate/${project_id}/${task_id}/data_guide`,
+      "_blank",
+      "noopener,noreferrer",
+    )
   }
 </script>
 
@@ -40,19 +43,14 @@
   <FormElement
     id="data_guide_toggle"
     label="Use Data Guide"
-    description="Guidelines, and rules for task data to follow, with examples."
     inputType="checkbox"
     bind:value={enabled_value}
     disabled={!$saved_guide_text_store}
     inline_action={$saved_guide_text_store
       ? {
-          handler: show_view_dialog,
+          handler: open_data_guide_in_new_tab,
           label: "View",
         }
       : null}
   />
 </div>
-
-<Dialog bind:this={view_dialog} title="Data Guide" width="wide">
-  <Output raw_output={$saved_guide_text_store} />
-</Dialog>

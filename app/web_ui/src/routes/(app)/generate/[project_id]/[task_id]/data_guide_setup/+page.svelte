@@ -5,10 +5,9 @@
   import { onMount, onDestroy } from "svelte"
   import { page } from "$app/stores"
   import { goto, pushState } from "$app/navigation"
-  import GuideSetupForm, {
-    type GuideSample,
-    type GuideRule,
-  } from "./guide_setup_form.svelte"
+  import GuideSetupForm, { type GuideSample } from "./guide_setup_form.svelte"
+  import { pending_data_guide_example } from "./pending_example_store"
+  import { get } from "svelte/store"
   import GuidePreview from "./guide_preview.svelte"
   import DataGenDescription from "../data_gen_description.svelte"
   import { SynthDataGuidanceDataModel } from "../synth_data_guidance_datamodel"
@@ -55,11 +54,10 @@
   // mirror the SDG output flow (prompt + tools/skills selectors at top level).
   let task: Task | null = null
 
-  // Lifted out of GuideSetupForm so the user's examples/rules survive the
+  // Lifted out of GuideSetupForm so the user's examples survive the
   // setup → generating → setup unmount cycle that happens when a preview
   // request fails.
   let guide_examples: GuideSample[] = []
-  let guide_rules: GuideRule[] = []
 
   // --- Wizard journey nav ---
   // Each "user-visible" step (setup form or preview screen) snapshots the
@@ -73,7 +71,6 @@
     guide: string
     preview_initial_guide: string
     guide_examples: GuideSample[]
-    guide_rules: GuideRule[]
     preview_samples: PreviewSample[]
     reviewed_samples: ReviewedSample[]
     general_feedback: string
@@ -94,7 +91,6 @@
       guide,
       preview_initial_guide,
       guide_examples: [...guide_examples],
-      guide_rules: [...guide_rules],
       preview_samples: [...preview_samples],
       reviewed_samples: reviewed_samples.map((s) => ({ ...s })),
       general_feedback,
@@ -118,7 +114,6 @@
     guide = s.guide
     preview_initial_guide = s.preview_initial_guide
     guide_examples = s.guide_examples
-    guide_rules = s.guide_rules
     preview_samples = s.preview_samples
     reviewed_samples = s.reviewed_samples
     general_feedback = s.general_feedback
@@ -197,6 +192,16 @@
       } catch {
         // Non-critical
       }
+    }
+
+    // Seed from the synth-page handoff: if the user clicked "Set Up Data
+    // Guide" and added their first example via the dialog before navigating
+    // here, that sample is sitting on a writable store. Pull it once and
+    // clear so a hard refresh doesn't re-seed it.
+    const seeded = get(pending_data_guide_example)
+    if (seeded) {
+      guide_examples = [seeded]
+      pending_data_guide_example.set(null)
     }
 
     current_state = "setup"
@@ -375,7 +380,7 @@
 <div class="max-w-[1400px]">
   <AppPage
     title="Set Up Data Guide"
-    subtitle="Help us understand what your data looks like so we can generate high-quality synthetic data."
+    subtitle="Your Data Guide will help us generate better synthetic data."
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/synthetic-data-generation"
     breadcrumbs={[
@@ -397,35 +402,40 @@
         {task_id}
         {task}
         bind:guide_examples
-        bind:guide_rules
         bind:page_error={error}
         on:generate_preview={handle_generate_preview}
       />
     {:else if current_state === "generating"}
       <AnalyzingAnimation
         title="Generating Examples"
-        description="Kiln is generating synthetic examples using your data guide so you can review them. Hold tight!"
+        description="Generating synthetic data to test your data guide."
       />
     {:else if current_state === "preview"}
-      <GuidePreview
-        initial_guide={preview_initial_guide}
-        bind:guide
-        bind:error
-        bind:submitting
-        bind:reviewed_samples
-        bind:general_feedback
-        on:refine={handle_refine}
-        on:save={handle_save}
-      />
+      <!-- {#key} forces a clean remount when the journey index changes so
+           back/forward through preview snapshots rebuilds the table and
+           dialog state from the restored snapshot rather than reusing stale
+           component state. -->
+      {#key journey_index}
+        <GuidePreview
+          initial_guide={preview_initial_guide}
+          bind:guide
+          bind:error
+          bind:submitting
+          bind:reviewed_samples
+          bind:general_feedback
+          on:refine={handle_refine}
+          on:save={handle_save}
+        />
+      {/key}
     {:else if current_state === "refining"}
       <RefiningAnimation
         title="Refining Data Guide"
-        description="Kiln is refining your data guide with the feedback you provided and generating fresh examples to review. Hold tight!"
+        description="Refining your data guide with the feedback you provided and generating fresh examples to review."
       />
     {:else if current_state === "regenerating"}
       <AnalyzingAnimation
         title="Regenerating Examples"
-        description="Regenerating examples to review with your edited data guide. Hold tight!"
+        description="Regenerating synthetic data to test your edited data guide."
       />
     {/if}
   </AppPage>

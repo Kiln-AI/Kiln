@@ -224,16 +224,13 @@
   <Dialog
     bind:this={combined_config_dialog}
     title="Generation Options"
-    sub_subtitle="Configure the run options used to generate example inputs and outputs."
+    sub_subtitle="Options used to generate synthetic data."
     width="wide"
     action_buttons={[{ label: "Done", isPrimary: true }]}
   >
     <div class="flex flex-col gap-6">
       <div>
-        <div class="font-medium">Input Generation</div>
-        <div class="text-sm text-gray-500 mb-3">
-          Used to generate example inputs.
-        </div>
+        <div class="font-medium">Input Generation Options</div>
         <RunConfigComponent
           bind:this={input_run_config_component}
           bind:model_name={input_model_name}
@@ -251,10 +248,7 @@
       </div>
       <div class="border-t"></div>
       <div>
-        <div class="font-medium">Output Generation</div>
-        <div class="text-sm text-gray-500 mb-3">
-          Used to generate example outputs.
-        </div>
+        <div class="font-medium">Output Generation Options</div>
         <RunConfigComponent
           bind:this={output_run_config_component}
           bind:model_name={output_model_name}
