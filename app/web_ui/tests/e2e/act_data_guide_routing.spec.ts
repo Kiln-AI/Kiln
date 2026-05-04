@@ -11,8 +11,8 @@ somewhere usable.
 - seededProjectWithTask
 
 ## Hints
-- Guard lives in data_guide/+page.svelte: if both examples_md and rules_md
-  are empty/whitespace, goto /data_guide_setup with replaceState.
+- Guard lives in data_guide/+page.svelte: if `guide` is empty/whitespace,
+  goto /data_guide_setup with replaceState.
 - No backend write needed — a fresh task has no data guide.
 
 ## Assertions
@@ -67,9 +67,8 @@ test("/data_guide/refine direct hit redirects to /data_guide", async ({
     `/api/projects/${encodeURIComponent(project.id)}/tasks/${encodeURIComponent(task.id)}/data_gen_guide`,
     {
       data: {
-        examples_md:
-          "## Example 1\n```input\nHello\n```\n\n```output\nHi there\n```",
-        rules_md: "Be concise and friendly.",
+        guide:
+          "# Reference Examples\n\n## Example 1\n```input\nHello\n```\n\n```output\nHi there\n```\n\n# Guidelines & Rules\n\nBe concise and friendly.",
       },
     },
   )

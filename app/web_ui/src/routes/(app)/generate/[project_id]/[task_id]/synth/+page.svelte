@@ -35,7 +35,6 @@
   import AddExampleDialog from "../data_guide_setup/add_example_dialog.svelte"
   import type { GuideSample } from "../data_guide_setup/guide_setup_form.svelte"
   import { pending_data_guide_example } from "../data_guide_setup/pending_example_store"
-  import { compose_guide_md } from "../data_guide_setup/data_guide_md"
 
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
@@ -48,8 +47,7 @@
   const selected_template = guidance_data.selected_template
 
   type DataGuide = {
-    examples_md: string
-    rules_md: string
+    guide: string
   }
   let data_guide: DataGuide | null = null
   let guide_loading = true
@@ -417,9 +415,7 @@
       gen_type,
       task,
       splits,
-      data_guide
-        ? compose_guide_md(data_guide.examples_md, data_guide.rules_md)
-        : "",
+      data_guide?.guide ?? "",
     )
     // Trigger reactivity
     guidance_data = guidance_data

@@ -67,7 +67,7 @@
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
         { params: { path: { project_id, task_id } } },
       )
-      has_data_guide = !!(data?.examples_md?.trim() || data?.rules_md?.trim())
+      has_data_guide = !!data?.guide?.trim()
     } catch {
       has_data_guide = false
     }

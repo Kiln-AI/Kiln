@@ -1,19 +1,17 @@
 import { test, expect } from "./fixtures"
 
-const SEED_EXAMPLES_MD =
-  "## Example 1\n```input\nHello\n```\n\n```output\nHi there\n```"
-const SEED_RULES_MD = "Be concise and friendly."
+const SEED_GUIDE =
+  "# Reference Examples\n\n## Example 1\n```input\nHello\n```\n\n```output\nHi there\n```\n\n# Guidelines & Rules\n\nBe concise and friendly."
 
 async function seedDataGuide(
   apiRequest: import("@playwright/test").APIRequestContext,
   projectId: string,
   taskId: string,
-  examples_md: string = SEED_EXAMPLES_MD,
-  rules_md: string = SEED_RULES_MD,
+  guide: string = SEED_GUIDE,
 ): Promise<void> {
   const resp = await apiRequest.put(
     `/api/projects/${encodeURIComponent(projectId)}/tasks/${encodeURIComponent(taskId)}/data_gen_guide`,
-    { data: { examples_md, rules_md } },
+    { data: { guide } },
   )
   expect(
     resp.ok(),
@@ -88,16 +86,16 @@ click Save Without Verifying, confirm the new content is persisted.
 ## Hints
 - Pre-seed a guide via PUT.
 - The Edit action button is rendered by AppPage with label "Edit".
-- The dialog's textarea has id="edit_examples_text".
+- The dialog's textarea has id="edit_guide_text".
 - The "Save Without Verifying" affordance is a link styled <button> that
-  appears below the FormContainer only when editing_examples_md !==
-  examples_md (guide_refine_view.svelte:280).
+  appears below the FormContainer only when editing_guide !== guide
+  (guide_refine_view.svelte).
 - handle_save_without_verifying does not close the dialog itself; we verify
   via a fresh GET on /data_gen_guide rather than relying on dialog close.
 
 ## Assertions
 - After clicking Save Without Verifying, GET /data_gen_guide returns
-  examples_md equal to the user's edit (i.e. the PUT happened).
+  guide equal to the user's edit (i.e. the PUT happened).
 */
 test("edit dialog Save Without Verifying does a direct PUT", async ({
   page,
@@ -114,8 +112,8 @@ test("edit dialog Save Without Verifying does a direct PUT", async ({
 
   await page.getByRole("button", { name: "Edit", exact: true }).click()
 
-  const editedExamples = `## Example 1\n\`\`\`input\nedited-${Date.now()}\n\`\`\`\n\n\`\`\`output\nedited-out\n\`\`\``
-  await page.locator("#edit_examples_text").fill(editedExamples)
+  const editedGuide = `# Reference Examples\n\n## Example 1\n\`\`\`input\nedited-${Date.now()}\n\`\`\`\n\n\`\`\`output\nedited-out\n\`\`\``
+  await page.locator("#edit_guide_text").fill(editedGuide)
 
   await page.getByRole("button", { name: "Save Without Verifying" }).click()
 
@@ -126,12 +124,12 @@ test("edit dialog Save Without Verifying does a direct PUT", async ({
           `/api/projects/${encodeURIComponent(project.id)}/tasks/${encodeURIComponent(task.id)}/data_gen_guide`,
         )
         if (!resp.ok()) return null
-        const body = (await resp.json()) as { examples_md?: string }
-        return body.examples_md ?? null
+        const body = (await resp.json()) as { guide?: string }
+        return body.guide ?? null
       },
       { timeout: 5000 },
     )
-    .toBe(editedExamples)
+    .toBe(editedGuide)
 })
 
 /* @act

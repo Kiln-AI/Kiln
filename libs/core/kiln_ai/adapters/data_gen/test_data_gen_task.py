@@ -659,13 +659,16 @@ def test_generate_sample_generation_prompt_with_guide_text():
 
 
 def test_generate_guidance_refinement_prompt_minimal():
-    """Includes the required sections — task instruction, current examples,
-    current rules, rated samples, and feedback — when only the required args
-    are passed."""
+    """Includes the required sections — task instruction, current guide,
+    rated samples, and feedback — when only the required args are passed."""
     prompt = generate_guidance_refinement_prompt(
         task_instruction="Translate to French",
-        current_examples_md="## Example 1\n```input\nhi\n```\n```output\nbonjour\n```",
-        current_rules_md="<output_semantic>\n\n## Native\nOnly real French words.\n\n</output_semantic>",
+        current_guide=(
+            "# Reference Examples\n\n"
+            "## Example 1\n```input\nhi\n```\n```output\nbonjour\n```\n\n"
+            "# Guidelines & Rules\n\n"
+            "<output_semantic>\n\n## Native\nOnly real French words.\n\n</output_semantic>"
+        ),
         preview_samples=[
             ("hello", "bonjour", True),
             ("frog", "ranagrenouille", False),
@@ -674,9 +677,8 @@ def test_generate_guidance_refinement_prompt_minimal():
     )
 
     assert "<task_instruction>\nTranslate to French\n</task_instruction>" in prompt
-    assert "<current_reference_examples>" in prompt
+    assert "<current_guide>" in prompt
     assert "## Example 1" in prompt
-    assert "<current_rules>" in prompt
     assert "<output_semantic>" in prompt
     # Required samples section, with their ratings rendered as the rating attr
     assert '<sample_1 rating="Realistic">' in prompt
@@ -693,8 +695,7 @@ def test_generate_guidance_refinement_prompt_skips_optional_sections_when_none()
     shouldn't appear in the output when their args are None or blank."""
     prompt = generate_guidance_refinement_prompt(
         task_instruction="X",
-        current_examples_md="ex",
-        current_rules_md="rules",
+        current_guide="some guide body",
         preview_samples=[],
         feedback="Z",
         task_description=None,
@@ -708,8 +709,7 @@ def test_generate_guidance_refinement_prompt_skips_optional_sections_when_none()
     # Blank strings are also treated as "not provided" — same outcome.
     prompt_blank = generate_guidance_refinement_prompt(
         task_instruction="X",
-        current_examples_md="ex",
-        current_rules_md="rules",
+        current_guide="some guide body",
         preview_samples=[],
         feedback="Z",
         task_description="   ",
@@ -724,8 +724,7 @@ def test_generate_guidance_refinement_prompt_skips_optional_sections_when_none()
 def test_generate_guidance_refinement_prompt_includes_optional_sections_when_provided():
     prompt = generate_guidance_refinement_prompt(
         task_instruction="X",
-        current_examples_md="ex",
-        current_rules_md="rules",
+        current_guide="some guide body",
         preview_samples=[],
         feedback="Z",
         task_description="A short task description.",
@@ -755,8 +754,7 @@ def test_generate_guidance_refinement_prompt_renders_all_samples_in_order():
     ]
     prompt = generate_guidance_refinement_prompt(
         task_instruction="X",
-        current_examples_md="ex",
-        current_rules_md="rules",
+        current_guide="some guide body",
         preview_samples=samples,
         feedback="Z",
     )

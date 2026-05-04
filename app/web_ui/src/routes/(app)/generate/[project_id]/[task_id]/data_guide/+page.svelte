@@ -28,8 +28,7 @@
   let current_state: ViewState = "loading"
   let error: KilnError | null = null
 
-  let examples_md: string = ""
-  let rules_md: string = ""
+  let guide: string = ""
   let saved_data_guide: DataGuide | null = null
   let task: Task | null = null
   // Bound so the AppPage's "Edit" action button can drive the dialog inside
@@ -69,8 +68,7 @@
         load_failed = true
         error = createKilnError(api_error)
       } else if (data) {
-        examples_md = data.examples_md
-        rules_md = data.rules_md
+        guide = data.guide
         saved_data_guide = data
       }
     } catch (e) {
@@ -86,7 +84,7 @@
     }
 
     // No saved guide content → send them to the setup flow.
-    if (!examples_md.trim() && !rules_md.trim()) {
+    if (!guide.trim()) {
       goto(`/generate/${project_id}/${task_id}/data_guide_setup`)
       return
     }
@@ -112,15 +110,13 @@
 
   function handle_generate_preview(
     event: CustomEvent<{
-      examples_md: string
-      rules_md: string
+      guide: string
       input_run_config: KilnAgentRunConfigProperties
       output_run_config: KilnAgentRunConfigProperties
     }>,
   ) {
     pending_data_guide_refine_handoff.set({
-      examples_md: event.detail.examples_md,
-      rules_md: event.detail.rules_md,
+      guide: event.detail.guide,
       input_run_config: event.detail.input_run_config,
       output_run_config: event.detail.output_run_config,
     })
@@ -128,7 +124,7 @@
   }
 
   async function handle_save_with_guide(
-    event: CustomEvent<{ examples_md: string; rules_md: string }>,
+    event: CustomEvent<{ guide: string }>,
   ) {
     save_error = null
     save_submitting = true
@@ -138,10 +134,7 @@
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
         {
           params: { path: { project_id, task_id } },
-          body: {
-            examples_md: event.detail.examples_md,
-            rules_md: event.detail.rules_md,
-          },
+          body: { guide: event.detail.guide },
         },
       )
 
@@ -149,8 +142,7 @@
 
       if (saved) {
         saved_data_guide = saved
-        examples_md = saved.examples_md
-        rules_md = saved.rules_md
+        guide = saved.guide
       }
     } catch (e) {
       save_error = createKilnError(e)
@@ -205,8 +197,7 @@
       <GuideRefineView
         bind:this={refine_view}
         {project_id}
-        {examples_md}
-        {rules_md}
+        {guide}
         {task}
         data_guide={saved_data_guide}
         bind:page_error={error}

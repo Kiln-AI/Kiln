@@ -35,10 +35,9 @@
   // GuidePreview's unsaved-changes warn so the post-save goto doesn't prompt.
   let saved = false
 
-  // The two halves of the guide. Examples are user-authored; rules are
-  // LLM-authored (initially empty, populated by refine).
-  let examples_md: string = ""
-  let rules_md: string = ""
+  // The full data guide markdown. Setup builds this from the user's
+  // examples; refine rewrites it wholesale to incorporate generated rules.
+  let guide: string = ""
 
   type PreviewSample = { input: string; output: string }
   type ReviewedSample = {
@@ -47,8 +46,7 @@
     looks_good: boolean | undefined
   }
   let preview_samples: PreviewSample[] = []
-  let preview_initial_examples_md: string = ""
-  let preview_initial_rules_md: string = ""
+  let preview_initial_guide: string = ""
   let reviewed_samples: ReviewedSample[] = []
   let general_feedback: string = ""
 
@@ -128,7 +126,7 @@
 
   async function handle_generate_preview(
     event: CustomEvent<{
-      examples_md: string
+      guide: string
       input_run_config: KilnAgentRunConfigProperties
       output_run_config: KilnAgentRunConfigProperties
     }>,
@@ -140,18 +138,14 @@
     try {
       captured_input_run_config = event.detail.input_run_config
       captured_output_run_config = event.detail.output_run_config
-      examples_md = event.detail.examples_md
-      // Setup flow only collects examples — rules are LLM-authored on first
-      // refine. Reset to empty in case the user restarted setup.
-      rules_md = ""
+      guide = event.detail.guide
 
       const { data, error: api_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_preview",
         {
           params: { path: { project_id, task_id } },
           body: {
-            examples_md,
-            rules_md,
+            guide,
             run_config_properties: captured_input_run_config,
             output_run_config_properties: captured_output_run_config,
             num_samples: 5,
@@ -169,8 +163,7 @@
         looks_good: undefined,
       }))
       general_feedback = ""
-      preview_initial_examples_md = examples_md
-      preview_initial_rules_md = rules_md
+      preview_initial_guide = guide
       current_state = "preview"
     } catch (e) {
       error = createKilnError(e)
@@ -206,8 +199,7 @@
           {
             params: { path: { project_id, task_id } },
             body: {
-              current_examples_md: examples_md,
-              current_rules_md: rules_md,
+              current_guide: guide,
               feedback: event.detail.feedback,
               preview_samples: event.detail.rated_samples,
               run_config_properties: captured_input_run_config,
@@ -218,7 +210,7 @@
         if (api_error) throw api_error
         if (!data) throw new KilnError("No refinement returned", null)
 
-        rules_md = data.refined_rules_md
+        guide = data.refined_guide
       }
 
       const { data: preview_data, error: preview_error } = await client.POST(
@@ -226,8 +218,7 @@
         {
           params: { path: { project_id, task_id } },
           body: {
-            examples_md,
-            rules_md,
+            guide,
             run_config_properties: captured_input_run_config,
             output_run_config_properties: captured_output_run_config,
             num_samples: 5,
@@ -246,8 +237,7 @@
         looks_good: undefined,
       }))
       general_feedback = ""
-      preview_initial_examples_md = examples_md
-      preview_initial_rules_md = rules_md
+      preview_initial_guide = guide
       current_state = "preview"
     } catch (e) {
       error = createKilnError(e)
@@ -266,10 +256,7 @@
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
         {
           params: { path: { project_id, task_id } },
-          body: {
-            examples_md,
-            rules_md,
-          },
+          body: { guide },
         },
       )
 
@@ -333,10 +320,8 @@
       />
     {:else if current_state === "preview"}
       <GuidePreview
-        initial_examples_md={preview_initial_examples_md}
-        initial_rules_md={preview_initial_rules_md}
-        bind:examples_md
-        bind:rules_md
+        initial_guide={preview_initial_guide}
+        bind:guide
         bind:error
         bind:submitting
         bind:reviewed_samples

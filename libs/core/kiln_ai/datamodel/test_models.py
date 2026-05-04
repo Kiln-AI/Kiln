@@ -507,28 +507,29 @@ def test_task_output_source_validation(tmp_path):
 def test_data_guide():
     from kiln_ai.datamodel.data_guide import DataGuide
 
-    guide = DataGuide(
-        examples_md="## Example 1\n```input\ntest\n```\n\n```output\nresult\n```",
-        rules_md="<output_semantic>\n\n## Cholesterol\nIf cholesterol is high, never have low LDL.\n\n</output_semantic>",
+    body = (
+        "# Reference Examples\n\n"
+        "## Example 1\n```input\ntest\n```\n\n```output\nresult\n```\n\n"
+        "# Guidelines & Rules\n\n"
+        "<output_semantic>\n\n## Cholesterol\nIf cholesterol is high, never have low LDL.\n\n</output_semantic>"
     )
-    assert "test" in guide.examples_md
-    assert "cholesterol" in guide.rules_md.lower()
+    guide = DataGuide(guide=body)
+    assert "test" in guide.guide
+    assert "cholesterol" in guide.guide.lower()
 
     # Serializes correctly
     data = guide.model_dump()
-    assert "test" in data["examples_md"]
-    assert "cholesterol" in data["rules_md"].lower()
+    assert "test" in data["guide"]
+    assert "cholesterol" in data["guide"].lower()
 
     # Deserializes correctly
     restored = DataGuide.model_validate(data)
-    assert restored.examples_md == guide.examples_md
-    assert restored.rules_md == guide.rules_md
+    assert restored.guide == guide.guide
 
-    # Both fields default to empty — a guide with neither is permitted at the
-    # model layer (validation lives at the API).
+    # Field defaults to empty — a blank guide is permitted at the model layer
+    # (validation lives at the API).
     blank = DataGuide()
-    assert blank.examples_md == ""
-    assert blank.rules_md == ""
+    assert blank.guide == ""
 
 
 def test_task_data_guide_accessors(tmp_path):
@@ -550,21 +551,19 @@ def test_task_data_guide_accessors(tmp_path):
     assert task.current_data_guide() is None
 
     # Save one DataGuide as a child of the task
-    guide = DataGuide(parent=task, examples_md="ex", rules_md="rule")
+    guide = DataGuide(parent=task, guide="some guide body")
     guide.save_to_file()
 
     reloaded = Task.from_id_and_parent_path(task.id, project.path)
     assert reloaded is not None
     guides = reloaded.data_guides()
     assert len(guides) == 1
-    assert guides[0].examples_md == "ex"
-    assert guides[0].rules_md == "rule"
+    assert guides[0].guide == "some guide body"
 
     current = reloaded.current_data_guide()
     assert current is not None
     assert current.id == guide.id
-    assert current.examples_md == "ex"
-    assert current.rules_md == "rule"
+    assert current.guide == "some guide body"
 
 
 def test_task_run_tags_validation():

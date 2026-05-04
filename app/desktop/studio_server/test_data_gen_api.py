@@ -693,17 +693,18 @@ def test_save_and_get_data_gen_guide(
     test_task,
     client,
 ):
+    body = (
+        "# Reference Examples\n\n## Example 1\n```input\nx\n```\n\n```output\ny\n```\n\n"
+        "# Guidelines & Rules\n\n<output_semantic>\n\n## Cholesterol\nIf cholesterol is high, never have low LDL.\n\n</output_semantic>"
+    )
     response = client.put(
         "/api/projects/test_project/tasks/test_task/data_gen_guide",
-        json={
-            "examples_md": "## Example 1\n```input\nx\n```\n\n```output\ny\n```",
-            "rules_md": "<output_semantic>\n\n## Cholesterol\nIf cholesterol is high, never have low LDL.\n\n</output_semantic>",
-        },
+        json={"guide": body},
     )
     assert response.status_code == 200
     result = response.json()
-    assert "x" in result["examples_md"]
-    assert "cholesterol" in result["rules_md"].lower()
+    assert "x" in result["guide"]
+    assert "cholesterol" in result["guide"].lower()
 
     # Verify it's persisted via GET
     get_response = client.get(
@@ -711,19 +712,34 @@ def test_save_and_get_data_gen_guide(
     )
     assert get_response.status_code == 200
     get_result = get_response.json()
-    assert "x" in get_result["examples_md"]
-    assert "cholesterol" in get_result["rules_md"].lower()
+    assert "x" in get_result["guide"]
+    assert "cholesterol" in get_result["guide"].lower()
 
     # Verify task was actually saved to disk
     reloaded_task = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
     assert reloaded_task is not None
     current = reloaded_task.current_data_guide()
     assert current is not None
-    assert "x" in current.examples_md
-    assert "cholesterol" in current.rules_md.lower()
+    assert "x" in current.guide
+    assert "cholesterol" in current.guide.lower()
     # Only one DataGuide should exist on disk — saves overwrite in place
     # rather than accumulating new files.
     assert len(reloaded_task.data_guides()) == 1
+
+
+def test_save_data_gen_guide_rejects_blank(
+    mock_task_from_id,
+    test_task,
+    client,
+):
+    """Blank/whitespace-only guides are rejected with 400 — DELETE is the
+    correct way to remove a guide."""
+    response = client.put(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide",
+        json={"guide": "   \n  "},
+    )
+    assert response.status_code == 400
+    assert "empty" in response.json()["message"].lower()
 
 
 def test_delete_data_gen_guide(
@@ -734,7 +750,7 @@ def test_delete_data_gen_guide(
     # First save a guide
     client.put(
         "/api/projects/test_project/tasks/test_task/data_gen_guide",
-        json={"examples_md": "examples", "rules_md": "Some rules"},
+        json={"guide": "some guide body"},
     )
 
     # Delete it
@@ -758,14 +774,14 @@ def test_save_data_gen_guide_overwrites_previous(
     # Save first guide
     first_response = client.put(
         "/api/projects/test_project/tasks/test_task/data_gen_guide",
-        json={"examples_md": "first ex", "rules_md": "first rules"},
+        json={"guide": "first body"},
     )
     first_id = first_response.json()["id"]
 
     # Overwrite with second
     response = client.put(
         "/api/projects/test_project/tasks/test_task/data_gen_guide",
-        json={"examples_md": "second ex", "rules_md": "second rules"},
+        json={"guide": "second body"},
     )
     assert response.status_code == 200
 
@@ -773,8 +789,7 @@ def test_save_data_gen_guide_overwrites_previous(
         "/api/projects/test_project/tasks/test_task/data_gen_guide"
     )
     result = get_response.json()
-    assert result["examples_md"] == "second ex"
-    assert result["rules_md"] == "second rules"
+    assert result["guide"] == "second body"
 
     # Same file — second save reuses the first DataGuide rather than creating
     # a new one. Keeps git history of the guide localized to one file.
@@ -782,54 +797,6 @@ def test_save_data_gen_guide_overwrites_previous(
     reloaded_task = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
     assert reloaded_task is not None
     assert len(reloaded_task.data_guides()) == 1
-
-
-# --- _compose_guide_md helper ---
-
-
-def test_compose_guide_md_both_populated():
-    """Both halves render with their canonical headings, separated by a
-    blank line. Internal whitespace on each body is trimmed by .strip() but
-    the bodies themselves come through verbatim."""
-    from app.desktop.studio_server.data_gen_api import _compose_guide_md
-
-    out = _compose_guide_md(
-        "## Example 1\n```input\nx\n```\n\n```output\ny\n```",
-        "<output_semantic>\n\n## Length\nOutputs are 1-3 sentences.\n\n</output_semantic>",
-    )
-    assert (
-        out
-        == "# Reference Examples\n\n## Example 1\n```input\nx\n```\n\n```output\ny\n```\n\n# Guidelines & Rules\n\n<output_semantic>\n\n## Length\nOutputs are 1-3 sentences.\n\n</output_semantic>"
-    )
-
-
-def test_compose_guide_md_only_examples():
-    """No rules → only the Reference Examples section, no trailing
-    Guidelines & Rules heading."""
-    from app.desktop.studio_server.data_gen_api import _compose_guide_md
-
-    assert _compose_guide_md("## Example 1\nbody", "") == (
-        "# Reference Examples\n\n## Example 1\nbody"
-    )
-
-
-def test_compose_guide_md_only_rules():
-    """No examples → only the Guidelines & Rules section."""
-    from app.desktop.studio_server.data_gen_api import _compose_guide_md
-
-    assert _compose_guide_md("", "## Foo\nbar") == (
-        "# Guidelines & Rules\n\n## Foo\nbar"
-    )
-
-
-def test_compose_guide_md_both_empty():
-    """Two empty strings collapse to an empty string — neither heading is
-    rendered, so `_resolve_data_guide` can treat the result as falsy and
-    skip the framing entirely."""
-    from app.desktop.studio_server.data_gen_api import _compose_guide_md
-
-    assert _compose_guide_md("", "") == ""
-    assert _compose_guide_md("   ", "\n\n") == ""
 
 
 # --- _resolve_data_guide / _combine_guidance helpers ---
@@ -841,7 +808,7 @@ def test_resolve_data_guide_override_replaces_persisted(test_task):
 
     from app.desktop.studio_server.data_gen_api import _resolve_data_guide
 
-    saved = DataGuide(parent=test_task, examples_md="persisted")
+    saved = DataGuide(parent=test_task, guide="persisted body")
     saved.save_to_file()
     reloaded = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
     assert reloaded is not None
@@ -856,7 +823,7 @@ def test_resolve_data_guide_blank_override_returns_none(test_task):
 
     from app.desktop.studio_server.data_gen_api import _resolve_data_guide
 
-    saved = DataGuide(parent=test_task, examples_md="persisted")
+    saved = DataGuide(parent=test_task, guide="persisted body")
     saved.save_to_file()
     reloaded = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
     assert reloaded is not None
@@ -871,19 +838,14 @@ def test_resolve_data_guide_falls_back_to_persisted(test_task):
 
     from app.desktop.studio_server.data_gen_api import _resolve_data_guide
 
-    saved = DataGuide(
-        parent=test_task,
-        examples_md="examples body",
-        rules_md="rules body",
-    )
+    body = "# Reference Examples\n\nexamples body\n\n# Guidelines & Rules\n\nrules body"
+    saved = DataGuide(parent=test_task, guide=body)
     saved.save_to_file()
     reloaded = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
     assert reloaded is not None
 
     out = _resolve_data_guide(reloaded, None)
-    assert out is not None
-    assert "# Reference Examples\n\nexamples body" in out
-    assert "# Guidelines & Rules\n\nrules body" in out
+    assert out == body
 
 
 def test_resolve_data_guide_no_persisted_returns_none(test_task):
@@ -899,7 +861,7 @@ def test_combine_guidance_with_data_guide_only(test_task):
 
     from app.desktop.studio_server.data_gen_api import _combine_guidance
 
-    saved = DataGuide(parent=test_task, examples_md="GUIDE_BODY")
+    saved = DataGuide(parent=test_task, guide="GUIDE_BODY")
     saved.save_to_file()
     reloaded = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
     assert reloaded is not None
@@ -918,7 +880,7 @@ def test_combine_guidance_data_guide_and_session(test_task):
 
     from app.desktop.studio_server.data_gen_api import _combine_guidance
 
-    saved = DataGuide(parent=test_task, examples_md="GUIDE_BODY")
+    saved = DataGuide(parent=test_task, guide="GUIDE_BODY")
     saved.save_to_file()
     reloaded = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
     assert reloaded is not None
@@ -952,7 +914,7 @@ def test_combine_guidance_override_wins_over_persisted(test_task):
 
     from app.desktop.studio_server.data_gen_api import _combine_guidance
 
-    saved = DataGuide(parent=test_task, examples_md="PERSISTED_GUIDE")
+    saved = DataGuide(parent=test_task, guide="PERSISTED_GUIDE")
     saved.save_to_file()
     reloaded = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
     assert reloaded is not None
@@ -1011,8 +973,7 @@ def test_preview_data_gen_guide_success(
             response = client.post(
                 "/api/projects/test_project/tasks/test_task/data_gen_guide_preview",
                 json={
-                    "examples_md": "Some examples",
-                    "rules_md": "Some rules",
+                    "guide": "# Reference Examples\n\nSome examples\n\n# Guidelines & Rules\n\nSome rules",
                     "run_config_properties": {
                         "type": "kiln_agent",
                         "model_name": "gpt-4",
@@ -1056,8 +1017,7 @@ def test_preview_data_gen_guide_empty_output_returns_500(
             response = client.post(
                 "/api/projects/test_project/tasks/test_task/data_gen_guide_preview",
                 json={
-                    "examples_md": "Some examples",
-                    "rules_md": "Some rules",
+                    "guide": "# Reference Examples\n\nSome examples\n\n# Guidelines & Rules\n\nSome rules",
                     "run_config_properties": {
                         "type": "kiln_agent",
                         "model_name": "gpt-4",
@@ -1098,8 +1058,7 @@ def test_preview_data_gen_guide_unparseable_samples_returns_500(
             response = client.post(
                 "/api/projects/test_project/tasks/test_task/data_gen_guide_preview",
                 json={
-                    "examples_md": "Some examples",
-                    "rules_md": "Some rules",
+                    "guide": "# Reference Examples\n\nSome examples\n\n# Guidelines & Rules\n\nSome rules",
                     "run_config_properties": {
                         "type": "kiln_agent",
                         "model_name": "gpt-4",
@@ -1123,12 +1082,12 @@ def test_refine_data_gen_guide_success(
     client,
 ):
     """Happy path: the metaprompter LLM returns a structured JSON object with
-    a `rules` key; the endpoint stitches it into the refined guide."""
+    a `guide` key; the endpoint returns it as `refined_guide`."""
     import json
 
     refine_run = MagicMock()
     refine_run.output = MagicMock()
-    refine_run.output.output = json.dumps({"rules": "REFINED RULES BODY"})
+    refine_run.output.output = json.dumps({"guide": "REFINED FULL GUIDE BODY"})
 
     with patch(
         "app.desktop.studio_server.data_gen_api.adapter_for_task"
@@ -1140,8 +1099,12 @@ def test_refine_data_gen_guide_success(
         response = client.post(
             "/api/projects/test_project/tasks/test_task/data_gen_guide_refine",
             json={
-                "current_examples_md": "## Example 1\n```input\nx\n```\n\n```output\ny\n```",
-                "current_rules_md": "<output_semantic>\n\n## Old\nOld rule.\n\n</output_semantic>",
+                "current_guide": (
+                    "# Reference Examples\n\n"
+                    "## Example 1\n```input\nx\n```\n\n```output\ny\n```\n\n"
+                    "# Guidelines & Rules\n\n"
+                    "<output_semantic>\n\n## Old\nOld rule.\n\n</output_semantic>"
+                ),
                 "feedback": "Please make outputs shorter",
                 "preview_samples": [
                     {"input": "i1", "output": "o1", "looks_good": True},
@@ -1158,15 +1121,15 @@ def test_refine_data_gen_guide_success(
         )
 
     assert response.status_code == 200
-    assert response.json() == {"refined_rules_md": "REFINED RULES BODY"}
+    assert response.json() == {"refined_guide": "REFINED FULL GUIDE BODY"}
 
 
 def test_refine_data_gen_guide_falls_back_to_current_when_missing_key(
     mock_task_from_id,
     client,
 ):
-    """If the LLM JSON doesn't include the `rules` key, fall back to the
-    current rules body rather than returning an empty string."""
+    """If the LLM JSON doesn't include the `guide` key, fall back to the
+    current guide body rather than returning an empty string."""
     import json
 
     refine_run = MagicMock()
@@ -1183,8 +1146,7 @@ def test_refine_data_gen_guide_falls_back_to_current_when_missing_key(
         response = client.post(
             "/api/projects/test_project/tasks/test_task/data_gen_guide_refine",
             json={
-                "current_examples_md": "",
-                "current_rules_md": "Original rules",
+                "current_guide": "Original guide",
                 "feedback": "fb",
                 "preview_samples": [],
                 "run_config_properties": {
@@ -1198,7 +1160,7 @@ def test_refine_data_gen_guide_falls_back_to_current_when_missing_key(
         )
 
     assert response.status_code == 200
-    assert response.json() == {"refined_rules_md": "Original rules"}
+    assert response.json() == {"refined_guide": "Original guide"}
 
 
 def test_refine_data_gen_guide_empty_output_returns_500(
@@ -1218,8 +1180,7 @@ def test_refine_data_gen_guide_empty_output_returns_500(
         response = client.post(
             "/api/projects/test_project/tasks/test_task/data_gen_guide_refine",
             json={
-                "current_examples_md": "",
-                "current_rules_md": "Original",
+                "current_guide": "Original",
                 "feedback": "fb",
                 "preview_samples": [],
                 "run_config_properties": {

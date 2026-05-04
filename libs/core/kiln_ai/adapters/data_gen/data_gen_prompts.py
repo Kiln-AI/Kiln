@@ -283,8 +283,7 @@ When generating Q&A pairs, focus on generating queries and answers that are rele
 
 def generate_guidance_refinement_prompt(
     task_instruction: str,
-    current_examples_md: str,
-    current_rules_md: str,
+    current_guide: str,
     preview_samples: list[tuple[str, str, bool]],
     feedback: str,
     task_description: str | None = None,
@@ -297,25 +296,24 @@ def generate_guidance_refinement_prompt(
     looks_good=True means the user marked it Realistic and looks_good=False
     means the user marked it Needs Work.
 
-    `current_examples_md` and `current_rules_md` are the two halves of the
-    persisted DataGuide. The examples half is shown to the LLM for context
-    only (immutable user input); the rules half is the editable body the
-    metaprompter rewrites wholesale.
+    `current_guide` is the full markdown body of the user's current data
+    guide. Typically it has a `# Reference Examples` section with user-written
+    `(input, output)` pairs and a `# Guidelines & Rules` section with
+    structural/semantic constraints. Either section may be missing on early
+    refines. The metaprompter rewrites the entire guide and returns the
+    refined version.
 
     The optional task_description / task_input_json_schema /
-    task_output_json_schema args give the LLM extra grounding so refined rules
-    stay consistent with the task's actual purpose and shape.
+    task_output_json_schema args give the LLM extra grounding so the refined
+    guide stays consistent with the task's actual purpose and shape.
     """
 
-    prompt = f"""You are an expert at writing guidance for synthetic data generation. Your job is to refine the **rules half** of a Task Data Guide — the structural and semantic constraints that, together with the user's reference examples, control how synthetic data for this task is generated.
+    prompt = f"""You are an expert at writing guidance for synthetic data generation. Your job is to refine a **Task Data Guide** — a single markdown document that, together with the task definition, controls how synthetic data for this task is generated.
 
-A Data Guide has exactly three things:
+A Task Data Guide is structured as up to two top-level sections:
 
-1. **Reference Examples** — concrete `(input, output)` pairs the user has authored. These are the user's ground truth. **They are passed to you for context only — you must NEVER modify or re-emit them. The system preserves them automatically.**
-2. **Structural rules** — *how* the data is shaped: format, length, sections, layout, formatting conventions, presentation. (How a sample looks.)
-3. **Semantic rules** — *what* the data means: fields, valid values, ranges, relationships between fields, domain constraints, plausibility. (What a sample is.)
-
-Examples ground; structural rules constrain shape; semantic rules constrain meaning.
+1. **`# Reference Examples`** — concrete `(input, output)` pairs the user has authored. These are the user's ground truth. **Preserve them verbatim by default — only add, modify, or remove an example when the user's feedback explicitly asks for it (e.g. "add an example showing X", "example 2 is wrong, the output should be Y", "remove the third example").** If the section is missing and the user hasn't asked for examples, do not invent any.
+2. **`# Guidelines & Rules`** — structural and semantic constraints. Structural rules govern *how* the data is shaped (format, length, layout, formatting conventions). Semantic rules govern *what* the data means (fields, valid values, relationships, domain plausibility). **You own this section** — you may add, edit, reorder, split, merge, or remove rules in response to feedback or to fix what the rated samples got wrong. If the section is missing, generate a starter set on this pass.
 
 ### Rule grouping: every rule sits in one of six XML-tagged groups
 
@@ -332,9 +330,11 @@ Group rules by scope+type using XML-style tags. The six valid groups are:
 
 Inside each group, every rule is a `## <short title>` block followed by a one-or-more-sentence description. Only emit a group tag if it has at least one rule. Use blank lines between rule blocks within a group, and a blank line between groups, for human legibility.
 
-**Worked example of the output shape (illustrative — your task will differ):**
+**Worked example of the rules section shape (illustrative — your task will differ):**
 
 ```
+# Guidelines & Rules
+
 <input_structural>
 
 ## Format
@@ -405,38 +405,24 @@ The task's output JSON schema (every rule about output structure must be consist
 {task_output_json_schema}
 </task_output_json_schema>"""
 
-    examples_block = current_examples_md.strip()
-    rules_block = current_rules_md.strip()
+    guide_block = current_guide.strip()
 
     prompt += """
 
-The two halves of the user's current guide are shown below in separate blocks. **Read the reference examples carefully — they are your primary signal for what realistic task data looks like — but DO NOT include them in your output.** Read the existing rules (if any) to understand what's already in place; your output will replace the rules half wholesale. Either block may be empty if the user has not authored that half yet.
+The user's current data guide is shown below. Read it carefully — the reference examples (if any) are your primary signal for what realistic task data looks like, and the rules (if any) are constraints already in force. **Your output replaces the entire guide wholesale**, so anything you want to keep, you must include.
 """
 
-    if examples_block:
+    if guide_block:
         prompt += f"""
-<current_reference_examples>
-{_xml_escape(examples_block)}
-</current_reference_examples>
+<current_guide>
+{_xml_escape(guide_block)}
+</current_guide>
 """
     else:
         prompt += """
-<current_reference_examples>
-(empty — the user has not authored any reference examples yet)
-</current_reference_examples>
-"""
-
-    if rules_block:
-        prompt += f"""
-<current_rules>
-{_xml_escape(rules_block)}
-</current_rules>
-"""
-    else:
-        prompt += """
-<current_rules>
-(empty — no rules have been authored yet; treat creating an initial set as your primary task)
-</current_rules>
+<current_guide>
+(empty — the user has not authored a guide yet; treat creating one as your primary task)
+</current_guide>
 """
 
     has_samples = len(preview_samples) > 0
@@ -472,17 +458,19 @@ The user's written feedback (focused on the "Needs Work" samples):
     prompt += """
 ## Your Task
 
-Produce a refined set of rules — both structural and semantic — that, combined with the user's existing reference examples, will steer the next round of synthetic data generation toward what the user wants.
+Produce the **complete refined data guide markdown** — both `# Reference Examples` (preserved verbatim from the input unless the user's feedback asks you to add, modify, or remove specific examples) and `# Guidelines & Rules` (rewritten to address the feedback and rated samples). Your output replaces the entire guide on the user's task.
 
 ### Hard requirements
 
-1. **Output the rules half only.** Do NOT output any reference examples, do NOT include the `# Guidelines & Rules` heading itself, and do NOT introduce any other top-level (`#`) headings. Each rule is a `## <short title>` block followed by a one-or-more-sentence description. The system will combine your output with the user's existing reference examples to form the full refined guide.
+1. **Output the full guide markdown.** Include `# Reference Examples` as a top-level section if the user had any (or if their feedback asks you to add or replace examples), and include `# Guidelines & Rules` as a top-level section with the refined rules. Do NOT add any other top-level (`#`) headings.
 
-2. **Your output replaces the rules half wholesale.** You are not append-only — you may edit, reorder, split, merge, or remove existing rules — but only when justified by the user's feedback or by a clear conflict with the rated samples.
+2. **Preserve reference examples verbatim by default.** The reference examples are user-owned ground truth. Carry every existing example forward unchanged unless the user's feedback explicitly asks you to add, modify, or remove specific examples (e.g. "add an example showing X", "example 2 is wrong, the output should be Y", "remove the third example", "this example uses the wrong format"). When in doubt, keep examples exactly as the user wrote them.
 
-3. **Default to keeping existing rules; synthesize new ones when the guide is sparse.** Carry forward every existing rule unless the user's feedback contradicts it, the rule is now redundant with another, or it is clearly causing a "Needs Work" sample. When in doubt, keep it. **If the current guide has reference examples but few or no rules, treat creating an initial set of rules as your primary task** — extract the patterns implicit in the examples (covering both structural and semantic axes) and codify them as roughly 3-8 rules total, using the rated samples and feedback as confirmation/correction signal.
+3. **Rewrite the rules section in response to feedback and ratings.** You may add, edit, reorder, split, merge, or remove rules. Carry forward existing rules unless the user's feedback contradicts them, they're now redundant with another rule, or they're clearly causing a "Needs Work" sample. When in doubt, keep the rule.
 
-4. **Stay consistent with the task definition above, AND mine it for rules.** The refined rules must respect the task's runtime system prompt and (when provided) its description and input/output JSON schemas — do not invent fields, formats, or behaviors that contradict them. **But the task definition is also a source of rules, not just a constraint** — see the next section.
+4. **If the current guide has examples but few or no rules, generate an initial set of rules.** Extract the patterns implicit in the examples (across both structural and semantic axes) and codify them as roughly 3-8 rules total, using the rated samples and feedback as confirmation/correction signal.
+
+5. **Stay consistent with the task definition above, AND mine it for rules.** The refined guide must respect the task's runtime system prompt and (when provided) its description and input/output JSON schemas — do not invent fields, formats, or behaviors that contradict them. The task definition is also a source of rules, not just a constraint — see the next section.
 
 ### Mine rules from the task definition
 
@@ -516,7 +504,7 @@ When a rule genuinely applies to both halves (e.g., "all dates are ISO 8601"), p
 
 - **"Realistic" samples confirm patterns to lock in.** They show that the inferences currently being made (from examples and any existing rules) are working for cases like that. Don't weaken or remove rules that are producing realistic samples. Realistic samples are particularly valuable when synthesizing new rules: they identify which patterns implicit in the examples deserve to be made explicit. Avoid overfitting to a single Realistic sample, but a pattern echoed across multiple Realistic samples is worth codifying.
 - **"Needs Work" samples plus the user's feedback are the primary signal for changes.** Identify what specifically is wrong (structure, values, realism, format, tone, constraints) and add or update a rule that prevents that mistake.
-- If the user's feedback is general (e.g. "values should be more realistic"), prefer adding or sharpening a rule rather than encoding the fix as an example (you cannot add examples — those are user-owned).
+- If the user's feedback is general (e.g. "values should be more realistic"), prefer adding or sharpening a rule rather than touching the reference examples — examples are user-owned and only change when feedback names them directly.
 - If the user's feedback points at a specific structural issue, prefer fixing or adding a precise rule (e.g. "id must be a UUID v4 string").
 """
 
@@ -532,6 +520,6 @@ The rules you write will be applied downstream as **hard constraints**, not soft
 
 ### Output
 
-Return only the rules markdown — a sequence of XML group tags (`<input_structural>`, `<input_semantic>`, `<output_structural>`, `<output_semantic>`, `<both_structural>`, `<both_semantic>`), each containing one or more `## <short title>` rule blocks with descriptions. Use blank lines between rule blocks within a group, and a blank line between groups, for legibility. Only emit a group tag if it has at least one rule. Do NOT use a `[<Scope> · <Type>]` prefix in rule titles — the group tag carries that information. Do NOT include the `# Reference Examples` section, do NOT include the `# Guidelines & Rules` heading itself, do NOT include any other top-level (`#`) headings, and do NOT include commentary or explanation of your changes. The system will stitch your output together with the user's existing reference examples to form the complete refined guide."""
+Return the **complete refined data guide markdown**. Include the `# Reference Examples` top-level section (with each example as `## Example N` containing fenced ```input / ```output blocks) if the user had any, then the `# Guidelines & Rules` top-level section containing the XML-tagged group blocks (`<input_structural>`, `<input_semantic>`, etc.), each with one or more `## <short title>` rule blocks. Do NOT add any other top-level (`#`) headings, do NOT include commentary or explanation of your changes."""
 
     return prompt

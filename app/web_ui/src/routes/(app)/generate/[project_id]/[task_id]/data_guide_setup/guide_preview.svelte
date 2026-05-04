@@ -16,10 +16,8 @@
     looks_good: boolean | undefined
   }
 
-  export let examples_md: string = ""
-  export let rules_md: string = ""
-  export let initial_examples_md: string = examples_md
-  export let initial_rules_md: string = rules_md
+  export let guide: string = ""
+  export let initial_guide: string = guide
   export let error: KilnError | null = null
   export let submitting: boolean = false
   // Lifted to the parent so back/forward navigation can restore the user's
@@ -32,20 +30,21 @@
   // prompt the user.
   export let saved: boolean = false
 
-  // True iff the user edited either half of the guide via the Edit dialog
-  // after this preview was generated. Drives the submit button label
-  // (Refine vs Save Data Guide).
-  $: guide_was_edited =
-    examples_md !== initial_examples_md || rules_md !== initial_rules_md
+  // True iff the user edited the guide via the Edit dialog after this
+  // preview was generated. Drives the submit button label (Refine vs Save
+  // Data Guide).
+  $: guide_was_edited = guide !== initial_guide
 
   // Long input/output cells are clamped to 3 lines with a "See all" link;
   // clicking opens the full content in a dialog.
   let see_all_dialog: Dialog
   let see_all_title: string = ""
+  let see_all_subtitle: string = ""
   let see_all_content: string = ""
 
-  function show_full_text(title: string, content: string) {
+  function show_full_text(title: string, subtitle: string, content: string) {
     see_all_title = title
+    see_all_subtitle = subtitle
     see_all_content = content
     see_all_dialog?.show()
   }
@@ -56,27 +55,21 @@
 
   // --- Edit data guide dialog ---
   let edit_dialog: Dialog
-  let editing_examples_md: string = ""
-  let editing_rules_md: string = ""
+  let editing_guide: string = ""
 
   function open_edit_dialog() {
-    editing_examples_md = examples_md
-    editing_rules_md = rules_md
+    editing_guide = guide
     edit_dialog?.show()
   }
 
   // Reset reverts all edits made in this preview session, not just the
-  // unsaved-in-dialog ones. Compares against the *_initial values (the
-  // bodies when this preview was generated) so reopening the dialog after a
-  // prior Save still lets the user undo back to the original.
-  function reset_examples() {
-    editing_examples_md = initial_examples_md
+  // unsaved-in-dialog ones. Compares against initial_guide (the body when
+  // this preview was generated) so reopening the dialog after a prior Save
+  // still lets the user undo back to the original.
+  function reset_guide() {
+    editing_guide = initial_guide
   }
-  function reset_rules() {
-    editing_rules_md = initial_rules_md
-  }
-  $: examples_differs_from_initial = editing_examples_md !== initial_examples_md
-  $: rules_differs_from_initial = editing_rules_md !== initial_rules_md
+  $: guide_differs_from_initial = editing_guide !== initial_guide
 
   // FormContainer flips edit_submitting=true before dispatching submit and
   // expects an async handler to reset it. Our handler is sync, so we reset it
@@ -85,17 +78,15 @@
   let edit_submitting: boolean = false
   function save_guide_edit() {
     try {
-      examples_md = editing_examples_md
-      rules_md = editing_rules_md
+      guide = editing_guide
       edit_dialog?.close()
     } finally {
       edit_submitting = false
     }
   }
 
-  $: guide_has_changes =
-    editing_examples_md !== examples_md || editing_rules_md !== rules_md
-  $: guide_is_empty = !editing_examples_md.trim() && !editing_rules_md.trim()
+  $: guide_has_changes = editing_guide !== guide
+  $: guide_is_empty = !editing_guide.trim()
 
   function set_looks_good(index: number, value: boolean, event: Event) {
     event.stopPropagation()
@@ -239,14 +230,14 @@
                 <ClampedText
                   content={sample.input}
                   on:see_all={() =>
-                    show_full_text(`Sample ${i + 1} — Input`, sample.input)}
+                    show_full_text("Input", `Sample ${i + 1}`, sample.input)}
                 />
               </td>
               <td class="py-2">
                 <ClampedText
                   content={sample.output}
                   on:see_all={() =>
-                    show_full_text(`Sample ${i + 1} — Output`, sample.output)}
+                    show_full_text("Output", `Sample ${i + 1}`, sample.output)}
                 />
               </td>
               <td class="py-2">
@@ -315,7 +306,7 @@
     bind:open={preview_collapse_open}
     small={true}
   >
-    <div class="flex flex-col gap-4">
+    <div class="flex flex-col gap-2">
       <div class="flex justify-end">
         <button
           class="btn btn-sm btn-outline"
@@ -323,24 +314,7 @@
           type="button">Edit</button
         >
       </div>
-      <div class="flex flex-col gap-2">
-        <h3 class="text-sm font-medium">Reference Examples</h3>
-        {#if examples_md.trim()}
-          <Output raw_output={examples_md} show_border={true} />
-        {:else}
-          <div
-            class="rounded-lg border border-dashed border-gray-300 p-4 text-center text-xs text-gray-400"
-          >
-            No reference examples
-          </div>
-        {/if}
-      </div>
-      {#if rules_md.trim()}
-        <div class="flex flex-col gap-2">
-          <h3 class="text-sm font-medium">Guidelines &amp; Rules</h3>
-          <Output raw_output={rules_md} show_border={true} />
-        </div>
-      {/if}
+      <Output raw_output={guide} show_border={true} />
     </div>
   </Collapse>
 
@@ -404,67 +378,35 @@
     on:submit={save_guide_edit}
     compact_button={true}
   >
-    <div class="flex flex-col gap-6">
-      <div>
-        <div class="flex flex-row items-center pb-[4px] min-h-[1.25rem]">
-          <span class="text-sm font-medium">Reference Examples</span>
-          <span class="grow"></span>
-          {#if examples_differs_from_initial}
-            <button
-              type="button"
-              class="link text-xs text-gray-500 hover:text-gray-700"
-              on:click|stopPropagation={reset_examples}
-            >
-              Reset
-            </button>
-          {/if}
-        </div>
-        <FormElement
-          label="Reference Examples"
-          hide_label={true}
-          id="edit_examples_text"
-          inputType="textarea"
-          height="xl"
-          bind:value={editing_examples_md}
-          optional={true}
-          hide_optional_badge={true}
-        />
+    <div>
+      <div class="flex flex-row items-center pb-[4px] min-h-[1.25rem]">
+        <span class="grow"></span>
+        {#if guide_differs_from_initial}
+          <button
+            type="button"
+            class="link ml-4 text-xs text-gray-500 hover:text-gray-700"
+            on:click|stopPropagation={reset_guide}
+          >
+            Reset
+          </button>
+        {/if}
       </div>
-      <div>
-        <div class="flex flex-row items-center pb-[4px] min-h-[1.25rem]">
-          <span class="text-sm font-medium">Guidelines &amp; Rules</span>
-          <span class="grow"></span>
-          <span class="pl-1 text-xs text-gray-500 flex-none">Optional</span>
-          {#if rules_differs_from_initial}
-            <button
-              type="button"
-              class="link ml-4 text-xs text-gray-500 hover:text-gray-700"
-              on:click|stopPropagation={reset_rules}
-            >
-              Reset
-            </button>
-          {/if}
-        </div>
-        <FormElement
-          label="Guidelines & Rules"
-          hide_label={true}
-          id="edit_rules_text"
-          inputType="textarea"
-          height="xl"
-          bind:value={editing_rules_md}
-          optional={true}
-          hide_optional_badge={true}
-        />
-      </div>
+      <FormElement
+        label="Data Guide"
+        hide_label={true}
+        id="edit_guide_text"
+        inputType="textarea"
+        height="xl"
+        bind:value={editing_guide}
+      />
     </div>
   </FormContainer>
 </Dialog>
 
-<!-- See-all Dialog: shows the full text of an input/output cell that was
-     clamped in the table by ClampedText. -->
 <Dialog
   bind:this={see_all_dialog}
   title={see_all_title}
+  sub_subtitle={see_all_subtitle}
   width="wide"
   action_buttons={[{ label: "Close", isCancel: true }]}
 >
