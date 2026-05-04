@@ -9025,6 +9025,11 @@ export interface components {
              * @description ID of the run config to use for this task by default. Must exist in saved run configs for this task.
              */
             default_run_config_id?: string | null;
+            /**
+             * @description Whether this task is single-turn (each run independent) or multiturn (runs continue prior runs).
+             * @default single_turn
+             */
+            turn_mode: components["schemas"]["TurnMode"];
             /** Model Type */
             readonly model_type: string;
         };
@@ -9834,6 +9839,12 @@ export interface components {
             /** Arguments */
             arguments: string;
         };
+        /**
+         * TurnMode
+         * @description Whether a Task runs as a single turn or as a multiturn conversation.
+         * @enum {string}
+         */
+        TurnMode: "single_turn" | "multiturn";
         /**
          * UpdateConfigRequest
          * @description Request to partially update a git sync configuration.

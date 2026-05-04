@@ -8,6 +8,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     ModelProviderName,
     StructuredOutputMode,
     TaskOutputRatingType,
+    TurnMode,
 )
 from kiln_ai.datamodel.project import Project
 from kiln_ai.datamodel.prompt_id import PromptGenerators
@@ -21,6 +22,7 @@ from kiln_ai.datamodel.spec_properties import (
 from kiln_ai.datamodel.task import Task, TaskRunConfig
 from kiln_ai.datamodel.task_output import TaskOutput, normalize_rating
 from kiln_ai.datamodel.task_run import TaskRun
+from kiln_ai.datamodel.test_json_schema import json_joke_schema
 
 
 def test_runconfig_valid_creation():
@@ -752,3 +754,56 @@ def test_is_toolcall_pending_true_when_task_response_mixed_with_unmanaged_tools(
         RunOutput(output="", intermediate_outputs=None, trace=trace).is_toolcall_pending
         is True
     )
+
+
+def test_task_turn_mode_defaults_to_single_turn():
+    task = Task(name="Test Task", instruction="Test instruction")
+    assert task.turn_mode == TurnMode.single_turn
+
+
+def test_task_loads_legacy_json_without_turn_mode_as_single_turn():
+    legacy_data = {
+        "v": 1,
+        "name": "Legacy Task",
+        "instruction": "Legacy instruction",
+        "model_type": "task",
+    }
+
+    parsed = Task.model_validate(legacy_data, context={"loading_from_file": True})
+    assert parsed.turn_mode == TurnMode.single_turn
+
+    parsed_no_context = Task.model_validate(legacy_data)
+    assert parsed_no_context.turn_mode == TurnMode.single_turn
+
+
+def test_task_multiturn_rejects_input_json_schema():
+    with pytest.raises(ValidationError, match="structured input"):
+        Task(
+            name="Multiturn Task",
+            instruction="Test instruction",
+            turn_mode=TurnMode.multiturn,
+            input_json_schema=json_joke_schema,
+        )
+
+
+def test_task_multiturn_rejects_output_json_schema():
+    with pytest.raises(ValidationError, match="structured output"):
+        Task(
+            name="Multiturn Task",
+            instruction="Test instruction",
+            turn_mode=TurnMode.multiturn,
+            output_json_schema=json_joke_schema,
+        )
+
+
+def test_task_single_turn_allows_both_schemas():
+    task = Task(
+        name="Structured Task",
+        instruction="Test instruction",
+        turn_mode=TurnMode.single_turn,
+        input_json_schema=json_joke_schema,
+        output_json_schema=json_joke_schema,
+    )
+    assert task.turn_mode == TurnMode.single_turn
+    assert task.input_json_schema == json_joke_schema
+    assert task.output_json_schema == json_joke_schema

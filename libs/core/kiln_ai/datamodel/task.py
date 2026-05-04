@@ -14,6 +14,7 @@ from kiln_ai.datamodel.datamodel_enums import (
     Priority,
     StructuredOutputMode,
     TaskOutputRatingType,
+    TurnMode,
 )
 from kiln_ai.datamodel.dataset_split import DatasetSplit
 from kiln_ai.datamodel.eval import Eval
@@ -173,6 +174,26 @@ class Task(
         default=None,
         description="ID of the run config to use for this task by default. Must exist in saved run configs for this task.",
     )
+
+    turn_mode: TurnMode = Field(
+        default=TurnMode.single_turn,
+        description="Whether this task is single-turn (each run independent) or multiturn (runs continue prior runs).",
+    )
+
+    @model_validator(mode="after")
+    def validate_turn_mode_compatibility(self) -> "Task":
+        if self.turn_mode == TurnMode.multiturn:
+            if self.input_json_schema is not None:
+                raise ValueError(
+                    "Multiturn tasks cannot have a structured input schema. "
+                    "Use plaintext input for multiturn tasks."
+                )
+            if self.output_json_schema is not None:
+                raise ValueError(
+                    "Multiturn tasks do not support structured output yet. "
+                    "Use plaintext output, or set turn_mode to single_turn."
+                )
+        return self
 
     def output_schema(self) -> Dict | None:
         if self.output_json_schema is None:
