@@ -148,7 +148,7 @@
     dispatch("generate_preview", result)
   }
 
-  function handle_save_without_reviewing() {
+  function handle_save_without_verifying() {
     edit_submit_error = null
     if (!editing_guide.trim()) {
       edit_submit_error = new KilnError(
@@ -157,20 +157,7 @@
       )
       return
     }
-    edit_dialog?.close()
     dispatch("save", { guide: editing_guide })
-  }
-
-  function handle_save_without_verifying_main() {
-    page_error = null
-    if (!guide.trim()) {
-      page_error = new KilnError(
-        "Data guide cannot be empty. Add some content first.",
-        null,
-      )
-      return
-    }
-    dispatch("save", { guide })
   }
 
   $: data_guide_properties = build_data_guide_properties(data_guide)
@@ -216,7 +203,7 @@
         {#if page_submitting}
           <span class="loading loading-spinner loading-xs"></span>
         {:else}
-          Verify Data Guide
+          Test Data Guide
         {/if}
       </button>
 
@@ -285,7 +272,7 @@
       <span class="text-sm text-gray-500">or</span>
       <button
         class="link underline text-sm text-gray-500"
-        on:click={handle_save_without_reviewing}
+        on:click={handle_save_without_verifying}
       >
         Save Without Verifying
       </button>

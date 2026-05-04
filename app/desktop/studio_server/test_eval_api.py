@@ -2042,6 +2042,7 @@ async def test_get_run_config_eval_scores_with_usage(
             output_tokens=50,
             total_tokens=150,
             cost=0.005,
+            total_llm_latency_ms=500,
         ),
         parent=mock_task,
     )
@@ -2063,6 +2064,7 @@ async def test_get_run_config_eval_scores_with_usage(
             output_tokens=100,
             total_tokens=300,
             cost=0.010,
+            total_llm_latency_ms=1000,
         ),
         parent=mock_task,
     )
@@ -2193,6 +2195,168 @@ async def test_get_run_config_eval_scores_with_usage(
     assert mean_usage["mean_output_tokens"] == 75.0
     assert mean_usage["mean_total_tokens"] == 225.0
     assert mean_usage["mean_cost"] == 0.0075
+    # Expected mean latency: (500+1000)/2 = 750.0 (2 of 3 runs have latency, 66.7% > 50%)
+    assert mean_usage["mean_total_llm_latency_ms"] == 750.0
+
+
+@pytest.mark.asyncio
+async def test_get_run_config_eval_scores_latency_below_threshold(
+    client, mock_task_from_id, mock_task, mock_eval, mock_eval_config, mock_run_config
+):
+    """Test that mean_total_llm_latency_ms is None when fewer than 50% of runs have latency data"""
+    mock_task_from_id.return_value = mock_task
+
+    # Create 3 TaskRuns, only 1 with latency data (1/3 = 33% < 50% threshold)
+    task_run_1 = TaskRun(
+        input="test input 1",
+        input_source=DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+                "adapter_name": "langchain_adapter",
+            },
+        ),
+        output=TaskOutput(output="test output 1"),
+        usage=Usage(
+            input_tokens=100,
+            output_tokens=50,
+            total_tokens=150,
+            cost=0.005,
+            total_llm_latency_ms=500,
+        ),
+        parent=mock_task,
+    )
+    task_run_1.save_to_file()
+
+    task_run_2 = TaskRun(
+        input="test input 2",
+        input_source=DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+                "adapter_name": "langchain_adapter",
+            },
+        ),
+        output=TaskOutput(output="test output 2"),
+        usage=Usage(
+            input_tokens=200,
+            output_tokens=100,
+            total_tokens=300,
+            cost=0.010,
+        ),
+        parent=mock_task,
+    )
+    task_run_2.save_to_file()
+
+    task_run_3 = TaskRun(
+        input="test input 3",
+        input_source=DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "gpt-4",
+                "model_provider": "openai",
+                "adapter_name": "langchain_adapter",
+            },
+        ),
+        output=TaskOutput(output="test output 3"),
+        usage=Usage(
+            input_tokens=150,
+            output_tokens=75,
+            total_tokens=225,
+            cost=0.008,
+        ),
+        parent=mock_task,
+    )
+    task_run_3.save_to_file()
+
+    eval_run_1 = EvalRun(
+        task_run_config_id=mock_run_config.id,
+        scores={"score1": 4.0, "overall_rating": 4.0},
+        input="test input 1",
+        output="test output 1",
+        dataset_id=task_run_1.id,
+        task_run_usage=task_run_1.usage,
+        parent=mock_eval_config,
+    )
+    eval_run_1.save_to_file()
+
+    eval_run_2 = EvalRun(
+        task_run_config_id=mock_run_config.id,
+        scores={"score1": 4.5, "overall_rating": 4.5},
+        input="test input 2",
+        output="test output 2",
+        dataset_id=task_run_2.id,
+        task_run_usage=task_run_2.usage,
+        parent=mock_eval_config,
+    )
+    eval_run_2.save_to_file()
+
+    eval_run_3 = EvalRun(
+        task_run_config_id=mock_run_config.id,
+        scores={"score1": 3.5, "overall_rating": 3.5},
+        input="test input 3",
+        output="test output 3",
+        dataset_id=task_run_3.id,
+        task_run_usage=task_run_3.usage,
+        parent=mock_eval_config,
+    )
+    eval_run_3.save_to_file()
+
+    mock_task_for_api = MagicMock()
+    mock_task_for_api.runs.return_value = [task_run_1, task_run_2, task_run_3]
+    mock_task_for_api.evals.return_value = [mock_eval]
+
+    mock_eval_config_for_api = MagicMock()
+    mock_eval_config_for_api.runs.return_value = [eval_run_1, eval_run_2, eval_run_3]
+    mock_eval_config_for_api.id = mock_eval_config.id
+
+    mock_eval_for_api = MagicMock()
+    mock_eval_for_api.configs.return_value = [mock_eval_config_for_api]
+    mock_eval_for_api.id = mock_eval.id
+    mock_eval_for_api.eval_set_filter_id = mock_eval.eval_set_filter_id
+    mock_eval_for_api.output_scores = mock_eval.output_scores
+
+    mock_eval.current_config_id = mock_eval_config.id
+
+    with (
+        patch(
+            "app.desktop.studio_server.eval_api.task_from_id"
+        ) as mock_task_from_id_patch,
+        patch(
+            "app.desktop.studio_server.eval_api.eval_from_id"
+        ) as mock_eval_from_id_patch,
+        patch(
+            "app.desktop.studio_server.eval_api.task_run_config_from_id"
+        ) as mock_task_run_config_from_id_patch,
+    ):
+        mock_task_from_id_patch.return_value = mock_task_for_api
+        mock_eval_from_id_patch.return_value = mock_eval_for_api
+        mock_task_run_config_from_id_patch.return_value = mock_run_config
+
+        with patch(
+            "app.desktop.studio_server.eval_api.dataset_ids_in_filter"
+        ) as mock_dataset_ids_in_filter:
+            mock_dataset_ids_in_filter.return_value = {
+                task_run_1.id,
+                task_run_2.id,
+                task_run_3.id,
+            }
+
+            response = client.get(
+                f"/api/projects/project1/tasks/task1/run_configs/{mock_run_config.id}/eval_scores"
+            )
+
+    assert response.status_code == 200
+    data = response.json()
+    mean_usage = data["mean_usage"]
+    assert mean_usage is not None
+
+    # Cost/tokens should be present (3/3 = 100% > 50%)
+    assert mean_usage["mean_cost"] is not None
+    # Latency should be None (only 1/3 = 33% < 50% threshold)
+    assert mean_usage["mean_total_llm_latency_ms"] is None
 
 
 def test_get_eval_configs_score_summary_no_filter_id(

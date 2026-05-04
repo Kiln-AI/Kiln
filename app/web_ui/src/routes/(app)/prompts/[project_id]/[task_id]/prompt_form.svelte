@@ -81,10 +81,12 @@
       complete = true
       if (redirect_from === "optimize") {
         goto(
-          `/optimize/${project_id}/${task_id}/run_config/create?prompt_id=${encodeURIComponent(`id::${data.id}`)}`,
+          `/optimize/${project_id}/${task_id}/run_config/create?prompt_id=${encodeURIComponent(data.id)}`,
         )
       } else {
-        goto(`/prompts/${project_id}/${task_id}/saved/id::${data.id}`)
+        goto(
+          `/prompts/${project_id}/${task_id}/saved/${encodeURIComponent(data.id)}`,
+        )
       }
     } catch (e) {
       error = createKilnError(e)

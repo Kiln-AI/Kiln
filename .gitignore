@@ -25,6 +25,10 @@ test_output/
 
 .specs_skill_state/
 .config/wt/user_settings.sh
+/.worktreeinclude
 .worktrees/
 reviews/
+
+# ActRight discover local state
+.act_right
 

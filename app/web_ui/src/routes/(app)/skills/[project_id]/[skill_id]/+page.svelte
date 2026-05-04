@@ -27,6 +27,7 @@
   let loading = true
   let loading_error: KilnError | null = null
   let archive_error: KilnError | null = null
+  let archive_loading = false
   let open_folder_error: KilnError | null = null
 
   onMount(async () => {
@@ -95,6 +96,7 @@
 
   async function update_archive(is_archived: boolean) {
     try {
+      archive_loading = true
       archive_error = null
       const { error: api_error } = await client.PATCH(
         "/api/projects/{project_id}/skills/{skill_id}",
@@ -111,6 +113,7 @@
       archive_error = createKilnError(e)
     } finally {
       await fetch_skill()
+      archive_loading = false
     }
   }
 
@@ -146,6 +149,7 @@
           {
             label: is_archived ? "Unarchive" : "Archive",
             handler: () => update_archive(!is_archived),
+            loading: archive_loading,
           },
         ]
       : []}

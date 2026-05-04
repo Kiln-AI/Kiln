@@ -5,8 +5,11 @@
     renameClone,
     saveConfig,
     is_stale_clone_error,
+    isGitHubUrl,
+    isGitLabUrl,
   } from "$lib/git_sync/api"
   import { clear_wizard_store } from "$lib/stores/git_import_wizard_store"
+  import posthog from "posthog-js"
   import { load_projects } from "$lib/stores"
   import { onMount } from "svelte"
 
@@ -31,6 +34,12 @@
   let saving = true
   let error: KilnError | null = null
   let done = false
+
+  function git_host_label(url: string): string {
+    if (isGitHubUrl(url)) return "github"
+    if (isGitLabUrl(url)) return "gitlab"
+    return "other"
+  }
 
   onMount(async () => {
     try {
@@ -60,6 +69,12 @@
         oauth_token: oauth_token,
         auth_mode: auth_mode,
         sync_mode: "auto",
+      })
+
+      posthog.capture("import_project", {
+        method: "git_sync",
+        git_host: git_host_label(git_url),
+        auth_mode: auth_mode,
       })
 
       clear_wizard_store()

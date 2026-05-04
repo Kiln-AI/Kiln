@@ -2,6 +2,9 @@
   export type InlineAction = {
     handler: () => void
     label: string
+    loading?: boolean
+    loading_text?: string
+    disabled?: boolean
   }
 </script>
 
@@ -181,9 +184,12 @@
             {#if inline_action}
               <button
                 type="button"
-                class="link ml-4 text-xs text-gray-500 hover:text-gray-700"
+                class="link ml-4 text-xs text-gray-500 hover:text-gray-700 disabled:opacity-60 disabled:no-underline disabled:pointer-events-none"
+                disabled={inline_action.loading || inline_action.disabled}
                 on:click|stopPropagation={inline_action.handler}
-                >{inline_action.label}</button
+                >{inline_action.loading
+                  ? inline_action.loading_text ?? "Loading..."
+                  : inline_action.label}</button
               >
             {/if}
             {#if info_description}

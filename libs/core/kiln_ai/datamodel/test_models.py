@@ -527,6 +527,40 @@ def test_data_guide():
         DataGuide(guide="")
 
 
+def test_task_data_guide_accessors(tmp_path):
+    """Task.data_guides() lists child guides; current_data_guide() returns
+    the single one (or None) — the canonical accessor used by the data-gen
+    APIs."""
+    from kiln_ai.datamodel import Project, Task
+    from kiln_ai.datamodel.data_guide import DataGuide
+
+    project = Project(name="P", path=tmp_path / "p" / "project.kiln")
+    project.path.parent.mkdir()
+    project.save_to_file()
+
+    task = Task(name="T", instruction="t", parent=project)
+    task.save_to_file()
+
+    # No guides yet
+    assert task.data_guides() == []
+    assert task.current_data_guide() is None
+
+    # Save one DataGuide as a child of the task
+    guide = DataGuide(parent=task, guide="rule")
+    guide.save_to_file()
+
+    reloaded = Task.from_id_and_parent_path(task.id, project.path)
+    assert reloaded is not None
+    guides = reloaded.data_guides()
+    assert len(guides) == 1
+    assert guides[0].guide == "rule"
+
+    current = reloaded.current_data_guide()
+    assert current is not None
+    assert current.id == guide.id
+    assert current.guide == "rule"
+
+
 def test_task_run_tags_validation():
     # Setup basic output for TaskRun creation
     output = TaskOutput(

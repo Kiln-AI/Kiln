@@ -5,7 +5,8 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || (cd "$SCRIPT_DIR/../.." && pwd))"
 
-BRANCH="$(git branch --show-current 2>/dev/null || echo "main")"
+BRANCH="$(git -C "$REPO_ROOT" branch --show-current 2>/dev/null)"
+[ -n "$BRANCH" ] || BRANCH="main"
 
 hash_port() {
     printf '%s' "$1" | cksum | awk '{print ($1 % 10000) + 10000}'
@@ -30,4 +31,4 @@ if [ -f "$REPO_ROOT/.config/wt/user_settings.sh" ]; then
 fi
 
 export WK_BIN_DIR="$REPO_ROOT/.config/wt/bin"
-export PATH="$WK_BIN_DIR:$PATH"
+[[ ":$PATH:" != *":$WK_BIN_DIR:"* ]] && export PATH="$WK_BIN_DIR:$PATH"
