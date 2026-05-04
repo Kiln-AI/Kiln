@@ -81,6 +81,11 @@
   export function open_edit_dialog() {
     editing_guide = guide
     edit_submit_error = null
+    // Reset verifying — the happy path destroys this component on the
+    // post-Verify goto, but if a prior Verify attempt didn't navigate
+    // (parent's goto failed, beforeNavigate cancelled, etc.) the flag
+    // could still be true and would silently disable warn_before_unload.
+    verifying = false
     edit_dialog?.show()
   }
 

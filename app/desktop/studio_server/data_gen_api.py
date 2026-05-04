@@ -699,6 +699,14 @@ The topic path for this sample is:
             raise HTTPException(
                 status_code=500, detail="Failed to parse generated samples"
             )
+        # Validate the LLM gave us a list. `[]` from json could be missing-key
+        # default or null/string/dict from a malformed response — in those
+        # cases the slice + iterate below would TypeError or silently iterate
+        # the wrong thing.
+        if not isinstance(generated_samples, list):
+            raise HTTPException(
+                status_code=500, detail="Failed to parse generated samples"
+            )
 
         preview_samples: list[GuidePreviewSample] = []
         # Use the user's run config as-is for output generation. Don't override
