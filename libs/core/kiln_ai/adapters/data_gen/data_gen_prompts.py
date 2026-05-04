@@ -292,6 +292,15 @@ def generate_guidance_refinement_prompt(
 ) -> str:
     """Generate a prompt for refining a Task Data Guide based on user feedback.
 
+    The Guide describes what real-world task data looks like — input shape and
+    distribution, plus output shape. Output policy (correctness, classification
+    rules, decision logic, voice/tone) lives in the task's system prompt, not
+    the Guide. The metaprompter only emits four group tags:
+    `<input_structural>`, `<input_semantic>`, `<output_structural>`, and
+    `<both_structural>`. Output-side semantics are intentionally out of scope
+    to prevent the Guide from becoming a lossy paraphrase of the system prompt
+    that silently overrides the authoritative source.
+
     Each preview sample is a tuple of (input, output, looks_good) where
     looks_good=True means the user marked it Realistic and looks_good=False
     means the user marked it Needs Work.
@@ -310,23 +319,25 @@ def generate_guidance_refinement_prompt(
 
     prompt = f"""You are an expert at writing guidance for synthetic data generation. Your job is to refine a **Task Data Guide** — a single markdown document that, together with the task definition, controls how synthetic data for this task is generated.
 
+**Scope: data shape, not output policy.** The Guide describes what real-world task data looks like — the format, distribution, and content of *inputs*, and the *shape* of outputs (length, format, schema). Output policy — classification rules, decision logic, correctness criteria, voice/tone, "when to output X vs Y" — lives in the task's system prompt, which is the authoritative source for what outputs should be. Restating it in the Guide creates a lossy paraphrase that drifts over time and silently overrides the original. **Output-side rules in the Guide are limited to structure; output-side semantics are out of scope and must not be written.**
+
 A Task Data Guide is structured as up to two top-level sections:
 
 1. **`# Reference Examples`** — concrete `(input, output)` pairs the user has authored. These are the user's ground truth. **Preserve them verbatim by default — only add, modify, or remove an example when the user's feedback explicitly asks for it (e.g. "add an example showing X", "example 2 is wrong, the output should be Y", "remove the third example").** If the section is missing and the user hasn't asked for examples, do not invent any.
-2. **`# Guidelines & Rules`** — structural and semantic constraints. Structural rules govern *how* the data is shaped (format, length, layout, formatting conventions). Semantic rules govern *what* the data means (fields, valid values, relationships, domain plausibility). **You own this section** — you may add, edit, reorder, split, merge, or remove rules in response to feedback or to fix what the rated samples got wrong. If the section is missing, generate a starter set on this pass.
+2. **`# Guidelines & Rules`** — structural rules and input-side semantic rules. Structural rules govern *how* the data is shaped (format, length, layout, formatting conventions) and may apply to inputs, outputs, or both. Semantic rules govern *what* the data means (fields, valid values, relationships, domain plausibility) and are **input-side only** — output semantics belong in the system prompt, not here. **You own this section** — you may add, edit, reorder, split, merge, or remove rules in response to feedback or to fix what the rated samples got wrong. If the section is missing, generate a starter set on this pass.
 
-### Rule grouping: every rule sits in one of six XML-tagged groups
+### Rule grouping: every rule sits in one of four XML-tagged groups
 
-A task generates inputs and outputs in **separate LLM calls** at runtime. A rule about output JSON shape has no bearing on the input-generation call, and vice versa. So every rule has both a **type** (Structural | Semantic) and a **scope** (Input | Output | Both).
+A task generates inputs and outputs in **separate LLM calls** at runtime. A rule about output JSON shape has no bearing on the input-generation call, and vice versa. So every rule has both a **type** (Structural | Semantic) and a **scope** (Input | Output | Both) — but semantic rules are restricted to the input scope (see "Scope" above).
 
-Group rules by scope+type using XML-style tags. The six valid groups are:
+Group rules by scope+type using XML-style tags. The four valid groups are:
 
 - `<input_structural>` — how inputs are shaped (length, format, layout, casing, prose vs JSON)
 - `<input_semantic>` — what inputs mean (fields, valid values, plausibility, terminology)
-- `<output_structural>` — how outputs are shaped (length, format, formatting conventions, tone)
-- `<output_semantic>` — what outputs mean (fields, enums, dependencies, plausibility)
+- `<output_structural>` — how outputs are shaped (length, format, formatting conventions). Additive only: write rules that *supplement* the system prompt or output JSON schema where they're underspecified; never restate or contradict what they already say.
 - `<both_structural>` — structural rules that apply uniformly to inputs and outputs (e.g., universal formatting like ISO dates)
-- `<both_semantic>` — semantic rules that apply uniformly to inputs and outputs (e.g., domain terminology constraints)
+
+There is **no** `<output_semantic>` group and **no** `<both_semantic>` group. If a candidate rule is about what makes an output *good*, *correct*, or which value to pick, it is output policy and belongs in the system prompt — not in the Guide. Drop it.
 
 Inside each group, every rule is a `## <short title>` block followed by a one-or-more-sentence description. Only emit a group tag if it has at least one rule. Use blank lines between rule blocks within a group, and a blank line between groups, for human legibility.
 
@@ -361,16 +372,9 @@ Outputs are 1-3 sentences, 20-60 words.
 Outputs are direct prose answers — no conversational preamble like "Sure!" or "The answer is...".
 
 </output_structural>
-
-<output_semantic>
-
-## Grounding
-Each output must be answerable from the source material, not from the model's outside knowledge.
-
-</output_semantic>
 ```
 
-The runtime model uses the group tag to filter which rules apply to its current generation stage. Untagged rules from older guides (a `## Title` block sitting outside any group) are treated as `<both_semantic>`. **Always wrap every rule in the appropriate group tag.**
+The runtime model uses the group tag to filter which rules apply to its current generation stage. Untagged rules from older guides (a `## Title` block sitting outside any group) should be classified into one of the four valid groups based on the rule's actual scope and type — and dropped if it turns out to be output-side policy that should live in the system prompt. **Always wrap every rule in one of the four valid group tags.**
 
 ## Context
 
@@ -466,36 +470,46 @@ Produce the **complete refined data guide markdown** — both `# Reference Examp
 
 2. **Preserve reference examples verbatim by default.** The reference examples are user-owned ground truth. Carry every existing example forward unchanged unless the user's feedback explicitly asks you to add, modify, or remove specific examples (e.g. "add an example showing X", "example 2 is wrong, the output should be Y", "remove the third example", "this example uses the wrong format"). When in doubt, keep examples exactly as the user wrote them.
 
-3. **Rewrite the rules section in response to feedback and ratings.** You may add, edit, reorder, split, merge, or remove rules. Carry forward existing rules unless the user's feedback contradicts them, they're now redundant with another rule, or they're clearly causing a "Needs Work" sample. When in doubt, keep the rule.
+3. **Rewrite the rules section in response to feedback and ratings.** You may add, edit, reorder, split, merge, or remove rules. Carry forward existing rules unless the user's feedback contradicts them, they're now redundant with another rule, or they're clearly causing a "Needs Work" sample. When in doubt, keep the rule. **If the existing rules section contains `<output_semantic>` or `<both_semantic>` blocks (from older guides), drop them entirely** — those groups are no longer valid; if any of their content was genuinely structural, re-classify it as `<output_structural>` or `<both_structural>`, otherwise discard it as output policy that belongs in the system prompt.
 
-4. **If the current guide has examples but few or no rules, generate an initial set of rules.** Extract the patterns implicit in the examples (across both structural and semantic axes) and codify them as roughly 3-8 rules total, using the rated samples and feedback as confirmation/correction signal.
+4. **If the current guide has examples but few or no rules, generate an initial set of rules.** Extract the patterns implicit in the examples (input shape, input semantics, and output shape) and codify them as roughly 3-8 rules total, using the rated samples and feedback as confirmation/correction signal.
 
 5. **Stay consistent with the task definition above, AND mine it for rules.** The refined guide must respect the task's runtime system prompt and (when provided) its description and input/output JSON schemas — do not invent fields, formats, or behaviors that contradict them. The task definition is also a source of rules, not just a constraint — see the next section.
 
 ### Mine rules from the task definition
 
-The task instruction, description, and JSON schemas already encode constraints the user wants enforced. Your job is to lift the load-bearing ones into explicit rules so the runtime model can't slip past them. In particular:
+The task instruction, description, and JSON schemas already encode constraints the user wants enforced. Your job is to lift the load-bearing **shape and input-semantic** ones into explicit rules so the runtime model can't slip past them. In particular:
 
-- **Closed-set value constraints in the task instruction.** If the instruction says "the output is one of: yes, no, unclear," that's an `<output_semantic>` rule waiting to be written.
-- **Required fields and types from JSON schemas.** Every required field, type, enum, or pattern in `task_input_json_schema` belongs in `<input_semantic>`; same for `task_output_json_schema` → `<output_semantic>`. Don't restate the entire schema — pick the constraints that matter for realism and that the runtime model is likely to drift on (enums, formats, cross-field relationships).
-- **Format directives in the instruction.** Phrases like "respond in JSON," "answer in one sentence," "use bullet points" belong in `<output_structural>`.
+- **Required fields and types from the input JSON schema.** Every required field, type, enum, or pattern in `task_input_json_schema` belongs in `<input_semantic>`. Don't restate the entire schema — pick the constraints that matter for realism and that the runtime model is likely to drift on (enums, formats, cross-field relationships).
+- **Format directives in the instruction.** Phrases like "respond in JSON," "answer in one sentence," "use bullet points" belong in `<output_structural>` — but only if the instruction or output schema doesn't already say so. If they do, the runtime model will already see it; don't restate.
 - **Input shape implied by the instruction.** If the instruction says "given a user's question," that points to an `<input_semantic>` rule about what fields or content a realistic input contains.
+- **Underspecified output shape.** If the output JSON schema or instruction is loose on shape (e.g., says "string" with no length bound, or doesn't specify whether prose vs bullets), an `<output_structural>` rule can supplement — but only ADD missing constraints, never override what's already specified.
 
-The task instruction is visible to the runtime model at generation time, but rules in the guide reinforce the critical constraints, give them measurable bounds where appropriate, and survive prompt-template changes. Treat schema-derived and instruction-derived rules as floor-level — they should be present even before you look at the examples.
+**Do NOT mine the following from the task definition** — they are output policy, not data shape, and they belong in the system prompt:
+
+- Closed-set value constraints used as decision rules ("the output is one of: yes, no, unclear" used to encode classification logic).
+- "When to output X vs Y" rules, including conditions for any classification or routing decision.
+- Correctness criteria, grounding requirements about whether the answer is right, or any rule that paraphrases the system prompt's policy on what a *good* output is.
+- Voice, tone, or stylistic prescriptions about output content (those define the task; they belong in the system prompt).
+
+If you find yourself writing "Use X when …" or "Output should be Y because …", stop — that's policy. The runtime model already sees the system prompt; restating its rules in the Guide creates drift and silently overrides the authoritative source.
+
+The task instruction is visible to the runtime model at generation time, but rules in the guide reinforce the critical *shape* constraints, give them measurable bounds where appropriate, and survive prompt-template changes. Treat schema-derived and instruction-derived shape rules as floor-level — they should be present even before you look at the examples.
 
 ### How to extract rules from sparse examples
 
-When the current guide has examples but no rules, the examples are your primary signal **alongside the task definition**. After mining the task definition (above), read each example carefully and look for patterns to codify across all four scope+type cells:
+When the current guide has examples but no rules, the examples are your primary signal **alongside the task definition**. After mining the task definition (above), read each example carefully and look for patterns to codify across the three scope+type cells the Guide owns:
 
 - `<input_structural>` — input length, format, layout, casing, prose vs key-value vs JSON.
 - `<input_semantic>` — what fields appear in the input, plausible value ranges, relationships between input fields, terminology.
-- `<output_structural>` — output length, format, section ordering, tone, level of detail, formatting conventions (bullets vs prose, units, date formats).
-- `<output_semantic>` — what fields/values the output must contain, valid enums, dependencies between input and output fields, domain plausibility.
+- `<output_structural>` — output length, format, section ordering, level of detail, formatting conventions (bullets vs prose, units, date formats). Additive only — supplement what the system prompt or output schema doesn't pin down.
 
-When a rule genuinely applies to both halves (e.g., "all dates are ISO 8601"), put it in `<both_structural>` or `<both_semantic>` instead.
+When a rule genuinely applies to both halves (e.g., "all dates are ISO 8601"), put it in `<both_structural>` instead.
+
+Output-side *semantics* observed in the examples (what fields/values appear in outputs, valid enums, decision patterns, dependencies between input and output) **must not be codified as Guide rules**. Those are properties the system prompt already defines or should define; restating them here causes drift. If you notice the examples imply an output-policy pattern the system prompt doesn't capture, that's a signal the user's system prompt may need updating — but it is not a rule for the Guide.
 
 - **Don't overfit to a single example.** A pattern echoed in only one example is a hypothesis; a pattern confirmed by a Realistic preview sample is a rule.
-- **Aim for coverage across the cells.** Five `<output_structural>` rules and nothing else is a sign you skipped three cells. Quickly scan all four before finalizing.
+- **Aim for coverage across the cells you own.** Five `<output_structural>` rules and nothing else is a sign you skipped the input-side cells. Quickly scan all four group tags before finalizing.
 """
 
     if has_samples:
@@ -513,13 +527,13 @@ When a rule genuinely applies to both halves (e.g., "all dates are ISO 8601"), p
 
 The rules you write will be applied downstream as **hard constraints**, not soft suggestions. Phrase them accordingly:
 
-- **Always wrap every rule in the right group tag.** Use one of `<input_structural>`, `<input_semantic>`, `<output_structural>`, `<output_semantic>`, `<both_structural>`, `<both_semantic>` and put each rule's `## <short title>` block inside. Untagged rules will be treated as `<both_semantic>` at runtime, which is rarely what you want.
+- **Always wrap every rule in one of the four valid group tags.** Use `<input_structural>`, `<input_semantic>`, `<output_structural>`, or `<both_structural>` and put each rule's `## <short title>` block inside. There is no `<output_semantic>` or `<both_semantic>` group — output-side semantic content is out of scope for the Guide.
 - **Prefer specific, measurable rules over vague ones.** "Outputs are 3-5 sentences, 60-100 words" beats "Outputs are concise". "id must be a UUID v4 string" beats "id should look real". Where there is a natural numeric bound (length, sentence count, field count, value range, format pattern), name it.
 - **State rules as constraints, not preferences.** Write "Inputs must include a primary question" rather than "Inputs should usually include a primary question". If something is genuinely a soft preference, say so explicitly ("Prefer X when possible, but Y is acceptable").
 - **Keep scope and type pure within a single rule.** Don't mix an Input-side and an Output-side constraint in one rule, and don't mix a structural and a semantic constraint in one rule. Split it into two rules in the appropriate groups. Mixing blurs the constraint and makes it harder to enforce.
 
 ### Output
 
-Return the **complete refined data guide markdown**. Include the `# Reference Examples` top-level section (with each example as `## Example N` containing fenced ```input / ```output blocks) if the user had any, then the `# Guidelines & Rules` top-level section containing the XML-tagged group blocks (`<input_structural>`, `<input_semantic>`, etc.), each with one or more `## <short title>` rule blocks. Do NOT add any other top-level (`#`) headings, do NOT include commentary or explanation of your changes."""
+Return the **complete refined data guide markdown**. Include the `# Reference Examples` top-level section (with each example as `## Example N` containing fenced ```input / ```output blocks) if the user had any, then the `# Guidelines & Rules` top-level section containing the XML-tagged group blocks drawn from the four valid groups (`<input_structural>`, `<input_semantic>`, `<output_structural>`, `<both_structural>`), each with one or more `## <short title>` rule blocks. Do NOT emit `<output_semantic>` or `<both_semantic>` — output-side semantics are out of scope and belong in the system prompt. Do NOT add any other top-level (`#`) headings, do NOT include commentary or explanation of your changes."""
 
     return prompt
