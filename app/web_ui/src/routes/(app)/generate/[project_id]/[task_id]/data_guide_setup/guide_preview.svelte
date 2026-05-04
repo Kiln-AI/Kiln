@@ -71,22 +71,25 @@
   }
   $: guide_differs_from_initial = editing_guide !== initial_guide
 
-  // FormContainer flips edit_submitting=true before dispatching submit and
-  // expects an async handler to reset it. Our handler is sync, so we reset it
-  // ourselves — otherwise the next time the dialog opens the Save button is
-  // stuck rendering the spinner state.
-  let edit_submitting: boolean = false
   function save_guide_edit() {
-    try {
-      guide = editing_guide
-      edit_dialog?.close()
-    } finally {
-      edit_submitting = false
-    }
+    guide = editing_guide
+    edit_dialog?.close()
+  }
+
+  // Verify Edit: same as Save, but immediately kicks off a preview
+  // regeneration with the edited guide. Dispatches refine with empty
+  // rated_samples + feedback so the parent's handle_refine takes the
+  // no-metaprompter path (has_negative_feedback === false) — the user
+  // explicitly chose to test the raw edit, not refine through ratings.
+  function verify_edit_and_regenerate() {
+    guide = editing_guide
+    edit_dialog?.close()
+    dispatch("refine", { feedback: "", rated_samples: [] })
   }
 
   $: guide_has_changes = editing_guide !== guide
   $: guide_is_empty = !editing_guide.trim()
+  $: edit_buttons_disabled = !guide_has_changes || guide_is_empty
 
   function set_looks_good(index: number, value: boolean, event: Event) {
     event.stopPropagation()
@@ -366,41 +369,66 @@
 {/if}
 
 <!-- Edit Data Guide Dialog -->
+<!-- No warn_before_unload here — the outer review-samples FormContainer
+     already registers a beforeNavigate handler. Duplicating the flag in a
+     nested FormContainer caused the unsaved-changes confirm() to fire twice
+     on navigation, hence the raw buttons below instead of a FormContainer. -->
 <Dialog bind:this={edit_dialog} title="Edit Data Guide" width="wide">
-  <!-- No warn_before_unload here — the outer review-samples FormContainer
-       already registers a beforeNavigate handler. Each FormContainer registers
-       its own, so duplicating the flag here causes the user to see the unsaved
-       changes confirm() twice on navigation. -->
-  <FormContainer
-    submit_label="Save"
-    submit_disabled={!guide_has_changes || guide_is_empty}
-    bind:submitting={edit_submitting}
-    on:submit={save_guide_edit}
-    compact_button={true}
-  >
-    <div>
-      <div class="flex flex-row items-center pb-[4px] min-h-[1.25rem]">
-        <span class="grow"></span>
-        {#if guide_differs_from_initial}
-          <button
-            type="button"
-            class="link ml-4 text-xs text-gray-500 hover:text-gray-700"
-            on:click|stopPropagation={reset_guide}
-          >
-            Reset
-          </button>
-        {/if}
-      </div>
-      <FormElement
-        label="Data Guide"
-        hide_label={true}
-        id="edit_guide_text"
-        inputType="textarea"
-        height="xl"
-        bind:value={editing_guide}
-      />
+  <div>
+    <div class="flex flex-row items-center pb-[4px] min-h-[1.25rem]">
+      <span class="grow"></span>
+      {#if guide_differs_from_initial}
+        <button
+          type="button"
+          class="link ml-4 text-xs text-gray-500 hover:text-gray-700"
+          on:click|stopPropagation={reset_guide}
+        >
+          Reset
+        </button>
+      {/if}
     </div>
-  </FormContainer>
+    <FormElement
+      label="Data Guide"
+      hide_label={true}
+      id="edit_guide_text"
+      inputType="textarea"
+      height="xl"
+      bind:value={editing_guide}
+    />
+  </div>
+
+  <!-- Two equal columns side-by-side, each taking half the dialog width.
+       Buttons stretch to fill their column (default flex cross-axis), so
+       both end up the same width regardless of label length. Helper text
+       wraps naturally within the column. -->
+  <div class="grid grid-cols-2 gap-4 mt-6">
+    <div class="flex flex-col gap-1">
+      <button
+        type="button"
+        class="btn btn-sm btn-outline btn-primary"
+        disabled={edit_buttons_disabled}
+        on:click={save_guide_edit}
+      >
+        Save
+      </button>
+      <div class="text-xs text-gray-500">
+        Edit will be combined with feedback in the next step.
+      </div>
+    </div>
+    <div class="flex flex-col gap-1">
+      <button
+        type="button"
+        class="btn btn-sm btn-outline btn-primary"
+        disabled={edit_buttons_disabled}
+        on:click={verify_edit_and_regenerate}
+      >
+        Verify Edit
+      </button>
+      <div class="text-xs text-gray-500">
+        Generate new examples using only this edit.
+      </div>
+    </div>
+  </div>
 </Dialog>
 
 <Dialog
