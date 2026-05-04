@@ -3,7 +3,6 @@
   import { client } from "$lib/api_client"
   import type { PromptOptimizationJob } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import { onMount } from "svelte"
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
   import { formatDate } from "$lib/utils/formatters"
@@ -35,20 +34,34 @@
   $: is_empty =
     !prompt_optimization_jobs || prompt_optimization_jobs.length === 0
 
-  onMount(async () => {
-    await get_prompt_optimization_jobs()
+  $: if (project_id && task_id) {
+    load_jobs_and_copilot_status(project_id, task_id)
+  }
+
+  async function load_jobs_and_copilot_status(
+    req_project_id: string,
+    req_task_id: string,
+  ) {
+    loading = true
+    await get_prompt_optimization_jobs(req_project_id, req_task_id)
+
+    if (req_project_id !== project_id || req_task_id !== task_id) return
 
     if (!prompt_optimization_jobs || prompt_optimization_jobs.length === 0) {
       try {
         kiln_copilot_connected = await checkKilnCopilotAvailable()
       } catch (e) {
+        if (req_project_id !== project_id || req_task_id !== task_id) return
         copilot_check_error = createKilnError(e)
         kiln_copilot_connected = false
       }
 
+      if (req_project_id !== project_id || req_task_id !== task_id) return
+
       if (kiln_copilot_connected) {
         const { has_access, error: entitlement_error } =
           await checkPromptOptimizationAccess()
+        if (req_project_id !== project_id || req_task_id !== task_id) return
         has_prompt_optimization_entitlement = has_access
         if (entitlement_error) {
           copilot_check_error = entitlement_error
@@ -56,23 +69,25 @@
       }
     }
 
-    loading = false
-  })
+    if (req_project_id === project_id && req_task_id === task_id) {
+      loading = false
+    }
+  }
 
-  async function get_prompt_optimization_jobs() {
+  async function get_prompt_optimization_jobs(
+    req_project_id: string,
+    req_task_id: string,
+  ) {
     try {
       prompt_optimization_jobs_error = null
-      if (!project_id || !task_id) {
-        throw new Error("Project or task ID not set.")
-      }
       const { data: prompt_optimization_jobs_response, error: get_error } =
         await client.GET(
           "/api/projects/{project_id}/tasks/{task_id}/prompt_optimization_jobs",
           {
             params: {
               path: {
-                project_id,
-                task_id,
+                project_id: req_project_id,
+                task_id: req_task_id,
               },
               query: {
                 update_status: true,
@@ -80,6 +95,7 @@
             },
           },
         )
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       if (get_error) {
         throw get_error
       }
@@ -92,6 +108,7 @@
         })
       prompt_optimization_jobs = sorted_prompt_optimization_jobs
     } catch (e) {
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       if (e instanceof Error && e.message.includes("Load failed")) {
         prompt_optimization_jobs_error = new KilnError(
           "Could not load Prompt Optimization jobs. This task may belong to a project you don't have access to.",

@@ -4,7 +4,6 @@
   import { client } from "$lib/api_client"
   import type { Finetune } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { onMount } from "svelte"
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
   import { formatDate } from "$lib/utils/formatters"
@@ -24,24 +23,21 @@
   let finetunes_error: KilnError | null = null
   let finetunes_loading = true
 
-  onMount(async () => {
-    await load_available_models()
-    get_finetunes()
-  })
+  $: if (project_id && task_id) {
+    load_available_models()
+    get_finetunes(project_id, task_id)
+  }
 
-  async function get_finetunes() {
+  async function get_finetunes(req_project_id: string, req_task_id: string) {
     try {
       finetunes_loading = true
-      if (!project_id || !task_id) {
-        throw new Error("Project or task ID not set.")
-      }
       const { data: finetunes_response, error: get_error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/finetunes",
         {
           params: {
             path: {
-              project_id,
-              task_id,
+              project_id: req_project_id,
+              task_id: req_task_id,
             },
             query: {
               update_status: true,
@@ -49,6 +45,7 @@
           },
         },
       )
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       if (get_error) {
         throw get_error
       }
@@ -60,6 +57,7 @@
       })
       finetunes = sorted_finetunes
     } catch (e) {
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       if (e instanceof Error && e.message.includes("Load failed")) {
         finetunes_error = new KilnError(
           "Could not load finetunes. This task may belong to a project you don't have access to.",
@@ -69,7 +67,9 @@
         finetunes_error = createKilnError(e)
       }
     } finally {
-      finetunes_loading = false
+      if (req_project_id === project_id && req_task_id === task_id) {
+        finetunes_loading = false
+      }
     }
   }
 

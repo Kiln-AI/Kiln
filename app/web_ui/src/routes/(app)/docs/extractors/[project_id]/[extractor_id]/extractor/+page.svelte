@@ -6,7 +6,6 @@
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import AppPage from "../../../../../app_page.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
-  import { onMount } from "svelte"
   import { extractor_output_format, formatDate } from "$lib/utils/formatters"
   import Output from "$lib/ui/output.svelte"
   import Warning from "$lib/ui/warning.svelte"
@@ -25,24 +24,31 @@
   let archive_error: KilnError | null = null
   let extractor_config: ExtractorConfig | null = null
 
-  onMount(async () => {
-    await get_extractor_config()
-  })
+  $: if (project_id && extractor_id) {
+    get_extractor_config(project_id, extractor_id)
+  }
 
-  async function get_extractor_config() {
+  async function get_extractor_config(
+    req_project_id: string,
+    req_extractor_id: string,
+  ) {
     try {
       loading = true
+      error = null
       const { error: get_extractor_error, data } = await client.GET(
         "/api/projects/{project_id}/extractor_configs/{extractor_config_id}",
         {
           params: {
             path: {
-              project_id,
-              extractor_config_id: extractor_id,
+              project_id: req_project_id,
+              extractor_config_id: req_extractor_id,
             },
           },
         },
       )
+
+      if (req_project_id !== project_id || req_extractor_id !== extractor_id)
+        return
 
       if (get_extractor_error) {
         error = createKilnError(get_extractor_error)
@@ -51,7 +57,9 @@
 
       extractor_config = data
     } finally {
-      loading = false
+      if (req_project_id === project_id && req_extractor_id === extractor_id) {
+        loading = false
+      }
     }
   }
 
@@ -78,7 +86,7 @@
         throw archive_extractor_error
       }
 
-      await get_extractor_config()
+      await get_extractor_config(project_id, extractor_id)
     } catch (e) {
       archive_error = createKilnError(e)
     } finally {

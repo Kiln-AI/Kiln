@@ -3,7 +3,7 @@
   import type { Eval, Spec } from "$lib/types"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { onMount, tick } from "svelte"
+  import { tick } from "svelte"
   import { page } from "$app/stores"
   import type { EvalProgress } from "$lib/types"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
@@ -49,19 +49,35 @@
   $: loading = spec_loading || eval_loading || eval_progress_loading
   $: error = spec_error || eval_error || eval_progress_error
 
-  onMount(async () => {
-    // Wait for page params to load
+  $: if (project_id && task_id && spec_id && eval_id) {
+    load_all(project_id, task_id, spec_id, eval_id)
+  }
+
+  async function load_all(
+    req_project_id: string,
+    req_task_id: string,
+    req_spec_id: string,
+    req_eval_id: string,
+  ) {
     await tick()
-    // can be async
     load_model_info()
     load_available_models()
-    // Load spec and eval data in parallel
-    await Promise.all([get_spec(), get_eval(), get_eval_progress()])
-  })
+    await Promise.all([
+      get_spec(req_project_id, req_task_id, req_spec_id),
+      get_eval(req_project_id, req_task_id, req_eval_id),
+      get_eval_progress(req_project_id, req_task_id, req_eval_id),
+    ])
+  }
 
-  async function get_spec() {
-    if (spec_id === "legacy") {
-      spec_loading = false
+  async function get_spec(
+    req_project_id: string,
+    req_task_id: string,
+    req_spec_id: string,
+  ) {
+    if (req_spec_id === "legacy") {
+      if (req_project_id === project_id && req_task_id === task_id) {
+        spec_loading = false
+      }
       return
     }
     try {
@@ -70,22 +86,48 @@
         "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
         {
           params: {
-            path: { project_id, task_id, spec_id },
+            path: {
+              project_id: req_project_id,
+              task_id: req_task_id,
+              spec_id: req_spec_id,
+            },
           },
         },
       )
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_spec_id !== spec_id
+      )
+        return
       if (error) {
         throw error
       }
       spec = data
     } catch (error) {
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_spec_id !== spec_id
+      )
+        return
       spec_error = createKilnError(error)
     } finally {
-      spec_loading = false
+      if (
+        req_project_id === project_id &&
+        req_task_id === task_id &&
+        req_spec_id === spec_id
+      ) {
+        spec_loading = false
+      }
     }
   }
 
-  async function get_eval() {
+  async function get_eval(
+    req_project_id: string,
+    req_task_id: string,
+    req_eval_id: string,
+  ) {
     try {
       eval_loading = true
       const { data, error } = await client.GET(
@@ -93,25 +135,47 @@
         {
           params: {
             path: {
-              project_id,
-              task_id,
-              eval_id,
+              project_id: req_project_id,
+              task_id: req_task_id,
+              eval_id: req_eval_id,
             },
           },
         },
       )
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_eval_id !== eval_id
+      )
+        return
       if (error) {
         throw error
       }
       evaluator = data
     } catch (error) {
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_eval_id !== eval_id
+      )
+        return
       eval_error = createKilnError(error)
     } finally {
-      eval_loading = false
+      if (
+        req_project_id === project_id &&
+        req_task_id === task_id &&
+        req_eval_id === eval_id
+      ) {
+        eval_loading = false
+      }
     }
   }
 
-  async function get_eval_progress() {
+  async function get_eval_progress(
+    req_project_id: string,
+    req_task_id: string,
+    req_eval_id: string,
+  ) {
     try {
       eval_progress_loading = true
       eval_progress = null
@@ -120,21 +184,39 @@
         {
           params: {
             path: {
-              project_id,
-              task_id,
-              eval_id,
+              project_id: req_project_id,
+              task_id: req_task_id,
+              eval_id: req_eval_id,
             },
           },
         },
       )
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_eval_id !== eval_id
+      )
+        return
       if (error) {
         throw error
       }
       eval_progress = data
     } catch (error) {
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_eval_id !== eval_id
+      )
+        return
       eval_progress_error = createKilnError(error)
     } finally {
-      eval_progress_loading = false
+      if (
+        req_project_id === project_id &&
+        req_task_id === task_id &&
+        req_eval_id === eval_id
+      ) {
+        eval_progress_loading = false
+      }
     }
   }
 

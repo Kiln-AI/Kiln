@@ -3,7 +3,6 @@
   import FeatureCarousel from "$lib/ui/feature_carousel.svelte"
   import { get_optimizers, type Optimizer } from "./optimizers"
   import { page } from "$app/stores"
-  import { onMount } from "svelte"
   import {
     available_tools,
     get_task_composite_id,
@@ -96,28 +95,36 @@
     await load_task_run_configs(project_id, task_id, true)
   }
 
-  onMount(async () => {
+  $: if (project_id && task_id) {
+    load_task_data(project_id, task_id)
+  }
+
+  async function load_task_data(req_project_id: string, req_task_id: string) {
     loading = true
-    load_available_tools(project_id)
+    load_available_tools(req_project_id)
     try {
       await Promise.all([
         load_model_info(),
-        load_task_prompts(project_id, task_id),
-
+        load_task_prompts(req_project_id, req_task_id),
         // some run configs are created server-side as a result of async jobs
         // frontend does not know about them until the store is refreshed
-        load_task_run_configs(project_id, task_id, true),
+        load_task_run_configs(req_project_id, req_task_id, true),
       ])
-      task = await load_task(project_id, task_id)
-      if (!task) {
+      const loaded_task = await load_task(req_project_id, req_task_id)
+      if (req_project_id !== project_id || req_task_id !== task_id) return
+      if (!loaded_task) {
         throw new Error("Task not found")
       }
+      task = loaded_task
     } catch (e) {
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       error = createKilnError(e)
     } finally {
-      loading = false
+      if (req_project_id === project_id && req_task_id === task_id) {
+        loading = false
+      }
     }
-  })
+  }
 
   $: task_prompts =
     $prompts_by_task_composite_id[get_task_composite_id(project_id, task_id)] ||

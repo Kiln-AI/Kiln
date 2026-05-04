@@ -17,15 +17,18 @@
   import { string_to_json_key } from "$lib/utils/json_schema_editor/json_schema_templates"
   import { eval_config_to_ui_name } from "$lib/utils/formatters"
   import {
+    get_task_composite_id,
     model_info,
     load_model_info,
     model_name,
     provider_name_from_id,
     prompt_name_from_id,
-    current_task_prompts,
-    load_available_prompts,
     load_available_models,
   } from "$lib/stores"
+  import {
+    prompts_by_task_composite_id,
+    load_task_prompts,
+  } from "$lib/stores/prompts_store"
   import OutputTypeTablePreview from "$lib/components/output_type_table_preview.svelte"
 
   import { agentInfo } from "$lib/agent"
@@ -46,20 +49,41 @@
   let thinking_dialog: Dialog | null = null
   let displayed_result: EvalRun | null = null
 
-  onMount(async () => {
+  onMount(() => {
     peek_dialog?.show()
-    // Wait for params to load
-    await tick()
-    // Wait for these 3 to load, as they are needed for better labels. Usually already cached and instant.
-    await Promise.all([
-      load_model_info(),
-      load_available_prompts(),
-      load_available_models(),
-    ])
-    get_evals()
   })
 
-  async function get_evals() {
+  $: if (project_id && task_id && eval_id && eval_config_id && run_config_id) {
+    load_all(project_id, task_id, eval_id, eval_config_id, run_config_id)
+  }
+
+  async function load_all(
+    req_project_id: string,
+    req_task_id: string,
+    req_eval_id: string,
+    req_eval_config_id: string,
+    req_run_config_id: string,
+  ) {
+    await tick()
+    load_model_info()
+    load_task_prompts(req_project_id, req_task_id)
+    load_available_models()
+    get_evals(
+      req_project_id,
+      req_task_id,
+      req_eval_id,
+      req_eval_config_id,
+      req_run_config_id,
+    )
+  }
+
+  async function get_evals(
+    req_project_id: string,
+    req_task_id: string,
+    req_eval_id: string,
+    req_eval_config_id: string,
+    req_run_config_id: string,
+  ) {
     try {
       results_loading = true
       const { data, error } = await client.GET(
@@ -67,23 +91,47 @@
         {
           params: {
             path: {
-              project_id,
-              task_id,
-              eval_id,
-              eval_config_id,
-              run_config_id,
+              project_id: req_project_id,
+              task_id: req_task_id,
+              eval_id: req_eval_id,
+              eval_config_id: req_eval_config_id,
+              run_config_id: req_run_config_id,
             },
           },
         },
       )
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_eval_id !== eval_id ||
+        req_eval_config_id !== eval_config_id ||
+        req_run_config_id !== run_config_id
+      )
+        return
       if (error) {
         throw error
       }
       results = data
     } catch (error) {
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_eval_id !== eval_id ||
+        req_eval_config_id !== eval_config_id ||
+        req_run_config_id !== run_config_id
+      )
+        return
       results_error = createKilnError(error)
     } finally {
-      results_loading = false
+      if (
+        req_project_id === project_id &&
+        req_task_id === task_id &&
+        req_eval_id === eval_id &&
+        req_eval_config_id === eval_config_id &&
+        req_run_config_id === run_config_id
+      ) {
+        results_loading = false
+      }
     }
   }
 
@@ -116,7 +164,9 @@
       ),
       Prompt: prompt_name_from_id(
         run_config.run_config_properties.prompt_id,
-        $current_task_prompts,
+        $prompts_by_task_composite_id[
+          get_task_composite_id(project_id, task_id)
+        ] ?? null,
       ),
     }
   }

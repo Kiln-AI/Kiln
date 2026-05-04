@@ -1,6 +1,6 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
-  import { current_task, get_task_composite_id, load_task } from "$lib/stores"
+  import { get_task_composite_id, load_task } from "$lib/stores"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import { formatDate } from "$lib/utils/formatters"
@@ -10,7 +10,6 @@
     load_task_prompts,
     prompts_by_task_composite_id,
   } from "$lib/stores/prompts_store"
-  import { onMount } from "svelte"
   import type { Task, ApiPrompt } from "$lib/types"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
@@ -28,16 +27,31 @@
   let error: KilnError | null = null
   let task: Task | null = null
 
-  onMount(async () => {
+  $: if (project_id && task_id) {
+    load_prompts_and_task(project_id, task_id)
+  }
+
+  async function load_prompts_and_task(
+    req_project_id: string,
+    req_task_id: string,
+  ) {
     try {
-      await load_task_prompts(project_id, task_id, true)
-      task = await load_task(project_id, task_id)
+      loading = true
+      error = null
+      task = null
+      await load_task_prompts(req_project_id, req_task_id, true)
+      const loaded_task = await load_task(req_project_id, req_task_id)
+      if (req_project_id !== project_id || req_task_id !== task_id) return
+      task = loaded_task
     } catch (e) {
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       error = createKilnError(e)
     } finally {
-      loading = false
+      if (req_project_id === project_id && req_task_id === task_id) {
+        loading = false
+      }
     }
-  })
+  }
 
   $: task_prompts =
     $prompts_by_task_composite_id[get_task_composite_id(project_id, task_id)] ||
@@ -156,12 +170,6 @@
     {:else if error}
       <div class="text-error text-sm">
         {error?.getMessage() || "An unknown error occurred"}
-      </div>
-    {:else if $current_task?.id != task_id}
-      <div class="flex flex-col gap-4 text-error">
-        This link is to another task's prompts. Either select that task in the
-        sidebar, or click prompts in the sidebar to load the current task's
-        prompts.
       </div>
     {:else}
       <div class="flex flex-col gap-6">

@@ -1,6 +1,6 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
-  import { current_task } from "$lib/stores"
+  import { load_task } from "$lib/stores"
   import { page } from "$app/stores"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
@@ -63,8 +63,13 @@
     } else {
       generator_name = "Custom"
 
-      if ($current_task?.instruction) {
-        initial_prompt = $current_task.instruction
+      try {
+        const task = await load_task(project_id, task_id)
+        if (task?.instruction) {
+          initial_prompt = task.instruction
+        }
+      } catch (e) {
+        loading_error = createKilnError(e)
       }
     }
 

@@ -4,7 +4,6 @@
   import { client } from "$lib/api_client"
   import type { RunSummary } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { onMount } from "svelte"
   import { model_info, load_model_info, model_name } from "$lib/stores"
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
@@ -77,34 +76,33 @@
     { key: "tags", label: "Tags" },
   ]
 
-  onMount(async () => {
-    get_runs()
-  })
+  $: if (project_id && task_id) {
+    get_runs(project_id, task_id)
+  }
 
-  async function get_runs() {
+  async function get_runs(req_project_id: string, req_task_id: string) {
     try {
       load_model_info()
       loading = true
-      if (!project_id || !task_id) {
-        throw new Error("Project or task ID not set.")
-      }
       const { data: runs_response, error: get_error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/runs_summaries",
         {
           params: {
             path: {
-              project_id,
-              task_id,
+              project_id: req_project_id,
+              task_id: req_task_id,
             },
           },
         },
       )
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       if (get_error) {
         throw get_error
       }
       runs = runs_response
       sortRuns()
     } catch (e) {
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       if (e instanceof Error && e.message.includes("Load failed")) {
         error = new KilnError(
           "Could not load dataset. It may belong to a project you don't have access to.",
@@ -114,7 +112,9 @@
         error = createKilnError(e)
       }
     } finally {
-      loading = false
+      if (req_project_id === project_id && req_task_id === task_id) {
+        loading = false
+      }
     }
   }
 
@@ -425,7 +425,7 @@
       // Reload UI, even on failure, as partial delete is possible
       selected_runs = new Set()
       select_mode = false
-      await get_runs()
+      await get_runs(project_id, task_id)
     }
   }
 
@@ -502,7 +502,7 @@
       selected_runs = new Set()
       add_tags = []
       select_mode = false
-      await get_runs()
+      await get_runs(project_id, task_id)
     }
   }
 </script>

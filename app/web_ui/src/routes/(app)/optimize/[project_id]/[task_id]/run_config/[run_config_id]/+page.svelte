@@ -21,7 +21,6 @@
   import type { Task, TaskRunConfig } from "$lib/types"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import { getRunConfigUiProperties } from "$lib/utils/run_config_formatters"
-  import { onMount } from "svelte"
   import AppPage from "../../../../../app_page.svelte"
   import EditDialog from "$lib/ui/edit_dialog.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
@@ -44,20 +43,29 @@
   let edit_dialog: EditDialog | null = null
   let create_run_config_dialog: CreateNewRunConfigDialog | null = null
 
-  onMount(async () => {
+  $: if (project_id && task_id) {
+    load_task_data(project_id, task_id)
+  }
+
+  async function load_task_data(req_project_id: string, req_task_id: string) {
     try {
-      load_available_tools(project_id)
-      await Promise.all([load_model_info(), load_available_models()])
-      await Promise.all([
-        load_task_prompts(project_id, task_id),
-        load_task_run_configs(project_id, task_id),
-      ])
-      task = await load_task(project_id, task_id)
+      load_available_tools(req_project_id)
+      load_model_info()
+      load_available_models()
+      load_task_prompts(req_project_id, req_task_id)
+      load_task_run_configs(req_project_id, req_task_id)
+      const loaded_task = await load_task(req_project_id, req_task_id)
+      if (req_project_id !== project_id || req_task_id !== task_id) return
+      task = loaded_task
     } catch (e) {
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       error = createKilnError(e)
+    } finally {
+      if (req_project_id === project_id && req_task_id === task_id) {
+        loading = false
+      }
     }
-    loading = false
-  })
+  }
 
   $: run_config =
     $run_configs_by_task_composite_id[

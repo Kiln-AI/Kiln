@@ -139,8 +139,13 @@
     ? specs.some((spec) => spec.status === "archived")
     : false
 
+  $: if (project_id && task_id) {
+    load_specs(project_id, task_id)
+    load_evals(project_id, task_id)
+  }
+
   onMount(async () => {
-    await Promise.all([load_specs(), load_evals(), load_has_kiln_copilot()])
+    await load_has_kiln_copilot()
   })
 
   async function load_has_kiln_copilot() {
@@ -155,7 +160,7 @@
     }
   }
 
-  async function load_specs() {
+  async function load_specs(req_project_id: string, req_task_id: string) {
     try {
       specs_loading = true
       specs_error = null
@@ -163,10 +168,11 @@
         "/api/projects/{project_id}/tasks/{task_id}/specs",
         {
           params: {
-            path: { project_id, task_id },
+            path: { project_id: req_project_id, task_id: req_task_id },
           },
         },
       )
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       if (error) {
         throw error
       }
@@ -179,13 +185,16 @@
       }
       filterAndSortSpecs()
     } catch (error) {
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       specs_error = createKilnError(error)
     } finally {
-      specs_loading = false
+      if (req_project_id === project_id && req_task_id === task_id) {
+        specs_loading = false
+      }
     }
   }
 
-  async function load_evals() {
+  async function load_evals(req_project_id: string, req_task_id: string) {
     try {
       evals_loading = true
       evals_error = null
@@ -193,19 +202,23 @@
         "/api/projects/{project_id}/tasks/{task_id}/evals",
         {
           params: {
-            path: { project_id, task_id },
+            path: { project_id: req_project_id, task_id: req_task_id },
           },
         },
       )
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       if (error) {
         throw error
       }
       evals = data
       filterAndSortSpecs()
     } catch (error) {
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       evals_error = createKilnError(error)
     } finally {
-      evals_loading = false
+      if (req_project_id === project_id && req_task_id === task_id) {
+        evals_loading = false
+      }
     }
   }
 
@@ -546,7 +559,7 @@
         selected_specs = new Set()
         add_tags = []
         select_mode = false
-        await load_specs()
+        await load_specs(project_id, task_id)
       }
     }
   }
@@ -601,7 +614,7 @@
       if (success) {
         selected_specs = new Set()
         select_mode = false
-        await load_specs()
+        await load_specs(project_id, task_id)
       }
     }
   }
