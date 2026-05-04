@@ -145,9 +145,10 @@ test.describe("Synthetic data generation", () => {
 
   /* @act
   ## Goals
-  The synth page loads in fresh state (no saved data) and shows the
-  DataGenIntro with "Add Topics" and "Generate Model Inputs" buttons.
-  The page title should be "Synthetic Data Generation".
+  On a fresh task with no saved data guide, the synth page first shows the
+  "Create a Data Guide" intro (KIL-485). Clicking "Continue Without Data
+  Guide" falls through to the DataGenIntro with "Add Topics" and "Generate
+  Model Inputs" buttons.
 
   ## Fixtures
   - registeredUser
@@ -155,15 +156,14 @@ test.describe("Synthetic data generation", () => {
 
   ## Hints
   - Route is /generate/{project_id}/{task_id}/synth?reason=fine_tune&template_id=fine_tuning&splits=fine_tune_data%3A1
-  - When in setup mode with no saved data, shows DataGenIntro
-  - DataGenIntro shows "Add Topics" and "Generate Model Inputs" buttons
-  - Also has a "Docs & Guide" action button
+  - First-time users see the "Create a Data Guide" intro card. Clicking
+    "Continue Without Data Guide" sets skip_data_guide=true and reveals the
+    underlying DataGenIntro.
 
   ## Assertions
   - Page heading "Synthetic Data Generation" is visible.
-  - "Add Topics" button is visible.
-  - "Generate Model Inputs" button is visible.
-  - "Docs & Guide" link is visible.
+  - After clicking "Continue Without Data Guide", "Add Topics" and "Generate
+    Model Inputs" buttons are visible.
   */
   test("synth page shows intro with add topics and generate inputs buttons", async ({
     page,
@@ -181,21 +181,21 @@ test.describe("Synthetic data generation", () => {
       page.getByRole("heading", { name: "Synthetic Data Generation" }),
     ).toBeVisible()
 
+    await page
+      .getByRole("button", { name: "Continue Without Data Guide" })
+      .click()
+
     await expect(page.getByRole("button", { name: "Add Topics" })).toBeVisible()
 
     await expect(
       page.getByRole("button", { name: "Generate Model Inputs" }),
     ).toBeVisible()
-
-    await expect(
-      page.getByRole("button", { name: "Docs & Guide" }),
-    ).toBeVisible()
   })
 
   /* @act
   ## Goals
-  The synth page has a "Docs & Guide" action button and a "Read the Docs"
-  sub-subtitle link pointing to the synthetic data generation documentation.
+  The synth page has a "Read the Docs" sub-subtitle link pointing to the
+  synthetic data generation documentation.
 
   ## Fixtures
   - registeredUser
@@ -203,11 +203,9 @@ test.describe("Synthetic data generation", () => {
 
   ## Hints
   - Route is /generate/{project_id}/{task_id}/synth?reason=fine_tune&template_id=fine_tuning&splits=fine_tune_data%3A1
-  - "Docs & Guide" is an action button (not a link)
   - "Read the Docs" is a sub-subtitle link with the correct href
 
   ## Assertions
-  - "Docs & Guide" button is visible.
   - "Read the Docs" link has the correct href.
   */
   test("synth page docs link has correct href", async ({
@@ -224,10 +222,6 @@ test.describe("Synthetic data generation", () => {
 
     await expect(
       page.getByRole("heading", { name: "Synthetic Data Generation" }),
-    ).toBeVisible()
-
-    await expect(
-      page.getByRole("button", { name: "Docs & Guide" }),
     ).toBeVisible()
 
     const readDocsLink = page.getByRole("link", { name: "Read the Docs" })
@@ -383,9 +377,8 @@ test.describe("Synthetic data generation", () => {
 
   /* @act
   ## Goals
-  The generate overview page has a "Read the Docs" sub-subtitle link and a
-  "Docs & Guide" action button, both pointing to the synthetic data
-  generation documentation.
+  The generate overview page has a "Read the Docs" sub-subtitle link
+  pointing to the synthetic data generation documentation.
 
   ## Fixtures
   - registeredUser
@@ -393,11 +386,9 @@ test.describe("Synthetic data generation", () => {
 
   ## Hints
   - Route is /generate/{project_id}/{task_id}
-  - "Docs & Guide" is an action button (not a link)
   - "Read the Docs" is a sub-subtitle link with the correct href
 
   ## Assertions
-  - "Docs & Guide" button is visible.
   - "Read the Docs" link has the correct href.
   */
   test("generate overview docs link has correct href", async ({
@@ -412,10 +403,6 @@ test.describe("Synthetic data generation", () => {
 
     await expect(
       page.getByRole("heading", { name: "Synthetic Data Generation" }),
-    ).toBeVisible()
-
-    await expect(
-      page.getByRole("button", { name: "Docs & Guide" }),
     ).toBeVisible()
 
     const readDocsLink = page.getByRole("link", { name: "Read the Docs" })
