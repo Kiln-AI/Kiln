@@ -203,7 +203,7 @@
         {#if page_submitting}
           <span class="loading loading-spinner loading-xs"></span>
         {:else}
-          Verify Data Guide
+          Test Data Guide
         {/if}
       </button>
 

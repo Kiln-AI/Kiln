@@ -2,7 +2,7 @@
   import AppPage from "../../../app_page.svelte"
   import { onMount } from "svelte"
   import { page } from "$app/stores"
-  import { goto } from "$app/navigation"
+  import { goto, afterNavigate } from "$app/navigation"
   import DataGenIntro from "./data_gen_intro.svelte"
   import { indexedDBStore } from "$lib/stores/index_db_store"
   import { get, writable, type Writable } from "svelte/store"
@@ -42,8 +42,23 @@
     gen_type: null,
   })
 
-  onMount(async () => {
-    await Promise.all([handle_routing(), check_data_guide()])
+  // Auto-redirect to the user's last-used sub-flow on initial page load and
+  // forward navigations, but NOT when the user back-navigates here. Without
+  // this guard, hitting back from /synth lands on this route, the redirect
+  // fires again, and the user gets bounced forward — a double-back.
+  // afterNavigate fires for every navigation including initial mount.
+  afterNavigate(({ type }) => {
+    if (type === "popstate") {
+      // Back/forward — show the cold-start eval/finetune cards instead of
+      // re-redirecting forward.
+      loading = false
+      return
+    }
+    handle_routing()
+  })
+
+  onMount(() => {
+    check_data_guide()
   })
 
   async function check_data_guide() {

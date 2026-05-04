@@ -1,41 +1,35 @@
 <script lang="ts">
-  import AppPage from "../../../../app_page.svelte"
+  // Refine flow: previewing + iterating on a saved data guide. Reached from
+  // /data_guide via a handoff store carrying the chosen run configs and the
+  // (possibly edited) guide text. The saved-guide read-only view lives at
+  // /data_guide; this page only handles the active refine loop.
+  import AppPage from "../../../../../app_page.svelte"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, onDestroy } from "svelte"
   import { page } from "$app/stores"
   import { goto, pushState } from "$app/navigation"
-  import GuideSetupForm, { type GuideSample } from "./guide_setup_form.svelte"
-  import { pending_data_guide_example } from "./pending_example_store"
   import { get } from "svelte/store"
-  import GuidePreview from "./guide_preview.svelte"
-  import DataGenDescription from "../data_gen_description.svelte"
-  import { SynthDataGuidanceDataModel } from "../synth_data_guidance_datamodel"
-  import type { KilnAgentRunConfigProperties, Task } from "$lib/types"
+  import GuidePreview from "../../data_guide_setup/guide_preview.svelte"
+  import DataGenDescription from "../../data_gen_description.svelte"
+  import { SynthDataGuidanceDataModel } from "../../synth_data_guidance_datamodel"
+  import type { KilnAgentRunConfigProperties } from "$lib/types"
   import { agentInfo } from "$lib/agent"
-  import { current_task } from "$lib/stores"
   import AnalyzingAnimation from "$lib/ui/animations/analyzing_animation.svelte"
   import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
+  import { pending_data_guide_refine_handoff } from "../refine_handoff_store"
 
-  type GuideBuilderState =
+  type RefineState =
     | "loading"
-    | "setup"
     | "generating"
     | "preview"
     | "refining"
     | "regenerating"
 
-  // Start in "loading" so we can redirect away if a saved guide already exists
-  // (the refine flow lives at /data_guide). Without this we'd briefly flash
-  // the setup form before the GET resolves.
-  let current_state: GuideBuilderState = "loading"
+  let current_state: RefineState = "loading"
   let error: KilnError | null = null
   let submitting = false
-  // Flipped true once the guide is saved and we're navigating away. Suppresses
-  // GuidePreview's unsaved-changes warn so the post-save goto doesn't prompt.
-  let saved = false
 
-  // The single guide prompt string — the source of truth
   let guide: string = ""
 
   type PreviewSample = { input: string; output: string }
@@ -49,31 +43,16 @@
   let reviewed_samples: ReviewedSample[] = []
   let general_feedback: string = ""
 
-  // Captured from the setup form so refine/regenerate can reuse them
   let captured_input_run_config: KilnAgentRunConfigProperties | null = null
   let captured_output_run_config: KilnAgentRunConfigProperties | null = null
 
-  // The task being edited. Needed by the output run config dialog so it can
-  // mirror the SDG output flow (prompt + tools/skills selectors at top level).
-  let task: Task | null = null
-
-  // Lifted out of GuideSetupForm so the user's examples survive the
-  // setup → generating → setup unmount cycle that happens when a preview
-  // request fails.
-  let guide_examples: GuideSample[] = []
-
-  // --- Wizard journey nav ---
-  // Each "user-visible" step (setup form or preview screen) snapshots the
-  // page state and pushes a new history entry. popstate restores by index.
-  // Only stable states get snapshotted — "loading" / "generating" /
-  // "refining" / "regenerating" are transient and skipped.
-  // Memory-only: a hard refresh resets the journey.
-  type StableState = "setup" | "preview"
+  // --- Preview-iteration journey nav ---
+  // Each preview render snapshots state and pushes a history entry so back/
+  // forward steps through prior iterations. Transient states (generating /
+  // refining / regenerating) are skipped.
   type JourneySnapshot = {
-    state: StableState
     guide: string
     preview_initial_guide: string
-    guide_examples: GuideSample[]
     preview_samples: PreviewSample[]
     reviewed_samples: ReviewedSample[]
     general_feedback: string
@@ -83,17 +62,12 @@
   let journey: JourneySnapshot[] = []
   let journey_index: number = -1
   let restoring_from_history: boolean = false
-  // Bumped on popstate so any async op in flight at the time can detect that
-  // the user navigated away mid-call and abandon its push_step instead of
-  // forcing them back to the result screen.
   let nav_token: number = 0
 
-  function snapshot_state(state: StableState): JourneySnapshot {
+  function snapshot_state(): JourneySnapshot {
     return {
-      state,
       guide,
       preview_initial_guide,
-      guide_examples: [...guide_examples],
       preview_samples: [...preview_samples],
       reviewed_samples: reviewed_samples.map((s) => ({ ...s })),
       general_feedback,
@@ -102,16 +76,12 @@
     }
   }
 
-  function push_step(state: StableState) {
+  function push_preview_step() {
     if (restoring_from_history) return
-    const snap = snapshot_state(state)
+    const snap = snapshot_state()
     journey = [...journey.slice(0, journey_index + 1), snap]
     journey_index = journey.length - 1
-    // Don't push history for the entry state — the page's bare URL already
-    // represents it. Pushing here means the user has to hit back twice (once
-    // to drop the hash, once to actually leave the page).
-    if (journey_index === 0) return
-    pushState(`#${state}-${journey_index}`, { journey_index })
+    pushState(`#preview-${journey_index}`, { journey_index })
   }
 
   function restore_snapshot(idx: number) {
@@ -120,39 +90,32 @@
     const s = journey[idx]
     guide = s.guide
     preview_initial_guide = s.preview_initial_guide
-    guide_examples = s.guide_examples
     preview_samples = s.preview_samples
     reviewed_samples = s.reviewed_samples
     general_feedback = s.general_feedback
     captured_input_run_config = s.captured_input_run_config
     captured_output_run_config = s.captured_output_run_config
-    current_state = s.state
+    current_state = "preview"
     journey_index = idx
     Promise.resolve().then(() => {
       restoring_from_history = false
     })
   }
 
-  function handle_popstate(_event: PopStateEvent) {
+  function handle_popstate(event: PopStateEvent) {
     nav_token++
-    // SvelteKit nests our pushState payload under its own keys, so reading
-    // event.state.journey_index directly is always undefined. Use the page
-    // store, which SvelteKit unwraps for us and updates synchronously in its
-    // own popstate handler before ours runs.
-    const idx = (get(page).state as { journey_index?: number } | undefined)
+    const idx = (event.state as { journey_index?: number } | null)
       ?.journey_index
     if (typeof idx === "number") {
       restore_snapshot(idx)
       return
     }
-    // No journey_index — the user backed onto the bare page URL (which
-    // represents the entry state, since we don't push history for it).
-    // Snap back to the entry snapshot so any in-flight transient state or
-    // forward-pushed snapshot clears cleanly.
+    // No journey_index — the user backed past our first pushed preview onto
+    // the bare /refine URL. There's nothing to show here without a handoff,
+    // so step back one more entry to land cleanly on /data_guide (where this
+    // flow always starts). Avoids leaving an orphan /refine entry in history.
     submitting = false
-    if (journey.length > 0) {
-      restore_snapshot(0)
-    }
+    window.history.back()
   }
 
   let guidance_data: SynthDataGuidanceDataModel =
@@ -164,92 +127,45 @@
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: agentInfo.set({
-    name: "Set Up Data Guide",
-    description: `Setup the task data guide for project ${project_id}, task ${task_id}. The data guide describes the structure, rules, and examples for synthetic data generation.`,
+    name: "Refine Data Guide",
+    description: `Refine the saved task data guide for project ${project_id}, task ${task_id}.`,
   })
 
   onMount(async () => {
-    // If a saved guide already exists, the user shouldn't be in the setup
-    // flow — that's for first-time creation only. Edit/delete/re-verify
-    // happens on the main /data_guide page.
-    try {
-      const { data } = await client.GET(
-        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
-        { params: { path: { project_id, task_id } } },
-      )
-      if (data) {
-        if (window.location.hash) {
-          // We landed here via back-navigation onto a leftover journey
-          // hash entry (e.g. #preview-1) from a now-completed setup flow.
-          // Keep popping so the user exits the setup flow's history
-          // entries entirely instead of bouncing through /data_guide on
-          // every press.
-          window.history.back()
-        } else {
-          // Fresh entry (direct URL or forward goto) → forward to the
-          // refine page, replacing this entry so back doesn't re-enter
-          // the setup flow.
-          goto(`/generate/${project_id}/${task_id}/data_guide`, {
-            replaceState: true,
-          })
-        }
-        return
-      }
-    } catch {
-      // No existing guide
+    const handoff = get(pending_data_guide_refine_handoff)
+    if (!handoff) {
+      // No seed (direct URL hit / hard refresh) — the saved-guide view is
+      // where this flow starts.
+      goto(`/generate/${project_id}/${task_id}/data_guide`, {
+        replaceState: true,
+      })
+      return
     }
+    pending_data_guide_refine_handoff.set(null)
 
-    if ($current_task?.id === task_id) {
-      task = $current_task
-    } else {
-      try {
-        const { data: task_data } = await client.GET(
-          "/api/projects/{project_id}/tasks/{task_id}",
-          { params: { path: { project_id, task_id } } },
-        )
-        if (task_data) {
-          task = task_data
-        }
-      } catch {
-        // Non-critical
-      }
-    }
+    guide = handoff.guide
+    captured_input_run_config = handoff.input_run_config
+    captured_output_run_config = handoff.output_run_config
 
-    // Seed from the synth-page handoff: if the user clicked "Set Up Data
-    // Guide" and added their first example via the dialog before navigating
-    // here, that sample is sitting on a writable store. Pull it once and
-    // clear so a hard refresh doesn't re-seed it.
-    const seeded = get(pending_data_guide_example)
-    if (seeded) {
-      guide_examples = [seeded]
-      pending_data_guide_example.set(null)
-    }
-
-    current_state = "setup"
-    push_step("setup")
     window.addEventListener("popstate", handle_popstate)
+
+    await run_initial_preview()
   })
 
   onDestroy(() => {
     window.removeEventListener("popstate", handle_popstate)
   })
 
-  async function handle_generate_preview(
-    event: CustomEvent<{
-      guide: string
-      input_run_config: KilnAgentRunConfigProperties
-      output_run_config: KilnAgentRunConfigProperties
-    }>,
-  ) {
+  async function run_initial_preview() {
     const op_token = nav_token
     error = null
     submitting = true
     current_state = "generating"
 
     try {
-      captured_input_run_config = event.detail.input_run_config
-      captured_output_run_config = event.detail.output_run_config
-      guide = event.detail.guide
+      if (!captured_input_run_config || !captured_output_run_config) {
+        throw new KilnError("No model configuration available", null)
+      }
 
       const { data, error: api_error } = await client.POST(
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_preview",
@@ -267,8 +183,6 @@
       if (api_error) throw api_error
       if (!data) throw new KilnError("No preview samples returned", null)
 
-      // If the user navigated back/forward during the API call, abandon the
-      // result rather than yanking them back to a preview screen.
       if (nav_token !== op_token) return
 
       preview_samples = data as PreviewSample[]
@@ -280,11 +194,15 @@
       general_feedback = ""
       preview_initial_guide = guide
       current_state = "preview"
-      push_step("preview")
+      push_preview_step()
     } catch (e) {
       if (nav_token !== op_token) return
       error = createKilnError(e)
-      current_state = "setup"
+      // Initial preview failed — bail back to the saved-guide view with the
+      // error surfaced via the URL? Simpler: just bail; the user can retry.
+      goto(`/generate/${project_id}/${task_id}/data_guide`, {
+        replaceState: true,
+      })
     } finally {
       submitting = false
     }
@@ -348,8 +266,6 @@
       if (!preview_data)
         throw new KilnError("No preview samples returned", null)
 
-      // If the user navigated back/forward during the API call, abandon the
-      // result rather than yanking them back to a preview screen.
       if (nav_token !== op_token) return
 
       preview_samples = preview_data as PreviewSample[]
@@ -361,7 +277,7 @@
       general_feedback = ""
       preview_initial_guide = guide
       current_state = "preview"
-      push_step("preview")
+      push_preview_step()
     } catch (e) {
       if (nav_token !== op_token) return
       error = createKilnError(e)
@@ -380,23 +296,16 @@
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
         {
           params: { path: { project_id, task_id } },
-          body: {
-            guide,
-          },
+          body: { guide },
         },
       )
 
       if (api_error) throw api_error
 
-      // Disable the unsaved-changes warn before goto fires beforeNavigate.
-      // Mirrors the prompt_form / skill_form `complete = true` pattern.
-      saved = true
-
-      // Replace the setup page in history rather than pushing onto it. The
-      // user finished and shouldn't be able to back-navigate into the now-
-      // completed setup flow (which would just redirect them straight to
-      // the refine page anyway).
-      goto(`/generate/${project_id}/${task_id}/synth?session_continued=true`, {
+      // Replace state so the user can't back-navigate into the now-stale
+      // refine flow they just exited. /data_guide will refetch the saved
+      // guide on its own.
+      goto(`/generate/${project_id}/${task_id}/data_guide`, {
         replaceState: true,
       })
     } catch (e) {
@@ -410,37 +319,23 @@
 <!-- TODO: Update read the docs link to point to new data guide docs -->
 <div class="max-w-[1400px]">
   <AppPage
-    title="Set Up Data Guide"
-    subtitle="Your Data Guide will help us generate better synthetic data."
+    title="Refine Data Guide"
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/synthetic-data-generation"
     breadcrumbs={[
       {
         label: "Synthetic Data Generation",
-        href: `/generate/${project_id}/${task_id}/synth?session_continued=true`,
-        // This page is a sub-flow of /synth — replace rather than push so
-        // back from /synth returns to wherever the user originally came
-        // from (cards page, spec page, etc.) instead of bouncing here.
-        replace_state: true,
+        href: `/generate/${project_id}/${task_id}/synth`,
+      },
+      {
+        label: "Data Guide",
+        href: `/generate/${project_id}/${task_id}/data_guide`,
       },
     ]}
   >
     <DataGenDescription bind:guidance_data />
 
-    {#if current_state === "loading"}
-      <div class="flex flex-col items-center justify-center py-24 gap-4">
-        <span class="loading loading-spinner loading-lg text-primary" />
-      </div>
-    {:else if current_state === "setup"}
-      <GuideSetupForm
-        {project_id}
-        {task_id}
-        {task}
-        bind:guide_examples
-        bind:page_error={error}
-        on:generate_preview={handle_generate_preview}
-      />
-    {:else if current_state === "generating"}
+    {#if current_state === "loading" || current_state === "generating"}
       <AnalyzingAnimation
         title="Generating Examples"
         description="Generating synthetic data to test your data guide."
@@ -458,7 +353,6 @@
           bind:submitting
           bind:reviewed_samples
           bind:general_feedback
-          {saved}
           on:refine={handle_refine}
           on:save={handle_save}
         />
@@ -466,12 +360,12 @@
     {:else if current_state === "refining"}
       <RefiningAnimation
         title="Refining Data Guide"
-        description="Refining your data guide with the feedback you provided and generating fresh examples to review."
+        description="Kiln is refining your data guide with the feedback you provided and generating fresh examples to review. Hold tight!"
       />
     {:else if current_state === "regenerating"}
       <AnalyzingAnimation
         title="Regenerating Examples"
-        description="Regenerating synthetic data to test your edited data guide."
+        description="Regenerating examples to review with your edited data guide. Hold tight!"
       />
     {/if}
   </AppPage>

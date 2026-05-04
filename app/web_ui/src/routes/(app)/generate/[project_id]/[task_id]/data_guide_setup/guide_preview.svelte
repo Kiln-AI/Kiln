@@ -24,6 +24,10 @@
   // new history entry; the parent snapshots these props before transitioning).
   export let reviewed_samples: ReviewedSample[] = []
   export let general_feedback: string = ""
+  // Set true by the parent right before navigating away after a successful
+  // save. Disables the unsaved-changes warn so the post-save goto doesn't
+  // prompt the user.
+  export let saved: boolean = false
 
   // True iff the user edited the guide via the Edit dialog after this preview
   // was generated. Drives the submit button label (Refine vs Save Data Guide).
@@ -106,11 +110,14 @@
   // Drive warn_before_unload off real user work in this preview screen
   // (ratings, feedback, or guide edits) rather than always-on. Without this,
   // backing past our journey entries would prompt the unsaved-changes confirm
-  // even on a fresh preview screen the user hasn't touched.
+  // even on a fresh preview screen the user hasn't touched. `saved` flips
+  // this off entirely once the parent has committed the guide and is about
+  // to navigate away.
   $: has_unsaved_user_work =
-    reviewed_samples.some((s) => s.looks_good !== undefined) ||
-    general_feedback.trim().length > 0 ||
-    guide_was_edited
+    !saved &&
+    (reviewed_samples.some((s) => s.looks_good !== undefined) ||
+      general_feedback.trim().length > 0 ||
+      guide_was_edited)
 
   // Whenever the user changed something the LLM should react to (rated some
   // samples Needs Work, edited the guide text directly), switch the submit
