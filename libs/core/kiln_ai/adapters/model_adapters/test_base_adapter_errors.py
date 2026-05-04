@@ -52,13 +52,13 @@ class _ControllableAdapter(BaseAdapter):
     async def _run(
         self,
         input,
-        messages: list[ChatCompletionMessageParam],
+        trace_ref: list[ChatCompletionMessageParam],
         prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> Tuple[RunOutput, Usage | None]:
         if self._pre_raise is not None:
             raise self._pre_raise
         if self._messages_to_add:
-            messages.extend(self._messages_to_add)
+            trace_ref.extend(self._messages_to_add)
         if self._post_raise is not None:
             raise self._post_raise
         if self._return_output is not None:

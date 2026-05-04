@@ -218,11 +218,9 @@ class BaseAdapter(metaclass=ABCMeta):
         prior_trace: list[ChatCompletionMessageParam] | None = None,
         parent_task_run: TaskRun | None = None,
     ) -> Tuple[TaskRun, RunOutput]:
-        # Pre-run validation happens outside the exception-wrapping block:
-        # these errors occur before the adapter makes any model call, so
-        # there is no trace to preserve and they should surface as plain
-        # exceptions (the API layer returns them as 4xx, not as an
-        # ErrorWithTrace 500).
+        # Pre-run validation: these checks run before any model call, so
+        # there is no trace to preserve. They stay outside the
+        # exception-wrapping block and surface as plain exceptions.
         prior_trace = self._normalize_prior_trace(prior_trace)
         self._reject_multiturn_with_structured_input(prior_trace)
 
@@ -247,12 +245,10 @@ class BaseAdapter(metaclass=ABCMeta):
         # exception thrown from inside `_run` (or the post-processing that
         # follows). `_run` must mutate this list in place (extend/append,
         # or `list[:] = ...`) and never rebind the local name.
-        messages: list[ChatCompletionMessageParam] = []
+        trace_ref: list[ChatCompletionMessageParam] = []
         try:
-            # Run. `messages` is mutated in place by `_run` so we keep a live
-            # reference to the partial trace if an exception escapes.
             run_output, usage = await self._run(
-                formatted_input, messages, prior_trace=prior_trace
+                formatted_input, trace_ref, prior_trace=prior_trace
             )
 
             if not run_output.is_toolcall_pending:
@@ -337,9 +333,9 @@ class BaseAdapter(metaclass=ABCMeta):
             # real failure). Never let that swallow the original exception —
             # fall back to no trace so the user still sees the real error.
             partial_trace: list[ChatCompletionMessageParam] | None = None
-            if messages:
+            if trace_ref:
                 try:
-                    partial_trace = self._messages_to_trace(messages)
+                    partial_trace = self._messages_to_trace(trace_ref)
                 except Exception:
                     partial_trace = None
             raise KilnRunError(
@@ -525,11 +521,11 @@ class BaseAdapter(metaclass=ABCMeta):
     async def _run(
         self,
         input: InputType,
-        messages: list[ChatCompletionMessageParam],
+        trace_ref: list[ChatCompletionMessageParam],
         prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> Tuple[RunOutput, Usage | None]:
-        """Run the model. Implementations MUST mutate `messages` in place
-        (extend/append, or `messages[:] = ...`) — never rebind it — so the
+        """Run the model. Implementations MUST mutate `trace_ref` in place
+        (extend/append, or `trace_ref[:] = ...`) — never rebind it — so the
         caller keeps a live reference to the partial trace if an exception
         escapes.
         """

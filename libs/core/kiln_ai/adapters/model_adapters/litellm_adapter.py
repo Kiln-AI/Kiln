@@ -240,7 +240,7 @@ class LiteLlmAdapter(BaseAdapter):
     async def _run(
         self,
         input: InputType,
-        messages: list[ChatCompletionMessageParam],
+        trace_ref: list[ChatCompletionMessageParam],
         prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> tuple[RunOutput, Usage | None]:
         usage = Usage()
@@ -251,14 +251,12 @@ class LiteLlmAdapter(BaseAdapter):
 
         # build_chat_formatter returns MultiturnFormatter when prior_trace is set, else prompt-based formatter
         chat_formatter = self.build_chat_formatter(input, prior_trace)
-        # The caller owns `messages`. Mutate it in place (never rebind) so
-        # the partial trace survives any exception escaping this method. The
-        # list is typed as `ChatCompletionMessageParam` for the caller's API
-        # surface, but internally we need to store LiteLLM `Message` objects
-        # transiently (they are converted by `_messages_to_trace` before
+        # `trace_ref` is typed as `ChatCompletionMessageParam` for the
+        # caller's API surface, but internally we store LiteLLM `Message`
+        # objects transiently (converted by `all_messages_to_trace` before
         # export). We widen the type alias once here so the internal
         # mutations don't each need their own suppression.
-        messages_internal: list[ChatCompletionMessageIncludingLiteLLM] = messages  # type: ignore[assignment]
+        messages_internal: list[ChatCompletionMessageIncludingLiteLLM] = trace_ref  # type: ignore[assignment]
         messages_internal.extend(copy.deepcopy(chat_formatter.initial_messages()))
 
         prior_output: str | None = None

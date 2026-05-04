@@ -46,13 +46,13 @@ class MCPAdapter(BaseAdapter):
     async def _run(
         self,
         input: InputType,
-        messages: list[ChatCompletionMessageParam],
+        trace_ref: list[ChatCompletionMessageParam],
         prior_trace: list[ChatCompletionMessageParam] | None = None,
     ) -> Tuple[RunOutput, Usage | None]:
         # MCP adapter is single-turn and does not build a conversation trace;
-        # `messages` is unused. Kept for signature compatibility with the
+        # `trace_ref` is unused. Kept for signature compatibility with the
         # base adapter's exception-wrapping contract.
-        _ = messages
+        _ = trace_ref
         if prior_trace is not None:
             raise NotImplementedError(
                 "Session continuation is not supported for MCP adapter. "
