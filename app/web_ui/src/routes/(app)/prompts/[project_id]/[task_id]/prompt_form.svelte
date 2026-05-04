@@ -7,7 +7,7 @@
     filename_string_validator_default,
     normalize_filename_string,
   } from "$lib/utils/input_validators"
-  import { load_available_prompts } from "$lib/stores"
+  import { load_task_prompts } from "$lib/stores/prompts_store"
   import { goto } from "$app/navigation"
   import posthog from "posthog-js"
 
@@ -76,7 +76,7 @@
         is_clone: clone_mode,
       })
 
-      await load_available_prompts(true)
+      await load_task_prompts(project_id, task_id, true)
 
       complete = true
       if (redirect_from === "optimize") {

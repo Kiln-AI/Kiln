@@ -13,9 +13,9 @@
     load_model_info,
     model_name,
     provider_name_from_id,
-    load_available_prompts,
     load_available_models,
   } from "$lib/stores"
+  import { load_task_prompts } from "$lib/stores/prompts_store"
   import { set_current_eval_config } from "$lib/stores/evals_store"
   import Warning from "$lib/ui/warning.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
@@ -202,7 +202,7 @@
     await tick()
     await Promise.all([
       load_model_info(),
-      load_available_prompts(),
+      load_task_prompts(req_project_id, req_task_id),
       load_available_models(),
       get_spec(req_project_id, req_task_id, req_spec_id),
       get_eval(req_project_id, req_task_id, req_eval_id),
