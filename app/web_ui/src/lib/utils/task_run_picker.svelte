@@ -2,6 +2,7 @@
   import { createEventDispatcher } from "svelte"
   import type { TaskRun } from "$lib/types"
   import Dialog from "$lib/ui/dialog.svelte"
+  import ClampedText from "$lib/ui/clamped_text.svelte"
 
   export let available_runs: TaskRun[] = []
 
@@ -12,13 +13,10 @@
   $: page_end = Math.min(page_start + PAGE_SIZE, available_runs.length)
   $: paged_runs = available_runs.slice(page_start, page_end)
 
-  // Mirror the data-guide review table: show as much content as fits inside
-  // a fixed-height clipped box with a fade + "See all" affordance for long
-  // strings; the dialog shows the full content.
-  const SEE_ALL_CHAR_THRESHOLD = 600
+  // Long inputs/outputs are clamped to 3 lines with a "See all" link that
+  // pops the full content in a dialog.
   let see_all_dialog: Dialog
   let see_all_title: string = ""
-  let see_all_subtitle: string = ""
   let see_all_content: string = ""
 
   function show_full_text(title: string, content: string) {
@@ -46,62 +44,20 @@
         {#each paged_runs as run}
           {@const input_text = run.input ?? ""}
           {@const output_text = run.output?.output ?? ""}
-          {@const input_long = input_text.length > SEE_ALL_CHAR_THRESHOLD}
-          {@const output_long = output_text.length > SEE_ALL_CHAR_THRESHOLD}
           <tr>
             <td class="py-2">
-              {#if input_long}
-                <div class="max-h-[140px] overflow-y-hidden relative">
-                  <pre
-                    class="whitespace-pre-wrap break-words text-xs text-gray-600">{input_text}</pre>
-                  <div class="absolute bottom-0 left-0 w-full">
-                    <div
-                      class="h-16 bg-gradient-to-t from-white to-transparent"
-                    ></div>
-                    <div
-                      class="text-center bg-white font-medium text-xs text-gray-500"
-                    >
-                      <button
-                        type="button"
-                        class="text-gray-500 hover:text-gray-700 underline-offset-2 hover:underline"
-                        on:click={() => show_full_text("Input", input_text)}
-                      >
-                        See all
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              {:else}
-                <pre
-                  class="whitespace-pre-wrap break-words text-xs text-gray-600">{input_text}</pre>
-              {/if}
+              <ClampedText
+                content={input_text}
+                text_class="whitespace-pre-wrap break-words text-xs text-gray-600"
+                on:see_all={() => show_full_text("Input", input_text)}
+              />
             </td>
             <td class="py-2">
-              {#if output_long}
-                <div class="max-h-[140px] overflow-y-hidden relative">
-                  <pre
-                    class="whitespace-pre-wrap break-words text-xs text-gray-600">{output_text}</pre>
-                  <div class="absolute bottom-0 left-0 w-full">
-                    <div
-                      class="h-16 bg-gradient-to-t from-white to-transparent"
-                    ></div>
-                    <div
-                      class="text-center bg-white font-medium text-xs text-gray-500"
-                    >
-                      <button
-                        type="button"
-                        class="text-gray-500 hover:text-gray-700 underline-offset-2 hover:underline"
-                        on:click={() => show_full_text("Output", output_text)}
-                      >
-                        See all
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              {:else}
-                <pre
-                  class="whitespace-pre-wrap break-words text-xs text-gray-600">{output_text}</pre>
-              {/if}
+              <ClampedText
+                content={output_text}
+                text_class="whitespace-pre-wrap break-words text-xs text-gray-600"
+                on:see_all={() => show_full_text("Output", output_text)}
+              />
             </td>
             <td class="py-2 text-center align-middle">
               <button
@@ -146,12 +102,9 @@
   <div class="text-sm text-gray-400">No existing data available.</div>
 {/if}
 
-<!-- See-all Dialog: shows the full text of an input/output cell that was
-     truncated in the table because it exceeded SEE_ALL_CHAR_THRESHOLD. -->
 <Dialog
   bind:this={see_all_dialog}
   title={see_all_title}
-  subtitle={see_all_subtitle}
   width="wide"
   action_buttons={[{ label: "Close", isCancel: true }]}
 >

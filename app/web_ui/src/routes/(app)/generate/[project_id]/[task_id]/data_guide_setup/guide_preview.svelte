@@ -8,6 +8,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import Callout from "$lib/ui/callout.svelte"
   import Output from "$lib/ui/output.svelte"
+  import ClampedText from "$lib/ui/clamped_text.svelte"
 
   type ReviewedSample = {
     input: string
@@ -37,19 +38,14 @@
   $: guide_was_edited =
     examples_md !== initial_examples_md || rules_md !== initial_rules_md
 
-  // --- "See all" expansion for long input/output cells ---
-  // Threshold chosen so a typical paragraph fits in the row but multi-paragraph
-  // bodies get truncated with a "See all" affordance. Mirrors the run_result
-  // page pattern (a fixed clipped height + fade gradient + button).
-  const SEE_ALL_CHAR_THRESHOLD = 600
+  // Long input/output cells are clamped to 3 lines with a "See all" link;
+  // clicking opens the full content in a dialog.
   let see_all_dialog: Dialog
   let see_all_title: string = ""
-  let see_all_subtitle: string = ""
   let see_all_content: string = ""
 
-  function show_full_text(title: string, subtitle: string, content: string) {
+  function show_full_text(title: string, content: string) {
     see_all_title = title
-    see_all_subtitle = subtitle
     see_all_content = content
     see_all_dialog?.show()
   }
@@ -238,72 +234,20 @@
         </thead>
         <tbody>
           {#each reviewed_samples as sample, i}
-            {@const input_long = sample.input.length > SEE_ALL_CHAR_THRESHOLD}
-            {@const output_long = sample.output.length > SEE_ALL_CHAR_THRESHOLD}
             <tr>
               <td class="py-2">
-                {#if input_long}
-                  <div class="max-h-[140px] overflow-y-hidden relative">
-                    <pre
-                      class="whitespace-pre-wrap break-words">{sample.input}</pre>
-                    <div class="absolute bottom-0 left-0 w-full">
-                      <div
-                        class="h-16 bg-gradient-to-t from-white to-transparent"
-                      ></div>
-                      <div
-                        class="text-center bg-white font-medium text-sm text-gray-500"
-                      >
-                        <button
-                          type="button"
-                          class="text-gray-500 hover:text-gray-700 underline-offset-2 hover:underline"
-                          on:click={() =>
-                            show_full_text(
-                              "Input",
-                              `Sample ${i + 1}`,
-                              sample.input,
-                            )}
-                        >
-                          See all
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                {:else}
-                  <pre
-                    class="whitespace-pre-wrap break-words">{sample.input}</pre>
-                {/if}
+                <ClampedText
+                  content={sample.input}
+                  on:see_all={() =>
+                    show_full_text(`Sample ${i + 1} — Input`, sample.input)}
+                />
               </td>
               <td class="py-2">
-                {#if output_long}
-                  <div class="max-h-[140px] overflow-y-hidden relative">
-                    <pre
-                      class="whitespace-pre-wrap break-words">{sample.output}</pre>
-                    <div class="absolute bottom-0 left-0 w-full">
-                      <div
-                        class="h-16 bg-gradient-to-t from-white to-transparent"
-                      ></div>
-                      <div
-                        class="text-center bg-white font-medium text-sm text-gray-500"
-                      >
-                        <button
-                          type="button"
-                          class="text-gray-500 hover:text-gray-700 underline-offset-2 hover:underline"
-                          on:click={() =>
-                            show_full_text(
-                              "Output",
-                              `Sample ${i + 1}`,
-                              sample.output,
-                            )}
-                        >
-                          See all
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                {:else}
-                  <pre
-                    class="whitespace-pre-wrap break-words">{sample.output}</pre>
-                {/if}
+                <ClampedText
+                  content={sample.output}
+                  on:see_all={() =>
+                    show_full_text(`Sample ${i + 1} — Output`, sample.output)}
+                />
               </td>
               <td class="py-2">
                 <div class="flex flex-col gap-1">
@@ -517,11 +461,10 @@
 </Dialog>
 
 <!-- See-all Dialog: shows the full text of an input/output cell that was
-     truncated in the table because it exceeded SEE_ALL_CHAR_THRESHOLD. -->
+     clamped in the table by ClampedText. -->
 <Dialog
   bind:this={see_all_dialog}
   title={see_all_title}
-  sub_subtitle={see_all_subtitle}
   width="wide"
   action_buttons={[{ label: "Close", isCancel: true }]}
 >
