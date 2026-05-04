@@ -1,2 +1,14 @@
 open_workspace_cmd: "./.config/wt/start.sh"
 restart_workspace_cmd: "./.config/wt/start.sh --restart"
+
+workspace_env_script: ".config/wt/env.sh"
+
+workspace_windows:
+  term: "echo \"\nWeb UI: $KILN_WEB_URL\nBackend: http://localhost:$KILN_PORT\n\nType 'web' to open in browser.\n\"; exec $SHELL"
+  agent:
+    command: "$KILN_CODER_CMD"
+  backend:
+    command: "uv run python -m app.desktop.dev_server"
+  webui:
+    command: "npm run dev -- --host --port $KILN_FRONTEND_PORT"
+    cwd: "app/web_ui"

@@ -282,7 +282,7 @@
         throw post_error
       }
 
-      posthog.capture("import_project", {})
+      posthog.capture("import_project", { method: "local" })
 
       await load_projects()
       import_done = true
@@ -333,7 +333,10 @@
 
       <button
         class="w-full text-left p-5 border rounded-lg hover:border-primary hover:bg-base-200 transition-colors"
-        on:click={() => set_step("url")}
+        on:click={() => {
+          posthog.capture("git_sync_setup_start")
+          set_step("url")
+        }}
       >
         <div class="font-medium flex flex-row gap-2 items-center">
           <div class="flex-1">Git Auto Sync</div>
