@@ -1,4 +1,3 @@
-import re
 from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException, Path, Query
@@ -81,7 +80,14 @@ class DataGenSampleApiInput(BaseModel):
 
 
 class SaveTaskDataGuideInput(BaseModel):
-    guide: str = Field(description="The data guide prompt string to persist")
+    examples_md: str = Field(
+        default="",
+        description="Body of the reference examples section — user-authored.",
+    )
+    rules_md: str = Field(
+        default="",
+        description="Body of the guidelines & rules section — LLM-authored.",
+    )
 
 
 class GuidePreviewSample(BaseModel):
@@ -98,7 +104,14 @@ class RatedGuidePreviewSample(BaseModel):
 
 
 class GuidePreviewInput(BaseModel):
-    guide: str = Field(description="The data guide prompt string")
+    examples_md: str = Field(
+        default="",
+        description="Body of the reference examples section being previewed.",
+    )
+    rules_md: str = Field(
+        default="",
+        description="Body of the guidelines & rules section being previewed.",
+    )
     run_config_properties: KilnAgentRunConfigProperties = Field(
         description="The model config to use for preview input generation"
     )
@@ -115,7 +128,14 @@ class GuidePreviewInput(BaseModel):
 
 
 class GuideRefineInput(BaseModel):
-    current_guide: str = Field(description="The current data guide prompt string")
+    current_examples_md: str = Field(
+        default="",
+        description="Body of the reference examples section — passed to the metaprompter for context only; never modified.",
+    )
+    current_rules_md: str = Field(
+        default="",
+        description="Body of the current guidelines & rules section — the metaprompter rewrites this wholesale.",
+    )
     feedback: str = Field(
         description="User feedback on what's wrong with preview samples"
     )
@@ -147,7 +167,9 @@ class GuideRefineOutput(BaseModel):
 
 
 class GuideRefineResponse(BaseModel):
-    refined_guide: str = Field(description="The refined data guide prompt string")
+    refined_rules_md: str = Field(
+        description="The refined guidelines & rules section body. Examples are preserved by the frontend; only this field is rewritten by the metaprompter."
+    )
 
 
 class DataGenSaveSamplesApiInput(BaseModel):
@@ -585,10 +607,15 @@ The topic path for this sample is:
         # otherwise create the first one.
         existing = task.current_data_guide()
         if existing is not None:
-            existing.guide = input.guide
+            existing.examples_md = input.examples_md
+            existing.rules_md = input.rules_md
             existing.save_to_file()
             return existing
-        guide = DataGuide(parent=task, guide=input.guide)
+        guide = DataGuide(
+            parent=task,
+            examples_md=input.examples_md,
+            rules_md=input.rules_md,
+        )
         guide.save_to_file()
         return guide
 
@@ -639,7 +666,10 @@ The topic path for this sample is:
         # uses at runtime. Without this, previewed inputs are generated under
         # different framing than saved inputs would be — defeating the purpose
         # of iterating on the guide here.
-        input_combined_guidance = _combine_guidance(task, None, "inputs", input.guide)
+        draft_guide_md = _compose_guide_md(input.examples_md, input.rules_md)
+        input_combined_guidance = _combine_guidance(
+            task, None, "inputs", draft_guide_md
+        )
 
         sample_task = DataGenSampleTask(
             target_task=task,
@@ -694,10 +724,10 @@ The topic path for this sample is:
         # Condition the output generation on the (in-progress) data guide so
         # the previewed outputs reflect what real SDG would produce with this
         # guide saved — same wrapping that /generate_sample does at runtime.
-        # Pass `input.guide` as the override so we use the guide being tested,
+        # Pass the composed draft as override so we use the guide being tested,
         # not whatever's currently persisted on the task.
         output_combined_guidance = (
-            _combine_guidance(task, None, "outputs", input.guide) or ""
+            _combine_guidance(task, None, "outputs", draft_guide_md) or ""
         )
         for sample_input in generated_samples[: input.num_samples]:
             # Always keep a string form for the response so the UI can display
@@ -787,7 +817,8 @@ The topic path for this sample is:
 
         system_prompt = generate_guidance_refinement_prompt(
             task_instruction=task.instruction,
-            current_guide=input.current_guide,
+            current_examples_md=input.current_examples_md,
+            current_rules_md=input.current_rules_md,
             preview_samples=[
                 (s.input, s.output, s.looks_good) for s in input.preview_samples
             ],
@@ -822,25 +853,10 @@ The topic path for this sample is:
         parsed = json.loads(refine_run.output.output)
         new_rules_body = (parsed.get("rules") or "").strip()
 
-        # Defensive: if the LLM ignored the schema description and prefixed its
-        # output with the heading anyway, strip every occurrence so we don't
-        # double up. Use the default count (0 = unlimited) rather than count=1
-        # in case the LLM emits the heading more than once.
-        new_rules_body = _GUIDELINES_HEADING_RE.sub("", new_rules_body).strip()
-
         if not new_rules_body:
-            # LLM returned nothing useful — preserve the existing guide rather
-            # than blanking out the rules section.
-            return GuideRefineResponse(refined_guide=input.current_guide)
+            return GuideRefineResponse(refined_rules_md=input.current_rules_md)
 
-        examples_block, _ = _split_data_guide(input.current_guide)
-        new_rules_block = f"# Guidelines & Rules\n\n{new_rules_body}"
-        refined_guide = (
-            f"{examples_block}\n\n{new_rules_block}"
-            if examples_block
-            else new_rules_block
-        )
-        return GuideRefineResponse(refined_guide=refined_guide)
+        return GuideRefineResponse(refined_rules_md=new_rules_body)
 
 
 _DATA_GUIDE_STAGE_HINTS: dict[Literal["topics", "inputs", "outputs"], str] = {
@@ -876,40 +892,20 @@ _DATA_GUIDE_STAGE_HINTS: dict[Literal["topics", "inputs", "outputs"], str] = {
 }
 
 
-_GUIDELINES_HEADING_RE = re.compile(r"^# Guidelines & Rules\b.*$", re.MULTILINE)
+def _compose_guide_md(examples_md: str, rules_md: str) -> str:
+    """Render a DataGuide's two persisted bodies into a single markdown blob
+    with the canonical `# Reference Examples` / `# Guidelines & Rules` headings.
 
-
-def _split_data_guide(guide: str) -> tuple[str, str]:
-    """Split a Data Guide markdown into (examples_block, rules_body).
-
-    `examples_block` is everything before the `# Guidelines & Rules` heading
-    (typically the `# Reference Examples` section). `rules_body` is the
-    markdown content *under* the rules heading, with the heading itself
-    removed — i.e. the sequence of `## <title>` rule blocks. Either may be
-    empty.
-
-    Both blocks are content-preserving — surrounding whitespace is normalized
-    via `.strip()`, but the body of each block (examples, fenced code,
-    rule blocks) is returned verbatim. Internal whitespace is untouched.
-
-    If the guide has no `# Guidelines & Rules` heading, the entire input is
-    returned as `examples_block` and `rules_body` is empty. This means a
-    user who manually deletes the heading via the Edit dialog will, on the
-    next refinement, see the full guide treated as immutable examples and
-    only the LLM's new output written under a freshly-stitched `# Guidelines
-    & Rules` heading. Acceptable trade-off given that deleting the heading
-    is an explicit off-script action.
-
-    The split exists so refinement can treat reference examples as immutable
-    user input (preserved by the system) and have the LLM produce only the
-    rules portion of the guide.
+    The headings are added by the composer rather than stored on the model so
+    the persisted form stays canonical regardless of how the user enters
+    examples or how the LLM phrases the rules body.
     """
-    match = _GUIDELINES_HEADING_RE.search(guide)
-    if not match:
-        return guide.strip(), ""
-    examples_block = guide[: match.start()].strip()
-    rules_body = guide[match.end() :].strip()
-    return examples_block, rules_body
+    parts: list[str] = []
+    if examples_md.strip():
+        parts.append(f"# Reference Examples\n\n{examples_md.strip()}")
+    if rules_md.strip():
+        parts.append(f"# Guidelines & Rules\n\n{rules_md.strip()}")
+    return "\n\n".join(parts)
 
 
 def _resolve_data_guide(task: Task, data_guide_override: str | None) -> str | None:
@@ -923,7 +919,8 @@ def _resolve_data_guide(task: Task, data_guide_override: str | None) -> str | No
         return data_guide_override if data_guide_override.strip() else None
     current = task.current_data_guide()
     if current:
-        return current.guide
+        composed = _compose_guide_md(current.examples_md, current.rules_md)
+        return composed if composed else None
     return None
 
 
@@ -945,7 +942,7 @@ def _combine_guidance(
     if data_guide_content:
         stage_hint = _DATA_GUIDE_STAGE_HINTS[stage]
         parts.append(
-            "## Task Data Guide\n\n"
+            "# Task Data Guide\n\n"
             "A Task Data Guide is a recipe for what realistic data for this "
             "task looks like. It contains three things: **reference examples** "
             "(concrete `(input, output)` pairs showing what good looks like), "

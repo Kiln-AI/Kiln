@@ -4753,13 +4753,21 @@ export interface components {
         /**
          * DataGuide
          * @description Persistent data guide for synthetic data generation, stored as a child
-         *     of a Task. The guide is a markdown string describing structure, rules, and
-         *     examples used to steer synthetic data quality.
+         *     of a Task. Split into two fields to make the user-owned vs LLM-owned
+         *     boundary explicit at the data layer:
          *
-         *     Metadata (id, created_at, created_by, path) is inherited from KilnBaseModel
-         *     via KilnParentedModel so each saved guide carries authorship + timestamps.
-         *     Tasks point at the active guide via `Task.current_data_guide_id`; older
-         *     guides remain on disk so the UI can surface guide history.
+         *     - `examples_md`: user-authored reference examples — the body of the
+         *       `# Reference Examples` section (the sequence of `## Example N` blocks
+         *       with fenced ```input / ```output code fences). Never written by the
+         *       LLM. The `# Reference Examples` heading itself is added by the
+         *       composer at runtime, not stored here.
+         *     - `rules_md`: LLM-authored rules — the body of the `# Guidelines & Rules`
+         *       section (XML-tagged group blocks containing `## <title>` rule blocks).
+         *       Refresh-replaced wholesale by the metaprompter on each refinement.
+         *       The `# Guidelines & Rules` heading itself is added by the composer.
+         *
+         *     Either may be empty; a guide with neither is not useful but the model
+         *     permits it (validation lives at the save endpoint).
          */
         DataGuide: {
             /**
@@ -4790,10 +4798,17 @@ export interface components {
              */
             created_by?: string;
             /**
-             * Guide
-             * @description The data guide markdown — appended to synthetic data generation prompts to improve sample quality.
+             * Examples Md
+             * @description Body of the `# Reference Examples` section — user-authored reference examples (sequence of `## Example N` blocks with fenced input/output). The heading itself is not stored here; it is added by the runtime composer.
+             * @default
              */
-            guide: string;
+            examples_md: string;
+            /**
+             * Rules Md
+             * @description Body of the `# Guidelines & Rules` section — LLM-authored rules (XML-tagged group blocks). The heading itself is not stored here; it is added by the runtime composer.
+             * @default
+             */
+            rules_md: string;
             /** Model Type */
             readonly model_type: string;
         };
@@ -6592,10 +6607,17 @@ export interface components {
         /** GuidePreviewInput */
         GuidePreviewInput: {
             /**
-             * Guide
-             * @description The data guide prompt string
+             * Examples Md
+             * @description Body of the reference examples section being previewed.
+             * @default
              */
-            guide: string;
+            examples_md: string;
+            /**
+             * Rules Md
+             * @description Body of the guidelines & rules section being previewed.
+             * @default
+             */
+            rules_md: string;
             /** @description The model config to use for preview input generation */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
             /** @description Optional model config to use for preview output generation. Defaults to the input run config when not provided. */
@@ -6623,10 +6645,17 @@ export interface components {
         /** GuideRefineInput */
         GuideRefineInput: {
             /**
-             * Current Guide
-             * @description The current data guide prompt string
+             * Current Examples Md
+             * @description Body of the reference examples section — passed to the metaprompter for context only; never modified.
+             * @default
              */
-            current_guide: string;
+            current_examples_md: string;
+            /**
+             * Current Rules Md
+             * @description Body of the current guidelines & rules section — the metaprompter rewrites this wholesale.
+             * @default
+             */
+            current_rules_md: string;
             /**
              * Feedback
              * @description User feedback on what's wrong with preview samples
@@ -6643,10 +6672,10 @@ export interface components {
         /** GuideRefineResponse */
         GuideRefineResponse: {
             /**
-             * Refined Guide
-             * @description The refined data guide prompt string
+             * Refined Rules Md
+             * @description The refined guidelines & rules section body. Examples are preserved by the frontend; only this field is rewritten by the metaprompter.
              */
-            refined_guide: string;
+            refined_rules_md: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -8643,10 +8672,17 @@ export interface components {
         /** SaveTaskDataGuideInput */
         SaveTaskDataGuideInput: {
             /**
-             * Guide
-             * @description The data guide prompt string to persist
+             * Examples Md
+             * @description Body of the reference examples section — user-authored.
+             * @default
              */
-            guide: string;
+            examples_md: string;
+            /**
+             * Rules Md
+             * @description Body of the guidelines & rules section — LLM-authored.
+             * @default
+             */
+            rules_md: string;
         };
         /**
          * ScanProjectsRequest

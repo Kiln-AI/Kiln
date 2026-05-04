@@ -8,6 +8,7 @@
   import Warning from "$lib/ui/warning.svelte"
   import Callout from "$lib/ui/callout.svelte"
   import Output from "$lib/ui/output.svelte"
+  import { compose_guide_md } from "./data_guide_md"
 
   type ReviewedSample = {
     input: string
@@ -15,8 +16,14 @@
     looks_good: boolean | undefined
   }
 
-  export let guide: string = ""
-  export let initial_guide: string = guide
+  export let examples_md: string = ""
+  export let rules_md: string = ""
+  export let initial_examples_md: string = examples_md
+  // initial_rules_md is currently unused — rules are LLM-only and not part of
+  // the diff that flips the submit-button label. Kept on the API so callers
+  // pass both halves symmetrically with initial_examples_md.
+  export const initial_rules_md: string = rules_md
+  void initial_rules_md
   export let error: KilnError | null = null
   export let submitting: boolean = false
   // Lifted to the parent so back/forward navigation can restore the user's
@@ -29,9 +36,12 @@
   // prompt the user.
   export let saved: boolean = false
 
-  // True iff the user edited the guide via the Edit dialog after this preview
-  // was generated. Drives the submit button label (Refine vs Save Data Guide).
-  $: guide_was_edited = guide !== initial_guide
+  // True iff the user edited the examples via the Edit dialog after this
+  // preview was generated. Drives the submit button label (Refine vs Save
+  // Data Guide). Rules are LLM-only here, so they're not part of the diff.
+  $: guide_was_edited = examples_md !== initial_examples_md
+  // Composed view used for the read-only preview card in the collapse below.
+  $: preview_md = compose_guide_md(examples_md, rules_md)
 
   // --- "See all" expansion for long input/output cells ---
   // Threshold chosen so a typical paragraph fits in the row but multi-paragraph
@@ -54,23 +64,24 @@
   // while expanded.
   let preview_collapse_open: boolean = false
 
-  // --- Edit guide dialog ---
+  // --- Edit examples dialog ---
+  // Only examples are user-editable; rules are LLM-authored via refine.
   let edit_dialog: Dialog
-  let editing_guide: string = ""
+  let editing_examples_md: string = ""
 
   function open_edit_dialog() {
-    editing_guide = guide
+    editing_examples_md = examples_md
     edit_dialog?.show()
   }
 
   // Reset reverts all edits made in this preview session, not just the
-  // unsaved-in-dialog ones. We compare against initial_guide (the guide
-  // string when this preview was generated) so reopening the dialog after a
-  // prior Save still lets the user undo back to the original.
-  function reset_guide() {
-    editing_guide = initial_guide
+  // unsaved-in-dialog ones. We compare against initial_examples_md (the
+  // examples body when this preview was generated) so reopening the dialog
+  // after a prior Save still lets the user undo back to the original.
+  function reset_examples() {
+    editing_examples_md = initial_examples_md
   }
-  $: editing_differs_from_initial = editing_guide !== initial_guide
+  $: editing_differs_from_initial = editing_examples_md !== initial_examples_md
 
   // FormContainer flips edit_submitting=true before dispatching submit and
   // expects an async handler to reset it. Our handler is sync, so we reset it
@@ -79,14 +90,14 @@
   let edit_submitting: boolean = false
   function save_guide_edit() {
     try {
-      guide = editing_guide
+      examples_md = editing_examples_md
       edit_dialog?.close()
     } finally {
       edit_submitting = false
     }
   }
 
-  $: guide_has_changes = editing_guide !== guide
+  $: guide_has_changes = editing_examples_md !== examples_md
 
   function set_looks_good(index: number, value: boolean, event: Event) {
     event.stopPropagation()
@@ -364,7 +375,7 @@
           type="button">Edit</button
         >
       </div>
-      <Output raw_output={guide} show_border={true} />
+      <Output raw_output={preview_md} show_border={true} />
     </div>
   </Collapse>
 
@@ -415,11 +426,11 @@
   </div>
 {/if}
 
-<!-- Edit Guide Dialog -->
+<!-- Edit Examples Dialog -->
 <Dialog
   bind:this={edit_dialog}
-  title="Edit Data Guide"
-  sub_subtitle="Manually update the data guide prompt."
+  title="Edit Reference Examples"
+  sub_subtitle="Manually update the reference examples. Rules are managed by Kiln via refine and aren't editable here."
   width="wide"
 >
   <!-- No warn_before_unload here — the outer review-samples FormContainer
@@ -444,19 +455,19 @@
           <button
             type="button"
             class="link ml-4 text-xs text-gray-500 hover:text-gray-700"
-            on:click|stopPropagation={reset_guide}
+            on:click|stopPropagation={reset_examples}
           >
             Reset
           </button>
         {/if}
       </div>
       <FormElement
-        label="Data Guide"
+        label="Reference Examples"
         hide_label={true}
-        id="edit_guide_text"
+        id="edit_examples_text"
         inputType="textarea"
         height="xl"
-        bind:value={editing_guide}
+        bind:value={editing_examples_md}
       />
     </div>
   </FormContainer>

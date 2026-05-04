@@ -30,7 +30,8 @@
   let error: KilnError | null = null
   let submitting = false
 
-  let guide: string = ""
+  let examples_md: string = ""
+  let rules_md: string = ""
 
   type PreviewSample = { input: string; output: string }
   type ReviewedSample = {
@@ -39,7 +40,8 @@
     looks_good: boolean | undefined
   }
   let preview_samples: PreviewSample[] = []
-  let preview_initial_guide: string = ""
+  let preview_initial_examples_md: string = ""
+  let preview_initial_rules_md: string = ""
   let reviewed_samples: ReviewedSample[] = []
   let general_feedback: string = ""
 
@@ -51,8 +53,10 @@
   // forward steps through prior iterations. Transient states (generating /
   // refining / regenerating) are skipped.
   type JourneySnapshot = {
-    guide: string
-    preview_initial_guide: string
+    examples_md: string
+    rules_md: string
+    preview_initial_examples_md: string
+    preview_initial_rules_md: string
     preview_samples: PreviewSample[]
     reviewed_samples: ReviewedSample[]
     general_feedback: string
@@ -66,8 +70,10 @@
 
   function snapshot_state(): JourneySnapshot {
     return {
-      guide,
-      preview_initial_guide,
+      examples_md,
+      rules_md,
+      preview_initial_examples_md,
+      preview_initial_rules_md,
       preview_samples: [...preview_samples],
       reviewed_samples: reviewed_samples.map((s) => ({ ...s })),
       general_feedback,
@@ -88,8 +94,10 @@
     if (idx < 0 || idx >= journey.length) return
     restoring_from_history = true
     const s = journey[idx]
-    guide = s.guide
-    preview_initial_guide = s.preview_initial_guide
+    examples_md = s.examples_md
+    rules_md = s.rules_md
+    preview_initial_examples_md = s.preview_initial_examples_md
+    preview_initial_rules_md = s.preview_initial_rules_md
     preview_samples = s.preview_samples
     reviewed_samples = s.reviewed_samples
     general_feedback = s.general_feedback
@@ -143,7 +151,8 @@
     }
     pending_data_guide_refine_handoff.set(null)
 
-    guide = handoff.guide
+    examples_md = handoff.examples_md
+    rules_md = handoff.rules_md
     captured_input_run_config = handoff.input_run_config
     captured_output_run_config = handoff.output_run_config
 
@@ -172,7 +181,8 @@
         {
           params: { path: { project_id, task_id } },
           body: {
-            guide,
+            examples_md,
+            rules_md,
             run_config_properties: captured_input_run_config,
             output_run_config_properties: captured_output_run_config,
             num_samples: 5,
@@ -192,7 +202,8 @@
         looks_good: undefined,
       }))
       general_feedback = ""
-      preview_initial_guide = guide
+      preview_initial_examples_md = examples_md
+      preview_initial_rules_md = rules_md
       current_state = "preview"
       push_preview_step()
     } catch (e) {
@@ -235,7 +246,8 @@
           {
             params: { path: { project_id, task_id } },
             body: {
-              current_guide: guide,
+              current_examples_md: examples_md,
+              current_rules_md: rules_md,
               feedback: event.detail.feedback,
               preview_samples: event.detail.rated_samples,
               run_config_properties: captured_input_run_config,
@@ -246,7 +258,7 @@
         if (api_error) throw api_error
         if (!data) throw new KilnError("No refinement returned", null)
 
-        guide = data.refined_guide
+        rules_md = data.refined_rules_md
       }
 
       const { data: preview_data, error: preview_error } = await client.POST(
@@ -254,7 +266,8 @@
         {
           params: { path: { project_id, task_id } },
           body: {
-            guide,
+            examples_md,
+            rules_md,
             run_config_properties: captured_input_run_config,
             output_run_config_properties: captured_output_run_config,
             num_samples: 5,
@@ -275,7 +288,8 @@
         looks_good: undefined,
       }))
       general_feedback = ""
-      preview_initial_guide = guide
+      preview_initial_examples_md = examples_md
+      preview_initial_rules_md = rules_md
       current_state = "preview"
       push_preview_step()
     } catch (e) {
@@ -296,7 +310,7 @@
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
         {
           params: { path: { project_id, task_id } },
-          body: { guide },
+          body: { examples_md, rules_md },
         },
       )
 
@@ -347,8 +361,10 @@
            component state. -->
       {#key journey_index}
         <GuidePreview
-          initial_guide={preview_initial_guide}
-          bind:guide
+          initial_examples_md={preview_initial_examples_md}
+          initial_rules_md={preview_initial_rules_md}
+          bind:examples_md
+          bind:rules_md
           bind:error
           bind:submitting
           bind:reviewed_samples

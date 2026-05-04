@@ -33,23 +33,24 @@
   // Unified examples list (manual + existing + saved golden)
   export let guide_examples: GuideSample[] = []
 
-  // Build the complete guide prompt from examples. Rules are intentionally
-  // not collected from the user here — the metaprompter generates them under
-  // the hood from refine feedback.
-  function build_guide_markdown(): string {
+  // Build the body of the `# Reference Examples` section from the user's
+  // examples. The `# Reference Examples` heading itself is added by the
+  // composer (or the runtime) at render time. Rules are intentionally not
+  // collected from the user here — the metaprompter generates them from
+  // refine feedback.
+  function build_examples_md(): string {
     const valid_examples = guide_examples.filter(
       (e) => e.input.trim() || e.output.trim(),
     )
     if (valid_examples.length === 0) {
-      return "Generate diverse, realistic inputs for this task."
+      return ""
     }
-    const example_text = valid_examples
+    return valid_examples
       .map(
         (e, i) =>
           `## Example ${i + 1}\n\`\`\`input\n${e.input}\n\`\`\`\n\n\`\`\`output\n${e.output}\n\`\`\``,
       )
       .join("\n\n")
-    return `# Reference Examples\n\n${example_text}`
   }
 
   // --- Example management ---
@@ -123,7 +124,7 @@
         return
       }
       dispatch("generate_preview", {
-        guide: build_guide_markdown(),
+        examples_md: build_examples_md(),
         input_run_config,
         output_run_config,
       })
@@ -135,7 +136,7 @@
   // --- Events ---
   const dispatch = createEventDispatcher<{
     generate_preview: {
-      guide: string
+      examples_md: string
       input_run_config: KilnAgentRunConfigProperties
       output_run_config: KilnAgentRunConfigProperties
     }

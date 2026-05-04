@@ -275,7 +275,8 @@ When generating Q&A pairs, focus on generating queries and answers that are rele
 
 def generate_guidance_refinement_prompt(
     task_instruction: str,
-    current_guide: str,
+    current_examples_md: str,
+    current_rules_md: str,
     preview_samples: list[tuple[str, str, bool]],
     feedback: str,
     task_description: str | None = None,
@@ -287,6 +288,11 @@ def generate_guidance_refinement_prompt(
     Each preview sample is a tuple of (input, output, looks_good) where
     looks_good=True means the user marked it Realistic and looks_good=False
     means the user marked it Needs Work.
+
+    `current_examples_md` and `current_rules_md` are the two halves of the
+    persisted DataGuide. The examples half is shown to the LLM for context
+    only (immutable user input); the rules half is the editable body the
+    metaprompter rewrites wholesale.
 
     The optional task_description / task_input_json_schema /
     task_output_json_schema args give the LLM extra grounding so refined rules
@@ -391,15 +397,38 @@ The task's output JSON schema (every rule about output structure must be consist
 {task_output_json_schema}
 </task_output_json_schema>"""
 
-    prompt += f"""
+    examples_block = current_examples_md.strip()
+    rules_block = current_rules_md.strip()
 
-The user's current guide is shown below for context. It uses two top-level sections — `# Reference Examples` (user-authored, immutable) and `# Guidelines & Rules` (the editable rules half — what you produce). Either section may be absent if the user has not authored any items yet.
+    prompt += """
 
-**Read the reference examples carefully — they are your primary signal for what realistic task data looks like — but DO NOT include them in your output.** Read the existing rules (if any) to understand what's already in place; your output will replace the rules half wholesale.
+The two halves of the user's current guide are shown below in separate blocks. **Read the reference examples carefully — they are your primary signal for what realistic task data looks like — but DO NOT include them in your output.** Read the existing rules (if any) to understand what's already in place; your output will replace the rules half wholesale. Either block may be empty if the user has not authored that half yet.
+"""
 
-<current_guide>
-{current_guide}
-</current_guide>
+    if examples_block:
+        prompt += f"""
+<current_reference_examples>
+{examples_block}
+</current_reference_examples>
+"""
+    else:
+        prompt += """
+<current_reference_examples>
+(empty — the user has not authored any reference examples yet)
+</current_reference_examples>
+"""
+
+    if rules_block:
+        prompt += f"""
+<current_rules>
+{rules_block}
+</current_rules>
+"""
+    else:
+        prompt += """
+<current_rules>
+(empty — no rules have been authored yet; treat creating an initial set as your primary task)
+</current_rules>
 """
 
     has_samples = len(preview_samples) > 0

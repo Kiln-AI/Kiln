@@ -7,7 +7,8 @@ import type { KilnAgentRunConfigProperties } from "$lib/types"
 // only — a hard refresh of /refine drops the seed and the page redirects back
 // to /data_guide.
 export type DataGuideRefineHandoff = {
-  guide: string
+  examples_md: string
+  rules_md: string
   input_run_config: KilnAgentRunConfigProperties
   output_run_config: KilnAgentRunConfigProperties
 }
