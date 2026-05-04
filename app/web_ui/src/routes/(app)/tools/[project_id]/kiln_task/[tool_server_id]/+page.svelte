@@ -52,6 +52,7 @@
   let loading_error: KilnError | null = null
   let archive_error: KilnError | null = null
   let unarchive_error: KilnError | null = null
+  let archive_loading = false
   let run_config_properties: UiProperty[] = []
   let task_id_for_run_config: string | null = null
 
@@ -256,6 +257,7 @@
     const properties = tool_server.properties as KilnTaskServerProperties
 
     try {
+      archive_loading = true
       archive_error = null
       unarchive_error = null
 
@@ -284,9 +286,15 @@
         unarchive_error = createKilnError(e)
       }
     } finally {
-      fetch_tool_server()
-      // Re-load available tools to make sure archived tools aren't shown
-      load_available_tools(project_id, true)
+      try {
+        await Promise.all([
+          fetch_tool_server(),
+          // Re-load available tools to make sure archived tools aren't shown
+          load_available_tools(project_id, true),
+        ])
+      } finally {
+        archive_loading = false
+      }
     }
   }
 </script>
@@ -319,6 +327,7 @@
       {
         label: is_archived ? "Unarchive" : "Archive",
         handler: is_archived ? unarchive : archive,
+        loading: archive_loading,
       },
     ]}
   >

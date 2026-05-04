@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte"
+  import posthog from "posthog-js"
   import { client } from "$lib/api_client"
   import { hydrateSessionFromSnapshot } from "$lib/chat/session_messages"
   import type { LoadedChatSessionDetail } from "$lib/chat/chat_history_apply"
@@ -48,7 +49,9 @@
   }
 
   export function open() {
-    historyDialog?.show()
+    if (!historyDialog) return
+    historyDialog.show()
+    posthog.capture("chat_history_opened")
     void loadSessionList()
   }
 
@@ -77,6 +80,9 @@
       const { messages, continuationTraceId } =
         hydrateSessionFromSnapshot(snapshot)
       dispatch("apply", { messages, continuationTraceId })
+      posthog.capture("chat_history_session_loaded", {
+        message_count: messages.length,
+      })
       close()
     } catch (e) {
       sessionsError = createKilnError(e)
@@ -97,6 +103,7 @@
         return
       }
       sessionRows = sessionRows.filter((r) => r.id !== sessionId)
+      posthog.capture("chat_history_session_deleted")
     } catch (e) {
       sessionsError = createKilnError(e)
     } finally {

@@ -1491,7 +1491,7 @@
     <div class="font-light flex flex-col gap-2">
       <p>
         Your existing synthetic data gen session is incompatible with your
-        current goal. You'll need to clear it's data to start a new session for
+        current goal. You'll need to clear its data to start a new session for
         this goal.
       </p>
       <Warning warning_message="This action cannot be undone." />
