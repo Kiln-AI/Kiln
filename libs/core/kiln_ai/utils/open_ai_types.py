@@ -140,6 +140,9 @@ def sanitize_messages_for_provider(messages: Iterable[Any]) -> list[Any]:
     pass through unchanged. The input list and its dicts are not mutated."""
     sanitized: list[Any] = []
     for message in messages:
+        # Traces mix TypedDict messages (which may carry kiln-only fields) with
+        # LiteLLM Message pydantic objects returned from prior calls (which never
+        # do). Only dicts need stripping; pass other types through untouched.
         if isinstance(message, dict):
             sanitized.append(
                 {k: v for k, v in message.items() if k not in KILN_ONLY_MESSAGE_FIELDS}
