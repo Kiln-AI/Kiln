@@ -85,6 +85,8 @@
     req_run_config_id: string,
   ) {
     try {
+      results = null
+      results_error = null
       results_loading = true
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/evals/{eval_id}/eval_config/{eval_config_id}/run_config/{run_config_id}/results",

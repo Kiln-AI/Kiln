@@ -48,13 +48,17 @@
   }
 
   async function load_task_data(req_project_id: string, req_task_id: string) {
+    loading = true
+    error = null
     try {
-      load_available_tools(req_project_id)
-      load_model_info()
-      load_available_models()
-      load_task_prompts(req_project_id, req_task_id)
-      load_task_run_configs(req_project_id, req_task_id)
-      const loaded_task = await load_task(req_project_id, req_task_id)
+      const [, , , , , loaded_task] = await Promise.all([
+        load_available_tools(req_project_id),
+        load_model_info(),
+        load_available_models(),
+        load_task_prompts(req_project_id, req_task_id),
+        load_task_run_configs(req_project_id, req_task_id),
+        load_task(req_project_id, req_task_id),
+      ])
       if (req_project_id !== project_id || req_task_id !== task_id) return
       task = loaded_task
     } catch (e) {

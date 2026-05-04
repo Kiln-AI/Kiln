@@ -77,6 +77,12 @@
   ]
 
   $: if (project_id && task_id) {
+    runs = null
+    filtered_runs = null
+    error = null
+    select_mode = false
+    selected_runs = new Set()
+    last_selected_id = null
     get_runs(project_id, task_id)
   }
 

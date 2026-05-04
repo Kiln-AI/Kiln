@@ -115,7 +115,6 @@
         throw get_error
       }
       prompt_optimization_job = prompt_optimization_job_response
-      build_properties()
     } catch (error) {
       if (
         req_project_id !== project_id ||
@@ -199,10 +198,20 @@
     return s.charAt(0).toUpperCase() + s.slice(1)
   }
 
-  function build_properties() {
+  // Re-derive whenever the job, run configs, evals, or model info store change —
+  // any of them feeding the property list mid-render would otherwise show stale
+  // names ("Unknown", raw IDs) until the next refresh.
+  $: {
+    void prompt_optimization_job
+    void run_configs
+    void evals
+    void $model_info
+    properties = build_properties()
+  }
+
+  function build_properties(): UiProperty[] {
     if (!prompt_optimization_job) {
-      properties = []
-      return
+      return []
     }
 
     const target_run_config_page_link = `/optimize/${project_id}/${task_id}/run_config/${prompt_optimization_job.target_run_config_id}`
@@ -280,7 +289,7 @@
       ].filter((p) => !!p.value),
     )
 
-    properties = base
+    return base
   }
 
   function no_optimized_prompt_status_message(status: string): string {

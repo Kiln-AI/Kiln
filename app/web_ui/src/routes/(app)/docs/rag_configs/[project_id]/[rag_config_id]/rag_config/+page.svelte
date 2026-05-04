@@ -64,6 +64,12 @@
   }> = []
 
   $: if (project_id && rag_config_id) {
+    error = null
+    rag_config = null
+    searchQuery = ""
+    searchError = null
+    lastSearchQuery = null
+    searchResults = []
     load_available_models()
     load_available_embedding_models()
     load_available_reranker_models()

@@ -25,6 +25,9 @@
   let extractor_config: ExtractorConfig | null = null
 
   $: if (project_id && extractor_id) {
+    extractor_config = null
+    archive_error = null
+    error = null
     get_extractor_config(project_id, extractor_id)
   }
 

@@ -237,6 +237,20 @@
           evaluator.current_config_id,
         )
       }
+    } else if (
+      req_project_id === project_id &&
+      req_task_id === task_id &&
+      req_spec_id === spec_id
+    ) {
+      // Spec exists but has no eval_id yet — clear eval-scoped loading flags
+      // so the page doesn't sit on the global spinner forever.
+      eval_progress_loading = false
+      eval_loading = false
+      task_loading = false
+      run_configs_loading = false
+      eval_progress = null
+      evaluator = null
+      score_summary = null
     }
   }
 

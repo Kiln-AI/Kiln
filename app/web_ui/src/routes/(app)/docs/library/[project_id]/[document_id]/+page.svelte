@@ -25,7 +25,10 @@
   let updated_document: KilnDocument | null = null
   $: document = updated_document || initial_document
   let error: KilnError | null = null
-  let loading = true
+  let document_loading = true
+  let extractions_loading = true
+  let folder_loading = false
+  $: loading = document_loading || extractions_loading || folder_loading
   let results: ExtractionSummary[] | null = null
 
   $: project_id = $page.params.project_id!
@@ -54,7 +57,7 @@
 
   async function get_document(req_project_id: string, req_document_id: string) {
     try {
-      loading = true
+      document_loading = true
       const { data: document_response, error: get_error } = await client.GET(
         "/api/projects/{project_id}/documents/{document_id}",
         {
@@ -85,7 +88,7 @@
       }
     } finally {
       if (req_project_id === project_id && req_document_id === document_id) {
-        loading = false
+        document_loading = false
       }
     }
   }
@@ -95,7 +98,7 @@
     req_document_id: string,
   ) {
     try {
-      loading = true
+      extractions_loading = true
       const { data: extractions_response, error: get_error } = await client.GET(
         "/api/projects/{project_id}/documents/{document_id}/extractions",
         {
@@ -115,14 +118,14 @@
       results = extractions_response
     } finally {
       if (req_project_id === project_id && req_document_id === document_id) {
-        loading = false
+        extractions_loading = false
       }
     }
   }
 
   async function open_enclosing_folder() {
     try {
-      loading = true
+      folder_loading = true
       const { error: open_error } = await client.POST(
         "/api/projects/{project_id}/documents/{document_id}/open_enclosing_folder",
         {
@@ -138,7 +141,7 @@
         throw createKilnError(open_error)
       }
     } finally {
-      loading = false
+      folder_loading = false
     }
   }
 

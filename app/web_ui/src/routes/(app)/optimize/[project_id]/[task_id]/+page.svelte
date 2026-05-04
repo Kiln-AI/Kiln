@@ -96,11 +96,13 @@
   }
 
   $: if (project_id && task_id) {
+    cancelSelection()
     load_task_data(project_id, task_id)
   }
 
   async function load_task_data(req_project_id: string, req_task_id: string) {
     loading = true
+    error = null
     load_available_tools(req_project_id)
     try {
       await Promise.all([

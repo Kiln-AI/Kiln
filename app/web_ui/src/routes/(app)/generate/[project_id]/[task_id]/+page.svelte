@@ -38,7 +38,7 @@
   let last_handled_key: string | null = null
 
   $: if (project_id && task_id) {
-    const key = `${project_id}/${task_id}`
+    const key = `${project_id}/${task_id}?${$page.url.searchParams.toString()}`
     if (last_handled_key !== key) {
       last_handled_key = key
       handle_routing(project_id, task_id)

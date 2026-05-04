@@ -43,6 +43,7 @@
     req_task_id: string,
   ) {
     loading = true
+    copilot_check_error = null
     await get_prompt_optimization_jobs(req_project_id, req_task_id)
 
     if (req_project_id !== project_id || req_task_id !== task_id) return

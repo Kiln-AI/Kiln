@@ -75,7 +75,11 @@
     req_spec_id: string,
   ) {
     if (req_spec_id === "legacy") {
-      if (req_project_id === project_id && req_task_id === task_id) {
+      if (
+        req_project_id === project_id &&
+        req_task_id === task_id &&
+        req_spec_id === spec_id
+      ) {
         spec_loading = false
       }
       return
