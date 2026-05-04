@@ -36,6 +36,12 @@
   // GuideRefineView without having to lift the dialog state up here.
   let refine_view: GuideRefineView | null = null
 
+  // Surface "Save Without Verifying" pending + error state inside the edit
+  // dialog (instead of dropping the failure into the parent-level `error`,
+  // which renders behind the still-open dialog).
+  let save_submitting: boolean = false
+  let save_error: KilnError | null = null
+
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
   onDestroy(() => {
@@ -49,19 +55,34 @@
     description: `View and refine the saved task data guide for project ${project_id}, task ${task_id}.`,
   })
 
+  // Distinguish "load failed" from "no guide saved". Without this, a 5xx
+  // would silently send the user into setup and risk overwriting a guide
+  // that's actually present but unreachable due to a transient error.
+  let load_failed = false
   onMount(async () => {
     try {
-      const { data } = await client.GET(
+      const { data, error: api_error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
         { params: { path: { project_id, task_id } } },
       )
-      if (data) {
+      if (api_error) {
+        load_failed = true
+        error = createKilnError(api_error)
+      } else if (data) {
         examples_md = data.examples_md
         rules_md = data.rules_md
         saved_data_guide = data
       }
-    } catch {
-      // No existing guide
+    } catch (e) {
+      load_failed = true
+      error = createKilnError(e)
+    }
+
+    if (load_failed) {
+      // Surface the load error in-page rather than redirecting away, so the
+      // user can see what went wrong instead of being silently sent to setup.
+      current_state = "saved"
+      return
     }
 
     // No saved guide content → send them to the setup flow.
@@ -109,7 +130,8 @@
   async function handle_save_with_guide(
     event: CustomEvent<{ examples_md: string; rules_md: string }>,
   ) {
-    error = null
+    save_error = null
+    save_submitting = true
 
     try {
       const { data: saved, error: api_error } = await client.PUT(
@@ -131,7 +153,9 @@
         rules_md = saved.rules_md
       }
     } catch (e) {
-      error = createKilnError(e)
+      save_error = createKilnError(e)
+    } finally {
+      save_submitting = false
     }
   }
 
@@ -142,7 +166,6 @@
   }
 </script>
 
-<!-- TODO: Update read the docs link to point to new data guide docs -->
 <div class="max-w-[1400px]">
   <AppPage
     title="Data Guide"
@@ -187,6 +210,8 @@
         {task}
         data_guide={saved_data_guide}
         bind:page_error={error}
+        bind:save_error
+        bind:save_submitting
         on:generate_preview={handle_generate_preview}
         on:save={handle_save_with_guide}
       />

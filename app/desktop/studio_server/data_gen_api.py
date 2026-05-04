@@ -1,7 +1,11 @@
+import json
 from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException, Path, Query
 from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
+from kiln_ai.adapters.data_gen.data_gen_prompts import (
+    generate_guidance_refinement_prompt,
+)
 from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenCategoriesTask,
     DataGenCategoriesTaskInput,
@@ -123,7 +127,10 @@ class GuidePreviewInput(BaseModel):
         default=None,
     )
     num_samples: int = Field(
-        description="Number of preview samples to generate", default=5
+        description="Number of preview samples to generate",
+        default=5,
+        ge=1,
+        le=20,
     )
 
 
@@ -602,6 +609,12 @@ The topic path for this sample is:
     ) -> DataGuide:
         task = task_from_id(project_id, task_id)
 
+        if not input.examples_md.strip() and not input.rules_md.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Data guide cannot be empty. Use DELETE to remove it.",
+            )
+
         # By design there is at most one DataGuide per task. Reuse the existing
         # file if present (so git history of the guide stays in one place);
         # otherwise create the first one.
@@ -623,7 +636,7 @@ The topic path for this sample is:
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
         summary="Delete Task Data Guide",
         tags=["Synthetic Data"],
-        openapi_extra=ALLOW_AGENT,
+        openapi_extra=agent_policy_require_approval("Delete saved Data Guide?"),
     )
     async def delete_data_gen_guide(
         project_id: Annotated[
@@ -683,8 +696,6 @@ The topic path for this sample is:
             topic=[],
             num_samples=input.num_samples,
         )
-
-        import json
 
         run_config_properties = input.run_config_properties.model_copy()
         run_config_properties.prompt_id = PromptGenerators.SIMPLE
@@ -807,12 +818,6 @@ The topic path for this sample is:
         ],
         input: GuideRefineInput,
     ) -> GuideRefineResponse:
-        import json
-
-        from kiln_ai.adapters.data_gen.data_gen_prompts import (
-            generate_guidance_refinement_prompt,
-        )
-
         task = task_from_id(project_id, task_id)
 
         system_prompt = generate_guidance_refinement_prompt(
@@ -850,7 +855,17 @@ The topic path for this sample is:
         if not refine_run.output or not refine_run.output.output:
             raise HTTPException(status_code=500, detail="Failed to refine guidance")
 
-        parsed = json.loads(refine_run.output.output)
+        try:
+            parsed = json.loads(refine_run.output.output)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=500, detail="Failed to parse refined guidance"
+            )
+        if not isinstance(parsed, dict):
+            raise HTTPException(
+                status_code=500, detail="Failed to parse refined guidance"
+            )
+
         new_rules_body = (parsed.get("rules") or "").strip()
 
         if not new_rules_body:

@@ -3,7 +3,15 @@
 # These libraries are licensed under the Apache License 2.0. Any modifications
 # are licensed under the kiln AI Core license (MIT at time of writing). See /libs/core/LICENSE.txt for details.
 
+from html import escape
 from typing import Literal
+
+
+def _xml_escape(value: str) -> str:
+    """Escape `<`/`>`/`&` so user-supplied text can't close out of an
+    XML-style block in the refine prompt and re-shape the surrounding
+    structure (deliberate or accidental)."""
+    return escape(value, quote=False)
 
 
 def generate_goal_description(gen_type: Literal["training", "eval"]) -> str:
@@ -408,7 +416,7 @@ The two halves of the user's current guide are shown below in separate blocks. *
     if examples_block:
         prompt += f"""
 <current_reference_examples>
-{examples_block}
+{_xml_escape(examples_block)}
 </current_reference_examples>
 """
     else:
@@ -421,7 +429,7 @@ The two halves of the user's current guide are shown below in separate blocks. *
     if rules_block:
         prompt += f"""
 <current_rules>
-{rules_block}
+{_xml_escape(rules_block)}
 </current_rules>
 """
     else:
@@ -446,8 +454,8 @@ The following samples were generated using the current guide. The user rated eac
         ):
             rating = "Realistic" if looks_good else "Needs Work"
             prompt += f"""<sample_{i} rating="{rating}">
-<input>{sample_input}</input>
-<output>{sample_output}</output>
+<input>{_xml_escape(sample_input)}</input>
+<output>{_xml_escape(sample_output)}</output>
 </sample_{i}>
 """
 
@@ -457,7 +465,7 @@ The following samples were generated using the current guide. The user rated eac
 
 The user's written feedback (focused on the "Needs Work" samples):
 <feedback>
-{feedback}
+{_xml_escape(feedback)}
 </feedback>
 """
 

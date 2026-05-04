@@ -25,6 +25,7 @@
     | "preview"
     | "refining"
     | "regenerating"
+    | "load_error"
 
   let current_state: RefineState = "loading"
   let error: KilnError | null = null
@@ -122,12 +123,11 @@
       preview_initial_rules_md = rules_md
       current_state = "preview"
     } catch (e) {
+      // Surface the failure on this page rather than silently bouncing back
+      // to /data_guide, which would lose the error and leave the user with
+      // no idea why the refine flow didn't start.
       error = createKilnError(e)
-      // Initial preview failed — bail back to the saved-guide view; the
-      // user can retry from there.
-      goto(`/generate/${project_id}/${task_id}/data_guide`, {
-        replaceState: true,
-      })
+      current_state = "load_error"
     } finally {
       submitting = false
     }
@@ -241,7 +241,6 @@
   }
 </script>
 
-<!-- TODO: Update read the docs link to point to new data guide docs -->
 <div class="max-w-[1400px]">
   <AppPage
     title="Refine Data Guide"
@@ -289,6 +288,14 @@
         title="Regenerating Examples"
         description="Regenerating examples to review with your edited data guide. Hold tight!"
       />
+    {:else if current_state === "load_error"}
+      <div
+        class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+      >
+        <div class="text-error text-sm">
+          {error?.getMessage() ?? "An unknown error occurred"}
+        </div>
+      </div>
     {/if}
   </AppPage>
 </div>

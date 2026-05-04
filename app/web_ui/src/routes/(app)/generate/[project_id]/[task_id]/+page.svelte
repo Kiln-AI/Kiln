@@ -1,6 +1,5 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
-  import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto, afterNavigate } from "$app/navigation"
   import DataGenIntro from "./data_gen_intro.svelte"
@@ -48,6 +47,11 @@
   // fires again, and the user gets bounced forward — a double-back.
   // afterNavigate fires for every navigation including initial mount.
   afterNavigate(({ type }) => {
+    // SvelteKit can reuse this component across project/task param-only
+    // navigations, so onMount won't refire — refresh has_data_guide on
+    // every navigation so the top-bar Data Guide button reflects the
+    // current task, not the previous one.
+    void check_data_guide()
     if (type === "popstate") {
       // Back/forward — show the cold-start eval/finetune cards instead of
       // re-redirecting forward.
@@ -55,10 +59,6 @@
       return
     }
     handle_routing()
-  })
-
-  onMount(() => {
-    check_data_guide()
   })
 
   async function check_data_guide() {

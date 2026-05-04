@@ -294,7 +294,6 @@
   }
 </script>
 
-<!-- TODO: Update read the docs link to point to new data guide docs -->
 <div class="max-w-[1400px]">
   <AppPage
     title="Set Up Data Guide"

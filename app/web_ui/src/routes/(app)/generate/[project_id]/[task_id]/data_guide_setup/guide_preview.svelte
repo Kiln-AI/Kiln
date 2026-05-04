@@ -8,7 +8,6 @@
   import Warning from "$lib/ui/warning.svelte"
   import Callout from "$lib/ui/callout.svelte"
   import Output from "$lib/ui/output.svelte"
-  import { compose_guide_md } from "./data_guide_md"
 
   type ReviewedSample = {
     input: string
@@ -19,11 +18,7 @@
   export let examples_md: string = ""
   export let rules_md: string = ""
   export let initial_examples_md: string = examples_md
-  // initial_rules_md is currently unused — rules are LLM-only and not part of
-  // the diff that flips the submit-button label. Kept on the API so callers
-  // pass both halves symmetrically with initial_examples_md.
-  export const initial_rules_md: string = rules_md
-  void initial_rules_md
+  export let initial_rules_md: string = rules_md
   export let error: KilnError | null = null
   export let submitting: boolean = false
   // Lifted to the parent so back/forward navigation can restore the user's
@@ -36,12 +31,11 @@
   // prompt the user.
   export let saved: boolean = false
 
-  // True iff the user edited the examples via the Edit dialog after this
-  // preview was generated. Drives the submit button label (Refine vs Save
-  // Data Guide). Rules are LLM-only here, so they're not part of the diff.
-  $: guide_was_edited = examples_md !== initial_examples_md
-  // Composed view used for the read-only preview card in the collapse below.
-  $: preview_md = compose_guide_md(examples_md, rules_md)
+  // True iff the user edited either half of the guide via the Edit dialog
+  // after this preview was generated. Drives the submit button label
+  // (Refine vs Save Data Guide).
+  $: guide_was_edited =
+    examples_md !== initial_examples_md || rules_md !== initial_rules_md
 
   // --- "See all" expansion for long input/output cells ---
   // Threshold chosen so a typical paragraph fits in the row but multi-paragraph
@@ -64,24 +58,29 @@
   // while expanded.
   let preview_collapse_open: boolean = false
 
-  // --- Edit examples dialog ---
-  // Only examples are user-editable; rules are LLM-authored via refine.
+  // --- Edit data guide dialog ---
   let edit_dialog: Dialog
   let editing_examples_md: string = ""
+  let editing_rules_md: string = ""
 
   function open_edit_dialog() {
     editing_examples_md = examples_md
+    editing_rules_md = rules_md
     edit_dialog?.show()
   }
 
   // Reset reverts all edits made in this preview session, not just the
-  // unsaved-in-dialog ones. We compare against initial_examples_md (the
-  // examples body when this preview was generated) so reopening the dialog
-  // after a prior Save still lets the user undo back to the original.
+  // unsaved-in-dialog ones. Compares against the *_initial values (the
+  // bodies when this preview was generated) so reopening the dialog after a
+  // prior Save still lets the user undo back to the original.
   function reset_examples() {
     editing_examples_md = initial_examples_md
   }
-  $: editing_differs_from_initial = editing_examples_md !== initial_examples_md
+  function reset_rules() {
+    editing_rules_md = initial_rules_md
+  }
+  $: examples_differs_from_initial = editing_examples_md !== initial_examples_md
+  $: rules_differs_from_initial = editing_rules_md !== initial_rules_md
 
   // FormContainer flips edit_submitting=true before dispatching submit and
   // expects an async handler to reset it. Our handler is sync, so we reset it
@@ -91,13 +90,16 @@
   function save_guide_edit() {
     try {
       examples_md = editing_examples_md
+      rules_md = editing_rules_md
       edit_dialog?.close()
     } finally {
       edit_submitting = false
     }
   }
 
-  $: guide_has_changes = editing_examples_md !== examples_md
+  $: guide_has_changes =
+    editing_examples_md !== examples_md || editing_rules_md !== rules_md
+  $: guide_is_empty = !editing_examples_md.trim() && !editing_rules_md.trim()
 
   function set_looks_good(index: number, value: boolean, event: Event) {
     event.stopPropagation()
@@ -307,6 +309,7 @@
                 <div class="flex flex-col gap-1">
                   <div class="flex gap-1">
                     <button
+                      type="button"
                       class="btn btn-sm btn-outline whitespace-nowrap hover:btn-success {sample.looks_good ===
                       true
                         ? 'btn-secondary'
@@ -316,6 +319,7 @@
                     >
                     <div class="flex flex-col gap-1">
                       <button
+                        type="button"
                         class="btn btn-sm btn-outline whitespace-nowrap hover:btn-warning {sample.looks_good ===
                         false
                           ? 'btn-secondary'
@@ -367,7 +371,7 @@
     bind:open={preview_collapse_open}
     small={true}
   >
-    <div class="flex flex-col gap-2">
+    <div class="flex flex-col gap-4">
       <div class="flex justify-end">
         <button
           class="btn btn-sm btn-outline"
@@ -375,7 +379,24 @@
           type="button">Edit</button
         >
       </div>
-      <Output raw_output={preview_md} show_border={true} />
+      <div class="flex flex-col gap-2">
+        <h3 class="text-sm font-medium">Reference Examples</h3>
+        {#if examples_md.trim()}
+          <Output raw_output={examples_md} show_border={true} />
+        {:else}
+          <div
+            class="rounded-lg border border-dashed border-gray-300 p-4 text-center text-xs text-gray-400"
+          >
+            No reference examples
+          </div>
+        {/if}
+      </div>
+      {#if rules_md.trim()}
+        <div class="flex flex-col gap-2">
+          <h3 class="text-sm font-medium">Guidelines &amp; Rules</h3>
+          <Output raw_output={rules_md} show_border={true} />
+        </div>
+      {/if}
     </div>
   </Collapse>
 
@@ -426,49 +447,71 @@
   </div>
 {/if}
 
-<!-- Edit Examples Dialog -->
-<Dialog
-  bind:this={edit_dialog}
-  title="Edit Reference Examples"
-  sub_subtitle="Manually update the reference examples. Rules are managed by Kiln via refine and aren't editable here."
-  width="wide"
->
+<!-- Edit Data Guide Dialog -->
+<Dialog bind:this={edit_dialog} title="Edit Data Guide" width="wide">
   <!-- No warn_before_unload here — the outer review-samples FormContainer
        already registers a beforeNavigate handler. Each FormContainer registers
        its own, so duplicating the flag here causes the user to see the unsaved
        changes confirm() twice on navigation. -->
   <FormContainer
     submit_label="Save"
-    submit_disabled={!guide_has_changes}
+    submit_disabled={!guide_has_changes || guide_is_empty}
     bind:submitting={edit_submitting}
     on:submit={save_guide_edit}
     compact_button={true}
   >
-    <!-- FormElement.inline_action only renders next to the visible label, but
-         we hide the label here. Mimic the inline reset button manually so the
-         user can still revert their edits — same pattern as
-         guide_refine_view.svelte. -->
-    <div>
-      <div class="flex flex-row items-center pb-[4px] min-h-[1.25rem]">
-        <span class="grow"></span>
-        {#if editing_differs_from_initial}
-          <button
-            type="button"
-            class="link ml-4 text-xs text-gray-500 hover:text-gray-700"
-            on:click|stopPropagation={reset_examples}
-          >
-            Reset
-          </button>
-        {/if}
+    <div class="flex flex-col gap-6">
+      <div>
+        <div class="flex flex-row items-center pb-[4px] min-h-[1.25rem]">
+          <span class="text-sm font-medium">Reference Examples</span>
+          <span class="grow"></span>
+          {#if examples_differs_from_initial}
+            <button
+              type="button"
+              class="link text-xs text-gray-500 hover:text-gray-700"
+              on:click|stopPropagation={reset_examples}
+            >
+              Reset
+            </button>
+          {/if}
+        </div>
+        <FormElement
+          label="Reference Examples"
+          hide_label={true}
+          id="edit_examples_text"
+          inputType="textarea"
+          height="xl"
+          bind:value={editing_examples_md}
+          optional={true}
+          hide_optional_badge={true}
+        />
       </div>
-      <FormElement
-        label="Reference Examples"
-        hide_label={true}
-        id="edit_examples_text"
-        inputType="textarea"
-        height="xl"
-        bind:value={editing_examples_md}
-      />
+      <div>
+        <div class="flex flex-row items-center pb-[4px] min-h-[1.25rem]">
+          <span class="text-sm font-medium">Guidelines &amp; Rules</span>
+          <span class="grow"></span>
+          <span class="pl-1 text-xs text-gray-500 flex-none">Optional</span>
+          {#if rules_differs_from_initial}
+            <button
+              type="button"
+              class="link ml-4 text-xs text-gray-500 hover:text-gray-700"
+              on:click|stopPropagation={reset_rules}
+            >
+              Reset
+            </button>
+          {/if}
+        </div>
+        <FormElement
+          label="Guidelines & Rules"
+          hide_label={true}
+          id="edit_rules_text"
+          inputType="textarea"
+          height="xl"
+          bind:value={editing_rules_md}
+          optional={true}
+          hide_optional_badge={true}
+        />
+      </div>
     </div>
   </FormContainer>
 </Dialog>
