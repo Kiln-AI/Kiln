@@ -123,9 +123,7 @@
     goto(`/generate/${project_id}/${task_id}/data_guide/refine`)
   }
 
-  async function handle_save_with_guide(
-    event: CustomEvent<{ guide: string }>,
-  ) {
+  async function handle_save_with_guide(event: CustomEvent<{ guide: string }>) {
     save_error = null
     save_submitting = true
 

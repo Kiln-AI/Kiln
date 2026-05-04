@@ -24,6 +24,7 @@
     | "preview"
     | "refining"
     | "regenerating"
+    | "load_error"
 
   // Start in "loading" so we can redirect away if a saved guide already exists
   // (the refine flow lives at /data_guide). Without this we'd briefly flash
@@ -80,19 +81,31 @@
     // If a saved guide already exists, the user shouldn't be in the setup
     // flow — that's for first-time creation only. Edit/delete/re-verify
     // happens on the main /data_guide page.
+    //
+    // Distinguish "GET returned no guide" from "GET failed". A backend or
+    // network error must NOT silently land the user on setup, where they
+    // could overwrite an existing-but-currently-unreachable guide once the
+    // server recovers.
     try {
-      const { data } = await client.GET(
+      const { data, error: api_error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
         { params: { path: { project_id, task_id } } },
       )
+      if (api_error) {
+        error = createKilnError(api_error)
+        current_state = "load_error"
+        return
+      }
       if (data) {
         goto(`/generate/${project_id}/${task_id}/data_guide`, {
           replaceState: true,
         })
         return
       }
-    } catch {
-      // No existing guide
+    } catch (e) {
+      error = createKilnError(e)
+      current_state = "load_error"
+      return
     }
 
     if ($current_task?.id === task_id) {
@@ -107,7 +120,9 @@
           task = task_data
         }
       } catch {
-        // Non-critical
+        // Non-critical — `task` is bound nullable downstream and only feeds
+        // optional UI (the output run config dialog). The setup form remains
+        // usable without it.
       }
     }
 
@@ -340,6 +355,14 @@
         title="Regenerating Examples"
         description="Regenerating synthetic data to test your edited data guide."
       />
+    {:else if current_state === "load_error"}
+      <div
+        class="w-full min-h-[50vh] flex flex-col justify-center items-center gap-2"
+      >
+        <div class="text-error text-sm">
+          {error?.getMessage() ?? "An unknown error occurred"}
+        </div>
+      </div>
     {/if}
   </AppPage>
 </div>
