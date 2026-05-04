@@ -4,7 +4,7 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount, onDestroy } from "svelte"
   import { page } from "$app/stores"
-  import { goto, pushState } from "$app/navigation"
+  import { goto } from "$app/navigation"
   import GuideSetupForm, { type GuideSample } from "./guide_setup_form.svelte"
   import { pending_data_guide_example } from "./pending_example_store"
   import { get } from "svelte/store"
@@ -62,99 +62,6 @@
   // request fails.
   let guide_examples: GuideSample[] = []
 
-  // --- Wizard journey nav ---
-  // Each "user-visible" step (setup form or preview screen) snapshots the
-  // page state and pushes a new history entry. popstate restores by index.
-  // Only stable states get snapshotted — "loading" / "generating" /
-  // "refining" / "regenerating" are transient and skipped.
-  // Memory-only: a hard refresh resets the journey.
-  type StableState = "setup" | "preview"
-  type JourneySnapshot = {
-    state: StableState
-    guide: string
-    preview_initial_guide: string
-    guide_examples: GuideSample[]
-    preview_samples: PreviewSample[]
-    reviewed_samples: ReviewedSample[]
-    general_feedback: string
-    captured_input_run_config: KilnAgentRunConfigProperties | null
-    captured_output_run_config: KilnAgentRunConfigProperties | null
-  }
-  let journey: JourneySnapshot[] = []
-  let journey_index: number = -1
-  let restoring_from_history: boolean = false
-  // Bumped on popstate so any async op in flight at the time can detect that
-  // the user navigated away mid-call and abandon its push_step instead of
-  // forcing them back to the result screen.
-  let nav_token: number = 0
-
-  function snapshot_state(state: StableState): JourneySnapshot {
-    return {
-      state,
-      guide,
-      preview_initial_guide,
-      guide_examples: [...guide_examples],
-      preview_samples: [...preview_samples],
-      reviewed_samples: reviewed_samples.map((s) => ({ ...s })),
-      general_feedback,
-      captured_input_run_config,
-      captured_output_run_config,
-    }
-  }
-
-  function push_step(state: StableState) {
-    if (restoring_from_history) return
-    const snap = snapshot_state(state)
-    journey = [...journey.slice(0, journey_index + 1), snap]
-    journey_index = journey.length - 1
-    // Don't push history for the entry state — the page's bare URL already
-    // represents it. Pushing here means the user has to hit back twice (once
-    // to drop the hash, once to actually leave the page).
-    if (journey_index === 0) return
-    pushState(`#${state}-${journey_index}`, { journey_index })
-  }
-
-  function restore_snapshot(idx: number) {
-    if (idx < 0 || idx >= journey.length) return
-    restoring_from_history = true
-    const s = journey[idx]
-    guide = s.guide
-    preview_initial_guide = s.preview_initial_guide
-    guide_examples = s.guide_examples
-    preview_samples = s.preview_samples
-    reviewed_samples = s.reviewed_samples
-    general_feedback = s.general_feedback
-    captured_input_run_config = s.captured_input_run_config
-    captured_output_run_config = s.captured_output_run_config
-    current_state = s.state
-    journey_index = idx
-    Promise.resolve().then(() => {
-      restoring_from_history = false
-    })
-  }
-
-  function handle_popstate(_event: PopStateEvent) {
-    nav_token++
-    // SvelteKit nests our pushState payload under its own keys, so reading
-    // event.state.journey_index directly is always undefined. Use the page
-    // store, which SvelteKit unwraps for us and updates synchronously in its
-    // own popstate handler before ours runs.
-    const idx = (get(page).state as { journey_index?: number } | undefined)
-      ?.journey_index
-    if (typeof idx === "number") {
-      restore_snapshot(idx)
-      return
-    }
-    // No journey_index — the user backed onto the bare page URL (which
-    // represents the entry state, since we don't push history for it).
-    // Snap back to the entry snapshot so any in-flight transient state or
-    // forward-pushed snapshot clears cleanly.
-    submitting = false
-    if (journey.length > 0) {
-      restore_snapshot(0)
-    }
-  }
-
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
   onDestroy(() => {
@@ -178,21 +85,9 @@
         { params: { path: { project_id, task_id } } },
       )
       if (data) {
-        if (window.location.hash) {
-          // We landed here via back-navigation onto a leftover journey
-          // hash entry (e.g. #preview-1) from a now-completed setup flow.
-          // Keep popping so the user exits the setup flow's history
-          // entries entirely instead of bouncing through /data_guide on
-          // every press.
-          window.history.back()
-        } else {
-          // Fresh entry (direct URL or forward goto) → forward to the
-          // refine page, replacing this entry so back doesn't re-enter
-          // the setup flow.
-          goto(`/generate/${project_id}/${task_id}/data_guide`, {
-            replaceState: true,
-          })
-        }
+        goto(`/generate/${project_id}/${task_id}/data_guide`, {
+          replaceState: true,
+        })
         return
       }
     } catch {
@@ -226,12 +121,6 @@
     }
 
     current_state = "setup"
-    push_step("setup")
-    window.addEventListener("popstate", handle_popstate)
-  })
-
-  onDestroy(() => {
-    window.removeEventListener("popstate", handle_popstate)
   })
 
   async function handle_generate_preview(
@@ -241,7 +130,6 @@
       output_run_config: KilnAgentRunConfigProperties
     }>,
   ) {
-    const op_token = nav_token
     error = null
     submitting = true
     current_state = "generating"
@@ -267,10 +155,6 @@
       if (api_error) throw api_error
       if (!data) throw new KilnError("No preview samples returned", null)
 
-      // If the user navigated back/forward during the API call, abandon the
-      // result rather than yanking them back to a preview screen.
-      if (nav_token !== op_token) return
-
       preview_samples = data as PreviewSample[]
       reviewed_samples = preview_samples.map((s) => ({
         input: s.input,
@@ -280,9 +164,7 @@
       general_feedback = ""
       preview_initial_guide = guide
       current_state = "preview"
-      push_step("preview")
     } catch (e) {
-      if (nav_token !== op_token) return
       error = createKilnError(e)
       current_state = "setup"
     } finally {
@@ -296,7 +178,6 @@
       rated_samples: { input: string; output: string; looks_good: boolean }[]
     }>,
   ) {
-    const op_token = nav_token
     error = null
     submitting = true
 
@@ -348,10 +229,6 @@
       if (!preview_data)
         throw new KilnError("No preview samples returned", null)
 
-      // If the user navigated back/forward during the API call, abandon the
-      // result rather than yanking them back to a preview screen.
-      if (nav_token !== op_token) return
-
       preview_samples = preview_data as PreviewSample[]
       reviewed_samples = preview_samples.map((s) => ({
         input: s.input,
@@ -361,9 +238,7 @@
       general_feedback = ""
       preview_initial_guide = guide
       current_state = "preview"
-      push_step("preview")
     } catch (e) {
-      if (nav_token !== op_token) return
       error = createKilnError(e)
       current_state = "preview"
     } finally {
@@ -446,23 +321,17 @@
         description="Generating synthetic data to test your data guide."
       />
     {:else if current_state === "preview"}
-      <!-- {#key} forces a clean remount when the journey index changes so
-           back/forward through preview snapshots rebuilds the table and
-           dialog state from the restored snapshot rather than reusing stale
-           component state. -->
-      {#key journey_index}
-        <GuidePreview
-          initial_guide={preview_initial_guide}
-          bind:guide
-          bind:error
-          bind:submitting
-          bind:reviewed_samples
-          bind:general_feedback
-          {saved}
-          on:refine={handle_refine}
-          on:save={handle_save}
-        />
-      {/key}
+      <GuidePreview
+        initial_guide={preview_initial_guide}
+        bind:guide
+        bind:error
+        bind:submitting
+        bind:reviewed_samples
+        bind:general_feedback
+        {saved}
+        on:refine={handle_refine}
+        on:save={handle_save}
+      />
     {:else if current_state === "refining"}
       <RefiningAnimation
         title="Refining Data Guide"

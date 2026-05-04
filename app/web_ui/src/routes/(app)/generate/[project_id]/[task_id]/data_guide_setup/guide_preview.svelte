@@ -107,17 +107,10 @@
   $: has_sufficient_feedback =
     needs_improvement_samples.length === 0 || general_feedback.trim().length > 0
 
-  // Drive warn_before_unload off real user work in this preview screen
-  // (ratings, feedback, or guide edits) rather than always-on. Without this,
-  // backing past our journey entries would prompt the unsaved-changes confirm
-  // even on a fresh preview screen the user hasn't touched. `saved` flips
-  // this off entirely once the parent has committed the guide and is about
-  // to navigate away.
-  $: has_unsaved_user_work =
-    !saved &&
-    (reviewed_samples.some((s) => s.looks_good !== undefined) ||
-      general_feedback.trim().length > 0 ||
-      guide_was_edited)
+  // Generated samples (and any ratings/feedback/edits on top) are unsaved
+  // work — back-navigation away from this screen loses them. Warn unless
+  // the parent has flipped `saved` after a successful PUT.
+  $: has_unsaved_user_work = !saved
 
   // Whenever the user changed something the LLM should react to (rated some
   // samples Needs Work, edited the guide text directly), switch the submit
