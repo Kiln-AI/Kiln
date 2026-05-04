@@ -1854,3 +1854,245 @@ async def test_run_task_adapter_sanity_math_tools(
     assert response4.status_code == 200
     res4 = response4.json()
     _assert_math_tools_response(res4, "7")
+
+
+def _make_task_run(
+    task,
+    *,
+    input_text,
+    output_text,
+    parent_task_run_id=None,
+    trace=None,
+):
+    run = TaskRun(
+        parent=task,
+        parent_task_run_id=parent_task_run_id,
+        input=input_text,
+        input_source=DataSource(
+            type=DataSourceType.human, properties={"created_by": "Test User"}
+        ),
+        output=TaskOutput(
+            output=output_text,
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt_4o",
+                    "model_provider": "ollama",
+                    "adapter_name": "kiln_langchain_adapter",
+                    "prompt_id": "simple_prompt_builder",
+                },
+            ),
+        ),
+        trace=trace,
+    )
+    run.save_to_file()
+    return run
+
+
+@pytest.fixture
+def multiturn_task_run_setup(tmp_path):
+    """Multiturn task with a single saved parent TaskRun whose trace has one user/assistant exchange."""
+    project_path = tmp_path / "test_project" / "project.kiln"
+    project_path.parent.mkdir()
+
+    project = Project(name="Multiturn Project", path=str(project_path))
+    project.save_to_file()
+
+    task = Task(
+        name="Multiturn Task",
+        instruction="Have a conversation",
+        description="Multiturn test task",
+        parent=project,
+        turn_mode="multiturn",
+    )
+    task.save_to_file()
+
+    parent_run = _make_task_run(
+        task,
+        input_text="hi",
+        output_text="hello",
+        trace=[
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello"},
+        ],
+    )
+
+    return {"project": project, "task": task, "parent_run": parent_run}
+
+
+@pytest.mark.asyncio
+async def test_run_task_continuation_multiturn(client, multiturn_task_run_setup):
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+    parent_run = multiturn_task_run_setup["parent_run"]
+
+    follow_up_run = _make_task_run(
+        task,
+        input_text="how are you?",
+        output_text="great, thanks!",
+        parent_task_run_id=parent_run.id,
+        trace=[
+            *(parent_run.trace or []),
+            {"role": "user", "content": "how are you?"},
+            {"role": "assistant", "content": "great, thanks!"},
+        ],
+    )
+
+    run_request = {
+        "run_config_properties": {
+            "model_name": "gpt_4o",
+            "model_provider_name": "ollama",
+            "prompt_id": "simple_prompt_builder",
+            "structured_output_mode": "json_schema",
+        },
+        "plaintext_input": "how are you?",
+        "parent_task_run_id": parent_run.id,
+    }
+
+    with (
+        patch("kiln_server.run_api.task_from_id") as mock_task_from_id,
+        patch.object(LiteLlmAdapter, "invoke", new_callable=AsyncMock) as mock_invoke,
+        patch("kiln_ai.utils.config.Config.shared") as MockConfig,
+    ):
+        mock_task_from_id.return_value = task
+        mock_invoke.return_value = follow_up_run
+
+        mock_config_instance = MockConfig.return_value
+        mock_config_instance.ollama_base_url = "http://localhost:11434/v1"
+
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/run", json=run_request
+        )
+
+    assert response.status_code == 200
+
+    # Plumbing check: API forwarded prior_trace and the parent run to the adapter.
+    # (We don't re-assert the response body's trace/parent_task_run_id — those come
+    # from the locally fabricated follow_up_run, not from real adapter behavior.)
+    mock_invoke.assert_awaited_once()
+    invoke_kwargs = mock_invoke.await_args.kwargs
+    assert invoke_kwargs["prior_trace"] == parent_run.trace
+    assert invoke_kwargs["parent_task_run"].id == parent_run.id
+
+
+@pytest.mark.asyncio
+async def test_run_task_continuation_single_turn_rejected(client, task_run_setup):
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    parent_run = task_run_setup["task_run"]
+
+    run_request = {
+        "run_config_properties": {
+            "model_name": "gpt_4o",
+            "model_provider_name": "ollama",
+            "prompt_id": "simple_prompt_builder",
+            "structured_output_mode": "json_schema",
+        },
+        "plaintext_input": "follow up",
+        "parent_task_run_id": parent_run.id,
+    }
+
+    with (
+        patch("kiln_server.run_api.task_from_id") as mock_task_from_id,
+        patch.object(LiteLlmAdapter, "invoke", new_callable=AsyncMock) as mock_invoke,
+    ):
+        mock_task_from_id.return_value = task
+
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/run", json=run_request
+        )
+
+    assert response.status_code == 400
+    assert (
+        response.json()["message"]
+        == "parent_task_run_id is only valid for multiturn tasks."
+    )
+    mock_invoke.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_task_continuation_parent_not_found(client, multiturn_task_run_setup):
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+
+    run_request = {
+        "run_config_properties": {
+            "model_name": "gpt_4o",
+            "model_provider_name": "ollama",
+            "prompt_id": "simple_prompt_builder",
+            "structured_output_mode": "json_schema",
+        },
+        "plaintext_input": "follow up",
+        "parent_task_run_id": "missing_parent_run_id",
+    }
+
+    with (
+        patch("kiln_server.run_api.task_from_id") as mock_task_from_id,
+        patch.object(LiteLlmAdapter, "invoke", new_callable=AsyncMock) as mock_invoke,
+    ):
+        mock_task_from_id.return_value = task
+
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/run", json=run_request
+        )
+
+    assert response.status_code == 404
+    assert response.json()["message"] == "Parent run not found: missing_parent_run_id"
+    mock_invoke.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_runs_summaries_multiturn_returns_leaf_only(
+    client, multiturn_task_run_setup
+):
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+    run_a = multiturn_task_run_setup["parent_run"]
+
+    run_b = _make_task_run(
+        task,
+        input_text="turn 2",
+        output_text="reply 2",
+        parent_task_run_id=run_a.id,
+    )
+    run_c = _make_task_run(
+        task,
+        input_text="turn 3",
+        output_text="reply 3",
+        parent_task_run_id=run_b.id,
+    )
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs_summaries"
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert isinstance(result, list)
+    assert [r["id"] for r in result] == [run_c.id]
+
+
+@pytest.mark.asyncio
+async def test_get_runs_summaries_single_turn_returns_all_runs(client, task_run_setup):
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    first_run = task_run_setup["task_run"]
+
+    second_run = _make_task_run(
+        task, input_text="independent input 2", output_text="independent output 2"
+    )
+    third_run = _make_task_run(
+        task, input_text="independent input 3", output_text="independent output 3"
+    )
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs_summaries"
+        )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert {r["id"] for r in result} == {first_run.id, second_run.id, third_run.id}

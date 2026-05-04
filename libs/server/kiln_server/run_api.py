@@ -13,7 +13,7 @@ from kiln_ai.adapters.ml_model_list import ModelProviderName
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.datamodel import Task, TaskOutputRating, TaskOutputRatingType, TaskRun
 from kiln_ai.datamodel.basemodel import ID_TYPE
-from kiln_ai.datamodel.datamodel_enums import StructuredInputType
+from kiln_ai.datamodel.datamodel_enums import StructuredInputType, TurnMode
 from kiln_ai.datamodel.task import RunConfigProperties
 from kiln_ai.datamodel.task_output import DataSource, DataSourceType, TaskOutput
 from kiln_ai.utils.dataset_import import (
@@ -70,6 +70,14 @@ class RunTaskRequest(BaseModel):
     )
     tags: list[str] | None = Field(
         default=None, description="Tags to apply to the resulting task run."
+    )
+    parent_task_run_id: str | None = Field(
+        default=None,
+        description=(
+            "When set, treat this as a continuation of the given parent run "
+            "(multiturn tasks only). The parent run's trace is passed as "
+            "prior_trace, and parent_task_run_id is set on the resulting TaskRun."
+        ),
     )
 
     # Allows use of the model_name field (usually pydantic will reserve model_*)
@@ -327,11 +335,10 @@ def connect_run_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
         # Readonly since we are not mutating the runs. Faster as we don't need to copy them.
         runs = task.runs(readonly=True)
-        run_summaries: list[RunSummary] = []
-        for run in runs:
-            summary = RunSummary.from_run(run)
-            run_summaries.append(summary)
-        return run_summaries
+        parent_ids: set[str] = {
+            r.parent_task_run_id for r in runs if r.parent_task_run_id
+        }
+        return [RunSummary.from_run(run) for run in runs if run.id not in parent_ids]
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/runs/delete",
@@ -411,7 +418,29 @@ def connect_run_api(app: FastAPI):
                 detail="No input provided. Ensure your provided the proper format (plaintext or structured).",
             )
 
-        return await adapter.invoke(input)
+        prior_trace = None
+        parent_task_run = None
+        if request.parent_task_run_id is not None:
+            if task.turn_mode != TurnMode.multiturn:
+                raise HTTPException(
+                    status_code=400,
+                    detail="parent_task_run_id is only valid for multiturn tasks.",
+                )
+            parent_task_run = TaskRun.from_id_and_parent_path(
+                request.parent_task_run_id, task.path
+            )
+            if parent_task_run is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Parent run not found: {request.parent_task_run_id}",
+                )
+            prior_trace = parent_task_run.trace
+
+        return await adapter.invoke(
+            input,
+            prior_trace=prior_trace,
+            parent_task_run=parent_task_run,
+        )
 
     @app.patch(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",

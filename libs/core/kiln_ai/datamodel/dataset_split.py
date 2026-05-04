@@ -142,8 +142,12 @@ class DatasetSplit(KilnParentedModel):
         splits: list[DatasetSplitDefinition],
         filter: DatasetFilter,
     ) -> dict[str, list[str]]:
+        runs = list(task.runs())
+        parent_ids = {r.parent_task_run_id for r in runs if r.parent_task_run_id}
         valid_ids = []
-        for task_run in task.runs():
+        for task_run in runs:
+            if task_run.id in parent_ids:
+                continue
             if filter(task_run):
                 valid_ids.append(task_run.id)
 

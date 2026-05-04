@@ -8348,6 +8348,11 @@ export interface components {
              * @description Tags to apply to the resulting task run.
              */
             tags?: string[] | null;
+            /**
+             * Parent Task Run Id
+             * @description When set, treat this as a continuation of the given parent run (multiturn tasks only). The parent run's trace is passed as prior_trace, and parent_task_run_id is set on the resulting TaskRun.
+             */
+            parent_task_run_id?: string | null;
         };
         /**
          * SampleApi
