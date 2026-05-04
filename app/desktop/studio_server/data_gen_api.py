@@ -749,12 +749,17 @@ The topic path for this sample is:
                 if isinstance(sample_input, (dict, list)):
                     adapter_input = sample_input
                 else:
+                    # Generator produced something that wasn't a structured
+                    # value (e.g. a JSON-encoded string). Parse it, and
+                    # require the result to be a dict/list — a scalar
+                    # (`json.loads("42")` → 42, `json.loads("null")` → None)
+                    # would pass JSON parsing but blow up jsonschema
+                    # validation deeper in the adapter. Skip with a clear
+                    # placeholder rather than fail the preview.
+                    parsed_input: object
                     try:
-                        adapter_input = json.loads(str(sample_input))
+                        parsed_input = json.loads(str(sample_input))
                     except json.JSONDecodeError:
-                        # Generator produced something that wasn't valid JSON
-                        # for a structured-input task. Skip this sample rather
-                        # than fail the whole preview.
                         preview_samples.append(
                             GuidePreviewSample(
                                 input=sample_input_str,
@@ -762,6 +767,15 @@ The topic path for this sample is:
                             )
                         )
                         continue
+                    if not isinstance(parsed_input, (dict, list)):
+                        preview_samples.append(
+                            GuidePreviewSample(
+                                input=sample_input_str,
+                                output="[Skipped: generated input was not a JSON object or array for the task's input schema]",
+                            )
+                        )
+                        continue
+                    adapter_input = parsed_input
             else:
                 adapter_input = sample_input_str
 
