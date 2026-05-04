@@ -289,15 +289,70 @@ def test_openai_compatible_adapter(basic_task):
         assert isinstance(adapter, LiteLlmAdapter)
         assert adapter.config.additional_body_options == {"api_key": "test-key"}
         assert adapter.config.base_url == "https://test.com/v1"
-        assert adapter.config.run_config_properties.model_name == "test-model"
+        # The full slug is preserved on the run config so it can be persisted and rehydrated.
+        # The bare model id is only stripped at the litellm boundary (see lite_llm_provider_model).
+        assert (
+            adapter.config.run_config_properties.model_name
+            == "some-provider::test-model"
+        )
         assert (
             adapter.config.run_config_properties.model_provider_name
             == "openai_compatible"
         )
+        assert adapter.model_provider().model_id == "test-model"
         assert adapter.config.run_config_properties.prompt_id == "simple_prompt_builder"
         assert (
             adapter.config.run_config_properties.structured_output_mode == "json_schema"
         )
+
+
+def test_openai_compatible_adapter_preserves_model_name_for_rehydration(basic_task):
+    """Regression: building an adapter must not strip the legacy "{provider}::{model_id}"
+    prefix off run_config.model_name. _properties_for_task_output writes that name to
+    disk; if it's stripped, repair (and any other rehydration path) re-reads a name
+    without "::" and crashes splitting it again. See: openai/gpt-oss-safeguard-20b repair bug.
+    """
+    with patch("kiln_ai.adapters.provider_tools.Config.shared") as mock_config_shared:
+        mock_config_shared.return_value.openai_compatible_providers = [
+            {
+                "name": "vllm local",
+                "base_url": "http://localhost:8000/v1",
+                "api_key": "",
+            }
+        ]
+
+        original_run_config = KilnAgentRunConfigProperties(
+            model_name="vllm local::openai/gpt-oss-safeguard-20b",
+            model_provider_name=ModelProviderName.openai_compatible,
+            prompt_id="simple_prompt_builder",
+            structured_output_mode="json_schema",
+        )
+
+        adapter = adapter_for_task(
+            kiln_task=basic_task,
+            run_config_properties=original_run_config,
+        )
+
+        assert isinstance(adapter, LiteLlmAdapter)
+        # The slug round-trips intact on the run config that gets persisted.
+        assert (
+            adapter.config.run_config_properties.model_name
+            == "vllm local::openai/gpt-oss-safeguard-20b"
+        )
+        # Litellm sees the bare model id (no "::").
+        assert adapter.model_provider().model_id == "openai/gpt-oss-safeguard-20b"
+
+        # Simulate the repair flow: rebuild the adapter from the (now-correctly persisted)
+        # run config. This used to raise "Invalid openai compatible model ID: ..." because
+        # the first call had stripped the prefix.
+        rehydrated = adapter_for_task(
+            kiln_task=basic_task,
+            run_config_properties=adapter.config.run_config_properties.model_copy(
+                deep=True
+            ),
+        )
+        assert isinstance(rehydrated, LiteLlmAdapter)
+        assert rehydrated.config.base_url == "http://localhost:8000/v1"
 
 
 def test_custom_openai_compatible_provider(mock_config, basic_task):

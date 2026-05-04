@@ -662,19 +662,24 @@ def test_openai_compatible_provider_config(mock_shared_config):
         config.run_config_properties.model_provider_name
         == ModelProviderName.openai_compatible
     )
-    assert config.run_config_properties.model_name == "gpt-4"
+    # Full slug is preserved on the run config; the bare model id is only used at the litellm boundary.
+    assert config.run_config_properties.model_name == "test_provider::gpt-4"
     assert config.additional_body_options == {"api_key": "test-key"}
     assert config.base_url == "https://api.test.com"
 
 
 def test_litellm_provider_model_success(mock_shared_config):
-    """Test successful creation of an OpenAI compatible provider"""
+    """Test successful creation of an OpenAI compatible provider.
+
+    The provider's model_id is the bare model id (without the legacy "provider::" prefix),
+    since that's what litellm needs to call the upstream API.
+    """
     model_id = "test_provider::gpt-4"
 
     provider = lite_llm_provider_model(model_id)
 
     assert provider.name == ModelProviderName.openai_compatible
-    assert provider.model_id == model_id
+    assert provider.model_id == "gpt-4"
     assert provider.supports_structured_output is False
     assert provider.supports_data_gen is False
     assert provider.untested_model is True
@@ -697,7 +702,7 @@ def test_lite_llm_config_no_api_key(mock_shared_config):
         config.run_config_properties.model_provider_name
         == ModelProviderName.openai_compatible
     )
-    assert config.run_config_properties.model_name == "gpt-4"
+    assert config.run_config_properties.model_name == "no_key_provider::gpt-4"
     assert config.additional_body_options == {"api_key": "NA"}
     assert config.base_url == "https://api.nokey.com"
 
