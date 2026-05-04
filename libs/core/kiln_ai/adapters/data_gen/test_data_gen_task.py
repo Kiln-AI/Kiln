@@ -4,6 +4,7 @@ import pytest
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.data_gen.data_gen_prompts import (
+    generate_guidance_refinement_prompt,
     generate_qna_generation_prompt,
     generate_sample_generation_prompt,
     generate_topic_tree_prompt,
@@ -652,6 +653,111 @@ def test_generate_sample_generation_prompt_with_guide_text():
 
     assert "### Custom Guidance" in prompt
     assert "Generate inputs about geography questions" in prompt
+
+
+# --- generate_guidance_refinement_prompt ---
+
+
+def test_generate_guidance_refinement_prompt_minimal():
+    """Includes the four required sections — task instruction, current guide,
+    rated samples, and feedback — when only the required args are passed."""
+    prompt = generate_guidance_refinement_prompt(
+        task_instruction="Translate to French",
+        current_guide="# Reference Examples\n## Example 1\n```input\nhi\n```\n```output\nbonjour\n```",
+        preview_samples=[
+            ("hello", "bonjour", True),
+            ("frog", "ranagrenouille", False),
+        ],
+        feedback="The second one isn't a real word.",
+    )
+
+    assert "<task_instruction>\nTranslate to French\n</task_instruction>" in prompt
+    assert "<current_guide>" in prompt
+    assert "## Example 1" in prompt
+    # Required samples section, with their ratings rendered as the rating attr
+    assert '<sample_1 rating="Realistic">' in prompt
+    assert '<sample_2 rating="Needs Work">' in prompt
+    assert "<input>hello</input>" in prompt
+    assert "<output>bonjour</output>" in prompt
+    assert "<input>frog</input>" in prompt
+    assert "<output>ranagrenouille</output>" in prompt
+    assert "<feedback>\nThe second one isn't a real word.\n</feedback>" in prompt
+
+
+def test_generate_guidance_refinement_prompt_skips_optional_sections_when_none():
+    """The task description and JSON schema sections are optional — they
+    shouldn't appear in the output when their args are None or blank."""
+    prompt = generate_guidance_refinement_prompt(
+        task_instruction="X",
+        current_guide="Y",
+        preview_samples=[],
+        feedback="Z",
+        task_description=None,
+        task_input_json_schema=None,
+        task_output_json_schema=None,
+    )
+    assert "<task_description>" not in prompt
+    assert "<task_input_json_schema>" not in prompt
+    assert "<task_output_json_schema>" not in prompt
+
+    # Blank strings are also treated as "not provided" — same outcome.
+    prompt_blank = generate_guidance_refinement_prompt(
+        task_instruction="X",
+        current_guide="Y",
+        preview_samples=[],
+        feedback="Z",
+        task_description="   ",
+        task_input_json_schema="\n",
+        task_output_json_schema="",
+    )
+    assert "<task_description>" not in prompt_blank
+    assert "<task_input_json_schema>" not in prompt_blank
+    assert "<task_output_json_schema>" not in prompt_blank
+
+
+def test_generate_guidance_refinement_prompt_includes_optional_sections_when_provided():
+    prompt = generate_guidance_refinement_prompt(
+        task_instruction="X",
+        current_guide="Y",
+        preview_samples=[],
+        feedback="Z",
+        task_description="A short task description.",
+        task_input_json_schema='{"type":"object"}',
+        task_output_json_schema='{"type":"string"}',
+    )
+    assert (
+        "<task_description>\nA short task description.\n</task_description>" in prompt
+    )
+    assert (
+        '<task_input_json_schema>\n{"type":"object"}\n</task_input_json_schema>'
+        in prompt
+    )
+    assert (
+        '<task_output_json_schema>\n{"type":"string"}\n</task_output_json_schema>'
+        in prompt
+    )
+
+
+def test_generate_guidance_refinement_prompt_renders_all_samples_in_order():
+    """Sample blocks should be numbered 1..N in the order received and each
+    one should reflect the user's rating."""
+    samples = [
+        ("a", "b", True),
+        ("c", "d", False),
+        ("e", "f", True),
+    ]
+    prompt = generate_guidance_refinement_prompt(
+        task_instruction="X",
+        current_guide="Y",
+        preview_samples=samples,
+        feedback="Z",
+    )
+    for i, (sample_input, sample_output, looks_good) in enumerate(samples, 1):
+        rating = "Realistic" if looks_good else "Needs Work"
+        assert f'<sample_{i} rating="{rating}">' in prompt
+        assert f"<input>{sample_input}</input>" in prompt
+        assert f"<output>{sample_output}</output>" in prompt
+        assert f"</sample_{i}>" in prompt
 
 
 def test_generate_qna_generation_prompt_without_guidance():
