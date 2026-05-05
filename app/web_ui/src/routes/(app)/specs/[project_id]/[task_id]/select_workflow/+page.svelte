@@ -81,10 +81,10 @@
                   <div class="flex items-center justify-center gap-2">
                     <img
                       src="/images/animated_logo.svg"
-                      alt="Kiln Copilot"
+                      alt="Kiln Pro"
                       class="size-4"
                     />
-                    <span>Kiln Copilot</span>
+                    <span>Kiln Pro</span>
                   </div>
                 </th>
               </tr>
@@ -144,7 +144,7 @@
                   <div
                     class="tooltip"
                     data-tip={default_run_config_has_tools
-                      ? "Tool calling is not yet supported in Kiln Copilot. Please create the spec manually for now."
+                      ? "Tool calling is not yet supported in Kiln Pro. Please create the spec manually for now."
                       : undefined}
                   >
                     <button
@@ -155,7 +155,7 @@
                           replaceState: true,
                         })}
                     >
-                      Connect Kiln Copilot
+                      Connect Kiln Pro
                     </button>
                   </div>
                 </td>

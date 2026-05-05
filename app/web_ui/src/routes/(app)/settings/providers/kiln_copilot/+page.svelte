@@ -5,13 +5,13 @@
   import { agentInfo } from "$lib/agent"
 
   agentInfo.set({
-    name: "Kiln Copilot",
-    description: "Connect to Kiln Copilot for AI-assisted features.",
+    name: "Kiln Pro",
+    description: "Connect to Kiln Pro for AI-assisted features.",
   })
 </script>
 
 <AppPage
-  title="Kiln Copilot"
+  title="Kiln Pro"
   breadcrumbs={[
     { label: "Settings", href: "/settings" },
     { label: "AI Providers", href: "/settings/providers" },

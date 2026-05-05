@@ -4,9 +4,9 @@
   import { agentInfo } from "$lib/agent"
 
   agentInfo.set({
-    name: "Setup: Kiln Copilot",
+    name: "Setup: Kiln Pro",
     description:
-      "Onboarding step to connect Kiln Copilot for AI-assisted features.",
+      "Onboarding step to connect Kiln Pro for AI-assisted features.",
   })
 </script>
 

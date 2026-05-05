@@ -761,15 +761,15 @@
         return "Create Spec"
       case "questioning":
       case "questions":
-        return "Copilot: Clarify Spec"
+        return "Kiln Pro: Clarify Spec"
       case "analyzing_for_review":
       case "review":
-        return "Copilot: Review and Refine"
+        return "Kiln Pro: Review and Refine"
       case "refining":
       case "refine":
-        return "Copilot: Review Suggested Refinements"
+        return "Kiln Pro: Review Suggested Refinements"
       case "saving_with_copilot":
-        return "Copilot: Creating Spec"
+        return "Kiln Pro: Creating Spec"
     }
   }
 

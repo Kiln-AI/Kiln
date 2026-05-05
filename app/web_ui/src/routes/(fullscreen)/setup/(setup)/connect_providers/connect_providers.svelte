@@ -47,9 +47,9 @@
       ],
     },
     {
-      name: "Kiln Copilot",
+      name: "Kiln Pro",
       id: "kiln_copilot",
-      description: "Our Copilot to optimize your evals and AI performance.",
+      description: "Optimize your evals and AI performance with Kiln Pro.",
       featured: !highlight_finetune,
       hide_in_onboarding: true,
     },

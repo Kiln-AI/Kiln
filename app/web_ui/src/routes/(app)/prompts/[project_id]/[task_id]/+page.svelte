@@ -173,7 +173,7 @@
         >
           <div slot="icon" class="p-4 border rounded-lg bg-base-100">
             <div class="h-12 w-12">
-              <img src="/images/animated_logo.svg" alt="Kiln Copilot" />
+              <img src="/images/animated_logo.svg" alt="Kiln Pro" />
             </div>
           </div>
         </Banner>

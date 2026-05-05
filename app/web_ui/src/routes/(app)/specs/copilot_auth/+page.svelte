@@ -4,8 +4,8 @@
   import { agentInfo } from "$lib/agent"
 
   agentInfo.set({
-    name: "Specs Copilot Auth",
-    description: "Authentication page for Kiln Copilot access to create specs.",
+    name: "Specs Kiln Pro Auth",
+    description: "Authentication page for Kiln Pro access to create specs.",
   })
 
   $: project_id = $ui_state.current_project_id
