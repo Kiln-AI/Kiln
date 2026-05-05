@@ -152,14 +152,7 @@
       "Are you sure you want to clear all synthetic data gen state? This cannot be undone."
 
     if (confirm(msg)) {
-      clear_all_state()
-      // Flush to IndexedDB before navigating. The store subscriber writes async,
-      // so without this the page reloads with stale state and re-shows the dialog.
-      try {
-        await persist_state()
-      } catch (e) {
-        console.error("Failed to persist cleared state:", e)
-      }
+      await clear_and_persist()
       window.location.href = `/generate/${project_id}/${task_id}/synth`
     }
   }
@@ -182,24 +175,26 @@
     }))
   }
 
-  async function clear_state_and_reload() {
+  // Clears state and flushes to IndexedDB before navigating. The store
+  // subscriber writes async, so without this the page reloads with stale
+  // state and re-shows the dialog.
+  async function clear_and_persist() {
     clear_all_state()
     try {
       await persist_state()
     } catch (e) {
       console.error("Failed to persist cleared state:", e)
     }
+  }
+
+  async function clear_state_and_reload() {
+    await clear_and_persist()
     window.location.reload()
     return true
   }
 
   async function clear_state_and_go_to_intro() {
-    clear_all_state()
-    try {
-      await persist_state()
-    } catch (e) {
-      console.error("Failed to persist cleared state:", e)
-    }
+    await clear_and_persist()
     window.location.href = `/generate/${project_id}/${task_id}`
     return true
   }

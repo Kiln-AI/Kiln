@@ -122,7 +122,8 @@ export function indexedDBStore<T>(key: string, initialValue: T) {
       }
     })
     // Flush the current store value to IndexedDB, resolving when the write completes
-    const persist = (): Promise<void> => {
+    const persist = async (): Promise<void> => {
+      await initPromise
       let currentValue: T | undefined
       const unsub = store.subscribe((v) => (currentValue = v))
       unsub()
