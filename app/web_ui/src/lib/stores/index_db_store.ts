@@ -121,13 +121,27 @@ export function indexedDBStore<T>(key: string, initialValue: T) {
         })
       }
     })
+    // Flush the current store value to IndexedDB, resolving when the write completes
+    const persist = (): Promise<void> => {
+      let currentValue: T | undefined
+      const unsub = store.subscribe((v) => (currentValue = v))
+      unsub()
+      return setValue(currentValue as T)
+    }
+
+    return {
+      store,
+      initialized: initPromise,
+      persist,
+    }
   } else {
     // If not in browser, resolve immediately
     initPromise = Promise.resolve()
-  }
 
-  return {
-    store,
-    initialized: initPromise,
+    return {
+      store,
+      initialized: initPromise,
+      persist: () => Promise.resolve(),
+    }
   }
 }

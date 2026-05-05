@@ -329,6 +329,72 @@ describe("indexedDBStore", () => {
     })
   })
 
+  describe("persist", () => {
+    it("should write current store value to IndexedDB and resolve when complete", async () => {
+      // Setup: simulate successful DB open so setValue can work
+      mockObjectStore.get.mockImplementation(() => {
+        const request: MockIDBRequest = {
+          result: null,
+          error: null,
+          onsuccess: null,
+          onerror: null,
+        }
+        process.nextTick(() => {
+          if (request.onsuccess) request.onsuccess()
+        })
+        return request
+      })
+
+      const {
+        store: storeInstance,
+        initialized,
+        persist,
+      } = indexedDBStore("test-key", "initial-value")
+
+      // Trigger DB init success
+      process.nextTick(() => {
+        if (mockRequest.onsuccess) mockRequest.onsuccess()
+      })
+      await initialized
+
+      // Update store value (this triggers an async write via subscriber)
+      storeInstance.set("updated-value")
+
+      // Mock the transaction for the persist call to complete
+      mockDatabase.transaction.mockImplementation(() => {
+        const tx: MockIDBTransaction = {
+          objectStore: vi.fn<[string], MockIDBObjectStore>(
+            () => mockObjectStore,
+          ),
+          oncomplete: null,
+          onerror: null,
+          error: null,
+        }
+        // Simulate transaction completing asynchronously
+        process.nextTick(() => {
+          if (tx.oncomplete) tx.oncomplete()
+        })
+        return tx
+      })
+
+      // persist() should resolve after IndexedDB write completes
+      await persist()
+
+      // Verify put was called with the updated value
+      expect(mockObjectStore.put).toHaveBeenCalledWith({
+        key: "test-key",
+        value: "updated-value",
+      })
+    })
+
+    it("should resolve immediately in non-browser environment", async () => {
+      vi.unstubAllGlobals()
+      const { persist } = indexedDBStore("test-key", "initial-value")
+      // Should not throw or hang
+      await persist()
+    })
+  })
+
   describe("edge cases", () => {
     it("should handle IndexedDB not being available", () => {
       // Mock browser environment without IndexedDB

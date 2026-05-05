@@ -118,6 +118,7 @@
   }
   // Empty to start but will be populated from IndexedDB after task is loaded
   // Note: load the state vars into the guidance_data model and use that, this is just for the initial load/persistence
+  let persist_state: () => Promise<void> = () => Promise.resolve()
   let saved_state: Writable<SavedDataGenState> = writable({
     gen_type: null,
     template_id: null,
@@ -146,13 +147,19 @@
     guidance_data.splits.set($saved_state.splits)
   }
 
-  function clear_all_with_confirm() {
+  async function clear_all_with_confirm() {
     let msg =
       "Are you sure you want to clear all synthetic data gen state? This cannot be undone."
 
     if (confirm(msg)) {
       clear_all_state()
-      // Load the page again with clear URL params to get fresh state
+      // Flush to IndexedDB before navigating. The store subscriber writes async,
+      // so without this the page reloads with stale state and re-shows the dialog.
+      try {
+        await persist_state()
+      } catch (e) {
+        console.error("Failed to persist cleared state:", e)
+      }
       window.location.href = `/generate/${project_id}/${task_id}/synth`
     }
   }
@@ -175,16 +182,24 @@
     }))
   }
 
-  function clear_state_and_reload() {
+  async function clear_state_and_reload() {
     clear_all_state()
-    // reload the window keeping the same URL
+    try {
+      await persist_state()
+    } catch (e) {
+      console.error("Failed to persist cleared state:", e)
+    }
     window.location.reload()
     return true
   }
 
-  function clear_state_and_go_to_intro() {
+  async function clear_state_and_go_to_intro() {
     clear_all_state()
-    // Redirect back to intro to choose mode
+    try {
+      await persist_state()
+    } catch (e) {
+      console.error("Failed to persist cleared state:", e)
+    }
     window.location.href = `/generate/${project_id}/${task_id}`
     return true
   }
@@ -212,7 +227,7 @@
     if (project_id && task_id) {
       // Setup the root node store
       const synth_data_key = `synth_data_${project_id}_${task_id}_v2`
-      const { store, initialized } = indexedDBStore(synth_data_key, {
+      const { store, initialized, persist } = indexedDBStore(synth_data_key, {
         gen_type: null,
         template_id: null,
         eval_id: null,
@@ -225,6 +240,7 @@
       // Wait for the store to be initialized, then set the state
       await initialized
       saved_state = store
+      persist_state = persist
 
       // Special case: if we have some state (goal) but no root_node data, we should reset the state
       // Cleaner to give the user a fresh UI since there's very little data saved, and the clean UI is about picking goal.
@@ -1483,7 +1499,7 @@
     {
       label: "New Session (Clear Existing)",
       isWarning: true,
-      action: clear_state_and_reload,
+      asyncAction: clear_state_and_reload,
     },
   ]}
 >
@@ -1506,7 +1522,7 @@
   action_buttons={[
     {
       label: "New Session",
-      action: clear_state_and_go_to_intro,
+      asyncAction: clear_state_and_go_to_intro,
     },
     {
       label: "Continue Session",
