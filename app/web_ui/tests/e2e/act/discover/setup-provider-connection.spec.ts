@@ -194,7 +194,7 @@ test.describe("Setup provider connection", () => {
   - "Cancel setting up Kiln Pro" link is visible.
   - Back button links to /setup/connect_providers.
   */
-  test("kiln copilot setup page renders heading and back button", async ({
+  test("kiln pro setup page renders heading and back button", async ({
     page,
     cleanBackend,
   }) => {

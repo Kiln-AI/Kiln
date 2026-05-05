@@ -183,7 +183,7 @@ test.describe("Settings - providers and misc", () => {
   - Connect button is visible.
   - "Cancel setting up Kiln Pro" link is visible.
   */
-  test("kiln copilot settings page renders connect UI", async ({
+  test("kiln pro settings page renders connect UI", async ({
     page,
     registeredUser,
     seededProjectWithTask,
