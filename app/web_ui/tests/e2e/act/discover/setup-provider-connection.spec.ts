@@ -184,7 +184,7 @@ test.describe("Setup provider connection", () => {
   - cleanBackend
 
   ## Hints
-  - Route is /setup/connect_providers/kiln_copilot
+  - Route is /setup/connect_providers/kiln_pro
   - Page has heading "Connect AI Providers"
   - Back button links to /setup/connect_providers
   - Cancel link text is "Cancel setting up Kiln Pro"
@@ -200,7 +200,7 @@ test.describe("Setup provider connection", () => {
   }) => {
     void cleanBackend
 
-    await navigateToSetupPage(page, "/setup/connect_providers/kiln_copilot")
+    await navigateToSetupPage(page, "/setup/connect_providers/kiln_pro")
 
     await expect(
       page.getByRole("heading", { name: "Connect AI Providers" }),

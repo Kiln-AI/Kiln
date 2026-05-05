@@ -172,7 +172,7 @@ test.describe("Settings - providers and misc", () => {
   - seededProjectWithTask (provides project context so app layout renders)
 
   ## Hints
-  - Route is /settings/providers/kiln_copilot
+  - Route is /settings/providers/kiln_pro
   - Page heading is "Kiln Pro"
   - ConnectKilnCopilotSteps renders "Connect Kiln Pro" heading and a Connect button
   - Cancel link text is "Cancel setting up Kiln Pro"
@@ -191,7 +191,7 @@ test.describe("Settings - providers and misc", () => {
     void registeredUser
     void seededProjectWithTask
 
-    await page.goto("/settings/providers/kiln_copilot")
+    await page.goto("/settings/providers/kiln_pro")
 
     await expect(
       page.getByRole("heading", { name: "Kiln Pro", exact: true }),

@@ -151,7 +151,7 @@
                       class="btn btn-primary btn-sm whitespace-nowrap"
                       disabled={loading || default_run_config_has_tools}
                       on:click={() =>
-                        goto(`/specs/copilot_auth`, {
+                        goto(`/specs/pro_auth`, {
                           replaceState: true,
                         })}
                     >

@@ -450,8 +450,8 @@
     if (provider.id === "kiln_copilot") {
       const isSettings = window.location.pathname.includes("/settings/")
       const route = isSettings
-        ? "/settings/providers/kiln_copilot"
-        : "/setup/connect_providers/kiln_copilot"
+        ? "/settings/providers/kiln_pro"
+        : "/setup/connect_providers/kiln_pro"
       goto(route)
       return
     }

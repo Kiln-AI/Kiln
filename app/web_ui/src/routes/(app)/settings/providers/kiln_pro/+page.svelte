@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
   import { goto } from "$app/navigation"
-  import ConnectKilnCopilot from "../../../../(fullscreen)/setup/(setup)/connect_providers/kiln_copilot/connect_kiln_copilot.svelte"
+  import ConnectKilnCopilot from "../../../../(fullscreen)/setup/(setup)/connect_providers/kiln_pro/connect_kiln_copilot.svelte"
   import { agentInfo } from "$lib/agent"
 
   agentInfo.set({
