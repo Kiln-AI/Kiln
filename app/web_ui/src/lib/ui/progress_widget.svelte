@@ -57,7 +57,7 @@
       ></progress>
     {:else if $state?.step_count !== null && $state?.current_step !== null}
       <div class="h-4 overflow-hidden w-40 mt-1 ml-[-8px]">
-        <div class="scale-[0.35] origin-top-left w-[160]">
+        <div class="scale-[0.35] origin-top-left w-[160px]">
           <ul class="steps pl-0 ml-0">
             {#each Array($state.step_count) as _, index}
               <li

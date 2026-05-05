@@ -120,10 +120,7 @@
   })
 </script>
 
-<div
-  class="drawer lg:drawer-open"
-  style="grid-auto-columns: max-content minmax(0, 1fr);"
->
+<div class="drawer lg:drawer-open auto-cols-[max-content_minmax(0,1fr)]">
   <input id="main-drawer" type="checkbox" class="drawer-toggle" />
   <div class="drawer-content flex flex-col lg:mr-4 min-h-screen">
     <div class="flex-none h-12 lg:h-6">
