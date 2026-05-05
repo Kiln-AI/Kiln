@@ -16,6 +16,7 @@ export type ActionButton = {
 // Project-Input is a variant with path
 export type Project = components["schemas"]["Project-Input"]
 export type Task = components["schemas"]["Task"]
+export type TurnMode = components["schemas"]["TurnMode"]
 export type TaskRun = components["schemas"]["TaskRun-Input"]
 export type TaskRunOutput = components["schemas"]["TaskRun-Output"]
 export type TaskRequirement = components["schemas"]["TaskRequirement"]
