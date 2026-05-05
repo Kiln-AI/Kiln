@@ -35,6 +35,7 @@
 {#if $state}
   <button
     class="bg-white border border-primary rounded-lg p-3 flex flex-col gap-1 items-start relative text-left text-xs 2xl:text-sm"
+    style="max-width: 100%;"
     on:click={openLink}
   >
     <button
@@ -56,7 +57,7 @@
         max="100"
       ></progress>
     {:else if $state?.step_count !== null && $state?.current_step !== null}
-      <div class="h-4 overflow-hidden w-48 mt-1 ml-[-8px]">
+      <div class="h-4 overflow-hidden w-40 mt-1 ml-[-8px]">
         <div class="scale-[0.35] origin-top-left w-[160]">
           <ul class="steps pl-0 ml-0">
             {#each Array($state.step_count) as _, index}
