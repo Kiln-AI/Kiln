@@ -34,8 +34,7 @@
 
 {#if $state}
   <button
-    class="bg-white border border-primary rounded-lg p-3 flex flex-col gap-1 items-start relative text-left text-xs 2xl:text-sm"
-    style="max-width: 100%;"
+    class="bg-white border border-primary rounded-lg p-3 flex flex-col gap-1 items-start relative text-left text-xs 2xl:text-sm max-w-full"
     on:click={openLink}
   >
     <button
