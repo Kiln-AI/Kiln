@@ -240,7 +240,10 @@
         </li>
 
         <li class="menu-sm">
-          <a href="/assistant" class={section == Section.Assistant ? "active" : ""}>
+          <a
+            href="/assistant"
+            class={section == Section.Assistant ? "active" : ""}
+          >
             <div class="h-6 w-6">
               <ChatIcon />
             </div>

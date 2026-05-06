@@ -183,10 +183,10 @@
       ]
     : []
 
-  $: isChat = section === Section.Assistant
+  $: isAssistant = section === Section.Assistant
 </script>
 
-{#if !isChat}
+{#if !isAssistant}
   <!-- Spacer to reserve width in the flex layout for the fixed sidebar -->
   {#if expanded}
     <div

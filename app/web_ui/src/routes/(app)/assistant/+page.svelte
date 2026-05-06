@@ -20,7 +20,7 @@
   agentInfo.set({
     name: "Assistant",
     description:
-      "The Kiln Assistant page for conversing with the Kiln Assistant AI agent.",
+      "The interface for conversing with the Kiln Assistant AI agent.",
   })
 
   let chatRef: Chat
