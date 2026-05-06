@@ -24,6 +24,8 @@
   let finetunes_loading = true
 
   $: if (project_id && task_id) {
+    finetunes_error = null
+    finetunes = null
     load_available_models()
     get_finetunes(project_id, task_id)
   }

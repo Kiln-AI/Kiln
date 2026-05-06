@@ -197,7 +197,14 @@
       // e.g. the rating options
       await load_current_task(get(current_project)?.id)
       if (target_project_id && data.id) {
-        await load_rating_options(target_project_id, data.id, true)
+        try {
+          await load_rating_options(target_project_id, data.id, true)
+        } catch (refreshError) {
+          console.warn(
+            "Task was saved, but refreshing rating options failed",
+            refreshError,
+          )
+        }
       }
 
       // Wait for the saved change to propagate to the warn_before_unload

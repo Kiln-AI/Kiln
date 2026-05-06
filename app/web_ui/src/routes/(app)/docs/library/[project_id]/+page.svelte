@@ -77,6 +77,8 @@
   ]
 
   $: if (project_id) {
+    error = null
+    documents = null
     get_documents(project_id)
   }
 

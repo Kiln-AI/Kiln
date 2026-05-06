@@ -76,7 +76,14 @@
         is_clone: clone_mode,
       })
 
-      await load_task_prompts(project_id, task_id, true)
+      try {
+        await load_task_prompts(project_id, task_id, true)
+      } catch (refreshError) {
+        console.warn(
+          "Prompt was created, but refreshing the task prompt cache failed",
+          refreshError,
+        )
+      }
 
       complete = true
       if (redirect_from === "optimize") {
