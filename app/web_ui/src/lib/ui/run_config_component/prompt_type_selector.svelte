@@ -3,6 +3,7 @@
   import { get_task_composite_id } from "$lib/stores"
   import {
     prompts_by_task_composite_id,
+    prompts_errors_by_task_composite_id,
     load_task_prompts,
   } from "$lib/stores/prompts_store"
   import type { PromptResponse } from "$lib/types"
@@ -74,6 +75,13 @@
           get_task_composite_id(project_id, task_id)
         ] ?? null
       : null
+  $: prompt_load_error = !!(
+    project_id &&
+    task_id &&
+    $prompts_errors_by_task_composite_id[
+      get_task_composite_id(project_id, task_id)
+    ]
+  )
   $: if (project_id && task_id) {
     load_task_prompts(project_id, task_id)
   }
@@ -293,8 +301,10 @@
 <FormElement
   label="Prompt Method"
   inputType="fancy_select"
-  empty_state_message="Loading prompts..."
-  empty_state_subtitle="Please wait."
+  empty_state_message={prompt_load_error
+    ? "Failed to load prompts"
+    : "Loading prompts..."}
+  empty_state_subtitle={prompt_load_error ? null : "Please wait."}
   {description}
   {info_description}
   bind:value={prompt_method}
