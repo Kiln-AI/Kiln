@@ -15,6 +15,7 @@
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import { isMcpRunConfig } from "$lib/types"
   import { page } from "$app/stores"
+  import { goto } from "$app/navigation"
 
   $: agentInfo.set({
     name: "Run",
@@ -118,6 +119,10 @@
         })
       }
       response = data
+      if ($current_task?.turn_mode === "multiturn" && data?.id) {
+        await goto(`/dataset/${project_id}/${task_id}/${data.id}/run`)
+        return
+      }
     } catch (e) {
       run_error = createKilnError(e)
     } finally {

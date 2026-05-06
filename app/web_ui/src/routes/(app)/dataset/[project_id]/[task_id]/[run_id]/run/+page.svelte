@@ -20,7 +20,6 @@
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type { TaskRun, StructuredOutputMode } from "$lib/types"
-  import { isMcpRunConfig } from "$lib/types"
   import {
     formatDate,
     structuredOutputModeToString,
@@ -40,6 +39,18 @@
     split_tool_and_skill_ids,
   } from "$lib/stores/tools_store"
   import { agentInfo } from "$lib/agent"
+  import ConversationView from "$lib/ui/conversation/conversation_view.svelte"
+  import RunInputForm from "../../../../../run/run_input_form.svelte"
+  import FormContainer from "$lib/utils/form_container.svelte"
+  import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
+  import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
+  import {
+    isKilnAgentRunConfig,
+    isMcpRunConfig,
+    type TaskRunConfig,
+  } from "$lib/types"
+  import { tick } from "svelte"
+  import { send_multiturn } from "./multiturn_send"
 
   $: run_id = $page.params.run_id!
   $: task_id = $page.params.task_id!
@@ -421,6 +432,74 @@
     load_run()
   }
 
+  async function handle_send(new_run_id: string) {
+    load_error = null
+    run_id = new_run_id
+    run = null
+    loading = true
+    await goto(`/dataset/${project_id}/${task_id}/${new_run_id}/run`, {
+      replaceState: true,
+    })
+    await load_run()
+  }
+
+  // ---- Multiturn composer state ----
+  let multiturn_input_form: RunInputForm
+  let multiturn_run_config_component: RunConfigComponent
+  let multiturn_submitting = false
+  let multiturn_run_error: KilnError | null = null
+  let multiturn_save_config_error: KilnError | null = null
+  let multiturn_set_default_error: KilnError | null = null
+  let multiturn_selected_run_config_id: string | null = null
+  let multiturn_selected_model_specific_run_config_id: string | null = null
+
+  function multiturn_initial_model(r: TaskRun | null): string {
+    const cfg = r?.output?.source?.run_config ?? null
+    if (cfg && isKilnAgentRunConfig(cfg)) {
+      return `${cfg.model_provider_name}/${cfg.model_name}`
+    }
+    return ""
+  }
+  function multiturn_initial_prompt(r: TaskRun | null): string {
+    const cfg = r?.output?.source?.run_config ?? null
+    if (cfg && isKilnAgentRunConfig(cfg)) {
+      return cfg.prompt_id
+    }
+    return "simple_prompt_builder"
+  }
+
+  async function on_multiturn_submit() {
+    multiturn_run_error = null
+    multiturn_submitting = true
+    try {
+      const result = await send_multiturn({
+        project_id,
+        task_id,
+        parent_task_run_id: run?.id,
+        run_config_component: multiturn_run_config_component,
+        input_form: multiturn_input_form,
+        on_success: handle_send,
+      })
+      if (!result.ok) {
+        multiturn_run_error = createKilnError(result.error)
+      }
+    } catch (e) {
+      // on_success threw (e.g. goto/load_run failed). Input is intentionally
+      // not cleared in that case so the user does not lose their typed text.
+      multiturn_run_error = createKilnError(e)
+    } finally {
+      multiturn_submitting = false
+      await tick()
+    }
+  }
+
+  async function handle_save_new_multiturn_run_config(): Promise<TaskRunConfig> {
+    if (!multiturn_run_config_component) {
+      throw new Error("Run configuration component is not loaded")
+    }
+    return await multiturn_run_config_component.save_new_run_config()
+  }
+
   let buttons: ActionButton[] = []
   $: {
     buttons = []
@@ -497,22 +576,92 @@
     {:else if load_error}
       <div class="text-error">{load_error.getMessage()}</div>
     {:else if run && $current_task}
-      <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
-        <div class="grow">
-          <div class="text-xl font-bold mb-4">Input</div>
-          <Output raw_output={run.input} />
+      {#if $current_task.turn_mode === "multiturn"}
+        <div data-testid="multiturn-layout">
+          <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
+            <div class="grow flex flex-col gap-6">
+              <ConversationView trace={run.trace ?? []} task={$current_task} />
+              <div data-testid="multiturn-composer">
+                <FormContainer
+                  submit_label="Send"
+                  on:submit={on_multiturn_submit}
+                  bind:error={multiturn_run_error}
+                  bind:submitting={multiturn_submitting}
+                  primary={true}
+                  keyboard_submit={true}
+                >
+                  <div data-testid="multiturn-composer-input">
+                    <RunInputForm
+                      bind:this={multiturn_input_form}
+                      input_schema={null}
+                    />
+                  </div>
+                </FormContainer>
+              </div>
+            </div>
+            <div class="w-72 2xl:w-96 flex-none flex flex-col">
+              <PropertyList
+                properties={properties_for_list}
+                title="Properties"
+              />
+              <button
+                class="text-xs text-gray-500 underline text-left cursor-pointer bg-transparent border-none p-0 mt-4"
+                on:click={() => (see_all_properties = !see_all_properties)}
+              >
+                {see_all_properties ? "See Less" : "See All"}
+              </button>
+              <div class="text-xl font-bold mt-8 mb-4">Options</div>
+              <div class="flex flex-col gap-4">
+                {#key run.id}
+                  <SavedRunConfigurationsDropdown
+                    {project_id}
+                    current_task={$current_task}
+                    bind:selected_run_config_id={multiturn_selected_run_config_id}
+                    bind:save_config_error={multiturn_save_config_error}
+                    bind:set_default_error={multiturn_set_default_error}
+                    save_new_run_config={handle_save_new_multiturn_run_config}
+                    selected_model_specific_run_config_id={multiturn_selected_model_specific_run_config_id}
+                  />
+                  <RunConfigComponent
+                    model={multiturn_initial_model(run)}
+                    prompt_method={multiturn_initial_prompt(run)}
+                    bind:this={multiturn_run_config_component}
+                    {project_id}
+                    current_task={$current_task}
+                    requires_structured_output={false}
+                    bind:selected_run_config_id={multiturn_selected_run_config_id}
+                    bind:set_default_error={multiturn_set_default_error}
+                    bind:selected_model_specific_run_config_id={multiturn_selected_model_specific_run_config_id}
+                    show_name_field={false}
+                  />
+                {/key}
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="w-72 2xl:w-96 flex-none flex flex-col">
-          <PropertyList properties={properties_for_list} title="Properties" />
-          <button
-            class="text-xs text-gray-500 underline text-left cursor-pointer bg-transparent border-none p-0 mt-4"
-            on:click={() => (see_all_properties = !see_all_properties)}
-          >
-            {see_all_properties ? "See Less" : "See All"}
-          </button>
+      {:else}
+        <div data-testid="single-turn-layout">
+          <div class="flex flex-col xl:flex-row gap-8 xl:gap-16 mb-8">
+            <div class="grow">
+              <div class="text-xl font-bold mb-4">Input</div>
+              <Output raw_output={run.input} />
+            </div>
+            <div class="w-72 2xl:w-96 flex-none flex flex-col">
+              <PropertyList
+                properties={properties_for_list}
+                title="Properties"
+              />
+              <button
+                class="text-xs text-gray-500 underline text-left cursor-pointer bg-transparent border-none p-0 mt-4"
+                on:click={() => (see_all_properties = !see_all_properties)}
+              >
+                {see_all_properties ? "See Less" : "See All"}
+              </button>
+            </div>
+          </div>
+          <Run initial_run={run} task={$current_task} {project_id} />
         </div>
-      </div>
-      <Run initial_run={run} task={$current_task} {project_id} />
+      {/if}
     {:else}
       <div class="text-gray-500 text-lg">Run not found</div>
     {/if}
