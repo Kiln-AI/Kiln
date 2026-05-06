@@ -75,7 +75,7 @@
 
 <FormContainer
   bind:this={form_container}
-  submit_label={copilot_allowed ? "Create with Copilot" : "Create Auto-Eval"}
+  submit_label={copilot_allowed ? "Create with Kiln Pro" : "Create Eval"}
   on:submit={handle_submit}
   bind:error
   bind:submitting
@@ -144,9 +144,9 @@
         disabled={full_trace_disabled}
         description="When enabled, this will be evaluated on the full agent history including intermediate steps and tool calls. When disabled, only the final answer is evaluated."
         info_description={full_trace_disabled
-          ? "Auto-evals for tool use always analyze the full conversation history including tool calls."
-          : "Enable this for auto-evals that cover reasoning steps, tool usage, or intermediate outputs." +
-            (copilot_enabled ? " Not supported by Copilot." : "")}
+          ? "Evals for tool use always analyze the full conversation history including tool calls."
+          : "Enable this for evals that cover reasoning steps, tool usage, or intermediate outputs." +
+            (copilot_enabled ? " Not supported by Kiln Pro." : "")}
       />
     {/if}
   </Collapse>

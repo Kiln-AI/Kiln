@@ -761,15 +761,15 @@
         return "Create Auto-Eval"
       case "questioning":
       case "questions":
-        return "Copilot: Clarify Auto-Eval"
+        return "Kiln Pro: Clarify Eval"
       case "analyzing_for_review":
       case "review":
-        return "Copilot: Review and Refine"
+        return "Kiln Pro: Review and Refine"
       case "refining":
       case "refine":
-        return "Copilot: Review Suggested Refinements"
+        return "Kiln Pro: Review Suggested Refinements"
       case "saving_with_copilot":
-        return "Copilot: Creating Auto-Eval"
+        return "Kiln Pro: Creating Eval"
     }
   }
 

@@ -23,7 +23,7 @@ test.describe("Setup provider connection", () => {
   ## Goals
   The connect providers page loads and displays a list of AI providers. OpenRouter should
   be visible and marked as "Recommended". The heading should say "Connect AI Providers".
-  In onboarding mode, providers with hide_in_onboarding should not appear (e.g. Kiln Copilot, W&B).
+  In onboarding mode, providers with hide_in_onboarding should not appear (e.g. Kiln Pro, W&B).
 
   ## Fixtures
   - cleanBackend
@@ -40,7 +40,7 @@ test.describe("Setup provider connection", () => {
   - OpenAI provider name is visible.
   - Ollama provider name is visible.
   - At least one "Connect" button is visible.
-  - Kiln Copilot and Weights & Biases are NOT visible (hidden in onboarding).
+  - Kiln Pro and Weights & Biases are NOT visible (hidden in onboarding).
   */
   test("connect providers page shows provider list with recommended badge", async ({
     page,
@@ -70,7 +70,7 @@ test.describe("Setup provider connection", () => {
     ).toBeVisible()
 
     await expect(
-      page.getByRole("heading", { name: "Kiln Copilot" }),
+      page.getByRole("heading", { name: "Kiln Pro" }),
     ).not.toBeVisible()
     await expect(
       page.getByRole("heading", { name: "Weights & Biases" }),
@@ -176,7 +176,7 @@ test.describe("Setup provider connection", () => {
 
   /* @act
   ## Goals
-  The Kiln Copilot setup page renders its heading, the Connect Kiln Copilot steps UI,
+  The Kiln Pro setup page renders its heading, the Connect Kiln Pro steps UI,
   a cancel link, and a Back button linking to /setup/connect_providers. This page uses
   Kinde OAuth so we only test UI rendering, not the actual OAuth flow.
 
@@ -184,29 +184,29 @@ test.describe("Setup provider connection", () => {
   - cleanBackend
 
   ## Hints
-  - Route is /setup/connect_providers/kiln_copilot
+  - Route is /setup/connect_providers/kiln_pro
   - Page has heading "Connect AI Providers"
   - Back button links to /setup/connect_providers
-  - Cancel link text is "Cancel setting up Kiln Copilot"
+  - Cancel link text is "Cancel setting up Kiln Pro"
 
   ## Assertions
   - Page heading "Connect AI Providers" is visible.
-  - "Cancel setting up Kiln Copilot" link is visible.
+  - "Cancel setting up Kiln Pro" link is visible.
   - Back button links to /setup/connect_providers.
   */
-  test("kiln copilot setup page renders heading and back button", async ({
+  test("kiln pro setup page renders heading and back button", async ({
     page,
     cleanBackend,
   }) => {
     void cleanBackend
 
-    await navigateToSetupPage(page, "/setup/connect_providers/kiln_copilot")
+    await navigateToSetupPage(page, "/setup/connect_providers/kiln_pro")
 
     await expect(
       page.getByRole("heading", { name: "Connect AI Providers" }),
     ).toBeVisible()
 
-    await expect(page.getByText("Cancel setting up Kiln Copilot")).toBeVisible()
+    await expect(page.getByText("Cancel setting up Kiln Pro")).toBeVisible()
 
     const backLink = page.getByRole("link", { name: "Back" })
     await expect(backLink).toBeVisible()
