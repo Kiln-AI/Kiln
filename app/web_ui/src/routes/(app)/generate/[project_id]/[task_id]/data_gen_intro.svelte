@@ -94,7 +94,9 @@
   function select_spec(spec: Spec) {
     const evaluator = spec.eval_id ? evals_by_id[spec.eval_id] : null
     if (!evaluator) {
-      alert("This auto-eval doesn't have an associated eval yet.")
+      alert(
+        "This auto-eval's eval is not ready yet. Please configure it first.",
+      )
       return
     }
     const eval_set_filter_id = evaluator.eval_set_filter_id

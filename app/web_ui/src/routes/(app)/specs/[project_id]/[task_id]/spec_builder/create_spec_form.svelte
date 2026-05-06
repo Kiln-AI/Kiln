@@ -144,8 +144,8 @@
         disabled={full_trace_disabled}
         description="When enabled, this will be evaluated on the full agent history including intermediate steps and tool calls. When disabled, only the final answer is evaluated."
         info_description={full_trace_disabled
-          ? "Tool use auto-evals always evaluate the full conversation history to analyze tool calls."
-          : "Enable this for auto-evals that need to evaluate reasoning steps, tool usage, or intermediate outputs." +
+          ? "Auto-evals for tool use always analyze the full conversation history including tool calls."
+          : "Enable this for auto-evals that cover reasoning steps, tool usage, or intermediate outputs." +
             (copilot_enabled ? " Not supported by Copilot." : "")}
       />
     {/if}

@@ -722,7 +722,7 @@
 <AppPage
   limit_max_width={true}
   title="Auto-Evals"
-  subtitle="Auto-evals describe the behaviours to enforce or avoid for your task, and automatically measure quality."
+  subtitle="Define the behaviours to enforce or avoid for your task, and automatically measure quality."
   sub_subtitle={"Read the Docs"}
   sub_subtitle_link="https://docs.kiln.tech/docs/evals-and-specs"
   action_buttons={is_empty

@@ -776,7 +776,7 @@
   function getPageSubtitle(state: BuilderState): string | undefined {
     switch (state) {
       case "create":
-        return "An auto-eval describes a behaviour to enforce or avoid for your task, and automatically measures quality."
+        return "Define a behaviour to enforce or avoid for your task, and automatically measure quality."
       case "analyzing_for_review":
       case "refining":
       case "questioning":

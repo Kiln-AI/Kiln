@@ -77,9 +77,9 @@
 
   function get_feedback_empty_label(row: ReviewRow): string {
     if (row.user_says_meets_spec) {
-      return "Describe why this meets the auto-eval criteria"
+      return "Describe why this passes"
     } else {
-      return "Describe why this does not meet the auto-eval criteria"
+      return "Describe why this fails"
     }
   }
 
@@ -163,7 +163,7 @@
                 <span>Meets Criteria</span>
                 <span class="font-normal">
                   <InfoTooltip
-                    tooltip_text="Whether the example conforms to your auto-eval. If Kiln's judge analysis is incorrect, you will be asked to provide feedback to help Kiln refine the auto-eval."
+                    tooltip_text="Whether the example conforms to your auto-eval. If Kiln's judge analysis is incorrect, you will be asked to provide feedback to help refine it."
                     position="top"
                   />
                 </span>
