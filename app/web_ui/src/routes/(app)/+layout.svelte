@@ -32,12 +32,13 @@
     ([$lg, $narrow, $chatOpen]) => $lg && $narrow && $chatOpen,
   )
 
-  // The chat bar hides itself on the /chat page (chat_bar.svelte early-returns
-  // when section === Chat). When the chat bar isn't visible there is no width
-  // pressure on the main column, so we keep the full sidebar on the chat page
-  // even when the other rail-eligibility conditions are true.
+  // The chat bar hides itself on the /assistant page (chat_bar.svelte
+  // early-returns when section === Assistant). When the chat bar isn't
+  // visible there is no width pressure on the main column, so we keep the
+  // full sidebar on the assistant page even when the other rail-eligibility
+  // conditions are true.
   let showRail = false
-  $: showRail = $isRailEligible && section !== Section.Chat
+  $: showRail = $isRailEligible && section !== Section.Assistant
 
   let justExitedRail = false
   let prevRailActive = false
@@ -106,8 +107,8 @@
       section = Section.Specs
     } else if (path_start("/optimize", $page.url.pathname)) {
       section = Section.Optimize
-    } else if (path_start("/chat", $page.url.pathname)) {
-      section = Section.Chat
+    } else if (path_start("/assistant", $page.url.pathname)) {
+      section = Section.Assistant
     } else {
       section = Section.None
     }
@@ -239,11 +240,11 @@
         </li>
 
         <li class="menu-sm">
-          <a href="/chat" class={section == Section.Chat ? "active" : ""}>
+          <a href="/assistant" class={section == Section.Assistant ? "active" : ""}>
             <div class="h-6 w-6">
               <ChatIcon />
             </div>
-            Chat</a
+            Assistant</a
           >
         </li>
         <li class="menu-sm">

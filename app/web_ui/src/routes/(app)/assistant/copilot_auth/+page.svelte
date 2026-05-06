@@ -3,15 +3,15 @@
   import { agentInfo } from "$lib/agent"
 
   agentInfo.set({
-    name: "Chat Copilot Auth",
+    name: "Assistant Copilot Auth",
     description:
-      "Authentication page for Kiln Copilot access to use Kiln Chat.",
+      "Authentication page for Kiln Copilot access to use Kiln Assistant.",
   })
 </script>
 
 <CopilotAuthPage
-  title="Kiln Chat"
+  title="Kiln Assistant"
   docs_link="https://docs.kiln.tech"
-  breadcrumbs={[{ label: "Chat", href: "/chat" }]}
-  success_redirect_url="/chat"
+  breadcrumbs={[{ label: "Assistant", href: "/assistant" }]}
+  success_redirect_url="/assistant"
 />

@@ -44,7 +44,7 @@
         </div>
       {:else if icon === "chat"}
         <div class="w-16">
-          <img src="/images/chat_icon.svg" alt="Kiln chat icon" />
+          <img src="/images/chat_icon.svg" alt="Kiln Assistant icon" />
         </div>
       {/if}
     </div>

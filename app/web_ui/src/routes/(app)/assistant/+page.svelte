@@ -6,18 +6,21 @@
   import Chat from "./chat.svelte"
   import { agentInfo } from "$lib/agent"
   import type { ActionButton } from "$lib/types"
-  import ChatCopilotRequired from "$lib/ui/kiln_copilot/chat_copilot_required.svelte"
+  import ChatCopilotRequired from "$lib/ui/kiln_copilot/assistant_copilot_required.svelte"
   import {
     kilnCopilotConnected,
     initCopilotConnectionStore,
   } from "$lib/stores/copilot_connection_store"
 
   const chatPageTitle =
-    env.PUBLIC_SHOW_TOOL_CALL_DETAILS === "true" ? "Chat (debug mode)" : "Chat"
+    env.PUBLIC_SHOW_TOOL_CALL_DETAILS === "true"
+      ? "Assistant (debug mode)"
+      : "Assistant"
 
   agentInfo.set({
-    name: "Chat",
-    description: "The chat interface for conversing with the AI assistant.",
+    name: "Assistant",
+    description:
+      "The Kiln Assistant page for conversing with the Kiln Assistant AI agent.",
   })
 
   let chatRef: Chat

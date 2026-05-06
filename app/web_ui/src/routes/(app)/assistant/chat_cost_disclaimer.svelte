@@ -52,7 +52,7 @@
     },
     {
       icon: "M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
-      title: "Chat actions may consume API tokens",
+      title: "Assistant actions may consume API tokens",
       description:
         "The agent may run tasks, evals, and other API calls that use your token balance.",
     },
@@ -61,8 +61,8 @@
 
 <Dialog
   bind:this={dialog}
-  title="Enable Kiln Chat?"
-  subtitle="Kiln Chat is an AI agent that can answer questions about your projects and make changes on your behalf."
+  title="Enable Kiln Assistant?"
+  subtitle="Kiln Assistant is an AI agent that can answer questions about your projects and make changes on your behalf."
   action_buttons={[
     { label: "Cancel", isCancel: true },
     { label: "Agree & Enable", isPrimary: true, action: approve },

@@ -11,6 +11,6 @@ export enum Section {
   Tools,
   Skills,
   Optimize,
-  Chat,
+  Assistant,
   None,
 }
