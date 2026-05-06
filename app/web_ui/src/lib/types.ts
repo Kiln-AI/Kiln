@@ -10,6 +10,7 @@ export type ActionButton = {
   notice?: boolean
   shortcut?: string
   disabled?: boolean
+  loading?: boolean
 }
 
 // Project-Input is a variant with path

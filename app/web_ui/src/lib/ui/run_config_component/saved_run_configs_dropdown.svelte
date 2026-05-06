@@ -320,12 +320,20 @@
     set_default_error = null
   }
 
+  let inline_action_loading = false
+
   async function handle_save() {
-    if (save_new_run_config) {
+    if (!save_new_run_config) {
+      return
+    }
+    try {
+      inline_action_loading = true
       const saved_run_config = await save_new_run_config()
       if (saved_run_config.id) {
         selected_run_config_id = saved_run_config.id
       }
+    } finally {
+      inline_action_loading = false
     }
   }
 
@@ -335,6 +343,7 @@
     }
     // Update task default run config
     try {
+      inline_action_loading = true
       set_default_error = null
       await update_task_default_run_config(
         project_id,
@@ -343,23 +352,32 @@
       )
     } catch (e) {
       set_default_error = createKilnError(e)
+    } finally {
+      inline_action_loading = false
     }
   }
 
   let inline_action: InlineAction | null = null
 
-  $: void (show_save_button, show_set_default_button, update_inline_action())
+  $: void (show_save_button,
+  show_set_default_button,
+  inline_action_loading,
+  update_inline_action())
 
   function update_inline_action() {
     if (show_save_button) {
       inline_action = {
         handler: handle_save,
         label: "Save current options",
+        loading: inline_action_loading,
+        loading_text: "Saving...",
       }
     } else if (show_set_default_button) {
       inline_action = {
         handler: set_run_config_as_default,
         label: "Set as task default",
+        loading: inline_action_loading,
+        loading_text: "Saving...",
       }
     } else {
       inline_action = null

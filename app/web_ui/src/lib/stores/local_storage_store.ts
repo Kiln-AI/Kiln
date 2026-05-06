@@ -23,7 +23,13 @@ export function localStorageStore<T>(key: string, initialValue: T) {
         localStorage.setItem(key, JSON.stringify(value))
       } catch {
         console.error("Failed to save to localStorage for key: " + key)
-        localStorage.removeItem(key)
+        try {
+          localStorage.removeItem(key)
+        } catch {
+          // removeItem may also fail in degraded environments (e.g. Node 25+
+          // exposes a localStorage global that is non-functional without a
+          // backing file)
+        }
       }
     })
   }
@@ -50,7 +56,11 @@ export function sessionStorageStore<T>(key: string, initialValue: T) {
         sessionStorage.setItem(key, JSON.stringify(value))
       } catch {
         console.error("Failed to save to sessionStorage for key: " + key)
-        sessionStorage.removeItem(key)
+        try {
+          sessionStorage.removeItem(key)
+        } catch {
+          // removeItem may also fail in degraded environments
+        }
       }
     })
   }

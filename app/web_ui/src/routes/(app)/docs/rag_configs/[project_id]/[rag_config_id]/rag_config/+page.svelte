@@ -47,6 +47,7 @@
   let loading: boolean = false
   let error: KilnError | null = null
   let update_error: KilnError | null = null
+  let archive_loading: boolean = false
   let rag_config: RagConfigWithSubConfigs | null = null
 
   let edit_dialog: EditDialog | null = null
@@ -101,6 +102,7 @@
 
   async function update_archived_state(is_archived: boolean) {
     try {
+      archive_loading = true
       update_error = null
       const { error: update_archived_state_error } = await client.PATCH(
         "/api/projects/{project_id}/rag_configs/{rag_config_id}",
@@ -131,6 +133,7 @@
       update_error = createKilnError(e)
     } finally {
       loading = false
+      archive_loading = false
     }
 
     uncache_available_tools(project_id)
@@ -260,6 +263,7 @@
       {
         label: rag_config?.is_archived ? "Unarchive" : "Archive",
         primary: rag_config?.is_archived,
+        loading: archive_loading,
         handler: () => {
           if (!rag_config) {
             return

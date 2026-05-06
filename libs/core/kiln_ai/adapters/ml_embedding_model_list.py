@@ -58,6 +58,7 @@ class EmbeddingModelName(str, Enum):
     openai_text_embedding_3_large = "openai_text_embedding_3_large"
     gemini_text_embedding_004 = "gemini_text_embedding_004"
     gemini_embedding_001 = "gemini_embedding_001"
+    gemini_embedding_002 = "gemini_embedding_002"
     embedding_gemma_300m = "embedding_gemma_300m"
     nomic_text_embedding_v1_5 = "nomic_text_embedding_v1_5"
     qwen_3_embedding_0p6b = "qwen_3_embedding_0p6b"
@@ -221,6 +222,31 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 model_id="google/gemini-embedding-001",
                 n_dimensions=3072,
                 max_input_tokens=2048,
+                # litellm rejecting - but model itself supports it
+                supports_custom_dimensions=False,
+                suggested_for_chunk_embedding=True,
+            ),
+        ],
+    ),
+    # Gemini Embedding 002 (Preview)
+    KilnEmbeddingModel(
+        family=KilnEmbeddingModelFamily.gemini,
+        name=EmbeddingModelName.gemini_embedding_002,
+        friendly_name="Gemini Embedding 002",
+        providers=[
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-embedding-2-preview",
+                n_dimensions=3072,
+                max_input_tokens=8192,
+                supports_custom_dimensions=True,
+                suggested_for_chunk_embedding=True,
+            ),
+            KilnEmbeddingModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-embedding-2-preview",
+                n_dimensions=3072,
+                max_input_tokens=8192,
                 # litellm rejecting - but model itself supports it
                 supports_custom_dimensions=False,
                 suggested_for_chunk_embedding=True,

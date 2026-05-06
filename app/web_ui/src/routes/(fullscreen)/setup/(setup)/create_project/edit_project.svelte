@@ -4,6 +4,10 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
+  import {
+    filename_string_validator_default,
+    normalize_filename_string,
+  } from "$lib/utils/input_validators"
   import { client } from "$lib/api_client"
   import type { Project } from "$lib/types"
   import { tick } from "svelte"
@@ -36,6 +40,7 @@
       if (!project?.name) {
         throw new Error("Project name is required")
       }
+      project.name = normalize_filename_string(project.name)
       let data: Project | undefined = undefined
       let error: unknown | undefined = undefined
       let body = {
@@ -113,6 +118,7 @@
         inputType="input"
         bind:value={project.name}
         max_length={120}
+        validator={filename_string_validator_default}
       />
       <FormElement
         label="Project Description"

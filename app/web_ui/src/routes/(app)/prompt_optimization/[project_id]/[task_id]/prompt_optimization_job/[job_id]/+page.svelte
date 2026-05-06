@@ -121,17 +121,6 @@
     prompt_optimization_job?.latest_status === "failed" ||
     prompt_optimization_job?.latest_status === "cancelled"
 
-  $: view_prompt_action_buttons = (() => {
-    const buttons: { label: string; href?: string; handler?: () => void }[] = []
-    if (!is_terminal) {
-      buttons.push({
-        label: "Refresh Status",
-        handler: () => get_prompt_optimization_job(false),
-      })
-    }
-    return buttons
-  })()
-
   async function load_evals() {
     try {
       const { data, error } = await client.GET(
@@ -266,7 +255,7 @@
     if (status === "failed") return "Prompt optimization failed."
     if (status === "cancelled") return "Prompt optimization was cancelled."
     if (status === "pending" || status === "running")
-      return "Prompt optimization in progress. Click 'Refresh Status' to check for updates."
+      return "Prompt optimization in progress."
     return "Failed to find optimized prompt."
   }
 </script>
@@ -293,7 +282,6 @@
         href: `/prompt_optimization/${project_id}/${task_id}`,
       },
     ]}
-    action_buttons={view_prompt_action_buttons}
   >
     {#if prompt_optimization_job_loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -327,12 +315,20 @@
               <Output raw_output={prompt_optimization_job.optimized_prompt} />
             </div>
           {:else}
-            <div class="mt-4">
-              <div class="text-gray-500 text-xs italic">
+            <div class="mt-4 flex flex-col gap-2">
+              <div class="text-gray-500 text-base italic">
                 {no_optimized_prompt_status_message(
                   prompt_optimization_job.latest_status,
                 )}
               </div>
+              {#if !is_terminal}
+                <button
+                  class="btn btn-sm btn-outline btn-primary w-fit"
+                  on:click={() => get_prompt_optimization_job(false)}
+                >
+                  ↻ Refresh Status
+                </button>
+              {/if}
             </div>
           {/if}
         </div>

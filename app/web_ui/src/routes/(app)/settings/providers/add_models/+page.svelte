@@ -5,7 +5,10 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { onMount } from "svelte"
   import FormElement from "$lib/utils/form_element.svelte"
-  import { provider_name_from_id } from "$lib/stores"
+  import {
+    provider_name_from_id,
+    clear_available_models_cache,
+  } from "$lib/stores"
   import Dialog from "$lib/ui/dialog.svelte"
   import { getContext } from "svelte"
   import type { Writable } from "svelte/store"
@@ -256,6 +259,9 @@
     // Refresh list
     await load_data()
 
+    // Invalidate cached available_models so dropdowns refetch (cache otherwise short-circuits)
+    clear_available_models_cache()
+
     return true
   }
 
@@ -296,6 +302,9 @@
 
     // Refresh list
     await load_data()
+
+    // Invalidate cached available_models so dropdowns refetch (cache otherwise short-circuits)
+    clear_available_models_cache()
   }
 
   function get_provider_display_name(model: UserModelEntry): string {

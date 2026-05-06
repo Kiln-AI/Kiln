@@ -1,3 +1,4 @@
+import copy
 import json
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -784,6 +785,45 @@ async def test_build_completion_kwargs(
     # Verify extra body is included
     for key, value in extra_body.items():
         assert kwargs[key] == value
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_strips_kiln_only_fields(config, mock_task):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [
+        {"role": "user", "content": "hi"},
+        {
+            "role": "assistant",
+            "content": "hello",
+            "latency_ms": 123,
+        },
+        {
+            "role": "tool",
+            "content": "{}",
+            "tool_call_id": "c1",
+            "is_error": True,
+            "error_message": "boom",
+            "kiln_task_tool_data": "p:::t:::ta:::r",
+        },
+    ]
+    original = copy.deepcopy(messages)
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    assert kwargs["messages"] == [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+        {"role": "tool", "content": "{}", "tool_call_id": "c1"},
+    ]
+    assert messages == original
 
 
 @pytest.mark.parametrize(
@@ -2429,3 +2469,357 @@ async def test_process_tool_calls_propagates_error_fields(config, mock_task):
     assert success_msg["content"] == "all good"
     assert success_msg.get("is_error") is None
     assert success_msg.get("error_message") is None
+
+
+@pytest.fixture
+def unstructured_task(tmp_path):
+    project_path = tmp_path / "test_project_multiturn" / "project.kiln"
+    project_path.parent.mkdir()
+    project = Project(name="Multiturn Test Project", path=str(project_path))
+    project.save_to_file()
+
+    task = Task(
+        name="Multiturn Task",
+        instruction="Plain conversational assistant.",
+        parent=project,
+    )
+    task.save_to_file()
+    return task
+
+
+@pytest.mark.asyncio
+async def test_invoke_multiturn_preserves_kiln_fields_on_prior_trace(
+    config, unstructured_task
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=unstructured_task)
+
+    prior_trace = [
+        {"role": "user", "content": "what is 2+2"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "add", "arguments": '{"a": 2, "b": 2}'},
+                }
+            ],
+            "latency_ms": 321,
+        },
+        {
+            "role": "tool",
+            "content": "boom",
+            "tool_call_id": "call_1",
+            "is_error": True,
+            "error_message": "boom",
+            "kiln_task_tool_data": "p:::t:::ta:::r",
+        },
+        {
+            "role": "assistant",
+            "content": "Sorry, the tool failed. Try again.",
+            "latency_ms": 654,
+        },
+    ]
+
+    final_response = ModelResponse(
+        model="test-model",
+        choices=[
+            {"message": {"content": "ok, here is the answer", "tool_calls": None}}
+        ],
+    )
+
+    captured_kwargs: dict = {}
+
+    async def mock_acompletion(self, **kwargs):
+        captured_kwargs.update(kwargs)
+        return final_response, final_response.choices[0]
+
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    mock_provider.reasoning_capable = False
+    mock_provider.parser = None
+    mock_provider.formatter = None
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=[]),
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=mock_acompletion,
+        ),
+    ):
+        task_run = await adapter.invoke("try again please", prior_trace=prior_trace)
+
+    sent_messages = captured_kwargs["messages"]
+    for m in sent_messages:
+        if isinstance(m, dict):
+            assert "is_error" not in m
+            assert "error_message" not in m
+            assert "kiln_task_tool_data" not in m
+            assert "latency_ms" not in m
+
+    trace = task_run.trace
+    assert trace is not None
+    prior_assistant = trace[1]
+    prior_tool = trace[2]
+    prior_assistant_2 = trace[3]
+    assert prior_assistant.get("latency_ms") == 321
+    assert prior_tool.get("is_error") is True
+    assert prior_tool.get("error_message") == "boom"
+    assert prior_tool.get("kiln_task_tool_data") == "p:::t:::ta:::r"
+    assert prior_assistant_2.get("latency_ms") == 654
+
+    new_assistant = trace[-1]
+    assert new_assistant["role"] == "assistant"
+    assert new_assistant.get("content") == "ok, here is the answer"
+    assert "latency_ms" in new_assistant
+
+
+@pytest.mark.asyncio
+async def test_invoke_multiturn_resume_preserves_kiln_fields_on_tool_results(
+    config, unstructured_task
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=unstructured_task)
+
+    prior_trace = [
+        {"role": "user", "content": "what is 2+2"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "add", "arguments": '{"a": 2, "b": 2}'},
+                }
+            ],
+            "latency_ms": 111,
+        },
+    ]
+
+    tool_results = [
+        {
+            "tool_call_id": "call_1",
+            "content": "boom",
+            "is_error": True,
+            "error_message": "boom",
+            "kiln_task_tool_data": "p:::t:::ta:::r",
+        }
+    ]
+
+    final_response = ModelResponse(
+        model="test-model",
+        choices=[{"message": {"content": "Got it.", "tool_calls": None}}],
+    )
+
+    captured_kwargs: dict = {}
+
+    async def mock_acompletion(self, **kwargs):
+        captured_kwargs.update(kwargs)
+        return final_response, final_response.choices[0]
+
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    mock_provider.reasoning_capable = False
+    mock_provider.parser = None
+    mock_provider.formatter = None
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=[]),
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=mock_acompletion,
+        ),
+    ):
+        task_run = await adapter.invoke(tool_results, prior_trace=prior_trace)
+
+    sent_messages = captured_kwargs["messages"]
+    for m in sent_messages:
+        if isinstance(m, dict):
+            assert "is_error" not in m
+            assert "error_message" not in m
+            assert "kiln_task_tool_data" not in m
+            assert "latency_ms" not in m
+
+    trace = task_run.trace
+    assert trace is not None
+    new_tool_msg = next(
+        m
+        for m in trace
+        if m.get("role") == "tool" and m.get("tool_call_id") == "call_1"
+    )
+    assert new_tool_msg.get("is_error") is True
+    assert new_tool_msg.get("error_message") == "boom"
+    assert new_tool_msg.get("kiln_task_tool_data") == "p:::t:::ta:::r"
+
+
+class TestLatencyTracking:
+    """Tests for LLM call latency tracking in _run_model_turn and trace messages."""
+
+    @pytest.fixture
+    def adapter(self, config, mock_task):
+        return LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    @pytest.fixture
+    def simple_response(self):
+        return ModelResponse(
+            model="test-model",
+            choices=[{"message": {"content": "Hello!", "tool_calls": None}}],
+        )
+
+    @pytest.fixture
+    def provider(self):
+        from kiln_ai.adapters.ml_model_list import KilnModelProvider
+
+        return KilnModelProvider(
+            name=ModelProviderName.openrouter, model_id="test-model"
+        )
+
+    @pytest.mark.asyncio
+    async def test_run_model_turn_sets_latency_on_usage(
+        self, adapter, simple_response, provider
+    ):
+        """_run_model_turn() should set total_llm_latency_ms on usage."""
+        monotonic_values = [0.0, 0.5]  # 500ms call
+        with patch.object(adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                adapter,
+                "acompletion_checking_response",
+                return_value=(simple_response, simple_response.choices[0]),
+            ):
+                with patch(
+                    "kiln_ai.adapters.model_adapters.litellm_adapter.time.monotonic",
+                    side_effect=monotonic_values,
+                ):
+                    result = await adapter._run_model_turn(
+                        provider, [{"role": "user", "content": "Hi"}], None, False
+                    )
+
+        assert result.usage.total_llm_latency_ms == 500
+
+    @pytest.mark.asyncio
+    async def test_run_model_turn_sets_latency_on_message_latency_dict(
+        self, adapter, simple_response, provider
+    ):
+        """_run_model_turn() should record latency in the message_latency dict."""
+        monotonic_values = [0.0, 0.25]  # 250ms
+        with patch.object(adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                adapter,
+                "acompletion_checking_response",
+                return_value=(simple_response, simple_response.choices[0]),
+            ):
+                with patch(
+                    "kiln_ai.adapters.model_adapters.litellm_adapter.time.monotonic",
+                    side_effect=monotonic_values,
+                ):
+                    result = await adapter._run_model_turn(
+                        provider, [{"role": "user", "content": "Hi"}], None, False
+                    )
+
+        assert result.message_latency is not None
+        # Latency is keyed by message index in the messages list
+        last_index = len(result.all_messages) - 1
+        assert result.message_latency[last_index] == 250
+
+    @pytest.mark.asyncio
+    async def test_run_model_turn_accumulates_latency_across_tool_calls(
+        self, adapter, provider
+    ):
+        """Latency should accumulate across multiple LLM calls in a tool-call loop."""
+        # First LLM call: model requests a regular tool (not task_response)
+        tool_call_response = ModelResponse(
+            model="test-model",
+            choices=[
+                {
+                    "message": {
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "some_tool",
+                                    "arguments": '{"arg": "val"}',
+                                },
+                            }
+                        ],
+                    }
+                }
+            ],
+        )
+        # Second LLM call: model returns final content
+        final_response = ModelResponse(
+            model="test-model",
+            choices=[
+                {
+                    "message": {
+                        "content": "Final answer",
+                    }
+                }
+            ],
+        )
+
+        # monotonic: start1, end1 (200ms), start2, end2 (300ms)
+        monotonic_values = [0.0, 0.2, 0.2, 0.5]
+        with patch.object(adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                adapter,
+                "acompletion_checking_response",
+                side_effect=[
+                    (tool_call_response, tool_call_response.choices[0]),
+                    (final_response, final_response.choices[0]),
+                ],
+            ):
+                with patch.object(
+                    adapter,
+                    "process_tool_calls",
+                    return_value=(
+                        None,
+                        [
+                            {
+                                "role": "tool",
+                                "content": "tool result",
+                                "tool_call_id": "call_1",
+                            }
+                        ],
+                    ),
+                ):
+                    with patch(
+                        "kiln_ai.adapters.model_adapters.litellm_adapter.time.monotonic",
+                        side_effect=monotonic_values,
+                    ):
+                        result = await adapter._run_model_turn(
+                            provider, [{"role": "user", "content": "Hi"}], None, False
+                        )
+
+        # 200ms + 300ms = 500ms total
+        assert result.usage.total_llm_latency_ms == 500
+
+    def test_litellm_message_to_trace_message_includes_latency(self, adapter):
+        """litellm_message_to_trace_message should include latency_ms when provided."""
+        from litellm.types.utils import Message as LiteLLMMessage
+
+        msg = LiteLLMMessage(role="assistant", content="Hello")
+
+        trace_msg = adapter.litellm_message_to_trace_message(msg, latency_ms=123)
+        assert trace_msg["latency_ms"] == 123
+
+    def test_litellm_message_to_trace_message_no_latency(self, adapter):
+        """litellm_message_to_trace_message should omit latency_ms when not provided."""
+        from litellm.types.utils import Message as LiteLLMMessage
+
+        msg = LiteLLMMessage(role="assistant", content="Hello")
+
+        trace_msg = adapter.litellm_message_to_trace_message(msg)
+        assert "latency_ms" not in trace_msg
