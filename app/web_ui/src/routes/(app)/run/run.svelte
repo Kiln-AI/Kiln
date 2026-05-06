@@ -190,7 +190,9 @@
         ] ?? null
       : null
   $: if (project_id && task.id) {
-    load_rating_options(project_id, task.id)
+    load_rating_options(project_id, task.id).catch((e: unknown) => {
+      console.warn("Failed to load rating options", e)
+    })
   }
 
   // Dynamic rating requirements based on tags
