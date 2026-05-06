@@ -353,7 +353,7 @@
     Preparing Clarifying Questions
   </div>
   <div class="font-light text-center text-gray-500 max-w-md mt-2 text-balance">
-    Kiln is analyzing your auto-eval to identify areas that could use more
-    clarity. Hold tight!
+    Kiln is analyzing your eval to identify areas that could use more clarity.
+    Hold tight!
   </div>
 </div>

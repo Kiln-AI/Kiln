@@ -42,9 +42,9 @@
       />
     </svg>
   </div>
-  <div class="font-medium text-lg text-center mt-2">Creating Auto-Eval</div>
+  <div class="font-medium text-lg text-center mt-2">Creating Eval</div>
   <div class="font-light text-center text-gray-500 max-w-md mt-2 text-balance">
-    Kiln is generating evaluation and training data for your auto-eval before
-    saving. Hold tight!
+    Kiln is generating test and training data for your eval before saving. Hold
+    tight!
   </div>
 </div>

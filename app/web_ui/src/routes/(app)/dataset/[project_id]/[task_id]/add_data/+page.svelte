@@ -56,7 +56,7 @@
     reason === "eval"
       ? [
           {
-            label: "Auto-Evals",
+            label: "Evals",
             href: `/specs/${$page.params.project_id}/${$page.params.task_id}`,
           },
         ]

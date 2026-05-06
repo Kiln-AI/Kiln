@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://docs.kiln.tech/docs/evals-and-specs"><strong>Kiln Auto-Evals</strong></a> • 
+  <a href="https://docs.kiln.tech/docs/evals-and-specs"><strong>Kiln Eval Builder</strong></a> • 
   <a href="https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer"><strong>Prompt Optimizer</strong></a> • 
   <a href="https://docs.kiln.tech/docs/documents-and-search-rag"><strong>RAG</strong></a> • 
   <a href="https://docs.kiln.tech/docs/agents"><strong>Agents</strong></a> • 

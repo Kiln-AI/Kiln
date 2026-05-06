@@ -539,17 +539,17 @@
     breadcrumbs={spec_id === "legacy"
       ? [
           {
-            label: "Auto-Evals",
+            label: "Evals",
             href: `/specs/${project_id}/${task_id}`,
           },
         ]
       : [
           {
-            label: "Auto-Evals",
+            label: "Evals",
             href: `/specs/${project_id}/${task_id}`,
           },
           {
-            label: spec?.name || "Auto-Eval",
+            label: spec?.name || "Eval",
             href: `/specs/${project_id}/${task_id}/${spec_id}`,
           },
         ]}

@@ -96,7 +96,7 @@
     return true
   })
 
-  $: submit_label = all_feedback_aligned ? "Create Auto-Eval" : "Next"
+  $: submit_label = all_feedback_aligned ? "Create Eval" : "Next"
   $: submit_disabled = !all_feedback_aligned && !all_examples_reviewed
 
   function handle_submit() {
@@ -140,15 +140,14 @@
   <div class="flex flex-col">
     <div class="font-medium">Review Data Examples</div>
     <div class="font-light text-gray-500 text-sm">
-      Review these examples to ensure Kiln understands the goal of your
-      auto-eval: <button
+      Review these examples to ensure Kiln understands the goal of your eval: <button
         class="link text-sm text-left text-gray-500 hover:text-gray-700"
         on:click={open_details_dialog}
       >
         {name}</button
-      >. For each row, select "Pass" if the example conforms to your auto-eval
-      and "Fail" if it does not. This will ensure Kiln's synthetic data
-      generation, evals and judge will work effectively.
+      >. For each row, select "Pass" if the example conforms to your eval and
+      "Fail" if it does not. This will ensure Kiln's synthetic data generation,
+      evals and judge will work effectively.
     </div>
   </div>
   <div class="flex flex-col gap-6">
@@ -163,7 +162,7 @@
                 <span>Meets Criteria</span>
                 <span class="font-normal">
                   <InfoTooltip
-                    tooltip_text="Whether the example conforms to your auto-eval. If Kiln's judge analysis is incorrect, you will be asked to provide feedback to help refine it."
+                    tooltip_text="Whether the example conforms to your eval. If Kiln's judge analysis is incorrect, you will be asked to provide feedback to help refine it."
                     position="top"
                   />
                 </span>
@@ -269,7 +268,7 @@
       <Warning
         warning_color="success"
         warning_icon="check"
-        warning_message="Our judge analysis was consistent with your responses. Your auto-eval is ready to be created."
+        warning_message="Our judge analysis was consistent with your responses. Your eval is ready to be created."
         tight={true}
       />
     </div>
@@ -287,7 +286,7 @@
       {#if submitting}
         <span class="loading loading-spinner loading-xs"></span>
       {:else}
-        Skip Review and Create Auto-Eval
+        Skip Review and Create Eval
       {/if}
     </button>
   </div>
@@ -295,7 +294,7 @@
 
 <Dialog
   bind:this={spec_details_dialog}
-  title={`Auto-Eval: ${name}`}
+  title={`Eval: ${name}`}
   width="wide"
   action_buttons={[
     {

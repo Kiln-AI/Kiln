@@ -311,7 +311,7 @@ test("add data page shows data source options for generic reason", async ({
 /* @act
 ## Goals
 When the add data page is loaded with reason=eval, the title changes to
-"Add Data for your Eval" and the breadcrumb links to the Auto-Evals page.
+"Add Data for your Eval" and the breadcrumb links to the Evals page.
 
 ## Fixtures
 - registeredUser
@@ -320,11 +320,11 @@ When the add data page is loaded with reason=eval, the title changes to
 ## Hints
 - Route is /dataset/{project_id}/{task_id}/add_data?reason=eval.
 - Title: "Add Data for your Eval".
-- Breadcrumb shows "Auto-Evals" linking to /specs/{project_id}/{task_id}.
+- Breadcrumb shows "Evals" linking to /specs/{project_id}/{task_id}.
 
 ## Assertions
 - Page title "Add Data for your Eval" is visible.
-- "Auto-Evals" breadcrumb is present.
+- "Evals" breadcrumb is present.
 */
 test("add data page shows eval-specific title and breadcrumb", async ({
   page,
@@ -339,9 +339,7 @@ test("add data page shows eval-specific title and breadcrumb", async ({
   await expect(page.getByText("Add Data for your Eval")).toBeVisible()
 
   const breadcrumb = page.locator(".breadcrumbs")
-  await expect(
-    breadcrumb.getByRole("link", { name: "Auto-Evals" }),
-  ).toBeVisible()
+  await expect(breadcrumb.getByRole("link", { name: "Evals" })).toBeVisible()
 })
 
 /* @act

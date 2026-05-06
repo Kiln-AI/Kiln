@@ -110,8 +110,8 @@
       </rect>
     </svg>
   </div>
-  <div class="font-medium text-lg text-center mt-2">Refining Auto-Eval</div>
+  <div class="font-medium text-lg text-center mt-2">Refining Eval</div>
   <div class="font-light text-center text-gray-500 max-w-md mt-2 text-balance">
-    Kiln is refining your auto-eval with the feedback you provided. Hold tight!
+    Kiln is refining your eval with the feedback you provided. Hold tight!
   </div>
 </div>

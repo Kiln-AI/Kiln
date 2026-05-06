@@ -53,8 +53,8 @@
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: agentInfo.set({
-    name: "Auto-Eval Builder",
-    description: `Guided auto-eval builder for project ID ${project_id}, task ID ${task_id}. Step-by-step creation of auto-evals with requirements and test cases.`,
+    name: "Evals",
+    description: `Guided eval builder for project ID ${project_id}, task ID ${task_id}. Step-by-step creation of evals with requirements and test cases.`,
   })
 
   // State machine for the spec builder flow
@@ -307,7 +307,7 @@
 
     if (!data) {
       throw new KilnError(
-        "Failed to analyze auto-eval for review. Please try again.",
+        "Failed to analyze eval for review. Please try again.",
       )
     }
 
@@ -472,7 +472,7 @@
     }
 
     if (!spec_id) {
-      throw new KilnError("Failed to create auto-eval. Please try again.")
+      throw new KilnError("Failed to create eval. Please try again.")
     }
 
     complete = true
@@ -726,7 +726,7 @@
 
       if (!data) {
         throw new KilnError(
-          "Failed to refine auto-eval with question answers. Please try again.",
+          "Failed to refine eval with question answers. Please try again.",
         )
       }
 
@@ -758,7 +758,7 @@
   function getPageTitle(state: BuilderState): string {
     switch (state) {
       case "create":
-        return "Create Auto-Eval"
+        return "Create Eval"
       case "questioning":
       case "questions":
         return "Kiln Pro: Clarify Eval"
@@ -783,11 +783,11 @@
       case "saving_with_copilot":
         return undefined
       case "questions":
-        return "Reduce ambiguity of your auto-eval."
+        return "Reduce ambiguity of your eval."
       case "review":
-        return "Improve your auto-eval and judge with AI guidance."
+        return "Improve your eval and judge with AI guidance."
       case "refine":
-        return "Polish your auto-eval to be analyzed further."
+        return "Polish your eval to be analyzed further."
     }
   }
 
@@ -859,11 +859,11 @@
     sub_subtitle_link="https://docs.kiln.tech/docs/evals-and-specs"
     breadcrumbs={[
       {
-        label: "Auto-Evals",
+        label: "Evals",
         href: `/specs/${project_id}/${task_id}`,
       },
       {
-        label: "Auto-Eval Templates",
+        label: "Eval Templates",
         href: `/specs/${project_id}/${task_id}/select_template`,
       },
     ]}

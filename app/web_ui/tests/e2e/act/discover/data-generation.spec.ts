@@ -60,7 +60,7 @@ test.describe("Synthetic data generation", () => {
   /* @act
   ## Goals
   Clicking "Generate Eval Data" opens a dialog titled "Generate Synthetic Eval Data"
-  which shows a "Create a New Auto-Eval" link when no specs exist.
+  which shows a "Create a New Eval" link when no specs exist.
 
   ## Fixtures
   - registeredUser
@@ -69,12 +69,12 @@ test.describe("Synthetic data generation", () => {
   ## Hints
   - Route is /generate/{project_id}/{task_id}
   - Clicking "Generate Eval Data" calls show_specs_dialog which opens a Dialog
-  - When no specs exist, the dialog shows "Create a New Auto-Eval" link
+  - When no specs exist, the dialog shows "Create a New Eval" link
   - The link goes to /specs/{project_id}/{task_id}/select_template
 
   ## Assertions
   - Dialog with heading "Generate Synthetic Eval Data" is visible after clicking button.
-  - "Create a New Auto-Eval" link is visible inside the dialog.
+  - "Create a New Eval" link is visible inside the dialog.
   */
   test("generate eval data button opens specs dialog with create link", async ({
     page,
@@ -93,7 +93,7 @@ test.describe("Synthetic data generation", () => {
     ).toBeVisible()
 
     const createLink = page.getByRole("link", {
-      name: "Create a New Auto-Eval",
+      name: "Create a New Eval",
     })
     await expect(createLink).toBeVisible()
     await expect(createLink).toHaveAttribute(

@@ -31,8 +31,8 @@
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: agentInfo.set({
-    name: "Auto-Evals",
-    description: `Auto-evals list for project ID ${project_id}, task ID ${task_id}. Shows all auto-evals and their associated evaluations.`,
+    name: "Evals",
+    description: `Evals list for project ID ${project_id}, task ID ${task_id}. Shows all evals, their requirements, and test cases.`,
   })
 
   let specs: Spec[] | null = null
@@ -721,7 +721,7 @@
 
 <AppPage
   limit_max_width={true}
-  title="Auto-Evals"
+  title="Evals"
   subtitle="Define the behaviours to enforce or avoid for your task, and automatically measure quality."
   sub_subtitle={"Read the Docs"}
   sub_subtitle_link="https://docs.kiln.tech/docs/evals-and-specs"
@@ -729,7 +729,7 @@
     ? []
     : [
         {
-          label: "Create Auto-Eval",
+          label: "Create Eval",
           handler: async () => {
             await check_kiln_copilot_and_proceed()
           },
@@ -749,14 +749,14 @@
     {:else if is_empty}
       <div class="mx-auto mt-[10vh]">
         <Intro
-          title="Auto-Evals Ensure AI Quality"
+          title="Evals Ensure AI Quality"
           align_title_left={true}
           description_paragraphs={[
             "Specify how your AI task should behave, then use evaluations to verify performance.",
           ]}
           action_buttons={[
             {
-              label: "Create Auto-Eval",
+              label: "Create Eval",
               onClick: async () => {
                 await check_kiln_copilot_and_proceed()
               },
@@ -1038,7 +1038,7 @@
 
 <FilterTagsDialog
   bind:this={filter_tags_dialog}
-  title="Filter Auto-Evals by Tags"
+  title="Filter Evals by Tags"
   {filter_tags}
   {available_filter_tags}
   onRemoveFilterTag={remove_filter_tag}
@@ -1048,8 +1048,8 @@
 <AddTagsDialog
   bind:this={add_tags_dialog}
   title={selected_specs.size > 1
-    ? "Add Tags to " + selected_specs.size + " Auto-Evals"
-    : "Add Tags to Auto-Eval"}
+    ? "Add Tags to " + selected_specs.size + " Evals"
+    : "Add Tags to Eval"}
   {project_id}
   {task_id}
   tag_type="task_run"
@@ -1061,8 +1061,8 @@
 <RemoveTagsDialog
   bind:this={remove_tags_dialog}
   title={selected_specs.size > 1
-    ? "Remove Tags from " + selected_specs.size + " Auto-Evals"
-    : "Remove Tags from Auto-Eval"}
+    ? "Remove Tags from " + selected_specs.size + " Evals"
+    : "Remove Tags from Eval"}
   bind:remove_tags
   available_tags={removeable_tags}
   onRemoveTag={handle_remove_tag}
@@ -1074,11 +1074,11 @@
   bind:this={archive_dialog}
   title={archive_action_state === "unarchive"
     ? selected_specs.size > 1
-      ? `Unarchive ${selected_specs.size} Auto-Evals`
-      : "Unarchive Auto-Eval"
+      ? `Unarchive ${selected_specs.size} Evals`
+      : "Unarchive Eval"
     : selected_specs.size > 1
-      ? `Archive ${selected_specs.size} Auto-Evals`
-      : "Archive Auto-Eval"}
+      ? `Archive ${selected_specs.size} Evals`
+      : "Archive Eval"}
   action_buttons={[
     { label: "Cancel", isCancel: true },
     {
@@ -1091,8 +1091,8 @@
   <div class="mt-6">
     <p class="text-sm text-gray-500 mt-2">
       {archive_action_state === "unarchive"
-        ? "Unarchived auto-evals will be set back to an active state."
-        : "Archived auto-evals will be hidden from this list but can be restored later by unarchiving them."}
+        ? "Unarchived evals will be set back to an active state."
+        : "Archived evals will be hidden from this list but can be restored later by unarchiving them."}
     </p>
   </div>
 </Dialog>

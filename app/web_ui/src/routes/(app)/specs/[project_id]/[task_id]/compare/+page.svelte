@@ -48,7 +48,7 @@
   $: fromOptimize = $page.url.searchParams.get("from") === "optimize"
   $: breadcrumbs = fromOptimize
     ? [{ label: "Optimize", href: `/optimize/${project_id}/${task_id}` }]
-    : [{ label: "Auto-Evals", href: `/specs/${project_id}/${task_id}` }]
+    : [{ label: "Evals", href: `/specs/${project_id}/${task_id}` }]
 
   // State management
   let columns = 2 // Start with 2 columns
@@ -632,8 +632,8 @@
   )
 
   $: agentInfo.set({
-    name: "Compare Auto-Evals",
-    description: `Compare auto-evals for project ID ${project_id}, task ID ${task_id}. Side-by-side comparison of auto-eval results. ${validSelectedModels.length > 0 ? `The following run configs are selected: ${validSelectedModels.join(", ")}.` : "No run configs are selected."}`,
+    name: "Compare Evals",
+    description: `Compare evals for project ID ${project_id}, task ID ${task_id}. Side-by-side comparison of eval results. ${validSelectedModels.length > 0 ? `The following run configs are selected: ${validSelectedModels.join(", ")}.` : "No run configs are selected."}`,
   })
 
   $: allSelectedLoading = validSelectedModels.every(

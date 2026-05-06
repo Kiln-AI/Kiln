@@ -83,7 +83,7 @@
   warn_before_unload={computed_warn_before_unload}
 >
   <FormElement
-    label="Auto-Eval Name"
+    label="Eval Name"
     description="A short name for your own reference."
     id="spec_name"
     bind:value={name}
@@ -127,7 +127,7 @@
       id="priority"
       inputType="select"
       bind:value={priority}
-      description="The priority level for this auto-eval."
+      description="The priority level for this eval."
       select_options={[
         [0, "P0 - Critical"],
         [1, "P1 - High"],

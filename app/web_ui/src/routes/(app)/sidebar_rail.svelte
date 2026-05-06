@@ -98,7 +98,7 @@
   <SidebarRailItem
     href={`/specs/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
     active={section === Section.Specs}
-    label="Auto-Evals"
+    label="Evals"
   >
     <div slot="icon" class="w-full h-full">
       <EvalIcon />

@@ -43,12 +43,12 @@
 
 <div class="max-w-[900px]">
   <AppPage
-    title="Create Auto-Eval"
+    title="Create Eval"
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/evals-and-specs"
     breadcrumbs={[
       {
-        label: "Auto-Evals",
+        label: "Evals",
         href: `/specs/${project_id}/${task_id}`,
       },
     ]}
@@ -64,7 +64,7 @@
     {:else}
       <div class="my-4 max-w-[680px] mx-auto">
         <div class="font-medium text-xl text-center">
-          Choose your Auto-Eval Creation Workflow
+          Choose your Eval Creation Workflow
         </div>
         <div class="overflow-x-auto">
           <table class="table w-full mt-4">
