@@ -7,7 +7,7 @@
 <CopilotRequiredCard
   title="Kiln Chat"
   description_markdown="Chat with Kiln to build, evaluate, and optimize your AI systems."
-  auth_href="/chat/copilot_auth"
+  auth_href="/chat/pro_auth"
   {compact}
   connect_button_label="Log in"
   icon="chat"

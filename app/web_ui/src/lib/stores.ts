@@ -486,7 +486,7 @@ export function model_name(
   }
 
   if (model_id === "kiln-copilot") {
-    return "Kiln Copilot"
+    return "Kiln Pro"
   }
 
   const model = get_model_info(model_id, provider_models)
@@ -731,7 +731,7 @@ export function rating_options_for_sample(
 
 export function get_model_friendly_name(model_id: string): string {
   if (model_id === "kiln-copilot") {
-    return "Kiln Copilot"
+    return "Kiln Pro"
   }
   const model = get_model_info(model_id, get(model_info))
   if (model?.name) {
