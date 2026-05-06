@@ -95,7 +95,7 @@
     const evaluator = spec.eval_id ? evals_by_id[spec.eval_id] : null
     if (!evaluator) {
       alert(
-        "This auto-eval's eval is not ready yet. Please configure it first.",
+        "This auto-eval is not ready yet. Please configure its evaluation first.",
       )
       return
     }
