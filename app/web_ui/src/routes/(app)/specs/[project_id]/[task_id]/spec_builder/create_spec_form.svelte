@@ -75,7 +75,7 @@
 
 <FormContainer
   bind:this={form_container}
-  submit_label={copilot_allowed ? "Create with Copilot" : "Create Spec"}
+  submit_label={copilot_allowed ? "Create with Copilot" : "Create Auto-Eval"}
   on:submit={handle_submit}
   bind:error
   bind:submitting
@@ -83,7 +83,7 @@
   warn_before_unload={computed_warn_before_unload}
 >
   <FormElement
-    label="Spec Name"
+    label="Auto-Eval Name"
     description="A short name for your own reference."
     id="spec_name"
     bind:value={name}
@@ -127,7 +127,7 @@
       id="priority"
       inputType="select"
       bind:value={priority}
-      description="The priority level for this spec."
+      description="The priority level for this auto-eval."
       select_options={[
         [0, "P0 - Critical"],
         [1, "P1 - High"],
@@ -144,8 +144,8 @@
         disabled={full_trace_disabled}
         description="When enabled, this will be evaluated on the full agent history including intermediate steps and tool calls. When disabled, only the final answer is evaluated."
         info_description={full_trace_disabled
-          ? "Tool use specs always evaluate the full conversation history to analyze tool calls."
-          : "Enable this for specs that need to evaluate reasoning steps, tool usage, or intermediate outputs." +
+          ? "Tool use auto-evals always evaluate the full conversation history to analyze tool calls."
+          : "Enable this for auto-evals that need to evaluate reasoning steps, tool usage, or intermediate outputs." +
             (copilot_enabled ? " Not supported by Copilot." : "")}
       />
     {/if}

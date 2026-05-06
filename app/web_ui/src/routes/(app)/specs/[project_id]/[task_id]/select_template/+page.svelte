@@ -71,11 +71,11 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title="Select a Spec Template"
+    title="Select an Auto-Eval Template"
     subtitle="Select a template for what you want this task to enforce or avoid."
     breadcrumbs={[
       {
-        label: "Specs & Evals",
+        label: "Auto-Evals",
         href: `/specs/${project_id}/${task_id}`,
       },
     ]}
@@ -89,7 +89,7 @@
 
   <Dialog
     bind:this={tool_selection_dialog}
-    title="Tool for this Spec"
+    title="Tool for this Auto-Eval"
     action_buttons={[
       {
         label: "Next",
@@ -113,7 +113,7 @@
       {task_id}
       label="Tool to Use"
       settings={{
-        description: "Select the tool you want to use for this spec.",
+        description: "Select the tool you want to use for this auto-eval.",
         hide_info_description: true,
         single_select: true,
         optional: false,

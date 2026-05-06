@@ -4,8 +4,9 @@
   import { agentInfo } from "$lib/agent"
 
   agentInfo.set({
-    name: "Specs Copilot Auth",
-    description: "Authentication page for Kiln Copilot access to create specs.",
+    name: "Auto-Evals Copilot Auth",
+    description:
+      "Authentication page for Kiln Copilot access to create auto-evals.",
   })
 
   $: project_id = $ui_state.current_project_id
@@ -13,10 +14,10 @@
 </script>
 
 <CopilotAuthPage
-  title="Create Spec"
+  title="Create Auto-Eval"
   docs_link="https://docs.kiln.tech/docs/evals-and-specs"
   breadcrumbs={[
-    { label: "Specs & Evals", href: `/specs/${project_id}/${task_id}` },
+    { label: "Auto-Evals", href: `/specs/${project_id}/${task_id}` },
   ]}
   success_redirect_url={`/specs/${project_id}/${task_id}/select_template`}
 />

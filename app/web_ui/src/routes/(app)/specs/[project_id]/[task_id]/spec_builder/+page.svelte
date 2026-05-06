@@ -53,8 +53,8 @@
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: agentInfo.set({
-    name: "Spec Builder",
-    description: `Guided spec builder for project ID ${project_id}, task ID ${task_id}. Step-by-step creation of specs with requirements and test cases.`,
+    name: "Auto-Eval Builder",
+    description: `Guided auto-eval builder for project ID ${project_id}, task ID ${task_id}. Step-by-step creation of auto-evals with requirements and test cases.`,
   })
 
   // State machine for the spec builder flow
@@ -307,7 +307,7 @@
 
     if (!data) {
       throw new KilnError(
-        "Failed to analyze spec for review. Please try again.",
+        "Failed to analyze auto-eval for review. Please try again.",
       )
     }
 
@@ -472,7 +472,7 @@
     }
 
     if (!spec_id) {
-      throw new KilnError("Failed to create spec. Please try again.")
+      throw new KilnError("Failed to create auto-eval. Please try again.")
     }
 
     complete = true
@@ -726,7 +726,7 @@
 
       if (!data) {
         throw new KilnError(
-          "Failed to refine spec with question answers. Please try again.",
+          "Failed to refine auto-eval with question answers. Please try again.",
         )
       }
 
@@ -758,10 +758,10 @@
   function getPageTitle(state: BuilderState): string {
     switch (state) {
       case "create":
-        return "Create Spec"
+        return "Create Auto-Eval"
       case "questioning":
       case "questions":
-        return "Copilot: Clarify Spec"
+        return "Copilot: Clarify Auto-Eval"
       case "analyzing_for_review":
       case "review":
         return "Copilot: Review and Refine"
@@ -769,25 +769,25 @@
       case "refine":
         return "Copilot: Review Suggested Refinements"
       case "saving_with_copilot":
-        return "Copilot: Creating Spec"
+        return "Copilot: Creating Auto-Eval"
     }
   }
 
   function getPageSubtitle(state: BuilderState): string | undefined {
     switch (state) {
       case "create":
-        return "A specification describes a behaviour to enforce or avoid for your task. Adding specs lets us measure and optimize quality."
+        return "An auto-eval describes a behaviour to enforce or avoid for your task, and automatically measures quality."
       case "analyzing_for_review":
       case "refining":
       case "questioning":
       case "saving_with_copilot":
         return undefined
       case "questions":
-        return "Reduce ambiguity of your spec."
+        return "Reduce ambiguity of your auto-eval."
       case "review":
-        return "Improve your spec and judge with AI guidance."
+        return "Improve your auto-eval and judge with AI guidance."
       case "refine":
-        return "Polish your spec to be analyzed further."
+        return "Polish your auto-eval to be analyzed further."
     }
   }
 
@@ -859,11 +859,11 @@
     sub_subtitle_link="https://docs.kiln.tech/docs/evals-and-specs"
     breadcrumbs={[
       {
-        label: "Specs & Evals",
+        label: "Auto-Evals",
         href: `/specs/${project_id}/${task_id}`,
       },
       {
-        label: "Spec Templates",
+        label: "Auto-Eval Templates",
         href: `/specs/${project_id}/${task_id}/select_template`,
       },
     ]}

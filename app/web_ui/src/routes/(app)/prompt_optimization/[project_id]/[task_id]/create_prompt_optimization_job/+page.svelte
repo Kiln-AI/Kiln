@@ -937,7 +937,7 @@
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      Create Eval & Spec
+                      Create Auto-Eval
                     </a>
                   </div>
                 {:else}

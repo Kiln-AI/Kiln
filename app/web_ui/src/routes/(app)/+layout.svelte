@@ -299,7 +299,7 @@
               <EvalIcon />
             </div>
 
-            Specs &amp; Evals</a
+            Auto-Evals</a
           >
         </li>
 
