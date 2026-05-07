@@ -12,6 +12,7 @@ from openai.types.chat import (
     ChatCompletionToolMessageParam as OpenAIChatCompletionToolMessageParam,
 )
 
+from kiln_ai.datamodel.usage import Usage
 from kiln_ai.utils.open_ai_types import (
     KILN_ONLY_MESSAGE_FIELDS,
     ChatCompletionAssistantMessageParamWrapper,
@@ -46,6 +47,10 @@ def test_assistant_message_param_properties_match():
     # latency_ms is a Kiln-added property for LLM call timing. Confirm it's there and remove it.
     assert "latency_ms" in kiln_properties, "Kiln should have latency_ms"
     kiln_properties.remove("latency_ms")
+
+    # usage is a Kiln-added property for per-LLM-call token usage and cost.
+    assert "usage" in kiln_properties, "Kiln should have usage"
+    kiln_properties.remove("usage")
 
     assert openai_properties == kiln_properties, (
         f"Property names don't match. "
@@ -215,7 +220,7 @@ def test_tool_message_wrapper_can_be_instantiated():
 
 def test_kiln_only_message_fields_set():
     assert KILN_ONLY_MESSAGE_FIELDS == frozenset(
-        {"latency_ms", "is_error", "error_message", "kiln_task_tool_data"}
+        {"latency_ms", "is_error", "error_message", "kiln_task_tool_data", "usage"}
     )
 
 
@@ -227,6 +232,7 @@ def test_sanitize_messages_strips_kiln_only_fields():
             "role": "assistant",
             "content": "hello",
             "latency_ms": 200,
+            "usage": Usage(input_tokens=10, output_tokens=5, cost=0.001),
         },
         {
             "role": "tool",
@@ -246,6 +252,35 @@ def test_sanitize_messages_strips_kiln_only_fields():
         {"role": "assistant", "content": "hello"},
         {"role": "tool", "content": "{}", "tool_call_id": "c1"},
     ]
+
+
+def test_sanitize_messages_strips_usage_from_assistant():
+    messages = [
+        {
+            "role": "assistant",
+            "content": "hi",
+            "usage": Usage(input_tokens=42, output_tokens=7, cost=0.005),
+        }
+    ]
+
+    sanitized = sanitize_messages_for_provider(messages)
+
+    assert sanitized == [{"role": "assistant", "content": "hi"}]
+    assert "usage" not in sanitized[0]
+
+
+def test_assistant_wrapper_accepts_usage_field():
+    usage = Usage(input_tokens=10, output_tokens=20, total_tokens=30, cost=0.01)
+    message: ChatCompletionAssistantMessageParamWrapper = {
+        "role": "assistant",
+        "content": "ok",
+        "latency_ms": 123,
+        "usage": usage,
+    }
+
+    assert message["role"] == "assistant"
+    assert message.get("latency_ms") == 123
+    assert message.get("usage") is usage
 
 
 def test_sanitize_messages_does_not_mutate_input():

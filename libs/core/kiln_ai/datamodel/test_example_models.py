@@ -1015,3 +1015,37 @@ def test_usage_backwards_compat_without_latency():
     usage = Usage.model_validate_json(old_json)
     assert usage.total_llm_latency_ms is None
     assert usage.input_tokens == 100
+
+
+def test_task_run_default_cumulative_usage_is_none(valid_task_run):
+    assert valid_task_run.cumulative_usage is None
+
+
+def test_task_run_can_set_cumulative_usage(valid_task_run):
+    cumulative = Usage(input_tokens=300, output_tokens=120, total_tokens=420, cost=0.05)
+    task_run = valid_task_run.model_copy(deep=True)
+    task_run.cumulative_usage = cumulative
+    assert task_run.cumulative_usage == cumulative
+    # `usage` and `cumulative_usage` are independent fields.
+    assert task_run.usage is None
+
+
+def test_task_run_loads_old_json_without_cumulative_usage(valid_task_run):
+    """JSON serialized before this field existed loads with cumulative_usage None."""
+    payload = valid_task_run.model_dump(mode="json")
+    payload.pop("cumulative_usage", None)
+
+    reloaded = TaskRun.model_validate(payload)
+
+    assert reloaded.cumulative_usage is None
+
+
+def test_task_run_round_trip_cumulative_usage(valid_task_run):
+    cumulative = Usage(input_tokens=10, output_tokens=5, total_tokens=15, cost=0.001)
+    task_run = valid_task_run.model_copy(deep=True)
+    task_run.cumulative_usage = cumulative
+
+    payload = task_run.model_dump(mode="json")
+    reloaded = TaskRun.model_validate(payload)
+
+    assert reloaded.cumulative_usage == cumulative
