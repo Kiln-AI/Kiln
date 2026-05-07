@@ -31,19 +31,19 @@ describe("SidebarRailItem", () => {
 
   it("renders a tooltip on hover with the label text", async () => {
     const { container } = render(SidebarRailItem, {
-      props: { href: "/chat", label: "Chat" },
+      props: { href: "/assistant", label: "Assistant" },
     })
     const anchor = container.querySelector("a") as HTMLElement
     // No tooltip before hover.
     expect(findTooltip()).toBeNull()
     await fireEvent.mouseEnter(anchor)
     await waitFor(() => expect(findTooltip()).not.toBeNull())
-    expect(findTooltip()?.textContent?.trim()).toBe("Chat")
+    expect(findTooltip()?.textContent?.trim()).toBe("Assistant")
   })
 
   it("hides the tooltip on mouse leave", async () => {
     const { container } = render(SidebarRailItem, {
-      props: { href: "/chat", label: "Chat" },
+      props: { href: "/assistant", label: "Assistant" },
     })
     const anchor = container.querySelector("a") as HTMLElement
     await fireEvent.mouseEnter(anchor)
@@ -74,7 +74,7 @@ describe("SidebarRailItem", () => {
     // Regression guard: pre-portal the tooltip is a DOM descendant of the <a>,
     // so it must remain non-interactive or it could swallow clicks on the link.
     const { container } = render(SidebarRailItem, {
-      props: { href: "/chat", label: "Chat" },
+      props: { href: "/assistant", label: "Assistant" },
     })
     const anchor = container.querySelector("a") as HTMLElement
     await fireEvent.mouseEnter(anchor)
