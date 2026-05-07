@@ -81,10 +81,10 @@
                   <div class="flex items-center justify-center gap-2">
                     <img
                       src="/images/animated_logo.svg"
-                      alt="Kiln Pro"
+                      alt="Kiln Eval Builder"
                       class="size-4"
                     />
-                    <span>Kiln Pro</span>
+                    <span>Kiln Eval Builder</span>
                   </div>
                 </th>
               </tr>
