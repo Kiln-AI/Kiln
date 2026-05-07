@@ -566,6 +566,186 @@ class TestAdapterStreamEdgeCases:
                     pass
 
 
+class TestAdapterStreamPerMessageUsage:
+    """Per-message usage capture mirroring the non-streaming adapter."""
+
+    @pytest.mark.asyncio
+    async def test_per_message_usage_captured_for_simple_response(
+        self, mock_adapter, mock_provider
+    ):
+        """A single LLM call should record one per-message Usage entry."""
+        response = _make_model_response(content="Hello world")
+        fake_stream = FakeStreamingCompletion(response)
+        call_usage = Usage(input_tokens=10, output_tokens=20, cost=0.1)
+        mock_adapter.usage_from_response = MagicMock(return_value=call_usage)
+
+        with patch(
+            "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+            return_value=fake_stream,
+        ):
+            stream = AdapterStream(
+                adapter=mock_adapter,
+                provider=mock_provider,
+                chat_formatter=FakeChatFormatter(),
+                initial_messages=[],
+                top_logprobs=None,
+            )
+            async for _ in stream:
+                pass
+
+        # all_messages_to_trace receives the per-message usage dict.
+        call_args = mock_adapter.all_messages_to_trace.call_args
+        message_usage_arg = call_args.args[2] if len(call_args.args) >= 3 else None
+        assert message_usage_arg is not None
+        assert len(message_usage_arg) == 1
+        # The single entry maps the assistant message index to the call's Usage.
+        only_entry = next(iter(message_usage_arg.values()))
+        assert only_entry == call_usage
+        # The per-call Usage stored on the message has no aggregated latency
+        # — that lives on the running `usage` accumulator only.
+        assert only_entry.total_llm_latency_ms is None
+
+        # The running aggregate sums the per-call usage and accumulates latency.
+        assert stream.result.usage.input_tokens == 10
+        assert stream.result.usage.output_tokens == 20
+        assert stream.result.usage.cost == 0.1
+        assert stream.result.usage.total_llm_latency_ms is not None
+
+    @pytest.mark.asyncio
+    async def test_per_message_usage_distinct_per_tool_call_loop(
+        self, mock_adapter, mock_provider
+    ):
+        """Each LLM call inside a tool-call loop should record its own per-message Usage."""
+        tool_call = _make_tool_call(
+            call_id="call_1", name="add", arguments={"a": 1, "b": 2}
+        )
+        tool_response = _make_model_response(content=None, tool_calls=[tool_call])
+        final_response = _make_model_response(content="The answer is 3")
+
+        tool_stream = FakeStreamingCompletion(
+            tool_response,
+            [_make_streaming_chunk(finish_reason="tool_calls")],
+        )
+        final_stream = FakeStreamingCompletion(
+            final_response,
+            [
+                _make_streaming_chunk(content="The answer is 3"),
+                _make_streaming_chunk(finish_reason="stop"),
+            ],
+        )
+        streams_iter = iter([tool_stream, final_stream])
+
+        first_call_usage = Usage(input_tokens=10, output_tokens=20, cost=0.1)
+        second_call_usage = Usage(input_tokens=11, output_tokens=22, cost=0.2)
+        mock_adapter.usage_from_response = MagicMock(
+            side_effect=[first_call_usage, second_call_usage]
+        )
+        mock_adapter.process_tool_calls = AsyncMock(
+            return_value=(
+                None,
+                [{"role": "tool", "tool_call_id": "call_1", "content": "3"}],
+            )
+        )
+
+        with patch(
+            "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+            side_effect=lambda **kw: next(streams_iter),
+        ):
+            stream = AdapterStream(
+                adapter=mock_adapter,
+                provider=mock_provider,
+                chat_formatter=FakeChatFormatter(),
+                initial_messages=[],
+                top_logprobs=None,
+            )
+            async for _ in stream:
+                pass
+
+        message_usage_arg = mock_adapter.all_messages_to_trace.call_args.args[2]
+        # Two assistant messages → two distinct per-message Usage entries.
+        # (One tool-result message is also appended, but it's not an assistant.)
+        assert len(message_usage_arg) == 2
+        usages = list(message_usage_arg.values())
+        assert first_call_usage in usages
+        assert second_call_usage in usages
+        # Running aggregate sums both calls.
+        assert stream.result.usage.input_tokens == 21
+        assert stream.result.usage.output_tokens == 42
+        assert stream.result.usage.cost == pytest.approx(0.3)
+
+    @pytest.mark.asyncio
+    async def test_per_message_usage_on_tool_call_interruption(
+        self, mock_adapter, mock_provider
+    ):
+        """return_on_tool_call=True should still record per-message usage for the interrupting call."""
+        tool_call = _make_tool_call(
+            call_id="call_1", name="add", arguments={"a": 1, "b": 2}
+        )
+        tool_response = _make_model_response(content=None, tool_calls=[tool_call])
+        fake_stream = FakeStreamingCompletion(
+            tool_response,
+            [_make_streaming_chunk(finish_reason="tool_calls")],
+        )
+
+        mock_adapter.base_adapter_config.return_on_tool_call = True
+        interrupted_call_usage = Usage(input_tokens=7, output_tokens=8, cost=0.05)
+        mock_adapter.usage_from_response = MagicMock(
+            return_value=interrupted_call_usage
+        )
+
+        with patch(
+            "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+            return_value=fake_stream,
+        ):
+            stream = AdapterStream(
+                adapter=mock_adapter,
+                provider=mock_provider,
+                chat_formatter=FakeChatFormatter(),
+                initial_messages=[],
+                top_logprobs=None,
+            )
+            async for _ in stream:
+                pass
+
+        # Even on interruption, the assistant message produced before the
+        # tool-call hand-off must have its per-message usage recorded.
+        message_usage_arg = mock_adapter.all_messages_to_trace.call_args.args[2]
+        assert len(message_usage_arg) == 1
+        only_entry = next(iter(message_usage_arg.values()))
+        assert only_entry == interrupted_call_usage
+
+    @pytest.mark.asyncio
+    async def test_per_message_usage_handles_empty_usage(
+        self, mock_adapter, mock_provider
+    ):
+        """When the provider returns no usage, an empty Usage() is still attached."""
+        response = _make_model_response(content="Hi")
+        fake_stream = FakeStreamingCompletion(response)
+        # Default fixture already returns Usage() (all None) — be explicit.
+        mock_adapter.usage_from_response = MagicMock(return_value=Usage())
+
+        with patch(
+            "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",
+            return_value=fake_stream,
+        ):
+            stream = AdapterStream(
+                adapter=mock_adapter,
+                provider=mock_provider,
+                chat_formatter=FakeChatFormatter(),
+                initial_messages=[],
+                top_logprobs=None,
+            )
+            async for _ in stream:
+                pass
+
+        # An entry exists (an empty Usage), it doesn't break finalization.
+        message_usage_arg = mock_adapter.all_messages_to_trace.call_args.args[2]
+        assert len(message_usage_arg) == 1
+        only_entry = next(iter(message_usage_arg.values()))
+        assert only_entry.input_tokens is None
+        assert only_entry.cost is None
+
+
 class TestValidateResponse:
     def test_valid_response(self):
         from kiln_ai.adapters.model_adapters.adapter_stream import _validate_response
