@@ -29,7 +29,9 @@
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import { split_tool_and_skill_ids } from "$lib/stores/tools_store"
   import Intro from "$lib/ui/intro.svelte"
+  import Callout from "$lib/ui/callout.svelte"
   import NotebookIcon from "$lib/ui/icons/notebook_icon.svelte"
+  import CheckmarkIcon from "$lib/ui/icons/checkmark_icon.svelte"
   import { agentInfo } from "$lib/agent"
   import { goto } from "$app/navigation"
   import AddExampleDialog from "../data_guide_setup/add_example_dialog.svelte"
@@ -71,6 +73,11 @@
   let task: Task | null = null
   let task_error: KilnError | null = null
   let task_loading = true
+
+  // Set when the user just returned from /data_guide_setup so the synth page
+  // can confirm the guide was saved (the new guide is below the fold). Read
+  // once on mount and stripped from the URL so a refresh doesn't re-show it.
+  let data_guide_just_saved = false
 
   // Add-example dialog reused from the data_guide_setup flow. Lets the user
   // start filling out their first example without leaving the synth page.
@@ -210,6 +217,12 @@
   }
 
   onMount(async () => {
+    if ($page.url.searchParams.get("data_guide_saved") === "true") {
+      data_guide_just_saved = true
+      const cleaned = new URL($page.url.toString())
+      cleaned.searchParams.delete("data_guide_saved")
+      history.replaceState(history.state, "", cleaned.toString())
+    }
     await Promise.all([get_task(), fetch_data_guide()])
     if (!task) {
       task_error = new KilnError(
@@ -718,7 +731,9 @@
         ? JSON.parse(sample.input)
         : sample.input
       const save_sample_guidance = guidance_data.guidance_for_type("outputs")
-      const session_data_guide = get(guidance_data.data_guide)
+      const data_guide = get(guidance_data.use_data_guide)
+        ? get(guidance_data.data_guide)
+        : ""
       // Get a random split tag, if splits are defined
       const split_tag = get_random_split_tag()
       const tags = split_tag ? [split_tag] : []
@@ -745,7 +760,7 @@
             run_config_properties: run_config_properties,
             topic_path: topic_path || [],
             guidance: save_sample_guidance ? save_sample_guidance : undefined, // clear empty string
-            data_guide: session_data_guide ?? "",
+            data_guide,
             tags,
           },
         },
@@ -891,7 +906,8 @@
           <Intro
             title="Create a Data Guide"
             description_paragraphs={[
-              "Help us generate better synthetic data with examples.",
+              "A Data Guide tells us what realistic data for your task looks like. Without one, the model might guess.",
+              "Add a few good examples, rate the data we generate, and we'll refine the guide from there.",
             ]}
             action_buttons={[
               {
@@ -920,6 +936,16 @@
           />
         </div>
       {:else if is_empty}
+        {#if data_guide_just_saved}
+          <div class="mt-8">
+            <Callout
+              title="Data Guide saved"
+              description="Your data guide will be available to use when generating data below."
+            >
+              <div slot="icon"><CheckmarkIcon /></div>
+            </Callout>
+          </div>
+        {/if}
         <div>
           <DataGenIntro
             generate_subtopics={() => {

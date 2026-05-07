@@ -15,6 +15,7 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
 )
 from kiln_ai.adapters.data_gen.qna_gen_task import DataGenQnaTask, DataGenQnaTaskInput
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
+from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun, generate_model_id
 from kiln_ai.datamodel.data_guide import DataGuide
 from kiln_ai.datamodel.extraction import Document
@@ -138,7 +139,18 @@ class GuideRefineInput(BaseModel):
         description="The previewed samples the user is giving feedback on, each rated by the user as realistic (true) or needs work (false)"
     )
     run_config_properties: KilnAgentRunConfigProperties = Field(
-        description="The model config to use for refinement"
+        description="The model config to use for the metaprompter call itself."
+    )
+    output_run_config_properties: KilnAgentRunConfigProperties | None = Field(
+        description=(
+            "The user's chosen output-generation run config. Its prompt template "
+            "is rendered server-side and used as runtime context for the "
+            "metaprompter, so the rules it produces match what the model actually "
+            "sees at synthesis time. Falls back to `task.instruction` when not "
+            "provided — accurate for users on the default simple prompt template, "
+            "stale for users on prompt-optimization or saved-prompt run configs."
+        ),
+        default=None,
     )
 
 
@@ -821,8 +833,30 @@ The topic path for this sample is:
     ) -> GuideRefineResponse:
         task = task_from_id(project_id, task_id)
 
+        # Use the user's chosen output-generation prompt as runtime context for
+        # the metaprompter so the rules it produces match what the model
+        # actually sees at synthesis time. For users on the default simple
+        # prompt template this is equivalent to `task.instruction`; for users
+        # on saved prompts / few-shot / prompt-optimization output it can be
+        # substantially richer, and using `task.instruction` directly would
+        # leave the metaprompter blind to that.
+        runtime_prompt = task.instruction
+        if input.output_run_config_properties is not None:
+            try:
+                output_prompt_builder = prompt_builder_from_id(
+                    input.output_run_config_properties.prompt_id, task
+                )
+                runtime_prompt = output_prompt_builder.build_prompt(
+                    include_json_instructions=False
+                )
+            except Exception:
+                # Resolution failure (e.g. a prompt_id pointing at a deleted
+                # saved Prompt) is non-critical — fall back to task.instruction
+                # rather than failing the refine call.
+                runtime_prompt = task.instruction
+
         system_prompt = generate_guidance_refinement_prompt(
-            task_instruction=task.instruction,
+            task_instruction=runtime_prompt,
             current_guide=input.current_guide,
             preview_samples=[
                 (s.input, s.output, s.looks_good) for s in input.preview_samples

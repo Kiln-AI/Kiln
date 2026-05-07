@@ -8,6 +8,10 @@ import type { KilnAgentRunConfigProperties } from "$lib/types"
 // to /data_guide.
 export type DataGuideRefineHandoff = {
   guide: string
+  // The actually-saved-on-server guide text at handoff time. Used by the
+  // refine page to detect whether the user has anything new to save (the
+  // `guide` field above can be a pending edit that hasn't been persisted).
+  saved_guide: string
   input_run_config: KilnAgentRunConfigProperties
   output_run_config: KilnAgentRunConfigProperties
 }

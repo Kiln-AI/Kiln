@@ -29,6 +29,11 @@
   // save. Disables the unsaved-changes warn so the post-save goto doesn't
   // prompt the user.
   export let saved: boolean = false
+  // True when the working guide differs from what's persisted on the server,
+  // i.e. there's something for the submit button to actually save. When false
+  // and nothing else needs refinement, the submit becomes a "Back to Data
+  // Guide" navigation that skips the redundant PUT.
+  export let requires_save: boolean = true
 
   // True iff the user edited the guide via the Edit dialog after this
   // preview was generated. Drives the submit button label (Refine vs Save
@@ -124,18 +129,23 @@
   $: submit_disabled =
     !all_reviewed || (!all_look_good && !has_sufficient_feedback)
 
-  $: submit_label = needs_refine ? "Continue" : "Save Data Guide"
+  $: submit_label = needs_refine
+    ? "Continue"
+    : requires_save
+      ? "Save Data Guide"
+      : "Back to Data Guide"
 
   type RatedSample = { input: string; output: string; looks_good: boolean }
 
   const dispatch = createEventDispatcher<{
     refine: { feedback: string; rated_samples: RatedSample[] }
     save: void
+    back: void
   }>()
 
   function handle_submit() {
     if (!needs_refine) {
-      dispatch("save")
+      dispatch(requires_save ? "save" : "back")
     } else {
       const rated_samples: RatedSample[] = reviewed_samples
         .filter(

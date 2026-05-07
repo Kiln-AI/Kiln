@@ -49,6 +49,12 @@
 
   let captured_input_run_config: KilnAgentRunConfigProperties | null = null
   let captured_output_run_config: KilnAgentRunConfigProperties | null = null
+  // Snapshot of the guide as actually-saved-on-server at handoff time. Drives
+  // the GuidePreview submit button label/behavior: when the working `guide`
+  // matches this, there's nothing to persist — the button becomes a plain
+  // "Back to Data Guide" navigation rather than a save.
+  let saved_guide_snapshot: string = ""
+  $: requires_save = guide !== saved_guide_snapshot
 
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
@@ -76,6 +82,7 @@
     pending_data_guide_refine_handoff.set(null)
 
     guide = handoff.guide
+    saved_guide_snapshot = handoff.saved_guide
     captured_input_run_config = handoff.input_run_config
     captured_output_run_config = handoff.output_run_config
 
@@ -158,6 +165,7 @@
               feedback: event.detail.feedback,
               preview_samples: event.detail.rated_samples,
               run_config_properties: captured_input_run_config,
+              output_run_config_properties: captured_output_run_config,
             },
           },
         )
@@ -200,6 +208,16 @@
     } finally {
       submitting = false
     }
+  }
+
+  function handle_back() {
+    // Suppress the unsaved-changes warn — there's nothing the user could lose
+    // (guide already matches what's on the server, samples were just for
+    // verification).
+    saved = true
+    goto(`/generate/${project_id}/${task_id}/data_guide`, {
+      replaceState: true,
+    })
   }
 
   async function handle_save() {
@@ -265,8 +283,10 @@
         bind:reviewed_samples
         bind:general_feedback
         {saved}
+        {requires_save}
         on:refine={handle_refine}
         on:save={handle_save}
+        on:back={handle_back}
       />
     {:else if current_state === "refining"}
       <RefiningAnimation

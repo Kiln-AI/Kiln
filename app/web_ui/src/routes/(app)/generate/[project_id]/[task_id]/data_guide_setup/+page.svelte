@@ -218,6 +218,7 @@
               feedback: event.detail.feedback,
               preview_samples: event.detail.rated_samples,
               run_config_properties: captured_input_run_config,
+              output_run_config_properties: captured_output_run_config,
             },
           },
         )
@@ -285,9 +286,12 @@
       // user finished and shouldn't be able to back-navigate into the now-
       // completed setup flow (which would just redirect them straight to
       // the refine page anyway).
-      goto(`/generate/${project_id}/${task_id}/synth?session_continued=true`, {
-        replaceState: true,
-      })
+      goto(
+        `/generate/${project_id}/${task_id}/synth?session_continued=true&data_guide_saved=true`,
+        {
+          replaceState: true,
+        },
+      )
     } catch (e) {
       error = createKilnError(e)
     } finally {

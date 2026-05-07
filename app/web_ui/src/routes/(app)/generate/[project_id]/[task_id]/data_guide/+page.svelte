@@ -117,6 +117,7 @@
   ) {
     pending_data_guide_refine_handoff.set({
       guide: event.detail.guide,
+      saved_guide: guide,
       input_run_config: event.detail.input_run_config,
       output_run_config: event.detail.output_run_config,
     })

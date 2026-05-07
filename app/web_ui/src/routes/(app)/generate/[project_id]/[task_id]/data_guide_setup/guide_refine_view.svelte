@@ -19,6 +19,7 @@
   import { formatDate } from "$lib/utils/formatters"
   import PropertyList from "$lib/ui/property_list.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
+  import InfoTooltip from "$lib/ui/info_tooltip.svelte"
 
   export let project_id: string
   export let guide: string
@@ -231,27 +232,38 @@
         <PropertyList title="Properties" properties={data_guide_properties} />
       {/if}
 
-      <button
-        type="button"
-        class="btn btn-sm btn-outline w-full mt-4"
-        disabled={page_submitting}
-        on:click={() => form_container?.validate_and_submit()}
-      >
-        {#if page_submitting}
-          <span class="loading loading-spinner loading-xs"></span>
-        {:else}
-          Test Data Guide
-        {/if}
-      </button>
-
-      <div class="flex justify-end -mt-2">
+      <div class="flex flex-row items-center gap-2 mt-4">
         <button
           type="button"
-          class="link text-sm text-gray-500 hover:text-gray-700"
-          on:click={() => run_options_tiles?.open_combined_dialog()}
+          class="btn btn-sm btn-outline grow"
+          disabled={page_submitting}
+          on:click={() => form_container?.validate_and_submit()}
         >
-          Generation options
+          {#if page_submitting}
+            <span class="loading loading-spinner loading-xs"></span>
+          {:else}
+            Test Data Guide
+          {/if}
         </button>
+        <InfoTooltip
+          tooltip_text="Run your guide against fresh samples to verify quality. Refine the guide further if any examples need work."
+          position="top"
+        />
+      </div>
+
+      <div class="flex flex-row items-center gap-2 -mt-2">
+        <div class="grow flex justify-end">
+          <button
+            type="button"
+            class="link text-sm text-gray-500 hover:text-gray-700"
+            on:click={() => run_options_tiles?.open_combined_dialog()}
+          >
+            Generation options
+          </button>
+        </div>
+        <!-- Spacer matching the InfoTooltip icon above so the link
+             right-aligns with the button's edge, not the row's. -->
+        <div class="w-6 shrink-0" aria-hidden="true"></div>
       </div>
       <RunOptionsTiles
         bind:this={run_options_tiles}

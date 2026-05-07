@@ -110,7 +110,9 @@
         throw new KilnError("Invalid model selected.", null)
       }
       const input_guidance = guidance_data.guidance_for_type("inputs")
-      const session_data_guide = get(guidance_data.data_guide)
+      const data_guide = get(guidance_data.use_data_guide)
+        ? get(guidance_data.data_guide)
+        : ""
       const { data: generate_response, error: generate_error } =
         await client.POST(
           "/api/projects/{project_id}/tasks/{task_id}/generate_inputs",
@@ -120,7 +122,7 @@
               num_samples: num_samples_to_generate,
               run_config_properties: run_config_properties,
               guidance: input_guidance ? input_guidance : null, // clear empty string
-              data_guide: session_data_guide ?? "",
+              data_guide,
               gen_type: guidance_data.gen_type,
             },
             params: {

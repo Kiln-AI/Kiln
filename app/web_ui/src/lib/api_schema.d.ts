@@ -6641,8 +6641,10 @@ export interface components {
              * @description The previewed samples the user is giving feedback on, each rated by the user as realistic (true) or needs work (false)
              */
             preview_samples: components["schemas"]["RatedGuidePreviewSample"][];
-            /** @description The model config to use for refinement */
+            /** @description The model config to use for the metaprompter call itself. */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
+            /** @description The user's chosen output-generation run config. Its prompt template is rendered server-side and used as runtime context for the metaprompter, so the rules it produces match what the model actually sees at synthesis time. Falls back to `task.instruction` when not provided — accurate for users on the default simple prompt template, stale for users on prompt-optimization or saved-prompt run configs. */
+            output_run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
         };
         /** GuideRefineResponse */
         GuideRefineResponse: {
