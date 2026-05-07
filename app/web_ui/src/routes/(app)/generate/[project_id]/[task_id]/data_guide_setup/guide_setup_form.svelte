@@ -16,6 +16,8 @@
   import RunOptionsTiles from "./run_options_tiles.svelte"
   import AddExampleDialog from "./add_example_dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
+  import ClampedText from "$lib/ui/clamped_text.svelte"
+  import Dialog from "$lib/ui/dialog.svelte"
 
   export let project_id: string
   export let task_id: string
@@ -142,17 +144,17 @@
     }
   }>()
 
-  // --- Expandable rows ---
-  let expanded_examples: boolean[] = []
-  let prev_examples_len = 0
-  $: if (guide_examples.length !== prev_examples_len) {
-    prev_examples_len = guide_examples.length
-    expanded_examples = new Array(guide_examples.length).fill(false)
-  }
+  // --- See-all dialog for long input/output cells ---
+  // Mirrors the preview-screen pattern: rows show a 3-line clamp with a
+  // "See all" link, which pops the full content in this dialog.
+  let see_all_dialog: Dialog
+  let see_all_title: string = ""
+  let see_all_content: string = ""
 
-  function toggle_example_expand(index: number) {
-    expanded_examples[index] = !expanded_examples[index]
-    expanded_examples = expanded_examples
+  function show_full_text(title: string, content: string) {
+    see_all_title = title
+    see_all_content = content
+    see_all_dialog?.show()
   }
 </script>
 
@@ -195,25 +197,18 @@
           </thead>
           <tbody>
             {#each guide_examples as example, i}
-              <tr
-                on:click={() => toggle_example_expand(i)}
-                class="cursor-pointer"
-              >
+              <tr>
                 <td class="py-2">
-                  {#if expanded_examples[i]}
-                    <pre
-                      class="whitespace-pre-wrap break-words">{example.input}</pre>
-                  {:else}
-                    <div class="truncate">{example.input}</div>
-                  {/if}
+                  <ClampedText
+                    content={example.input}
+                    on:see_all={() => show_full_text("Input", example.input)}
+                  />
                 </td>
                 <td class="py-2">
-                  {#if expanded_examples[i]}
-                    <pre
-                      class="whitespace-pre-wrap break-words">{example.output}</pre>
-                  {:else}
-                    <div class="truncate">{example.output}</div>
-                  {/if}
+                  <ClampedText
+                    content={example.output}
+                    on:see_all={() => show_full_text("Output", example.output)}
+                  />
                 </td>
                 <td class="py-2 p-0">
                   <div class="dropdown dropdown-end dropdown-hover">
@@ -276,3 +271,15 @@
   existing_examples={guide_examples}
   on:submit={handle_example_submit}
 />
+
+<!-- See-all Dialog: shows the full text of an input/output cell that was
+     clamped in the table by ClampedText. -->
+<Dialog
+  bind:this={see_all_dialog}
+  title={see_all_title}
+  width="wide"
+  action_buttons={[{ label: "Close", isCancel: true }]}
+>
+  <pre
+    class="whitespace-pre-wrap break-words text-sm text-gray-600">{see_all_content}</pre>
+</Dialog>

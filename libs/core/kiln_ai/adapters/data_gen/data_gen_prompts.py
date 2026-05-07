@@ -6,6 +6,21 @@
 from html import escape
 from typing import Literal
 
+from pydantic import BaseModel, Field
+
+
+class RatedSample(BaseModel):
+    """A preview sample (input/output pair) plus the user's rating, used as
+    feedback input to the data-guide refinement metaprompter. Shared between
+    the API surface and the prompt builder so callers don't have to flatten
+    into positional tuples."""
+
+    input: str = Field(description="Generated sample input")
+    output: str = Field(description="Generated sample output")
+    looks_good: bool = Field(
+        description="User rating: true if the sample looks realistic, false if it needs work"
+    )
+
 
 def _xml_escape(value: str) -> str:
     """Escape `<`/`>`/`&` so user-supplied text can't close out of an
@@ -284,7 +299,7 @@ When generating Q&A pairs, focus on generating queries and answers that are rele
 def generate_guidance_refinement_prompt(
     task_instruction: str,
     current_guide: str,
-    preview_samples: list[tuple[str, str, bool]],
+    preview_samples: list[RatedSample],
     feedback: str,
     task_description: str | None = None,
     task_input_json_schema: str | None = None,
@@ -301,9 +316,8 @@ def generate_guidance_refinement_prompt(
     to prevent the Guide from becoming a lossy paraphrase of the system prompt
     that silently overrides the authoritative source.
 
-    Each preview sample is a tuple of (input, output, looks_good) where
-    looks_good=True means the user marked it Realistic and looks_good=False
-    means the user marked it Needs Work.
+    Each preview sample is a `RatedSample` with `input`, `output`, and
+    `looks_good` (True for Realistic, False for Needs Work).
 
     `current_guide` is the full markdown body of the user's current data
     guide. Typically it has a `# Reference Examples` section with user-written
@@ -439,13 +453,11 @@ The user's current data guide is shown below. Read it carefully — the referenc
 The following samples were generated using the current guide. The user rated each one as either "Realistic" (the sample looks like real, correct task data) or "Needs Work" (the sample is wrong, unrealistic, or violates a constraint).
 
 """
-        for i, (sample_input, sample_output, looks_good) in enumerate(
-            preview_samples, 1
-        ):
-            rating = "Realistic" if looks_good else "Needs Work"
+        for i, sample in enumerate(preview_samples, 1):
+            rating = "Realistic" if sample.looks_good else "Needs Work"
             prompt += f"""<sample_{i} rating="{rating}">
-<input>{_xml_escape(sample_input)}</input>
-<output>{_xml_escape(sample_output)}</output>
+<input>{_xml_escape(sample.input)}</input>
+<output>{_xml_escape(sample.output)}</output>
 </sample_{i}>
 """
 
