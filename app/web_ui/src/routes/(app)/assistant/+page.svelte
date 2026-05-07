@@ -6,7 +6,7 @@
   import Chat from "./chat.svelte"
   import { agentInfo } from "$lib/agent"
   import type { ActionButton } from "$lib/types"
-  import ChatCopilotRequired from "$lib/ui/kiln_copilot/assistant_copilot_required.svelte"
+  import AssistantProRequired from "$lib/ui/kiln_copilot/assistant_pro_required.svelte"
   import {
     kilnCopilotConnected,
     initCopilotConnectionStore,
@@ -64,7 +64,7 @@
         <div class="loading loading-spinner loading-lg"></div>
       </div>
     {:else if $kilnCopilotConnected === false}
-      <ChatCopilotRequired />
+      <AssistantProRequired />
     {:else}
       <Chat bind:this={chatRef} bind:hasMessages />
     {/if}

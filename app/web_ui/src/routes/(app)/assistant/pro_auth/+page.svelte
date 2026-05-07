@@ -4,7 +4,8 @@
 
   agentInfo.set({
     name: "Assistant Kiln Pro Auth",
-    description: "Authentication page for Kiln Pro access to use Kiln Assistant.",
+    description:
+      "Authentication page for Kiln Pro access to use Kiln Assistant.",
   })
 </script>
 

@@ -15,7 +15,7 @@
   import { onDestroy, onMount } from "svelte"
   import { Section } from "$lib/ui/section"
   import { browser } from "$app/environment"
-  import ChatCopilotRequired from "$lib/ui/kiln_copilot/assistant_copilot_required.svelte"
+  import AssistantProRequired from "$lib/ui/kiln_copilot/assistant_pro_required.svelte"
   import {
     kilnCopilotConnected,
     initCopilotConnectionStore,
@@ -268,7 +268,7 @@
               <span class="loading loading-spinner loading-md"></span>
             </div>
           {:else if $kilnCopilotConnected === false}
-            <ChatCopilotRequired compact />
+            <AssistantProRequired compact />
           {:else}
             <Chat
               bind:this={sidebarChat}
@@ -314,7 +314,7 @@
             <span class="loading loading-spinner loading-lg"></span>
           </div>
         {:else if $kilnCopilotConnected === false}
-          <ChatCopilotRequired compact />
+          <AssistantProRequired compact />
         {:else}
           <Chat bind:this={dialogChat} bind:hasMessages={dialogHasMessages} />
         {/if}
