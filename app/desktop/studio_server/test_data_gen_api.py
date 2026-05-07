@@ -677,3 +677,521 @@ def test_save_qna_pair_persists_task_run(
         run.trace[2]["role"] == "assistant"
         and run.trace[2]["content"] == "Kiln is an app for building AI systems."
     )
+
+
+def test_get_data_gen_guide_none(
+    mock_task_from_id,
+    client,
+):
+    response = client.get("/api/projects/test_project/tasks/test_task/data_gen_guide")
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+def test_save_and_get_data_gen_guide(
+    mock_task_from_id,
+    test_task,
+    client,
+):
+    body = (
+        "# Reference Examples\n\n## Example 1\n```input\nx\n```\n\n```output\ny\n```\n\n"
+        "# Guidelines & Rules\n\n<output_semantic>\n\n## Cholesterol\nIf cholesterol is high, never have low LDL.\n\n</output_semantic>"
+    )
+    response = client.put(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide",
+        json={"guide": body},
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert "x" in result["guide"]
+    assert "cholesterol" in result["guide"].lower()
+
+    # Verify it's persisted via GET
+    get_response = client.get(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide"
+    )
+    assert get_response.status_code == 200
+    get_result = get_response.json()
+    assert "x" in get_result["guide"]
+    assert "cholesterol" in get_result["guide"].lower()
+
+    # Verify task was actually saved to disk
+    reloaded_task = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
+    assert reloaded_task is not None
+    current = reloaded_task.current_data_guide()
+    assert current is not None
+    assert "x" in current.guide
+    assert "cholesterol" in current.guide.lower()
+    # Only one DataGuide should exist on disk — saves overwrite in place
+    # rather than accumulating new files.
+    assert len(reloaded_task.data_guides()) == 1
+
+
+def test_save_data_gen_guide_rejects_blank(
+    mock_task_from_id,
+    test_task,
+    client,
+):
+    """Blank/whitespace-only guides are rejected with 400 — DELETE is the
+    correct way to remove a guide."""
+    response = client.put(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide",
+        json={"guide": "   \n  "},
+    )
+    assert response.status_code == 400
+    assert "empty" in response.json()["message"].lower()
+
+
+def test_delete_data_gen_guide(
+    mock_task_from_id,
+    test_task,
+    client,
+):
+    # First save a guide
+    client.put(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide",
+        json={"guide": "some guide body"},
+    )
+
+    # Delete it
+    response = client.delete(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide"
+    )
+    assert response.status_code == 200
+
+    # Verify it's gone
+    get_response = client.get(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide"
+    )
+    assert get_response.json() is None
+
+
+def test_save_data_gen_guide_overwrites_previous(
+    mock_task_from_id,
+    test_task,
+    client,
+):
+    # Save first guide
+    first_response = client.put(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide",
+        json={"guide": "first body"},
+    )
+    first_id = first_response.json()["id"]
+
+    # Overwrite with second
+    response = client.put(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide",
+        json={"guide": "second body"},
+    )
+    assert response.status_code == 200
+
+    get_response = client.get(
+        "/api/projects/test_project/tasks/test_task/data_gen_guide"
+    )
+    result = get_response.json()
+    assert result["guide"] == "second body"
+
+    # Same file — second save reuses the first DataGuide rather than creating
+    # a new one. Keeps git history of the guide localized to one file.
+    assert result["id"] == first_id
+    reloaded_task = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
+    assert reloaded_task is not None
+    assert len(reloaded_task.data_guides()) == 1
+
+
+# --- _resolve_data_guide / _combine_guidance helpers ---
+
+
+def test_resolve_data_guide_override_replaces_persisted(test_task):
+    """An explicit override (non-empty) replaces the persisted guide."""
+    from kiln_ai.datamodel.data_guide import DataGuide
+
+    from app.desktop.studio_server.data_gen_api import _resolve_data_guide
+
+    saved = DataGuide(parent=test_task, guide="persisted body")
+    saved.save_to_file()
+    reloaded = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
+    assert reloaded is not None
+
+    assert _resolve_data_guide(reloaded, "override text") == "override text"
+
+
+def test_resolve_data_guide_blank_override_returns_none(test_task):
+    """A blank/whitespace override is treated as 'don't include any guide for
+    this call' even if there's a persisted one."""
+    from kiln_ai.datamodel.data_guide import DataGuide
+
+    from app.desktop.studio_server.data_gen_api import _resolve_data_guide
+
+    saved = DataGuide(parent=test_task, guide="persisted body")
+    saved.save_to_file()
+    reloaded = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
+    assert reloaded is not None
+
+    assert _resolve_data_guide(reloaded, "") is None
+    assert _resolve_data_guide(reloaded, "   \n  ") is None
+
+
+def test_resolve_data_guide_falls_back_to_persisted(test_task):
+    """`None` means 'no override provided' → fall back to the saved guide."""
+    from kiln_ai.datamodel.data_guide import DataGuide
+
+    from app.desktop.studio_server.data_gen_api import _resolve_data_guide
+
+    body = "# Reference Examples\n\nexamples body\n\n# Guidelines & Rules\n\nrules body"
+    saved = DataGuide(parent=test_task, guide=body)
+    saved.save_to_file()
+    reloaded = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
+    assert reloaded is not None
+
+    out = _resolve_data_guide(reloaded, None)
+    assert out == body
+
+
+def test_resolve_data_guide_no_persisted_returns_none(test_task):
+    from app.desktop.studio_server.data_gen_api import _resolve_data_guide
+
+    assert _resolve_data_guide(test_task, None) is None
+
+
+def test_combine_guidance_with_data_guide_only(test_task):
+    """With a saved guide and no session guidance, the helper wraps the
+    guide with the framing paragraph + stage hint."""
+    from kiln_ai.datamodel.data_guide import DataGuide
+
+    from app.desktop.studio_server.data_gen_api import _combine_guidance
+
+    saved = DataGuide(parent=test_task, guide="GUIDE_BODY")
+    saved.save_to_file()
+    reloaded = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
+    assert reloaded is not None
+
+    out = _combine_guidance(reloaded, None, "inputs")
+    assert out is not None
+    assert "# Task Data Guide" in out
+    assert "GUIDE_BODY" in out
+    assert "mirror their structure and value patterns" in out
+
+
+def test_combine_guidance_data_guide_and_session(test_task):
+    """When both a guide and session guidance exist, both blocks are present
+    separated by a blank line."""
+    from kiln_ai.datamodel.data_guide import DataGuide
+
+    from app.desktop.studio_server.data_gen_api import _combine_guidance
+
+    saved = DataGuide(parent=test_task, guide="GUIDE_BODY")
+    saved.save_to_file()
+    reloaded = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
+    assert reloaded is not None
+
+    out = _combine_guidance(reloaded, "EXTRA_SESSION_GUIDANCE", "outputs")
+    assert out is not None
+    assert "GUIDE_BODY" in out
+    assert "EXTRA_SESSION_GUIDANCE" in out
+    # session guidance should appear after the data guide block
+    assert out.index("GUIDE_BODY") < out.index("EXTRA_SESSION_GUIDANCE")
+
+
+def test_combine_guidance_session_only(test_task):
+    """With no saved guide and a session guidance, the helper just returns
+    the session guidance — no Task Data Guide framing."""
+    from app.desktop.studio_server.data_gen_api import _combine_guidance
+
+    out = _combine_guidance(test_task, "SESSION_ONLY", "topics")
+    assert out == "SESSION_ONLY"
+
+
+def test_combine_guidance_empty_returns_none(test_task):
+    """No saved guide, no session guidance, no override → None."""
+    from app.desktop.studio_server.data_gen_api import _combine_guidance
+
+    assert _combine_guidance(test_task, None, "topics") is None
+
+
+def test_combine_guidance_override_wins_over_persisted(test_task):
+    from kiln_ai.datamodel.data_guide import DataGuide
+
+    from app.desktop.studio_server.data_gen_api import _combine_guidance
+
+    saved = DataGuide(parent=test_task, guide="PERSISTED_GUIDE")
+    saved.save_to_file()
+    reloaded = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
+    assert reloaded is not None
+
+    out = _combine_guidance(
+        reloaded,
+        None,
+        "inputs",
+        data_guide_override="OVERRIDE_GUIDE",
+    )
+    assert out is not None
+    assert "OVERRIDE_GUIDE" in out
+    assert "PERSISTED_GUIDE" not in out
+
+
+# --- /data_gen_guide_preview endpoint ---
+
+
+def test_preview_data_gen_guide_success(
+    mock_task_from_id,
+    mock_project_from_id,
+    test_task,
+    client,
+):
+    """Happy path: the input adapter returns a JSON sample list, the output
+    adapter returns one output per sample, and we get a flat list of
+    GuidePreviewSample objects back."""
+    import json
+
+    sample_input_run = MagicMock()
+    sample_input_run.output = MagicMock()
+    sample_input_run.output.output = json.dumps(
+        {"generated_samples": ["input one", "input two"]}
+    )
+
+    output_run_a = MagicMock()
+    output_run_a.output = MagicMock()
+    output_run_a.output.output = "output one"
+    output_run_b = MagicMock()
+    output_run_b.output = MagicMock()
+    output_run_b.output.output = "output two"
+
+    invoke_mock = AsyncMock(side_effect=[sample_input_run, output_run_a, output_run_b])
+
+    with patch(
+        "app.desktop.studio_server.data_gen_api.adapter_for_task"
+    ) as mock_adapter_for_task:
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke = invoke_mock
+        mock_adapter_for_task.return_value = mock_adapter
+
+        with patch(
+            "app.desktop.studio_server.data_gen_api.load_skills_for_task",
+            return_value=[],
+        ):
+            response = client.post(
+                "/api/projects/test_project/tasks/test_task/data_gen_guide_preview",
+                json={
+                    "guide": "# Reference Examples\n\nSome examples\n\n# Guidelines & Rules\n\nSome rules",
+                    "run_config_properties": {
+                        "type": "kiln_agent",
+                        "model_name": "gpt-4",
+                        "model_provider_name": ModelProviderName.openai.value,
+                        "prompt_id": PromptGenerators.SIMPLE.value,
+                        "structured_output_mode": StructuredOutputMode.default.value,
+                    },
+                    "num_samples": 2,
+                },
+            )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body == [
+        {"input": "input one", "output": "output one"},
+        {"input": "input two", "output": "output two"},
+    ]
+
+
+def test_preview_data_gen_guide_empty_output_returns_500(
+    mock_task_from_id,
+    mock_project_from_id,
+    client,
+):
+    """If the input-generating adapter returns no output, surface a 500 with
+    a helpful detail rather than crashing later in the pipeline."""
+    sample_run = MagicMock()
+    sample_run.output = None
+
+    with patch(
+        "app.desktop.studio_server.data_gen_api.adapter_for_task"
+    ) as mock_adapter_for_task:
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke = AsyncMock(return_value=sample_run)
+        mock_adapter_for_task.return_value = mock_adapter
+
+        with patch(
+            "app.desktop.studio_server.data_gen_api.load_skills_for_task",
+            return_value=[],
+        ):
+            response = client.post(
+                "/api/projects/test_project/tasks/test_task/data_gen_guide_preview",
+                json={
+                    "guide": "# Reference Examples\n\nSome examples\n\n# Guidelines & Rules\n\nSome rules",
+                    "run_config_properties": {
+                        "type": "kiln_agent",
+                        "model_name": "gpt-4",
+                        "model_provider_name": ModelProviderName.openai.value,
+                        "prompt_id": PromptGenerators.SIMPLE.value,
+                        "structured_output_mode": StructuredOutputMode.default.value,
+                    },
+                    "num_samples": 1,
+                },
+            )
+
+    assert response.status_code == 500
+    assert "preview" in response.json()["message"].lower()
+
+
+def test_preview_data_gen_guide_unparseable_samples_returns_500(
+    mock_task_from_id,
+    mock_project_from_id,
+    client,
+):
+    """Adapter returned non-JSON in the slot we expect parsed samples in →
+    500 rather than letting JSONDecodeError bubble up."""
+    sample_run = MagicMock()
+    sample_run.output = MagicMock()
+    sample_run.output.output = "not json at all"
+
+    with patch(
+        "app.desktop.studio_server.data_gen_api.adapter_for_task"
+    ) as mock_adapter_for_task:
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke = AsyncMock(return_value=sample_run)
+        mock_adapter_for_task.return_value = mock_adapter
+
+        with patch(
+            "app.desktop.studio_server.data_gen_api.load_skills_for_task",
+            return_value=[],
+        ):
+            response = client.post(
+                "/api/projects/test_project/tasks/test_task/data_gen_guide_preview",
+                json={
+                    "guide": "# Reference Examples\n\nSome examples\n\n# Guidelines & Rules\n\nSome rules",
+                    "run_config_properties": {
+                        "type": "kiln_agent",
+                        "model_name": "gpt-4",
+                        "model_provider_name": ModelProviderName.openai.value,
+                        "prompt_id": PromptGenerators.SIMPLE.value,
+                        "structured_output_mode": StructuredOutputMode.default.value,
+                    },
+                    "num_samples": 1,
+                },
+            )
+
+    assert response.status_code == 500
+    assert "parse" in response.json()["message"].lower()
+
+
+# --- /data_gen_guide_refine endpoint ---
+
+
+def test_refine_data_gen_guide_success(
+    mock_task_from_id,
+    client,
+):
+    """Happy path: the metaprompter LLM returns a structured JSON object with
+    a `guide` key; the endpoint returns it as `refined_guide`."""
+    import json
+
+    refine_run = MagicMock()
+    refine_run.output = MagicMock()
+    refine_run.output.output = json.dumps({"guide": "REFINED FULL GUIDE BODY"})
+
+    with patch(
+        "app.desktop.studio_server.data_gen_api.adapter_for_task"
+    ) as mock_adapter_for_task:
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke = AsyncMock(return_value=refine_run)
+        mock_adapter_for_task.return_value = mock_adapter
+
+        response = client.post(
+            "/api/projects/test_project/tasks/test_task/data_gen_guide_refine",
+            json={
+                "current_guide": (
+                    "# Reference Examples\n\n"
+                    "## Example 1\n```input\nx\n```\n\n```output\ny\n```\n\n"
+                    "# Guidelines & Rules\n\n"
+                    "<output_semantic>\n\n## Old\nOld rule.\n\n</output_semantic>"
+                ),
+                "feedback": "Please make outputs shorter",
+                "preview_samples": [
+                    {"input": "i1", "output": "o1", "looks_good": True},
+                    {"input": "i2", "output": "o2", "looks_good": False},
+                ],
+                "run_config_properties": {
+                    "type": "kiln_agent",
+                    "model_name": "gpt-4",
+                    "model_provider_name": ModelProviderName.openai.value,
+                    "prompt_id": PromptGenerators.SIMPLE.value,
+                    "structured_output_mode": StructuredOutputMode.default.value,
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"refined_guide": "REFINED FULL GUIDE BODY"}
+
+
+def test_refine_data_gen_guide_falls_back_to_current_when_missing_key(
+    mock_task_from_id,
+    client,
+):
+    """If the LLM JSON doesn't include the `guide` key, fall back to the
+    current guide body rather than returning an empty string."""
+    import json
+
+    refine_run = MagicMock()
+    refine_run.output = MagicMock()
+    refine_run.output.output = json.dumps({"unrelated": "field"})
+
+    with patch(
+        "app.desktop.studio_server.data_gen_api.adapter_for_task"
+    ) as mock_adapter_for_task:
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke = AsyncMock(return_value=refine_run)
+        mock_adapter_for_task.return_value = mock_adapter
+
+        response = client.post(
+            "/api/projects/test_project/tasks/test_task/data_gen_guide_refine",
+            json={
+                "current_guide": "Original guide",
+                "feedback": "fb",
+                "preview_samples": [],
+                "run_config_properties": {
+                    "type": "kiln_agent",
+                    "model_name": "gpt-4",
+                    "model_provider_name": ModelProviderName.openai.value,
+                    "prompt_id": PromptGenerators.SIMPLE.value,
+                    "structured_output_mode": StructuredOutputMode.default.value,
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"refined_guide": "Original guide"}
+
+
+def test_refine_data_gen_guide_empty_output_returns_500(
+    mock_task_from_id,
+    client,
+):
+    refine_run = MagicMock()
+    refine_run.output = None
+
+    with patch(
+        "app.desktop.studio_server.data_gen_api.adapter_for_task"
+    ) as mock_adapter_for_task:
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke = AsyncMock(return_value=refine_run)
+        mock_adapter_for_task.return_value = mock_adapter
+
+        response = client.post(
+            "/api/projects/test_project/tasks/test_task/data_gen_guide_refine",
+            json={
+                "current_guide": "Original",
+                "feedback": "fb",
+                "preview_samples": [],
+                "run_config_properties": {
+                    "type": "kiln_agent",
+                    "model_name": "gpt-4",
+                    "model_provider_name": ModelProviderName.openai.value,
+                    "prompt_id": PromptGenerators.SIMPLE.value,
+                    "structured_output_mode": StructuredOutputMode.default.value,
+                },
+            },
+        )
+
+    assert response.status_code == 500
+    assert "refine" in response.json()["message"].lower()

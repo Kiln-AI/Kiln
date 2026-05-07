@@ -33,6 +33,13 @@ export class SynthDataGuidanceDataModel {
   public topic_guidance: Writable<string | null> = writable(null)
   public input_guidance: Writable<string | null> = writable(null)
   public output_guidance: Writable<string | null> = writable(null)
+  // The task's saved data guide text. Loaded once on init; not edited from
+  // the synth flow.
+  public data_guide: Writable<string> = writable("")
+  // Whether to include the saved data guide in generation requests. Shared
+  // across every SynthDataGuide mount (synth page, modal, node) so toggling
+  // in one place applies everywhere.
+  public use_data_guide: Writable<boolean> = writable(false)
   public select_options: Writable<OptionGroup[]> = writable([])
   public loading_error: Writable<KilnError | null> = writable(null)
 
@@ -61,6 +68,7 @@ export class SynthDataGuidanceDataModel {
     gen_type: "training" | "eval",
     task: Task,
     splits: Record<string, number>,
+    data_guide: string = "",
   ): Promise<void> {
     this.eval_id = eval_id
     this.project_id = project_id
@@ -68,6 +76,8 @@ export class SynthDataGuidanceDataModel {
     this.gen_type = gen_type
     this.task = task
     this.splits.set(splits)
+    this.data_guide.set(data_guide)
+    this.use_data_guide.set(!!data_guide)
 
     // Set the selected template if it exists in static. The other eval templates are set as part of the load_eval flow.
     if (template_id && static_templates.find((t) => t.id == template_id)) {

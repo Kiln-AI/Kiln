@@ -196,6 +196,13 @@ export async function load_available_tools(
   project_id: string,
   force: boolean = false,
 ) {
+  // Selectors call this reactively from props, so we can be invoked with an
+  // empty string before the parent has resolved project_id. Skip — fetching
+  // /api/projects//available_tools 404s.
+  if (!project_id) {
+    return
+  }
+
   // Only allow one request per project at a time
   if (loading_project_tools.includes(project_id)) {
     return

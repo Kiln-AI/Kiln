@@ -10,7 +10,7 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import Output from "$lib/ui/output.svelte"
   import Collapse from "$lib/ui/collapse.svelte"
-  import Dialog from "$lib/ui/dialog.svelte"
+  import TaskRunPicker from "$lib/utils/task_run_picker.svelte"
 
   export let project_id: string
   export let task_id: string
@@ -31,25 +31,6 @@
   let is_changing_selection: boolean = false
   let user_verification_desired: boolean = false // tracks if user should verify the selection before continuing (open collapse for them)
 
-  // Pagination
-  const PAGE_SIZE = 5
-  let current_page = 0
-  $: total_pages = Math.ceil(available_runs.length / PAGE_SIZE)
-  $: page_start = current_page * PAGE_SIZE
-  $: page_end = Math.min(page_start + PAGE_SIZE, available_runs.length)
-  $: paged_runs = available_runs.slice(page_start, page_end)
-
-  // Preview dialog
-  let preview_dialog: Dialog
-  let previewing_run: TaskRun | null = null
-
-  function show_preview(run: TaskRun, event: MouseEvent) {
-    // Don't show preview if clicking on a button
-    if ((event.target as HTMLElement).closest("button")) return
-    previewing_run = run
-    preview_dialog?.show()
-  }
-
   // Handle run selection
   function select_run(run: TaskRun) {
     selected_example = task_run_to_example(run)
@@ -62,7 +43,6 @@
   function start_changing_selection() {
     is_changing_selection = true
     show_manual_entry = false
-    current_page = 0
   }
 
   // Start manual entry from the selected example view
@@ -260,70 +240,10 @@
         {:else}
           <!-- Selection table -->
           {#if available_runs.length > 0}
-            <div class="overflow-x-auto rounded-lg border bg-white">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Input Preview</th>
-                    <th>Output Preview</th>
-                    <th class="w-[100px]"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each paged_runs as run (run.id)}
-                    <tr
-                      class="hover cursor-pointer"
-                      on:click={(e) => show_preview(run, e)}
-                    >
-                      <td class="text-xs text-gray-600">
-                        <div class="truncate w-0 min-w-full">{run.input}</div>
-                      </td>
-                      <td class="text-xs text-gray-600">
-                        <div class="truncate w-0 min-w-full">
-                          {run.output?.output || ""}
-                        </div>
-                      </td>
-                      <td class="text-center">
-                        <button
-                          type="button"
-                          class="btn btn-xs btn-outline"
-                          on:click|stopPropagation={() => select_run(run)}
-                        >
-                          Select
-                        </button>
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-            {#if available_runs.length > PAGE_SIZE}
-              <div
-                class="flex items-center justify-center gap-2 text-xs text-gray-500"
-              >
-                <span
-                  >{page_start + 1}-{page_end} of {available_runs.length}</span
-                >
-                <div class="flex gap-1">
-                  <button
-                    type="button"
-                    class="btn btn-xs btn-ghost"
-                    disabled={current_page === 0}
-                    on:click={() => (current_page = current_page - 1)}
-                  >
-                    ←
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn-xs btn-ghost"
-                    disabled={current_page >= total_pages - 1}
-                    on:click={() => (current_page = current_page + 1)}
-                  >
-                    →
-                  </button>
-                </div>
-              </div>
-            {/if}
+            <TaskRunPicker
+              {available_runs}
+              on:select={(e) => select_run(e.detail)}
+            />
 
             {#if is_changing_selection}
               <div class="mt-3">
@@ -342,18 +262,3 @@
     {/if}
   </div>
 </Collapse>
-
-<Dialog bind:this={preview_dialog} title="Example" width="wide">
-  {#if previewing_run}
-    <div class="flex flex-col gap-4">
-      <div>
-        <div class="text-sm font-medium text-left mb-1">Input</div>
-        <Output raw_output={previewing_run.input} />
-      </div>
-      <div>
-        <div class="text-sm font-medium text-left mb-1">Output</div>
-        <Output raw_output={previewing_run.output?.output || ""} />
-      </div>
-    </div>
-  {/if}
-</Dialog>
