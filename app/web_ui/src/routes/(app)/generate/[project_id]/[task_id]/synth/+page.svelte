@@ -1,7 +1,6 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
   import { client } from "$lib/api_client"
-  import { current_task } from "$lib/stores"
   import type { RunConfigProperties, Task } from "$lib/types"
   import { isKilnAgentRunConfig } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
@@ -466,10 +465,6 @@
       task_loading = true
       if (!project_id || !task_id) {
         throw new Error("Project or task ID not set.")
-      }
-      if ($current_task?.id === task_id) {
-        task = $current_task
-        return
       }
       const { data: task_response, error: get_error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}",

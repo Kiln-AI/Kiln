@@ -1,11 +1,7 @@
 import { writable } from "svelte/store"
 import { client } from "$lib/api_client"
 import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
-import {
-  get_task_composite_id,
-  load_available_prompts,
-  type TaskCompositeId,
-} from "$lib/stores"
+import { get_task_composite_id, type TaskCompositeId } from "$lib/stores"
 import type { PromptResponse } from "$lib/types"
 
 export const prompts_by_task_composite_id = writable<
@@ -28,8 +24,6 @@ export async function load_task_prompts(
   task_id: string,
   force_refresh: boolean = false,
 ): Promise<void> {
-  await load_available_prompts(force_refresh) // For the case task_id = current task id and other clients use load_available_prompts still
-
   const composite_key = get_task_composite_id(project_id, task_id)
 
   if (composite_key in loading_task_prompts) {

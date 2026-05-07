@@ -3,7 +3,6 @@
   import { base_url, client } from "$lib/api_client"
   import type { ExtractionSummary, KilnDocument } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { formatDate, formatSize } from "$lib/utils/formatters"
   import Dialog from "$lib/ui/dialog.svelte"
@@ -26,7 +25,10 @@
   let updated_document: KilnDocument | null = null
   $: document = updated_document || initial_document
   let error: KilnError | null = null
-  let loading = true
+  let document_loading = true
+  let extractions_loading = true
+  let folder_loading = false
+  $: loading = document_loading || extractions_loading || folder_loading
   let results: ExtractionSummary[] | null = null
 
   $: project_id = $page.params.project_id!
@@ -44,33 +46,38 @@
 
   $: download_document_url = `${base_url}/api/projects/${project_id}/documents/${document_id}/download`
 
-  onMount(async () => {
-    get_document()
-    get_extractions()
-  })
+  $: if (project_id && document_id) {
+    initial_document = null
+    updated_document = null
+    results = null
+    error = null
+    get_document(project_id, document_id)
+    get_extractions(project_id, document_id)
+  }
 
-  async function get_document() {
+  async function get_document(req_project_id: string, req_document_id: string) {
     try {
-      loading = true
-      if (!project_id) {
-        throw new Error("Project ID not set.")
-      }
+      document_loading = true
       const { data: document_response, error: get_error } = await client.GET(
         "/api/projects/{project_id}/documents/{document_id}",
         {
           params: {
             path: {
-              project_id,
-              document_id,
+              project_id: req_project_id,
+              document_id: req_document_id,
             },
           },
         },
       )
+      if (req_project_id !== project_id || req_document_id !== document_id)
+        return
       if (get_error) {
         throw get_error
       }
       updated_document = document_response
     } catch (e) {
+      if (req_project_id !== project_id || req_document_id !== document_id)
+        return
       if (e instanceof Error && e.message.includes("Load failed")) {
         error = new KilnError(
           "Could not load dataset. It may belong to a project you don't have access to.",
@@ -80,36 +87,45 @@
         error = createKilnError(e)
       }
     } finally {
-      loading = false
+      if (req_project_id === project_id && req_document_id === document_id) {
+        document_loading = false
+      }
     }
   }
 
-  async function get_extractions() {
+  async function get_extractions(
+    req_project_id: string,
+    req_document_id: string,
+  ) {
     try {
-      loading = true
+      extractions_loading = true
       const { data: extractions_response, error: get_error } = await client.GET(
         "/api/projects/{project_id}/documents/{document_id}/extractions",
         {
           params: {
             path: {
-              project_id,
-              document_id,
+              project_id: req_project_id,
+              document_id: req_document_id,
             },
           },
         },
       )
+      if (req_project_id !== project_id || req_document_id !== document_id)
+        return
       if (get_error) {
         throw get_error
       }
       results = extractions_response
     } finally {
-      loading = false
+      if (req_project_id === project_id && req_document_id === document_id) {
+        extractions_loading = false
+      }
     }
   }
 
   async function open_enclosing_folder() {
     try {
-      loading = true
+      folder_loading = true
       const { error: open_error } = await client.POST(
         "/api/projects/{project_id}/documents/{document_id}/open_enclosing_folder",
         {
@@ -125,7 +141,7 @@
         throw createKilnError(open_error)
       }
     } finally {
-      loading = false
+      folder_loading = false
     }
   }
 
@@ -142,7 +158,7 @@
   let delete_extraction_dialog: DeleteDialog | null = null
   $: delete_extraction_url = `/api/projects/${project_id}/documents/${document_id}/extractions/${delete_extraction_id}`
   async function after_delete_extraction() {
-    get_extractions()
+    get_extractions(project_id, document_id)
   }
 
   let tags_error: KilnError | null = null
@@ -472,8 +488,8 @@
 <EditDialog
   bind:this={edit_dialog}
   after_save={() => {
-    get_document()
-    get_extractions()
+    get_document(project_id, document_id)
+    get_extractions(project_id, document_id)
   }}
   name="Document"
   patch_url={`/api/projects/${project_id}/documents/${document_id}`}

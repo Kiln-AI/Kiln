@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
   import { page } from "$app/stores"
-  import { goto, afterNavigate } from "$app/navigation"
+  import { goto } from "$app/navigation"
   import DataGenIntro from "./data_gen_intro.svelte"
   import { indexedDBStore } from "$lib/stores/index_db_store"
   import { get, writable, type Writable } from "svelte/store"
@@ -41,25 +41,19 @@
     gen_type: null,
   })
 
-  // Auto-redirect to the user's last-used sub-flow on initial page load and
-  // forward navigations, but NOT when the user back-navigates here. Without
-  // this guard, hitting back from /synth lands on this route, the redirect
-  // fires again, and the user gets bounced forward — a double-back.
-  // afterNavigate fires for every navigation including initial mount.
-  afterNavigate(({ type }) => {
-    // SvelteKit can reuse this component across project/task param-only
-    // navigations, so onMount won't refire — refresh has_data_guide on
-    // every navigation so the top-bar Data Guide button reflects the
-    // current task, not the previous one.
+  let last_handled_key: string | null = null
+
+  $: if (project_id && task_id) {
+    // Refresh the Data Guide top-bar button state on every project/task
+    // change. SvelteKit reuses this component across param-only navs, so
+    // onMount won't refire and has_data_guide would otherwise go stale.
     void check_data_guide()
-    if (type === "popstate") {
-      // Back/forward — show the cold-start eval/finetune cards instead of
-      // re-redirecting forward.
-      loading = false
-      return
+    const key = `${project_id}/${task_id}?${$page.url.searchParams.toString()}`
+    if (last_handled_key !== key) {
+      last_handled_key = key
+      handle_routing(project_id, task_id)
     }
-    handle_routing()
-  })
+  }
 
   async function check_data_guide() {
     try {
@@ -73,7 +67,7 @@
     }
   }
 
-  async function handle_routing() {
+  async function handle_routing(req_project_id: string, req_task_id: string) {
     loading = true
     const reason_param = $page.url.searchParams.get(
       "reason",
@@ -84,12 +78,14 @@
     if (reason_param === "eval" || reason_param === "fine_tune") {
       const params = $page.url.searchParams
       await goto(
-        `/generate/${project_id}/${task_id}/synth?${params.toString()}`,
+        `/generate/${req_project_id}/${req_task_id}/synth?${params.toString()}`,
       )
       return
     } else if (reason_param === "qna") {
       const params = $page.url.searchParams
-      await goto(`/generate/${project_id}/${task_id}/qna?${params.toString()}`)
+      await goto(
+        `/generate/${req_project_id}/${req_task_id}/qna?${params.toString()}`,
+      )
       return
     } else if (reason_param) {
       //typecheck will flag this if we add a new case that we don't handle
@@ -100,16 +96,20 @@
     // user lands on this page without any specific state in the URL, we want to redirect
     // them to wherever they last were (i.e. synth page) if they have any ongoing session
     try {
-      const currentSessionGenType = await getCurrentSessionGenType()
+      const currentSessionGenType = await getCurrentSessionGenType(
+        req_project_id,
+        req_task_id,
+      )
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       switch (currentSessionGenType) {
         case "training":
-          await goto(`/generate/${project_id}/${task_id}/synth`)
+          await goto(`/generate/${req_project_id}/${req_task_id}/synth`)
           return
         case "eval":
-          await goto(`/generate/${project_id}/${task_id}/synth`)
+          await goto(`/generate/${req_project_id}/${req_task_id}/synth`)
           return
         case "qna":
-          await goto(`/generate/${project_id}/${task_id}/qna`)
+          await goto(`/generate/${req_project_id}/${req_task_id}/qna`)
           return
         case null:
           // no ongoing session, stay on this page and show intro
@@ -125,21 +125,24 @@
       console.error("Error checking for ongoing session:", error)
     }
 
-    loading = false
+    if (req_project_id === project_id && req_task_id === task_id) {
+      loading = false
+    }
   }
 
-  async function getCurrentSessionGenType(): Promise<
-    "training" | "eval" | "qna" | null
-  > {
+  async function getCurrentSessionGenType(
+    req_project_id: string,
+    req_task_id: string,
+  ): Promise<"training" | "eval" | "qna" | null> {
     // Check for saved Q&A session first
     if (
       !cachedQnaStore ||
-      cachedQnaProjectId !== project_id ||
-      cachedQnaTaskId !== task_id
+      cachedQnaProjectId !== req_project_id ||
+      cachedQnaTaskId !== req_task_id
     ) {
-      cachedQnaStore = createQnaStore(project_id, task_id)
-      cachedQnaProjectId = project_id
-      cachedQnaTaskId = task_id
+      cachedQnaStore = createQnaStore(req_project_id, req_task_id)
+      cachedQnaProjectId = req_project_id
+      cachedQnaTaskId = req_task_id
       cachedQnaInitialized = false
     }
     if (!cachedQnaInitialized) {
@@ -151,7 +154,7 @@
       return "qna"
     }
     // Check for saved synthetic data session
-    const synth_data_key = `synth_data_${project_id}_${task_id}_v2`
+    const synth_data_key = `synth_data_${req_project_id}_${req_task_id}_v2`
     const { store, initialized } = indexedDBStore(synth_data_key, {
       gen_type: null,
       template_id: null,

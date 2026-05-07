@@ -21,7 +21,7 @@ from openai.types.chat.chat_completion_message_tool_call_param import (
 
 import kiln_ai.datamodel as datamodel
 from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
-from kiln_ai.adapters.chat.chat_formatter import ToolResponseMessage
+from kiln_ai.adapters.chat.chat_formatter import chat_message_to_dict
 from kiln_ai.adapters.ml_model_list import (
     KilnModelProvider,
     ModelProviderName,
@@ -56,6 +56,7 @@ from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionMessageParam,
     ChatCompletionToolMessageParamWrapper,
+    sanitize_messages_for_provider,
 )
 
 MAX_CALLS_PER_TURN = 10
@@ -274,11 +275,7 @@ class LiteLlmAdapter(BaseAdapter):
             for message in turn.messages:
                 if message.content is None:
                     raise ValueError("Empty message content isn't allowed")
-                # pyright incorrectly warns about this, but it's valid so we can ignore. It can't handle the multi-value role.
-                msg_dict: dict = {"role": message.role, "content": message.content}
-                if isinstance(message, ToolResponseMessage):
-                    msg_dict["tool_call_id"] = message.tool_call_id
-                messages.append(msg_dict)  # type: ignore
+                messages.append(chat_message_to_dict(message))  # type: ignore
 
             skip_response_format = not turn.final_call
             turn_result = await self._run_model_turn(
@@ -719,6 +716,8 @@ class LiteLlmAdapter(BaseAdapter):
         )
         if len(allowed_openai_params) > 0:
             completion_kwargs["allowed_openai_params"] = allowed_openai_params
+
+        completion_kwargs["messages"] = sanitize_messages_for_provider(messages)
 
         return completion_kwargs
 

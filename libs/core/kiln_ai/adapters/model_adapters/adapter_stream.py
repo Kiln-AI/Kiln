@@ -7,14 +7,10 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
-from litellm.types.utils import (
-    ChatCompletionMessageToolCall,
-    Choices,
-    ModelResponse,
-)
+from litellm.types.utils import ChatCompletionMessageToolCall, Choices, ModelResponse
 
 from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
-from kiln_ai.adapters.chat.chat_formatter import ChatFormatter, ToolResponseMessage
+from kiln_ai.adapters.chat.chat_formatter import ChatFormatter, chat_message_to_dict
 from kiln_ai.adapters.litellm_utils.litellm_streaming import StreamingCompletion
 from kiln_ai.adapters.ml_model_list import KilnModelProvider
 from kiln_ai.adapters.model_adapters.stream_events import (
@@ -103,10 +99,7 @@ class AdapterStream:
             for message in turn.messages:
                 if message.content is None:
                     raise ValueError("Empty message content isn't allowed")
-                msg_dict: dict = {"role": message.role, "content": message.content}
-                if isinstance(message, ToolResponseMessage):
-                    msg_dict["tool_call_id"] = message.tool_call_id
-                self._messages.append(msg_dict)  # type: ignore[arg-type]
+                self._messages.append(chat_message_to_dict(message))  # type: ignore[arg-type]
 
             skip_response_format = not turn.final_call
             turn_top_logprobs = self._top_logprobs if turn.final_call else None

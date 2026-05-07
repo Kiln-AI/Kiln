@@ -34,10 +34,11 @@ jobs:
 
       - name: Run coverage
         run: |
-          uv run coverage run -m pytest
-          uv run coverage report
-          uv run coverage html
-          uv run coverage xml
+          # Use pytest-cov so coverage data is collected from pytest-xdist
+          # worker subprocesses (plain `coverage run` only traces the main
+          # process, which silently dropped most of our coverage when -n auto
+          # was enabled in pyproject.toml).
+          uv run pytest --cov --cov-report=xml --cov-report=html --cov-report=term
 
       - name: Upload coverage HTML report as artifact
         uses: actions/upload-artifact@v4

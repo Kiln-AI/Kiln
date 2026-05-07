@@ -11,7 +11,7 @@
   <ConnectKilnCopilotSteps {onSuccess} />
 
   <button class="link text-center text-sm mt-8" on:click={onCancel}>
-    Cancel setting up Kiln Copilot
+    Cancel setting up Kiln Pro
   </button>
 
   <div class="grow-[1.5]"></div>

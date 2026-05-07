@@ -1,13 +1,13 @@
 <script lang="ts">
   import Intro from "../intro.svelte"
 
-  export let title: string = "Kiln Copilot Required"
+  export let title: string = "Kiln Pro Required"
   export let description_markdown: string
   export let auth_href: string
   export let learn_more_label: string | null = null
   export let learn_more_href: string | null = null
   export let compact: boolean = false
-  export let connect_button_label: string = "Connect Kiln Copilot"
+  export let connect_button_label: string = "Connect Kiln Pro"
   export let icon: "logo" | "chat" = "logo"
 </script>
 
