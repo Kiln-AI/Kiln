@@ -50,8 +50,9 @@ async def test_streams_response_when_no_disconnect():
     async def send(message: Message) -> None:
         sent.append(message)
 
-    async with asyncio.timeout(5):
-        await response(scope, _never_disconnect_receive(), send)
+    await asyncio.wait_for(
+        response(scope, _never_disconnect_receive(), send), timeout=5
+    )
 
     assert finally_ran.is_set()
     bodies = [m for m in sent if m["type"] == "http.response.body"]
@@ -92,8 +93,7 @@ async def test_cancels_generator_on_client_disconnect():
         await asyncio.sleep(0.05)
         return {"type": "http.disconnect"}
 
-    async with asyncio.timeout(5):
-        await response(scope, receive, send)
+    await asyncio.wait_for(response(scope, receive, send), timeout=5)
 
     assert finally_ran.is_set(), "generator's finally did not run on disconnect"
     bodies = [m for m in sent if m["type"] == "http.response.body"]
@@ -123,8 +123,9 @@ async def test_background_task_runs_after_completion():
     async def send(message: Message) -> None:
         sent.append(message)
 
-    async with asyncio.timeout(5):
-        await response(scope, _never_disconnect_receive(), send)
+    await asyncio.wait_for(
+        response(scope, _never_disconnect_receive(), send), timeout=5
+    )
 
     assert background_ran.is_set(), "background task did not run"
 
@@ -161,8 +162,7 @@ async def test_no_spec_version_branching(spec_version: str):
         await asyncio.sleep(0.05)
         return {"type": "http.disconnect"}
 
-    async with asyncio.timeout(5):
-        await response(scope, receive, send)
+    await asyncio.wait_for(response(scope, receive, send), timeout=5)
 
     assert finally_ran.is_set(), (
         f"generator's finally did not run on disconnect with spec_version={spec_version}"
@@ -189,6 +189,7 @@ async def test_exception_in_generator_propagates():
     async def send(message: Message) -> None:
         sent.append(message)
 
-    async with asyncio.timeout(5):
-        with pytest.raises(ValueError, match="boom"):
-            await response(scope, _never_disconnect_receive(), send)
+    with pytest.raises(ValueError, match="boom"):
+        await asyncio.wait_for(
+            response(scope, _never_disconnect_receive(), send), timeout=5
+        )
