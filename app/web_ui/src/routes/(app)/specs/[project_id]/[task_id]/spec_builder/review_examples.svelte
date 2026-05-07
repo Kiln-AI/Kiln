@@ -7,6 +7,7 @@
   import XCircleIcon from "$lib/ui/icons/x_circle_icon.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import ClampedText from "$lib/ui/clamped_text.svelte"
   import SpecPropertiesDisplay from "../spec_properties_display.svelte"
   import type { KilnError } from "$lib/utils/error_handlers"
   import type { SpecType } from "$lib/types"
@@ -112,6 +113,18 @@
     spec_details_dialog?.show()
   }
 
+  let see_all_dialog: Dialog | null = null
+  let see_all_title: string = ""
+  let see_all_content: { value: string; isJson: boolean } = {
+    value: "",
+    isJson: false,
+  }
+  function show_full_text(title: string, raw: string) {
+    see_all_title = title
+    see_all_content = formatExpandedContent(raw)
+    see_all_dialog?.show()
+  }
+
   async function handle_secondary_click() {
     if (await form_container.validate_only()) {
       dispatch("create_spec_secondary")
@@ -174,30 +187,18 @@
         </thead>
         <tbody>
           {#each review_rows as row (row.row_id)}
-            {@const input_content = formatExpandedContent(row.input)}
-            {@const output_content = formatExpandedContent(row.output)}
             <tr>
               <td class="py-2">
-                {#if input_content.isJson}
-                  <!-- eslint-disable svelte/no-at-html-tags -->
-                  <pre
-                    class="whitespace-pre-wrap break-words">{@html input_content.value}</pre>
-                  <!-- eslint-enable svelte/no-at-html-tags -->
-                {:else}
-                  <pre
-                    class="whitespace-pre-wrap break-words">{input_content.value}</pre>
-                {/if}
+                <ClampedText
+                  content={row.input}
+                  on:see_all={() => show_full_text("Input", row.input)}
+                />
               </td>
               <td class="py-2">
-                {#if output_content.isJson}
-                  <!-- eslint-disable svelte/no-at-html-tags -->
-                  <pre
-                    class="whitespace-pre-wrap break-words">{@html output_content.value}</pre>
-                  <!-- eslint-enable svelte/no-at-html-tags -->
-                {:else}
-                  <pre
-                    class="whitespace-pre-wrap break-words">{output_content.value}</pre>
-                {/if}
+                <ClampedText
+                  content={row.output}
+                  on:see_all={() => show_full_text("Output", row.output)}
+                />
               </td>
               <td class="py-2">
                 <div class="flex gap-1">
@@ -304,4 +305,21 @@
   ]}
 >
   <SpecPropertiesDisplay {spec_type} properties={property_values} />
+</Dialog>
+
+<Dialog
+  bind:this={see_all_dialog}
+  title={see_all_title}
+  width="wide"
+  action_buttons={[{ label: "Close", isCancel: true }]}
+>
+  {#if see_all_content.isJson}
+    <!-- eslint-disable svelte/no-at-html-tags -->
+    <pre
+      class="whitespace-pre-wrap break-words text-sm">{@html see_all_content.value}</pre>
+    <!-- eslint-enable svelte/no-at-html-tags -->
+  {:else}
+    <pre
+      class="whitespace-pre-wrap break-words text-sm">{see_all_content.value}</pre>
+  {/if}
 </Dialog>

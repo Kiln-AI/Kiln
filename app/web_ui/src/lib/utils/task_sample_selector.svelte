@@ -160,7 +160,7 @@
             <Output
               raw_output={selected_example.input}
               show_border={true}
-              background_color="white"
+              max_height="220px"
             />
           </div>
         </div>
@@ -170,7 +170,7 @@
             <Output
               raw_output={selected_example.output}
               show_border={true}
-              background_color="white"
+              max_height="220px"
             />
           </div>
         </div>
@@ -203,7 +203,7 @@
               id="manual_input"
               label="Example Input"
               inputType="textarea"
-              height="base"
+              height="medium"
               bind:value={manual_input}
               placeholder="Enter an example input for your task"
             />
@@ -211,7 +211,7 @@
               id="manual_output"
               label="Example Output"
               inputType="textarea"
-              height="base"
+              height="medium"
               bind:value={manual_output}
               placeholder="Enter the expected output for this input"
             />
