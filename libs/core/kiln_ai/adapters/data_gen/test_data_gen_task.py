@@ -744,6 +744,62 @@ def test_generate_guidance_refinement_prompt_includes_optional_sections_when_pro
     )
 
 
+def test_generate_guidance_refinement_prompt_taxonomy_is_four_cells():
+    """The metaprompter must instruct the LLM to use only the four valid
+    group tags. Output-side semantic groups (`<output_semantic>`,
+    `<both_semantic>`) were culled to prevent the Guide from encoding output
+    policy that drifts from — and overrides — the task's system prompt.
+
+    Old guides may still contain those tags in `current_guide`; this test
+    asserts the metaprompter's *instructions* (not the input echo) drop them.
+    """
+    prompt = generate_guidance_refinement_prompt(
+        task_instruction="Translate to French",
+        # Empty guide so the input echo doesn't leak `<output_semantic>` into
+        # the prompt — we only want to assert the template doesn't reference
+        # it in its own instructions.
+        current_guide="",
+        preview_samples=[],
+        feedback="",
+    )
+
+    # The four valid groups must be referenced.
+    assert "`<input_structural>`" in prompt
+    assert "`<input_semantic>`" in prompt
+    assert "`<output_structural>`" in prompt
+    assert "`<both_structural>`" in prompt
+
+    # The "four valid groups" framing must be present; the old "six" framing must be gone.
+    assert "four valid groups" in prompt
+    assert "six valid groups" not in prompt
+    assert "six XML-tagged groups" not in prompt
+
+    # Scope statement must be present so the LLM understands why output
+    # semantics aren't being asked for.
+    assert "Scope: data shape, not output policy" in prompt
+    assert "out of scope" in prompt
+
+
+def test_generate_guidance_refinement_prompt_explicitly_forbids_policy_mining():
+    """The metaprompter must explicitly forbid mining output-policy rules
+    from the task instruction (closed-set decision rules, when-to-output-X
+    rules, correctness criteria). Prior versions instructed the LLM to lift
+    these into `<output_semantic>` rules, which caused the Guide to silently
+    override the system prompt's policy."""
+    prompt = generate_guidance_refinement_prompt(
+        task_instruction="X",
+        current_guide="",
+        preview_samples=[],
+        feedback="",
+    )
+
+    assert "Do NOT mine the following from the task definition" in prompt
+    assert "When to output X vs Y" in prompt
+    assert "classification" in prompt.lower()
+    # Old policy-mining example must be gone.
+    assert "that's an `<output_semantic>` rule waiting to be written" not in prompt
+
+
 def test_generate_guidance_refinement_prompt_renders_all_samples_in_order():
     """Sample blocks should be numbered 1..N in the order received and each
     one should reflect the user's rating."""
