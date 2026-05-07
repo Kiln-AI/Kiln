@@ -44,12 +44,10 @@
   // clicking opens the full content in a dialog.
   let see_all_dialog: Dialog
   let see_all_title: string = ""
-  let see_all_subtitle: string = ""
   let see_all_content: string = ""
 
-  function show_full_text(title: string, subtitle: string, content: string) {
+  function show_full_text(title: string, content: string) {
     see_all_title = title
-    see_all_subtitle = subtitle
     see_all_content = content
     see_all_dialog?.show()
   }
@@ -242,15 +240,13 @@
               <td class="py-2">
                 <ClampedText
                   content={sample.input}
-                  on:see_all={() =>
-                    show_full_text("Input", `Sample ${i + 1}`, sample.input)}
+                  on:see_all={() => show_full_text("Input", sample.input)}
                 />
               </td>
               <td class="py-2">
                 <ClampedText
                   content={sample.output}
-                  on:see_all={() =>
-                    show_full_text("Output", `Sample ${i + 1}`, sample.output)}
+                  on:see_all={() => show_full_text("Output", sample.output)}
                 />
               </td>
               <td class="py-2">
@@ -444,7 +440,6 @@
 <Dialog
   bind:this={see_all_dialog}
   title={see_all_title}
-  sub_subtitle={see_all_subtitle}
   width="wide"
   action_buttons={[{ label: "Close", isCancel: true }]}
 >

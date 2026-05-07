@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 from fastapi import FastAPI, HTTPException, Path, Query
 from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
 from kiln_ai.adapters.data_gen.data_gen_prompts import (
+    RatedSample,
     generate_guidance_refinement_prompt,
 )
 from kiln_ai.adapters.data_gen.data_gen_task import (
@@ -96,14 +97,6 @@ class GuidePreviewSample(BaseModel):
     output: str = Field(description="Generated sample output")
 
 
-class RatedGuidePreviewSample(BaseModel):
-    input: str = Field(description="Generated sample input")
-    output: str = Field(description="Generated sample output")
-    looks_good: bool = Field(
-        description="User rating: true if the sample looks realistic, false if it needs work"
-    )
-
-
 class GuidePreviewInput(BaseModel):
     guide: str = Field(
         default="",
@@ -135,7 +128,7 @@ class GuideRefineInput(BaseModel):
     feedback: str = Field(
         description="User feedback on what's wrong with preview samples"
     )
-    preview_samples: list[RatedGuidePreviewSample] = Field(
+    preview_samples: list[RatedSample] = Field(
         description="The previewed samples the user is giving feedback on, each rated by the user as realistic (true) or needs work (false)"
     )
     run_config_properties: KilnAgentRunConfigProperties = Field(
@@ -858,9 +851,7 @@ The topic path for this sample is:
         system_prompt = generate_guidance_refinement_prompt(
             task_instruction=runtime_prompt,
             current_guide=input.current_guide,
-            preview_samples=[
-                (s.input, s.output, s.looks_good) for s in input.preview_samples
-            ],
+            preview_samples=input.preview_samples,
             feedback=input.feedback,
             task_description=task.description,
             task_input_json_schema=task.input_json_schema,

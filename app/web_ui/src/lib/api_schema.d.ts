@@ -6640,7 +6640,7 @@ export interface components {
              * Preview Samples
              * @description The previewed samples the user is giving feedback on, each rated by the user as realistic (true) or needs work (false)
              */
-            preview_samples: components["schemas"]["RatedGuidePreviewSample"][];
+            preview_samples: components["schemas"]["RatedSample"][];
             /** @description The model config to use for the metaprompter call itself. */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
             /** @description The user's chosen output-generation run config. Its prompt template is rendered server-side and used as runtime context for the metaprompter, so the rules it produces match what the model actually sees at synthesis time. Falls back to `task.instruction` when not provided — accurate for users on the default simple prompt template, stale for users on prompt-optimization or saved-prompt run configs. */
@@ -8142,8 +8142,14 @@ export interface components {
              */
             results: components["schemas"]["SearchResult"][];
         };
-        /** RatedGuidePreviewSample */
-        RatedGuidePreviewSample: {
+        /**
+         * RatedSample
+         * @description A preview sample (input/output pair) plus the user's rating, used as
+         *     feedback input to the data-guide refinement metaprompter. Shared between
+         *     the API surface and the prompt builder so callers don't have to flatten
+         *     into positional tuples.
+         */
+        RatedSample: {
             /**
              * Input
              * @description Generated sample input

@@ -4,6 +4,7 @@ import pytest
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.data_gen.data_gen_prompts import (
+    RatedSample,
     generate_guidance_refinement_prompt,
     generate_qna_generation_prompt,
     generate_sample_generation_prompt,
@@ -670,8 +671,8 @@ def test_generate_guidance_refinement_prompt_minimal():
             "<output_semantic>\n\n## Native\nOnly real French words.\n\n</output_semantic>"
         ),
         preview_samples=[
-            ("hello", "bonjour", True),
-            ("frog", "ranagrenouille", False),
+            RatedSample(input="hello", output="bonjour", looks_good=True),
+            RatedSample(input="frog", output="ranagrenouille", looks_good=False),
         ],
         feedback="The second one isn't a real word.",
     )
@@ -804,9 +805,9 @@ def test_generate_guidance_refinement_prompt_renders_all_samples_in_order():
     """Sample blocks should be numbered 1..N in the order received and each
     one should reflect the user's rating."""
     samples = [
-        ("a", "b", True),
-        ("c", "d", False),
-        ("e", "f", True),
+        RatedSample(input="a", output="b", looks_good=True),
+        RatedSample(input="c", output="d", looks_good=False),
+        RatedSample(input="e", output="f", looks_good=True),
     ]
     prompt = generate_guidance_refinement_prompt(
         task_instruction="X",
@@ -814,11 +815,11 @@ def test_generate_guidance_refinement_prompt_renders_all_samples_in_order():
         preview_samples=samples,
         feedback="Z",
     )
-    for i, (sample_input, sample_output, looks_good) in enumerate(samples, 1):
-        rating = "Realistic" if looks_good else "Needs Work"
+    for i, sample in enumerate(samples, 1):
+        rating = "Realistic" if sample.looks_good else "Needs Work"
         assert f'<sample_{i} rating="{rating}">' in prompt
-        assert f"<input>{sample_input}</input>" in prompt
-        assert f"<output>{sample_output}</output>" in prompt
+        assert f"<input>{sample.input}</input>" in prompt
+        assert f"<output>{sample.output}</output>" in prompt
         assert f"</sample_{i}>" in prompt
 
 
