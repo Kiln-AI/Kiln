@@ -32,3 +32,4 @@ reviews/
 # ActRight discover local state
 .act_right
 
+test-results/
