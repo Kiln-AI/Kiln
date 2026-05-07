@@ -99,15 +99,15 @@ showing the first spec.
     {spec_type, core_requirement, tone_description}
   For "toxicity":
     {spec_type, core_requirement, toxicity_examples}
-- The spec detail page title is `Spec: <name>` (rendered as an h-level heading
-  via AppPage). Use getByRole("heading", { name: `Spec: <name>` }) to wait.
+- The spec detail page title is `Eval: <name>` (rendered as an h-level heading
+  via AppPage). Use getByRole("heading", { name: `Eval: <name>` }) to wait.
 - Same-route client-side nav must go through an <a> click — page.goto would
   remount the component and mask the bug.
 
 ## Assertions
-- Visiting specA first shows "Spec: specA.name".
+- Visiting specA first shows "Eval: specA.name".
 - After client-side nav to specB's URL, the URL updates and the heading becomes
-  "Spec: specB.name" (and the old specA heading is gone).
+  "Eval: specB.name" (and the old specA heading is gone).
 */
 test.fixme(
   "KIL-516: spec-to-spec in-app link updates the loaded spec",
@@ -136,7 +136,7 @@ test.fixme(
 
     await page.goto(`/specs/${project.id}/${task.id}/${specA.id}`)
     await expect(
-      page.getByRole("heading", { name: `Spec: ${specA.name}` }),
+      page.getByRole("heading", { name: `Eval: ${specA.name}` }),
     ).toBeVisible()
 
     const specBHref = `/specs/${project.id}/${task.id}/${specB.id}`
@@ -151,10 +151,10 @@ test.fixme(
 
     await expect(page).toHaveURL(specBHref)
     await expect(
-      page.getByRole("heading", { name: `Spec: ${specB.name}` }),
+      page.getByRole("heading", { name: `Eval: ${specB.name}` }),
     ).toBeVisible()
     await expect(
-      page.getByRole("heading", { name: `Spec: ${specA.name}` }),
+      page.getByRole("heading", { name: `Eval: ${specA.name}` }),
     ).toHaveCount(0)
   },
 )

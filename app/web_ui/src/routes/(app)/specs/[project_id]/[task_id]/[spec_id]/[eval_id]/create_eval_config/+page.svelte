@@ -379,11 +379,11 @@
     const next_page = $page.url.searchParams.get("next_page")
     const crumbs: Breadcrumb[] = [
       {
-        label: "Specs & Evals",
+        label: "Evals",
         href: `/specs/${project_id}/${task_id}`,
       },
       {
-        label: spec?.name || "Spec",
+        label: spec?.name || "Eval",
         href: `/specs/${project_id}/${task_id}/${spec_id}`,
       },
       {
@@ -596,7 +596,7 @@
               {#if spec}
                 <div class="text-xs text-gray-500">
                   We've pre-populated the evaluation steps for you based on the
-                  spec you selected ({spec.name}). Feel free to edit.
+                  eval you selected ({spec.name}). Feel free to edit.
                 </div>
               {/if}
             </div>
