@@ -1,7 +1,12 @@
+import json
 from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException, Path, Query
 from kiln_ai.adapters.adapter_registry import adapter_for_task, load_skills_for_task
+from kiln_ai.adapters.data_gen.data_gen_prompts import (
+    RatedSample,
+    generate_guidance_refinement_prompt,
+)
 from kiln_ai.adapters.data_gen.data_gen_task import (
     DataGenCategoriesTask,
     DataGenCategoriesTaskInput,
@@ -11,11 +16,13 @@ from kiln_ai.adapters.data_gen.data_gen_task import (
 )
 from kiln_ai.adapters.data_gen.qna_gen_task import DataGenQnaTask, DataGenQnaTaskInput
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
+from kiln_ai.adapters.prompt_builders import prompt_builder_from_id
 from kiln_ai.datamodel import DataSource, DataSourceType, TaskRun, generate_model_id
+from kiln_ai.datamodel.data_guide import DataGuide
 from kiln_ai.datamodel.extraction import Document
 from kiln_ai.datamodel.prompt_id import PromptGenerators
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-from kiln_ai.datamodel.task import RunConfigProperties
+from kiln_ai.datamodel.task import RunConfigProperties, Task
 from kiln_ai.datamodel.task_output import TaskOutput
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionAssistantMessageParamWrapper,
@@ -46,6 +53,10 @@ class DataGenCategoriesApiInput(BaseModel):
         description="Optional human guidance for generation",
         default=None,
     )
+    data_guide: str | None = Field(
+        description="Optional per-run data guide override. Sent in addition to any human guidance.",
+        default=None,
+    )
     existing_topics: list[str] | None = Field(
         description="Optional list of existing topics to avoid",
         default=None,
@@ -65,8 +76,92 @@ class DataGenSampleApiInput(BaseModel):
         description="Optional custom guidance for generation",
         default=None,
     )
+    data_guide: str | None = Field(
+        description="Optional per-run data guide override. Replaces the task's persisted data guide for this run.",
+        default=None,
+    )
     run_config_properties: KilnAgentRunConfigProperties = Field(
         description="The run config properties to use for input generation"
+    )
+
+
+class SaveTaskDataGuideInput(BaseModel):
+    guide: str = Field(
+        default="",
+        description="Markdown body of the data guide.",
+    )
+
+
+class GuidePreviewSample(BaseModel):
+    input: str = Field(description="Generated sample input")
+    output: str = Field(description="Generated sample output")
+
+
+class GuidePreviewInput(BaseModel):
+    guide: str = Field(
+        default="",
+        description="Markdown body of the data guide being previewed.",
+    )
+    run_config_properties: KilnAgentRunConfigProperties = Field(
+        description="The model config to use for preview input generation"
+    )
+    output_run_config_properties: KilnAgentRunConfigProperties | None = Field(
+        description=(
+            "Optional model config to use for preview output generation. "
+            "Defaults to the input run config when not provided."
+        ),
+        default=None,
+    )
+    num_samples: int = Field(
+        description="Number of preview samples to generate",
+        default=5,
+        ge=1,
+        le=20,
+    )
+
+
+class GuideRefineInput(BaseModel):
+    current_guide: str = Field(
+        default="",
+        description="Markdown body of the current data guide — the metaprompter rewrites it wholesale.",
+    )
+    feedback: str = Field(
+        description="User feedback on what's wrong with preview samples"
+    )
+    preview_samples: list[RatedSample] = Field(
+        description="The previewed samples the user is giving feedback on, each rated by the user as realistic (true) or needs work (false)"
+    )
+    run_config_properties: KilnAgentRunConfigProperties = Field(
+        description="The model config to use for the metaprompter call itself."
+    )
+    output_run_config_properties: KilnAgentRunConfigProperties | None = Field(
+        description=(
+            "The user's chosen output-generation run config. Its prompt template "
+            "is rendered server-side and used as runtime context for the "
+            "metaprompter, so the rules it produces match what the model actually "
+            "sees at synthesis time. Falls back to `task.instruction` when not "
+            "provided — accurate for users on the default simple prompt template, "
+            "stale for users on prompt-optimization or saved-prompt run configs."
+        ),
+        default=None,
+    )
+
+
+class GuideRefineOutput(BaseModel):
+    """Structured output schema for the LLM refinement task — the full
+    refined data guide markdown."""
+
+    guide: str = Field(
+        description=(
+            "Full refined data guide markdown. Includes `# Reference Examples` "
+            "and `# Guidelines & Rules` sections as appropriate."
+        ),
+    )
+
+
+class GuideRefineResponse(BaseModel):
+    refined_guide: str = Field(
+        description="The refined data guide markdown returned by the metaprompter."
     )
 
 
@@ -86,6 +181,10 @@ class DataGenSaveSamplesApiInput(BaseModel):
     )
     guidance: str | None = Field(
         description="Optional custom guidance for generation",
+        default=None,
+    )
+    data_guide: str | None = Field(
+        description="Optional per-run data guide override. Replaces the task's persisted data guide for this run.",
         default=None,
     )
     tags: list[str] | None = Field(
@@ -145,10 +244,13 @@ def connect_data_gen_api(app: FastAPI):
         project = project_from_id(project_id)
         task = task_from_id(project_id, task_id)
 
+        combined_guidance = _combine_guidance(
+            task, input.guidance, "topics", input.data_guide
+        )
         categories_task = DataGenCategoriesTask(
             gen_type=input.gen_type,
             parent_project=project,
-            guidance=input.guidance,
+            guidance=combined_guidance,
         )
 
         task_input = DataGenCategoriesTaskInput.from_task(
@@ -189,11 +291,15 @@ def connect_data_gen_api(app: FastAPI):
     ) -> TaskRun:
         project = project_from_id(project_id)
         task = task_from_id(project_id, task_id)
+
+        combined_guidance = _combine_guidance(
+            task, input.guidance, "inputs", input.data_guide
+        )
         sample_task = DataGenSampleTask(
             target_task=task,
             gen_type=input.gen_type,
             parent_project=project,
-            guidance=input.guidance,
+            guidance=combined_guidance,
         )
 
         task_input = DataGenSampleTaskInput.from_task(
@@ -262,7 +368,10 @@ def connect_data_gen_api(app: FastAPI):
     ) -> TaskRun:
         task = task_from_id(project_id, task_id)
 
-        guidance = sample.guidance or ""
+        combined = (
+            _combine_guidance(task, sample.guidance, "outputs", sample.data_guide) or ""
+        )
+        guidance = combined
         if len(sample.topic_path) > 0:
             guidance += f"""
 ## Topic Path
@@ -449,6 +558,446 @@ The topic path for this sample is:
         task_run.parent = task
         task_run.save_to_file()
         return task_run
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
+        summary="Get Task Data Guide",
+        tags=["Synthetic Data"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_data_gen_guide(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> DataGuide | None:
+        task = task_from_id(project_id, task_id)
+        return task.current_data_guide()
+
+    @app.put(
+        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
+        summary="Save Task Data Guide",
+        tags=["Synthetic Data"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def save_data_gen_guide(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        input: SaveTaskDataGuideInput,
+    ) -> DataGuide:
+        task = task_from_id(project_id, task_id)
+
+        if not input.guide.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Data guide cannot be empty. Use DELETE to remove it.",
+            )
+
+        # By design there is at most one DataGuide per task. Reuse the existing
+        # file if present (so git history of the guide stays in one place);
+        # otherwise create the first one.
+        existing = task.current_data_guide()
+        if existing is not None:
+            existing.guide = input.guide
+            existing.save_to_file()
+            return existing
+        guide = DataGuide(
+            parent=task,
+            guide=input.guide,
+        )
+        guide.save_to_file()
+        return guide
+
+    @app.delete(
+        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
+        summary="Delete Task Data Guide",
+        tags=["Synthetic Data"],
+        openapi_extra=agent_policy_require_approval("Delete saved Data Guide?"),
+    )
+    async def delete_data_gen_guide(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+    ) -> None:
+        task = task_from_id(project_id, task_id)
+        existing = task.current_data_guide()
+        if existing is not None:
+            existing.delete()
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_preview",
+        summary="Preview Task Data Guide",
+        tags=["Synthetic Data"],
+        openapi_extra=agent_policy_require_approval(
+            "Generate preview samples using LLM?"
+        ),
+    )
+    async def preview_data_gen_guide(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        input: GuidePreviewInput,
+    ) -> list[GuidePreviewSample]:
+        project = project_from_id(project_id)
+        task = task_from_id(project_id, task_id)
+
+        # Wrap the draft guide through `_combine_guidance` so the preview's
+        # input-generation pass receives the same Data Guide framing (definition,
+        # authority cascade, invariants, stage hint) that real `/generate_inputs`
+        # uses at runtime. Without this, previewed inputs are generated under
+        # different framing than saved inputs would be — defeating the purpose
+        # of iterating on the guide here.
+        draft_guide_md = input.guide
+        input_combined_guidance = _combine_guidance(
+            task, None, "inputs", draft_guide_md
+        )
+
+        sample_task = DataGenSampleTask(
+            target_task=task,
+            gen_type="eval",
+            parent_project=project,
+            guidance=input_combined_guidance,
+        )
+
+        task_input = DataGenSampleTaskInput.from_task(
+            task=task,
+            topic=[],
+            num_samples=input.num_samples,
+        )
+
+        run_config_properties = input.run_config_properties.model_copy()
+        run_config_properties.prompt_id = PromptGenerators.SIMPLE
+        skills = load_skills_for_task(sample_task, run_config_properties)
+        adapter = adapter_for_task(
+            sample_task,
+            run_config_properties=run_config_properties,
+            base_adapter_config=AdapterConfig(skills=skills),
+        )
+
+        samples_run = await adapter.invoke(task_input.model_dump())
+
+        if not samples_run.output or not samples_run.output.output:
+            raise HTTPException(
+                status_code=500, detail="Failed to generate preview samples"
+            )
+
+        try:
+            parsed = json.loads(samples_run.output.output)
+            generated_samples = parsed.get("generated_samples", [])
+        except (json.JSONDecodeError, AttributeError):
+            raise HTTPException(
+                status_code=500, detail="Failed to parse generated samples"
+            )
+        # Validate the LLM gave us a list. `[]` from json could be missing-key
+        # default or null/string/dict from a malformed response — in those
+        # cases the slice + iterate below would TypeError or silently iterate
+        # the wrong thing.
+        if not isinstance(generated_samples, list):
+            raise HTTPException(
+                status_code=500, detail="Failed to parse generated samples"
+            )
+
+        preview_samples: list[GuidePreviewSample] = []
+        # Use the user's run config as-is for output generation. Don't override
+        # prompt_id — this adapter runs the user's actual task (not a meta-task),
+        # so we want to mirror the real SDG /generate_sample flow which respects
+        # the chosen prompt template (few-shot, chain-of-thought, saved prompts).
+        # Forcing SIMPLE here strips that and can cause empty assistant responses
+        # on models that rely on the prompt structure (e.g. reasoning models).
+        output_run_config = (
+            input.output_run_config_properties or input.run_config_properties
+        ).model_copy()
+
+        # Condition the output generation on the (in-progress) data guide so
+        # the previewed outputs reflect what real SDG would produce with this
+        # guide saved — same wrapping that /generate_sample does at runtime.
+        # Pass the composed draft as override so we use the guide being tested,
+        # not whatever's currently persisted on the task.
+        output_combined_guidance = (
+            _combine_guidance(task, None, "outputs", draft_guide_md) or ""
+        )
+        for sample_input in generated_samples[: input.num_samples]:
+            # Always keep a string form for the response so the UI can display
+            # the input verbatim (matches what the user sees in the preview
+            # table).
+            sample_input_str = (
+                json.dumps(sample_input)
+                if isinstance(sample_input, (dict, list))
+                else str(sample_input)
+            )
+
+            # But what we hand to the adapter depends on the task's input
+            # schema. Structured-input tasks must receive a parsed dict/list;
+            # passing a JSON string blows up jsonschema validation with
+            # "<json> is not of type 'object'". Plain-text tasks expect a
+            # string. This mirrors how the real SDG flow's frontend prepares
+            # the input before calling /generate_sample
+            # (synth/+page.svelte: `task.input_json_schema ? JSON.parse(...) : sample.input`).
+            adapter_input: str | dict | list
+            if task.input_json_schema:
+                if isinstance(sample_input, (dict, list)):
+                    adapter_input = sample_input
+                else:
+                    # Generator produced something that wasn't a structured
+                    # value (e.g. a JSON-encoded string). Parse it, and
+                    # require the result to be a dict/list — a scalar
+                    # (`json.loads("42")` → 42, `json.loads("null")` → None)
+                    # would pass JSON parsing but blow up jsonschema
+                    # validation deeper in the adapter. Skip with a clear
+                    # placeholder rather than fail the preview.
+                    parsed_input: object
+                    try:
+                        parsed_input = json.loads(str(sample_input))
+                    except json.JSONDecodeError:
+                        preview_samples.append(
+                            GuidePreviewSample(
+                                input=sample_input_str,
+                                output="[Skipped: generated input was not valid JSON for the task's input schema]",
+                            )
+                        )
+                        continue
+                    if not isinstance(parsed_input, (dict, list)):
+                        preview_samples.append(
+                            GuidePreviewSample(
+                                input=sample_input_str,
+                                output="[Skipped: generated input was not a JSON object or array for the task's input schema]",
+                            )
+                        )
+                        continue
+                    adapter_input = parsed_input
+            else:
+                adapter_input = sample_input_str
+
+            task_copy = task.model_copy(deep=True)
+            if output_combined_guidance.strip():
+                task_copy.instruction = wrap_task_with_guidance(
+                    task_copy.instruction, output_combined_guidance
+                )
+
+            skills = load_skills_for_task(task_copy, output_run_config)
+            output_adapter = adapter_for_task(
+                task_copy,
+                run_config_properties=output_run_config,
+                base_adapter_config=AdapterConfig(allow_saving=False, skills=skills),
+            )
+            output_run = await output_adapter.invoke(input=adapter_input)
+            output_text = (
+                output_run.output.output
+                if output_run.output and output_run.output.output
+                else ""
+            )
+            preview_samples.append(
+                GuidePreviewSample(input=sample_input_str, output=output_text)
+            )
+
+        return preview_samples
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_refine",
+        summary="Refine Task Data Guide",
+        tags=["Synthetic Data"],
+        openapi_extra=agent_policy_require_approval("Refine guidance using LLM?"),
+    )
+    async def refine_data_gen_guide(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        input: GuideRefineInput,
+    ) -> GuideRefineResponse:
+        task = task_from_id(project_id, task_id)
+
+        # Use the user's chosen output-generation prompt as runtime context for
+        # the metaprompter so the rules it produces match what the model
+        # actually sees at synthesis time. For users on the default simple
+        # prompt template this is equivalent to `task.instruction`; for users
+        # on saved prompts / few-shot / prompt-optimization output it can be
+        # substantially richer, and using `task.instruction` directly would
+        # leave the metaprompter blind to that.
+        runtime_prompt = task.instruction
+        if input.output_run_config_properties is not None:
+            try:
+                output_prompt_builder = prompt_builder_from_id(
+                    input.output_run_config_properties.prompt_id, task
+                )
+                runtime_prompt = output_prompt_builder.build_prompt(
+                    include_json_instructions=False
+                )
+            except Exception:
+                # Resolution failure (e.g. a prompt_id pointing at a deleted
+                # saved Prompt) is non-critical — fall back to task.instruction
+                # rather than failing the refine call.
+                runtime_prompt = task.instruction
+
+        system_prompt = generate_guidance_refinement_prompt(
+            task_instruction=runtime_prompt,
+            current_guide=input.current_guide,
+            preview_samples=input.preview_samples,
+            feedback=input.feedback,
+            task_description=task.description,
+            task_input_json_schema=task.input_json_schema,
+            task_output_json_schema=task.output_json_schema,
+        )
+
+        run_config = input.run_config_properties.model_copy()
+        run_config.prompt_id = PromptGenerators.SIMPLE
+
+        refine_task = Task(
+            name="guidance_refinement",
+            instruction=system_prompt,
+            output_json_schema=json.dumps(GuideRefineOutput.model_json_schema()),
+        )
+
+        adapter = adapter_for_task(
+            refine_task,
+            run_config_properties=run_config,
+            base_adapter_config=AdapterConfig(allow_saving=False),
+        )
+
+        refine_run = await adapter.invoke(
+            input="Please refine the input guidance based on the feedback provided in your instructions."
+        )
+
+        if not refine_run.output or not refine_run.output.output:
+            raise HTTPException(status_code=500, detail="Failed to refine guidance")
+
+        try:
+            parsed = json.loads(refine_run.output.output)
+        except json.JSONDecodeError:
+            raise HTTPException(
+                status_code=500, detail="Failed to parse refined guidance"
+            )
+        if not isinstance(parsed, dict):
+            raise HTTPException(
+                status_code=500, detail="Failed to parse refined guidance"
+            )
+
+        new_guide = (parsed.get("guide") or "").strip()
+
+        if not new_guide:
+            return GuideRefineResponse(refined_guide=input.current_guide)
+
+        return GuideRefineResponse(refined_guide=new_guide)
+
+
+_DATA_GUIDE_STAGE_HINTS: dict[Literal["topics", "inputs", "outputs"], str] = {
+    "topics": (
+        "Since this stage generates topics (subject areas, not data), use the "
+        "guide only to inform what scenarios the task's data covers. Rules and "
+        "examples about input/output shape and content are background context — "
+        "do NOT reproduce them in the topic strings. Group tags are largely "
+        "irrelevant at this stage; you are generating short topic labels."
+    ),
+    "inputs": (
+        "Since this stage generates task **inputs**, apply rules in the "
+        "`<input_structural>`, `<input_semantic>`, `<both_structural>`, and "
+        "`<both_semantic>` groups. Treat rules in `<output_structural>` and "
+        "`<output_semantic>` as background context (helpful for understanding "
+        "what kind of inputs naturally pair with realistic outputs) — do not "
+        "enforce them on this stage. Reference examples show what realistic "
+        "inputs look like; mirror their structure and value patterns."
+    ),
+    "outputs": (
+        "Since this stage generates task **outputs**, apply rules in the "
+        "`<output_structural>`, `<output_semantic>`, `<both_structural>`, and "
+        "`<both_semantic>` groups. Rules in `<input_structural>` and "
+        "`<input_semantic>` are background context — the input you receive "
+        "already exists; you are not regenerating it. Reference examples show "
+        "the kind of output you should produce. Rules that name measurable "
+        "bounds (length, sentence counts, field counts, formatting) are "
+        "CEILINGS — never exceed them, and compress content to fit rather "
+        "than expanding the bounds. Match the sentence structure and "
+        "formatting of the reference examples (terseness, prose vs bullets, "
+        "key-value layout)."
+    ),
+}
+
+
+def _resolve_data_guide(task: Task, data_guide_override: str | None) -> str | None:
+    """Return the data guide content to use for this call.
+
+    Override semantics: an explicit override (even an empty string) replaces the
+    task's persisted guide. `None` means "no override provided" and falls back
+    to the task's current DataGuide if one is set.
+    """
+    if data_guide_override is not None:
+        return data_guide_override if data_guide_override.strip() else None
+    current = task.current_data_guide()
+    if current and current.guide.strip():
+        return current.guide
+    return None
+
+
+def _combine_guidance(
+    task: Task,
+    session_guidance: str | None,
+    stage: Literal["topics", "inputs", "outputs"],
+    data_guide_override: str | None = None,
+) -> str | None:
+    """Combine the task data guide with the per-call/template guidance.
+
+    The data guide is wrapped with a short framing paragraph + a stage-specific
+    hint so the LLM understands what it's reading and how to apply it for the
+    current generation stage. Without this wrapper, the model sees the user's
+    raw markdown with no context for where it came from or how to use it.
+    """
+    parts: list[str] = []
+    data_guide_content = _resolve_data_guide(task, data_guide_override)
+    if data_guide_content:
+        stage_hint = _DATA_GUIDE_STAGE_HINTS[stage]
+        parts.append(
+            "# Task Data Guide\n\n"
+            "A Task Data Guide is a recipe for what realistic data for this "
+            "task looks like. It contains three things: **reference examples** "
+            "(concrete `(input, output)` pairs showing what good looks like), "
+            "**structural rules** (how the data is shaped — format, length, "
+            "layout, formatting conventions), and **semantic rules** (what the "
+            "data means — fields, valid values, relationships, domain "
+            "plausibility). Treat items in `# Guidelines & Rules` as hard "
+            "constraints, not suggestions.\n\n"
+            "**Rule grouping.** Rules in `# Guidelines & Rules` are wrapped in "
+            "XML-style group tags by scope+type. The six scope+type groups are "
+            "`<input_structural>`, `<input_semantic>`, `<output_structural>`, "
+            "`<output_semantic>`, `<both_structural>`, `<both_semantic>`. Each "
+            "group contains one or more `## <title>` rule blocks. Use the "
+            "group tag to decide whether a rule applies to the stage you are "
+            "generating for — see the stage hint below. Untagged rules (a `## "
+            "Title` block sitting outside any group, from older guides) should "
+            "be treated as `<both_semantic>`.\n\n"
+            "**Authority cascade** when sources conflict (highest wins):\n"
+            "1. Per-run guidance below this guide, if any.\n"
+            "2. The rules and reference examples in this guide.\n"
+            "3. Defaults you would otherwise pick.\n\n"
+            "**Invariants — must always hold regardless of source:** logical "
+            "relationships between fields, domain plausibility and accuracy, "
+            "and truthfulness to the task's actual purpose.\n\n"
+            f"{stage_hint}\n\n"
+            "<task_data_guide>\n"
+            f"{data_guide_content}\n"
+            "</task_data_guide>"
+        )
+    if session_guidance:
+        parts.append(session_guidance)
+    return "\n\n".join(parts) if parts else None
 
 
 def topic_path_to_string(topic_path: list[str]) -> str | None:

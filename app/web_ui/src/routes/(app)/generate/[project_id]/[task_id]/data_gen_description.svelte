@@ -5,6 +5,7 @@
   import FileIcon from "$lib/ui/icons/file_icon.svelte"
 
   export let guidance_data: SynthDataGuidanceDataModel
+
   $: selected_template = guidance_data.selected_template
   // reactive
   const splits = guidance_data.splits

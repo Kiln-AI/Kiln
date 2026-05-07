@@ -36,14 +36,14 @@
   import CreateSpecForm from "./create_spec_form.svelte"
   import ReviewExamples from "./review_examples.svelte"
   import RefineSpec from "./refine_spec.svelte"
-  import SpecAnalyzingAnimation from "./animations/spec_analyzing_animation.svelte"
-  import QuestioningAnimation from "./animations/questioning_animation.svelte"
-  import RefiningAnimation from "./animations/refining_animation.svelte"
+  import AnalyzingAnimation from "$lib/ui/animations/analyzing_animation.svelte"
+  import QuestioningAnimation from "$lib/ui/animations/questioning_animation.svelte"
+  import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
   import type { TaskSampleExample } from "$lib/utils/task_sample_example"
   import { build_prompt_with_task_sample } from "$lib/utils/task_sample_example"
   import Questions from "./questions.svelte"
   import posthog from "posthog-js"
-  import SavingAnimation from "./animations/saving_animation.svelte"
+  import SavingAnimation from "$lib/ui/animations/saving_animation.svelte"
   import { agentInfo } from "$lib/agent"
 
   const CLARIFY_SPEC_NUM_SAMPLES_PER_TOPIC = 10
@@ -761,15 +761,15 @@
         return "Create Spec"
       case "questioning":
       case "questions":
-        return "Copilot: Clarify Spec"
+        return "Kiln Pro: Clarify Spec"
       case "analyzing_for_review":
       case "review":
-        return "Copilot: Review and Refine"
+        return "Kiln Pro: Review and Refine"
       case "refining":
       case "refine":
-        return "Copilot: Review Suggested Refinements"
+        return "Kiln Pro: Review Suggested Refinements"
       case "saving_with_copilot":
-        return "Copilot: Creating Spec"
+        return "Kiln Pro: Creating Spec"
     }
   }
 
@@ -899,13 +899,25 @@
         on:create_without_copilot={handle_create_spec_without_copilot}
       />
     {:else if current_state === "analyzing_for_review"}
-      <SpecAnalyzingAnimation />
+      <AnalyzingAnimation
+        title="Analyzing Spec"
+        description="Kiln is reviewing your spec, generating example data to review, and creating a judge. Hold tight!"
+      />
     {:else if current_state === "questioning"}
-      <QuestioningAnimation />
+      <QuestioningAnimation
+        title="Preparing Clarifying Questions"
+        description="Kiln is analyzing your spec to identify areas that could use more clarity. Hold tight!"
+      />
     {:else if current_state === "refining"}
-      <RefiningAnimation />
+      <RefiningAnimation
+        title="Refining Spec"
+        description="Kiln is refining your spec with the feedback you provided. Hold tight!"
+      />
     {:else if current_state === "saving_with_copilot"}
-      <SavingAnimation />
+      <SavingAnimation
+        title="Creating Spec"
+        description="Kiln is generating evaluation and training data for your spec before saving. Hold tight!"
+      />
     {:else if current_state === "review"}
       <ReviewExamples
         {name}
