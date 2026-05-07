@@ -52,7 +52,7 @@ from kiln_ai.datamodel.task_output import (
     TaskOutput,
     TaskOutputRating,
 )
-from kiln_ai.datamodel.task_run import TaskRun, Usage
+from kiln_ai.datamodel.task_run import MessageUsage, TaskRun, Usage
 
 __all__ = [
     "BasePrompt",
@@ -67,6 +67,7 @@ __all__ = [
     "FeedbackSource",
     "FineTuneStatusType",
     "Finetune",
+    "MessageUsage",
     "Priority",
     "Project",
     "Prompt",

@@ -3,7 +3,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
-from kiln_ai.datamodel import DataSource, DataSourceType, Project, Task, Usage
+from kiln_ai.datamodel import (
+    DataSource,
+    DataSourceType,
+    MessageUsage,
+    Project,
+    Task,
+    Usage,
+)
 from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.utils.config import Config
@@ -562,13 +569,13 @@ def test_generate_run_sets_cumulative_usage_from_trace(test_task, adapter):
         {
             "role": "assistant",
             "content": "hello",
-            "usage": Usage(input_tokens=10, output_tokens=20, cost=0.1),
+            "usage": MessageUsage(input_tokens=10, output_tokens=20, cost=0.1),
         },
         {"role": "user", "content": "more"},
         {
             "role": "assistant",
             "content": "ok",
-            "usage": Usage(input_tokens=5, output_tokens=15, cost=0.2),
+            "usage": MessageUsage(input_tokens=5, output_tokens=15, cost=0.2),
         },
     ]
 
@@ -589,25 +596,28 @@ def test_generate_run_sets_cumulative_usage_from_trace(test_task, adapter):
 def test_generate_run_sets_empty_cumulative_usage_when_trace_is_none(
     test_task, adapter
 ):
-    """No trace → cumulative_usage is an empty Usage (all-None fields), not None."""
+    """No trace → cumulative_usage is an empty MessageUsage (all-None fields), not None."""
     task_run = adapter.generate_run(
         input="hi",
         input_source=None,
         run_output=RunOutput(output="ok", intermediate_outputs=None),
     )
 
-    assert task_run.cumulative_usage == Usage()
+    assert task_run.cumulative_usage == MessageUsage()
 
 
 def test_generate_run_fresh_run_cumulative_equals_usage(test_task, adapter):
-    """For a fresh run (trace contains only this run's messages), cumulative_usage == usage."""
+    """For a fresh run (trace contains only this run's messages), cumulative_usage's
+    aggregatable fields equal those of usage. cumulative_usage is a MessageUsage
+    (no latency); usage is a Usage."""
     fresh_usage = Usage(input_tokens=12, output_tokens=8, cost=0.42)
+    fresh_message_usage = MessageUsage(input_tokens=12, output_tokens=8, cost=0.42)
     trace = [
         {"role": "user", "content": "hi"},
         {
             "role": "assistant",
             "content": "hello",
-            "usage": fresh_usage,
+            "usage": fresh_message_usage,
         },
     ]
 
@@ -620,7 +630,7 @@ def test_generate_run_fresh_run_cumulative_equals_usage(test_task, adapter):
     )
 
     assert task_run.usage == fresh_usage
-    assert task_run.cumulative_usage == fresh_usage
+    assert task_run.cumulative_usage == fresh_message_usage
 
 
 def test_generate_run_seeded_run_cumulative_includes_prior_trace_usage(

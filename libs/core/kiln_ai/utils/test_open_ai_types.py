@@ -12,7 +12,7 @@ from openai.types.chat import (
     ChatCompletionToolMessageParam as OpenAIChatCompletionToolMessageParam,
 )
 
-from kiln_ai.datamodel.usage import Usage
+from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.utils.open_ai_types import (
     KILN_ONLY_MESSAGE_FIELDS,
     ChatCompletionAssistantMessageParamWrapper,
@@ -232,7 +232,7 @@ def test_sanitize_messages_strips_kiln_only_fields():
             "role": "assistant",
             "content": "hello",
             "latency_ms": 200,
-            "usage": Usage(input_tokens=10, output_tokens=5, cost=0.001),
+            "usage": MessageUsage(input_tokens=10, output_tokens=5, cost=0.001),
         },
         {
             "role": "tool",
@@ -259,7 +259,7 @@ def test_sanitize_messages_strips_usage_from_assistant():
         {
             "role": "assistant",
             "content": "hi",
-            "usage": Usage(input_tokens=42, output_tokens=7, cost=0.005),
+            "usage": MessageUsage(input_tokens=42, output_tokens=7, cost=0.005),
         }
     ]
 
@@ -270,7 +270,7 @@ def test_sanitize_messages_strips_usage_from_assistant():
 
 
 def test_assistant_wrapper_accepts_usage_field():
-    usage = Usage(input_tokens=10, output_tokens=20, total_tokens=30, cost=0.01)
+    usage = MessageUsage(input_tokens=10, output_tokens=20, total_tokens=30, cost=0.01)
     message: ChatCompletionAssistantMessageParamWrapper = {
         "role": "assistant",
         "content": "ok",

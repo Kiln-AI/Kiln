@@ -9,6 +9,7 @@ from kiln_ai.datamodel.feedback import Feedback
 from kiln_ai.datamodel.json_schema import validate_schema_with_value_error
 from kiln_ai.datamodel.strict_mode import strict_mode
 from kiln_ai.datamodel.task_output import DataSource, TaskOutput
+from kiln_ai.datamodel.usage import MessageUsage as MessageUsage
 from kiln_ai.datamodel.usage import Usage as Usage
 from kiln_ai.utils.open_ai_types import (
     ChatCompletionMessageParam,
@@ -61,12 +62,13 @@ class TaskRun(
         default=None,
         description="Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used.",
     )
-    cumulative_usage: Usage | None = Field(
+    cumulative_usage: MessageUsage | None = Field(
         default=None,
         description=(
-            "Sum of per-message usage across the entire trace, including any "
-            "seeded prior trace. None on records created before this field "
-            "existed. For a fresh (non-seeded) run, equals `usage`."
+            "Sum of per-message token usage and cost across the entire trace, "
+            "including any seeded prior trace. None on records created before "
+            "this field existed. For a fresh (non-seeded) run, the token / "
+            "cost fields equal those of `usage`."
         ),
     )
     trace: list[ChatCompletionMessageParam] | None = Field(

@@ -18,7 +18,7 @@ from kiln_ai.adapters.model_adapters.litellm_adapter import (
     ModelTurnResult,
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
-from kiln_ai.datamodel import Project, Task, Usage
+from kiln_ai.datamodel import MessageUsage, Project, Task, Usage
 from kiln_ai.datamodel.json_schema import close_object_schemas
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
@@ -2954,9 +2954,10 @@ class TestUsageTracking:
         assert recorded.output_tokens == 5
         assert recorded.total_tokens == 15
         assert recorded.cost == 0.1
-        # The per-message Usage is the per-call value, not the running aggregate.
-        # total_llm_latency_ms only lives on the running `usage` accumulator.
-        assert recorded.total_llm_latency_ms is None
+        # Per-message records use MessageUsage (no latency field at all);
+        # total_llm_latency_ms only lives on the Usage accumulator.
+        assert isinstance(recorded, MessageUsage)
+        assert not isinstance(recorded, Usage)
 
     @pytest.mark.asyncio
     async def test_run_model_turn_records_distinct_usage_across_tool_calls(
@@ -3079,8 +3080,10 @@ class TestUsageTracking:
         assert attached.input_tokens == 12
         assert attached.output_tokens == 8
         assert attached.cost == 0.42
-        # Per-message Usage carries no aggregated latency — that lives on `latency_ms`.
-        assert attached.total_llm_latency_ms is None
+        # Per-message records are MessageUsage — no latency field at all.
+        # The canonical per-call latency lives on the message's `latency_ms`.
+        assert isinstance(attached, MessageUsage)
+        assert not isinstance(attached, Usage)
 
         # The running aggregate (TaskRun.usage) matches a single-call sum.
         assert total_usage is not None

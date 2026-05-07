@@ -15,15 +15,24 @@ Persist per-LLM-call token usage and cost on each assistant message in the TaskR
 
 ## Behavior
 
+### Usage / MessageUsage Split
+
+The `Usage` model is split in two:
+
+- `MessageUsage`: the base class carrying the five aggregatable fields — `input_tokens`, `output_tokens`, `total_tokens`, `cached_tokens`, `cost`. Used everywhere a per-message record or a multi-message sum is stored.
+- `Usage(MessageUsage)`: adds `total_llm_latency_ms`. Used only for the in-flight per-run accumulator (`TaskRun.usage`), where the latency of model calls in real time is meaningful.
+
+Per-message records and full-trace sums use `MessageUsage` because `total_llm_latency_ms` is meaningless there: each message already has its own `latency_ms`, and summing latencies across turns or across a seeded prior trace mixes values that were never simultaneously in flight.
+
+`Usage.__add__` accepts `Usage | MessageUsage` and always returns a `Usage` so the running accumulator preserves its latency under chained `usage += per_message` operations. `MessageUsage.__add__` accepts only `MessageUsage` (or `Usage`, which is a subclass) and returns a `MessageUsage`.
+
 ### Per-Message Usage (New)
 
 A new optional Kiln-only field is added to the assistant message wrapper:
 
-- `usage`: an optional `Usage` object describing the cost of producing **that single LLM call** (the call whose response materialized as this assistant message).
+- `usage`: an optional `MessageUsage` object describing the cost of producing **that single LLM call** (the call whose response materialized as this assistant message).
 
-This mirrors the existing `latency_ms` field on assistant messages, which is already populated per-LLM-call. The `Usage` payload reuses the existing `Usage` model unchanged: `input_tokens`, `output_tokens`, `total_tokens`, `cached_tokens`, `cost`, `total_llm_latency_ms`.
-
-`total_llm_latency_ms` on a per-message `Usage` is redundant with the message's own `latency_ms` and SHOULD be left `None` on the per-message record (or set equal to `latency_ms`); the canonical per-call latency stays on `latency_ms`. Implementation may choose either; pick one and apply consistently.
+This mirrors the existing `latency_ms` field on assistant messages, which is already populated per-LLM-call. The `MessageUsage` payload contains: `input_tokens`, `output_tokens`, `total_tokens`, `cached_tokens`, `cost`. The canonical per-call latency stays on the message's `latency_ms` field — `MessageUsage` deliberately does not carry a latency field.
 
 `usage` is added to `KILN_ONLY_MESSAGE_FIELDS` so existing sanitization logic strips it before sending messages back to the LLM provider.
 
@@ -35,18 +44,18 @@ Implementation continues to accumulate `usage` per turn inside `_run()` as it do
 
 ### TaskRun.cumulative_usage (New)
 
-A new optional field `cumulative_usage: Usage | None` is added to `TaskRun`. It represents the sum of per-message usage across the **entire final trace**, including any messages carried in from a seeded prior trace.
+A new optional field `cumulative_usage: MessageUsage | None` is added to `TaskRun`. It represents the sum of per-message token counts and cost across the **entire final trace**, including any messages carried in from a seeded prior trace. It is typed `MessageUsage` (no latency) because aggregating latencies across turns / across a seeded prior trace would mix values from different points in time.
 
-- For a fresh (non-seeded) run, `cumulative_usage` equals `usage`.
-- For a seeded run, `cumulative_usage` = `usage` + sum of per-message usage on the seeded prior trace's messages.
+- For a fresh (non-seeded) run, `cumulative_usage`'s aggregatable fields equal those of `usage` (the latency on `usage` simply isn't replicated).
+- For a seeded run, `cumulative_usage` = (this run's `usage` projected to its `MessageUsage` fields) + sum of per-message usage on the seeded prior trace's messages.
 
 Aggregation guidance: callers totalling cost across a chain of related TaskRuns should sum `usage` (not `cumulative_usage`) to avoid double-counting. To get the total cost of a conversation given only its latest TaskRun, read `cumulative_usage`.
 
-If any seeded message has no `usage` (e.g., legacy or pre-change records), it contributes nothing (the existing `Usage.__add__` handles `None` gracefully). `cumulative_usage` is best-effort.
+If any seeded message has no `usage` (e.g., legacy or pre-change records), it contributes nothing (the existing `MessageUsage.__add__` handles `None` gracefully). `cumulative_usage` is best-effort.
 
 ### Computation
 
-Per-message usage is captured at the same point usage is extracted today: `usage_from_response()` in `litellm_adapter.py`. The mechanism mirrors `message_latency: dict[int, int]` — a parallel `message_usage: dict[int, Usage]` keyed by message index, attached to assistant messages by `all_messages_to_trace()`.
+Per-message usage is captured at the same point usage is extracted today: `usage_from_response()` in `litellm_adapter.py` (which now returns a `MessageUsage`). The mechanism mirrors `message_latency: dict[int, int]` — a parallel `message_usage: dict[int, MessageUsage]` keyed by message index, attached to assistant messages by `all_messages_to_trace()`.
 
 `cumulative_usage` is computed at run-finalization time as the sum of per-message usage across all assistant messages in the full final trace (seeded prior trace + new messages). User, system, and tool messages don't carry usage and are skipped.
 
@@ -89,7 +98,7 @@ The prior trace is not re-billed: those messages are not sent to the LLM again, 
 
 ## Public API Surface (libs/core)
 
-Per project memory: `libs/core` is a standalone library; the public API surface must be complete even if no in-repo code exercises it. The new fields — `usage` on the assistant message wrapper, `cumulative_usage` on `TaskRun` — are part of the public Pydantic schema and are documented in the model docstrings.
+Per project memory: `libs/core` is a standalone library; the public API surface must be complete even if no in-repo code exercises it. The new fields — `usage` on the assistant message wrapper (typed `MessageUsage`), `cumulative_usage` on `TaskRun` (typed `MessageUsage`) — are part of the public Pydantic schema and are documented in the model docstrings. Both `Usage` and the new `MessageUsage` are exported from `kiln_ai.datamodel` (and re-exported from `kiln_ai.datamodel.task_run`).
 
 ## Out of Scope
 

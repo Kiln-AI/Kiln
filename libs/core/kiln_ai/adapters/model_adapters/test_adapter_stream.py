@@ -20,7 +20,7 @@ from kiln_ai.adapters.model_adapters.stream_events import (
     ToolCallEvent,
     ToolCallEventType,
 )
-from kiln_ai.datamodel import Usage
+from kiln_ai.datamodel import MessageUsage, Usage
 
 
 def _make_streaming_chunk(
@@ -112,7 +112,7 @@ class FakeStreamingCompletion:
 def mock_adapter():
     adapter = MagicMock()
     adapter.build_completion_kwargs = AsyncMock(return_value={"model": "test"})
-    adapter.usage_from_response = MagicMock(return_value=Usage())
+    adapter.usage_from_response = MagicMock(return_value=MessageUsage())
     adapter.process_tool_calls = AsyncMock(return_value=(None, []))
     adapter._extract_and_validate_logprobs = MagicMock(return_value=None)
     adapter._extract_reasoning_to_intermediate_outputs = MagicMock()
@@ -573,10 +573,10 @@ class TestAdapterStreamPerMessageUsage:
     async def test_per_message_usage_captured_for_simple_response(
         self, mock_adapter, mock_provider
     ):
-        """A single LLM call should record one per-message Usage entry."""
+        """A single LLM call should record one per-message MessageUsage entry."""
         response = _make_model_response(content="Hello world")
         fake_stream = FakeStreamingCompletion(response)
-        call_usage = Usage(input_tokens=10, output_tokens=20, cost=0.1)
+        call_usage = MessageUsage(input_tokens=10, output_tokens=20, cost=0.1)
         mock_adapter.usage_from_response = MagicMock(return_value=call_usage)
 
         with patch(
@@ -598,14 +598,14 @@ class TestAdapterStreamPerMessageUsage:
         message_usage_arg = call_args.args[2] if len(call_args.args) >= 3 else None
         assert message_usage_arg is not None
         assert len(message_usage_arg) == 1
-        # The single entry maps the assistant message index to the call's Usage.
+        # The single entry maps the assistant message index to the call's MessageUsage.
         only_entry = next(iter(message_usage_arg.values()))
         assert only_entry == call_usage
-        # The per-call Usage stored on the message has no aggregated latency
-        # — that lives on the running `usage` accumulator only.
-        assert only_entry.total_llm_latency_ms is None
+        # Per-message records are MessageUsage — no latency field at all.
+        assert isinstance(only_entry, MessageUsage)
+        assert not isinstance(only_entry, Usage)
 
-        # The running aggregate sums the per-call usage and accumulates latency.
+        # The running aggregate (Usage) sums the per-call usage and accumulates latency.
         assert stream.result.usage.input_tokens == 10
         assert stream.result.usage.output_tokens == 20
         assert stream.result.usage.cost == 0.1
@@ -635,8 +635,8 @@ class TestAdapterStreamPerMessageUsage:
         )
         streams_iter = iter([tool_stream, final_stream])
 
-        first_call_usage = Usage(input_tokens=10, output_tokens=20, cost=0.1)
-        second_call_usage = Usage(input_tokens=11, output_tokens=22, cost=0.2)
+        first_call_usage = MessageUsage(input_tokens=10, output_tokens=20, cost=0.1)
+        second_call_usage = MessageUsage(input_tokens=11, output_tokens=22, cost=0.2)
         mock_adapter.usage_from_response = MagicMock(
             side_effect=[first_call_usage, second_call_usage]
         )
@@ -688,7 +688,9 @@ class TestAdapterStreamPerMessageUsage:
         )
 
         mock_adapter.base_adapter_config.return_on_tool_call = True
-        interrupted_call_usage = Usage(input_tokens=7, output_tokens=8, cost=0.05)
+        interrupted_call_usage = MessageUsage(
+            input_tokens=7, output_tokens=8, cost=0.05
+        )
         mock_adapter.usage_from_response = MagicMock(
             return_value=interrupted_call_usage
         )
@@ -721,8 +723,8 @@ class TestAdapterStreamPerMessageUsage:
         """When the provider returns no usage, an empty Usage() is still attached."""
         response = _make_model_response(content="Hi")
         fake_stream = FakeStreamingCompletion(response)
-        # Default fixture already returns Usage() (all None) — be explicit.
-        mock_adapter.usage_from_response = MagicMock(return_value=Usage())
+        # Default fixture already returns MessageUsage() (all None) — be explicit.
+        mock_adapter.usage_from_response = MagicMock(return_value=MessageUsage())
 
         with patch(
             "kiln_ai.adapters.model_adapters.adapter_stream.StreamingCompletion",

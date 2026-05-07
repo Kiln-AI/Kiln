@@ -31,6 +31,7 @@ from kiln_ai.adapters.model_adapters.adapter_stream import AdapterStream
 from kiln_ai.adapters.model_adapters.base_adapter import (
     AdapterConfig,
     BaseAdapter,
+    MessageUsage,
     RunOutput,
     Usage,
 )
@@ -82,7 +83,7 @@ class ModelTurnResult:
     usage: Usage
     interrupted_by_tool_calls: list[ChatCompletionMessageToolCall] | None = None
     message_latency: dict[int, int] | None = None
-    message_usage: dict[int, Usage] | None = None
+    message_usage: dict[int, MessageUsage] | None = None
 
 
 class LiteLlmAdapter(BaseAdapter):
@@ -130,7 +131,7 @@ class LiteLlmAdapter(BaseAdapter):
         # Per-LLM-call latency / usage, keyed by index in the messages list.
         # Kept separate because we don't own the LiteLLM message objects.
         message_latency: dict[int, int] = {}
-        message_usage: dict[int, Usage] = {}
+        message_usage: dict[int, MessageUsage] = {}
 
         while tool_calls_count < MAX_TOOL_CALLS_PER_TURN:
             # Build completion kwargs for tool calls
@@ -263,7 +264,7 @@ class LiteLlmAdapter(BaseAdapter):
         final_choice: Choices | None = None
         turns = 0
         message_latency: dict[int, int] = {}
-        message_usage: dict[int, Usage] = {}
+        message_usage: dict[int, MessageUsage] = {}
 
         # Same loop for both fresh runs and prior_trace continuation.
         # _run_model_turn has its own internal loop for tool calls (model calls tool -> we run it -> model continues).
@@ -733,7 +734,7 @@ class LiteLlmAdapter(BaseAdapter):
 
         return completion_kwargs
 
-    def usage_from_response(self, response: ModelResponse) -> Usage:
+    def usage_from_response(self, response: ModelResponse) -> MessageUsage:
         litellm_usage = response.get("usage", None)
 
         # LiteLLM isn't consistent in how it returns the cost.
@@ -741,7 +742,7 @@ class LiteLlmAdapter(BaseAdapter):
         if cost is None and litellm_usage:
             cost = litellm_usage.get("cost", None)
 
-        usage = Usage()
+        usage = MessageUsage()
 
         if not litellm_usage and not cost:
             return usage
@@ -890,7 +891,7 @@ class LiteLlmAdapter(BaseAdapter):
         self,
         raw_message: LiteLLMMessage,
         latency_ms: int | None = None,
-        usage: Usage | None = None,
+        usage: MessageUsage | None = None,
     ) -> ChatCompletionAssistantMessageParamWrapper:
         """
         Convert a LiteLLM Message object to an OpenAI compatible message, our ChatCompletionAssistantMessageParamWrapper
@@ -946,7 +947,7 @@ class LiteLlmAdapter(BaseAdapter):
         self,
         messages: list[ChatCompletionMessageIncludingLiteLLM],
         message_latency: dict[int, int] | None = None,
-        message_usage: dict[int, Usage] | None = None,
+        message_usage: dict[int, MessageUsage] | None = None,
     ) -> list[ChatCompletionMessageParam]:
         """
         Internally we allow LiteLLM Message objects, but for trace we need OpenAI compatible types. Replace LiteLLM Message objects with OpenAI compatible types.

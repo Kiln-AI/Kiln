@@ -19,7 +19,7 @@ from kiln_ai.adapters.model_adapters.stream_events import (
     ToolCallEventType,
 )
 from kiln_ai.adapters.run_output import RunOutput
-from kiln_ai.datamodel import Usage
+from kiln_ai.datamodel import MessageUsage, Usage
 
 if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
@@ -68,7 +68,7 @@ class AdapterStream:
         # message objects, so we accumulate side-channel state and attach
         # it during ``all_messages_to_trace`` at finalization.
         self._message_latency: dict[int, int] = {}
-        self._message_usage: dict[int, Usage] = {}
+        self._message_usage: dict[int, MessageUsage] = {}
 
     @property
     def result(self) -> AdapterStreamResult:
