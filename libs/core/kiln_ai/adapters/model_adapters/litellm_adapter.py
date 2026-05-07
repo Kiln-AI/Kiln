@@ -82,6 +82,7 @@ class ModelTurnResult:
     usage: Usage
     interrupted_by_tool_calls: list[ChatCompletionMessageToolCall] | None = None
     message_latency: dict[int, int] | None = None
+    message_usage: dict[int, Usage] | None = None
 
 
 class LiteLlmAdapter(BaseAdapter):
@@ -126,9 +127,10 @@ class LiteLlmAdapter(BaseAdapter):
         usage = Usage()
         messages = list(prior_messages)
         tool_calls_count = 0
-        # LLM call latency in ms, keyed by index in the messages list.
+        # Per-LLM-call latency / usage, keyed by index in the messages list.
         # Kept separate because we don't own the LiteLLM message objects.
         message_latency: dict[int, int] = {}
+        message_usage: dict[int, Usage] = {}
 
         while tool_calls_count < MAX_TOOL_CALLS_PER_TURN:
             # Build completion kwargs for tool calls
@@ -148,7 +150,8 @@ class LiteLlmAdapter(BaseAdapter):
             call_latency_ms = int((time.monotonic() - start) * 1000)
 
             # count the usage
-            usage += self.usage_from_response(model_response)
+            call_usage = self.usage_from_response(model_response)
+            usage += call_usage
             usage.total_llm_latency_ms = (
                 usage.total_llm_latency_ms or 0
             ) + call_latency_ms
@@ -166,6 +169,7 @@ class LiteLlmAdapter(BaseAdapter):
             # Add message to messages, so it can be used in the next turn
             messages.append(response_choice.message)
             message_latency[len(messages) - 1] = call_latency_ms
+            message_usage[len(messages) - 1] = call_usage
 
             # Process tool calls if any
             if tool_calls and len(tool_calls) > 0:
@@ -188,6 +192,7 @@ class LiteLlmAdapter(BaseAdapter):
                             usage=usage,
                             interrupted_by_tool_calls=standard_tool_calls,
                             message_latency=message_latency,
+                            message_usage=message_usage,
                         )
 
                 # otherwise: process tool calls internally until final output
@@ -208,6 +213,7 @@ class LiteLlmAdapter(BaseAdapter):
                         model_choice=response_choice,
                         usage=usage,
                         message_latency=message_latency,
+                        message_usage=message_usage,
                     )
 
                 # If there were tool calls, increment counter and continue
@@ -224,6 +230,7 @@ class LiteLlmAdapter(BaseAdapter):
                     model_choice=response_choice,
                     usage=usage,
                     message_latency=message_latency,
+                    message_usage=message_usage,
                 )
 
             # If we get here with no content and no tool calls, break
@@ -256,6 +263,7 @@ class LiteLlmAdapter(BaseAdapter):
         final_choice: Choices | None = None
         turns = 0
         message_latency: dict[int, int] = {}
+        message_usage: dict[int, Usage] = {}
 
         # Same loop for both fresh runs and prior_trace continuation.
         # _run_model_turn has its own internal loop for tool calls (model calls tool -> we run it -> model continues).
@@ -288,6 +296,8 @@ class LiteLlmAdapter(BaseAdapter):
             usage += turn_result.usage
             if turn_result.message_latency:
                 message_latency.update(turn_result.message_latency)
+            if turn_result.message_usage:
+                message_usage.update(turn_result.message_usage)
 
             prior_output = turn_result.assistant_message
             messages = turn_result.all_messages
@@ -295,7 +305,9 @@ class LiteLlmAdapter(BaseAdapter):
 
             # Check if we were interrupted by tool calls
             if turn_result.interrupted_by_tool_calls:
-                trace = self.all_messages_to_trace(messages, message_latency)
+                trace = self.all_messages_to_trace(
+                    messages, message_latency, message_usage
+                )
                 intermediate_outputs = chat_formatter.intermediate_outputs()
                 output = RunOutput(
                     output=prior_output or "",
@@ -319,7 +331,7 @@ class LiteLlmAdapter(BaseAdapter):
         if not isinstance(prior_output, str):
             raise RuntimeError(f"assistant message is not a string: {prior_output}")
 
-        trace = self.all_messages_to_trace(messages, message_latency)
+        trace = self.all_messages_to_trace(messages, message_latency, message_usage)
         output = RunOutput(
             output=prior_output,
             intermediate_outputs=intermediate_outputs,
@@ -878,6 +890,7 @@ class LiteLlmAdapter(BaseAdapter):
         self,
         raw_message: LiteLLMMessage,
         latency_ms: int | None = None,
+        usage: Usage | None = None,
     ) -> ChatCompletionAssistantMessageParamWrapper:
         """
         Convert a LiteLLM Message object to an OpenAI compatible message, our ChatCompletionAssistantMessageParamWrapper
@@ -919,6 +932,9 @@ class LiteLlmAdapter(BaseAdapter):
         if latency_ms is not None:
             message["latency_ms"] = latency_ms
 
+        if usage is not None:
+            message["usage"] = usage
+
         if not message.get("content") and not message.get("tool_calls"):
             raise ValueError(
                 "Model returned an assistant message, but no content or tool calls. This is not supported."
@@ -930,15 +946,23 @@ class LiteLlmAdapter(BaseAdapter):
         self,
         messages: list[ChatCompletionMessageIncludingLiteLLM],
         message_latency: dict[int, int] | None = None,
+        message_usage: dict[int, Usage] | None = None,
     ) -> list[ChatCompletionMessageParam]:
         """
         Internally we allow LiteLLM Message objects, but for trace we need OpenAI compatible types. Replace LiteLLM Message objects with OpenAI compatible types.
+
+        Non-LiteLLM dict messages pass through unchanged. Any per-message
+        ``usage``/``latency_ms`` already attached to those dicts (e.g. from a
+        seeded prior trace) is preserved.
         """
         trace: list[ChatCompletionMessageParam] = []
         for i, message in enumerate(messages):
             if isinstance(message, LiteLLMMessage):
                 latency_ms = message_latency.get(i) if message_latency else None
-                trace.append(self.litellm_message_to_trace_message(message, latency_ms))
+                usage = message_usage.get(i) if message_usage else None
+                trace.append(
+                    self.litellm_message_to_trace_message(message, latency_ms, usage)
+                )
             else:
                 trace.append(message)
         return trace

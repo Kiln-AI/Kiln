@@ -683,6 +683,7 @@ class BaseAdapter(metaclass=ABCMeta):
             tags=self.base_adapter_config.default_tags or [],
             usage=usage,
             trace=trace,
+            cumulative_usage=Usage.from_trace(trace),
         )
 
     def _properties_for_task_output(self) -> Dict[str, str | int | float]:

@@ -3732,6 +3732,7 @@ export interface components {
             tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
             /** Latency Ms */
             latency_ms?: number | null;
+            usage?: components["schemas"]["Usage"] | null;
         };
         /**
          * ChatCompletionAssistantMessageParamWrapper
@@ -3762,6 +3763,7 @@ export interface components {
             tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
             /** Latency Ms */
             latency_ms?: number | null;
+            usage?: components["schemas"]["Usage"] | null;
         };
         /** ChatCompletionContentPartImageParam */
         ChatCompletionContentPartImageParam: {
@@ -9599,6 +9601,8 @@ export interface components {
             tags: string[];
             /** @description Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used. */
             usage?: components["schemas"]["Usage"] | null;
+            /** @description Sum of per-message usage across the entire trace, including any seeded prior trace. None on records created before this field existed. For a fresh (non-seeded) run, equals `usage`. */
+            cumulative_usage?: components["schemas"]["Usage"] | null;
             /**
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
@@ -9676,6 +9680,8 @@ export interface components {
             tags: string[];
             /** @description Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used. */
             usage?: components["schemas"]["Usage"] | null;
+            /** @description Sum of per-message usage across the entire trace, including any seeded prior trace. None on records created before this field existed. For a fresh (non-seeded) run, equals `usage`. */
+            cumulative_usage?: components["schemas"]["Usage"] | null;
             /**
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
