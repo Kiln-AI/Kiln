@@ -64,6 +64,7 @@ class AdapterStream:
         self._result: AdapterStreamResult | None = None
         self._iterated = False
         self._message_latency: dict[int, int] = {}
+        self._message_usage: dict[int, Usage] = {}
 
     @property
     def result(self) -> AdapterStreamResult:
@@ -134,7 +135,7 @@ class AdapterStream:
             raise RuntimeError(f"assistant message is not a string: {prior_output}")
 
         trace = self._adapter.all_messages_to_trace(
-            self._messages, self._message_latency
+            self._messages, self._message_latency, self._message_usage
         )
         self._result = AdapterStreamResult(
             run_output=RunOutput(
@@ -170,7 +171,8 @@ class AdapterStream:
             call_latency_ms = int((time.monotonic() - start) * 1000)
 
             response, response_choice = _validate_response(stream.response)
-            usage += self._adapter.usage_from_response(response)
+            call_usage = self._adapter.usage_from_response(response)
+            usage += call_usage
             usage.total_llm_latency_ms = (
                 usage.total_llm_latency_ms or 0
             ) + call_latency_ms
@@ -183,7 +185,11 @@ class AdapterStream:
                 )
 
             self._messages.append(response_choice.message)
+            # Stamp per-call latency on the per-message usage so latency
+            # travels with usage in any consumer that reads usage independently.
+            call_usage.total_llm_latency_ms = call_latency_ms
             self._message_latency[len(self._messages) - 1] = call_latency_ms
+            self._message_usage[len(self._messages) - 1] = call_usage
 
             if tool_calls and len(tool_calls) > 0:
                 # Check for return_on_tool_call BEFORE processing

@@ -2823,3 +2823,198 @@ class TestLatencyTracking:
 
         trace_msg = adapter.litellm_message_to_trace_message(msg)
         assert "latency_ms" not in trace_msg
+
+    def test_litellm_message_to_trace_message_includes_usage(self, adapter):
+        """litellm_message_to_trace_message attaches per-call usage when provided."""
+        from litellm.types.utils import Message as LiteLLMMessage
+
+        msg = LiteLLMMessage(role="assistant", content="Hello")
+        per_call_usage = Usage(input_tokens=42, output_tokens=7, total_tokens=49)
+
+        trace_msg = adapter.litellm_message_to_trace_message(
+            msg, latency_ms=99, usage=per_call_usage
+        )
+        assert trace_msg["latency_ms"] == 99
+        assert trace_msg["usage"] is per_call_usage
+        assert trace_msg["usage"].input_tokens == 42
+        assert trace_msg["usage"].output_tokens == 7
+
+    def test_litellm_message_to_trace_message_no_usage(self, adapter):
+        """litellm_message_to_trace_message omits usage when not provided."""
+        from litellm.types.utils import Message as LiteLLMMessage
+
+        msg = LiteLLMMessage(role="assistant", content="Hello")
+
+        trace_msg = adapter.litellm_message_to_trace_message(msg)
+        assert "usage" not in trace_msg
+
+    @pytest.mark.asyncio
+    async def test_run_model_turn_records_per_call_usage_for_each_tool_loop_inference(
+        self, adapter, provider
+    ):
+        """Inner tool-loop inferences each get their own per-message usage entry.
+
+        Locks the fix for kintsugi's chain-summing token undercount: when a
+        single ``call_model`` invocation runs N inferences (model → tool → model
+        → tool → model), the saved ``task_run.usage`` only carries the LAST
+        inference's tokens. Per-message usage on every assistant trace event
+        lets downstream consumers sum the actual provider-billed totals.
+        """
+        # Two LLM responses with distinct usage shapes, so we can tell them apart.
+        tool_call_response = ModelResponse(
+            model="test-model",
+            choices=[
+                {
+                    "message": {
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "some_tool",
+                                    "arguments": '{"arg": "val"}',
+                                },
+                            }
+                        ],
+                    }
+                }
+            ],
+            usage={"prompt_tokens": 100, "completion_tokens": 11, "total_tokens": 111},
+        )
+        final_response = ModelResponse(
+            model="test-model",
+            choices=[{"message": {"content": "Final answer"}}],
+            usage={"prompt_tokens": 200, "completion_tokens": 22, "total_tokens": 222},
+        )
+
+        monotonic_values = [0.0, 0.05, 0.05, 0.20]  # 50ms then 150ms
+        with patch.object(adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                adapter,
+                "acompletion_checking_response",
+                side_effect=[
+                    (tool_call_response, tool_call_response.choices[0]),
+                    (final_response, final_response.choices[0]),
+                ],
+            ):
+                with patch.object(
+                    adapter,
+                    "process_tool_calls",
+                    return_value=(
+                        None,
+                        [
+                            {
+                                "role": "tool",
+                                "content": "tool result",
+                                "tool_call_id": "call_1",
+                            }
+                        ],
+                    ),
+                ):
+                    with patch(
+                        "kiln_ai.adapters.model_adapters.litellm_adapter.time.monotonic",
+                        side_effect=monotonic_values,
+                    ):
+                        result = await adapter._run_model_turn(
+                            provider,
+                            [{"role": "user", "content": "Hi"}],
+                            None,
+                            False,
+                        )
+
+        # message_usage carries one entry per assistant inference, keyed by
+        # the message's index in all_messages.
+        assert result.message_usage is not None
+        assert len(result.message_usage) == 2
+
+        # Identify the two assistant message indices.
+        asst_indices = [
+            i
+            for i, m in enumerate(result.all_messages)
+            if (isinstance(m, dict) and m.get("role") == "assistant")
+            or getattr(m, "role", None) == "assistant"
+        ]
+        assert len(asst_indices) == 2
+
+        first = result.message_usage[asst_indices[0]]
+        second = result.message_usage[asst_indices[1]]
+
+        # Per-call usage matches the per-call ModelResponse, NOT the summed total.
+        assert first.input_tokens == 100
+        assert first.output_tokens == 11
+        assert first.total_llm_latency_ms == 50
+        assert second.input_tokens == 200
+        assert second.output_tokens == 22
+        assert second.total_llm_latency_ms == 150
+
+        # Sanity: turn-total usage IS still the sum (existing contract).
+        assert result.usage.input_tokens == 300
+        assert result.usage.output_tokens == 33
+
+    @pytest.mark.asyncio
+    async def test_all_messages_to_trace_attaches_per_message_usage(
+        self, adapter, provider
+    ):
+        """End-to-end: per-message usage flows from the inference loop onto the
+        assistant trace messages."""
+        tool_call_response = ModelResponse(
+            model="test-model",
+            choices=[
+                {
+                    "message": {
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "some_tool",
+                                    "arguments": "{}",
+                                },
+                            }
+                        ],
+                    }
+                }
+            ],
+            usage={"prompt_tokens": 50, "completion_tokens": 5, "total_tokens": 55},
+        )
+        final_response = ModelResponse(
+            model="test-model",
+            choices=[{"message": {"content": "Done"}}],
+            usage={"prompt_tokens": 75, "completion_tokens": 8, "total_tokens": 83},
+        )
+        with patch.object(adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                adapter,
+                "acompletion_checking_response",
+                side_effect=[
+                    (tool_call_response, tool_call_response.choices[0]),
+                    (final_response, final_response.choices[0]),
+                ],
+            ):
+                with patch.object(
+                    adapter,
+                    "process_tool_calls",
+                    return_value=(
+                        None,
+                        [
+                            {
+                                "role": "tool",
+                                "content": "ok",
+                                "tool_call_id": "call_1",
+                            }
+                        ],
+                    ),
+                ):
+                    result = await adapter._run_model_turn(
+                        provider, [{"role": "user", "content": "Hi"}], None, False
+                    )
+
+        trace = adapter.all_messages_to_trace(
+            result.all_messages, result.message_latency, result.message_usage
+        )
+        asst_msgs = [m for m in trace if m.get("role") == "assistant"]
+        assert len(asst_msgs) == 2
+        assert asst_msgs[0]["usage"].input_tokens == 50
+        assert asst_msgs[1]["usage"].input_tokens == 75

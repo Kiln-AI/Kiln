@@ -47,6 +47,10 @@ def test_assistant_message_param_properties_match():
     assert "latency_ms" in kiln_properties, "Kiln should have latency_ms"
     kiln_properties.remove("latency_ms")
 
+    # usage is a Kiln-added property for per-call token accounting. Confirm it's there and remove it.
+    assert "usage" in kiln_properties, "Kiln should have usage"
+    kiln_properties.remove("usage")
+
     assert openai_properties == kiln_properties, (
         f"Property names don't match. "
         f"OpenAI has: {openai_properties}, "
@@ -215,7 +219,7 @@ def test_tool_message_wrapper_can_be_instantiated():
 
 def test_kiln_only_message_fields_set():
     assert KILN_ONLY_MESSAGE_FIELDS == frozenset(
-        {"latency_ms", "is_error", "error_message", "kiln_task_tool_data"}
+        {"latency_ms", "usage", "is_error", "error_message", "kiln_task_tool_data"}
     )
 
 
@@ -227,6 +231,7 @@ def test_sanitize_messages_strips_kiln_only_fields():
             "role": "assistant",
             "content": "hello",
             "latency_ms": 200,
+            "usage": {"input_tokens": 10, "output_tokens": 5},
         },
         {
             "role": "tool",
