@@ -44,6 +44,7 @@ from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
     as_kiln_agent_run_config,
 )
+from kiln_ai.datamodel.usage import record_per_call_usage_and_latency
 from kiln_ai.tools.base_tool import (
     KilnToolInterface,
     ToolCallContext,
@@ -156,14 +157,6 @@ class LiteLlmAdapter(BaseAdapter):
             )
             call_latency_ms = int((time.monotonic() - start) * 1000)
 
-            # count the usage (both summed for the turn-level total and
-            # captured per-message so the trace can show inner-loop calls)
-            call_usage = self.usage_from_response(model_response)
-            usage += call_usage
-            usage.total_llm_latency_ms = (
-                usage.total_llm_latency_ms or 0
-            ) + call_latency_ms
-
             # Extract content and tool calls
             if not hasattr(response_choice, "message"):
                 raise ValueError("Response choice has no message")
@@ -176,12 +169,16 @@ class LiteLlmAdapter(BaseAdapter):
 
             # Add message to messages, so it can be used in the next turn
             messages.append(response_choice.message)
-            # Per-call latency + usage for this newly-appended assistant message.
-            # Stamp latency on the per-call usage too so latency travels with
-            # usage in any consumer that reads usage independently.
-            call_usage.total_llm_latency_ms = call_latency_ms
-            message_latency[len(messages) - 1] = call_latency_ms
-            message_usage[len(messages) - 1] = call_usage
+            # Aggregate per-call usage + latency onto the turn total and
+            # stamp them onto the per-message dicts for the trace.
+            usage = record_per_call_usage_and_latency(
+                call_usage=self.usage_from_response(model_response),
+                call_latency_ms=call_latency_ms,
+                turn_usage=usage,
+                message_index=len(messages) - 1,
+                message_latency=message_latency,
+                message_usage=message_usage,
+            )
 
             # Process tool calls if any
             if tool_calls and len(tool_calls) > 0:

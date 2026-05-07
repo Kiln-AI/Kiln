@@ -20,6 +20,7 @@ from kiln_ai.adapters.model_adapters.stream_events import (
 )
 from kiln_ai.adapters.run_output import RunOutput
 from kiln_ai.datamodel import Usage
+from kiln_ai.datamodel.usage import record_per_call_usage_and_latency
 
 if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
@@ -171,11 +172,6 @@ class AdapterStream:
             call_latency_ms = int((time.monotonic() - start) * 1000)
 
             response, response_choice = _validate_response(stream.response)
-            call_usage = self._adapter.usage_from_response(response)
-            usage += call_usage
-            usage.total_llm_latency_ms = (
-                usage.total_llm_latency_ms or 0
-            ) + call_latency_ms
 
             content = response_choice.message.content
             tool_calls = response_choice.message.tool_calls
@@ -185,11 +181,14 @@ class AdapterStream:
                 )
 
             self._messages.append(response_choice.message)
-            # Stamp per-call latency on the per-message usage so latency
-            # travels with usage in any consumer that reads usage independently.
-            call_usage.total_llm_latency_ms = call_latency_ms
-            self._message_latency[len(self._messages) - 1] = call_latency_ms
-            self._message_usage[len(self._messages) - 1] = call_usage
+            usage = record_per_call_usage_and_latency(
+                call_usage=self._adapter.usage_from_response(response),
+                call_latency_ms=call_latency_ms,
+                turn_usage=usage,
+                message_index=len(self._messages) - 1,
+                message_latency=self._message_latency,
+                message_usage=self._message_usage,
+            )
 
             if tool_calls and len(tool_calls) > 0:
                 # Check for return_on_tool_call BEFORE processing

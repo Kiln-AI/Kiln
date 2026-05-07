@@ -3733,7 +3733,7 @@ export interface components {
             /** Latency Ms */
             latency_ms?: number | null;
             /** Usage */
-            usage?: unknown | null;
+            usage?: components["schemas"]["Usage"] | null;
         };
         /**
          * ChatCompletionAssistantMessageParamWrapper
@@ -3765,7 +3765,7 @@ export interface components {
             /** Latency Ms */
             latency_ms?: number | null;
             /** Usage */
-            usage?: unknown | null;
+            usage?: components["schemas"]["Usage"] | null;
         };
         /** ChatCompletionContentPartImageParam */
         ChatCompletionContentPartImageParam: {

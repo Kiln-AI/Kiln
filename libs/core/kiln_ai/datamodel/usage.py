@@ -9,6 +9,35 @@ itself imports from ``open_ai_types``).
 from pydantic import BaseModel, Field
 
 
+def record_per_call_usage_and_latency(
+    call_usage: "Usage",
+    call_latency_ms: int,
+    turn_usage: "Usage",
+    message_index: int,
+    message_latency: dict[int, int],
+    message_usage: dict[int, "Usage"],
+) -> "Usage":
+    """Aggregate one inference's usage + latency onto the turn total and
+    record the per-message entries on the trace.
+
+    Returns the new turn-level ``Usage`` (since ``Usage + Usage`` produces
+    a fresh object — caller reassigns). Stamps ``total_llm_latency_ms``
+    on the per-call ``Usage`` AFTER the aggregation so latency travels
+    with usage on the trace without double-counting it on the turn total.
+
+    Shared by ``_run_model_turn`` (litellm_adapter.py) and
+    ``_stream_model_turn`` (adapter_stream.py).
+    """
+    new_turn_usage = turn_usage + call_usage
+    new_turn_usage.total_llm_latency_ms = (
+        new_turn_usage.total_llm_latency_ms or 0
+    ) + call_latency_ms
+    call_usage.total_llm_latency_ms = call_latency_ms
+    message_latency[message_index] = call_latency_ms
+    message_usage[message_index] = call_usage
+    return new_turn_usage
+
+
 class Usage(BaseModel):
     """Token usage and cost information for a task run."""
 

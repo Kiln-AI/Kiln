@@ -8,6 +8,7 @@ Otherwise we are using OpenAI SDK types directly.
 """
 
 from typing import (
+    Annotated,
     Any,
     Iterable,
     List,
@@ -30,7 +31,18 @@ from openai.types.chat.chat_completion_assistant_message_param import (
     ContentArrayOfContentPart,
     FunctionCall,
 )
+from pydantic import WithJsonSchema
 from typing_extensions import Required, TypedDict
+
+# JSON-schema hint for the per-message ``usage`` field. We can't import
+# ``Usage`` eagerly here (cycle through ``kiln_ai.datamodel`` which
+# loads ``task_run`` which imports from this module). ``WithJsonSchema``
+# lets the OpenAPI generator emit a ``$ref`` to the same ``Usage``
+# component schema that ``TaskRun.usage`` registers, so the frontend
+# stays typed even though the Python annotation here is ``Any``.
+_UsageOpenApiHint = WithJsonSchema(
+    {"anyOf": [{"$ref": "#/components/schemas/Usage"}, {"type": "null"}]}
+)
 
 
 class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):
@@ -87,7 +99,7 @@ class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):
     latency_ms: Optional[int]
     """Time spent waiting on this specific LLM API call in milliseconds."""
 
-    usage: Optional[Any]
+    usage: Annotated[Optional[Any], _UsageOpenApiHint]
     """Token usage for this specific LLM API call.
 
     The runtime value is a ``kiln_ai.datamodel.usage.Usage`` instance (or
@@ -95,7 +107,9 @@ class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):
     avoid an import cycle: ``kiln_ai.datamodel`` eagerly loads ``task_run``,
     which imports from this module, so any direct annotation of ``Usage``
     here would form a cycle that breaks Pydantic's schema build for
-    ``TaskRun.trace``.
+    ``TaskRun.trace``. The ``WithJsonSchema`` hint above keeps the
+    generated OpenAPI / TypeScript schema as ``Usage | null`` despite
+    the relaxed Python type.
 
     Captured per-call (not summed) so downstream consumers can sum across
     every assistant turn in the trace and recover provider-true totals —
