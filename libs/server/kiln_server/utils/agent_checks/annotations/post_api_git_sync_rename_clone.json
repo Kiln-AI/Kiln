@@ -4,5 +4,40 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "clone_path": {
+          "type": "string",
+          "title": "Clone Path",
+          "description": "Current filesystem path of the cloned repo (typically in .tmp/)."
+        },
+        "project_name": {
+          "type": "string",
+          "title": "Project Name",
+          "description": "Human-readable project name for the final directory."
+        },
+        "project_id": {
+          "type": "string",
+          "title": "Project Id",
+          "description": "Unique project identifier used in the final path."
+        }
+      },
+      "type": "object",
+      "required": [
+        "clone_path",
+        "project_name",
+        "project_id"
+      ],
+      "title": "RenameCloneRequest",
+      "description": "Request to rename a temp clone directory to its final path."
+    }
+  },
+  "parameters": {
+    "path": {},
+    "query": {}
   }
 }

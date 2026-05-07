@@ -4,5 +4,103 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "project_id": {
+          "type": "string",
+          "title": "Project Id",
+          "description": "Unique project identifier."
+        },
+        "project_path": {
+          "type": "string",
+          "title": "Project Path",
+          "description": "Relative path to the project.kiln file within the clone."
+        },
+        "git_url": {
+          "type": "string",
+          "title": "Git Url",
+          "description": "The git remote URL."
+        },
+        "clone_path": {
+          "type": "string",
+          "title": "Clone Path",
+          "description": "Local filesystem path of the clone."
+        },
+        "branch": {
+          "type": "string",
+          "title": "Branch",
+          "description": "Branch name to sync."
+        },
+        "remote_name": {
+          "type": "string",
+          "title": "Remote Name",
+          "description": "Git remote name.",
+          "default": "origin"
+        },
+        "pat_token": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pat Token",
+          "description": "Optional personal access token for authentication."
+        },
+        "oauth_token": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Oauth Token",
+          "description": "Optional OAuth token for authentication."
+        },
+        "auth_mode": {
+          "type": "string",
+          "enum": [
+            "system_keys",
+            "pat_token",
+            "github_oauth"
+          ],
+          "title": "Auth Mode",
+          "description": "Auth mode detected during setup: 'system_keys', 'pat_token', or 'github_oauth'.",
+          "default": "system_keys"
+        },
+        "sync_mode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "manual"
+          ],
+          "title": "Sync Mode",
+          "description": "Sync mode: 'auto' or 'manual'.",
+          "default": "auto"
+        }
+      },
+      "type": "object",
+      "required": [
+        "project_id",
+        "project_path",
+        "git_url",
+        "clone_path",
+        "branch"
+      ],
+      "title": "SaveConfigRequest",
+      "description": "Request to save a complete git sync configuration for a project."
+    }
+  },
+  "parameters": {
+    "path": {},
+    "query": {}
   }
 }

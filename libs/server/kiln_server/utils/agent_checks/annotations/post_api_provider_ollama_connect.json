@@ -4,5 +4,23 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {},
+    "query": {
+      "custom_ollama_url": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Custom URL for the Ollama server.",
+        "title": "Custom Ollama Url"
+      }
+    }
   }
 }

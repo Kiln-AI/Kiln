@@ -4,5 +4,84 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "v": {
+          "type": "integer",
+          "title": "V",
+          "description": "Schema version for migration support.",
+          "default": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Id",
+          "description": "Unique identifier for this record."
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "path"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Path",
+          "description": "File system path where the record is stored."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "title": "Created At",
+          "description": "Timestamp when the model was created. Timezone-aware; stores the writer's local offset."
+        },
+        "created_by": {
+          "type": "string",
+          "title": "Created By",
+          "description": "User ID of the creator."
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Name",
+          "description": "The name of the project."
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Description",
+          "description": "A description of the project for you and your team. Will not be used in prompts/training/validation."
+        }
+      },
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "title": "Project",
+      "description": "A collection of related tasks.\n\nProjects organize tasks into logical groups and provide high-level descriptions\nof the overall goals."
+    }
+  },
+  "parameters": {
+    "path": {},
+    "query": {}
   }
 }

@@ -4,5 +4,144 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 120,
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name",
+          "description": "A name for this entity."
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Description",
+          "description": "The description of the extractor config"
+        },
+        "model_provider_name": {
+          "type": "string",
+          "enum": [
+            "openai",
+            "groq",
+            "amazon_bedrock",
+            "ollama",
+            "openrouter",
+            "fireworks_ai",
+            "kiln_fine_tune",
+            "kiln_custom_registry",
+            "openai_compatible",
+            "anthropic",
+            "gemini_api",
+            "azure_openai",
+            "huggingface",
+            "vertex",
+            "together_ai",
+            "siliconflow_cn",
+            "cerebras",
+            "docker_model_runner"
+          ],
+          "title": "ModelProviderName",
+          "description": "Enumeration of supported AI model providers."
+        },
+        "model_name": {
+          "type": "string",
+          "title": "Model Name",
+          "description": "The name of the model to use for the extractor config."
+        },
+        "output_format": {
+          "type": "string",
+          "enum": [
+            "text/plain",
+            "text/markdown"
+          ],
+          "title": "OutputFormat",
+          "description": "The output format for extraction results."
+        },
+        "passthrough_mimetypes": {
+          "items": {
+            "type": "string",
+            "enum": [
+              "text/plain",
+              "text/markdown"
+            ],
+            "title": "OutputFormat",
+            "description": "The output format for extraction results."
+          },
+          "type": "array",
+          "title": "Passthrough Mimetypes",
+          "description": "MIME types that bypass extraction and return the file content as-is."
+        },
+        "properties": {
+          "properties": {
+            "extractor_type": {
+              "type": "string",
+              "const": "litellm",
+              "title": "Extractor Type"
+            },
+            "prompt_document": {
+              "type": "string",
+              "title": "Prompt Document"
+            },
+            "prompt_image": {
+              "type": "string",
+              "title": "Prompt Image"
+            },
+            "prompt_video": {
+              "type": "string",
+              "title": "Prompt Video"
+            },
+            "prompt_audio": {
+              "type": "string",
+              "title": "Prompt Audio"
+            }
+          },
+          "type": "object",
+          "required": [
+            "extractor_type",
+            "prompt_document",
+            "prompt_image",
+            "prompt_video",
+            "prompt_audio"
+          ],
+          "title": "LitellmExtractorConfigProperties"
+        }
+      },
+      "type": "object",
+      "required": [
+        "model_provider_name",
+        "model_name",
+        "output_format",
+        "properties"
+      ],
+      "title": "CreateExtractorConfigRequest"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      }
+    },
+    "query": {}
   }
 }

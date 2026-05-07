@@ -4,5 +4,63 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "Name",
+          "description": "The name of the tool server."
+        },
+        "description": {
+          "type": "string",
+          "title": "Description",
+          "description": "A description of the tool server."
+        },
+        "task_id": {
+          "type": "string",
+          "title": "Task Id",
+          "description": "The task ID to expose as a tool."
+        },
+        "run_config_id": {
+          "type": "string",
+          "title": "Run Config Id",
+          "description": "The run config ID to use when running the task."
+        },
+        "is_archived": {
+          "type": "boolean",
+          "title": "Is Archived",
+          "description": "Whether the tool server is archived."
+        }
+      },
+      "type": "object",
+      "required": [
+        "name",
+        "description",
+        "task_id",
+        "run_config_id",
+        "is_archived"
+      ],
+      "title": "KilnTaskToolServerCreationRequest",
+      "description": "Request to create a Kiln task tool server."
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "tool_server_id": {
+        "type": "string",
+        "description": "The unique identifier of the tool server.",
+        "title": "Tool Server Id"
+      }
+    },
+    "query": {}
   }
 }

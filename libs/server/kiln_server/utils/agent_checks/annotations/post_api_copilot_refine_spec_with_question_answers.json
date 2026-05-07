@@ -5,5 +5,132 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Run Copilot spec refinement with question answers?"
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "task_prompt": {
+          "type": "string",
+          "title": "task_prompt",
+          "description": "The task's prompt"
+        },
+        "specification": {
+          "properties": {
+            "spec_fields": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object",
+              "title": "spec_fields",
+              "description": "Dictionary mapping field names to their descriptions/purposes"
+            },
+            "spec_field_current_values": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object",
+              "title": "spec_field_current_values",
+              "description": "Dictionary mapping field names to their current values"
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "spec_fields",
+            "spec_field_current_values"
+          ],
+          "title": "SpecificationInput",
+          "description": "The specification to refine."
+        },
+        "questions_and_answers": {
+          "items": {
+            "properties": {
+              "question_title": {
+                "type": "string",
+                "title": "question_title",
+                "description": "A short title for this question"
+              },
+              "question_body": {
+                "type": "string",
+                "title": "question_body",
+                "description": "The full question text"
+              },
+              "answer_options": {
+                "items": {
+                  "properties": {
+                    "answer_title": {
+                      "type": "string",
+                      "title": "answer_title",
+                      "description": "A short title describing this answer option"
+                    },
+                    "answer_description": {
+                      "type": "string",
+                      "title": "answer_description",
+                      "description": "A description of this answer"
+                    },
+                    "selected": {
+                      "type": "boolean",
+                      "title": "selected",
+                      "description": "Whether the user selected this answer option"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "type": "object",
+                  "required": [
+                    "answer_title",
+                    "answer_description",
+                    "selected"
+                  ],
+                  "title": "AnswerOptionWithSelection",
+                  "description": "An answer option with user selection state."
+                },
+                "type": "array",
+                "title": "answer_options",
+                "description": "Possible answers the user was asked to select from"
+              },
+              "custom_answer": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "custom_answer",
+                "description": "User-provided text feedback when predefined answer options don't fit"
+              }
+            },
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "question_title",
+              "question_body",
+              "answer_options"
+            ],
+            "title": "QuestionWithAnswer",
+            "description": "A question with user-provided answer."
+          },
+          "type": "array",
+          "title": "questions_and_answers",
+          "description": "Questions about the specification with user-provided answers"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "task_prompt",
+        "specification",
+        "questions_and_answers"
+      ],
+      "title": "SubmitAnswersRequest",
+      "description": "Request to submit answers to a question set."
+    }
+  },
+  "parameters": {
+    "path": {},
+    "query": {}
   }
 }

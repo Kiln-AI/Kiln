@@ -5,5 +5,279 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Creating a fine-tune incurs cost. Allow agent to proceed?"
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Description"
+        },
+        "dataset_id": {
+          "type": "string",
+          "title": "Dataset Id"
+        },
+        "train_split_name": {
+          "type": "string",
+          "title": "Train Split Name"
+        },
+        "validation_split_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Validation Split Name"
+        },
+        "parameters": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "type": "object",
+          "title": "Parameters"
+        },
+        "provider": {
+          "type": "string",
+          "title": "Provider"
+        },
+        "base_model_id": {
+          "type": "string",
+          "title": "Base Model Id"
+        },
+        "system_message_generator": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "System Message Generator"
+        },
+        "custom_system_message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Custom System Message"
+        },
+        "custom_thinking_instructions": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Custom Thinking Instructions"
+        },
+        "data_strategy": {
+          "type": "string",
+          "enum": [
+            "final_only",
+            "final_and_intermediate",
+            "two_message_cot",
+            "final_and_intermediate_r1_compatible"
+          ],
+          "title": "ChatStrategy",
+          "description": "Strategy for how a chat is structured."
+        },
+        "run_config_properties": {
+          "anyOf": [
+            {
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "kiln_agent",
+                  "title": "Type",
+                  "default": "kiln_agent"
+                },
+                "model_name": {
+                  "type": "string",
+                  "title": "Model Name",
+                  "description": "The model to use for this run config."
+                },
+                "model_provider_name": {
+                  "type": "string",
+                  "enum": [
+                    "openai",
+                    "groq",
+                    "amazon_bedrock",
+                    "ollama",
+                    "openrouter",
+                    "fireworks_ai",
+                    "kiln_fine_tune",
+                    "kiln_custom_registry",
+                    "openai_compatible",
+                    "anthropic",
+                    "gemini_api",
+                    "azure_openai",
+                    "huggingface",
+                    "vertex",
+                    "together_ai",
+                    "siliconflow_cn",
+                    "cerebras",
+                    "docker_model_runner"
+                  ],
+                  "title": "ModelProviderName",
+                  "description": "Enumeration of supported AI model providers."
+                },
+                "prompt_id": {
+                  "type": "string",
+                  "title": "Prompt Id",
+                  "description": "The prompt to use for this run config. Defaults to building a simple prompt from the task if not provided."
+                },
+                "top_p": {
+                  "type": "number",
+                  "title": "Top P",
+                  "description": "The top-p value to use for this run config. Defaults to 1.0.",
+                  "default": 1.0
+                },
+                "temperature": {
+                  "type": "number",
+                  "title": "Temperature",
+                  "description": "The temperature to use for this run config. Defaults to 1.0.",
+                  "default": 1.0
+                },
+                "structured_output_mode": {
+                  "type": "string",
+                  "enum": [
+                    "default",
+                    "json_schema",
+                    "function_calling_weak",
+                    "function_calling",
+                    "json_mode",
+                    "json_instructions",
+                    "json_instruction_and_object",
+                    "json_custom_instructions",
+                    "unknown"
+                  ],
+                  "title": "StructuredOutputMode",
+                  "description": "Enumeration of supported structured output modes.\n\n- json_schema: request json using API capabilities for json_schema\n- function_calling: request json using API capabilities for function calling\n- json_mode: request json using API's JSON mode, which should return valid JSON, but isn't checking/passing the schema\n- json_instructions: append instructions to the prompt to request json matching the schema. No API capabilities are used. You should have a custom parser on these models as they will be returning strings.\n- json_instruction_and_object: append instructions to the prompt to request json matching the schema. Also request the response as json_mode via API capabilities (returning dictionaries).\n- json_custom_instructions: The model should output JSON, but custom instructions are already included in the system prompt. Don't append additional JSON instructions.\n- default: let the adapter decide (legacy, do not use for new use cases)\n- unknown: used for cases where the structured output mode is not known (on old models where it wasn't saved). Should lookup best option at runtime."
+                },
+                "thinking_level": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Thinking Level",
+                  "description": "The thinking level to use for this run config. If None, defaults may apply."
+                },
+                "tools_config": {
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "tools": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array",
+                          "title": "Tools",
+                          "description": "The IDs of the tools available to the task."
+                        }
+                      },
+                      "type": "object",
+                      "required": [
+                        "tools"
+                      ],
+                      "title": "ToolsRunConfig",
+                      "description": "A config describing which tools are available to a task."
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The tools config to use for this run config, defining which tools are available to the model."
+                }
+              },
+              "type": "object",
+              "required": [
+                "model_name",
+                "model_provider_name",
+                "prompt_id",
+                "structured_output_mode"
+              ],
+              "title": "KilnAgentRunConfigProperties",
+              "description": "A configuration for running a task using a Kiln AI agent.\n\nThis includes everything needed to run a task, except the input and task ID. Running the same RunConfig with the same input should make identical calls to the model (output may vary as models are non-deterministic)."
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object",
+      "required": [
+        "dataset_id",
+        "train_split_name",
+        "parameters",
+        "provider",
+        "base_model_id",
+        "data_strategy"
+      ],
+      "title": "CreateFinetuneRequest",
+      "description": "Request to create a finetune"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      }
+    },
+    "query": {}
   }
 }

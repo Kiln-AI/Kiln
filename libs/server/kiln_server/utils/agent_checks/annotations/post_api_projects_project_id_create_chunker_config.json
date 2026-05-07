@@ -4,5 +4,136 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 120,
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name",
+          "description": "A name for this entity."
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Description",
+          "description": "The description of the chunker config"
+        },
+        "chunker_type": {
+          "type": "string",
+          "enum": [
+            "fixed_window",
+            "semantic"
+          ],
+          "title": "ChunkerType",
+          "description": "The type of chunking algorithm to use."
+        },
+        "properties": {
+          "oneOf": [
+            {
+              "properties": {
+                "chunker_type": {
+                  "type": "string",
+                  "const": "semantic",
+                  "title": "Chunker Type",
+                  "description": "The type of the chunker"
+                },
+                "embedding_config_id": {
+                  "type": "string",
+                  "title": "Embedding Config Id",
+                  "description": "The embedding config to use for the RAG workflow."
+                },
+                "buffer_size": {
+                  "type": "integer",
+                  "title": "Buffer Size",
+                  "description": "The buffer size to use for the chunker."
+                },
+                "breakpoint_percentile_threshold": {
+                  "type": "integer",
+                  "title": "Breakpoint Percentile Threshold",
+                  "description": "The breakpoint percentile threshold to use for the chunker."
+                }
+              },
+              "type": "object",
+              "required": [
+                "chunker_type",
+                "embedding_config_id",
+                "buffer_size",
+                "breakpoint_percentile_threshold"
+              ],
+              "title": "SemanticChunkerPropertiesPublic"
+            },
+            {
+              "properties": {
+                "chunker_type": {
+                  "type": "string",
+                  "const": "fixed_window",
+                  "title": "Chunker Type",
+                  "description": "The type of the chunker"
+                },
+                "chunk_size": {
+                  "type": "integer",
+                  "title": "Chunk Size",
+                  "description": "The chunk size to use for the chunker."
+                },
+                "chunk_overlap": {
+                  "type": "integer",
+                  "title": "Chunk Overlap",
+                  "description": "The chunk overlap to use for the chunker."
+                }
+              },
+              "type": "object",
+              "required": [
+                "chunker_type",
+                "chunk_size",
+                "chunk_overlap"
+              ],
+              "title": "FixedWindowChunkerPropertiesPublic"
+            }
+          ],
+          "title": "Properties",
+          "discriminator": {
+            "propertyName": "chunker_type",
+            "mapping": {
+              "fixed_window": "#/components/schemas/FixedWindowChunkerPropertiesPublic",
+              "semantic": "#/components/schemas/SemanticChunkerPropertiesPublic"
+            }
+          }
+        }
+      },
+      "type": "object",
+      "required": [
+        "chunker_type",
+        "properties"
+      ],
+      "title": "CreateChunkerConfigRequest"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      }
+    },
+    "query": {}
   }
 }

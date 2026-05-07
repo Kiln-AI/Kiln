@@ -4,5 +4,28 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "git_url": {
+          "type": "string",
+          "title": "Git Url",
+          "description": "The git remote URL to authenticate against."
+        }
+      },
+      "type": "object",
+      "required": [
+        "git_url"
+      ],
+      "title": "OAuthStartRequest",
+      "description": "Request to start a GitHub OAuth flow."
+    }
+  },
+  "parameters": {
+    "path": {},
+    "query": {}
   }
 }

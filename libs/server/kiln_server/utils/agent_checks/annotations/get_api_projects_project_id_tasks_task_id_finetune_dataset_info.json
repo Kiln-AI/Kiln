@@ -4,5 +4,43 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      }
+    },
+    "query": {
+      "tool_ids": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Optional list of tool/skill IDs to filter by.",
+        "title": "Tool Ids"
+      },
+      "empty_tool_filter": {
+        "type": "boolean",
+        "description": "If true and tool_ids is None, treats as empty tool filter.",
+        "default": false,
+        "title": "Empty Tool Filter"
+      }
+    }
   }
 }

@@ -5,5 +5,72 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Allow agent to edit eval? Ensure you backup your project before allowing agentic edits."
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name",
+          "description": "The updated name."
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Description",
+          "description": "The updated description."
+        },
+        "train_set_filter_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Train Set Filter Id",
+          "description": "The updated train set filter ID."
+        }
+      },
+      "type": "object",
+      "title": "UpdateEvalRequest",
+      "description": "Request to update an eval."
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      },
+      "eval_id": {
+        "type": "string",
+        "description": "The unique identifier of the eval.",
+        "title": "Eval Id"
+      }
+    },
+    "query": {}
   }
 }

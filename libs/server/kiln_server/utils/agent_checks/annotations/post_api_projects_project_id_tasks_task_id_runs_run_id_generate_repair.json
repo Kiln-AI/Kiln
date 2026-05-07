@@ -5,5 +5,43 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Generate a repair using LLM?"
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "evaluator_feedback": {
+          "type": "string",
+          "title": "Evaluator Feedback",
+          "description": "Feedback from an evaluator on how to repair the task run."
+        }
+      },
+      "type": "object",
+      "required": [
+        "evaluator_feedback"
+      ],
+      "title": "RepairTaskApiInput"
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      },
+      "run_id": {
+        "type": "string",
+        "description": "The unique identifier of the task run.",
+        "title": "Run Id"
+      }
+    },
+    "query": {}
   }
 }

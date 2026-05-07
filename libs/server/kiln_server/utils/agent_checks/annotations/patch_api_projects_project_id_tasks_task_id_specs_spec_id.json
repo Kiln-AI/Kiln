@@ -5,5 +5,620 @@
     "permission": "allow",
     "requires_approval": true,
     "approval_description": "Allow agent to edit spec? Ensure you backup your project before allowing agentic edits."
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 120,
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Name",
+          "description": "The updated name."
+        },
+        "definition": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Definition",
+          "description": "The updated definition."
+        },
+        "properties": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "properties": {
+                    "spec_type": {
+                      "type": "string",
+                      "const": "desired_behaviour",
+                      "title": "Spec Type"
+                    },
+                    "desired_behaviour_description": {
+                      "type": "string",
+                      "title": "Desired Behaviour Description"
+                    },
+                    "correct_behaviour_examples": {
+                      "type": "string",
+                      "title": "Correct Behaviour Examples"
+                    },
+                    "incorrect_behaviour_examples": {
+                      "type": "string",
+                      "title": "Incorrect Behaviour Examples"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "spec_type",
+                    "desired_behaviour_description"
+                  ],
+                  "title": "DesiredBehaviourProperties"
+                },
+                {
+                  "properties": {
+                    "spec_type": {
+                      "type": "string",
+                      "const": "issue",
+                      "title": "Spec Type"
+                    },
+                    "issue_description": {
+                      "type": "string",
+                      "title": "Issue Description"
+                    },
+                    "issue_examples": {
+                      "type": "string",
+                      "title": "Issue Examples"
+                    },
+                    "non_issue_examples": {
+                      "type": "string",
+                      "title": "Non Issue Examples"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "spec_type",
+                    "issue_description"
+                  ],
+                  "title": "IssueProperties"
+                },
+                {
+                  "properties": {
+                    "spec_type": {
+                      "type": "string",
+                      "const": "tone",
+                      "title": "Spec Type"
+                    },
+                    "core_requirement": {
+                      "type": "string",
+                      "title": "Core Requirement"
+                    },
+                    "tone_description": {
+                      "type": "string",
+                      "title": "Tone Description"
+                    },
+                    "acceptable_examples": {
+                      "type": "string",
+                      "title": "Acceptable Examples"
+                    },
+                    "unacceptable_examples": {
+                      "type": "string",
+                      "title": "Unacceptable Examples"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "spec_type",
+                    "core_requirement",
+                    "tone_description"
+                  ],
+                  "title": "ToneProperties"
+                },
+                {
+                  "properties": {
+                    "spec_type": {
+                      "type": "string",
+                      "const": "formatting",
+                      "title": "Spec Type"
+                    },
+                    "core_requirement": {
+                      "type": "string",
+                      "title": "Core Requirement"
+                    },
+                    "formatting_requirements": {
+                      "type": "string",
+                      "title": "Formatting Requirements"
+                    },
+                    "proper_formatting_examples": {
+                      "type": "string",
+                      "title": "Proper Formatting Examples"
+                    },
+                    "improper_formatting_examples": {
+                      "type": "string",
+                      "title": "Improper Formatting Examples"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "spec_type",
+                    "core_requirement",
+                    "formatting_requirements"
+                  ],
+                  "title": "FormattingProperties"
+                },
+                {
+                  "properties": {
+                    "spec_type": {
+                      "type": "string",
+                      "const": "localization",
+                      "title": "Spec Type"
+                    },
+                    "core_requirement": {
+                      "type": "string",
+                      "title": "Core Requirement"
+                    },
+                    "localization_requirements": {
+                      "type": "string",
+                      "title": "Localization Requirements"
+                    },
+                    "violation_examples": {
+                      "type": "string",
+                      "title": "Violation Examples"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "spec_type",
+                    "core_requirement",
+                    "localization_requirements",
+                    "violation_examples"
+                  ],
+                  "title": "LocalizationProperties"
+                },
+                {
+                  "properties": {
+                    "spec_type": {
+                      "type": "string",
+                      "const": "appropriate_tool_use",
+                      "title": "Spec Type"
+                    },
+                    "core_requirement": {
+                      "type": "string",
+                      "title": "Core Requirement"
+                    },
+                    "tool_id": {
+                      "type": "string",
+                      "title": "Tool Id"
+                    },
+                    "tool_function_name": {
+                      "type": "string",
+                      "title": "Tool Function Name"
+                    },
+                    "tool_use_guidelines": {
+                      "type": "string",
+                      "title": "Tool Use Guidelines"
+                    },
+                    "appropriate_tool_use_examples": {
+                      "type": "string",
+                      "title": "Appropriate Tool Use Examples"
+                    },
+                    "inappropriate_tool_use_examples": {
+                      "type": "string",
+                      "title": "Inappropriate Tool Use Examples"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "spec_type",
+                    "core_requirement",
+                    "tool_id",
+                    "tool_function_name",
+                    "tool_use_guidelines",
+                    "appropriate_tool_use_examples",
+                    "inappropriate_tool_use_examples"
+                  ],
+                  "title": "AppropriateToolUseProperties"
+                },
+                {
+                  "properties": {
+                    "spec_type": {
+                      "type": "string",
+                      "const": "reference_answer_accuracy",
+                      "title": "Spec Type"
+                    },
+                    "core_requirement": {
+                      "type": "string",
+                      "title": "Core Requirement"
+                    },
+                    "reference_answer_accuracy_description": {
+                      "type": "string",
+                      "title": "Reference Answer Accuracy Description"
+                    },
+                    "accurate_examples": {
+                      "type": "string",
+                      "title": "Accurate Examples"
+                    },
+                    "inaccurate_examples": {
+                      "type": "string",
+                      "title": "Inaccurate Examples"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "spec_type",
+                    "core_requirement",
+                    "reference_answer_accuracy_description",
+                    "accurate_examples",
+                    "inaccurate_examples"
+                  ],
+                  "title": "ReferenceAnswerAccuracyProperties"
+                },
+                {
+                  "properties": {
+                    "spec_type": {
+                      "type": "string",
+                      "const": "factual_correctness",
+                      "title": "Spec Type"
+                    },
+                    "core_requirement": {
+                      "type": "string",
+                      "title": "Core Requirement"
+                    },
+                    "factually_inaccurate_examples": {
+                      "type": "string",
+                      "title": "Factually Inaccurate Examples"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "spec_type",
+                    "core_requirement",
+                    "factually_inaccurate_examples"
+                  ],
+                  "title": "FactualCorrectnessProperties"
+                },
+                {
+                  "properties": {
+                    "spec_type": {
+                      "type": "string",
+                      "const": "hallucinations",
+                      "title": "Spec Type"
+                    },
+                    "core_requirement": {
+                      "type": "string",
+                      "title": "Core Requirement"
+                    },
+                    "hallucinations_examples": {
+                      "type": "string",
+                      "title": "Hallucinations Examples"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "spec_type",
+                    "core_requirement",
+                    "hallucinations_examples"
+                  ],
+                  "title": "HallucinationsProperties"
+                },
+                {
+                  "properties": {
+                    "spec_type": {
+                      "type": "string",
+                      "const": "completeness",
+                      "title": "Spec Type"
+                    },
+                    "core_requirement": {
+                      "type": "string",
+                      "title": "Core Requirement"
+                    },
+                    "complete_examples": {
+                      "type": "string",
+                      "title": "Complete Examples"
+                    },
+                    "incomplete_examples": {
+                      "type": "string",
+                      "title": "Incomplete Examples"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "spec_type",
+                    "core_requirement",
+                    "complete_examples",
+                    "incomplete_examples"
+                  ],
+                  "title": "CompletenessProperties"
+                },
+                {
+                  "properties": {
+                    "spec_type": {
+                      "type": "string",
+                      "const": "toxicity",
+                      "title": "Spec Type"
+                    },
+                    "core_requirement": {
+                      "type": "string",
+                      "title": "Core Requirement"
+                    },
+                    "toxicity_examples": {
+                      "type": "string",
+                      "title": "Toxicity Examples"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "spec_type",
+                    "core_requirement",
+                    "toxicity_examples"
+                  ],
+                  "title": "ToxicityProperties"
+                },
+                {
+                  "properties": {
+                    "spec_type": {
+                      "type": "string",
+                      "const": "bias",
+                      "title": "Spec Type"
+                    },
+                    "core_requirement": {
+                      "type": "string",
+                      "title": "Core Requirement"
+                    },
+                    "bias_examples": {
+                      "type": "string",
+                      "title": "Bias Examples"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "spec_type",
+                    "core_requirement",
+                    "bias_examples"
+                  ],
+                  "title": "BiasProperties"
+                },
+                {
+                  "properties": {
+                    "spec_type": {
+                      "type": "string",
+                      "const": "maliciousness",
+                      "title": "Spec Type"
+                    },
+                    "core_requirement": {
+                      "type": "string",
+                      "title": "Core Requirement"
+                    },
+                    "malicious_examples": {
+                      "type": "string",
+                      "title": "Malicious Examples"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "spec_type",
+                    "core_requirement",
+                    "malicious_examples"
+                  ],
+                  "title": "MaliciousnessProperties"
+                },
+                {
+                  "properties": {
+                    "spec_type": {
+                      "type": "string",
+                      "const": "nsfw",
+                      "title": "Spec Type"
+                    },
+                    "core_requirement": {
+                      "type": "string",
+                      "title": "Core Requirement"
+                    },
+                    "nsfw_examples": {
+                      "type": "string",
+                      "title": "Nsfw Examples"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "spec_type",
+                    "core_requirement",
+                    "nsfw_examples"
+                  ],
+                  "title": "NsfwProperties"
+                },
+                {
+                  "properties": {
+                    "spec_type": {
+                      "type": "string",
+                      "const": "taboo",
+                      "title": "Spec Type"
+                    },
+                    "core_requirement": {
+                      "type": "string",
+                      "title": "Core Requirement"
+                    },
+                    "taboo_examples": {
+                      "type": "string",
+                      "title": "Taboo Examples"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "spec_type",
+                    "core_requirement",
+                    "taboo_examples"
+                  ],
+                  "title": "TabooProperties"
+                },
+                {
+                  "properties": {
+                    "spec_type": {
+                      "type": "string",
+                      "const": "jailbreak",
+                      "title": "Spec Type"
+                    },
+                    "core_requirement": {
+                      "type": "string",
+                      "title": "Core Requirement"
+                    },
+                    "jailbroken_examples": {
+                      "type": "string",
+                      "title": "Jailbroken Examples"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "spec_type",
+                    "core_requirement",
+                    "jailbroken_examples"
+                  ],
+                  "title": "JailbreakProperties"
+                },
+                {
+                  "properties": {
+                    "spec_type": {
+                      "type": "string",
+                      "const": "prompt_leakage",
+                      "title": "Spec Type"
+                    },
+                    "core_requirement": {
+                      "type": "string",
+                      "title": "Core Requirement"
+                    },
+                    "leakage_examples": {
+                      "type": "string",
+                      "title": "Leakage Examples"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "spec_type",
+                    "core_requirement",
+                    "leakage_examples"
+                  ],
+                  "title": "PromptLeakageProperties"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "spec_type",
+                "mapping": {
+                  "appropriate_tool_use": "#/components/schemas/AppropriateToolUseProperties",
+                  "bias": "#/components/schemas/BiasProperties",
+                  "completeness": "#/components/schemas/CompletenessProperties",
+                  "desired_behaviour": "#/components/schemas/DesiredBehaviourProperties",
+                  "factual_correctness": "#/components/schemas/FactualCorrectnessProperties",
+                  "formatting": "#/components/schemas/FormattingProperties",
+                  "hallucinations": "#/components/schemas/HallucinationsProperties",
+                  "issue": "#/components/schemas/IssueProperties",
+                  "jailbreak": "#/components/schemas/JailbreakProperties",
+                  "localization": "#/components/schemas/LocalizationProperties",
+                  "maliciousness": "#/components/schemas/MaliciousnessProperties",
+                  "nsfw": "#/components/schemas/NsfwProperties",
+                  "prompt_leakage": "#/components/schemas/PromptLeakageProperties",
+                  "reference_answer_accuracy": "#/components/schemas/ReferenceAnswerAccuracyProperties",
+                  "taboo": "#/components/schemas/TabooProperties",
+                  "tone": "#/components/schemas/ToneProperties",
+                  "toxicity": "#/components/schemas/ToxicityProperties"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Properties",
+          "description": "The updated spec properties."
+        },
+        "priority": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "enum": [
+                0,
+                1,
+                2,
+                3
+              ],
+              "title": "Priority",
+              "description": "Priority levels, where P0 is highest priority."
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The updated priority."
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "active",
+                "future",
+                "deprecated",
+                "archived"
+              ],
+              "title": "SpecStatus",
+              "description": "Defines the status of a spec."
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The updated status."
+        },
+        "tags": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Tags",
+          "description": "The updated tags."
+        }
+      },
+      "type": "object",
+      "title": "UpdateSpecRequest",
+      "description": "Request to update a spec."
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      },
+      "spec_id": {
+        "type": "string",
+        "description": "The unique identifier of the spec.",
+        "title": "Spec Id"
+      }
+    },
+    "query": {}
   }
 }

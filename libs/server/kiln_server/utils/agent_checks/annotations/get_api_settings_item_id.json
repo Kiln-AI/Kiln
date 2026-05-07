@@ -4,5 +4,16 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": null,
+  "parameters": {
+    "path": {
+      "item_id": {
+        "type": "string",
+        "description": "The setting item key to retrieve.",
+        "title": "Item Id"
+      }
+    },
+    "query": {}
   }
 }

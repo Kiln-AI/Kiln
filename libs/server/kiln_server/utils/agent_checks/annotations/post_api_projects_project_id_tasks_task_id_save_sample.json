@@ -4,5 +4,1969 @@
   "agent_policy": {
     "permission": "allow",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "v": {
+          "type": "integer",
+          "title": "V",
+          "description": "Schema version for migration support.",
+          "default": 1
+        },
+        "id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Id",
+          "description": "Unique identifier for this record."
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "path"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Path",
+          "description": "File system path where the record is stored."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "title": "Created At",
+          "description": "Timestamp when the model was created. Timezone-aware; stores the writer's local offset."
+        },
+        "created_by": {
+          "type": "string",
+          "title": "Created By",
+          "description": "User ID of the creator."
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "properties": {
+                "v": {
+                  "type": "integer",
+                  "title": "V",
+                  "description": "Schema version for migration support.",
+                  "default": 1
+                },
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Id",
+                  "description": "Unique identifier for this record."
+                },
+                "path": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "path"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Path",
+                  "description": "File system path where the record is stored."
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "title": "Created At",
+                  "description": "Timestamp when the model was created. Timezone-aware; stores the writer's local offset."
+                },
+                "created_by": {
+                  "type": "string",
+                  "title": "Created By",
+                  "description": "User ID of the creator."
+                }
+              },
+              "type": "object",
+              "title": "KilnBaseModel",
+              "description": "Base model for all Kiln data models with common functionality for persistence and versioning.\n\nAttributes:\n    v (int): Schema version number for migration support\n    id (str): Unique identifier for the model instance\n    path (Path): File system path where the model is stored\n    created_at (datetime): Timestamp when the model was created\n    created_by (str): User ID of the creator"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "input": {
+          "type": "string",
+          "title": "Input",
+          "description": "The inputs to the task. JSON formatted for structured input, plaintext for unstructured input."
+        },
+        "input_source": {
+          "anyOf": [
+            {
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "human",
+                    "synthetic",
+                    "file_import",
+                    "tool_call"
+                  ],
+                  "title": "DataSourceType",
+                  "description": "The source type of a piece of data.\n\nHuman: a human created the data\nSynthetic: a model created the data"
+                },
+                "properties": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "type": "object",
+                  "title": "Properties",
+                  "description": "Properties describing the data source. For synthetic things like model. For human: the human's name. For file_import: file information.",
+                  "default": {}
+                },
+                "run_config": {
+                  "anyOf": [
+                    {
+                      "oneOf": [
+                        {
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "kiln_agent",
+                              "title": "Type",
+                              "default": "kiln_agent"
+                            },
+                            "model_name": {
+                              "type": "string",
+                              "title": "Model Name",
+                              "description": "The model to use for this run config."
+                            },
+                            "model_provider_name": {
+                              "type": "string",
+                              "enum": [
+                                "openai",
+                                "groq",
+                                "amazon_bedrock",
+                                "ollama",
+                                "openrouter",
+                                "fireworks_ai",
+                                "kiln_fine_tune",
+                                "kiln_custom_registry",
+                                "openai_compatible",
+                                "anthropic",
+                                "gemini_api",
+                                "azure_openai",
+                                "huggingface",
+                                "vertex",
+                                "together_ai",
+                                "siliconflow_cn",
+                                "cerebras",
+                                "docker_model_runner"
+                              ],
+                              "title": "ModelProviderName",
+                              "description": "Enumeration of supported AI model providers."
+                            },
+                            "prompt_id": {
+                              "type": "string",
+                              "title": "Prompt Id",
+                              "description": "The prompt to use for this run config. Defaults to building a simple prompt from the task if not provided."
+                            },
+                            "top_p": {
+                              "type": "number",
+                              "title": "Top P",
+                              "description": "The top-p value to use for this run config. Defaults to 1.0.",
+                              "default": 1.0
+                            },
+                            "temperature": {
+                              "type": "number",
+                              "title": "Temperature",
+                              "description": "The temperature to use for this run config. Defaults to 1.0.",
+                              "default": 1.0
+                            },
+                            "structured_output_mode": {
+                              "type": "string",
+                              "enum": [
+                                "default",
+                                "json_schema",
+                                "function_calling_weak",
+                                "function_calling",
+                                "json_mode",
+                                "json_instructions",
+                                "json_instruction_and_object",
+                                "json_custom_instructions",
+                                "unknown"
+                              ],
+                              "title": "StructuredOutputMode",
+                              "description": "Enumeration of supported structured output modes.\n\n- json_schema: request json using API capabilities for json_schema\n- function_calling: request json using API capabilities for function calling\n- json_mode: request json using API's JSON mode, which should return valid JSON, but isn't checking/passing the schema\n- json_instructions: append instructions to the prompt to request json matching the schema. No API capabilities are used. You should have a custom parser on these models as they will be returning strings.\n- json_instruction_and_object: append instructions to the prompt to request json matching the schema. Also request the response as json_mode via API capabilities (returning dictionaries).\n- json_custom_instructions: The model should output JSON, but custom instructions are already included in the system prompt. Don't append additional JSON instructions.\n- default: let the adapter decide (legacy, do not use for new use cases)\n- unknown: used for cases where the structured output mode is not known (on old models where it wasn't saved). Should lookup best option at runtime."
+                            },
+                            "thinking_level": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "title": "Thinking Level",
+                              "description": "The thinking level to use for this run config. If None, defaults may apply."
+                            },
+                            "tools_config": {
+                              "anyOf": [
+                                {
+                                  "properties": {
+                                    "tools": {
+                                      "items": {
+                                        "type": "string"
+                                      },
+                                      "type": "array",
+                                      "title": "Tools",
+                                      "description": "The IDs of the tools available to the task."
+                                    }
+                                  },
+                                  "type": "object",
+                                  "required": [
+                                    "tools"
+                                  ],
+                                  "title": "ToolsRunConfig",
+                                  "description": "A config describing which tools are available to a task."
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ],
+                              "description": "The tools config to use for this run config, defining which tools are available to the model."
+                            }
+                          },
+                          "type": "object",
+                          "required": [
+                            "model_name",
+                            "model_provider_name",
+                            "prompt_id",
+                            "structured_output_mode"
+                          ],
+                          "title": "KilnAgentRunConfigProperties",
+                          "description": "A configuration for running a task using a Kiln AI agent.\n\nThis includes everything needed to run a task, except the input and task ID. Running the same RunConfig with the same input should make identical calls to the model (output may vary as models are non-deterministic)."
+                        },
+                        {
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "mcp",
+                              "title": "Type",
+                              "default": "mcp"
+                            },
+                            "tool_reference": {
+                              "properties": {
+                                "tool_id": {
+                                  "type": "string",
+                                  "title": "Tool Id",
+                                  "description": "The MCP tool ID to call (mcp::local|remote::<server_id>::<tool_name>)."
+                                },
+                                "tool_server_id": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "title": "Tool Server Id",
+                                  "description": "The MCP tool server ID."
+                                },
+                                "tool_name": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "title": "Tool Name",
+                                  "description": "The MCP tool name."
+                                },
+                                "input_schema": {
+                                  "anyOf": [
+                                    {
+                                      "additionalProperties": true,
+                                      "type": "object"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "title": "Input Schema",
+                                  "description": "Snapshot of the MCP tool input schema."
+                                },
+                                "output_schema": {
+                                  "anyOf": [
+                                    {
+                                      "additionalProperties": true,
+                                      "type": "object"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "title": "Output Schema",
+                                  "description": "Snapshot of the MCP tool output schema."
+                                }
+                              },
+                              "type": "object",
+                              "required": [
+                                "tool_id"
+                              ],
+                              "title": "MCPToolReference"
+                            }
+                          },
+                          "type": "object",
+                          "required": [
+                            "tool_reference"
+                          ],
+                          "title": "McpRunConfigProperties",
+                          "description": "A configuration for running a task via an MCP tool."
+                        }
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Run Config",
+                  "description": "The run config used to generate the data, if generated by a running a model in Kiln (only true for type=synthetic)."
+                }
+              },
+              "type": "object",
+              "required": [
+                "type"
+              ],
+              "title": "DataSource",
+              "description": "Represents the origin of data, either human, synthetic, file import, or tool call, with associated properties.\n\nProperties vary based on the source type - for synthetic/tool_call sources this includes\nmodel information, for human sources this includes creator information, for file imports\nthis includes file information."
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The source of the input: human or synthetic."
+        },
+        "output": {
+          "properties": {
+            "v": {
+              "type": "integer",
+              "title": "V",
+              "description": "Schema version for migration support.",
+              "default": 1
+            },
+            "id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Id",
+              "description": "Unique identifier for this record."
+            },
+            "path": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "path"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Path",
+              "description": "File system path where the record is stored."
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time",
+              "title": "Created At",
+              "description": "Timestamp when the model was created. Timezone-aware; stores the writer's local offset."
+            },
+            "created_by": {
+              "type": "string",
+              "title": "Created By",
+              "description": "User ID of the creator."
+            },
+            "output": {
+              "type": "string",
+              "title": "Output",
+              "description": "The output of the task. JSON formatted for structured output, plaintext for unstructured output."
+            },
+            "source": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "human",
+                        "synthetic",
+                        "file_import",
+                        "tool_call"
+                      ],
+                      "title": "DataSourceType",
+                      "description": "The source type of a piece of data.\n\nHuman: a human created the data\nSynthetic: a model created the data"
+                    },
+                    "properties": {
+                      "additionalProperties": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "integer"
+                          },
+                          {
+                            "type": "number"
+                          }
+                        ]
+                      },
+                      "type": "object",
+                      "title": "Properties",
+                      "description": "Properties describing the data source. For synthetic things like model. For human: the human's name. For file_import: file information.",
+                      "default": {}
+                    },
+                    "run_config": {
+                      "anyOf": [
+                        {
+                          "oneOf": [
+                            {
+                              "properties": {
+                                "type": {
+                                  "type": "string",
+                                  "const": "kiln_agent",
+                                  "title": "Type",
+                                  "default": "kiln_agent"
+                                },
+                                "model_name": {
+                                  "type": "string",
+                                  "title": "Model Name",
+                                  "description": "The model to use for this run config."
+                                },
+                                "model_provider_name": {
+                                  "type": "string",
+                                  "enum": [
+                                    "openai",
+                                    "groq",
+                                    "amazon_bedrock",
+                                    "ollama",
+                                    "openrouter",
+                                    "fireworks_ai",
+                                    "kiln_fine_tune",
+                                    "kiln_custom_registry",
+                                    "openai_compatible",
+                                    "anthropic",
+                                    "gemini_api",
+                                    "azure_openai",
+                                    "huggingface",
+                                    "vertex",
+                                    "together_ai",
+                                    "siliconflow_cn",
+                                    "cerebras",
+                                    "docker_model_runner"
+                                  ],
+                                  "title": "ModelProviderName",
+                                  "description": "Enumeration of supported AI model providers."
+                                },
+                                "prompt_id": {
+                                  "type": "string",
+                                  "title": "Prompt Id",
+                                  "description": "The prompt to use for this run config. Defaults to building a simple prompt from the task if not provided."
+                                },
+                                "top_p": {
+                                  "type": "number",
+                                  "title": "Top P",
+                                  "description": "The top-p value to use for this run config. Defaults to 1.0.",
+                                  "default": 1.0
+                                },
+                                "temperature": {
+                                  "type": "number",
+                                  "title": "Temperature",
+                                  "description": "The temperature to use for this run config. Defaults to 1.0.",
+                                  "default": 1.0
+                                },
+                                "structured_output_mode": {
+                                  "type": "string",
+                                  "enum": [
+                                    "default",
+                                    "json_schema",
+                                    "function_calling_weak",
+                                    "function_calling",
+                                    "json_mode",
+                                    "json_instructions",
+                                    "json_instruction_and_object",
+                                    "json_custom_instructions",
+                                    "unknown"
+                                  ],
+                                  "title": "StructuredOutputMode",
+                                  "description": "Enumeration of supported structured output modes.\n\n- json_schema: request json using API capabilities for json_schema\n- function_calling: request json using API capabilities for function calling\n- json_mode: request json using API's JSON mode, which should return valid JSON, but isn't checking/passing the schema\n- json_instructions: append instructions to the prompt to request json matching the schema. No API capabilities are used. You should have a custom parser on these models as they will be returning strings.\n- json_instruction_and_object: append instructions to the prompt to request json matching the schema. Also request the response as json_mode via API capabilities (returning dictionaries).\n- json_custom_instructions: The model should output JSON, but custom instructions are already included in the system prompt. Don't append additional JSON instructions.\n- default: let the adapter decide (legacy, do not use for new use cases)\n- unknown: used for cases where the structured output mode is not known (on old models where it wasn't saved). Should lookup best option at runtime."
+                                },
+                                "thinking_level": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "title": "Thinking Level",
+                                  "description": "The thinking level to use for this run config. If None, defaults may apply."
+                                },
+                                "tools_config": {
+                                  "anyOf": [
+                                    {
+                                      "properties": {
+                                        "tools": {
+                                          "items": {
+                                            "type": "string"
+                                          },
+                                          "type": "array",
+                                          "title": "Tools",
+                                          "description": "The IDs of the tools available to the task."
+                                        }
+                                      },
+                                      "type": "object",
+                                      "required": [
+                                        "tools"
+                                      ],
+                                      "title": "ToolsRunConfig",
+                                      "description": "A config describing which tools are available to a task."
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ],
+                                  "description": "The tools config to use for this run config, defining which tools are available to the model."
+                                }
+                              },
+                              "type": "object",
+                              "required": [
+                                "model_name",
+                                "model_provider_name",
+                                "prompt_id",
+                                "structured_output_mode"
+                              ],
+                              "title": "KilnAgentRunConfigProperties",
+                              "description": "A configuration for running a task using a Kiln AI agent.\n\nThis includes everything needed to run a task, except the input and task ID. Running the same RunConfig with the same input should make identical calls to the model (output may vary as models are non-deterministic)."
+                            },
+                            {
+                              "properties": {
+                                "type": {
+                                  "type": "string",
+                                  "const": "mcp",
+                                  "title": "Type",
+                                  "default": "mcp"
+                                },
+                                "tool_reference": {
+                                  "properties": {
+                                    "tool_id": {
+                                      "type": "string",
+                                      "title": "Tool Id",
+                                      "description": "The MCP tool ID to call (mcp::local|remote::<server_id>::<tool_name>)."
+                                    },
+                                    "tool_server_id": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "title": "Tool Server Id",
+                                      "description": "The MCP tool server ID."
+                                    },
+                                    "tool_name": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "title": "Tool Name",
+                                      "description": "The MCP tool name."
+                                    },
+                                    "input_schema": {
+                                      "anyOf": [
+                                        {
+                                          "additionalProperties": true,
+                                          "type": "object"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "title": "Input Schema",
+                                      "description": "Snapshot of the MCP tool input schema."
+                                    },
+                                    "output_schema": {
+                                      "anyOf": [
+                                        {
+                                          "additionalProperties": true,
+                                          "type": "object"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "title": "Output Schema",
+                                      "description": "Snapshot of the MCP tool output schema."
+                                    }
+                                  },
+                                  "type": "object",
+                                  "required": [
+                                    "tool_id"
+                                  ],
+                                  "title": "MCPToolReference"
+                                }
+                              },
+                              "type": "object",
+                              "required": [
+                                "tool_reference"
+                              ],
+                              "title": "McpRunConfigProperties",
+                              "description": "A configuration for running a task via an MCP tool."
+                            }
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "title": "Run Config",
+                      "description": "The run config used to generate the data, if generated by a running a model in Kiln (only true for type=synthetic)."
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "type"
+                  ],
+                  "title": "DataSource",
+                  "description": "Represents the origin of data, either human, synthetic, file import, or tool call, with associated properties.\n\nProperties vary based on the source type - for synthetic/tool_call sources this includes\nmodel information, for human sources this includes creator information, for file imports\nthis includes file information."
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The source of the output: human or synthetic."
+            },
+            "rating": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "v": {
+                      "type": "integer",
+                      "title": "V",
+                      "description": "Schema version for migration support.",
+                      "default": 1
+                    },
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "title": "Id",
+                      "description": "Unique identifier for this record."
+                    },
+                    "path": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "path"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "title": "Path",
+                      "description": "File system path where the record is stored."
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time",
+                      "title": "Created At",
+                      "description": "Timestamp when the model was created. Timezone-aware; stores the writer's local offset."
+                    },
+                    "created_by": {
+                      "type": "string",
+                      "title": "Created By",
+                      "description": "User ID of the creator."
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "five_star",
+                        "pass_fail",
+                        "pass_fail_critical",
+                        "custom"
+                      ],
+                      "title": "TaskOutputRatingType",
+                      "description": "Defines the types of rating systems available for task outputs."
+                    },
+                    "value": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "title": "Value",
+                      "description": "The rating value. Interpretation depends on rating type:\n- five_star: 1-5 stars\n- pass_fail: 1.0 (pass) or 0.0 (fail)\n- pass_fail_critical: 1.0 (pass), 0.0 (fail), or -1.0 (critical fail)"
+                    },
+                    "requirement_ratings": {
+                      "additionalProperties": {
+                        "properties": {
+                          "value": {
+                            "type": "number",
+                            "title": "Value",
+                            "description": "The rating value. Interpretation depends on rating type"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "five_star",
+                              "pass_fail",
+                              "pass_fail_critical",
+                              "custom"
+                            ],
+                            "title": "TaskOutputRatingType",
+                            "description": "Defines the types of rating systems available for task outputs."
+                          }
+                        },
+                        "type": "object",
+                        "required": [
+                          "value",
+                          "type"
+                        ],
+                        "title": "RequirementRating",
+                        "description": "Rating for a specific requirement within a task output."
+                      },
+                      "type": "object",
+                      "title": "Requirement Ratings",
+                      "description": "The ratings of the requirements of the task. The ID can be either a task_requirement_id or a named rating for an eval_output_score name (in format 'named::<name>').",
+                      "default": {}
+                    }
+                  },
+                  "type": "object",
+                  "title": "TaskOutputRating",
+                  "description": "A rating for a task output, including an overall rating and ratings for each requirement.\n\nSupports:\n- five_star: 1-5 star ratings\n- pass_fail: boolean pass/fail (1.0 = pass, 0.0 = fail)\n- pass_fail_critical: tri-state (1.0 = pass, 0.0 = fail, -1.0 = critical fail)"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The rating of the output"
+            }
+          },
+          "type": "object",
+          "required": [
+            "output"
+          ],
+          "title": "TaskOutput",
+          "description": "An output for a specific task run.\n\nContains the actual output content, its source (human or synthetic),\nand optional rating information."
+        },
+        "repair_instructions": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Repair Instructions",
+          "description": "Instructions for fixing the output. Should define what is wrong, and how to fix it. Will be used by models for both generating a fixed output, and evaluating future models."
+        },
+        "repaired_output": {
+          "anyOf": [
+            {
+              "properties": {
+                "v": {
+                  "type": "integer",
+                  "title": "V",
+                  "description": "Schema version for migration support.",
+                  "default": 1
+                },
+                "id": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Id",
+                  "description": "Unique identifier for this record."
+                },
+                "path": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "path"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Path",
+                  "description": "File system path where the record is stored."
+                },
+                "created_at": {
+                  "type": "string",
+                  "format": "date-time",
+                  "title": "Created At",
+                  "description": "Timestamp when the model was created. Timezone-aware; stores the writer's local offset."
+                },
+                "created_by": {
+                  "type": "string",
+                  "title": "Created By",
+                  "description": "User ID of the creator."
+                },
+                "output": {
+                  "type": "string",
+                  "title": "Output",
+                  "description": "The output of the task. JSON formatted for structured output, plaintext for unstructured output."
+                },
+                "source": {
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "human",
+                            "synthetic",
+                            "file_import",
+                            "tool_call"
+                          ],
+                          "title": "DataSourceType",
+                          "description": "The source type of a piece of data.\n\nHuman: a human created the data\nSynthetic: a model created the data"
+                        },
+                        "properties": {
+                          "additionalProperties": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "integer"
+                              },
+                              {
+                                "type": "number"
+                              }
+                            ]
+                          },
+                          "type": "object",
+                          "title": "Properties",
+                          "description": "Properties describing the data source. For synthetic things like model. For human: the human's name. For file_import: file information.",
+                          "default": {}
+                        },
+                        "run_config": {
+                          "anyOf": [
+                            {
+                              "oneOf": [
+                                {
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "kiln_agent",
+                                      "title": "Type",
+                                      "default": "kiln_agent"
+                                    },
+                                    "model_name": {
+                                      "type": "string",
+                                      "title": "Model Name",
+                                      "description": "The model to use for this run config."
+                                    },
+                                    "model_provider_name": {
+                                      "type": "string",
+                                      "enum": [
+                                        "openai",
+                                        "groq",
+                                        "amazon_bedrock",
+                                        "ollama",
+                                        "openrouter",
+                                        "fireworks_ai",
+                                        "kiln_fine_tune",
+                                        "kiln_custom_registry",
+                                        "openai_compatible",
+                                        "anthropic",
+                                        "gemini_api",
+                                        "azure_openai",
+                                        "huggingface",
+                                        "vertex",
+                                        "together_ai",
+                                        "siliconflow_cn",
+                                        "cerebras",
+                                        "docker_model_runner"
+                                      ],
+                                      "title": "ModelProviderName",
+                                      "description": "Enumeration of supported AI model providers."
+                                    },
+                                    "prompt_id": {
+                                      "type": "string",
+                                      "title": "Prompt Id",
+                                      "description": "The prompt to use for this run config. Defaults to building a simple prompt from the task if not provided."
+                                    },
+                                    "top_p": {
+                                      "type": "number",
+                                      "title": "Top P",
+                                      "description": "The top-p value to use for this run config. Defaults to 1.0.",
+                                      "default": 1.0
+                                    },
+                                    "temperature": {
+                                      "type": "number",
+                                      "title": "Temperature",
+                                      "description": "The temperature to use for this run config. Defaults to 1.0.",
+                                      "default": 1.0
+                                    },
+                                    "structured_output_mode": {
+                                      "type": "string",
+                                      "enum": [
+                                        "default",
+                                        "json_schema",
+                                        "function_calling_weak",
+                                        "function_calling",
+                                        "json_mode",
+                                        "json_instructions",
+                                        "json_instruction_and_object",
+                                        "json_custom_instructions",
+                                        "unknown"
+                                      ],
+                                      "title": "StructuredOutputMode",
+                                      "description": "Enumeration of supported structured output modes.\n\n- json_schema: request json using API capabilities for json_schema\n- function_calling: request json using API capabilities for function calling\n- json_mode: request json using API's JSON mode, which should return valid JSON, but isn't checking/passing the schema\n- json_instructions: append instructions to the prompt to request json matching the schema. No API capabilities are used. You should have a custom parser on these models as they will be returning strings.\n- json_instruction_and_object: append instructions to the prompt to request json matching the schema. Also request the response as json_mode via API capabilities (returning dictionaries).\n- json_custom_instructions: The model should output JSON, but custom instructions are already included in the system prompt. Don't append additional JSON instructions.\n- default: let the adapter decide (legacy, do not use for new use cases)\n- unknown: used for cases where the structured output mode is not known (on old models where it wasn't saved). Should lookup best option at runtime."
+                                    },
+                                    "thinking_level": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "title": "Thinking Level",
+                                      "description": "The thinking level to use for this run config. If None, defaults may apply."
+                                    },
+                                    "tools_config": {
+                                      "anyOf": [
+                                        {
+                                          "properties": {
+                                            "tools": {
+                                              "items": {
+                                                "type": "string"
+                                              },
+                                              "type": "array",
+                                              "title": "Tools",
+                                              "description": "The IDs of the tools available to the task."
+                                            }
+                                          },
+                                          "type": "object",
+                                          "required": [
+                                            "tools"
+                                          ],
+                                          "title": "ToolsRunConfig",
+                                          "description": "A config describing which tools are available to a task."
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ],
+                                      "description": "The tools config to use for this run config, defining which tools are available to the model."
+                                    }
+                                  },
+                                  "type": "object",
+                                  "required": [
+                                    "model_name",
+                                    "model_provider_name",
+                                    "prompt_id",
+                                    "structured_output_mode"
+                                  ],
+                                  "title": "KilnAgentRunConfigProperties",
+                                  "description": "A configuration for running a task using a Kiln AI agent.\n\nThis includes everything needed to run a task, except the input and task ID. Running the same RunConfig with the same input should make identical calls to the model (output may vary as models are non-deterministic)."
+                                },
+                                {
+                                  "properties": {
+                                    "type": {
+                                      "type": "string",
+                                      "const": "mcp",
+                                      "title": "Type",
+                                      "default": "mcp"
+                                    },
+                                    "tool_reference": {
+                                      "properties": {
+                                        "tool_id": {
+                                          "type": "string",
+                                          "title": "Tool Id",
+                                          "description": "The MCP tool ID to call (mcp::local|remote::<server_id>::<tool_name>)."
+                                        },
+                                        "tool_server_id": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ],
+                                          "title": "Tool Server Id",
+                                          "description": "The MCP tool server ID."
+                                        },
+                                        "tool_name": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ],
+                                          "title": "Tool Name",
+                                          "description": "The MCP tool name."
+                                        },
+                                        "input_schema": {
+                                          "anyOf": [
+                                            {
+                                              "additionalProperties": true,
+                                              "type": "object"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ],
+                                          "title": "Input Schema",
+                                          "description": "Snapshot of the MCP tool input schema."
+                                        },
+                                        "output_schema": {
+                                          "anyOf": [
+                                            {
+                                              "additionalProperties": true,
+                                              "type": "object"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ],
+                                          "title": "Output Schema",
+                                          "description": "Snapshot of the MCP tool output schema."
+                                        }
+                                      },
+                                      "type": "object",
+                                      "required": [
+                                        "tool_id"
+                                      ],
+                                      "title": "MCPToolReference"
+                                    }
+                                  },
+                                  "type": "object",
+                                  "required": [
+                                    "tool_reference"
+                                  ],
+                                  "title": "McpRunConfigProperties",
+                                  "description": "A configuration for running a task via an MCP tool."
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Run Config",
+                          "description": "The run config used to generate the data, if generated by a running a model in Kiln (only true for type=synthetic)."
+                        }
+                      },
+                      "type": "object",
+                      "required": [
+                        "type"
+                      ],
+                      "title": "DataSource",
+                      "description": "Represents the origin of data, either human, synthetic, file import, or tool call, with associated properties.\n\nProperties vary based on the source type - for synthetic/tool_call sources this includes\nmodel information, for human sources this includes creator information, for file imports\nthis includes file information."
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The source of the output: human or synthetic."
+                },
+                "rating": {
+                  "anyOf": [
+                    {
+                      "properties": {
+                        "v": {
+                          "type": "integer",
+                          "title": "V",
+                          "description": "Schema version for migration support.",
+                          "default": 1
+                        },
+                        "id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Id",
+                          "description": "Unique identifier for this record."
+                        },
+                        "path": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "path"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Path",
+                          "description": "File system path where the record is stored."
+                        },
+                        "created_at": {
+                          "type": "string",
+                          "format": "date-time",
+                          "title": "Created At",
+                          "description": "Timestamp when the model was created. Timezone-aware; stores the writer's local offset."
+                        },
+                        "created_by": {
+                          "type": "string",
+                          "title": "Created By",
+                          "description": "User ID of the creator."
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "five_star",
+                            "pass_fail",
+                            "pass_fail_critical",
+                            "custom"
+                          ],
+                          "title": "TaskOutputRatingType",
+                          "description": "Defines the types of rating systems available for task outputs."
+                        },
+                        "value": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "title": "Value",
+                          "description": "The rating value. Interpretation depends on rating type:\n- five_star: 1-5 stars\n- pass_fail: 1.0 (pass) or 0.0 (fail)\n- pass_fail_critical: 1.0 (pass), 0.0 (fail), or -1.0 (critical fail)"
+                        },
+                        "requirement_ratings": {
+                          "additionalProperties": {
+                            "properties": {
+                              "value": {
+                                "type": "number",
+                                "title": "Value",
+                                "description": "The rating value. Interpretation depends on rating type"
+                              },
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "five_star",
+                                  "pass_fail",
+                                  "pass_fail_critical",
+                                  "custom"
+                                ],
+                                "title": "TaskOutputRatingType",
+                                "description": "Defines the types of rating systems available for task outputs."
+                              }
+                            },
+                            "type": "object",
+                            "required": [
+                              "value",
+                              "type"
+                            ],
+                            "title": "RequirementRating",
+                            "description": "Rating for a specific requirement within a task output."
+                          },
+                          "type": "object",
+                          "title": "Requirement Ratings",
+                          "description": "The ratings of the requirements of the task. The ID can be either a task_requirement_id or a named rating for an eval_output_score name (in format 'named::<name>').",
+                          "default": {}
+                        }
+                      },
+                      "type": "object",
+                      "title": "TaskOutputRating",
+                      "description": "A rating for a task output, including an overall rating and ratings for each requirement.\n\nSupports:\n- five_star: 1-5 star ratings\n- pass_fail: boolean pass/fail (1.0 = pass, 0.0 = fail)\n- pass_fail_critical: tri-state (1.0 = pass, 0.0 = fail, -1.0 = critical fail)"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The rating of the output"
+                }
+              },
+              "type": "object",
+              "required": [
+                "output"
+              ],
+              "title": "TaskOutput",
+              "description": "An output for a specific task run.\n\nContains the actual output content, its source (human or synthetic),\nand optional rating information."
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "An version of the output with issues fixed. This must be a 'fixed' version of the existing output, and not an entirely new output. If you wish to generate an ideal curatorial output for this task unrelated to this output, generate a new TaskOutput with type 'human' instead of using this field."
+        },
+        "intermediate_outputs": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Intermediate Outputs",
+          "description": "Intermediate outputs from the task run. Keys are the names of the intermediate output steps (cot=chain of thought, etc), values are the output data."
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "Tags",
+          "description": "Tags for the task run. Tags are used to categorize task runs for filtering and reporting.",
+          "default": []
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "properties": {
+                "input_tokens": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0.0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Input Tokens",
+                  "description": "The number of input tokens used in the task run."
+                },
+                "output_tokens": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0.0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Output Tokens",
+                  "description": "The number of output tokens used in the task run."
+                },
+                "total_tokens": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0.0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Total Tokens",
+                  "description": "The total number of tokens used in the task run."
+                },
+                "cost": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0.0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Cost",
+                  "description": "The cost of the task run in US dollars, saved at runtime (prices can change over time)."
+                },
+                "cached_tokens": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0.0
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Cached Tokens",
+                  "description": "Number of tokens served from prompt cache. None if not reported."
+                }
+              },
+              "type": "object",
+              "title": "Usage",
+              "description": "Token usage and cost information for a task run."
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used."
+        },
+        "trace": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "content": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "items": {
+                              "properties": {
+                                "text": {
+                                  "type": "string",
+                                  "title": "Text"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "text",
+                                  "title": "Type"
+                                }
+                              },
+                              "type": "object",
+                              "required": [
+                                "text",
+                                "type"
+                              ],
+                              "title": "ChatCompletionContentPartTextParam"
+                            },
+                            "type": "array"
+                          }
+                        ],
+                        "title": "Content"
+                      },
+                      "role": {
+                        "type": "string",
+                        "const": "developer",
+                        "title": "Role"
+                      },
+                      "name": {
+                        "type": "string",
+                        "title": "Name"
+                      }
+                    },
+                    "type": "object",
+                    "required": [
+                      "content",
+                      "role"
+                    ],
+                    "title": "ChatCompletionDeveloperMessageParam"
+                  },
+                  {
+                    "properties": {
+                      "content": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "items": {
+                              "properties": {
+                                "text": {
+                                  "type": "string",
+                                  "title": "Text"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "text",
+                                  "title": "Type"
+                                }
+                              },
+                              "type": "object",
+                              "required": [
+                                "text",
+                                "type"
+                              ],
+                              "title": "ChatCompletionContentPartTextParam"
+                            },
+                            "type": "array"
+                          }
+                        ],
+                        "title": "Content"
+                      },
+                      "role": {
+                        "type": "string",
+                        "const": "system",
+                        "title": "Role"
+                      },
+                      "name": {
+                        "type": "string",
+                        "title": "Name"
+                      }
+                    },
+                    "type": "object",
+                    "required": [
+                      "content",
+                      "role"
+                    ],
+                    "title": "ChatCompletionSystemMessageParam"
+                  },
+                  {
+                    "properties": {
+                      "content": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "properties": {
+                                    "text": {
+                                      "type": "string",
+                                      "title": "Text"
+                                    },
+                                    "type": {
+                                      "type": "string",
+                                      "const": "text",
+                                      "title": "Type"
+                                    }
+                                  },
+                                  "type": "object",
+                                  "required": [
+                                    "text",
+                                    "type"
+                                  ],
+                                  "title": "ChatCompletionContentPartTextParam"
+                                },
+                                {
+                                  "properties": {
+                                    "image_url": {
+                                      "properties": {
+                                        "url": {
+                                          "type": "string",
+                                          "title": "Url"
+                                        },
+                                        "detail": {
+                                          "type": "string",
+                                          "enum": [
+                                            "auto",
+                                            "low",
+                                            "high"
+                                          ],
+                                          "title": "Detail"
+                                        }
+                                      },
+                                      "type": "object",
+                                      "required": [
+                                        "url"
+                                      ],
+                                      "title": "ImageURL"
+                                    },
+                                    "type": {
+                                      "type": "string",
+                                      "const": "image_url",
+                                      "title": "Type"
+                                    }
+                                  },
+                                  "type": "object",
+                                  "required": [
+                                    "image_url",
+                                    "type"
+                                  ],
+                                  "title": "ChatCompletionContentPartImageParam"
+                                },
+                                {
+                                  "properties": {
+                                    "input_audio": {
+                                      "properties": {
+                                        "data": {
+                                          "type": "string",
+                                          "title": "Data"
+                                        },
+                                        "format": {
+                                          "type": "string",
+                                          "enum": [
+                                            "wav",
+                                            "mp3"
+                                          ],
+                                          "title": "Format"
+                                        }
+                                      },
+                                      "type": "object",
+                                      "required": [
+                                        "data",
+                                        "format"
+                                      ],
+                                      "title": "InputAudio"
+                                    },
+                                    "type": {
+                                      "type": "string",
+                                      "const": "input_audio",
+                                      "title": "Type"
+                                    }
+                                  },
+                                  "type": "object",
+                                  "required": [
+                                    "input_audio",
+                                    "type"
+                                  ],
+                                  "title": "ChatCompletionContentPartInputAudioParam"
+                                },
+                                {
+                                  "properties": {
+                                    "file": {
+                                      "properties": {
+                                        "file_data": {
+                                          "type": "string",
+                                          "title": "File Data"
+                                        },
+                                        "file_id": {
+                                          "type": "string",
+                                          "title": "File Id"
+                                        },
+                                        "filename": {
+                                          "type": "string",
+                                          "title": "Filename"
+                                        }
+                                      },
+                                      "type": "object",
+                                      "title": "FileFile"
+                                    },
+                                    "type": {
+                                      "type": "string",
+                                      "const": "file",
+                                      "title": "Type"
+                                    }
+                                  },
+                                  "type": "object",
+                                  "required": [
+                                    "file",
+                                    "type"
+                                  ],
+                                  "title": "File"
+                                }
+                              ]
+                            },
+                            "type": "array"
+                          }
+                        ],
+                        "title": "Content"
+                      },
+                      "role": {
+                        "type": "string",
+                        "const": "user",
+                        "title": "Role"
+                      },
+                      "name": {
+                        "type": "string",
+                        "title": "Name"
+                      }
+                    },
+                    "type": "object",
+                    "required": [
+                      "content",
+                      "role"
+                    ],
+                    "title": "ChatCompletionUserMessageParam"
+                  },
+                  {
+                    "properties": {
+                      "role": {
+                        "type": "string",
+                        "const": "assistant",
+                        "title": "Role"
+                      },
+                      "audio": {
+                        "anyOf": [
+                          {
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "title": "Id"
+                              }
+                            },
+                            "type": "object",
+                            "required": [
+                              "id"
+                            ],
+                            "title": "Audio"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "content": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "properties": {
+                                    "text": {
+                                      "type": "string",
+                                      "title": "Text"
+                                    },
+                                    "type": {
+                                      "type": "string",
+                                      "const": "text",
+                                      "title": "Type"
+                                    }
+                                  },
+                                  "type": "object",
+                                  "required": [
+                                    "text",
+                                    "type"
+                                  ],
+                                  "title": "ChatCompletionContentPartTextParam"
+                                },
+                                {
+                                  "properties": {
+                                    "refusal": {
+                                      "type": "string",
+                                      "title": "Refusal"
+                                    },
+                                    "type": {
+                                      "type": "string",
+                                      "const": "refusal",
+                                      "title": "Type"
+                                    }
+                                  },
+                                  "type": "object",
+                                  "required": [
+                                    "refusal",
+                                    "type"
+                                  ],
+                                  "title": "ChatCompletionContentPartRefusalParam"
+                                }
+                              ]
+                            },
+                            "type": "array"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Content"
+                      },
+                      "reasoning_content": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Reasoning Content"
+                      },
+                      "function_call": {
+                        "anyOf": [
+                          {
+                            "properties": {
+                              "arguments": {
+                                "type": "string",
+                                "title": "Arguments"
+                              },
+                              "name": {
+                                "type": "string",
+                                "title": "Name"
+                              }
+                            },
+                            "type": "object",
+                            "required": [
+                              "arguments",
+                              "name"
+                            ],
+                            "title": "FunctionCall"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "name": {
+                        "type": "string",
+                        "title": "Name"
+                      },
+                      "refusal": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Refusal"
+                      },
+                      "tool_calls": {
+                        "items": {
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "title": "Id"
+                            },
+                            "function": {
+                              "properties": {
+                                "arguments": {
+                                  "type": "string",
+                                  "title": "Arguments"
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "title": "Name"
+                                }
+                              },
+                              "type": "object",
+                              "required": [
+                                "arguments",
+                                "name"
+                              ],
+                              "title": "Function"
+                            },
+                            "type": {
+                              "type": "string",
+                              "const": "function",
+                              "title": "Type"
+                            }
+                          },
+                          "type": "object",
+                          "required": [
+                            "id",
+                            "function",
+                            "type"
+                          ],
+                          "title": "ChatCompletionMessageFunctionToolCallParam"
+                        },
+                        "type": "array",
+                        "title": "Tool Calls"
+                      }
+                    },
+                    "type": "object",
+                    "required": [
+                      "role"
+                    ],
+                    "title": "ChatCompletionAssistantMessageParamWrapper",
+                    "description": "Almost exact copy of ChatCompletionAssistantMessageParam, but two changes.\n\nFirst change: List[T] instead of Iterable[T] for tool_calls. Addresses pydantic issue.\nhttps://github.com/pydantic/pydantic/issues/9541\n\nSecond change: Add reasoning_content to the message. A LiteLLM property for reasoning data."
+                  },
+                  {
+                    "properties": {
+                      "content": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "items": {
+                              "properties": {
+                                "text": {
+                                  "type": "string",
+                                  "title": "Text"
+                                },
+                                "type": {
+                                  "type": "string",
+                                  "const": "text",
+                                  "title": "Type"
+                                }
+                              },
+                              "type": "object",
+                              "required": [
+                                "text",
+                                "type"
+                              ],
+                              "title": "ChatCompletionContentPartTextParam"
+                            },
+                            "type": "array"
+                          }
+                        ],
+                        "title": "Content"
+                      },
+                      "role": {
+                        "type": "string",
+                        "const": "tool",
+                        "title": "Role"
+                      },
+                      "tool_call_id": {
+                        "type": "string",
+                        "title": "Tool Call Id"
+                      },
+                      "kiln_task_tool_data": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Kiln Task Tool Data"
+                      },
+                      "is_error": {
+                        "anyOf": [
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Is Error"
+                      },
+                      "error_message": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Error Message"
+                      }
+                    },
+                    "type": "object",
+                    "required": [
+                      "content",
+                      "role",
+                      "tool_call_id"
+                    ],
+                    "title": "ChatCompletionToolMessageParamWrapper"
+                  },
+                  {
+                    "properties": {
+                      "content": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "title": "Content"
+                      },
+                      "name": {
+                        "type": "string",
+                        "title": "Name"
+                      },
+                      "role": {
+                        "type": "string",
+                        "const": "function",
+                        "title": "Role"
+                      }
+                    },
+                    "type": "object",
+                    "required": [
+                      "content",
+                      "name",
+                      "role"
+                    ],
+                    "title": "ChatCompletionFunctionMessageParam"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Trace",
+          "description": "The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model."
+        },
+        "parent_task_run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Parent Task Run Id",
+          "description": "The ID of the parent task run. This is the ID of the task run that contains this task run."
+        }
+      },
+      "type": "object",
+      "required": [
+        "input",
+        "output"
+      ],
+      "title": "TaskRun",
+      "description": "Represents a single execution of a Task.\n\nContains the input used, its source, the output produced, and optional\nrepair information if the output needed correction."
+    }
+  },
+  "parameters": {
+    "path": {
+      "project_id": {
+        "type": "string",
+        "description": "The unique identifier of the project.",
+        "title": "Project Id"
+      },
+      "task_id": {
+        "type": "string",
+        "description": "The unique identifier of the task within the project.",
+        "title": "Task Id"
+      }
+    },
+    "query": {}
   }
 }

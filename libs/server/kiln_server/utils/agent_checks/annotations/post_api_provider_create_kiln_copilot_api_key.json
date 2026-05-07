@@ -4,5 +4,27 @@
   "agent_policy": {
     "permission": "deny",
     "requires_approval": false
+  },
+  "request_body": {
+    "required": true,
+    "content_type": "application/json",
+    "schema": {
+      "properties": {
+        "access_token": {
+          "type": "string",
+          "title": "Access Token",
+          "description": "Kinde OAuth access token."
+        }
+      },
+      "type": "object",
+      "required": [
+        "access_token"
+      ],
+      "title": "CreateKilnCopilotApiKeyRequest"
+    }
+  },
+  "parameters": {
+    "path": {},
+    "query": {}
   }
 }
