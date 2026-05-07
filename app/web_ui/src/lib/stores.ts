@@ -60,7 +60,6 @@ export const ui_state = localStorageStore("ui_state", default_ui_state)
 export const projects = writable<AllProjects | null>(null)
 export const current_project = writable<Project | null>(null)
 export const current_task = writable<Task | null>(null)
-export const current_task_prompts = writable<PromptResponse | null>(null)
 
 // UI Stores we want persisted across page loads
 export const fine_tune_target_model: Writable<string | null> =
@@ -68,10 +67,6 @@ export const fine_tune_target_model: Writable<string | null> =
 
 export const chat_cost_disclaimer_acknowledged: Writable<boolean> =
   localStorageStore("kiln_chat_cost_disclaimer_v1_ack", false)
-
-// Rating options for the current task
-export const current_task_rating_options =
-  writable<RatingOptionResponse | null>(null)
 
 let previous_ui_state: UIState = default_ui_state
 
@@ -81,10 +76,8 @@ ui_state.subscribe((state) => {
     current_project.set(get_current_project())
   }
   if (state.current_task_id != previous_ui_state.current_task_id) {
-    // invalidate task caches. Rating options will load on demand.
+    // invalidate task cache. Rating options will load on demand.
     current_task.set(null)
-    current_task_rating_options.set(null)
-    current_task_prompts.set(null)
     load_current_task(get(current_project)?.id)
   }
   previous_ui_state = { ...state }
@@ -169,11 +162,6 @@ export async function load_current_task(project_id: string | null | undefined) {
       return
     }
     task = await load_task(project_id, task_id)
-
-    // Load the current task's prompts after 50ms, as it's not the most critical data
-    setTimeout(() => {
-      load_available_prompts()
-    }, 50)
   } catch (error: unknown) {
     // Can't load this task, likely deleted. Clear the ID, which will force the user to select a new task
     if (dev) {
@@ -208,6 +196,13 @@ export async function load_available_tools(
   project_id: string,
   force: boolean = false,
 ) {
+  // Selectors call this reactively from props, so we can be invoked with an
+  // empty string before the parent has resolved project_id. Skip — fetching
+  // /api/projects//available_tools 404s.
+  if (!project_id) {
+    return
+  }
+
   // Only allow one request per project at a time
   if (loading_project_tools.includes(project_id)) {
     return
@@ -598,10 +593,8 @@ export function prompt_name_from_id(
   prompt_id: string,
   prompt_response: PromptResponse | null,
 ): string {
-  // Dispatch a request to load the prompts if we don't have them yet
-  if (!prompt_response) {
-    load_available_prompts()
-  }
+  // Callers are responsible for loading prompts (typically via load_task_prompts
+  // in a reactive block). If they haven't, we just fall through to the raw ID.
   // Attempt to lookup a nice name for the prompt. First from named prompts, then from generators
   // Special case for fine-tuned prompts
   let prompt_name: string | undefined = undefined
@@ -624,95 +617,14 @@ export function prompt_name_from_id(
   return prompt_name
 }
 
-// Available prompts for the current task. Lock to avoid parallel requests.
-let is_loading_prompts = false
-export async function load_available_prompts(force: boolean = false) {
-  const project = get(current_project)
-  const task = get(current_task)
-  if (!project || !task || !project.id || !task.id) {
-    current_task_prompts.set(null)
-    return
-  }
-  if (!force && get(current_task_prompts)) {
-    return
-  }
-
-  try {
-    // Return early if already loading
-    if (is_loading_prompts) {
-      return
-    }
-    is_loading_prompts = true
-    const { data, error } = await client.GET(
-      "/api/projects/{project_id}/tasks/{task_id}/prompts",
-      {
-        params: {
-          path: {
-            project_id: project.id,
-            task_id: task.id,
-          },
-        },
-      },
-    )
-    if (error) {
-      throw error
-    }
-    current_task_prompts.set(data)
-  } catch (error: unknown) {
-    console.error(createKilnError(error).getMessage())
-    current_task_prompts.set(null)
-  } finally {
-    is_loading_prompts = false
-  }
-}
-
-// Lock to avoid parallel requests for rating options
-let is_loading_rating_options = false
-
-export async function load_rating_options() {
-  const project = get(current_project)
-  const task = get(current_task)
-  if (!project || !task || !project.id || !task.id) {
-    current_task_rating_options.set(null)
-    return
-  }
-
-  try {
-    // Return early if already loading
-    if (is_loading_rating_options) {
-      return
-    }
-    is_loading_rating_options = true
-    const { data, error } = await client.GET(
-      "/api/projects/{project_id}/tasks/{task_id}/rating_options",
-      {
-        params: {
-          path: {
-            project_id: project.id,
-            task_id: task.id,
-          },
-        },
-      },
-    )
-    if (error) {
-      throw error
-    }
-    current_task_rating_options.set(data)
-  } catch (error: unknown) {
-    console.error(createKilnError(error).getMessage())
-    current_task_rating_options.set(null)
-  } finally {
-    is_loading_rating_options = false
-  }
-}
-
 export function rating_options_for_sample(
   rating_options: RatingOptionResponse | null,
   tags: string[],
 ): TaskRequirement[] {
-  // Dispatch a request to load the rating options if we don't have them yet
+  // Callers are responsible for triggering load_rating_options(project_id, task_id)
+  // before reading; if not loaded yet, return an empty list and let the next
+  // reactive run produce the real one.
   if (!rating_options) {
-    load_rating_options()
     return []
   }
 

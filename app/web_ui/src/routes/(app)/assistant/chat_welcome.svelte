@@ -55,7 +55,7 @@
     <div class="text-center">
       <img
         src="/images/chat_icon.svg"
-        alt="Chat Icon"
+        alt="Assistant icon"
         class="welcome-icon w-[72px] h-[42px] mx-auto"
       />
       <div class="badge badge-outline badge-primary badge-sm mb-2 font-medium">

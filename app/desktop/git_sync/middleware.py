@@ -10,6 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.routing import Match
+from starlette.types import Receive, Scope, Send
 
 from app.desktop.git_sync.config import get_git_sync_config, project_path_from_id
 from app.desktop.git_sync.errors import (
@@ -71,7 +72,64 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
     passes through without buffering (preserves streaming responses).
     """
 
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await super().__call__(scope, receive, send)
+            return
+
+        request = Request(scope)
+        endpoint = self._resolve_endpoint(request)
+
+        if endpoint is None or not getattr(endpoint, "_git_sync_no_write_lock", False):
+            await super().__call__(scope, receive, send)
+            return
+
+        await self._no_write_lock_asgi(scope, receive, send, request)
+
+    async def _no_write_lock_asgi(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+        request: Request,
+    ) -> None:
+        """
+        Handle requests with @no_write_lock decorator.
+
+        This is a special case for endpoints that need to bypass the
+        write lock. Common for SSE endpoints, where we want to preserve
+        the streaming response.
+        """
+        manager = self._get_manager_for_request(request)
+        if manager is None:
+            await self.app(scope, receive, send)
+            return
+
+        try:
+            await manager.ensure_fresh_for_read()
+        except GitSyncError as e:
+            status, message = self._map_error(e)
+            error_response = Response(
+                content=json.dumps({"detail": message}, ensure_ascii=False),
+                status_code=status,
+                media_type="application/json",
+            )
+            await error_response(scope, receive, send)
+            return
+
+        self._notify_background_sync(manager)
+        scope.setdefault("state", {})
+        scope["state"]["git_sync_manager"] = manager
+
+        await self.app(scope, receive, send)
+
     async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        # Note: unlike _no_write_lock_asgi, this path does NOT attach the
+        # manager to request.state. Today no non-@no_write_lock endpoint
+        # reads request.state.git_sync_manager (build_save_context callers
+        # are all @no_write_lock). If you're adding build_save_context to a
+        # regular read endpoint, add @no_write_lock to route it through the
+        # ASGI bypass instead.
         manager = self._get_manager_for_request(request)
 
         if manager is None:
@@ -93,9 +151,6 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
         ) and not getattr(endpoint, "_git_sync_no_write_lock", False)
 
         if not needs_lock:
-            # Expose the manager so @no_write_lock endpoints can build a
-            # SaveContext without importing desktop-layer code.
-            request.state.git_sync_manager = manager
             try:
                 await manager.ensure_fresh_for_read()
             except GitSyncError as e:
@@ -106,13 +161,6 @@ class GitSyncMiddleware(BaseHTTPMiddleware):
                     media_type="application/json",
                 )
             self._notify_background_sync(manager)
-
-            # @no_write_lock endpoints manage their own atomic_write blocks
-            # per job, so a dirty check here would race in-flight commits.
-            # Skip them entirely, per the functional spec.
-            is_self_managed = getattr(endpoint, "_git_sync_no_write_lock", False)
-            if is_self_managed:
-                return await call_next(request)
 
             response = await call_next(request)
 

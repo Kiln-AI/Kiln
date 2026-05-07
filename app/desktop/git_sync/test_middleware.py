@@ -1,6 +1,7 @@
+import asyncio
 import logging
 from contextlib import contextmanager
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pygit2
 import pygit2.enums
@@ -11,6 +12,7 @@ from fastapi.testclient import TestClient
 from starlette.responses import JSONResponse, StreamingResponse
 
 from app.desktop.git_sync.config import GitSyncProjectConfig
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from app.desktop.git_sync.errors import (
     CorruptRepoError,
     RemoteUnreachableError,
@@ -524,18 +526,15 @@ def test_notify_request_called_on_write(git_repos):
     mock_bg.notify_request.assert_called()
 
 
-# --- request.state manager attachment for read path ---
+# --- request.state manager attachment ---
 
 
-def test_manager_attached_to_request_state_for_read(git_repos):
-    """Middleware sets request.state.git_sync_manager on read requests so
-    @no_write_lock endpoints can build a SaveContext."""
+def test_manager_not_attached_for_regular_read(git_repos):
+    """Regular (undecorated) read endpoints do not get git_sync_manager on
+    request.state. Only @no_write_lock endpoints (handled via the ASGI
+    bypass in __call__) receive it."""
     local_path, _ = git_repos
     config = _auto_config(str(local_path))
-
-    expected_manager = GitSyncRegistry.get_or_create(
-        local_path, auth_mode="system_keys"
-    )
 
     seen_manager: list = []
 
@@ -551,7 +550,7 @@ def test_manager_attached_to_request_state_for_read(git_repos):
 
     assert resp.status_code == 200
     assert len(seen_manager) == 1
-    assert seen_manager[0] is expected_manager
+    assert seen_manager[0] is None
 
 
 # --- Dev-mode dirty check ---
@@ -945,3 +944,310 @@ def test_unresolved_endpoint_no_warning_in_prod_mode(git_repos, monkeypatch, cap
         if r.levelno == logging.WARNING and "could not resolve endpoint" in r.message
     ]
     assert len(warning_records) == 0
+
+
+# --- ASGI bypass tests for @no_write_lock ---
+
+
+def _build_bypass_app():
+    """Build a FastAPI app with a @no_write_lock SSE endpoint for bypass tests."""
+    app = FastAPI()
+    app.add_middleware(GitSyncMiddleware)
+
+    @app.get(f"/api/projects/{PROJECT_ID}/stream")
+    @no_write_lock
+    async def sse_endpoint(request: FastAPIRequest):
+        mgr = getattr(request.state, "git_sync_manager", None)
+
+        async def gen():
+            yield f"data: manager={mgr is not None}\n\n".encode()
+
+        return StreamingResponse(gen(), media_type="text/event-stream")
+
+    @app.post(f"/api/projects/{PROJECT_ID}/items")
+    def post_endpoint():
+        return {"created": True}
+
+    @app.get("/ping")
+    def ping():
+        return "pong"
+
+    return app
+
+
+@contextmanager
+def _spy_dispatch():
+    """Patch GitSyncMiddleware.dispatch with a spy that records calls.
+
+    Yields a list that collects True for each dispatch invocation.
+    """
+    calls: list[bool] = []
+    original = GitSyncMiddleware.dispatch
+
+    async def spy(self, request, call_next):
+        calls.append(True)
+        return await original(self, request, call_next)
+
+    with patch.object(GitSyncMiddleware, "dispatch", spy):
+        yield calls
+
+
+def test_no_write_lock_takes_asgi_bypass(git_repos):
+    """A @no_write_lock endpoint takes the ASGI bypass, not dispatch."""
+    local_path, _ = git_repos
+    config = _auto_config(str(local_path))
+
+    app = _build_bypass_app()
+
+    with mock_git_sync_config(config), _spy_dispatch() as dispatch_called:
+        client = TestClient(app)
+        resp = client.get(f"/api/projects/{PROJECT_ID}/stream")
+
+    assert resp.status_code == 200
+    assert not dispatch_called, "dispatch should not be called for @no_write_lock"
+
+
+def test_write_endpoint_uses_dispatch(git_repos):
+    """An untagged POST endpoint goes through dispatch (not the ASGI bypass)."""
+    local_path, _ = git_repos
+    config = _auto_config(str(local_path))
+
+    app = _build_bypass_app()
+
+    with mock_git_sync_config(config), _spy_dispatch() as dispatch_called:
+        client = TestClient(app)
+        resp = client.post(f"/api/projects/{PROJECT_ID}/items")
+
+    assert resp.status_code == 200
+    assert dispatch_called, "dispatch should be called for write endpoint"
+
+
+def test_no_write_lock_attaches_manager_to_state(git_repos):
+    """After ASGI bypass, request.state.git_sync_manager is the resolved manager."""
+    local_path, _ = git_repos
+    config = _auto_config(str(local_path))
+    expected_manager = GitSyncRegistry.get_or_create(
+        local_path, auth_mode="system_keys"
+    )
+
+    seen_manager: list = []
+
+    app = FastAPI()
+    app.add_middleware(GitSyncMiddleware)
+
+    @app.get(f"/api/projects/{PROJECT_ID}/items")
+    @no_write_lock
+    async def get_endpoint(request: FastAPIRequest):
+        seen_manager.append(getattr(request.state, "git_sync_manager", None))
+        return {"ok": True}
+
+    with mock_git_sync_config(config):
+        client = TestClient(app)
+        resp = client.get(f"/api/projects/{PROJECT_ID}/items")
+
+    assert resp.status_code == 200
+    assert len(seen_manager) == 1
+    assert seen_manager[0] is expected_manager
+
+
+def test_no_write_lock_ensure_fresh_error_returns_json():
+    """GitSyncError during ensure_fresh_for_read in bypass returns JSON error."""
+    mgr = MagicMock()
+    mgr.ensure_fresh_for_read = AsyncMock(side_effect=SyncConflictError("conflict"))
+    mgr.repo_path = "/tmp/fake/repo"
+
+    app = _build_bypass_app()
+
+    with (
+        patch(
+            "app.desktop.git_sync.middleware.project_path_from_id",
+            return_value=PROJECT_PATH,
+        ),
+        patch(
+            "app.desktop.git_sync.middleware.get_git_sync_config",
+            return_value=_auto_config("/tmp/fake/clone"),
+        ),
+        patch.object(
+            GitSyncRegistry,
+            "get_or_create",
+            return_value=mgr,
+        ),
+        patch(
+            "app.desktop.git_sync.middleware.GitSyncRegistry.get_background_sync",
+            return_value=None,
+        ),
+    ):
+        client = TestClient(app)
+        resp = client.get(f"/api/projects/{PROJECT_ID}/stream")
+
+    assert resp.status_code == 409
+    body = resp.json()
+    assert body["detail"] == "There was a problem saving. Please try again."
+
+
+def test_no_write_lock_no_manager_passes_through():
+    """When _get_manager_for_request returns None, bypass calls self.app directly."""
+    app = _build_bypass_app()
+
+    with (
+        patch(
+            "app.desktop.git_sync.middleware.project_path_from_id",
+            return_value=None,
+        ),
+        patch(
+            "app.desktop.git_sync.middleware.get_git_sync_config",
+            return_value=None,
+        ),
+    ):
+        client = TestClient(app)
+        resp = client.get(f"/api/projects/{PROJECT_ID}/stream")
+
+    assert resp.status_code == 200
+    assert b"data:" in resp.content
+
+
+def test_unmatched_url_goes_through_super(git_repos):
+    """URLs not matching /api/projects/{id}/... go through super().__call__ -> dispatch."""
+
+    app = _build_bypass_app()
+
+    with _spy_dispatch() as dispatch_called:
+        client = TestClient(app)
+        resp = client.get("/ping")
+
+    assert resp.status_code == 200
+    assert resp.json() == "pong"
+    assert dispatch_called, "dispatch should be called for unmatched URL"
+
+
+@pytest.mark.asyncio
+async def test_non_http_scope_delegates_to_super():
+    """Non-HTTP scopes (e.g. websocket) delegate to super().__call__.
+
+    Sends a raw websocket ASGI scope and verifies that __call__ does not
+    attempt endpoint resolution or enter the bypass path -- it delegates
+    straight to super().__call__.
+    """
+    app = FastAPI()
+    app.add_middleware(GitSyncMiddleware)
+
+    @app.get("/test")
+    def test_endpoint():
+        return {"ok": True}
+
+    scope = {
+        "type": "websocket",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "path": "/ws",
+        "root_path": "",
+        "query_string": b"",
+        "headers": [],
+        "server": ("localhost", 80),
+        "app": app,
+    }
+
+    async def receive():
+        await asyncio.sleep(10)
+        return {"type": "websocket.disconnect"}
+
+    async def send(message):
+        pass
+
+    with patch.object(
+        GitSyncMiddleware, "_resolve_endpoint", wraps=None
+    ) as mock_resolve:
+        try:
+            await asyncio.wait_for(app(scope, receive, send), timeout=1.0)
+        except Exception:
+            pass
+
+    mock_resolve.assert_not_called()
+
+
+# --- Integration: SSE cancellation propagation ---
+
+
+@pytest.mark.asyncio
+async def test_sse_cancels_on_client_disconnect():
+    """ASGI bypass preserves client-disconnect cancellation for SSE endpoints.
+
+    Verifies the full chain: receive returns http.disconnect ->
+    StreamingResponse cancels body task -> generator finally block runs.
+
+    Tests at the ASGI layer by driving the full middleware + app stack
+    with a simulated receive that sends http.disconnect after the first
+    response body chunk is emitted. Uses a mock manager so the test
+    exercises the full bypass path (ensure_fresh_for_read, background
+    sync notify, scope state attachment).
+    """
+    finally_ran = asyncio.Event()
+    first_chunk_sent = asyncio.Event()
+
+    @no_write_lock
+    async def sse_endpoint() -> StreamingResponse:
+        async def gen():
+            try:
+                yield b"data: started\n\n"
+                await asyncio.sleep(3600)
+            finally:
+                finally_ran.set()
+
+        return CancellableStreamingResponse(gen(), media_type="text/event-stream")
+
+    app = FastAPI()
+    app.add_middleware(GitSyncMiddleware)
+    app.get(f"/api/projects/{PROJECT_ID}/stream")(sse_endpoint)
+
+    # spec_version "2.4" matches production uvicorn; under plain
+    # StreamingResponse this would skip listen_for_disconnect entirely,
+    # so this scope proves CancellableStreamingResponse + the ASGI bypass
+    # together restore cancellation.
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.4"},
+        "http_version": "1.1",
+        "method": "GET",
+        "path": f"/api/projects/{PROJECT_ID}/stream",
+        "root_path": "",
+        "query_string": b"",
+        "headers": [],
+        "server": ("localhost", 80),
+        "app": app,
+    }
+
+    async def receive():
+        await first_chunk_sent.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        if message["type"] == "http.response.body" and message.get("body"):
+            first_chunk_sent.set()
+
+    mgr = MagicMock()
+    mgr.ensure_fresh_for_read = AsyncMock()
+    mgr.repo_path = "/tmp/fake/repo"
+
+    with (
+        patch(
+            "app.desktop.git_sync.middleware.project_path_from_id",
+            return_value=PROJECT_PATH,
+        ),
+        patch(
+            "app.desktop.git_sync.middleware.get_git_sync_config",
+            return_value=_auto_config("/tmp/fake/clone"),
+        ),
+        patch.object(
+            GitSyncRegistry,
+            "get_or_create",
+            return_value=mgr,
+        ),
+        patch(
+            "app.desktop.git_sync.middleware.GitSyncRegistry.get_background_sync",
+            return_value=None,
+        ),
+    ):
+        await asyncio.wait_for(app(scope, receive, send), timeout=3.0)
+
+    assert finally_ran.is_set()
+    mgr.ensure_fresh_for_read.assert_called_once()

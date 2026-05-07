@@ -1,3 +1,10 @@
+<script lang="ts">
+  // Generic "questioning" animation: stacked card containers cascading in and
+  // out. Originally written for the spec builder; copy is now parameterized.
+  export let title: string
+  export let description: string
+</script>
+
 <div class="flex flex-col items-center justify-center">
   <div class="flex flex-col max-h-[300px] max-w-[300px] mt-6">
     <svg
@@ -349,11 +356,8 @@
       </g>
     </svg>
   </div>
-  <div class="font-medium text-lg text-center mt-2">
-    Preparing Clarifying Questions
-  </div>
+  <div class="font-medium text-lg text-center mt-2">{title}</div>
   <div class="font-light text-center text-gray-500 max-w-md mt-2 text-balance">
-    Kiln is analyzing your criteria to identify areas that could use more
-    clarity. Hold tight!
+    {description}
   </div>
 </div>

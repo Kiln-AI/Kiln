@@ -6,12 +6,16 @@
   export let badge_position: "left" | "right" = "left"
   export let badge_data_tip: string | null = null
   export let open: boolean = false
+  // When true, render with a transparent background + border instead of the
+  // default gray fill. Useful for nesting the collapse inside a section that
+  // already has its own surface treatment.
+  export let outlined: boolean = false
 </script>
 
 <div
-  class="collapse collapse-arrow bg-base-200 {small
-    ? 'collapse-sm'
-    : 'collapse-md'}"
+  class="collapse collapse-arrow {outlined
+    ? 'bg-transparent border border-base-300'
+    : 'bg-base-200'} {small ? 'collapse-sm' : 'collapse-md'}"
 >
   <input type="checkbox" class="peer min-h-[24px]" bind:checked={open} />
   <div

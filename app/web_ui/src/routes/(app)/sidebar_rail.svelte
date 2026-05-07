@@ -46,7 +46,11 @@
     </svg>
   </SidebarRailItem>
 
-  <SidebarRailItem href="/chat" active={section === Section.Chat} label="Chat">
+  <SidebarRailItem
+    href="/assistant"
+    active={section === Section.Assistant}
+    label="Assistant"
+  >
     <div slot="icon" class="w-full h-full">
       <ChatIcon />
     </div>

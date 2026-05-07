@@ -11,6 +11,7 @@
   import { agentInfo } from "$lib/agent"
   import { update_info, app_version } from "$lib/utils/update"
   import ArrowUpIcon from "$lib/ui/icons/arrow_up_icon.svelte"
+  import Callout from "$lib/ui/callout.svelte"
   import EditIcon from "$lib/ui/icons/edit_icon.svelte"
   import FolderIcon from "$lib/ui/icons/folder_icon.svelte"
   import FoldersIcon from "$lib/ui/icons/folders_icon.svelte"
@@ -131,36 +132,15 @@
 <AppPage title="Settings" no_y_padding>
   <div class="max-w-3xl mt-8 space-y-6">
     {#if $update_info.update_result?.has_update}
-      <div
-        class="card card-bordered border-primary/30 bg-primary/5 shadow-sm rounded-md"
-        data-testid="update-available-callout"
+      <Callout
+        testid="update-available-callout"
+        title="Update Available"
+        description="A new version of Kiln is ready to install."
+        button_label="View Update"
+        button_href="/settings/check_for_update"
       >
-        <div class="flex flex-row items-start sm:items-center gap-4 p-4">
-          <div
-            class="flex-shrink-0 w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center"
-          >
-            <div class="w-5 h-5">
-              <ArrowUpIcon />
-            </div>
-          </div>
-          <div
-            class="flex-grow min-w-0 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4"
-          >
-            <div class="flex-grow min-w-0">
-              <div class="font-medium text-primary">Update Available</div>
-              <div class="text-sm font-light text-gray-500">
-                A new version of Kiln is ready to install.
-              </div>
-            </div>
-            <a
-              href="/settings/check_for_update"
-              class="btn btn-primary btn-sm flex-shrink-0 self-start sm:self-auto"
-            >
-              View Update
-            </a>
-          </div>
-        </div>
-      </div>
+        <div slot="icon"><ArrowUpIcon /></div>
+      </Callout>
     {/if}
 
     {#each sections as section}

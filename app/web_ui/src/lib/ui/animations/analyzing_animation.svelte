@@ -1,3 +1,12 @@
+<script lang="ts">
+  // Generic "analyzing" animation: a list of items appearing, getting marked
+  // as pass/fail, and flying out. Originally written for the spec builder; the
+  // copy below is now parameterized so other flows (e.g. data guide preview
+  // generation) can reuse the visual.
+  export let title: string
+  export let description: string
+</script>
+
 <div class="flex flex-col items-center justify-center">
   <div class="flex flex-col max-h-[250px] max-w-[250px] mt-6">
     <svg
@@ -762,9 +771,8 @@
       </g>
     </svg>
   </div>
-  <div class="font-medium text-lg text-center mt-2">Analyzing Eval</div>
+  <div class="font-medium text-lg text-center mt-2">{title}</div>
   <div class="font-light text-center text-gray-500 max-w-md mt-2 text-balance">
-    Kiln is reviewing your eval, generating example data to review, and creating
-    a judge. Hold tight!
+    {description}
   </div>
 </div>

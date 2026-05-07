@@ -3,7 +3,7 @@
   import type { Eval, Spec } from "$lib/types"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { onMount, tick } from "svelte"
+  import { tick } from "svelte"
   import { page } from "$app/stores"
   import RunEval from "$lib/components/run_eval.svelte"
   import type { EvalConfig, EvalConfigCompareSummary } from "$lib/types"
@@ -13,9 +13,9 @@
     load_model_info,
     model_name,
     provider_name_from_id,
-    load_available_prompts,
     load_available_models,
   } from "$lib/stores"
+  import { load_task_prompts } from "$lib/stores/prompts_store"
   import { set_current_eval_config } from "$lib/stores/evals_store"
   import Warning from "$lib/ui/warning.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
@@ -189,26 +189,43 @@
     }
   }
 
-  onMount(async () => {
-    // Wait for page params to load
+  $: if (project_id && task_id && spec_id && eval_id) {
+    load_all(project_id, task_id, spec_id, eval_id)
+  }
+
+  async function load_all(
+    req_project_id: string,
+    req_task_id: string,
+    req_spec_id: string,
+    req_eval_id: string,
+  ) {
     await tick()
-    // Wait for these 3 to load, as they are needed for better labels. Usually already cached and instant.
     await Promise.all([
       load_model_info(),
-      load_available_prompts(),
+      load_task_prompts(req_project_id, req_task_id),
       load_available_models(),
-      get_spec(),
-      // Get this first, as we want to know "current" for sorting
-      get_eval(),
+      get_spec(req_project_id, req_task_id, req_spec_id),
+      get_eval(req_project_id, req_task_id, req_eval_id),
     ])
-    // These can be parallel
-    get_eval_config()
-    get_score_summary()
-  })
+    if (
+      req_project_id !== project_id ||
+      req_task_id !== task_id ||
+      req_eval_id !== eval_id
+    )
+      return
+    get_eval_config(req_project_id, req_task_id, req_eval_id)
+    get_score_summary(req_project_id, req_task_id, req_eval_id)
+  }
 
-  async function get_spec() {
-    if (spec_id === "legacy") {
-      spec_loading = false
+  async function get_spec(
+    req_project_id: string,
+    req_task_id: string,
+    req_spec_id: string,
+  ) {
+    if (req_spec_id === "legacy") {
+      if (req_project_id === project_id && req_task_id === task_id) {
+        spec_loading = false
+      }
       return
     }
     try {
@@ -218,25 +235,47 @@
         {
           params: {
             path: {
-              project_id: project_id,
-              task_id: task_id,
-              spec_id: spec_id,
+              project_id: req_project_id,
+              task_id: req_task_id,
+              spec_id: req_spec_id,
             },
           },
         },
       )
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_spec_id !== spec_id
+      )
+        return
       if (error) {
         throw error
       }
       spec = data
     } catch (error) {
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_spec_id !== spec_id
+      )
+        return
       spec_error = createKilnError(error)
     } finally {
-      spec_loading = false
+      if (
+        req_project_id === project_id &&
+        req_task_id === task_id &&
+        req_spec_id === spec_id
+      ) {
+        spec_loading = false
+      }
     }
   }
 
-  async function get_eval() {
+  async function get_eval(
+    req_project_id: string,
+    req_task_id: string,
+    req_eval_id: string,
+  ) {
     try {
       eval_loading = true
       const { data, error } = await client.GET(
@@ -244,13 +283,19 @@
         {
           params: {
             path: {
-              project_id,
-              task_id,
-              eval_id,
+              project_id: req_project_id,
+              task_id: req_task_id,
+              eval_id: req_eval_id,
             },
           },
         },
       )
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_eval_id !== eval_id
+      )
+        return
       if (error) {
         throw error
       }
@@ -265,13 +310,29 @@
         score_type = "mse"
       }
     } catch (error) {
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_eval_id !== eval_id
+      )
+        return
       eval_error = createKilnError(error)
     } finally {
-      eval_loading = false
+      if (
+        req_project_id === project_id &&
+        req_task_id === task_id &&
+        req_eval_id === eval_id
+      ) {
+        eval_loading = false
+      }
     }
   }
 
-  async function get_eval_config() {
+  async function get_eval_config(
+    req_project_id: string,
+    req_task_id: string,
+    req_eval_id: string,
+  ) {
     try {
       eval_configs_loading = true
       const { data, error } = await client.GET(
@@ -279,13 +340,19 @@
         {
           params: {
             path: {
-              project_id,
-              task_id,
-              eval_id,
+              project_id: req_project_id,
+              task_id: req_task_id,
+              eval_id: req_eval_id,
             },
           },
         },
       )
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_eval_id !== eval_id
+      )
+        return
       if (error) {
         throw error
       }
@@ -293,13 +360,29 @@
       eval_configs = data
       // Initial sort will be handled by the reactive statement
     } catch (error) {
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_eval_id !== eval_id
+      )
+        return
       eval_configs_error = createKilnError(error)
     } finally {
-      eval_configs_loading = false
+      if (
+        req_project_id === project_id &&
+        req_task_id === task_id &&
+        req_eval_id === eval_id
+      ) {
+        eval_configs_loading = false
+      }
     }
   }
 
-  async function get_score_summary() {
+  async function get_score_summary(
+    req_project_id: string,
+    req_task_id: string,
+    req_eval_id: string,
+  ) {
     try {
       score_summary = null
       score_summary_error = null
@@ -308,18 +391,30 @@
         {
           params: {
             path: {
-              project_id,
-              task_id,
-              eval_id,
+              project_id: req_project_id,
+              task_id: req_task_id,
+              eval_id: req_eval_id,
             },
           },
         },
       )
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_eval_id !== eval_id
+      )
+        return
       if (error) {
         throw error
       }
       score_summary = data
     } catch (error) {
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_eval_id !== eval_id
+      )
+        return
       score_summary_error = createKilnError(error)
     }
   }
@@ -569,7 +664,7 @@
                 btn_primary={!focus_select_eval_config}
                 eval_type="eval_config"
                 on_run_complete={() => {
-                  get_score_summary()
+                  get_score_summary(project_id, task_id, eval_id)
                 }}
               />
             </div>
