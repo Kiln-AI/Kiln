@@ -32,7 +32,11 @@ from kiln_ai.utils.config import Config
 from kiln_ai.utils.exhaustive_error import raise_exhaustive_enum_error
 from kiln_server.project_api import project_from_id
 from kiln_server.task_api import task_from_id
-from kiln_server.utils.agent_checks.policy import ALLOW_AGENT, DENY_AGENT
+from kiln_server.utils.agent_checks.policy import (
+    ALLOW_AGENT,
+    DENY_AGENT,
+    agent_policy_require_approval,
+)
 from mcp.types import Tool as MCPTool
 from pydantic import BaseModel, Field
 
@@ -818,7 +822,9 @@ def connect_tool_servers_api(app: FastAPI):
     @app.post(
         "/api/projects/{project_id}/kiln_task_tool",
         tags=["Tools & MCP"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=agent_policy_require_approval(
+            "Register a Kiln task as a tool (also called a sub-agent), making it callable by other agents and run configs."
+        ),
     )
     async def add_kiln_task_tool(
         project_id: Annotated[
@@ -852,7 +858,9 @@ def connect_tool_servers_api(app: FastAPI):
     @app.patch(
         "/api/projects/{project_id}/edit_kiln_task_tool/{tool_server_id}",
         tags=["Tools & MCP"],
-        openapi_extra=DENY_AGENT,
+        openapi_extra=agent_policy_require_approval(
+            "Edit a Kiln task tool (also called a sub-agent), including its name, description, underlying task, or run config."
+        ),
     )
     async def edit_kiln_task_tool(
         project_id: Annotated[
