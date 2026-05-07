@@ -86,7 +86,7 @@ def reset_committer_cache() -> None:
 
 class GitSyncManager:
     _GIT_EXECUTOR_TIMEOUT = 30.0
-    _WRITE_LOCK_TIMEOUT = 30.0
+    _WRITE_LOCK_TIMEOUT = 600.0
 
     def __init__(
         self,
