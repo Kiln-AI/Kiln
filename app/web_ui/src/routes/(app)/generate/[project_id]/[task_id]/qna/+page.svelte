@@ -1,6 +1,5 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
-  import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { get } from "svelte/store"
   import Dialog from "$lib/ui/dialog.svelte"
@@ -97,9 +96,21 @@
 
   let pendingUrlSplits: Record<string, number> = {}
 
-  onMount(async () => {
-    qna = createQnaStore(project_id, task_id)
-    await qna.init(DEFAULT_QNA_GUIDANCE)
+  let last_initialized_key: string | null = null
+
+  $: if (project_id && task_id) {
+    const key = `${project_id}/${task_id}?${$page.url.searchParams.toString()}`
+    if (last_initialized_key !== key) {
+      last_initialized_key = key
+      init_qna(project_id, task_id)
+    }
+  }
+
+  async function init_qna(req_project_id: string, req_task_id: string) {
+    const new_qna = createQnaStore(req_project_id, req_task_id)
+    await new_qna.init(DEFAULT_QNA_GUIDANCE)
+    if (req_project_id !== project_id || req_task_id !== task_id) return
+    qna = new_qna
 
     // Check for splits in URL parameters (for non-reference answer evals)
     const splitsParam = $page.url.searchParams.get("splits")
@@ -114,7 +125,7 @@
     } else if (!hasDocuments && Object.keys(urlSplits).length > 0) {
       qna.setSplits(urlSplits)
     }
-  })
+  }
 
   // Dialogs
   let clear_existing_state_dialog: Dialog | null = null
