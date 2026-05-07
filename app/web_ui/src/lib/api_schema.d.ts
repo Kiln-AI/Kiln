@@ -3732,7 +3732,8 @@ export interface components {
             tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
             /** Latency Ms */
             latency_ms?: number | null;
-            usage?: components["schemas"]["Usage"] | null;
+            /** Usage */
+            usage?: unknown | null;
         };
         /**
          * ChatCompletionAssistantMessageParamWrapper
@@ -3763,7 +3764,8 @@ export interface components {
             tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
             /** Latency Ms */
             latency_ms?: number | null;
-            usage?: components["schemas"]["Usage"] | null;
+            /** Usage */
+            usage?: unknown | null;
         };
         /** ChatCompletionContentPartImageParam */
         ChatCompletionContentPartImageParam: {

@@ -32,10 +32,6 @@ from openai.types.chat.chat_completion_assistant_message_param import (
 )
 from typing_extensions import Required, TypedDict
 
-# ``Usage`` lives in its own module specifically so this import doesn't
-# create a circular dependency on ``task_run`` (which imports from here).
-from kiln_ai.datamodel.usage import Usage
-
 
 class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):
     """
@@ -91,17 +87,25 @@ class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):
     latency_ms: Optional[int]
     """Time spent waiting on this specific LLM API call in milliseconds."""
 
-    usage: Optional[Usage]
+    usage: Optional[Any]
     """Token usage for this specific LLM API call.
 
+    The runtime value is a ``kiln_ai.datamodel.usage.Usage`` instance (or
+    its dict serialization on a deserialized trace). Typed as ``Any`` to
+    avoid an import cycle: ``kiln_ai.datamodel`` eagerly loads ``task_run``,
+    which imports from this module, so any direct annotation of ``Usage``
+    here would form a cycle that breaks Pydantic's schema build for
+    ``TaskRun.trace``.
+
     Captured per-call (not summed) so downstream consumers can sum across
-    every assistant turn in the trace and recover provider-true totals — even
-    when multiple inferences happen inside a single ``return_on_tool_call=False``
-    turn (the loop where the model calls a tool, the adapter runs it
-    internally, and the model is re-called within the same ``call_model``
-    invocation). Without this field, only the last inference's usage shows
-    up on the saved snapshot's ``task_run.usage``, and inner-loop inferences
-    are billed by the provider but invisible to trace consumers.
+    every assistant turn in the trace and recover provider-true totals —
+    even when multiple inferences happen inside a single
+    ``return_on_tool_call=False`` turn (the loop where the model calls a
+    tool, the adapter runs it internally, and the model is re-called
+    within the same ``call_model`` invocation). Without this field, only
+    the last inference's usage shows up on the saved snapshot's
+    ``task_run.usage``, and inner-loop inferences are billed by the
+    provider but invisible to trace consumers.
     """
 
 
