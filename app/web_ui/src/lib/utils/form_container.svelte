@@ -41,6 +41,10 @@
   export let focus_on_mount = true
   export let compact_button = false
   export let submitting_status: string = ""
+  // Optional class applied to the wrapper around the submit button when the
+  // `submit_left` slot is filled. Use this to give the action row a styled
+  // footer (e.g. grey background, padding) so it reads as a single unit.
+  export let submit_row_class: string = ""
   $: ui_saved_indicator = update_ui_saved_indicator(saved)
 
   function update_ui_saved_indicator(saved: boolean): boolean {
@@ -196,44 +200,98 @@
         </div>
       {/each}
     {/if}
-    <div
-      class="{submit_data_tip ? 'tooltip tooltip-top' : ''} {compact_button
-        ? ''
-        : 'w-full'}"
-      data-tip={submit_data_tip}
-    >
-      <button
-        type="submit"
-        class="relative btn {primary ? 'btn-primary' : ''} {ui_saved_indicator
-          ? 'btn-success'
-          : ''} {submit_visible ? '' : 'hidden'} {compact_button
-          ? 'min-w-64 px-12'
-          : 'w-full'}"
-        on:click={validate_and_submit}
-        disabled={submitting || submit_disabled}
+    {#if $$slots.submit_left}
+      <!-- Footer-style row: the parent provided content (e.g. compact run
+           options tiles) that should sit visually next to the submit button
+           on the same horizontal plane. submit_row_class lets the parent
+           apply backgrounds/padding to read as a single action bar. -->
+      <!-- self-stretch overrides the column's items-end alignment so the
+           submit row spans the full width and can host the slot content on
+           the left. Errors above remain shrink-to-fit + right-aligned. -->
+      <div
+        class="flex flex-row flex-wrap items-center gap-3 self-stretch w-full {submit_row_class}"
       >
-        {#if ui_saved_indicator}
-          ✔ Saved
-        {:else if !submitting}
-          {submit_label}
-          <span
-            class="absolute opacity-80 right-4 text-xs font-light {keyboard_submit
+        <div class="flex-1 min-w-0">
+          <slot name="submit_left" />
+        </div>
+        <div
+          class={submit_data_tip ? "tooltip tooltip-top" : ""}
+          data-tip={submit_data_tip}
+        >
+          <button
+            type="submit"
+            class="relative btn {primary
+              ? 'btn-primary'
+              : ''} {ui_saved_indicator ? 'btn-success' : ''} {submit_visible
               ? ''
-              : 'hidden'}"
+              : 'hidden'} min-w-64 px-12"
+            on:click={validate_and_submit}
+            disabled={submitting || submit_disabled}
           >
-            {#if isMacOS()}
-              <span class="tracking-widest">⌘↵</span>
+            {#if ui_saved_indicator}
+              ✔ Saved
+            {:else if !submitting}
+              {submit_label}
+              <span
+                class="absolute opacity-80 right-4 text-xs font-light {keyboard_submit
+                  ? ''
+                  : 'hidden'}"
+              >
+                {#if isMacOS()}
+                  <span class="tracking-widest">⌘↵</span>
+                {:else}
+                  <span>ctrl ↵</span>
+                {/if}
+              </span>
             {:else}
-              <span>ctrl ↵</span>
+              <span class="loading loading-spinner loading-md"></span>
+              {#if submitting_status}
+                <span class="truncate max-w-48">{submitting_status}</span>
+              {/if}
             {/if}
-          </span>
-        {:else}
-          <span class="loading loading-spinner loading-md"></span>
-          {#if submitting_status}
-            <span class="truncate max-w-48">{submitting_status}</span>
+          </button>
+        </div>
+      </div>
+    {:else}
+      <div
+        class="{submit_data_tip ? 'tooltip tooltip-top' : ''} {compact_button
+          ? ''
+          : 'w-full'}"
+        data-tip={submit_data_tip}
+      >
+        <button
+          type="submit"
+          class="relative btn {primary ? 'btn-primary' : ''} {ui_saved_indicator
+            ? 'btn-success'
+            : ''} {submit_visible ? '' : 'hidden'} {compact_button
+            ? 'min-w-64 px-12'
+            : 'w-full'}"
+          on:click={validate_and_submit}
+          disabled={submitting || submit_disabled}
+        >
+          {#if ui_saved_indicator}
+            ✔ Saved
+          {:else if !submitting}
+            {submit_label}
+            <span
+              class="absolute opacity-80 right-4 text-xs font-light {keyboard_submit
+                ? ''
+                : 'hidden'}"
+            >
+              {#if isMacOS()}
+                <span class="tracking-widest">⌘↵</span>
+              {:else}
+                <span>ctrl ↵</span>
+              {/if}
+            </span>
+          {:else}
+            <span class="loading loading-spinner loading-md"></span>
+            {#if submitting_status}
+              <span class="truncate max-w-48">{submitting_status}</span>
+            {/if}
           {/if}
-        {/if}
-      </button>
-    </div>
+        </button>
+      </div>
+    {/if}
   </div>
 </form>

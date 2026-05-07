@@ -7,6 +7,19 @@
   import MultiIntro from "$lib/ui/multi_intro.svelte"
   import { onMount } from "svelte"
   import { goto } from "$app/navigation"
+  import { page } from "$app/stores"
+
+  // This component renders on BOTH /generate/[ids]/ (cards) and /synth (when
+  // the synth flow shows the eval/finetune Intro). When the user clicks one
+  // of the gotos here while already on the same target route, push-to-history
+  // would stack a duplicate entry for the same logical page — making back
+  // press once just toggle search params instead of leaving. Use replaceState
+  // when staying on the same route so back behaves naturally.
+  function nav(target_path: string, query: string) {
+    const url = `${target_path}?${query}`
+    const same_route = $page.url.pathname === target_path
+    goto(url, { replaceState: same_route })
+  }
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import FinetuneIcon from "$lib/ui/icons/finetune_icon.svelte"
   import { encode_splits_for_url } from "$lib/utils/splits_util"
@@ -139,9 +152,9 @@
 
     // For reference answer evals, redirect to QnA page instead of synth page
     if (template_id === "rag") {
-      goto(`/generate/${project_id}/${task_id}/qna?${params.toString()}`)
+      nav(`/generate/${project_id}/${task_id}/qna`, params.toString())
     } else {
-      goto(`/generate/${project_id}/${task_id}/synth?${params.toString()}`)
+      nav(`/generate/${project_id}/${task_id}/synth`, params.toString())
     }
     specs_dialog?.close()
   }
@@ -222,7 +235,7 @@
     // .set will automatically URL encode
     params.set("splits", encode_splits_for_url(splits))
 
-    goto(`/generate/${project_id}/${task_id}/synth?${params.toString()}`)
+    nav(`/generate/${project_id}/${task_id}/synth`, params.toString())
     fine_tuning_dialog?.close()
   }
 

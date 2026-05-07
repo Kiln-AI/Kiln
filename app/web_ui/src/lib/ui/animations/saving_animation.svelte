@@ -1,3 +1,10 @@
+<script lang="ts">
+  // Generic "saving" animation: a database with a rotating cog. Originally
+  // written for the spec builder; copy is now parameterized for reuse.
+  export let title: string
+  export let description: string
+</script>
+
 <div class="flex flex-col items-center justify-center my-10">
   <div class="flex flex-col max-h-[125px] max-w-[125px] mt-6 mb-3">
     <svg
@@ -42,9 +49,8 @@
       />
     </svg>
   </div>
-  <div class="font-medium text-lg text-center mt-2">Creating Spec</div>
+  <div class="font-medium text-lg text-center mt-2">{title}</div>
   <div class="font-light text-center text-gray-500 max-w-md mt-2 text-balance">
-    Kiln is generating evaluation and training data for your spec before saving.
-    Hold tight!
+    {description}
   </div>
 </div>

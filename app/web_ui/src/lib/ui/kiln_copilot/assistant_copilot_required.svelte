@@ -7,7 +7,7 @@
 <CopilotRequiredCard
   title="Kiln Assistant"
   description_markdown="Kiln Assistant helps you build, evaluate, and optimize your AI systems."
-  auth_href="/assistant/copilot_auth"
+  auth_href="/assistant/pro_auth"
   {compact}
   connect_button_label="Log in to Kiln"
   icon="chat"

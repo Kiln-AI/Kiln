@@ -7,7 +7,6 @@
     prompts_by_task_composite_id,
   } from "$lib/stores/prompts_store"
   import { get_task_composite_id } from "$lib/stores"
-  import { onMount } from "svelte"
   import PromptForm from "../../prompt_form.svelte"
 
   import { agentInfo } from "$lib/agent"
@@ -25,15 +24,31 @@
   let loading = true
   let loading_error: KilnError | null = null
 
-  onMount(async () => {
+  $: if (project_id && task_id && prompt_id) {
+    load_source_prompt(project_id, task_id, prompt_id)
+  }
+
+  async function load_source_prompt(
+    req_project_id: string,
+    req_task_id: string,
+    req_prompt_id: string,
+  ) {
     try {
-      await load_task_prompts(project_id, task_id)
+      loading = true
+      loading_error = null
+      await load_task_prompts(req_project_id, req_task_id)
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_prompt_id !== prompt_id
+      )
+        return
       const task_prompts =
         $prompts_by_task_composite_id[
-          get_task_composite_id(project_id, task_id)
+          get_task_composite_id(req_project_id, req_task_id)
         ]
       const source_prompt = task_prompts?.prompts.find(
-        (p) => p.id === prompt_id,
+        (p) => p.id === req_prompt_id,
       )
 
       if (!source_prompt) {
@@ -45,11 +60,23 @@
       initial_chain_of_thought_instructions =
         source_prompt.chain_of_thought_instructions || null
     } catch (e) {
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_prompt_id !== prompt_id
+      )
+        return
       loading_error = createKilnError(e)
     } finally {
-      loading = false
+      if (
+        req_project_id === project_id &&
+        req_task_id === task_id &&
+        req_prompt_id === prompt_id
+      ) {
+        loading = false
+      }
     }
-  })
+  }
 </script>
 
 <div class="max-w-[1400px]">

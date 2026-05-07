@@ -13,7 +13,6 @@
   import {
     model_info,
     load_model_info,
-    load_available_prompts,
     load_available_models,
     load_task,
     get_task_composite_id,
@@ -93,7 +92,7 @@
     // Wait for these to load, as they are needed for better labels. Usually already cached and instant.
     await Promise.all([
       load_model_info(),
-      load_available_prompts(),
+      load_task_prompts(project_id, task_id),
       load_available_models(),
       get_task(),
       get_spec(),

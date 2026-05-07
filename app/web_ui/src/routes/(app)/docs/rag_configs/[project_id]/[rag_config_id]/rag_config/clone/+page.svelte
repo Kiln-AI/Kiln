@@ -6,7 +6,6 @@
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
   import type { RagConfigWithSubConfigs } from "$lib/types"
-  import { onMount } from "svelte"
   import EditRagConfigForm from "../../../create_rag_config/edit_rag_config_form.svelte"
 
   import { agentInfo } from "$lib/agent"
@@ -21,11 +20,14 @@
   let error: KilnError | null = null
   let rag_config: RagConfigWithSubConfigs | null = null
 
-  onMount(async () => {
-    await get_rag_config()
-  })
+  $: if (project_id && rag_config_id) {
+    get_rag_config(project_id, rag_config_id)
+  }
 
-  async function get_rag_config() {
+  async function get_rag_config(
+    req_project_id: string,
+    req_rag_config_id: string,
+  ) {
     try {
       loading = true
       const { data: rag_config_data, error: get_rag_config_error } =
@@ -34,12 +36,15 @@
           {
             params: {
               path: {
-                project_id,
-                rag_config_id,
+                project_id: req_project_id,
+                rag_config_id: req_rag_config_id,
               },
             },
           },
         )
+
+      if (req_project_id !== project_id || req_rag_config_id !== rag_config_id)
+        return
 
       if (get_rag_config_error) {
         throw get_rag_config_error
@@ -47,9 +52,16 @@
 
       rag_config = rag_config_data
     } catch (e) {
+      if (req_project_id !== project_id || req_rag_config_id !== rag_config_id)
+        return
       error = createKilnError(e)
     } finally {
-      loading = false
+      if (
+        req_project_id === project_id &&
+        req_rag_config_id === rag_config_id
+      ) {
+        loading = false
+      }
     }
   }
 </script>

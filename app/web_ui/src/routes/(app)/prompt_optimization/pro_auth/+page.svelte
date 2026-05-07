@@ -4,9 +4,9 @@
   import { agentInfo } from "$lib/agent"
 
   agentInfo.set({
-    name: "Prompt Optimization Copilot Auth",
+    name: "Prompt Optimization Kiln Pro Auth",
     description:
-      "Authentication page for Kiln Copilot access to create optimized prompts.",
+      "Authentication page for Kiln Pro access to create optimized prompts.",
   })
 
   $: project_id = $ui_state.current_project_id

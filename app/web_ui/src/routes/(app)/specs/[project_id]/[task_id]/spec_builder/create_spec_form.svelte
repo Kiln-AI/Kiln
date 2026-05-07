@@ -75,7 +75,7 @@
 
 <FormContainer
   bind:this={form_container}
-  submit_label={copilot_allowed ? "Create with Copilot" : "Create Spec"}
+  submit_label={copilot_allowed ? "Create with Kiln Pro" : "Create Spec"}
   on:submit={handle_submit}
   bind:error
   bind:submitting
@@ -146,7 +146,7 @@
         info_description={full_trace_disabled
           ? "Tool use specs always evaluate the full conversation history to analyze tool calls."
           : "Enable this for specs that need to evaluate reasoning steps, tool usage, or intermediate outputs." +
-            (copilot_enabled ? " Not supported by Copilot." : "")}
+            (copilot_enabled ? " Not supported by Kiln Pro." : "")}
       />
     {/if}
   </Collapse>

@@ -4,7 +4,6 @@
   import Warning from "$lib/ui/warning.svelte"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import { uncache_available_tools, ui_state } from "$lib/stores"
@@ -30,21 +29,24 @@
   let archive_loading = false
   let open_folder_error: KilnError | null = null
 
-  onMount(async () => {
-    await fetch_skill()
-  })
+  $: if (project_id && skill_id) {
+    fetch_skill(project_id, skill_id)
+  }
 
-  async function fetch_skill() {
+  async function fetch_skill(req_project_id: string, req_skill_id: string) {
     try {
       loading = true
       loading_error = null
-      const params = { path: { project_id, skill_id } }
+      const params = {
+        path: { project_id: req_project_id, skill_id: req_skill_id },
+      }
       const [skill_res, content_res] = await Promise.all([
         client.GET("/api/projects/{project_id}/skills/{skill_id}", { params }),
         client.GET("/api/projects/{project_id}/skills/{skill_id}/content", {
           params,
         }),
       ])
+      if (req_project_id !== project_id || req_skill_id !== skill_id) return
       if (skill_res.error || content_res.error) {
         throw skill_res.error ?? content_res.error
       }
@@ -52,9 +54,12 @@
       skill_description = skill_res.data?.description ?? null
       skill_body = content_res.data?.body ?? null
     } catch (err) {
+      if (req_project_id !== project_id || req_skill_id !== skill_id) return
       loading_error = createKilnError(err)
     } finally {
-      loading = false
+      if (req_project_id === project_id && req_skill_id === skill_id) {
+        loading = false
+      }
     }
   }
 
@@ -112,7 +117,7 @@
     } catch (e) {
       archive_error = createKilnError(e)
     } finally {
-      await fetch_skill()
+      await fetch_skill(project_id, skill_id)
       archive_loading = false
     }
   }

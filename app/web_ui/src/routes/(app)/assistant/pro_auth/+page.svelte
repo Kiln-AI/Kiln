@@ -3,9 +3,8 @@
   import { agentInfo } from "$lib/agent"
 
   agentInfo.set({
-    name: "Assistant Copilot Auth",
-    description:
-      "Authentication page for Kiln Copilot access to use Kiln Assistant.",
+    name: "Assistant Kiln Pro Auth",
+    description: "Authentication page for Kiln Pro access to use Kiln Assistant.",
   })
 </script>
 

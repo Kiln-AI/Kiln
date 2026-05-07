@@ -504,6 +504,68 @@ def test_task_output_source_validation(tmp_path):
         assert task_run.output.source is None
 
 
+def test_data_guide():
+    from kiln_ai.datamodel.data_guide import DataGuide
+
+    body = (
+        "# Reference Examples\n\n"
+        "## Example 1\n```input\ntest\n```\n\n```output\nresult\n```\n\n"
+        "# Guidelines & Rules\n\n"
+        "<output_semantic>\n\n## Cholesterol\nIf cholesterol is high, never have low LDL.\n\n</output_semantic>"
+    )
+    guide = DataGuide(guide=body)
+    assert "test" in guide.guide
+    assert "cholesterol" in guide.guide.lower()
+
+    # Serializes correctly
+    data = guide.model_dump()
+    assert "test" in data["guide"]
+    assert "cholesterol" in data["guide"].lower()
+
+    # Deserializes correctly
+    restored = DataGuide.model_validate(data)
+    assert restored.guide == guide.guide
+
+    # Field defaults to empty — a blank guide is permitted at the model layer
+    # (validation lives at the API).
+    blank = DataGuide()
+    assert blank.guide == ""
+
+
+def test_task_data_guide_accessors(tmp_path):
+    """Task.data_guides() lists child guides; current_data_guide() returns
+    the single one (or None) — the canonical accessor used by the data-gen
+    APIs."""
+    from kiln_ai.datamodel import Project, Task
+    from kiln_ai.datamodel.data_guide import DataGuide
+
+    project = Project(name="P", path=tmp_path / "p" / "project.kiln")
+    project.path.parent.mkdir()
+    project.save_to_file()
+
+    task = Task(name="T", instruction="t", parent=project)
+    task.save_to_file()
+
+    # No guides yet
+    assert task.data_guides() == []
+    assert task.current_data_guide() is None
+
+    # Save one DataGuide as a child of the task
+    guide = DataGuide(parent=task, guide="some guide body")
+    guide.save_to_file()
+
+    reloaded = Task.from_id_and_parent_path(task.id, project.path)
+    assert reloaded is not None
+    guides = reloaded.data_guides()
+    assert len(guides) == 1
+    assert guides[0].guide == "some guide body"
+
+    current = reloaded.current_data_guide()
+    assert current is not None
+    assert current.id == guide.id
+    assert current.guide == "some guide body"
+
+
 def test_task_run_tags_validation():
     # Setup basic output for TaskRun creation
     output = TaskOutput(
