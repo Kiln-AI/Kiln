@@ -901,7 +901,7 @@
     {:else if current_state === "analyzing_for_review"}
       <AnalyzingAnimation
         title="Analyzing Eval"
-        description="Kiln is reviewing your eval, generating example data to review, and creating a judge. Hold tight!"
+        description="Kiln is reviewing your eval, generating example data to review, and creating a judge. This may take a while. Hold tight!"
       />
     {:else if current_state === "questioning"}
       <QuestioningAnimation
