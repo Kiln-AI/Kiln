@@ -207,7 +207,7 @@
   }
 
   async function show_fine_tuning_dialog() {
-    // Special case: if loading or there is an error, show the dialog as it can handle these states. Usually it would alread be loaded by now since it's called onMount.
+    // Special case: if loading or there is an error, show the dialog as it can handle these states. Usually it would already be loaded by now since it's called onMount.
     if (finetune_dataset_info_loading || finetune_dataset_info_error) {
       fine_tuning_dialog?.show()
       return

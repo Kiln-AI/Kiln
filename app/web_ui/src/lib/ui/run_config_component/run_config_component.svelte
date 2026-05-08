@@ -213,7 +213,7 @@
 
   // Since some changes can make many other fields change (eg run config), we debounce the updates to avoid excessive updates.
   // Just mark as dirty, and run again only once, after the update is once.
-  // Knowning only 1 is called in parallel also makes it simpler to reason about.
+  // Knowing only 1 is called in parallel also makes it simpler to reason about.
   let running: boolean = false
   let run_again: boolean = false
   async function debounce_update_for_state_changes() {

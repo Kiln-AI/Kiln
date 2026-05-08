@@ -132,8 +132,8 @@
       <div class="font-medium">Prompt Options</div>
       <div class="text-sm text-gray-500 mt-1">
         Specify the prompt which will be used to extract data from your
-        documents. Each document type has it's own prompt. Leave blank to use
-        the default.
+        documents. Each document type has its own prompt. Leave blank to use the
+        default.
       </div>
     </div>
     <div class="flex flex-col gap-2">

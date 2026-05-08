@@ -512,7 +512,7 @@ def connect_tool_servers_api(app: FastAPI):
     ) -> ExternalToolServerApiDescription:
         tool_server = tool_server_from_id(project_id, tool_server_id)
 
-        # Check if the tool server has missing secretes (e.g. new user syncing exisiting project)
+        # Check if the tool server has missing secrets (e.g. new user syncing existing project)
         # If there are missing secrets, add a requirement to the result and skip getting available tools.
         _, missing_secrets = tool_server.retrieve_secrets()
         if missing_secrets:

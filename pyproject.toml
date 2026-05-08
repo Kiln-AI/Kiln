@@ -69,9 +69,9 @@ asyncio_mode = "auto"
 # Needed to silence warning. See https://github.com/pytest-dev/pytest-asyncio/issues/924
 asyncio_default_fixture_loop_scope = "function"
 markers = [
-    "paid: marks tests as requring paid APIs. Not run by default, run with '--runpaid' option.",
+    "paid: marks tests as requiring paid APIs. Not run by default, run with '--runpaid' option.",
     "slow: marks tests as slow. Not run by default, run with '--runslow' option.",
-    "ollama: marks tests as requring ollama server. Not run by default, run with '--ollama' option.",
+    "ollama: marks tests as requiring ollama server. Not run by default, run with '--ollama' option.",
 ]
 # pydantic deprecation warnings come from dependencies (not our code).
 # The benchmark fixture "not used at all" warning is a false-positive from pytest-benchmark.

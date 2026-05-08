@@ -94,7 +94,7 @@ class TaskRunConfig(KilnParentedModel):
             return None
         return self.parent  # type: ignore
 
-    # Previously we didn't store structured_output_mode in the run_config_properties. Updgrade old models when loading from file.
+    # Previously we didn't store structured_output_mode in the run_config_properties. Upgrade old models when loading from file.
     @model_validator(mode="before")
     def upgrade_old_entries(cls, data: dict, info: ValidationInfo) -> dict:
         if not info.context or not info.context.get("loading_from_file", False):

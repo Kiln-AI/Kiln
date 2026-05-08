@@ -776,7 +776,7 @@
   onMount(async () => {
     await check_existing_providers()
 
-    // Check Ollama every load, as it can be closed. More epmemerial (and local/cheap/fast)
+    // Check Ollama every load, as it can be closed. More ephemeral (and local/cheap/fast)
     connect_ollama(false).then(() => {
       // Clear the error as the user didn't initiate this run
       status["ollama"].error = null

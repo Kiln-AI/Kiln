@@ -445,7 +445,7 @@
   }
 
   async function add_selected_tags(): Promise<boolean> {
-    // Don't accidentially remove tags
+    // Don't accidentally remove tags
     remove_tags = new Set()
     return await edit_tags()
   }
@@ -476,7 +476,7 @@
   }
 
   async function remove_selected_tags(): Promise<boolean> {
-    // Don't accidentially add tags
+    // Don't accidentally add tags
     add_tags = []
     return await edit_tags()
   }

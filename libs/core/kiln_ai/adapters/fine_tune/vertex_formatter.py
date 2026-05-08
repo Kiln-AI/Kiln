@@ -25,7 +25,7 @@ def generate_vertex_gemini(
     if not training_chat:
         raise ValueError("Training chat cannot be empty")
 
-    # System message get's it's own entry in top level UI
+    # System message gets its own entry in top level UI
     system_instruction = training_chat[0].content
 
     contents: list[Dict[str, Any]] = []
