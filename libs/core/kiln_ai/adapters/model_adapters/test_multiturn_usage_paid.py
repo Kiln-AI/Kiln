@@ -138,11 +138,45 @@ def _assert_all_assistants_have_usage(trace) -> None:
             f"Expected the adapter to populate the field with the provider's "
             f"reported cached-prompt-tokens count (0 if no cache hit)."
         )
-        # cost is allowed to be None — but if reported, it must be positive.
+        # cost is allowed to be None (or 0.0) — providers don't always
+        # report it, and LiteLLM's cost-resolution table can lag behind
+        # newer models. Only fail on negative values.
         if usage.cost is not None:
-            assert usage.cost > 0, (
-                f"assistant message #{i} has zero/negative cost: {usage.cost}"
+            assert usage.cost >= 0, (
+                f"assistant message #{i} has negative cost: {usage.cost}"
             )
+
+
+def _assert_last_trace_has_usage_on_every_assistant(last_run: TaskRun) -> None:
+    """Dedicated check for the FINAL TaskRun in a chain: every assistant
+    message in its trace must carry a non-None ``usage`` with the required
+    fields populated.
+
+    The last trace is the canonical "full conversation history" snapshot
+    that downstream consumers (UI, eval, billing dashboards) read. If any
+    assistant message in it is missing per-message usage, the consumer
+    sees that inference's tokens as zero — silent undercount.
+
+    This exists as a separate explicit check (in addition to
+    ``_assert_per_message_usage_chain_consistent`` which walks every run)
+    so a failure here points unambiguously at the final-snapshot path."""
+    assert last_run.trace is not None, "last TaskRun has no trace"
+    last_assistants = _assistant_messages(last_run.trace)
+    assert len(last_assistants) >= 1, (
+        f"last TaskRun's trace has no assistant messages: {last_run.trace}"
+    )
+    missing: list[int] = []
+    for i, m in enumerate(last_assistants):
+        if _coerce_usage(m.get("usage")) is None:
+            missing.append(i)
+    assert not missing, (
+        f"Last TaskRun's trace is missing `usage` on assistant message(s) "
+        f"at index(es) {missing} (out of {len(last_assistants)} total "
+        f"assistants). Every assistant turn in the final snapshot must "
+        f"carry per-message usage."
+    )
+    # Now apply the full per-field shape requirements to the last trace.
+    _assert_all_assistants_have_usage(last_run.trace)
 
 
 def _assert_last_trace_anchors_each_taskrun_usage(
@@ -297,6 +331,10 @@ async def test_multiturn_with_internal_tool_loop_preserves_per_message_usage(tmp
         f"should equal run1.cumulative_usage + run2.usage = {expected_cum_input}"
     )
 
+    # Final-snapshot check: the LAST run's trace (the conversation history a
+    # consumer would render) carries per-message usage on every assistant.
+    _assert_last_trace_has_usage_on_every_assistant(run2)
+
 
 @pytest.mark.paid
 async def test_return_on_tool_call_resume_preserves_per_message_usage(tmp_path):
@@ -370,6 +408,10 @@ async def test_return_on_tool_call_resume_preserves_per_message_usage(tmp_path):
         "run2.cumulative_usage should strictly exceed run2.usage because the "
         "seeded prior trace contributes a non-zero number of input tokens."
     )
+
+    # Final-snapshot check: the LAST run's trace (the conversation history a
+    # consumer would render) carries per-message usage on every assistant.
+    _assert_last_trace_has_usage_on_every_assistant(run2)
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -601,6 +643,13 @@ async def _run_chat_session(streaming: bool, tmp_path: Path) -> None:
     # — whether on the running aggregator or on the seeded prior trace
     # — will trip this assertion. ──
     _assert_per_message_usage_chain_consistent(full_chain)
+
+    # ── Final-snapshot check: the LAST TaskRun's trace (which a chat UI,
+    # eval, or billing dashboard would render as "the conversation
+    # history") carries per-message usage on EVERY assistant message in
+    # it. A failure here points unambiguously at the final-snapshot path
+    # (vs. the running aggregator, which the previous assertion covers). ──
+    _assert_last_trace_has_usage_on_every_assistant(full_chain[-1])
 
     # ── Strongest precise check: the LAST TaskRun's trace anchors each
     # TaskRun's individual `usage` at the exact assistant-message slot
