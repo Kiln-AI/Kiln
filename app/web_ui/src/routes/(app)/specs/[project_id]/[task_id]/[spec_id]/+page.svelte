@@ -53,8 +53,8 @@
   $: task_id = $page.params.task_id!
   $: spec_id = $page.params.spec_id!
   $: agentInfo.set({
-    name: "Spec Detail",
-    description: `Spec detail for spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Spec name: ${spec?.name ?? "[loading]"}. Shows spec requirements, evals, and test cases.`,
+    name: "Eval Detail",
+    description: `Eval detail for eval ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Eval name: ${spec?.name ?? "[loading]"}. Shows eval requirements, evaluation configs, and test cases.`,
   })
 
   let spec: Spec | null = null
@@ -514,13 +514,13 @@
 
 <div class="max-w-[1400px]">
   <AppPage
-    title={`Spec: ${spec?.name ? `${spec.name}` : ""}`}
-    subtitle="Use evals to measure how well your task meets this specification."
+    title={`Eval: ${spec?.name ? `${spec.name}` : ""}`}
+    subtitle="Automatically measures how well your task performs."
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/evals-and-specs"
     breadcrumbs={[
       {
-        label: "Specs & Evals",
+        label: "Evals",
         href: `/specs/${project_id}/${task_id}`,
       },
     ]}
@@ -552,7 +552,7 @@
       </div>
     {:else if !spec}
       <div class="text-error text-sm">
-        Failed to load spec, please refresh the page and try again.
+        Failed to load eval, please refresh the page and try again.
       </div>
     {:else}
       <div class="grid grid-cols-1 lg:grid-cols-[1fr,auto] gap-12">
@@ -737,7 +737,7 @@
 
 <EditDialog
   bind:this={edit_dialog}
-  name="Spec"
+  name="Eval"
   patch_url={`/api/projects/${project_id}/tasks/${task_id}/specs/${spec_id}`}
   delete_url={`/api/projects/${project_id}/tasks/${task_id}/specs/${spec_id}`}
   after_delete={() => {
@@ -745,8 +745,8 @@
   }}
   fields={[
     {
-      label: "Spec Name",
-      description: "A name to identify this spec.",
+      label: "Eval Name",
+      description: "A name to identify this eval.",
       api_name: "name",
       value: spec?.name || "",
       input_type: "input",

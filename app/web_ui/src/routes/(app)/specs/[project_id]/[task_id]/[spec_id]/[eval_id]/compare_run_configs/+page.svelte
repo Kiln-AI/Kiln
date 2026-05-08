@@ -447,7 +447,7 @@
     breadcrumbs={spec_id === "legacy"
       ? [
           {
-            label: "Specs & Evals",
+            label: "Evals",
             href: `/specs/${project_id}/${task_id}`,
           },
           {
@@ -457,11 +457,11 @@
         ]
       : [
           {
-            label: "Specs & Evals",
+            label: "Evals",
             href: `/specs/${project_id}/${task_id}`,
           },
           {
-            label: spec?.name || "Spec",
+            label: spec?.name || "Eval",
             href: `/specs/${project_id}/${task_id}/${spec_id}`,
           },
           {

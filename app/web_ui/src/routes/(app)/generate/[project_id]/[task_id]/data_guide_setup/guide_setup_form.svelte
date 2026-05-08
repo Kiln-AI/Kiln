@@ -17,7 +17,8 @@
   import AddExampleDialog from "./add_example_dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import ClampedText from "$lib/ui/clamped_text.svelte"
-  import Dialog from "$lib/ui/dialog.svelte"
+  import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
+  import { formatExpandedContent } from "$lib/utils/format_expanded_content"
 
   export let project_id: string
   export let task_id: string
@@ -144,18 +145,7 @@
     }
   }>()
 
-  // --- See-all dialog for long input/output cells ---
-  // Mirrors the preview-screen pattern: rows show a 3-line clamp with a
-  // "See all" link, which pops the full content in this dialog.
-  let see_all_dialog: Dialog
-  let see_all_title: string = ""
-  let see_all_content: string = ""
-
-  function show_full_text(title: string, content: string) {
-    see_all_title = title
-    see_all_content = content
-    see_all_dialog?.show()
-  }
+  let see_all_dialog: SeeAllDialog
 </script>
 
 <FormContainer
@@ -197,17 +187,27 @@
           </thead>
           <tbody>
             {#each guide_examples as example, i}
+              {@const input_content = formatExpandedContent(example.input)}
+              {@const output_content = formatExpandedContent(example.output)}
               <tr>
                 <td class="py-2">
                   <ClampedText
-                    content={example.input}
-                    on:see_all={() => show_full_text("Input", example.input)}
+                    content={input_content.isJson ? "" : input_content.value}
+                    html_content={input_content.isJson
+                      ? input_content.value
+                      : null}
+                    on:see_all={() =>
+                      see_all_dialog.show("Input", example.input)}
                   />
                 </td>
                 <td class="py-2">
                   <ClampedText
-                    content={example.output}
-                    on:see_all={() => show_full_text("Output", example.output)}
+                    content={output_content.isJson ? "" : output_content.value}
+                    html_content={output_content.isJson
+                      ? output_content.value
+                      : null}
+                    on:see_all={() =>
+                      see_all_dialog.show("Output", example.output)}
                   />
                 </td>
                 <td class="py-2 p-0">
@@ -272,14 +272,4 @@
   on:submit={handle_example_submit}
 />
 
-<!-- See-all Dialog: shows the full text of an input/output cell that was
-     clamped in the table by ClampedText. -->
-<Dialog
-  bind:this={see_all_dialog}
-  title={see_all_title}
-  width="wide"
-  action_buttons={[{ label: "Close", isCancel: true }]}
->
-  <pre
-    class="whitespace-pre-wrap break-words text-sm text-gray-600">{see_all_content}</pre>
-</Dialog>
+<SeeAllDialog bind:this={see_all_dialog} />

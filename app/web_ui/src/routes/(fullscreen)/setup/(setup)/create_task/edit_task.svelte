@@ -451,7 +451,7 @@
               Requirements have been replaced by <a
                 href="https://docs.kiln.tech/docs/evals-and-specs"
                 target="_blank"
-                class="link">Specs & Evals</a
+                class="link">Evals</a
               >
               and
               <a

@@ -43,12 +43,12 @@
 
 <div class="max-w-[900px]">
   <AppPage
-    title="Create Spec"
+    title="Create Eval"
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/evals-and-specs"
     breadcrumbs={[
       {
-        label: "Specs & Evals",
+        label: "Evals",
         href: `/specs/${project_id}/${task_id}`,
       },
     ]}
@@ -64,7 +64,7 @@
     {:else}
       <div class="my-4 max-w-[680px] mx-auto">
         <div class="font-medium text-xl text-center">
-          Choose your Spec Creation Workflow
+          Choose your Eval Creation Workflow
         </div>
         <div class="overflow-x-auto">
           <table class="table w-full mt-4">
@@ -81,10 +81,10 @@
                   <div class="flex items-center justify-center gap-2">
                     <img
                       src="/images/animated_logo.svg"
-                      alt="Kiln Pro"
+                      alt="Kiln Eval Builder"
                       class="size-4"
                     />
-                    <span>Kiln Pro</span>
+                    <span>Kiln Eval Builder</span>
                   </div>
                 </th>
               </tr>
@@ -144,7 +144,7 @@
                   <div
                     class="tooltip"
                     data-tip={default_run_config_has_tools
-                      ? "Tool calling is not yet supported in Kiln Pro. Please create the spec manually for now."
+                      ? "Tool calling is not yet supported in Kiln Pro. Please create the eval manually for now."
                       : undefined}
                   >
                     <button

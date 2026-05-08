@@ -67,7 +67,7 @@
     return heightMap[height || "base"]
   }
 
-  $: submit_label = has_refinements ? "Analyze Refined Spec" : "Create Spec"
+  $: submit_label = has_refinements ? "Analyze Refined Eval" : "Create Eval"
 
   function handle_submit() {
     if (has_refinements) {
@@ -94,11 +94,11 @@
   compact_button={true}
 >
   <div class="flex flex-col">
-    <div class="font-medium">Refine your Spec</div>
+    <div class="font-medium">Refine your Eval</div>
     <div class="font-light text-gray-500 text-sm">
       {has_suggested_refinements
-        ? `Kiln has suggested ${num_suggested_edits} refinement${num_suggested_edits === 1 ? "" : "s"}. Review and optionally edit your refined spec before continuing to review new examples.`
-        : `Kiln has not suggested any refinements, your spec is ready to be created. Edit your spec if you would like to manually refine it further.`}
+        ? `Kiln has suggested ${num_suggested_edits} refinement${num_suggested_edits === 1 ? "" : "s"}. Review and optionally edit your refined eval before continuing to review new examples.`
+        : `Kiln has not suggested any refinements, your eval is ready to be created. Edit your eval if you would like to manually refine it further.`}
     </div>
   </div>
   <div class="border-t" />
@@ -112,7 +112,7 @@
     <!-- Spec Name Row -->
     <div class="grid grid-cols-2 gap-8">
       <FormElement
-        label="Spec Name"
+        label="Eval Name"
         description="A short name for your own reference."
         id="current_spec_name"
         value={name}
@@ -120,7 +120,7 @@
       />
       <div>
         <FormElement
-          label="Spec Name"
+          label="Eval Name"
           description="A short name for your own reference."
           id="suggested_spec_name"
           bind:value={name}
@@ -190,16 +190,16 @@
       <div class="col-span-2 flex flex-col gap-1">
         <div class="font-medium text-sm">Unincorporated Feedback</div>
         <div class="text-xs text-gray-500">
-          Feedback that was outside the scope of this spec and couldn't be
+          Feedback that was outside the scope of this eval and couldn't be
           incorporated into refinements.
         </div>
         <Output raw_output={not_incorporated_feedback} />
       </div>
     {/if}
   {:else}
-    <!-- Spec Name Row -->
+    <!-- Eval Name Row -->
     <FormElement
-      label="Spec Name"
+      label="Eval Name"
       description="A short name for your own reference."
       id="current_spec_name"
       bind:value={name}
@@ -225,7 +225,7 @@
         warning_color="success"
         warning_icon="check"
         tight={true}
-        warning_message="No changes made. Your spec is ready to be created."
+        warning_message="No changes made. Your eval is ready to be created."
       />
     </div>
   {/if}
@@ -238,7 +238,7 @@
       disabled={submitting}
       on:click={handle_secondary_click}
     >
-      Save Refined Spec without Further Review
+      Save Refined Eval without Further Review
     </button>
   </div>
 {/if}
