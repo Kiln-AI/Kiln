@@ -8,7 +8,7 @@
 
   export let content: string = ""
   export let html_content: string | null = null
-  export let max_lines: number = 3
+  export let max_lines: number = 4
   export let text_class: string = "whitespace-pre-wrap break-words"
 
   let pre_el: HTMLPreElement | undefined
