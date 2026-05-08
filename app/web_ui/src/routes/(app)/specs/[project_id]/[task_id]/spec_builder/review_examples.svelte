@@ -12,9 +12,10 @@
   import type { KilnError } from "$lib/utils/error_handlers"
   import type { SpecType } from "$lib/types"
   import type { ReviewRow } from "../spec_utils"
-  import hljs from "highlight.js/lib/core"
-  import json from "highlight.js/lib/languages/json"
-  hljs.registerLanguage("json", json)
+  import {
+    formatExpandedContent,
+    type ExpandedContent,
+  } from "$lib/utils/format_expanded_content"
 
   export let name: string
   export let spec_type: SpecType
@@ -32,25 +33,6 @@
     continue_to_refine: void
     create_spec_secondary: void
   }>()
-
-  function formatExpandedContent(data: string): {
-    value: string
-    isJson: boolean
-  } {
-    try {
-      const json_data = JSON.parse(data)
-      if (typeof json_data !== "string") {
-        const formatted = JSON.stringify(json_data, null, 2)
-        const highlighted = hljs.highlight(formatted, {
-          language: "json",
-        }).value
-        return { value: highlighted, isJson: true }
-      }
-    } catch (_) {
-      // Not valid JSON, return as plain text
-    }
-    return { value: data, isJson: false }
-  }
 
   function set_meets_spec(id: string, meets_spec: boolean, event: Event) {
     event.stopPropagation()
@@ -115,7 +97,7 @@
 
   let see_all_dialog: Dialog | null = null
   let see_all_title: string = ""
-  let see_all_content: { value: string; isJson: boolean } = {
+  let see_all_content: ExpandedContent = {
     value: "",
     isJson: false,
   }
@@ -187,16 +169,24 @@
         </thead>
         <tbody>
           {#each review_rows as row (row.row_id)}
+            {@const input_content = formatExpandedContent(row.input)}
+            {@const output_content = formatExpandedContent(row.output)}
             <tr>
               <td class="py-2">
                 <ClampedText
-                  content={row.input}
+                  content={input_content.isJson ? "" : input_content.value}
+                  html_content={input_content.isJson
+                    ? input_content.value
+                    : null}
                   on:see_all={() => show_full_text("Input", row.input)}
                 />
               </td>
               <td class="py-2">
                 <ClampedText
-                  content={row.output}
+                  content={output_content.isJson ? "" : output_content.value}
+                  html_content={output_content.isJson
+                    ? output_content.value
+                    : null}
                   on:see_all={() => show_full_text("Output", row.output)}
                 />
               </td>

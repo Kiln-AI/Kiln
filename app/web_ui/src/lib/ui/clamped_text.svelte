@@ -7,6 +7,7 @@
   } from "svelte"
 
   export let content: string = ""
+  export let html_content: string | null = null
   export let max_lines: number = 3
   export let text_class: string = "whitespace-pre-wrap break-words"
 
@@ -41,10 +42,12 @@
 
 <div>
   <div class="relative">
+    <!-- eslint-disable svelte/no-at-html-tags -->
     <pre
       bind:this={pre_el}
       class={text_class}
-      style="display: -webkit-box; -webkit-line-clamp: {max_lines}; -webkit-box-orient: vertical; overflow: hidden;">{content}</pre>
+      style="display: -webkit-box; -webkit-line-clamp: {max_lines}; -webkit-box-orient: vertical; overflow: hidden;">{#if html_content !== null}{@html html_content}{:else}{content}{/if}</pre>
+    <!-- eslint-enable svelte/no-at-html-tags -->
     {#if is_overflowing}
       <div
         class="pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-white to-transparent"

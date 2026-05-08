@@ -9,6 +9,10 @@
   import Callout from "$lib/ui/callout.svelte"
   import Output from "$lib/ui/output.svelte"
   import ClampedText from "$lib/ui/clamped_text.svelte"
+  import {
+    formatExpandedContent,
+    type ExpandedContent,
+  } from "$lib/utils/format_expanded_content"
 
   type ReviewedSample = {
     input: string
@@ -44,11 +48,11 @@
   // clicking opens the full content in a dialog.
   let see_all_dialog: Dialog
   let see_all_title: string = ""
-  let see_all_content: string = ""
+  let see_all_content: ExpandedContent = { value: "", isJson: false }
 
   function show_full_text(title: string, content: string) {
     see_all_title = title
-    see_all_content = content
+    see_all_content = formatExpandedContent(content)
     see_all_dialog?.show()
   }
 
@@ -236,16 +240,24 @@
         </thead>
         <tbody>
           {#each reviewed_samples as sample, i}
+            {@const input_content = formatExpandedContent(sample.input)}
+            {@const output_content = formatExpandedContent(sample.output)}
             <tr>
               <td class="py-2">
                 <ClampedText
-                  content={sample.input}
+                  content={input_content.isJson ? "" : input_content.value}
+                  html_content={input_content.isJson
+                    ? input_content.value
+                    : null}
                   on:see_all={() => show_full_text("Input", sample.input)}
                 />
               </td>
               <td class="py-2">
                 <ClampedText
-                  content={sample.output}
+                  content={output_content.isJson ? "" : output_content.value}
+                  html_content={output_content.isJson
+                    ? output_content.value
+                    : null}
                   on:see_all={() => show_full_text("Output", sample.output)}
                 />
               </td>
@@ -437,12 +449,23 @@
   </div>
 </Dialog>
 
+<head>
+  <link rel="stylesheet" href="/styles/highlightjs.min.css" />
+</head>
+
 <Dialog
   bind:this={see_all_dialog}
   title={see_all_title}
   width="wide"
   action_buttons={[{ label: "Close", isCancel: true }]}
 >
-  <pre
-    class="whitespace-pre-wrap break-words text-sm text-gray-600">{see_all_content}</pre>
+  {#if see_all_content.isJson}
+    <!-- eslint-disable svelte/no-at-html-tags -->
+    <pre
+      class="whitespace-pre-wrap break-words text-sm text-gray-600">{@html see_all_content.value}</pre>
+    <!-- eslint-enable svelte/no-at-html-tags -->
+  {:else}
+    <pre
+      class="whitespace-pre-wrap break-words text-sm text-gray-600">{see_all_content.value}</pre>
+  {/if}
 </Dialog>
