@@ -32,6 +32,8 @@ from openai.types.chat.chat_completion_assistant_message_param import (
 )
 from typing_extensions import Required, TypedDict
 
+from kiln_ai.datamodel.usage import MessageUsage
+
 
 class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):
     """
@@ -87,6 +89,15 @@ class ChatCompletionAssistantMessageParamWrapper(TypedDict, total=False):
     latency_ms: Optional[int]
     """Time spent waiting on this specific LLM API call in milliseconds."""
 
+    usage: Optional[MessageUsage]
+    """Token usage and cost for the LLM call that produced this assistant message.
+
+    Set per-call (one record per LLM response, not per logical turn). Stripped
+    before sending messages back to providers via KILN_ONLY_MESSAGE_FIELDS.
+    Per-call latency lives on the message's `latency_ms` field — MessageUsage
+    intentionally does not carry latency.
+    """
+
 
 class ChatCompletionToolMessageParamWrapper(TypedDict, total=False):
     content: Required[Union[str, Iterable[ChatCompletionContentPartTextParam]]]
@@ -127,6 +138,7 @@ KILN_ONLY_MESSAGE_FIELDS: frozenset[str] = frozenset(
         "is_error",
         "error_message",
         "kiln_task_tool_data",
+        "usage",
     }
 )
 """Per-message fields kept on traces for UI/diagnostics. Providers reject unknown

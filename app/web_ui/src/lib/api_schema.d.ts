@@ -3732,6 +3732,7 @@ export interface components {
             tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
             /** Latency Ms */
             latency_ms?: number | null;
+            usage?: components["schemas"]["MessageUsage"] | null;
         };
         /**
          * ChatCompletionAssistantMessageParamWrapper
@@ -3762,6 +3763,7 @@ export interface components {
             tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
             /** Latency Ms */
             latency_ms?: number | null;
+            usage?: components["schemas"]["MessageUsage"] | null;
         };
         /** ChatCompletionContentPartImageParam */
         ChatCompletionContentPartImageParam: {
@@ -7226,6 +7228,47 @@ export interface components {
              */
             mean_total_llm_latency_ms?: number | null;
         };
+        /**
+         * MessageUsage
+         * @description Token usage and cost for a single LLM call or a multi-message sum.
+         *
+         *     Carries only the fields that are meaningfully aggregatable across
+         *     messages: token counts and cost. Per-call latency lives on the
+         *     individual message's ``latency_ms`` field; aggregating it across the
+         *     full trace would mix latencies from different points in time, so
+         *     ``MessageUsage`` does NOT carry ``total_llm_latency_ms``.
+         *
+         *     The :class:`Usage` subclass adds ``total_llm_latency_ms`` for the
+         *     in-flight per-run accumulator that tracks how long this run spent
+         *     waiting on LLM calls.
+         */
+        MessageUsage: {
+            /**
+             * Input Tokens
+             * @description The number of input tokens used.
+             */
+            input_tokens?: number | null;
+            /**
+             * Output Tokens
+             * @description The number of output tokens used.
+             */
+            output_tokens?: number | null;
+            /**
+             * Total Tokens
+             * @description The total number of tokens used.
+             */
+            total_tokens?: number | null;
+            /**
+             * Cost
+             * @description The cost in US dollars, saved at runtime (prices can change over time).
+             */
+            cost?: number | null;
+            /**
+             * Cached Tokens
+             * @description Number of tokens served from prompt cache. None if not reported.
+             */
+            cached_tokens?: number | null;
+        };
         /** ModelDetails */
         ModelDetails: {
             /** Id */
@@ -9599,6 +9642,8 @@ export interface components {
             tags: string[];
             /** @description Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used. */
             usage?: components["schemas"]["Usage"] | null;
+            /** @description Sum of per-message token usage and cost across the entire trace, including any seeded prior trace. None on records created before this field existed. For a fresh (non-seeded) run, the token / cost fields equal those of `usage`. */
+            cumulative_usage?: components["schemas"]["MessageUsage"] | null;
             /**
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
@@ -9676,6 +9721,8 @@ export interface components {
             tags: string[];
             /** @description Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used. */
             usage?: components["schemas"]["Usage"] | null;
+            /** @description Sum of per-message token usage and cost across the entire trace, including any seeded prior trace. None on records created before this field existed. For a fresh (non-seeded) run, the token / cost fields equal those of `usage`. */
+            cumulative_usage?: components["schemas"]["MessageUsage"] | null;
             /**
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
@@ -10184,27 +10231,33 @@ export interface components {
         };
         /**
          * Usage
-         * @description Token usage and cost information for a task run.
+         * @description Token usage, cost, and aggregate LLM latency for a per-run accumulator.
+         *
+         *     Extends :class:`MessageUsage` with ``total_llm_latency_ms``, which is
+         *     only meaningful while a single run is in flight (its model calls run
+         *     sequentially in real time). For per-message records and full-trace
+         *     sums use :class:`MessageUsage` — those values would mix latencies
+         *     from different points in time, so the field doesn't apply.
          */
         Usage: {
             /**
              * Input Tokens
-             * @description The number of input tokens used in the task run.
+             * @description The number of input tokens used.
              */
             input_tokens?: number | null;
             /**
              * Output Tokens
-             * @description The number of output tokens used in the task run.
+             * @description The number of output tokens used.
              */
             output_tokens?: number | null;
             /**
              * Total Tokens
-             * @description The total number of tokens used in the task run.
+             * @description The total number of tokens used.
              */
             total_tokens?: number | null;
             /**
              * Cost
-             * @description The cost of the task run in US dollars, saved at runtime (prices can change over time).
+             * @description The cost in US dollars, saved at runtime (prices can change over time).
              */
             cost?: number | null;
             /**
