@@ -282,16 +282,21 @@ export class SynthDataGuidanceDataModel {
       return "None"
     }
 
+    const label = this.template_label(selected_template)
+    return label ? label + " Template" : "None"
+  }
+
+  public template_label(selected_template: string): string | null {
     const selection_options = get(this.select_options)
     for (const group of selection_options) {
       const selected_option = group.options.find(
         (option) => option.value == selected_template,
       )
       if (selected_option) {
-        return selected_option.label + " Template"
+        return selected_option.label
       }
     }
-    return "None"
+    return null
   }
 
   private requirements_eval_template(
