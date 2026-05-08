@@ -17,11 +17,8 @@
   import AddExampleDialog from "./add_example_dialog.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import ClampedText from "$lib/ui/clamped_text.svelte"
-  import Dialog from "$lib/ui/dialog.svelte"
-  import {
-    formatExpandedContent,
-    type ExpandedContent,
-  } from "$lib/utils/format_expanded_content"
+  import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
+  import { formatExpandedContent } from "$lib/utils/format_expanded_content"
 
   export let project_id: string
   export let task_id: string
@@ -148,18 +145,7 @@
     }
   }>()
 
-  // --- See-all dialog for long input/output cells ---
-  // Mirrors the preview-screen pattern: rows show a 3-line clamp with a
-  // "See all" link, which pops the full content in this dialog.
-  let see_all_dialog: Dialog
-  let see_all_title: string = ""
-  let see_all_content: ExpandedContent = { value: "", isJson: false }
-
-  function show_full_text(title: string, content: string) {
-    see_all_title = title
-    see_all_content = formatExpandedContent(content)
-    see_all_dialog?.show()
-  }
+  let see_all_dialog: SeeAllDialog
 </script>
 
 <FormContainer
@@ -210,7 +196,8 @@
                     html_content={input_content.isJson
                       ? input_content.value
                       : null}
-                    on:see_all={() => show_full_text("Input", example.input)}
+                    on:see_all={() =>
+                      see_all_dialog.show("Input", example.input)}
                   />
                 </td>
                 <td class="py-2">
@@ -219,7 +206,8 @@
                     html_content={output_content.isJson
                       ? output_content.value
                       : null}
-                    on:see_all={() => show_full_text("Output", example.output)}
+                    on:see_all={() =>
+                      see_all_dialog.show("Output", example.output)}
                   />
                 </td>
                 <td class="py-2 p-0">
@@ -284,25 +272,4 @@
   on:submit={handle_example_submit}
 />
 
-<head>
-  <link rel="stylesheet" href="/styles/highlightjs.min.css" />
-</head>
-
-<!-- See-all Dialog: shows the full text of an input/output cell that was
-     clamped in the table by ClampedText. -->
-<Dialog
-  bind:this={see_all_dialog}
-  title={see_all_title}
-  width="wide"
-  action_buttons={[{ label: "Close", isCancel: true }]}
->
-  {#if see_all_content.isJson}
-    <!-- eslint-disable svelte/no-at-html-tags -->
-    <pre
-      class="whitespace-pre-wrap break-words text-sm text-gray-600">{@html see_all_content.value}</pre>
-    <!-- eslint-enable svelte/no-at-html-tags -->
-  {:else}
-    <pre
-      class="whitespace-pre-wrap break-words text-sm text-gray-600">{see_all_content.value}</pre>
-  {/if}
-</Dialog>
+<SeeAllDialog bind:this={see_all_dialog} />

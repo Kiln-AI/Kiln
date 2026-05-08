@@ -8,14 +8,12 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import ClampedText from "$lib/ui/clamped_text.svelte"
+  import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
   import SpecPropertiesDisplay from "../spec_properties_display.svelte"
   import type { KilnError } from "$lib/utils/error_handlers"
   import type { SpecType } from "$lib/types"
   import type { ReviewRow } from "../spec_utils"
-  import {
-    formatExpandedContent,
-    type ExpandedContent,
-  } from "$lib/utils/format_expanded_content"
+  import { formatExpandedContent } from "$lib/utils/format_expanded_content"
 
   export let name: string
   export let spec_type: SpecType
@@ -95,17 +93,7 @@
     spec_details_dialog?.show()
   }
 
-  let see_all_dialog: Dialog | null = null
-  let see_all_title: string = ""
-  let see_all_content: ExpandedContent = {
-    value: "",
-    isJson: false,
-  }
-  function show_full_text(title: string, raw: string) {
-    see_all_title = title
-    see_all_content = formatExpandedContent(raw)
-    see_all_dialog?.show()
-  }
+  let see_all_dialog: SeeAllDialog
 
   async function handle_secondary_click() {
     if (await form_container.validate_only()) {
@@ -113,10 +101,6 @@
     }
   }
 </script>
-
-<head>
-  <link rel="stylesheet" href="/styles/highlightjs.min.css" />
-</head>
 
 <FormContainer
   bind:this={form_container}
@@ -178,7 +162,7 @@
                   html_content={input_content.isJson
                     ? input_content.value
                     : null}
-                  on:see_all={() => show_full_text("Input", row.input)}
+                  on:see_all={() => see_all_dialog.show("Input", row.input)}
                 />
               </td>
               <td class="py-2">
@@ -187,7 +171,7 @@
                   html_content={output_content.isJson
                     ? output_content.value
                     : null}
-                  on:see_all={() => show_full_text("Output", row.output)}
+                  on:see_all={() => see_all_dialog.show("Output", row.output)}
                 />
               </td>
               <td class="py-2">
@@ -297,19 +281,4 @@
   <SpecPropertiesDisplay {spec_type} properties={property_values} />
 </Dialog>
 
-<Dialog
-  bind:this={see_all_dialog}
-  title={see_all_title}
-  width="wide"
-  action_buttons={[{ label: "Close", isCancel: true }]}
->
-  {#if see_all_content.isJson}
-    <!-- eslint-disable svelte/no-at-html-tags -->
-    <pre
-      class="whitespace-pre-wrap break-words text-sm">{@html see_all_content.value}</pre>
-    <!-- eslint-enable svelte/no-at-html-tags -->
-  {:else}
-    <pre
-      class="whitespace-pre-wrap break-words text-sm">{see_all_content.value}</pre>
-  {/if}
-</Dialog>
+<SeeAllDialog bind:this={see_all_dialog} />
