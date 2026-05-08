@@ -7,13 +7,13 @@
   import XCircleIcon from "$lib/ui/icons/x_circle_icon.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import ClampedText from "$lib/ui/clamped_text.svelte"
+  import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
   import SpecPropertiesDisplay from "../spec_properties_display.svelte"
   import type { KilnError } from "$lib/utils/error_handlers"
   import type { SpecType } from "$lib/types"
   import type { ReviewRow } from "../spec_utils"
-  import hljs from "highlight.js/lib/core"
-  import json from "highlight.js/lib/languages/json"
-  hljs.registerLanguage("json", json)
+  import { formatExpandedContent } from "$lib/utils/format_expanded_content"
 
   export let name: string
   export let spec_type: SpecType
@@ -31,25 +31,6 @@
     continue_to_refine: void
     create_spec_secondary: void
   }>()
-
-  function formatExpandedContent(data: string): {
-    value: string
-    isJson: boolean
-  } {
-    try {
-      const json_data = JSON.parse(data)
-      if (typeof json_data !== "string") {
-        const formatted = JSON.stringify(json_data, null, 2)
-        const highlighted = hljs.highlight(formatted, {
-          language: "json",
-        }).value
-        return { value: highlighted, isJson: true }
-      }
-    } catch (_) {
-      // Not valid JSON, return as plain text
-    }
-    return { value: data, isJson: false }
-  }
 
   function set_meets_spec(id: string, meets_spec: boolean, event: Event) {
     event.stopPropagation()
@@ -112,16 +93,14 @@
     spec_details_dialog?.show()
   }
 
+  let see_all_dialog: SeeAllDialog
+
   async function handle_secondary_click() {
     if (await form_container.validate_only()) {
       dispatch("create_spec_secondary")
     }
   }
 </script>
-
-<head>
-  <link rel="stylesheet" href="/styles/highlightjs.min.css" />
-</head>
 
 <FormContainer
   bind:this={form_container}
@@ -178,26 +157,22 @@
             {@const output_content = formatExpandedContent(row.output)}
             <tr>
               <td class="py-2">
-                {#if input_content.isJson}
-                  <!-- eslint-disable svelte/no-at-html-tags -->
-                  <pre
-                    class="whitespace-pre-wrap break-words">{@html input_content.value}</pre>
-                  <!-- eslint-enable svelte/no-at-html-tags -->
-                {:else}
-                  <pre
-                    class="whitespace-pre-wrap break-words">{input_content.value}</pre>
-                {/if}
+                <ClampedText
+                  content={input_content.isJson ? "" : input_content.value}
+                  html_content={input_content.isJson
+                    ? input_content.value
+                    : null}
+                  on:see_all={() => see_all_dialog.show("Input", row.input)}
+                />
               </td>
               <td class="py-2">
-                {#if output_content.isJson}
-                  <!-- eslint-disable svelte/no-at-html-tags -->
-                  <pre
-                    class="whitespace-pre-wrap break-words">{@html output_content.value}</pre>
-                  <!-- eslint-enable svelte/no-at-html-tags -->
-                {:else}
-                  <pre
-                    class="whitespace-pre-wrap break-words">{output_content.value}</pre>
-                {/if}
+                <ClampedText
+                  content={output_content.isJson ? "" : output_content.value}
+                  html_content={output_content.isJson
+                    ? output_content.value
+                    : null}
+                  on:see_all={() => see_all_dialog.show("Output", row.output)}
+                />
               </td>
               <td class="py-2">
                 <div class="flex gap-1">
@@ -305,3 +280,5 @@
 >
   <SpecPropertiesDisplay {spec_type} properties={property_values} />
 </Dialog>
+
+<SeeAllDialog bind:this={see_all_dialog} />
