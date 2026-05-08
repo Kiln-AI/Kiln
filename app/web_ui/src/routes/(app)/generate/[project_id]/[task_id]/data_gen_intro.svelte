@@ -107,7 +107,7 @@
   function select_spec(spec: Spec) {
     const evaluator = spec.eval_id ? evals_by_id[spec.eval_id] : null
     if (!evaluator) {
-      alert("This spec doesn't have an associated eval yet.")
+      alert("This eval is not ready yet. Please configure its judge first.")
       return
     }
     const eval_set_filter_id = evaluator.eval_set_filter_id
@@ -348,7 +348,7 @@
     </div>
   {:else if specs_error || evals_error}
     <div class="font-light">
-      There was an error loading the specs. Please try again.
+      There was an error loading the evals. Please try again.
     </div>
     <div class="font-light text-error">
       {specs_error?.message ?? evals_error?.message ?? "Unknown error"}
@@ -359,7 +359,7 @@
         href={`/specs/${project_id}/${task_id}/select_template`}
         class="btn btn-wide btn-outline mx-auto my-4"
       >
-        Create a New Spec
+        Create a New Eval
       </a>
     </div>
     <div class="flex items-center mt-4">
@@ -367,7 +367,7 @@
       <div class="px-4 text-sm font-light text-base-content/60">OR</div>
       <div class="flex-1 border-t border-base-300"></div>
     </div>
-    <div class="font-medium text-center my-6">Select an Existing Spec</div>
+    <div class="font-medium text-center my-6">Select an Existing Eval</div>
     <div class="flex flex-col gap-3">
       {#each specs as spec}
         <button
@@ -383,8 +383,8 @@
   {:else}
     <div class="font-light">
       <p class="mt-2 mb-6 text-sm">
-        Create a spec with an eval to get started. This helps us understand what
-        specific scenarios to generate data for.
+        Create an eval to get started. This helps us understand what specific
+        scenarios to generate data for.
       </p>
     </div>
     <div class="flex items-center mt-4">
@@ -392,7 +392,7 @@
         href={`/specs/${project_id}/${task_id}/select_template`}
         class="btn btn-wide btn-primary mx-auto my-4"
       >
-        Create a New Spec
+        Create a New Eval
       </a>
     </div>
   {/if}

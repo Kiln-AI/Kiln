@@ -128,7 +128,8 @@
             Template
           </div>
           <div class="whitespace-nowrap">
-            {$selected_template}
+            {guidance_data.template_label($selected_template) ??
+              $selected_template}
             <InfoTooltip
               tooltip_text="A prompt template used to generate data. You can edit the template when generating topics, inputs, or outputs."
               no_pad={true}
