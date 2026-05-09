@@ -7,17 +7,13 @@
 </p>
 
 <h4 align="center">
-  Kiln is a free app and open-source library with everything you need to build better AI products.
+  A free app and open-source library with everything you need to build better AI products.
 </h4>
 
 <p align="center">
   <a href="https://kiln.tech#demo">
     <img width="360" alt="Kiln AI Animated Preview" src="https://github.com/user-attachments/assets/56ac04ea-010b-40bf-851c-ec5e05965336">
   </a>
-</p>
-
-<p align="center">
-  <sub>Used by engineers from Apple, Meta, Microsoft, NVIDIA, Tesla, and Netflix.</sub>
 </p>
 
 <p align="center">
@@ -44,18 +40,18 @@
 
 ## What is Kiln?
 
-Kiln is a workbench for the full AI development loop: evals, prompt optimization, RAG, fine-tuning, synthetic data, agents, and tools — all working against the same dataset. The desktop app lets your whole team contribute (PMs, SMEs, and QA can rate outputs and add data without writing code). The MIT-licensed Python library ships the same tasks to production. Runs locally — bring your own API keys, or go fully offline with Ollama.
+Kiln is a workbench for the full AI development loop: evals, optimization, RAG, fine-tuning, synthetic data, agents, and tools — all working together. The desktop app lets your whole team contribute (PMs, subject-experts, and QA can rate outputs and add data without writing code). The MIT-licensed Python library ships the same tasks to production. Runs locally — bring your own API keys, or go fully offline with Ollama.
 
 ## Highlights
 
 ### Iterate, optimize, and collaborate
 
 - 🖥️ [**Easy-to-use app**](https://kiln.tech/download) — One-click apps for Mac, Windows, and Linux.
-- 📊 [**Evals**](https://docs.kiln.tech/docs/evaluations) — Auto-generate a production-ready eval (judge + synthetic dataset) in ~5 minutes. LLM-as-Judge, RAG accuracy, and tool-use evaluators built in.
-- 🚀 [**Auto-Optimize**](https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer) — Runs hundreds of prompt mutations against your evals in ~1 hour to find the best prompt — no fine-tuning, no infrastructure required.
-- 💬 [**AI Assistant**](https://docs.kiln.tech) *(Beta)* — Your AI data-scientist partner. Proposes improvements, optimizes prompts, runs experiments, creates evals, and more.
-- 🪄 [**Synthetic Data**](https://docs.kiln.tech/docs/synthetic-data-generation) — Hierarchical topic-tree generation produces diverse datasets, instead of the 1,000 near-duplicates you get from naive batch sampling.
-- 🤝 [**Git-native collaboration**](https://docs.kiln.tech/docs/collaboration) — The app UI syncs to Git automatically — even for teammates who don't know what Git is.
+- 📊 [**Eval Builder**](https://docs.kiln.tech/docs/evaluations) — Auto-generate evals (judge + synthetic eval dataset), and align to your preference in ~10 minutes. 
+- 🚀 [**Auto-Optimize**](https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer) — Automatically find the best way to run your AI task, optimizing prompt, model selection, tools, skills, subagents, parameters, and more.
+- 💬 [**AI Assistant**](https://docs.kiln.tech) — Your AI data-science partner. Kiln Assistant proposes improvements, optimizes prompts, runs experiments, creates evals, and more.
+- 🪄 [**Synthetic Data Generation**](https://docs.kiln.tech/docs/synthetic-data-generation) — Generate data for evals or fine-tuning in minutes.
+- 🤝 [**Git-native collaboration**](https://docs.kiln.tech/docs/collaboration) — The app syncs to Git automatically — even for teammates who don't know what Git is.
 
 ### Build & ship agents
 
