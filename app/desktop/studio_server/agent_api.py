@@ -532,7 +532,7 @@ def connect_agent_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/agent_overview",
         summary="Agent Overview",
-        description="An overview of a task and all its components, optimized for agents.",
+        description="An overview of a task and all it's components, optimized for agents.",
         tags=["Agent"],
         openapi_extra=ALLOW_AGENT,
     )
