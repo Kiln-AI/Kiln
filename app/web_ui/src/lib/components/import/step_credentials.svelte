@@ -259,7 +259,7 @@
               target="_blank"
               rel="noopener noreferrer"
               class="link">fine-grained access tokens</a
-            >, however they are harder to setup and may require approval by an
+            >, however they are harder to set up and may require approval by an
             org administrator.<InfoTooltip
               tooltip_text={fine_grained_tooltip}
               no_pad

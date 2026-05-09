@@ -14,7 +14,7 @@ from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 if TYPE_CHECKING:
     from kiln_ai.datamodel.task import Task
 
-DATA_STRATIGIES_REQUIRED_THINKING_INSTRUCTIONS = [
+DATA_STRATEGIES_REQUIRED_THINKING_INSTRUCTIONS = [
     ChatStrategy.two_message_cot_legacy,
     ChatStrategy.two_message_cot,
 ]
@@ -112,16 +112,16 @@ class Finetune(KilnParentedModel):
     def validate_thinking_instructions(self) -> Self:
         if (
             self.thinking_instructions is not None
-            and self.data_strategy not in DATA_STRATIGIES_REQUIRED_THINKING_INSTRUCTIONS
+            and self.data_strategy not in DATA_STRATEGIES_REQUIRED_THINKING_INSTRUCTIONS
         ):
             raise ValueError(
-                f"Thinking instructions can only be used when data_strategy is one of the following: {DATA_STRATIGIES_REQUIRED_THINKING_INSTRUCTIONS}"
+                f"Thinking instructions can only be used when data_strategy is one of the following: {DATA_STRATEGIES_REQUIRED_THINKING_INSTRUCTIONS}"
             )
         if (
             self.thinking_instructions is None
-            and self.data_strategy in DATA_STRATIGIES_REQUIRED_THINKING_INSTRUCTIONS
+            and self.data_strategy in DATA_STRATEGIES_REQUIRED_THINKING_INSTRUCTIONS
         ):
             raise ValueError(
-                f"Thinking instructions are required when data_strategy is one of the following: {DATA_STRATIGIES_REQUIRED_THINKING_INSTRUCTIONS}"
+                f"Thinking instructions are required when data_strategy is one of the following: {DATA_STRATEGIES_REQUIRED_THINKING_INSTRUCTIONS}"
             )
         return self

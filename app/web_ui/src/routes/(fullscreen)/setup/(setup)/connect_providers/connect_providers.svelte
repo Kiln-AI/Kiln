@@ -199,7 +199,7 @@
         "Get the access key ID and secret access key for the new user. Paste them below and click 'Connect'",
       ],
       api_key_warning:
-        "Bedrock is quite difficult to setup.\nFor beginners we suggest other providers, like OpenRouter, as they easier to setup and have more models.",
+        "Bedrock is quite difficult to setup.\nFor beginners we suggest other providers, like OpenRouter, as they are easier to set up and have more models.",
       api_key_fields: ["Access Key", "Secret Key"],
     },
     {

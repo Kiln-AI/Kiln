@@ -161,7 +161,7 @@ class ExternalToolApiDescription(BaseModel):
 
 class ExternalToolServerApiDescription(BaseModel):
     """
-    This class is used to describe the external tool server under tool_servers/[tool_server_id] UI. It is based of ExternalToolServer.
+    This class is used to describe the external tool server under tool_servers/[tool_server_id] UI. It is based on ExternalToolServer.
     """
 
     id: ID_TYPE

@@ -128,7 +128,7 @@
       }
     } else {
       alert(
-        "We can't generate synthetic data for this eval as it's eval sets are not defined by tag filters. Select an eval which uses tags to define eval sets.",
+        "We can't generate synthetic data for this eval as its eval sets are not defined by tag filters. Select an eval which uses tags to define eval sets.",
       )
       return
     }

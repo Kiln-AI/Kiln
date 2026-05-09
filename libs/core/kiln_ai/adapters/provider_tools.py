@@ -281,7 +281,7 @@ def finetune_from_id(model_id: str) -> Finetune:
         raise ValueError(f"Fine tune {fine_tune_id} not found")
     if fine_tune.fine_tune_model_id is None:
         raise ValueError(
-            f"Fine tune {fine_tune_id} not completed. Refresh it's status in the fine-tune tab."
+            f"Fine tune {fine_tune_id} not completed. Refresh its status in the fine-tune tab."
         )
 
     finetune_cache[model_id] = fine_tune

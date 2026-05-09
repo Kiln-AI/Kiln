@@ -590,7 +590,7 @@ def test_finetune_provider_model_incomplete_finetune(
         finetune_provider_model("project-123::task-456::finetune-789")
     assert (
         str(exc_info.value)
-        == "Fine tune finetune-789 not completed. Refresh it's status in the fine-tune tab."
+        == "Fine tune finetune-789 not completed. Refresh its status in the fine-tune tab."
     )
 
 
@@ -941,7 +941,7 @@ def test_finetune_from_id_incomplete_finetune(mock_project, mock_task, mock_fine
         finetune_from_id(model_id)
     assert (
         str(exc_info.value)
-        == "Fine tune finetune-789 not completed. Refresh it's status in the fine-tune tab."
+        == "Fine tune finetune-789 not completed. Refresh its status in the fine-tune tab."
     )
 
     # Verify cache was not populated with incomplete finetune

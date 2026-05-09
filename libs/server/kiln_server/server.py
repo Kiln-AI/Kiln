@@ -157,7 +157,7 @@ def make_app(lifespan=None):
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run the Kiln AI  REST Server.")
+    parser = argparse.ArgumentParser(description="Run the Kiln AI REST Server.")
     parser.add_argument("--host", default=None, help="Host for network transports.")
     parser.add_argument(
         "--port", type=int, default=None, help="Port for network transports."

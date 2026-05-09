@@ -1,6 +1,6 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
-  import EmptyInto from "./empty_into.svelte"
+  import EmptyIntro from "./empty_intro.svelte"
   import { client } from "$lib/api_client"
   import type { RunSummary } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
@@ -533,7 +533,7 @@
     </div>
   {:else if runs && runs.length == 0}
     <div class="flex flex-col items-center justify-center min-h-[75vh]">
-      <EmptyInto {project_id} {task_id} />
+      <EmptyIntro {project_id} {task_id} />
     </div>
   {:else if runs}
     <div class="mb-4">
@@ -657,7 +657,7 @@
                   {run.rating && run.rating.value
                     ? run.rating.type === "five_star"
                       ? "★".repeat(run.rating.value)
-                      : run.rating.value + "(custom score)"
+                      : run.rating.value + " (custom score)"
                     : "Unrated"}
                 </td>
                 <td>{run.repair_state}</td>

@@ -139,7 +139,7 @@
     <div class="flex flex-col gap-2">
       <FormElement
         label="Document Extraction Prompt"
-        description="A prompt used to extracting documents (e.g. PDFs, HTML, etc.)."
+        description="A prompt used for extracting documents (e.g. PDFs, HTML, etc.)."
         info_description="Typically something like 'Transcribe the document into markdown.' or 'Transcribe the document into plain text.'"
         optional={true}
         inputType="textarea"

@@ -2969,7 +2969,7 @@ export interface paths {
         };
         /**
          * Agent Overview
-         * @description An overview of a task and all it's components, optimized for agents.
+         * @description An overview of a task and all its components, optimized for agents.
          */
         get: operations["agent_overview_api_projects__project_id__tasks__task_id__agent_overview_get"];
         put?: never;
@@ -5808,7 +5808,7 @@ export interface components {
         };
         /**
          * ExternalToolServerApiDescription
-         * @description This class is used to describe the external tool server under tool_servers/[tool_server_id] UI. It is based of ExternalToolServer.
+         * @description This class is used to describe the external tool server under tool_servers/[tool_server_id] UI. It is based on ExternalToolServer.
          */
         ExternalToolServerApiDescription: {
             /** Id */
