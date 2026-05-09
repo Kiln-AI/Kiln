@@ -1,18 +1,18 @@
 <p align="center">
     <a href="https://kiln.tech">
         <picture>
-            <img width="205" alt="Kiln AI Logo" src="https://github.com/user-attachments/assets/fc20f392-d913-4a94-a828-a66d21689496">
+            <img width="205" alt="Kiln AI Logo" src="https://github.com/user-attachments/assets/4ca9b69f-1c90-43a4-8d2e-13de4eb2ee9c">
         </picture>
     </a>
 </p>
 
-<h3 align="center">
+<h4 align="center">
   Kiln is a free app and open-source library with everything you need to build better AI products.
-</h3>
+</h4>
 
 <p align="center">
   <a href="https://kiln.tech#demo">
-    <img width="640" alt="Kiln Preview" src="https://github.com/user-attachments/assets/668d1d3c-a3b5-4dc7-ac32-8563631dd0c3">
+    <img width="360" alt="Kiln AI Animated Preview" src="https://github.com/user-attachments/assets/56ac04ea-010b-40bf-851c-ec5e05965336">
   </a>
 </p>
 
@@ -23,9 +23,7 @@
 <p align="center">
   <a href="https://github.com/Kiln-AI/kiln/actions/workflows/build_and_test.yml"><img src="https://github.com/Kiln-AI/kiln/actions/workflows/build_and_test.yml/badge.svg" alt="Build and Test"></a>
   <a href="https://pypi.org/project/kiln-ai/"><img src="https://img.shields.io/pypi/v/kiln-ai.svg?logo=pypi&label=PyPI&logoColor=gold" alt="PyPI"></a>
-  <a href="https://github.com/Kiln-AI/Kiln/stargazers"><img src="https://img.shields.io/github/stars/Kiln-AI/Kiln?style=social" alt="GitHub Stars"></a>
   <a href="https://kiln.tech/discord"><img src="https://img.shields.io/badge/Discord-Kiln_AI-blue?logo=Discord&logoColor=white" alt="Discord"></a>
-  <a href="https://github.com/Kiln-AI/Kiln/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
 </p>
 
 <p align="center">
@@ -52,22 +50,22 @@ Kiln is a workbench for the full AI development loop: evals, prompt optimization
 
 ### Iterate, optimize, and collaborate
 
-- 🖥️ [**Easy-to-use app**](https://kiln.tech/download) — One-click apps for Mac, Windows, and Linux. No GPU, no terminal, no setup.
-- 📊 [**Evals**](https://docs.kiln.tech/docs/evaluations) — Auto-generate a production-ready eval (judge + synthetic dataset) in ~5 minutes. LLM-as-Judge, G-Eval, RAG accuracy, and tool-use evaluators built in.
+- 🖥️ [**Easy-to-use app**](https://kiln.tech/download) — One-click apps for Mac, Windows, and Linux.
+- 📊 [**Evals**](https://docs.kiln.tech/docs/evaluations) — Auto-generate a production-ready eval (judge + synthetic dataset) in ~5 minutes. LLM-as-Judge, RAG accuracy, and tool-use evaluators built in.
 - 🚀 [**Auto-Optimize**](https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer) — Runs hundreds of prompt mutations against your evals in ~1 hour to find the best prompt — no fine-tuning, no infrastructure required.
-- 🪄 [**Synthetic Data**](https://docs.kiln.tech/docs/synthetic-data-generation) — Hierarchical topic-tree generation produces diverse datasets, instead of the 1,000 near-duplicates you get from naive batch sampling.
 - 💬 [**AI Assistant**](https://docs.kiln.tech) *(Beta)* — Your AI data-scientist partner. Proposes improvements, optimizes prompts, runs experiments, creates evals, and more.
-- 🤝 [**Git-native collaboration**](https://docs.kiln.tech/docs/collaboration) — Datasets sync to Git automatically — even for teammates who don't know what Git is. UUID-keyed JSON files avoid merge conflicts.
+- 🪄 [**Synthetic Data**](https://docs.kiln.tech/docs/synthetic-data-generation) — Hierarchical topic-tree generation produces diverse datasets, instead of the 1,000 near-duplicates you get from naive batch sampling.
+- 🤝 [**Git-native collaboration**](https://docs.kiln.tech/docs/collaboration) — The app UI syncs to Git automatically — even for teammates who don't know what Git is.
 
 ### Build & ship agents
 
 - 🔍 [**RAG**](https://docs.kiln.tech/docs/documents-and-search-rag) — Drag-and-drop docs (PDF, image, video, audio), hybrid search via LanceDB, and auto-generated RAG evals from your own documents.
-- 🤖 [**Agents & Subagents**](https://docs.kiln.tech/docs/agents) — Compose multi-agent hierarchies by turning any Kiln task into a callable subagent — each runs in its own focused context window.
+- 🤖 [**Subagents**](https://docs.kiln.tech/docs/agents) — Compose multi-agent hierarchies by turning any Kiln task into a callable subagent — each runs in its own focused context window.
 - 🎛️ [**Fine-Tuning**](https://docs.kiln.tech/docs/fine-tuning-guide) — Zero-code fine-tuning across 60+ models (Qwen, Llama, GPT, Gemini, …) on Fireworks, Together, OpenAI, and Vertex — serverless deployment included.
 - 🐍 [**Open Python library**](https://docs.kiln.tech/developers/python-library-quickstart) — Build in the app, deploy in production. Same engine, same project files, no rewrite. `pip install kiln-ai` · MIT.
-- 🧰 [**…and more**](https://docs.kiln.tech) — Tools & MCP, Skills, structured outputs, reasoning models, tool-use evals, model library (190+ tested).
+- 🧰 [**…and more**](https://docs.kiln.tech) — Tools & MCP, Skills, structured outputs, reasoning models, model library (190+ tested).
 
-## Quickstart
+## App Quickstart
 
 Get started in minutes — no GPU, no terminal, no setup.
 
