@@ -8,7 +8,7 @@
   <Intro
     title="{feature_name} Requires Account Upgrade"
     description_paragraphs={[
-      `${feature_name} is available with an enterprise plan. Contact our sales team to learn more about upgrading your Kiln Copilot account.`,
+      `${feature_name} is available with an enterprise plan. Contact our sales team to learn more about upgrading your Kiln Pro account.`,
     ]}
     action_buttons={[
       {

@@ -9,6 +9,7 @@ from kiln_ai.datamodel import (
     DataSource,
     DataSourceType,
     Finetune,
+    MessageUsage,
     Project,
     Task,
     TaskOutput,
@@ -1015,3 +1016,111 @@ def test_usage_backwards_compat_without_latency():
     usage = Usage.model_validate_json(old_json)
     assert usage.total_llm_latency_ms is None
     assert usage.input_tokens == 100
+
+
+def test_task_run_default_cumulative_usage_is_none(valid_task_run):
+    assert valid_task_run.cumulative_usage is None
+
+
+def test_task_run_can_set_cumulative_usage(valid_task_run):
+    cumulative = MessageUsage(
+        input_tokens=300, output_tokens=120, total_tokens=420, cost=0.05
+    )
+    task_run = valid_task_run.model_copy(deep=True)
+    task_run.cumulative_usage = cumulative
+    assert task_run.cumulative_usage == cumulative
+    # `usage` and `cumulative_usage` are independent fields.
+    assert task_run.usage is None
+
+
+def test_task_run_loads_old_json_without_cumulative_usage(valid_task_run):
+    """JSON serialized before this field existed loads with cumulative_usage None."""
+    payload = valid_task_run.model_dump(mode="json")
+    payload.pop("cumulative_usage", None)
+
+    reloaded = TaskRun.model_validate(payload)
+
+    assert reloaded.cumulative_usage is None
+
+
+def test_task_run_round_trip_cumulative_usage(valid_task_run):
+    cumulative = MessageUsage(
+        input_tokens=10, output_tokens=5, total_tokens=15, cost=0.001
+    )
+    task_run = valid_task_run.model_copy(deep=True)
+    task_run.cumulative_usage = cumulative
+
+    payload = task_run.model_dump(mode="json")
+    reloaded = TaskRun.model_validate(payload)
+
+    assert reloaded.cumulative_usage == cumulative
+
+
+def test_task_run_per_message_usage_and_cumulative_have_no_latency_key(
+    valid_task_run,
+):
+    """A persisted TaskRun's per-message ``usage`` and ``cumulative_usage``
+    are typed ``MessageUsage`` and must NOT serialize ``total_llm_latency_ms``.
+    The run-level ``usage`` field is still ``Usage`` and DOES carry the key."""
+    task_run = valid_task_run.model_copy(deep=True)
+    task_run.usage = Usage(input_tokens=5, total_llm_latency_ms=400)
+    task_run.cumulative_usage = MessageUsage(input_tokens=12, output_tokens=8)
+    task_run.trace = [
+        {"role": "user", "content": "hi"},
+        {
+            "role": "assistant",
+            "content": "ok",
+            "usage": MessageUsage(input_tokens=12, output_tokens=8, cost=0.42),
+        },
+    ]
+
+    payload = task_run.model_dump(mode="json")
+
+    cumulative_payload = payload["cumulative_usage"]
+    assert cumulative_payload is not None
+    assert "total_llm_latency_ms" not in cumulative_payload
+
+    assistant_msg = payload["trace"][1]
+    assert "total_llm_latency_ms" not in assistant_msg["usage"]
+
+    # Run-level Usage still keeps the latency field.
+    assert "total_llm_latency_ms" in payload["usage"]
+    assert payload["usage"]["total_llm_latency_ms"] == 400
+
+
+def test_task_run_loads_legacy_cumulative_usage_with_latency_key(valid_task_run):
+    """A pre-split TaskRun JSON could have ``cumulative_usage.total_llm_latency_ms``
+    set (typically to null). It must still load — Pydantic's default
+    ``extra='ignore'`` drops the unknown field on the narrowed MessageUsage."""
+    payload = valid_task_run.model_dump(mode="json")
+    payload["cumulative_usage"] = {
+        "input_tokens": 10,
+        "output_tokens": 5,
+        "total_tokens": 15,
+        "cost": 0.001,
+        "cached_tokens": None,
+        "total_llm_latency_ms": None,  # legacy field — must be dropped
+    }
+
+    reloaded = TaskRun.model_validate(payload)
+
+    assert reloaded.cumulative_usage is not None
+    assert reloaded.cumulative_usage.input_tokens == 10
+    assert reloaded.cumulative_usage.cost == 0.001
+    # The narrowed MessageUsage doesn't carry the legacy field at all.
+    assert not hasattr(reloaded.cumulative_usage, "total_llm_latency_ms")
+
+
+def test_task_run_loads_legacy_cumulative_usage_with_populated_latency(valid_task_run):
+    """Same as above but with a non-null legacy latency value — still loads."""
+    payload = valid_task_run.model_dump(mode="json")
+    payload["cumulative_usage"] = {
+        "input_tokens": 7,
+        "total_llm_latency_ms": 1234,  # non-null legacy value — must be dropped
+    }
+
+    reloaded = TaskRun.model_validate(payload)
+
+    assert reloaded.cumulative_usage is not None
+    assert reloaded.cumulative_usage.input_tokens == 7
+    assert not hasattr(reloaded.cumulative_usage, "total_llm_latency_ms")

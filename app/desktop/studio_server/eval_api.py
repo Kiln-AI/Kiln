@@ -5,6 +5,7 @@ from typing import Annotated, Any, Dict, List, Set, Tuple
 from fastapi import FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.eval.eval_runner import EvalRunner
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_ai.adapters.fine_tune.finetune_run_config_id import (
     finetune_from_finetune_run_config_id,
     finetune_run_config_id,
@@ -138,7 +139,7 @@ async def run_eval_runner_with_status(eval_runner: EvalRunner) -> StreamingRespo
         # Send the final complete message the app expects, and uses to stop listening
         yield "data: complete\n\n"
 
-    return StreamingResponse(
+    return CancellableStreamingResponse(
         content=event_generator(),
         media_type="text/event-stream",
     )

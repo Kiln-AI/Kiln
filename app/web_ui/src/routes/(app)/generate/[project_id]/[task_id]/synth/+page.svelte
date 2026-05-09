@@ -1,7 +1,6 @@
 <script lang="ts">
   import AppPage from "../../../../app_page.svelte"
   import { client } from "$lib/api_client"
-  import { current_task } from "$lib/stores"
   import type { RunConfigProperties, Task } from "$lib/types"
   import { isKilnAgentRunConfig } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
@@ -16,6 +15,7 @@
   import DataGenIntro from "../data_gen_intro.svelte"
   import { SynthDataGuidanceDataModel } from "../synth_data_guidance_datamodel"
   import SynthDataGuidance from "../synth_data_guidance.svelte"
+  import SynthDataGuide from "../synth_data_guide.svelte"
   import { onDestroy } from "svelte"
   import { get_splits_from_url_param } from "$lib/utils/splits_util"
   import DataGenDescription from "../data_gen_description.svelte"
@@ -27,7 +27,15 @@
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import { split_tool_and_skill_ids } from "$lib/stores/tools_store"
+  import Intro from "$lib/ui/intro.svelte"
+  import Callout from "$lib/ui/callout.svelte"
+  import NotebookIcon from "$lib/ui/icons/notebook_icon.svelte"
+  import CheckmarkIcon from "$lib/ui/icons/checkmark_icon.svelte"
   import { agentInfo } from "$lib/agent"
+  import { goto } from "$app/navigation"
+  import AddExampleDialog from "../data_guide_setup/add_example_dialog.svelte"
+  import type { GuideSample } from "../data_guide_setup/guide_setup_form.svelte"
+  import { pending_data_guide_example } from "../data_guide_setup/pending_example_store"
 
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
@@ -39,9 +47,52 @@
   const splits = guidance_data.splits
   const selected_template = guidance_data.selected_template
 
+  type DataGuide = {
+    guide: string
+  }
+  let data_guide: DataGuide | null = null
+  let guide_loading = true
+  let skip_data_guide = false
+
+  async function fetch_data_guide() {
+    if (!project_id || !task_id) return
+    try {
+      const { data } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide",
+        { params: { path: { project_id, task_id } } },
+      )
+      data_guide = (data as DataGuide) ?? null
+    } catch {
+      // Non-critical — guide is optional
+    } finally {
+      guide_loading = false
+    }
+  }
+
   let task: Task | null = null
   let task_error: KilnError | null = null
   let task_loading = true
+
+  // Set when the user just returned from /data_guide_setup so the synth page
+  // can confirm the guide was saved (the new guide is below the fold). Read
+  // once on mount and stripped from the URL so a refresh doesn't re-show it.
+  let data_guide_just_saved = false
+
+  // Add-example dialog reused from the data_guide_setup flow. Lets the user
+  // start filling out their first example without leaving the synth page.
+  // After they submit, we stash the sample on a pending store and navigate
+  // to /data_guide_setup, where it gets seeded into the form.
+  let add_data_guide_example_dialog: AddExampleDialog
+  function handle_data_guide_example_added(
+    event: CustomEvent<{
+      sample: GuideSample
+      index: number
+      mode: "add" | "edit"
+    }>,
+  ) {
+    pending_data_guide_example.set(event.detail.sample)
+    goto(`/generate/${project_id}/${task_id}/data_guide_setup`)
+  }
 
   $: error = $loading_error || task_error
 
@@ -73,6 +124,7 @@
   }
   // Empty to start but will be populated from IndexedDB after task is loaded
   // Note: load the state vars into the guidance_data model and use that, this is just for the initial load/persistence
+  let persist_state: () => Promise<void> = () => Promise.resolve()
   let saved_state: Writable<SavedDataGenState> = writable({
     gen_type: null,
     template_id: null,
@@ -101,13 +153,12 @@
     guidance_data.splits.set($saved_state.splits)
   }
 
-  function clear_all_with_confirm() {
+  async function clear_all_with_confirm() {
     let msg =
       "Are you sure you want to clear all synthetic data gen state? This cannot be undone."
 
     if (confirm(msg)) {
-      clear_all_state()
-      // Load the page again with clear URL params to get fresh state
+      await clear_and_persist()
       window.location.href = `/generate/${project_id}/${task_id}/synth`
     }
   }
@@ -130,16 +181,26 @@
     }))
   }
 
-  function clear_state_and_reload() {
+  // Clears state and flushes to IndexedDB before navigating. The store
+  // subscriber writes async, so without this the page reloads with stale
+  // state and re-shows the dialog.
+  async function clear_and_persist() {
     clear_all_state()
-    // reload the window keeping the same URL
+    try {
+      await persist_state()
+    } catch (e) {
+      console.error("Failed to persist cleared state:", e)
+    }
+  }
+
+  async function clear_state_and_reload() {
+    await clear_and_persist()
     window.location.reload()
     return true
   }
 
-  function clear_state_and_go_to_intro() {
-    clear_all_state()
-    // Redirect back to intro to choose mode
+  async function clear_state_and_go_to_intro() {
+    await clear_and_persist()
     window.location.href = `/generate/${project_id}/${task_id}`
     return true
   }
@@ -155,7 +216,13 @@
   }
 
   onMount(async () => {
-    await get_task()
+    if ($page.url.searchParams.get("data_guide_saved") === "true") {
+      data_guide_just_saved = true
+      const cleaned = new URL($page.url.toString())
+      cleaned.searchParams.delete("data_guide_saved")
+      history.replaceState(history.state, "", cleaned.toString())
+    }
+    await Promise.all([get_task(), fetch_data_guide()])
     if (!task) {
       task_error = new KilnError(
         "Could not load task. It may belong to a project you don't have access to.",
@@ -167,7 +234,7 @@
     if (project_id && task_id) {
       // Setup the root node store
       const synth_data_key = `synth_data_${project_id}_${task_id}_v2`
-      const { store, initialized } = indexedDBStore(synth_data_key, {
+      const { store, initialized, persist } = indexedDBStore(synth_data_key, {
         gen_type: null,
         template_id: null,
         eval_id: null,
@@ -180,10 +247,15 @@
       // Wait for the store to be initialized, then set the state
       await initialized
       saved_state = store
+      persist_state = persist
 
       // Special case: if we have some state (goal) but no root_node data, we should reset the state
-      // Cleaner to give the user a fresh UI since there's very little data saved, and the clean UI is about picking goal
+      // Cleaner to give the user a fresh UI since there's very little data saved, and the clean UI is about picking goal.
+      // Skip the reset when returning from a sub-flow (e.g. data guide setup) so the chosen goal/eval/template is preserved.
+      const session_continued =
+        $page.url.searchParams.get("session_continued") === "true"
       if (
+        !session_continued &&
         $saved_state.root_node.samples.length === 0 &&
         $saved_state.root_node.sub_topics.length === 0
       ) {
@@ -366,6 +438,7 @@
       gen_type,
       task,
       splits,
+      data_guide?.guide ?? "",
     )
     // Trigger reactivity
     guidance_data = guidance_data
@@ -392,10 +465,6 @@
       task_loading = true
       if (!project_id || !task_id) {
         throw new Error("Project or task ID not set.")
-      }
-      if ($current_task?.id === task_id) {
-        task = $current_task
-        return
       }
       const { data: task_response, error: get_error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}",
@@ -657,6 +726,9 @@
         ? JSON.parse(sample.input)
         : sample.input
       const save_sample_guidance = guidance_data.guidance_for_type("outputs")
+      const data_guide = get(guidance_data.use_data_guide)
+        ? get(guidance_data.data_guide)
+        : ""
       // Get a random split tag, if splits are defined
       const split_tag = get_random_split_tag()
       const tags = split_tag ? [split_tag] : []
@@ -683,6 +755,7 @@
             run_config_properties: run_config_properties,
             topic_path: topic_path || [],
             guidance: save_sample_guidance ? save_sample_guidance : undefined, // clear empty string
+            data_guide,
             tags,
           },
         },
@@ -795,11 +868,14 @@
               handler: clear_all_with_confirm,
             },
           ]
-        : []),
-      {
-        label: "Docs & Guide",
-        href: "https://docs.kiln.tech/docs/synthetic-data-generation",
-      },
+        : data_guide
+          ? [
+              {
+                label: "Data Guide",
+                href: `/generate/${project_id}/${task_id}/data_guide`,
+              },
+            ]
+          : []),
     ]}
   >
     {#if task_loading || synth_data_loading}
@@ -818,7 +894,53 @@
       </div>
     {:else if task}
       <DataGenDescription bind:guidance_data />
-      {#if is_empty}
+      {#if is_empty && is_setup && !data_guide && !guide_loading && !skip_data_guide}
+        <div
+          class="flex flex-col items-center justify-center min-h-[50vh] mt-12"
+        >
+          <Intro
+            title="Create a Data Guide"
+            description_paragraphs={[
+              "A Data Guide tells us what realistic data for your task looks like. Without one, the model might guess.",
+              "Add a few good examples, rate the data we generate, and we'll refine the guide from there.",
+            ]}
+            action_buttons={[
+              {
+                label: "Set Up Data Guide",
+                is_primary: true,
+                onClick: () => add_data_guide_example_dialog?.open_add(),
+              },
+              {
+                label: "Continue Without Data Guide",
+                is_primary: false,
+                onClick: () => {
+                  skip_data_guide = true
+                },
+              },
+            ]}
+          >
+            <div slot="icon" class="h-12 w-12">
+              <NotebookIcon />
+            </div>
+          </Intro>
+          <AddExampleDialog
+            bind:this={add_data_guide_example_dialog}
+            {project_id}
+            {task_id}
+            on:submit={handle_data_guide_example_added}
+          />
+        </div>
+      {:else if is_empty}
+        {#if data_guide_just_saved}
+          <div class="mt-8">
+            <Callout
+              title="Data Guide saved"
+              description="Your data guide will be available to use when generating data below."
+            >
+              <div slot="icon"><CheckmarkIcon /></div>
+            </Callout>
+          </div>
+        {/if}
         <div>
           <DataGenIntro
             generate_subtopics={() => {
@@ -1212,6 +1334,9 @@
         <div>
           <SynthDataGuidance guidance_type="outputs" {guidance_data} />
         </div>
+        <div>
+          <SynthDataGuide {guidance_data} />
+        </div>
         {#if task}
           <!-- Lock tools and skills whenever SDG inherits fine-tuning tool state, including the empty set. -->
           <RunConfigComponent
@@ -1390,7 +1515,7 @@
     {
       label: "New Session (Clear Existing)",
       isWarning: true,
-      action: clear_state_and_reload,
+      asyncAction: clear_state_and_reload,
     },
   ]}
 >
@@ -1413,7 +1538,7 @@
   action_buttons={[
     {
       label: "New Session",
-      action: clear_state_and_go_to_intro,
+      asyncAction: clear_state_and_go_to_intro,
     },
     {
       label: "Continue Session",

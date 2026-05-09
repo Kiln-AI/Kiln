@@ -11,6 +11,7 @@ import sys
 import tkinter as tk
 import webbrowser
 
+import sentry_sdk
 from kiln_ai.utils.config import Config
 from PIL import Image
 
@@ -20,6 +21,12 @@ from uvicorn import Config as UvicornConfig
 
 from app.desktop.custom_tray import KilnMenuItem, KilnTray
 from app.desktop.desktop_server import ThreadedServer, server_config
+from app.desktop.studio_server._sentry_config import (
+    SENTRY_DSN,
+    SENTRY_ENV,
+    SENTRY_RELEASE,
+)
+from app.desktop.studio_server._version import __version__
 from app.desktop.util.resource_limits import setup_resource_limits
 
 logger = logging.getLogger(__name__)
@@ -164,7 +171,27 @@ class DesktopServer(ThreadedServer):
             self.app.on_quit()
 
 
+def desktop_release_name() -> str:
+    if SENTRY_RELEASE:
+        return SENTRY_RELEASE
+    if not __version__:
+        logger.warning("__version__ is not set, using unknown version")
+        return "kiln-studio-desktop@unknown"
+    return f"kiln-studio-desktop@{__version__}"
+
+
 if __name__ == "__main__":
+    # Sentry is gated on DSN presence: CI bakes it into _sentry_config.py for
+    # release builds, dev/test builds leave it None and init is skipped.
+    if SENTRY_DSN:
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            release=desktop_release_name(),
+            environment=SENTRY_ENV,
+            send_default_pii=False,
+            traces_sample_rate=1.0,
+        )
+
     setup_resource_limits()
 
     host = Config.shared().kiln_local_api_host

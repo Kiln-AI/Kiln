@@ -3,7 +3,7 @@ import { test, expect } from "../../fixtures"
 test.describe("Settings - providers and misc", () => {
   /* @act
   ## Goals
-  The providers list page loads and displays AI providers including Kiln Copilot
+  The providers list page loads and displays AI providers including Kiln Pro
   (which is NOT hidden outside onboarding mode). The page title is "AI Providers"
   and has a "Custom Models" action button linking to /settings/providers/add_models.
   Standard providers like OpenRouter, OpenAI, and Ollama should be visible.
@@ -23,7 +23,7 @@ test.describe("Settings - providers and misc", () => {
   - OpenRouter provider name is visible.
   - OpenAI provider name is visible.
   - Ollama provider name is visible.
-  - Kiln Copilot IS visible (not hidden outside onboarding).
+  - Kiln Pro IS visible (not hidden outside onboarding).
   - "Custom Models" button is visible (renders as a button using goto for navigation).
   */
   test("providers page shows provider list with all providers", async ({
@@ -50,10 +50,8 @@ test.describe("Settings - providers and misc", () => {
       page.getByRole("heading", { name: "Ollama", exact: true }),
     ).toBeVisible()
 
-    // Kiln Copilot has a "Recommended" badge inside the h3, so use regex match
-    await expect(
-      page.getByRole("heading", { name: /Kiln Copilot/ }),
-    ).toBeVisible()
+    // Kiln Pro has a "Recommended" badge inside the h3, so use regex match
+    await expect(page.getByRole("heading", { name: /Kiln Pro/ })).toBeVisible()
 
     const customModelsButton = page.getByRole("button", {
       name: "Custom Models",
@@ -164,9 +162,9 @@ test.describe("Settings - providers and misc", () => {
 
   /* @act
   ## Goals
-  The Kiln Copilot settings page renders with the heading "Kiln Copilot",
-  breadcrumbs to Settings and AI Providers, and the Connect Kiln Copilot UI
-  with a Connect button and "Cancel setting up Kiln Copilot" link.
+  The Kiln Pro settings page renders with the heading "Kiln Pro",
+  breadcrumbs to Settings and AI Providers, and the Connect Kiln Pro UI
+  with a Connect button and "Cancel setting up Kiln Pro" link.
   Since this page uses Kinde OAuth, we only test UI rendering.
 
   ## Fixtures
@@ -174,18 +172,18 @@ test.describe("Settings - providers and misc", () => {
   - seededProjectWithTask (provides project context so app layout renders)
 
   ## Hints
-  - Route is /settings/providers/kiln_copilot
-  - Page heading is "Kiln Copilot"
-  - ConnectKilnCopilotSteps renders "Connect Kiln Copilot" heading and a Connect button
-  - Cancel link text is "Cancel setting up Kiln Copilot"
+  - Route is /settings/providers/kiln_pro
+  - Page heading is "Kiln Pro"
+  - ConnectKilnCopilotSteps renders "Connect Kiln Pro" heading and a Connect button
+  - Cancel link text is "Cancel setting up Kiln Pro"
 
   ## Assertions
-  - Page heading "Kiln Copilot" is visible.
-  - "Connect Kiln Copilot" text is visible.
+  - Page heading "Kiln Pro" is visible.
+  - "Connect Kiln Pro" text is visible.
   - Connect button is visible.
-  - "Cancel setting up Kiln Copilot" link is visible.
+  - "Cancel setting up Kiln Pro" link is visible.
   */
-  test("kiln copilot settings page renders connect UI", async ({
+  test("kiln pro settings page renders connect UI", async ({
     page,
     registeredUser,
     seededProjectWithTask,
@@ -193,19 +191,19 @@ test.describe("Settings - providers and misc", () => {
     void registeredUser
     void seededProjectWithTask
 
-    await page.goto("/settings/providers/kiln_copilot")
+    await page.goto("/settings/providers/kiln_pro")
 
     await expect(
-      page.getByRole("heading", { name: "Kiln Copilot", exact: true }),
+      page.getByRole("heading", { name: "Kiln Pro", exact: true }),
     ).toBeVisible()
 
-    await expect(page.getByText("Connect Kiln Copilot")).toBeVisible()
+    await expect(page.getByText("Connect Kiln Pro")).toBeVisible()
 
     await expect(
       page.getByRole("button", { name: "Connect", exact: true }),
     ).toBeVisible()
 
-    await expect(page.getByText("Cancel setting up Kiln Copilot")).toBeVisible()
+    await expect(page.getByText("Cancel setting up Kiln Pro")).toBeVisible()
   })
 
   /* @act
@@ -243,6 +241,6 @@ test.describe("Settings - providers and misc", () => {
       page.getByRole("heading", { name: "Check for Update", exact: true }),
     ).toBeVisible()
 
-    await expect(page.getByText("Current Version")).toBeVisible()
+    await expect(page.getByText("Current Version").first()).toBeVisible()
   })
 })

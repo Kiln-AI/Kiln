@@ -3,7 +3,6 @@
   import PropertyList from "$lib/ui/property_list.svelte"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import {
@@ -38,12 +37,15 @@
   let unarchive_error: KilnError | null = null
   let archive_loading = false
 
-  onMount(async () => {
-    await fetch_tool_server()
-  })
+  $: if (project_id && tool_server_id) {
+    fetch_tool_server(project_id, tool_server_id)
+  }
 
-  async function fetch_tool_server_config(): Promise<ExternalToolServerApiDescription | null> {
-    if (!project_id || !tool_server_id) {
+  async function fetch_tool_server_config(
+    req_project_id: string,
+    req_tool_server_id: string,
+  ): Promise<ExternalToolServerApiDescription | null> {
+    if (!req_project_id || !req_tool_server_id) {
       return null
     }
 
@@ -52,8 +54,8 @@
       {
         params: {
           path: {
-            project_id,
-            tool_server_id,
+            project_id: req_project_id,
+            tool_server_id: req_tool_server_id,
           },
         },
       },
@@ -66,16 +68,19 @@
     return data as ExternalToolServerApiDescription
   }
 
-  async function fetch_tool_server() {
+  async function fetch_tool_server(
+    req_project_id: string,
+    req_tool_server_id: string,
+  ) {
     try {
       loading = true
       loading_error = null
 
-      if (!project_id) {
+      if (!req_project_id) {
         throw new Error("No project ID provided")
       }
 
-      if (!tool_server_id) {
+      if (!req_tool_server_id) {
         throw new Error("No tool ID provided")
       }
 
@@ -85,12 +90,18 @@
         {
           params: {
             path: {
-              project_id,
-              tool_server_id,
+              project_id: req_project_id,
+              tool_server_id: req_tool_server_id,
             },
           },
         },
       )
+
+      if (
+        req_project_id !== project_id ||
+        req_tool_server_id !== tool_server_id
+      )
+        return
 
       if (fetch_error) {
         throw fetch_error
@@ -98,16 +109,38 @@
 
       tool_server = data as ExternalToolServerApiDescription
     } catch (err) {
+      if (
+        req_project_id !== project_id ||
+        req_tool_server_id !== tool_server_id
+      )
+        return
       loading_error = createKilnError(err)
-      // If the full tool-server fetch fails, fall back to persisted config
-      // so archive/unarchive still works.
       try {
-        tool_server = await fetch_tool_server_config()
+        const fallback = await fetch_tool_server_config(
+          req_project_id,
+          req_tool_server_id,
+        )
+        if (
+          req_project_id !== project_id ||
+          req_tool_server_id !== tool_server_id
+        )
+          return
+        tool_server = fallback
       } catch {
+        if (
+          req_project_id !== project_id ||
+          req_tool_server_id !== tool_server_id
+        )
+          return
         tool_server = null
       }
     } finally {
-      loading = false
+      if (
+        req_project_id === project_id &&
+        req_tool_server_id === tool_server_id
+      ) {
+        loading = false
+      }
     }
   }
 
@@ -350,7 +383,8 @@
       unarchive_error = null
 
       const current_tool_server =
-        tool_server ?? (await fetch_tool_server_config())
+        tool_server ??
+        (await fetch_tool_server_config(project_id, tool_server_id))
       if (!current_tool_server) {
         return
       }
@@ -404,7 +438,7 @@
     } finally {
       try {
         await Promise.all([
-          fetch_tool_server(),
+          fetch_tool_server(project_id, tool_server_id),
           project_id
             ? load_available_tools(project_id, true)
             : Promise.resolve(),

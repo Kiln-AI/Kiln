@@ -10,6 +10,7 @@ from kiln_ai.datamodel.basemodel import (
     KilnParentedModel,
     KilnParentModel,
 )
+from kiln_ai.datamodel.data_guide import DataGuide
 from kiln_ai.datamodel.datamodel_enums import (
     Priority,
     StructuredOutputMode,
@@ -134,6 +135,7 @@ class Task(
         "evals": Eval,
         "specs": Spec,
         "run_configs": TaskRunConfig,
+        "data_guides": DataGuide,
     },
 ):
     """
@@ -206,6 +208,17 @@ class Task(
 
     def specs(self, readonly: bool = False) -> list[Spec]:
         return super().specs(readonly=readonly)  # type: ignore
+
+    def data_guides(self, readonly: bool = False) -> list[DataGuide]:
+        return super().data_guides(readonly=readonly)  # type: ignore
+
+    def current_data_guide(self, readonly: bool = False) -> DataGuide | None:
+        # By design there is at most one DataGuide per task — saves overwrite
+        # the existing one in place rather than creating a new file. If the
+        # folder somehow ends up with multiple (e.g. an older import), return
+        # the first; cleanup is up to the caller.
+        guides = self.data_guides(readonly=readonly)
+        return guides[0] if guides else None
 
     def prompt_optimization_jobs(
         self, readonly: bool = False

@@ -7,13 +7,13 @@
   import XCircleIcon from "$lib/ui/icons/x_circle_icon.svelte"
   import InfoTooltip from "$lib/ui/info_tooltip.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
+  import ClampedText from "$lib/ui/clamped_text.svelte"
+  import SeeAllDialog from "$lib/ui/see_all_dialog.svelte"
   import SpecPropertiesDisplay from "../spec_properties_display.svelte"
   import type { KilnError } from "$lib/utils/error_handlers"
   import type { SpecType } from "$lib/types"
   import type { ReviewRow } from "../spec_utils"
-  import hljs from "highlight.js/lib/core"
-  import json from "highlight.js/lib/languages/json"
-  hljs.registerLanguage("json", json)
+  import { formatExpandedContent } from "$lib/utils/format_expanded_content"
 
   export let name: string
   export let spec_type: SpecType
@@ -31,25 +31,6 @@
     continue_to_refine: void
     create_spec_secondary: void
   }>()
-
-  function formatExpandedContent(data: string): {
-    value: string
-    isJson: boolean
-  } {
-    try {
-      const json_data = JSON.parse(data)
-      if (typeof json_data !== "string") {
-        const formatted = JSON.stringify(json_data, null, 2)
-        const highlighted = hljs.highlight(formatted, {
-          language: "json",
-        }).value
-        return { value: highlighted, isJson: true }
-      }
-    } catch (_) {
-      // Not valid JSON, return as plain text
-    }
-    return { value: data, isJson: false }
-  }
 
   function set_meets_spec(id: string, meets_spec: boolean, event: Event) {
     event.stopPropagation()
@@ -77,9 +58,9 @@
 
   function get_feedback_empty_label(row: ReviewRow): string {
     if (row.user_says_meets_spec) {
-      return "Describe why this meets the spec"
+      return "Describe why this passes"
     } else {
-      return "Describe why this does not meet the spec"
+      return "Describe why this fails"
     }
   }
 
@@ -96,7 +77,7 @@
     return true
   })
 
-  $: submit_label = all_feedback_aligned ? "Create Spec" : "Next"
+  $: submit_label = all_feedback_aligned ? "Create Eval" : "Next"
   $: submit_disabled = !all_feedback_aligned && !all_examples_reviewed
 
   function handle_submit() {
@@ -112,16 +93,14 @@
     spec_details_dialog?.show()
   }
 
+  let see_all_dialog: SeeAllDialog
+
   async function handle_secondary_click() {
     if (await form_container.validate_only()) {
       dispatch("create_spec_secondary")
     }
   }
 </script>
-
-<head>
-  <link rel="stylesheet" href="/styles/highlightjs.min.css" />
-</head>
 
 <FormContainer
   bind:this={form_container}
@@ -140,12 +119,12 @@
   <div class="flex flex-col">
     <div class="font-medium">Review Data Examples</div>
     <div class="font-light text-gray-500 text-sm">
-      Review these examples to ensure Kiln understands the goal of your spec: <button
+      Review these examples to ensure Kiln understands the goal of your eval: <button
         class="link text-sm text-left text-gray-500 hover:text-gray-700"
         on:click={open_details_dialog}
       >
         {name}</button
-      >. For each row, select "Pass" if the example conforms to your spec and
+      >. For each row, select "Pass" if the example conforms to your eval and
       "Fail" if it does not. This will ensure Kiln's synthetic data generation,
       evals and judge will work effectively.
     </div>
@@ -159,10 +138,10 @@
             <th>Output</th>
             <th class="whitespace-nowrap" style="width: 140px">
               <div class="flex flex-row items-center gap-2">
-                <span>Meets Spec</span>
+                <span>Meets Criteria</span>
                 <span class="font-normal">
                   <InfoTooltip
-                    tooltip_text="Whether the example conforms to your spec. If Kiln's judge analysis is incorrect, you will be asked to provide feedback to help Kiln refine the spec."
+                    tooltip_text="Whether the example conforms to your eval. If Kiln's judge analysis is incorrect, you will be asked to provide feedback to help refine it."
                     position="top"
                   />
                 </span>
@@ -178,26 +157,22 @@
             {@const output_content = formatExpandedContent(row.output)}
             <tr>
               <td class="py-2">
-                {#if input_content.isJson}
-                  <!-- eslint-disable svelte/no-at-html-tags -->
-                  <pre
-                    class="whitespace-pre-wrap break-words">{@html input_content.value}</pre>
-                  <!-- eslint-enable svelte/no-at-html-tags -->
-                {:else}
-                  <pre
-                    class="whitespace-pre-wrap break-words">{input_content.value}</pre>
-                {/if}
+                <ClampedText
+                  content={input_content.isJson ? "" : input_content.value}
+                  html_content={input_content.isJson
+                    ? input_content.value
+                    : null}
+                  on:see_all={() => see_all_dialog.show("Input", row.input)}
+                />
               </td>
               <td class="py-2">
-                {#if output_content.isJson}
-                  <!-- eslint-disable svelte/no-at-html-tags -->
-                  <pre
-                    class="whitespace-pre-wrap break-words">{@html output_content.value}</pre>
-                  <!-- eslint-enable svelte/no-at-html-tags -->
-                {:else}
-                  <pre
-                    class="whitespace-pre-wrap break-words">{output_content.value}</pre>
-                {/if}
+                <ClampedText
+                  content={output_content.isJson ? "" : output_content.value}
+                  html_content={output_content.isJson
+                    ? output_content.value
+                    : null}
+                  on:see_all={() => see_all_dialog.show("Output", row.output)}
+                />
               </td>
               <td class="py-2">
                 <div class="flex gap-1">
@@ -268,7 +243,7 @@
       <Warning
         warning_color="success"
         warning_icon="check"
-        warning_message="Our judge analysis was consistent with your responses. Your spec is ready to be created."
+        warning_message="Our judge analysis was consistent with your responses. Your eval is ready to be created."
         tight={true}
       />
     </div>
@@ -286,7 +261,7 @@
       {#if submitting}
         <span class="loading loading-spinner loading-xs"></span>
       {:else}
-        Skip Review and Create Spec
+        Skip Review and Create Eval
       {/if}
     </button>
   </div>
@@ -294,7 +269,7 @@
 
 <Dialog
   bind:this={spec_details_dialog}
-  title={`Spec: ${name}`}
+  title={`Eval: ${name}`}
   width="wide"
   action_buttons={[
     {
@@ -305,3 +280,5 @@
 >
   <SpecPropertiesDisplay {spec_type} properties={property_values} />
 </Dialog>
+
+<SeeAllDialog bind:this={see_all_dialog} />

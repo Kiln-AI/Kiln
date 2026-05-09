@@ -22,10 +22,14 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import {
     rating_options_for_sample,
-    current_task_rating_options,
+    get_task_composite_id,
     model_info,
     model_name as model_name_from_id,
   } from "$lib/stores"
+  import {
+    rating_options_by_task_composite_id,
+    load_rating_options,
+  } from "$lib/stores/rating_options_store"
   import posthog from "posthog-js"
   import TraceComponent from "$lib/ui/trace/trace.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
@@ -178,9 +182,22 @@
   export let run_complete: boolean = false
   export let focus_repair_on_appear: boolean = false
 
+  // URL-scoped rating options keyed by project/task composite id.
+  $: task_rating_options =
+    project_id && task.id
+      ? $rating_options_by_task_composite_id[
+          get_task_composite_id(project_id, task.id)
+        ] ?? null
+      : null
+  $: if (project_id && task.id) {
+    load_rating_options(project_id, task.id).catch((e: unknown) => {
+      console.warn("Failed to load rating options", e)
+    })
+  }
+
   // Dynamic rating requirements based on tags
   $: rating_requirements = rating_options_for_sample(
-    $current_task_rating_options,
+    task_rating_options,
     run?.tags || [],
   )
 
@@ -272,7 +289,7 @@
   let seeded_ratings_for_run_id: string | null = null
   let seeded_ratings_with_options = false
   $: {
-    const options_loaded = !!$current_task_rating_options
+    const options_loaded = !!task_rating_options
     const on_new_run = !!run?.id && run.id !== seeded_ratings_for_run_id
     const options_just_loaded = options_loaded && !seeded_ratings_with_options
     if (run?.id && (on_new_run || options_just_loaded)) {

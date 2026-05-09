@@ -36,14 +36,14 @@
   import CreateSpecForm from "./create_spec_form.svelte"
   import ReviewExamples from "./review_examples.svelte"
   import RefineSpec from "./refine_spec.svelte"
-  import SpecAnalyzingAnimation from "./animations/spec_analyzing_animation.svelte"
-  import QuestioningAnimation from "./animations/questioning_animation.svelte"
-  import RefiningAnimation from "./animations/refining_animation.svelte"
+  import AnalyzingAnimation from "$lib/ui/animations/analyzing_animation.svelte"
+  import QuestioningAnimation from "$lib/ui/animations/questioning_animation.svelte"
+  import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
   import type { TaskSampleExample } from "$lib/utils/task_sample_example"
   import { build_prompt_with_task_sample } from "$lib/utils/task_sample_example"
   import Questions from "./questions.svelte"
   import posthog from "posthog-js"
-  import SavingAnimation from "./animations/saving_animation.svelte"
+  import SavingAnimation from "$lib/ui/animations/saving_animation.svelte"
   import { agentInfo } from "$lib/agent"
 
   const CLARIFY_SPEC_NUM_SAMPLES_PER_TOPIC = 10
@@ -53,8 +53,8 @@
   $: project_id = $page.params.project_id!
   $: task_id = $page.params.task_id!
   $: agentInfo.set({
-    name: "Spec Builder",
-    description: `Guided spec builder for project ID ${project_id}, task ID ${task_id}. Step-by-step creation of specs with requirements and test cases.`,
+    name: "Evals",
+    description: `Guided eval builder for project ID ${project_id}, task ID ${task_id}. Step-by-step creation of evals with requirements and test cases.`,
   })
 
   // State machine for the spec builder flow
@@ -307,7 +307,7 @@
 
     if (!data) {
       throw new KilnError(
-        "Failed to analyze spec for review. Please try again.",
+        "Failed to analyze eval for review. Please try again.",
       )
     }
 
@@ -472,7 +472,7 @@
     }
 
     if (!spec_id) {
-      throw new KilnError("Failed to create spec. Please try again.")
+      throw new KilnError("Failed to create eval. Please try again.")
     }
 
     complete = true
@@ -726,7 +726,7 @@
 
       if (!data) {
         throw new KilnError(
-          "Failed to refine spec with question answers. Please try again.",
+          "Failed to refine eval with question answers. Please try again.",
         )
       }
 
@@ -758,36 +758,36 @@
   function getPageTitle(state: BuilderState): string {
     switch (state) {
       case "create":
-        return "Create Spec"
+        return "Create Eval"
       case "questioning":
       case "questions":
-        return "Copilot: Clarify Spec"
+        return "Kiln Pro: Clarify Eval"
       case "analyzing_for_review":
       case "review":
-        return "Copilot: Review and Refine"
+        return "Kiln Pro: Review and Refine"
       case "refining":
       case "refine":
-        return "Copilot: Review Suggested Refinements"
+        return "Kiln Pro: Review Suggested Refinements"
       case "saving_with_copilot":
-        return "Copilot: Creating Spec"
+        return "Kiln Pro: Creating Eval"
     }
   }
 
   function getPageSubtitle(state: BuilderState): string | undefined {
     switch (state) {
       case "create":
-        return "A specification describes a behaviour to enforce or avoid for your task. Adding specs lets us measure and optimize quality."
+        return "Define a behaviour to enforce or avoid for your task, and automatically measure quality."
       case "analyzing_for_review":
       case "refining":
       case "questioning":
       case "saving_with_copilot":
         return undefined
       case "questions":
-        return "Reduce ambiguity of your spec."
+        return "Reduce ambiguity of your eval."
       case "review":
-        return "Improve your spec and judge with AI guidance."
+        return "Improve your eval and judge with AI guidance."
       case "refine":
-        return "Polish your spec to be analyzed further."
+        return "Polish your eval to be analyzed further."
     }
   }
 
@@ -859,11 +859,11 @@
     sub_subtitle_link="https://docs.kiln.tech/docs/evals-and-specs"
     breadcrumbs={[
       {
-        label: "Specs & Evals",
+        label: "Evals",
         href: `/specs/${project_id}/${task_id}`,
       },
       {
-        label: "Spec Templates",
+        label: "Eval Templates",
         href: `/specs/${project_id}/${task_id}/select_template`,
       },
     ]}
@@ -899,13 +899,25 @@
         on:create_without_copilot={handle_create_spec_without_copilot}
       />
     {:else if current_state === "analyzing_for_review"}
-      <SpecAnalyzingAnimation />
+      <AnalyzingAnimation
+        title="Analyzing Eval"
+        description="Kiln is reviewing your eval, generating example data to review, and creating a judge. Hold tight!"
+      />
     {:else if current_state === "questioning"}
-      <QuestioningAnimation />
+      <QuestioningAnimation
+        title="Preparing Clarifying Questions"
+        description="Kiln is analyzing your criteria to identify areas that could use more clarity. Hold tight!"
+      />
     {:else if current_state === "refining"}
-      <RefiningAnimation />
+      <RefiningAnimation
+        title="Refining Eval"
+        description="Kiln is refining your eval with the feedback you provided. Hold tight!"
+      />
     {:else if current_state === "saving_with_copilot"}
-      <SavingAnimation />
+      <SavingAnimation
+        title="Creating Eval"
+        description="Kiln is generating test and training data for your eval before saving. Hold tight!"
+      />
     {:else if current_state === "review"}
       <ReviewExamples
         {name}
