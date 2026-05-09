@@ -12,15 +12,15 @@
 
 <p align="center">
   <a href="https://kiln.tech#demo">
-    <img width="360" alt="Kiln AI Animated Preview" src="https://github.com/user-attachments/assets/56ac04ea-010b-40bf-851c-ec5e05965336">
+    <img width="420" alt="Kiln AI Animated Preview" src="https://github.com/user-attachments/assets/56ac04ea-010b-40bf-851c-ec5e05965336">
   </a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/Kiln-AI/kiln/actions/workflows/build_and_test.yml"><img src="https://github.com/Kiln-AI/kiln/actions/workflows/build_and_test.yml/badge.svg" alt="Build and Test"></a>
-  <a href="https://pypi.org/project/kiln-ai/"><img src="https://img.shields.io/pypi/v/kiln-ai.svg?logo=pypi&label=PyPI&logoColor=gold" alt="PyPI"></a>
-  <a href="https://kiln.tech/discord"><img src="https://img.shields.io/badge/Discord-Kiln_AI-blue?logo=Discord&logoColor=white" alt="Discord"></a>
+  <a href="https://kiln.tech/download"><img width="180" src="https://github.com/user-attachments/assets/a5d51b8b-b30a-4a16-a902-ab6ef1d58dc0" alt="Download Kiln"></a>
+  <a href="https://docs.kiln.tech"><img width="180" src="https://github.com/user-attachments/assets/aff1b35f-72c0-4286-9b28-40a415558359" alt="Read the Docs"></a>
 </p>
+
 
 <p align="center">
   <a href="#highlights"><strong>Highlights</strong></a> •
@@ -34,8 +34,9 @@
 </p>
 
 <p align="center">
-  <a href="https://kiln.tech/download"><img width="180" src="https://github.com/user-attachments/assets/a5d51b8b-b30a-4a16-a902-ab6ef1d58dc0" alt="Download Kiln"></a>
-  <a href="https://docs.kiln.tech"><img width="180" src="https://github.com/user-attachments/assets/aff1b35f-72c0-4286-9b28-40a415558359" alt="Read the Docs"></a>
+  <a href="https://github.com/Kiln-AI/kiln/actions/workflows/build_and_test.yml"><img src="https://github.com/Kiln-AI/kiln/actions/workflows/build_and_test.yml/badge.svg" alt="Build and Test"></a>
+  <a href="https://pypi.org/project/kiln-ai/"><img src="https://img.shields.io/pypi/v/kiln-ai.svg?logo=pypi&label=PyPI&logoColor=gold" alt="PyPI"></a>
+  <a href="https://kiln.tech/discord"><img src="https://img.shields.io/badge/Discord-Kiln_AI-blue?logo=Discord&logoColor=white" alt="Discord"></a>
 </p>
 
 ## What is Kiln?
