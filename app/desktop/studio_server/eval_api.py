@@ -924,7 +924,7 @@ def connect_evals_api(app: FastAPI):
         # Load the list of run configs to use. Two options:
         run_configs: list[TaskRunConfig] = []
         if all_run_configs:
-            # special case, we cannot directly load task.run_configs(), we need to also get all finetune run configs which lives inside the finetune model
+            # special case, we cannot directly load task.run_configs(), we need to also get all finetune run configs which live inside the finetune model
             run_configs = get_all_run_configs(project_id, task_id)
         else:
             if len(run_config_ids) == 0:
