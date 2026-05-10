@@ -47,7 +47,7 @@ Kiln is a workbench for the full AI development loop: evals, optimization, RAG, 
 
 ### Iterate, optimize, and collaborate
 
-- 🖥️ [**Easy-to-use app**](https://kiln.tech/download) — One-click apps for Mac, Windows, and Linux.
+- 🖥️ [**Intuitive app**](https://kiln.tech/download) — Easy to use apps for Mac, Windows, and Linux. One-click install.
 - 📊 [**Eval Builder**](https://docs.kiln.tech/docs/evaluations) — Auto-generate evals (judge + synthetic eval dataset), and align to your preference in ~10 minutes. 
 - 🚀 [**Auto-Optimize**](https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer) — Automatically find the best way to run your AI task, optimizing prompt, model selection, tools, skills, subagents, parameters, and more.
 - 💬 [**AI Assistant**](https://docs.kiln.tech) — Your AI data-science partner. Kiln Assistant proposes improvements, optimizes prompts, runs experiments, creates evals, and more.
@@ -59,12 +59,12 @@ Kiln is a workbench for the full AI development loop: evals, optimization, RAG, 
 - 🔍 [**RAG**](https://docs.kiln.tech/docs/documents-and-search-rag) — Drag-and-drop docs (PDF, image, video, audio), hybrid search via LanceDB, and auto-generated RAG evals from your own documents.
 - 🤖 [**Subagents**](https://docs.kiln.tech/docs/agents) — Compose multi-agent hierarchies by turning any Kiln task into a callable subagent — each runs in its own focused context window.
 - 🎛️ [**Fine-Tuning**](https://docs.kiln.tech/docs/fine-tuning-guide) — Zero-code fine-tuning across 60+ models (Qwen, Llama, GPT, Gemini, …) on Fireworks, Together, OpenAI, and Vertex — serverless deployment included.
-- 🐍 [**Open Python library**](https://docs.kiln.tech/developers/python-library-quickstart) — Build in the app, deploy in production. Same engine, same project files, no rewrite. `pip install kiln-ai` · MIT.
+- 🐍 [**Open Python library**](https://docs.kiln.tech/developers/python-library-quickstart) — Agents built in the app and be deployed to production. MIT open-source.
 - 🧰 [**…and more**](https://docs.kiln.tech) — Tools & MCP, Skills, structured outputs, reasoning models, model library (190+ tested).
 
 ## App Quickstart
 
-Get started in minutes — no GPU, no terminal, no setup.
+Get started in minutes — one-click install.
 
 Download Kiln Desktop for macOS, Windows, or Linux, then follow the [5-minute quickstart](https://docs.kiln.tech/getting-started/quickstart) to run your first task.
 
@@ -78,7 +78,7 @@ Download Kiln Desktop for macOS, Windows, or Linux, then follow the [5-minute qu
 
 ## Open-source Python Library
 
-Build in the app. Deploy with the open-source library. Same engine, same project files, no rewrite. The MIT-licensed `kiln-ai` library has full feature parity with the app — load Kiln projects, run tasks, build fine-tunes, work in notebooks, integrate Pandas/Polars dataframes, and more.
+Build in the app. Deploy with the open-source library. Same engine, same project files, no rewrite. The MIT-licensed `kiln-ai` library is the same library used in the app. Load Kiln projects, run tasks, build fine-tunes, work in notebooks, integrate Pandas/Polars dataframes, and more.
 
 ```bash
 pip install kiln-ai
