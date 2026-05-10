@@ -6,9 +6,9 @@
     </a>
 </p>
 
-<h4 align="center">
+<h3 align="center">
   A free app and open-source library to build better AI products.
-</h4>
+</h3>
 
 <p align="center">
   <a href="https://kiln.tech#demo">
@@ -51,13 +51,13 @@ Kiln is a workbench for the full AI development loop: evals, optimization, RAG, 
 - 📊 [**Eval Builder**](https://docs.kiln.tech/docs/evaluations) — Auto-generate evals (judge + synthetic eval dataset), and align to your preference in ~10 minutes. 
 - 🚀 [**Auto-Optimize**](https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer) — Automatically find the best way to run your AI task, optimizing prompt, model selection, tools, skills, subagents, parameters, and more.
 - 💬 [**AI Assistant**](https://docs.kiln.tech) — Your AI data-science partner. Kiln Assistant proposes improvements, optimizes prompts, runs experiments, creates evals, and more.
-- 🪄 [**Synthetic Data Generation**](https://docs.kiln.tech/docs/synthetic-data-generation) — Generate data for evals or fine-tuning in minutes.
 - 🤝 [**Git-native collaboration**](https://docs.kiln.tech/docs/collaboration) — The app syncs to Git automatically — even for teammates who don't know what Git is.
 
 ### Build & ship agents
 
 - 🔍 [**RAG**](https://docs.kiln.tech/docs/documents-and-search-rag) — Drag-and-drop docs (PDF, image, video, audio), hybrid search via LanceDB, and auto-generated RAG evals from your own documents.
 - 🤖 [**Subagents**](https://docs.kiln.tech/docs/agents) — Compose multi-agent hierarchies by turning any Kiln task into a callable subagent — each runs in its own focused context window.
+- 🪄 [**Synthetic Data Generation**](https://docs.kiln.tech/docs/synthetic-data-generation) — Generate data for evals or fine-tuning in minutes.
 - 🎛️ [**Fine-Tuning**](https://docs.kiln.tech/docs/fine-tuning-guide) — Zero-code fine-tuning across 60+ models (Qwen, Llama, GPT, Gemini, …) on Fireworks, Together, OpenAI, and Vertex — serverless deployment included.
 - 🐍 [**Open Python library**](https://docs.kiln.tech/developers/python-library-quickstart) — Agents built in the app and be deployed to production. MIT open-source.
 - 🧰 [**…and more**](https://docs.kiln.tech) — Tools & MCP, Skills, structured outputs, reasoning models, model library (190+ tested).
