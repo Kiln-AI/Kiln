@@ -7,7 +7,7 @@
 </p>
 
 <h4 align="center">
-  A free app and open-source library with everything you need to build better AI products.
+  A free app and open-source to build better AI products.
 </h4>
 
 <p align="center">
