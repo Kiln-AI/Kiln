@@ -16,6 +16,7 @@
   import { current_task } from "$lib/stores"
   import AnalyzingAnimation from "$lib/ui/animations/analyzing_animation.svelte"
   import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
+  import posthog from "posthog-js"
 
   type GuideBuilderState =
     | "loading"
@@ -54,6 +55,9 @@
   // Captured from the setup form so refine/regenerate can reuse them
   let captured_input_run_config: KilnAgentRunConfigProperties | null = null
   let captured_output_run_config: KilnAgentRunConfigProperties | null = null
+
+  // Number of successful refine/regenerate cycles before save, for analytics.
+  let refine_iterations = 0
 
   // The task being edited. Needed by the output run config dialog so it can
   // mirror the SDG output flow (prompt + tools/skills selectors at top level).
@@ -255,6 +259,7 @@
       general_feedback = ""
       preview_initial_guide = guide
       current_state = "preview"
+      refine_iterations++
     } catch (e) {
       error = createKilnError(e)
       current_state = "preview"
@@ -281,6 +286,12 @@
       // Disable the unsaved-changes warn before goto fires beforeNavigate.
       // Mirrors the prompt_form / skill_form `complete = true` pattern.
       saved = true
+
+      posthog.capture("data_guide_saved", {
+        method: "after_preview",
+        source: "setup",
+        refine_iterations,
+      })
 
       // Replace the setup page in history rather than pushing onto it. The
       // user finished and shouldn't be able to back-navigate into the now-

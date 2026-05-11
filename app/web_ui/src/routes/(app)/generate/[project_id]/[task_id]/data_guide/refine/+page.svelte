@@ -18,6 +18,7 @@
   import AnalyzingAnimation from "$lib/ui/animations/analyzing_animation.svelte"
   import RefiningAnimation from "$lib/ui/animations/refining_animation.svelte"
   import { pending_data_guide_refine_handoff } from "../refine_handoff_store"
+  import posthog from "posthog-js"
 
   type RefineState =
     | "loading"
@@ -55,6 +56,9 @@
   // "Back to Data Guide" navigation rather than a save.
   let saved_guide_snapshot: string = ""
   $: requires_save = guide !== saved_guide_snapshot
+
+  // Number of successful refine/regenerate cycles before save, for analytics.
+  let refine_iterations = 0
 
   let guidance_data: SynthDataGuidanceDataModel =
     new SynthDataGuidanceDataModel()
@@ -202,6 +206,7 @@
       general_feedback = ""
       preview_initial_guide = guide
       current_state = "preview"
+      refine_iterations++
     } catch (e) {
       error = createKilnError(e)
       current_state = "preview"
@@ -237,6 +242,13 @@
 
       // Disable the unsaved-changes warn before goto fires beforeNavigate.
       saved = true
+
+      posthog.capture("data_guide_saved", {
+        method: "after_preview",
+        source: "refine",
+        refine_iterations,
+      })
+
       // Replace state so the user can't back-navigate into the now-stale
       // refine flow they just exited. /data_guide will refetch the saved
       // guide on its own.
