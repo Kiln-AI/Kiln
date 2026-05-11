@@ -47,8 +47,8 @@ Kiln is a workbench for the full AI development loop: evals, optimization, promp
 
 ### Iterate, optimize, and collaborate
 
-- 🖥️ [**Intuitive app**](https://kiln.tech/download) — Easy to use apps for Mac, Windows, and Linux. One-click install.
-- 📊 [**Eval Builder**](https://docs.kiln.tech/docs/evaluations) — Auto-generate evals (judge + synthetic eval dataset), and align to your preference in ~10 minutes. 
+- 🖥️ [**Intuitive app**](https://kiln.tech/download) — Easy-to-use apps for Mac, Windows, and Linux. One-click install.
+- 📊 [**Eval Builder**](https://docs.kiln.tech/docs/evaluations) — Auto-generate evals (judge + synthetic eval dataset), and align to your preference in ~10 minutes.
 - 🚀 [**Auto-Optimize**](https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer) — Automatically find the best way to run your AI task, optimizing prompt, model selection, tools, skills, subagents, parameters, and more.
 - 💬 [**AI Assistant**](https://docs.kiln.tech) — Your AI data-science partner. Kiln Assistant proposes improvements, optimizes prompts, runs experiments, creates evals, and more.
 - 🤝 [**Git-native collaboration**](https://docs.kiln.tech/docs/collaboration) — The app syncs to Git automatically — even for teammates who don't know what Git is.
@@ -59,7 +59,7 @@ Kiln is a workbench for the full AI development loop: evals, optimization, promp
 - 🤖 [**Subagents**](https://docs.kiln.tech/docs/agents) — Compose multi-agent hierarchies — each runs in its own focused context window.
 - 🪄 [**Synthetic Data Generation**](https://docs.kiln.tech/docs/synthetic-data-generation) — Generate data for evals or fine-tuning in minutes.
 - 🎛️ [**Fine-Tuning**](https://docs.kiln.tech/docs/fine-tuning-guide) — Zero-code fine-tuning across 60+ models (Qwen, Llama, GPT, Gemini, …) on Fireworks, Together, OpenAI, and Vertex. Serverless deployment included.
-- 🐍 [**Open Python library**](https://docs.kiln.tech/developers/python-library-quickstart) — Agents built in the app and be deployed to production. MIT open-source.
+- 🐍 [**Open Python library**](https://docs.kiln.tech/developers/python-library-quickstart) — Agents built in the app can be deployed to production. MIT open-source.
 - 🧰 [**…and more**](https://docs.kiln.tech) — Tools & MCP, Skills, structured outputs, reasoning models, model library (190+ tested).
 
 ## App Quickstart
@@ -90,7 +90,7 @@ Most AI tooling forces a tradeoff: a code-only framework that covers one slice (
 
 - **Optimization, not just evaluation.** Other tools tell you how a prompt scores, but not how to fix it. Kiln's Auto-Optimize searches across hundreds of prompt mutations and models to find what works best for every eval dimension.
 
-- **GUI for the whole team, library for engineers.** Kiln's desktop app lets PMs rate outputs, SMEs add training examples, and QA flag regressions — without a terminal. Engineers ship the same tasks via an MIT-licensed Python library. Data-scientists can use the library in notebooks and experiments. 
+- **GUI for the whole team, library for engineers.** Kiln's desktop app lets PMs rate outputs, SMEs add training examples, and QA flag regressions — without a terminal. Engineers ship the same tasks via an MIT-licensed Python library. Data scientists can use the library in notebooks and experiments.
 
 - **Local-first.** Most AI platforms are SaaS-only. Kiln runs entirely on your machine. Bring your own API keys, or go fully offline with Ollama. Your data never leaves your control. Team-sync is provided via Git infrastructure you already own.
 
@@ -131,11 +131,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution gu
 
 ## License & Trademarks
 
-Kiln's core Python library and REST server are [MIT-licensed](libs/core/LICENSE.txt). The desktop app is [source-available](app), free to use and — built on the [fair-code](https://faircode.io) model so Kiln stays free for individuals while remaining sustainable.
+Kiln's core Python library and REST server are [MIT-licensed](libs/core/LICENSE.txt). The desktop app is [source-available](app), free to use, and built on the [fair-code](https://faircode.io) model — so Kiln stays free for individuals while remaining sustainable.
 
 Datasets are open JSON. You own and control your datasets.
 
-[Kiln Pro](https://kiln.tech/pricing) is our service which adds the AI Assistant, Auto-Optimize, and the Eval Builder. It's opt-in, and the core Kiln app remains fully functional without it.
+[Kiln Pro](https://kiln.tech/pricing) is our service that adds the AI Assistant, Auto-Optimize, and the Eval Builder. It's opt-in, and the core Kiln app remains fully functional without it.
 
 The Kiln name and logos are trademarks of Chesterfield Laboratories Inc.
 
