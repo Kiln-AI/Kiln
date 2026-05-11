@@ -902,6 +902,7 @@
       <AnalyzingAnimation
         title="Analyzing Eval"
         description="Kiln is reviewing your eval, generating example data to review, and creating a judge. Hold tight!"
+        warning="This may take a while"
       />
     {:else if current_state === "questioning"}
       <QuestioningAnimation
