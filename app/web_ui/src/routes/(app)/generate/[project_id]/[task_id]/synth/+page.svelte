@@ -908,7 +908,10 @@
               {
                 label: "Set Up Data Guide",
                 is_primary: true,
-                onClick: () => add_data_guide_example_dialog?.open_add(),
+                onClick: () => {
+                  posthog.capture("data_guide_intro_clicked")
+                  add_data_guide_example_dialog?.open_add()
+                },
               },
               {
                 label: "Continue Without Data Guide",

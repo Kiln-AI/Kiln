@@ -22,6 +22,7 @@
   import DeleteDialog from "$lib/ui/delete_dialog.svelte"
   import { isMacOS } from "$lib/utils/platform"
   import { pending_data_guide_refine_handoff } from "./refine_handoff_store"
+  import posthog from "posthog-js"
 
   type ViewState = "loading" | "saved"
 
@@ -143,6 +144,12 @@
         saved_data_guide = saved
         guide = saved.guide
       }
+
+      posthog.capture("data_guide_saved", {
+        method: "save_without_verifying",
+        source: "saved_view",
+        refine_iterations: 0,
+      })
     } catch (e) {
       save_error = createKilnError(e)
     } finally {
