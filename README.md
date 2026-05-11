@@ -88,7 +88,7 @@ Most AI tooling forces a tradeoff: a code-only framework that covers one slice (
     <img width="600" alt="Kiln optimization across iterations" src="https://github.com/user-attachments/assets/5517b33b-74dd-444a-9f40-6a9c6d8a1ffc">
   </p>
 
-- **Optimization, not just evaluation.** Other tools tell you how a prompt scores, but not how to fix it. Kiln's Auto-Optimize searches across hundreds of prompt mutations and models to find what works best for every eval dimention.
+- **Optimization, not just evaluation.** Other tools tell you how a prompt scores, but not how to fix it. Kiln's Auto-Optimize searches across hundreds of prompt mutations and models to find what works best for every eval dimension.
 
 - **GUI for the whole team, library for engineers.** Kiln's desktop app lets PMs rate outputs, SMEs add training examples, and QA flag regressions — without a terminal. Engineers ship the same tasks via an MIT-licensed Python library. Data-scientists can use the library in notebooks and experiments. 
 
