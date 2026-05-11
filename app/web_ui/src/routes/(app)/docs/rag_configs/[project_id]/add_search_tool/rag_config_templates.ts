@@ -60,11 +60,11 @@ export type RagConfigTemplate = {
   notice_tooltip?: string
 }
 
-const gemini_2_5_flash_extractor: ExtractorSubConfig = {
-  config_name: "Gemini 2p5 Flash w Default Prompts",
-  description: "Gemini 2.5 Flash",
+const gemini_3_flash_extractor: ExtractorSubConfig = {
+  config_name: "Gemini 3 Flash w Default Prompts",
+  description: "Gemini 3 Flash",
   model_provider_name: "gemini_api",
-  model_name: "gemini_2_5_flash",
+  model_name: "gemini_3_flash",
 }
 const default_chunker: ChunkerSubConfig = {
   config_name: "Size 512 - Overlap 64",
@@ -73,10 +73,10 @@ const default_chunker: ChunkerSubConfig = {
   chunk_overlap: 64,
 }
 const default_embedding: EmbeddingSubConfig = {
-  config_name: "Gemini Embedding 001 (3072 dimensions)",
-  description: "Gemini Embedding 001 (3072 dimensions)",
+  config_name: "Gemini Embedding 002 (3072 dimensions)",
+  description: "Gemini Embedding 002 (3072 dimensions)",
   model_provider_name: "gemini_api",
-  model_name: "gemini_embedding_001",
+  model_name: "gemini_embedding_002",
 }
 const default_vector_store: VectorStoreSubConfig = {
   config_name: "Hybrid Search - Vector and Full-Text",
@@ -92,7 +92,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     preview_description:
       "The best quality search configuration. Uses Gemini 3.1 Pro with hybrid search.",
     preview_tooltip:
-      "Gemini 3.1 Pro extraction, Gemini embeddings 001 (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
+      "Gemini 3.1 Pro extraction, Gemini embeddings 002 (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
     required_provider: "GeminiOrOpenRouter",
     extractor: {
       config_name: "Gemini 3p1 Pro w Default Prompts",
@@ -110,11 +110,11 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     name: "Cost Optimized",
     preview_subtitle: "Balance Cost and Quality",
     preview_description:
-      "Great quality at a lower price. Uses Gemini 2.5 Flash with hybrid search.",
+      "Great quality at a lower price. Uses Gemini 3 Flash with hybrid search.",
     preview_tooltip:
-      "Gemini 2.5 Flash extraction, Gemini embeddings 001 (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
+      "Gemini 3 Flash extraction, Gemini embeddings 002 (3072 dimensions), and LanceDB hybrid search (vector + full-text).",
     required_provider: "GeminiOrOpenRouter",
-    extractor: gemini_2_5_flash_extractor,
+    extractor: gemini_3_flash_extractor,
     chunker: default_chunker,
     embedding: default_embedding,
     vector_store: default_vector_store,
@@ -123,21 +123,21 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
   },
   local_qwen: {
     name: "All Local",
-    preview_subtitle: "Qwen 2.5 VL with Ollama",
-    preview_description: "Qwen 2.5 VL on your computer using Ollama.",
+    preview_subtitle: "Qwen 3 VL with Ollama",
+    preview_description: "Qwen 3 VL on your computer using Ollama.",
     preview_tooltip:
-      "Qwen 2.5 VL 7B via Ollama for extraction and Qwen 3 Embedding 0.6B for embeddings.",
+      "Qwen 3 VL 8B via Ollama for extraction and Qwen 3 Embedding 0.6B for embeddings.",
     required_provider: "Ollama",
-    required_models: ["qwen2.5vl:7b", "qwen3-embedding:0.6b"],
+    required_models: ["qwen3-vl:8b", "qwen3-embedding:0.6b"],
     required_commands: [
-      "ollama pull qwen2.5vl:7b",
+      "ollama pull qwen3-vl:8b",
       "ollama pull qwen3-embedding:0.6b",
     ],
     extractor: {
-      config_name: "Qwen 2p5 VL 7B via Ollama",
-      description: "Qwen 2.5 VL 7B via Ollama",
+      config_name: "Qwen 3 VL 8B via Ollama",
+      description: "Qwen 3 VL 8B via Ollama",
       model_provider_name: "ollama",
-      model_name: "qwen_2p5_vl_7b",
+      model_name: "qwen_3_vl_8b",
     },
     chunker: default_chunker,
     embedding: {
@@ -148,7 +148,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     },
     vector_store: default_vector_store,
     reranker: null,
-    rag_config_name: "Ollama - Qwen 2p5 VL",
+    rag_config_name: "Ollama - Qwen 3 VL",
   },
   vector_only: {
     name: "Vector Only",
@@ -156,9 +156,9 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     preview_description:
       "Use only vector search for semantic similarity, without keyword search.",
     preview_tooltip:
-      "Gemini 2.5 Flash extraction, Gemini embeddings 001 (3072 dimensions), and LanceDB vector search (no full-text search).",
+      "Gemini 3 Flash extraction, Gemini embeddings 002 (3072 dimensions), and LanceDB vector search (no full-text search).",
     required_provider: "GeminiOrOpenRouter",
-    extractor: gemini_2_5_flash_extractor,
+    extractor: gemini_3_flash_extractor,
     chunker: default_chunker,
     embedding: default_embedding,
     vector_store: {
@@ -182,7 +182,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     notice_tooltip:
       "GPT-5.4 does not support extracting audio or video files. We suggest using Gemini if you require audio or video support.",
     extractor: {
-      config_name: "GPT-5.4 w Default Prompts",
+      config_name: "GPT-5p4 w Default Prompts",
       description: "GPT-5.4",
       model_provider_name: "openai",
       model_name: "gpt_5_4",
@@ -196,7 +196,7 @@ export const rag_config_templates: Record<string, RagConfigTemplate> = {
     },
     vector_store: default_vector_store,
     reranker: null,
-    rag_config_name: "OpenAI Based - GPT-5.4 Hybrid Search",
+    rag_config_name: "OpenAI Based - GPT-5p4 Hybrid Search",
   },
 }
 

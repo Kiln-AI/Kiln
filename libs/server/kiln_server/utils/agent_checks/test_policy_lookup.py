@@ -69,6 +69,24 @@ class TestGetPolicy:
         lookup.get_policy("get", "/api/projects")
         assert lookup._cache is not None
 
+    def test_preload_populates_cache(self, annotations_dir: Path) -> None:
+        _write_annotation(
+            annotations_dir,
+            "get",
+            "/api/projects",
+            {"permission": "allow", "requires_approval": False},
+        )
+        lookup = AgentPolicyLookup(annotations_dir)
+        assert lookup._cache is None
+        lookup.preload()
+        assert lookup._cache is not None
+        assert ("get", "/api/projects") in lookup._cache
+
+    def test_preload_missing_dir_raises(self, tmp_path: Path) -> None:
+        lookup = AgentPolicyLookup(tmp_path / "nonexistent")
+        with pytest.raises(FileNotFoundError, match="Annotations directory not found"):
+            lookup.preload()
+
     @pytest.mark.parametrize("method_input", ["GET", "Get", "get"])
     def test_method_case_insensitivity(
         self, annotations_dir: Path, method_input: str

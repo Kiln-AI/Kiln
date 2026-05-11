@@ -5,7 +5,11 @@
     renameClone,
     saveConfig,
     is_stale_clone_error,
+    isGitHubUrl,
+    isGitLabUrl,
   } from "$lib/git_sync/api"
+  import { clear_wizard_store } from "$lib/stores/git_import_wizard_store"
+  import posthog from "posthog-js"
   import { load_projects } from "$lib/stores"
   import { onMount } from "svelte"
 
@@ -22,9 +26,20 @@
   export let on_back: () => void
   export let on_stale_clone: (() => void) | null = null
 
+  let display_project_name = project_name
+  let display_project_path = project_path
+  let display_branch = branch
+  let display_project_id = project_id
+
   let saving = true
   let error: KilnError | null = null
   let done = false
+
+  function git_host_label(url: string): string {
+    if (isGitHubUrl(url)) return "github"
+    if (isGitLabUrl(url)) return "gitlab"
+    return "other"
+  }
 
   onMount(async () => {
     try {
@@ -55,6 +70,14 @@
         auth_mode: auth_mode,
         sync_mode: "auto",
       })
+
+      posthog.capture("import_project", {
+        method: "git_sync",
+        git_host: git_host_label(git_url),
+        auth_mode: auth_mode,
+      })
+
+      clear_wizard_store()
 
       try {
         await load_projects()
@@ -107,15 +130,16 @@
     <h2 class="text-xl font-medium">Git Auto Sync Enabled</h2>
 
     <p class="text-sm text-gray-500 text-center max-w-md">
-      Auto-sync is now active for "{project_name || project_path}". Changes will
-      be automatically committed and pushed to the
-      <span class="font-medium">{branch}</span> branch.
+      Auto-sync is now active for "{display_project_name ||
+        display_project_path}". Changes will be automatically committed and
+      pushed to the
+      <span class="font-medium">{display_branch}</span> branch.
     </p>
 
     <div class="flex flex-row gap-4 mt-4">
       <button
         class="btn btn-primary btn-wide"
-        on:click={() => on_complete(project_id)}
+        on:click={() => on_complete(display_project_id)}
       >
         Done
       </button>

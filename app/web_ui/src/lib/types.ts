@@ -10,6 +10,7 @@ export type ActionButton = {
   notice?: boolean
   shortcut?: string
   disabled?: boolean
+  loading?: boolean
 }
 
 // Project-Input is a variant with path
@@ -45,6 +46,7 @@ export type EvalConfigType = components["schemas"]["EvalConfigType"]
 export type EvalDataType = components["schemas"]["EvalDataType"]
 export type EvalConfig = components["schemas"]["EvalConfig"]
 export type TaskRunConfig = components["schemas"]["TaskRunConfig"]
+export type DataGuide = components["schemas"]["DataGuide"]
 export type KilnAgentRunConfigProperties =
   components["schemas"]["KilnAgentRunConfigProperties"]
 export type McpRunConfigProperties =

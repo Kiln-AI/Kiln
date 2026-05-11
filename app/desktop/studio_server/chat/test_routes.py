@@ -20,6 +20,7 @@ from app.desktop.studio_server.chat.helpers import (
     make_n_round_mock_client,
     sse_text_delta,
 )
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_server.error_codes import CHAT_CLIENT_VERSION_TOO_OLD
 
 
@@ -80,6 +81,37 @@ class TestChatStreaming:
 
         assert response.status_code == 200
         assert b"error" in response.content
+
+    def test_uses_cancellable_streaming_response(self, client, mock_api_key):
+        mock_class, _, _ = make_httpx_mock()
+
+        with (
+            patch(PATCH_ASYNC_CLIENT, mock_class),
+            patch(
+                "app.desktop.studio_server.chat.routes.CancellableStreamingResponse",
+                wraps=CancellableStreamingResponse,
+            ) as mock_cls,
+        ):
+            response = client.post(
+                "/api/chat",
+                json={"messages": [{"role": "user", "content": "hi"}]},
+            )
+            _ = response.content
+
+        assert response.status_code == 200
+        mock_cls.assert_called_once()
+
+    def test_has_no_write_lock_decorator(self, app):
+        for route in app.routes:
+            if getattr(route, "path", None) == "/api/chat" and "POST" in getattr(
+                route, "methods", set()
+            ):
+                assert getattr(route.endpoint, "_git_sync_no_write_lock", False), (
+                    "/api/chat must be @no_write_lock so GitSyncMiddleware does "
+                    "not wrap receive/send and break SSE disconnect cancellation"
+                )
+                return
+        raise AssertionError("POST /api/chat route not found")
 
 
 def _make_task_run_dict(**overrides):
@@ -564,6 +596,52 @@ def test_post_execute_tools_runs_and_continues(client, mock_api_key):
     assert continuation["messages"][0]["content"] == "3"
 
 
+def test_execute_tools_uses_cancellable_streaming_response(client, mock_api_key):
+    mock_class, _, _ = make_httpx_mock(
+        chunks=[sse_text_delta("ok"), b'data: {"type":"finish"}\n\n']
+    )
+    body = {
+        "trace_id": "tr-exec-1",
+        "tool_calls": [
+            {
+                "toolCallId": "tc1",
+                "toolName": "kiln_tool::add_numbers",
+                "input": {"a": 1, "b": 2},
+                "requiresApproval": True,
+            }
+        ],
+        "decisions": {"tc1": True},
+    }
+
+    with (
+        patch(PATCH_ASYNC_CLIENT, mock_class),
+        patch(PATCH_EXECUTE_TOOL, AsyncMock(return_value="3")),
+        patch(
+            "app.desktop.studio_server.chat.routes.CancellableStreamingResponse",
+            wraps=CancellableStreamingResponse,
+        ) as mock_cls,
+    ):
+        response = client.post("/api/chat/execute-tools", json=body)
+        _ = response.content
+
+    assert response.status_code == 200
+    mock_cls.assert_called_once()
+
+
+def test_execute_tools_has_no_write_lock_decorator(app):
+    for route in app.routes:
+        if getattr(
+            route, "path", None
+        ) == "/api/chat/execute-tools" and "POST" in getattr(route, "methods", set()):
+            assert getattr(route.endpoint, "_git_sync_no_write_lock", False), (
+                "/api/chat/execute-tools must be @no_write_lock so "
+                "GitSyncMiddleware does not wrap receive/send and break "
+                "SSE disconnect cancellation"
+            )
+            return
+    raise AssertionError("POST /api/chat/execute-tools route not found")
+
+
 def _sse_event(data: dict[str, Any]) -> bytes:
     return f"data: {json.dumps(data)}\n\n".encode()
 
@@ -1029,3 +1107,21 @@ class TestMockedFlows:
         assert len(tool_outputs) == 1
         assert tool_outputs[0]["toolCallId"] == "tc_shape"
         assert tool_outputs[0]["output"] == "15"
+
+
+def _find_endpoint_by_path(app, path: str):
+    """Locate the endpoint function for a route with exact path match."""
+    for route in app.routes:
+        if getattr(route, "path", None) == path:
+            return route.endpoint  # type: ignore[attr-defined]
+    raise AssertionError(f"Route with path {path} not found")
+
+
+def test_chat_stream_has_no_write_lock(app):
+    endpoint = _find_endpoint_by_path(app, "/api/chat")
+    assert getattr(endpoint, "_git_sync_no_write_lock", False) is True
+
+
+def test_execute_tools_has_no_write_lock(app):
+    endpoint = _find_endpoint_by_path(app, "/api/chat/execute-tools")
+    assert getattr(endpoint, "_git_sync_no_write_lock", False) is True

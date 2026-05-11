@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://docs.kiln.tech/docs/evals-and-specs"><strong>Evals & Specs</strong></a> • 
+  <a href="https://docs.kiln.tech/docs/evals-and-specs"><strong>Kiln Eval Builder</strong></a> • 
   <a href="https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer"><strong>Prompt Optimizer</strong></a> • 
   <a href="https://docs.kiln.tech/docs/documents-and-search-rag"><strong>RAG</strong></a> • 
   <a href="https://docs.kiln.tech/docs/agents"><strong>Agents</strong></a> • 
@@ -62,11 +62,11 @@ Build better AI systems through iteration. Kiln brings evals and optimization to
 
 ## Demo
 
-[Watch a 2 minute overview of Kiln](https://kiln.tech#demo) or our [end to end project demo (20 minutes)](https://docs.kiln.tech/docs/end-to-end-project-demo).
+[Watch a 2 minute overview of Kiln](https://kiln.tech#demo) 
 
 <kbd>
 <a href="https://kiln.tech#demo">
-<img alt="Kiln Preview" src="guides/kiln_preview.gif">
+<img alt="Kiln Preview" width="444" height="250" alt="kiln_preview" src="https://github.com/user-attachments/assets/56ac04ea-010b-40bf-851c-ec5e05965336" />
 </a>
 </kbd>
 

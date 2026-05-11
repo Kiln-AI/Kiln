@@ -10,6 +10,7 @@
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { client } from "$lib/api_client"
   import { load_projects } from "$lib/stores"
+  import { replaceState } from "$app/navigation"
   import { tick, onMount, onDestroy } from "svelte"
   import posthog from "posthog-js"
   import {
@@ -98,11 +99,7 @@
   function redirect_if_missing_state(step: WizardStep): boolean {
     if (!validate_step_requirements(step)) {
       clear_wizard_store()
-      history.replaceState(
-        null,
-        "",
-        window.location.pathname + window.location.search,
-      )
+      replaceState(window.location.pathname + window.location.search, {})
       current_step = "method"
       return true
     }
@@ -129,11 +126,7 @@
     if (hash) {
       window.location.hash = hash
     } else {
-      history.replaceState(
-        null,
-        "",
-        window.location.pathname + window.location.search,
-      )
+      replaceState(window.location.pathname + window.location.search, {})
     }
   }
 
@@ -233,11 +226,7 @@
     clear_wizard_store()
     stale_clone_message =
       "The cloned repository is no longer available (it may have been removed after a restart). Please start the import again."
-    history.replaceState(
-      null,
-      "",
-      window.location.pathname + window.location.search,
-    )
+    replaceState(window.location.pathname + window.location.search, {})
     current_step = "method"
   }
 
@@ -293,7 +282,7 @@
         throw post_error
       }
 
-      posthog.capture("import_project", {})
+      posthog.capture("import_project", { method: "local" })
 
       await load_projects()
       import_done = true
@@ -344,7 +333,10 @@
 
       <button
         class="w-full text-left p-5 border rounded-lg hover:border-primary hover:bg-base-200 transition-colors"
-        on:click={() => set_step("url")}
+        on:click={() => {
+          posthog.capture("git_sync_setup_start")
+          set_step("url")
+        }}
       >
         <div class="font-medium flex flex-row gap-2 items-center">
           <div class="flex-1">Git Auto Sync</div>

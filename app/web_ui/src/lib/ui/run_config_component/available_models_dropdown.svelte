@@ -16,7 +16,9 @@
   } from "$lib/stores/recent_model_store"
   import type { AvailableModels, ProviderModels } from "$lib/types"
   import { onMount } from "svelte"
-  import FormElement from "$lib/utils/form_element.svelte"
+  import FormElement, {
+    type InlineAction,
+  } from "$lib/utils/form_element.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
   import { mime_type_to_string } from "$lib/utils/formatters"
@@ -32,6 +34,10 @@
   export let info_description: string | undefined = undefined
   export let settings: Partial<ModelDropdownSettings> = {}
   export let error_message: string | null = null
+  export let inline_action: InlineAction | null = null
+  export let optional: boolean = false
+  export let hide_optional_badge: boolean = false
+  export let empty_label: string = "Select a model"
 
   let default_model_dropdown_settings: ModelDropdownSettings = {
     filter_models_predicate: (_) => true,
@@ -356,13 +362,16 @@
     {label}
     {description}
     {info_description}
+    {inline_action}
+    {optional}
+    {hide_optional_badge}
+    {empty_label}
     bind:value={model}
     id="model"
     inputType="fancy_select"
     on_select={confirm_model_select}
     bind:error_message
     fancy_select_options={model_options}
-    placeholder="Select a model"
   />
 
   {#if selected_model_untested}
@@ -403,7 +412,7 @@
         : selected_model_suggested_data_gen
           ? "success"
           : "warning"}
-      warning_message="For data gen we suggest using a high quality model such as GPT 4.1, Sonnet, Gemini Pro or R1."
+      warning_message={`For data gen we suggest using one of the models marked "Recommended" in the dropdown.`}
     />
   {:else if settings.suggested_mode === "uncensored_data_gen"}
     <Warning
@@ -417,7 +426,7 @@
         : selected_model_suggested_uncensored_data_gen
           ? "success"
           : "warning"}
-      warning_message="For this data gen template we suggest a large uncensored model like Grok 4."
+      warning_message={`For this data gen template we suggest using one of the models marked "Recommended" in the dropdown.`}
     />
   {:else if settings.suggested_mode === "evals"}
     <Warning
@@ -431,7 +440,7 @@
         : selected_model_suggested_evals
           ? "success"
           : "warning"}
-      warning_message="For evals we suggest using a high quality model such as GPT 4.1, Sonnet, Gemini Pro or R1."
+      warning_message={`For evals we suggest using one of the models marked "Recommended" in the dropdown.`}
     />
   {:else if settings.suggested_mode === "doc_extraction"}
     <Warning
@@ -445,7 +454,7 @@
         : selected_model_suggested_doc_extraction
           ? "success"
           : "warning"}
-      warning_message="For doc extraction, we recommend using a high quality multimodal model like Gemini Pro."
+      warning_message={`For doc extraction we suggest using one of the models marked "Recommended" in the dropdown.`}
     />
   {/if}
 </div>

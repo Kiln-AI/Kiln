@@ -27,6 +27,10 @@ jobs:
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
+        with:
+          node-version-file: "app/web_ui/.nvmrc"
+          cache: "npm"
+          cache-dependency-path: "app/web_ui/package-lock.json"
 
       - name: Install NPM dependencies
         run: npm install

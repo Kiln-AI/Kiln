@@ -137,7 +137,7 @@ describe("hydrateSessionFromSnapshot", () => {
 
   it("strips <new_app_ui_context> from the first user message", () => {
     const header =
-      "<new_app_ui_context>\nPath: /chat\nPage Name: Chat\n</new_app_ui_context>"
+      "<new_app_ui_context>\nPath: /assistant\nPage Name: Assistant\n</new_app_ui_context>"
     const { messages } = hydrateSessionFromSnapshot(
       snap("ctx", [
         { role: "user", content: `${header}\nHello agent` },
@@ -211,7 +211,7 @@ describe("hydrateSessionFromSnapshot", () => {
 describe("stripAppUiContext", () => {
   it("removes a single context block with trailing newline", () => {
     const input =
-      "<new_app_ui_context>\nPath: /chat\n</new_app_ui_context>\nHello"
+      "<new_app_ui_context>\nPath: /assistant\n</new_app_ui_context>\nHello"
     expect(stripAppUiContext(input)).toBe("Hello")
   })
 

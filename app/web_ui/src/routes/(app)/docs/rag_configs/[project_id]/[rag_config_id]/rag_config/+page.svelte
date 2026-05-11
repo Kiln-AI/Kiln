@@ -6,7 +6,6 @@
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import AppPage from "../../../../../app_page.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
-  import { onMount } from "svelte"
   import { extractor_output_format, formatDate } from "$lib/utils/formatters"
   import {
     embedding_model_name,
@@ -47,6 +46,7 @@
   let loading: boolean = false
   let error: KilnError | null = null
   let update_error: KilnError | null = null
+  let archive_loading: boolean = false
   let rag_config: RagConfigWithSubConfigs | null = null
 
   let edit_dialog: EditDialog | null = null
@@ -63,16 +63,23 @@
     similarity: number | null
   }> = []
 
-  onMount(async () => {
-    await Promise.all([
-      load_available_models(),
-      load_available_embedding_models(),
-      load_available_reranker_models(),
-      get_rag_config(),
-    ])
-  })
+  $: if (project_id && rag_config_id) {
+    error = null
+    rag_config = null
+    searchQuery = ""
+    searchError = null
+    lastSearchQuery = null
+    searchResults = []
+    load_available_models()
+    load_available_embedding_models()
+    load_available_reranker_models()
+    get_rag_config(project_id, rag_config_id)
+  }
 
-  async function get_rag_config() {
+  async function get_rag_config(
+    req_project_id: string,
+    req_rag_config_id: string,
+  ) {
     try {
       loading = true
       const { error: get_rag_config_error, data: rag_config_data } =
@@ -81,12 +88,15 @@
           {
             params: {
               path: {
-                project_id,
-                rag_config_id,
+                project_id: req_project_id,
+                rag_config_id: req_rag_config_id,
               },
             },
           },
         )
+
+      if (req_project_id !== project_id || req_rag_config_id !== rag_config_id)
+        return
 
       if (get_rag_config_error) {
         error = createKilnError(get_rag_config_error)
@@ -95,12 +105,18 @@
 
       rag_config = rag_config_data
     } finally {
-      loading = false
+      if (
+        req_project_id === project_id &&
+        req_rag_config_id === rag_config_id
+      ) {
+        loading = false
+      }
     }
   }
 
   async function update_archived_state(is_archived: boolean) {
     try {
+      archive_loading = true
       update_error = null
       const { error: update_archived_state_error } = await client.PATCH(
         "/api/projects/{project_id}/rag_configs/{rag_config_id}",
@@ -126,11 +142,12 @@
         is_archived,
       )
 
-      await get_rag_config()
+      await get_rag_config(project_id, rag_config_id)
     } catch (e) {
       update_error = createKilnError(e)
     } finally {
       loading = false
+      archive_loading = false
     }
 
     uncache_available_tools(project_id)
@@ -260,6 +277,7 @@
       {
         label: rag_config?.is_archived ? "Unarchive" : "Archive",
         primary: rag_config?.is_archived,
+        loading: archive_loading,
         handler: () => {
           if (!rag_config) {
             return

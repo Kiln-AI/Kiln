@@ -30,6 +30,17 @@ class StreamingCompletion:
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         kwargs = dict(kwargs)
         kwargs.pop("stream", None)
+        # LiteLLM's streaming responses don't include a usage block by
+        # default — ``stream_options={"include_usage": True}`` is required
+        # for the final assembled ModelResponse to carry token counts (and
+        # downstream cost). Force it on; merge with caller-provided
+        # ``stream_options`` without clobbering unrelated keys, but always
+        # override ``include_usage`` since usage tracking is mandatory.
+        caller_stream_options = kwargs.get("stream_options") or {}
+        kwargs["stream_options"] = {
+            **caller_stream_options,
+            "include_usage": True,
+        }
         self._args = args
         self._kwargs = kwargs
         self._response: Optional[Union[ModelResponse, TextCompletionResponse]] = None
