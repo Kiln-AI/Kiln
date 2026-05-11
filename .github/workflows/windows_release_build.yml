@@ -31,19 +31,24 @@ jobs:
         run: uv sync
 
       - name: Build Desktop App, including custom build of pyinstaller bootloader
-        env:
-          # SENTRY_AUTH_TOKEN/ORG/PROJECT are consumed only by sentrySvelteKit
-          # for source-map upload (web bundle). The desktop python bundle
-          # reports to a different Sentry project and uses no auth token.
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: kiln-oy
-          SENTRY_PROJECT: frontend
-          VITE_KILN_SENTRY_DSN: https://667db4eeb7ae7f46e960fee790d836a8@o4511151852224512.ingest.de.sentry.io/4511276081545296
-          VITE_KILN_SENTRY_ENV: ${{ env.SENTRY_ENV_NAME }}
-          VITE_KILN_SENTRY_RELEASE: kiln-studio-web@${{ env.SENTRY_RELEASE_TAG }}
-          KILN_SENTRY_DSN: https://772eb4a3e07a8c15616b6187e034f158@o4511151852224512.ingest.de.sentry.io/4511151853731920
-          KILN_SENTRY_ENV: ${{ env.SENTRY_ENV_NAME }}
-          KILN_SENTRY_RELEASE: kiln-studio-desktop@${{ env.SENTRY_RELEASE_TAG }}
+        # Sentry is temporarily disabled. With these env vars unset, both SDKs
+        # no-op (Python init is guarded on SENTRY_DSN; the web SDK no-ops with
+        # an undefined DSN) and the vite source-map upload plugin stays off
+        # (it activates only when SENTRY_AUTH_TOKEN is present).
+        # To re-enable: uncomment the env block below.
+        # env:
+        #   # SENTRY_AUTH_TOKEN/ORG/PROJECT are consumed only by sentrySvelteKit
+        #   # for source-map upload (web bundle). The desktop python bundle
+        #   # reports to a different Sentry project and uses no auth token.
+        #   SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        #   SENTRY_ORG: kiln-oy
+        #   SENTRY_PROJECT: frontend
+        #   VITE_KILN_SENTRY_DSN: https://667db4eeb7ae7f46e960fee790d836a8@o4511151852224512.ingest.de.sentry.io/4511276081545296
+        #   VITE_KILN_SENTRY_ENV: ${{ env.SENTRY_ENV_NAME }}
+        #   VITE_KILN_SENTRY_RELEASE: kiln-studio-web@${{ env.SENTRY_RELEASE_TAG }}
+        #   KILN_SENTRY_DSN: https://772eb4a3e07a8c15616b6187e034f158@o4511151852224512.ingest.de.sentry.io/4511151853731920
+        #   KILN_SENTRY_ENV: ${{ env.SENTRY_ENV_NAME }}
+        #   KILN_SENTRY_RELEASE: kiln-studio-desktop@${{ env.SENTRY_RELEASE_TAG }}
         run: uv run bash ./app/desktop/build_desktop_app.sh --build-bootloader
 
       - name: Sign internal files with Trusted Signing
