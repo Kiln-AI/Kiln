@@ -4,10 +4,13 @@ from typing import Annotated, List
 
 from fastapi import FastAPI, HTTPException, Path
 from kiln_ai.datamodel.skill import Skill
+from kiln_ai.utils.filesystem import open_folder
 from kiln_ai.utils.validation import SkillNameString
+from kiln_server.document_api import OpenFileResponse
 from kiln_server.project_api import project_from_id
 from kiln_server.utils.agent_checks.policy import (
     ALLOW_AGENT,
+    DENY_AGENT,
     agent_policy_require_approval,
 )
 from pydantic import BaseModel, Field
@@ -176,3 +179,25 @@ def connect_skill_api(app: FastAPI):
         updated.save_to_file()
 
         return skill_to_response(updated)
+
+    @app.post(
+        "/api/projects/{project_id}/skills/{skill_id}/open_enclosing_folder",
+        tags=["Skills"],
+        openapi_extra=DENY_AGENT,
+    )
+    async def open_skill_enclosing_folder(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        skill_id: Annotated[
+            str, Path(description="The unique identifier of the skill.")
+        ],
+    ) -> OpenFileResponse:
+        skill = _get_skill(project_id, skill_id)
+        if not skill.path:
+            raise HTTPException(
+                status_code=500,
+                detail="Skill path not found",
+            )
+        open_folder(skill.path)
+        return OpenFileResponse(path=str(skill.path.parent))

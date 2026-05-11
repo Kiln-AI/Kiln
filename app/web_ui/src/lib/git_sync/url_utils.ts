@@ -1,3 +1,5 @@
+import { replaceState } from "$app/navigation"
+
 // Convert SSH-style git URLs to HTTPS equivalents
 // e.g. git@github.com:user/repo.git -> https://github.com/user/repo.git
 export function try_convert_ssh_to_https(url: string): string {
@@ -41,7 +43,7 @@ export function sync_url_query_param(
     param_name,
     value,
   )
-  history.replaceState(null, "", updated)
+  replaceState(updated, {})
 }
 
 export function read_url_query_param(param_name: string): string | null {

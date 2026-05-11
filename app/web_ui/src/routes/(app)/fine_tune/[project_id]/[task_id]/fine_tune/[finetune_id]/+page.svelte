@@ -1,7 +1,6 @@
 <script lang="ts">
   import AppPage from "../../../../../app_page.svelte"
   import { page } from "$app/stores"
-  import { onMount } from "svelte"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import type { FinetuneWithStatus } from "$lib/types"
@@ -25,16 +24,20 @@
     finetune?.status.status === "pending" ||
     finetune?.status.status === "running"
 
-  onMount(async () => {
-    await load_available_models()
-    get_fine_tune()
-  })
+  $: if (project_id && task_id && finetune_id) {
+    load_available_models()
+    get_fine_tune(project_id, task_id, finetune_id)
+  }
 
   let finetune: FinetuneWithStatus | null = null
   let finetune_error: KilnError | null = null
   let finetune_loading = true
 
-  const get_fine_tune = async () => {
+  const get_fine_tune = async (
+    req_project_id: string,
+    req_task_id: string,
+    req_finetune_id: string,
+  ) => {
     try {
       finetune_loading = true
       finetune_error = null
@@ -44,22 +47,40 @@
         {
           params: {
             path: {
-              project_id,
-              task_id,
-              finetune_id,
+              project_id: req_project_id,
+              task_id: req_task_id,
+              finetune_id: req_finetune_id,
             },
           },
         },
       )
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_finetune_id !== finetune_id
+      )
+        return
       if (get_error) {
         throw get_error
       }
       finetune = finetune_response
       build_properties()
     } catch (error) {
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_finetune_id !== finetune_id
+      )
+        return
       finetune_error = createKilnError(error)
     } finally {
-      finetune_loading = false
+      if (
+        req_project_id === project_id &&
+        req_task_id === task_id &&
+        req_finetune_id === finetune_id
+      ) {
+        finetune_loading = false
+      }
     }
   }
 
@@ -289,7 +310,10 @@
               {/if}
               {finetune.status.status.charAt(0).toUpperCase() +
                 finetune.status.status.slice(1)}
-              <button class="link ml-2 font-medium" on:click={get_fine_tune}>
+              <button
+                class="link ml-2 font-medium"
+                on:click={() => get_fine_tune(project_id, task_id, finetune_id)}
+              >
                 Reload Status
               </button>
             </div>

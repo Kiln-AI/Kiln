@@ -2,7 +2,8 @@
   "method": "patch",
   "path": "/api/projects/{project_id}/edit_kiln_task_tool/{tool_server_id}",
   "agent_policy": {
-    "permission": "deny",
-    "requires_approval": false
+    "permission": "allow",
+    "requires_approval": true,
+    "approval_description": "Edit a Kiln task tool (also called a sub-agent), including its name, description, underlying task, or run config."
   }
 }

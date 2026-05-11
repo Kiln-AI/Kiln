@@ -32,7 +32,8 @@ class TaskOutputRating:
             v (int | Unset): Schema version for migration support. Default: 1.
             id (None | str | Unset): Unique identifier for this record.
             path (None | str | Unset): File system path where the record is stored.
-            created_at (datetime.datetime | Unset): Timestamp when the model was created.
+            created_at (datetime.datetime | Unset): Timestamp when the model was created. Timezone-aware; stores the
+                writer's local offset.
             created_by (str | Unset): User ID of the creator.
             type_ (TaskOutputRatingType | Unset): Defines the types of rating systems available for task outputs.
             value (float | None | Unset): The rating value. Interpretation depends on rating type:

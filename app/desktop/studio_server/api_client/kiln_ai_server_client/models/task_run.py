@@ -43,13 +43,12 @@ class TaskRun:
             v (int | Unset): Schema version for migration support. Default: 1.
             id (None | str | Unset): Unique identifier for this record.
             path (None | str | Unset): File system path where the record is stored.
-            created_at (datetime.datetime | Unset): Timestamp when the model was created.
+            created_at (datetime.datetime | Unset): Timestamp when the model was created. Timezone-aware; stores the
+                writer's local offset.
             created_by (str | Unset): User ID of the creator.
             input_source (DataSource | None | Unset): The source of the input: human or synthetic.
             repair_instructions (None | str | Unset): Instructions for fixing the output. Should define what is wrong, and
                 how to fix it. Will be used by models for both generating a fixed output, and evaluating future models.
-            user_feedback (None | str | Unset): User feedback from the spec review process explaining why the output passes
-                or fails a requirement.
             repaired_output (None | TaskOutput | Unset): An version of the output with issues fixed. This must be a 'fixed'
                 version of the existing output, and not an entirely new output. If you wish to generate an ideal curatorial
                 output for this task unrelated to this output, generate a new TaskOutput with type 'human' instead of using this
@@ -78,7 +77,6 @@ class TaskRun:
     created_by: str | Unset = UNSET
     input_source: DataSource | None | Unset = UNSET
     repair_instructions: None | str | Unset = UNSET
-    user_feedback: None | str | Unset = UNSET
     repaired_output: None | TaskOutput | Unset = UNSET
     intermediate_outputs: None | TaskRunIntermediateOutputsType0 | Unset = UNSET
     tags: list[str] | Unset = UNSET
@@ -148,12 +146,6 @@ class TaskRun:
             repair_instructions = UNSET
         else:
             repair_instructions = self.repair_instructions
-
-        user_feedback: None | str | Unset
-        if isinstance(self.user_feedback, Unset):
-            user_feedback = UNSET
-        else:
-            user_feedback = self.user_feedback
 
         repaired_output: dict[str, Any] | None | Unset
         if isinstance(self.repaired_output, Unset):
@@ -237,8 +229,6 @@ class TaskRun:
             field_dict["input_source"] = input_source
         if repair_instructions is not UNSET:
             field_dict["repair_instructions"] = repair_instructions
-        if user_feedback is not UNSET:
-            field_dict["user_feedback"] = user_feedback
         if repaired_output is not UNSET:
             field_dict["repaired_output"] = repaired_output
         if intermediate_outputs is not UNSET:
@@ -328,15 +318,6 @@ class TaskRun:
             return cast(None | str | Unset, data)
 
         repair_instructions = _parse_repair_instructions(d.pop("repair_instructions", UNSET))
-
-        def _parse_user_feedback(data: object) -> None | str | Unset:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            return cast(None | str | Unset, data)
-
-        user_feedback = _parse_user_feedback(d.pop("user_feedback", UNSET))
 
         def _parse_repaired_output(data: object) -> None | TaskOutput | Unset:
             if data is None:
@@ -515,7 +496,6 @@ class TaskRun:
             created_by=created_by,
             input_source=input_source,
             repair_instructions=repair_instructions,
-            user_feedback=user_feedback,
             repaired_output=repaired_output,
             intermediate_outputs=intermediate_outputs,
             tags=tags,

@@ -25,6 +25,14 @@ class RepairTaskApiInput(BaseModel):
     evaluator_feedback: str = Field(
         description="Feedback from an evaluator on how to repair the task run."
     )
+    model_name: str | None = Field(
+        default=None,
+        description="Optional override for the model used to generate the repair. When omitted, the model from the original run's source properties is used.",
+    )
+    provider: str | None = Field(
+        default=None,
+        description="Optional override for the model provider used to generate the repair. Must be set together with model_name.",
+    )
 
     # Allows use of the model_name field (usually pydantic will reserve model_*)
     model_config = ConfigDict(protected_namespaces=())
@@ -66,36 +74,55 @@ def connect_repair_api(app: FastAPI):
             evaluator_feedback=input.evaluator_feedback,
         )
 
-        # Build the same run config properties as the original run. The persisted data has changed over time, so lots of error checks.
+        # Build run config properties for the repair. Caller can override the model
+        # via the request body; otherwise we read the original run's persisted source
+        # properties. The persisted data has changed over time, so lots of error checks.
         source_properties = (
             run.output.source.properties
             if run.output.source and run.output.source.properties
             else {}
         )
+        override_model_name = input.model_name
+        override_provider = input.provider
+        if (override_model_name is None) != (override_provider is None):
+            raise HTTPException(
+                status_code=422,
+                detail="model_name and provider must be set together.",
+            )
         try:
-            model_name = source_properties.get("model_name", None)
-            provider = source_properties.get("model_provider", None)
-            if (
-                not model_name
-                or not provider
-                or not isinstance(model_name, str)
-                or not isinstance(provider, str)
-            ):
-                raise HTTPException(
-                    status_code=422,
-                    detail="Model name and provider must be specified.",
-                )
-            model_name = str(model_name)
-            provider = model_provider_from_string(provider)
-
-            sdm = source_properties.get("structured_output_mode", None)
-            if sdm is None or not isinstance(sdm, str):
+            if override_model_name and override_provider:
+                model_name = override_model_name
+                provider = model_provider_from_string(override_provider)
+                # Don't reuse the original run's structured_output_mode: it may not be
+                # supported on the chosen model. Re-derive from the model's defaults.
                 sdm = default_structured_output_mode_for_model_provider(
                     model_name,
                     provider,
                 )
             else:
-                sdm = StructuredOutputMode(sdm)
+                model_name = source_properties.get("model_name", None)
+                provider = source_properties.get("model_provider", None)
+                if (
+                    not model_name
+                    or not provider
+                    or not isinstance(model_name, str)
+                    or not isinstance(provider, str)
+                ):
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Model name and provider must be specified.",
+                    )
+                model_name = str(model_name)
+                provider = model_provider_from_string(provider)
+
+                sdm = source_properties.get("structured_output_mode", None)
+                if sdm is None or not isinstance(sdm, str):
+                    sdm = default_structured_output_mode_for_model_provider(
+                        model_name,
+                        provider,
+                    )
+                else:
+                    sdm = StructuredOutputMode(sdm)
 
             run_config_properties = KilnAgentRunConfigProperties(
                 model_name=model_name,
@@ -104,6 +131,8 @@ def connect_repair_api(app: FastAPI):
                 structured_output_mode=sdm,
             )
 
+            # Temperature/top_p from the original run still apply; the user is only
+            # overriding the model, not the sampling knobs.
             temperature = source_properties.get("temperature", None)
             if temperature is not None and isinstance(temperature, float):
                 run_config_properties.temperature = temperature

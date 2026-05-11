@@ -11,7 +11,7 @@
   import { client } from "$lib/api_client"
   import Output from "$lib/ui/output.svelte"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { formatDate } from "$lib/utils/formatters"
+  import { formatDate, formatLatency } from "$lib/utils/formatters"
   import { bounceOut } from "svelte/easing"
   import { fly } from "svelte/transition"
   import { onMount } from "svelte"
@@ -22,14 +22,21 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import {
     rating_options_for_sample,
-    current_task_rating_options,
+    get_task_composite_id,
+    model_info,
+    model_name as model_name_from_id,
   } from "$lib/stores"
+  import {
+    rating_options_by_task_composite_id,
+    load_rating_options,
+  } from "$lib/stores/rating_options_store"
   import posthog from "posthog-js"
   import TraceComponent from "$lib/ui/trace/trace.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import TableActionMenu from "$lib/ui/table_action_menu.svelte"
   import Warning from "$lib/ui/warning.svelte"
   import OutputRepairEditForm from "./output_repair_edit_form.svelte"
+  import AvailableModelsDropdown from "$lib/ui/run_config_component/available_models_dropdown.svelte"
   import type { components } from "$lib/api_schema"
 
   type SubtaskReference = {
@@ -59,12 +66,13 @@
   async function calculate_subtask_usage(
     trace: Trace | null | undefined,
     visited: Set<string> = new Set(),
-  ): Promise<{ cost: number; tokens: number }> {
-    if (!trace) return { cost: 0, tokens: 0 }
+  ): Promise<{ cost: number; tokens: number; latency_ms: number }> {
+    if (!trace) return { cost: 0, tokens: 0, latency_ms: 0 }
 
     const references = extract_subtask_references(trace)
     let total_cost = 0
     let total_tokens = 0
+    let total_llm_latency_ms = 0
 
     for (const ref of references) {
       const key = `${ref.project_id}:${ref.task_id}:${ref.run_id}`
@@ -88,12 +96,14 @@
         if (!response.error && response.data) {
           total_cost += response.data.usage?.cost ?? 0
           total_tokens += response.data.usage?.total_tokens ?? 0
+          total_llm_latency_ms += response.data.usage?.total_llm_latency_ms ?? 0
           const subtask_usage = await calculate_subtask_usage(
             response.data.trace,
             visited,
           )
           total_cost += subtask_usage.cost
           total_tokens += subtask_usage.tokens
+          total_llm_latency_ms += subtask_usage.latency_ms
         }
       } catch (error) {
         console.warn(
@@ -108,11 +118,16 @@
       }
     }
 
-    return { cost: total_cost, tokens: total_tokens }
+    return {
+      cost: total_cost,
+      tokens: total_tokens,
+      latency_ms: total_llm_latency_ms,
+    }
   }
 
   let subtask_cost: number | null = null
   let subtask_tokens: number | null = null
+  let subtask_latency_ms: number | null = null
   let subtask_usage_loading = false
   // Counter to prevent race conditions: when run changes rapidly, multiple async requests
   // may be in flight. We only update state if this request is still the latest one.
@@ -126,6 +141,7 @@
       if (request_id === subtask_usage_request_id) {
         subtask_cost = null
         subtask_tokens = null
+        subtask_latency_ms = null
         subtask_usage_loading = false
       }
       return
@@ -137,11 +153,13 @@
       if (request_id === subtask_usage_request_id) {
         subtask_cost = usage.cost
         subtask_tokens = usage.tokens
+        subtask_latency_ms = usage.latency_ms
       }
     } catch {
       if (request_id === subtask_usage_request_id) {
         subtask_cost = null
         subtask_tokens = null
+        subtask_latency_ms = null
       }
     } finally {
       if (request_id === subtask_usage_request_id) {
@@ -164,9 +182,22 @@
   export let run_complete: boolean = false
   export let focus_repair_on_appear: boolean = false
 
+  // URL-scoped rating options keyed by project/task composite id.
+  $: task_rating_options =
+    project_id && task.id
+      ? $rating_options_by_task_composite_id[
+          get_task_composite_id(project_id, task.id)
+        ] ?? null
+      : null
+  $: if (project_id && task.id) {
+    load_rating_options(project_id, task.id).catch((e: unknown) => {
+      console.warn("Failed to load rating options", e)
+    })
+  }
+
   // Dynamic rating requirements based on tags
   $: rating_requirements = rating_options_for_sample(
-    $current_task_rating_options,
+    task_rating_options,
     run?.tags || [],
   )
 
@@ -250,8 +281,23 @@
       },
     )
   }
-  // Load ratings anytime the run or rating requirements change
-  $: load_server_ratings(run, rating_requirements)
+  // Seed the ratings from the server run on navigation (new run.id), and once
+  // more when the task's rating options finish loading so requirement_ratings
+  // can be populated - we should not re-load on every Run mutation because if a
+  // PATCH is slow (as is the case for git-sync projects), it would reset the
+  // user's in progress input (e.g. Repair UI)
+  let seeded_ratings_for_run_id: string | null = null
+  let seeded_ratings_with_options = false
+  $: {
+    const options_loaded = !!task_rating_options
+    const on_new_run = !!run?.id && run.id !== seeded_ratings_for_run_id
+    const options_just_loaded = options_loaded && !seeded_ratings_with_options
+    if (run?.id && (on_new_run || options_just_loaded)) {
+      load_server_ratings(run, rating_requirements)
+      seeded_ratings_for_run_id = run.id
+      seeded_ratings_with_options = options_loaded
+    }
+  }
 
   async function patch_run(
     patch_body: Record<string, unknown>,
@@ -328,6 +374,64 @@
     }
   }
 
+  // Optional per-task override for which model generates the repair. Persisted in
+  // localStorage so the choice survives reloads. Useful when the original run's
+  // model can't be rehydrated (e.g. pre-fix legacy openai_compatible runs whose
+  // persisted model_name lost its "{provider}::" prefix on disk).
+  type RepairModelOverride = {
+    model_name: string
+    provider: string
+  }
+  let repair_model_override: RepairModelOverride | null = null
+  $: repair_model_storage_key = task?.id
+    ? `kiln_repair_model_override:${project_id}:${task.id}`
+    : null
+  $: if (repair_model_storage_key) {
+    repair_model_override = load_repair_model_override(repair_model_storage_key)
+  } else {
+    repair_model_override = null
+  }
+
+  function load_repair_model_override(key: string): RepairModelOverride | null {
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) return null
+      const parsed = JSON.parse(raw)
+      if (
+        parsed &&
+        typeof parsed.model_name === "string" &&
+        typeof parsed.provider === "string"
+      ) {
+        return { model_name: parsed.model_name, provider: parsed.provider }
+      }
+    } catch {
+      // ignore corrupted entries
+    }
+    return null
+  }
+
+  // The original run's model (what produced the saved output). Treated as the
+  // canonical "default" for repair: the dialog preselects it and the Reset
+  // button snaps the selection back to it.
+  $: original_run_model_name =
+    typeof run?.output?.source?.properties?.model_name === "string"
+      ? (run.output.source.properties.model_name as string)
+      : null
+  $: original_run_provider =
+    typeof run?.output?.source?.properties?.model_provider === "string"
+      ? (run.output.source.properties.model_provider as string)
+      : null
+
+  // The model that will actually be used to generate the repair: override
+  // wins, otherwise we fall back to the original run's model.
+  $: effective_repair_model_name =
+    repair_model_override?.model_name ?? original_run_model_name
+  $: effective_repair_provider =
+    repair_model_override?.provider ?? original_run_provider
+  $: effective_repair_model_display = effective_repair_model_name
+    ? model_name_from_id(effective_repair_model_name, $model_info)
+    : null
+
   let repair_submitting = false
   let repair_error: KilnError | null = null
   async function attempt_repair() {
@@ -343,6 +447,8 @@
           null,
         )
       }
+      // Only send the override on the wire — when no override is set, the
+      // server reads the original run's persisted model from source_properties.
       const {
         data: repair_data, // only present if 2XX response
         error: fetch_error, // only present if 4XX or 5XX response
@@ -356,16 +462,15 @@
               run_id: run?.id,
             },
           },
-          body:
-            model_name && provider
-              ? {
-                  evaluator_feedback: trimmed_instructions,
-                  model_name: model_name,
-                  provider: provider,
-                }
-              : {
-                  evaluator_feedback: trimmed_instructions,
-                },
+          body: repair_model_override
+            ? {
+                evaluator_feedback: trimmed_instructions,
+                model_name: repair_model_override.model_name,
+                provider: repair_model_override.provider,
+              }
+            : {
+                evaluator_feedback: trimmed_instructions,
+              },
         },
       )
       if (fetch_error) {
@@ -463,6 +568,61 @@
     accept_repair_error = null
   }
 
+  // Repair-model override dialog state
+  let repair_model_dialog: Dialog | null = null
+  let dialog_combined_model: string | null = null
+  let dialog_model_name: string | null = null
+  let dialog_provider_name: string | null = null
+
+  function open_repair_model_dialog() {
+    // Preselect the currently effective repair model (override > original run's model).
+    dialog_combined_model =
+      effective_repair_model_name && effective_repair_provider
+        ? `${effective_repair_provider}/${effective_repair_model_name}`
+        : null
+    repair_model_dialog?.show()
+  }
+
+  function reset_repair_model_dialog() {
+    // Reset = no override. Each run will fall back to whichever model originally
+    // produced it (which can vary across runs in the same task). Clear the dropdown
+    // visually; the actual override is cleared on Save (or stays as-is on Cancel).
+    dialog_combined_model = null
+  }
+
+  function save_repair_model_override(): boolean {
+    // Persist whatever is currently selected at the time Save is clicked.
+    // Empty selection = clear the override; per-run defaults take over.
+    if (!dialog_model_name || !dialog_provider_name) {
+      clear_repair_model_override()
+      return true
+    }
+    const next: RepairModelOverride = {
+      model_name: dialog_model_name,
+      provider: dialog_provider_name,
+    }
+    repair_model_override = next
+    if (repair_model_storage_key) {
+      try {
+        localStorage.setItem(repair_model_storage_key, JSON.stringify(next))
+      } catch {
+        // ignore quota/availability errors; in-memory state still applies
+      }
+    }
+    return true
+  }
+
+  function clear_repair_model_override() {
+    repair_model_override = null
+    if (repair_model_storage_key) {
+      try {
+        localStorage.removeItem(repair_model_storage_key)
+      } catch {
+        // ignore
+      }
+    }
+  }
+
   let repair_edit_mode = false
   function show_repair_edit() {
     repair_edit_mode = true
@@ -505,11 +665,13 @@
     subtask_cost: number | null,
     subtask_usage_loading: boolean,
     subtask_tokens: number | null,
+    subtask_latency_ms: number | null,
   ) {
     let properties = []
 
     const run_cost = run?.usage?.cost ?? 0
     const run_tokens = run?.usage?.total_tokens ?? 0
+    const run_latency = run?.usage?.total_llm_latency_ms ?? 0
 
     if (subtask_usage_loading) {
       properties.push({
@@ -565,6 +727,33 @@
       })
     }
 
+    if (subtask_usage_loading) {
+      properties.push({
+        name: "Total Latency",
+        value: "Loading...",
+      })
+    } else {
+      const total_latency = run_latency + (subtask_latency_ms ?? 0)
+      if (total_latency > 0) {
+        properties.push({
+          name: "Total Latency",
+          value: formatLatency(total_latency),
+        })
+      }
+    }
+
+    if (subtask_usage_loading) {
+      properties.push({
+        name: "Subtasks Latency",
+        value: "Loading...",
+      })
+    } else if (subtask_latency_ms && subtask_latency_ms > 0) {
+      properties.push({
+        name: "Subtasks Latency",
+        value: formatLatency(subtask_latency_ms),
+      })
+    }
+
     return properties
   }
 
@@ -574,6 +763,7 @@
     subtask_cost,
     subtask_usage_loading,
     subtask_tokens,
+    subtask_latency_ms,
   )
 
   // Feedback
@@ -782,7 +972,25 @@
 
       {#if repair_enabled_for_source && (should_offer_repair || repair_review_available || repair_complete)}
         <div class="grow mt-10">
-          <div class="text-xl font-bold mb-2">Repair Output</div>
+          <div class="flex items-baseline justify-between gap-4 flex-wrap mb-2">
+            <div class="text-xl font-bold">Repair Output</div>
+            {#if should_offer_repair}
+              <div class="text-xs text-gray-500">
+                {#if effective_repair_model_display}
+                  Repairing with <span class="font-medium text-gray-700"
+                    >{effective_repair_model_display}</span
+                  >
+                  ·
+                {/if}
+                <button
+                  type="button"
+                  class="link"
+                  on:click={open_repair_model_dialog}
+                  >Select different model</button
+                >
+              </div>
+            {/if}
+          </div>
           {#if should_offer_repair}
             <p class="text-sm text-gray-500 mb-4">
               Since the output isn't 5-star, provide instructions for the model
@@ -1074,6 +1282,39 @@
       />
     </FormContainer>
   {/if}
+</Dialog>
+
+<Dialog
+  bind:this={repair_model_dialog}
+  title="Repair Model"
+  sub_subtitle="Override the model used to generate repairs for this task. Reset to use each run's original model."
+  action_buttons={[
+    { label: "Cancel", isCancel: true },
+    {
+      label: "Save",
+      isPrimary: true,
+      action: save_repair_model_override,
+    },
+  ]}
+>
+  <div class="pt-2">
+    <AvailableModelsDropdown
+      label="Repair Model"
+      description="Leave empty to use each run's original model. Pick a specific model to override."
+      bind:model={dialog_combined_model}
+      bind:model_name={dialog_model_name}
+      bind:provider_name={dialog_provider_name}
+      optional
+      hide_optional_badge
+      empty_label="Use the same model as the original run"
+      inline_action={dialog_combined_model
+        ? {
+            handler: reset_repair_model_dialog,
+            label: "Reset",
+          }
+        : null}
+    />
+  </div>
 </Dialog>
 
 <Dialog bind:this={view_feedback_dialog} title="All Feedback" width="wide">

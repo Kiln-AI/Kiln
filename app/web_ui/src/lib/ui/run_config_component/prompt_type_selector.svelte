@@ -1,10 +1,18 @@
 <script lang="ts">
   import FormElement from "$lib/utils/form_element.svelte"
-  import { current_task_prompts } from "$lib/stores"
+  import { get_task_composite_id } from "$lib/stores"
+  import {
+    prompts_by_task_composite_id,
+    prompts_errors_by_task_composite_id,
+    load_task_prompts,
+  } from "$lib/stores/prompts_store"
   import type { PromptResponse } from "$lib/types"
   import Warning from "$lib/ui/warning.svelte"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
-  import { getStaticPromptDisplayName } from "$lib/utils/run_config_formatters"
+  import { client } from "$lib/api_client"
+  import { goto } from "$app/navigation"
+  import { page } from "$app/stores"
+  import { prompt_generator_categories } from "$lib/prompt_generators"
 
   export let prompt_method: string
   export let linked_model_selection: string | null | undefined = undefined
@@ -14,35 +22,166 @@
   export let fine_tune_prompt_id: string | undefined = undefined
   export let description: string | undefined = undefined
   export let info_description: string | undefined = undefined
+  export let project_id: string | null = null
+  export let task_id: string | null = null
+
+  let has_rated_data = false
+  let has_repair_data = false
+  let data_requirements_checked = false
+
+  $: generator_requirements = build_generator_requirements()
+
+  function build_generator_requirements(): Record<
+    string,
+    { requires_data: boolean; requires_repairs: boolean }
+  > {
+    const map: Record<
+      string,
+      { requires_data: boolean; requires_repairs: boolean }
+    > = {}
+    for (const category of prompt_generator_categories) {
+      for (const template of category.templates) {
+        if (template.generator_id) {
+          map[template.generator_id] = {
+            requires_data: template.requires_data,
+            requires_repairs: template.requires_repairs,
+          }
+        }
+      }
+    }
+    return map
+  }
+
+  function generator_disabled_reason(generator_id: string): string | null {
+    const req = generator_requirements[generator_id]
+    if (!req || !data_requirements_checked) {
+      return null
+    }
+    if (req.requires_repairs && !has_repair_data) {
+      return "Requires at least one repaired response in your dataset."
+    }
+    if (req.requires_data && !has_rated_data) {
+      return "Requires at least one rated response in your dataset."
+    }
+    return null
+  }
+
+  // Drive the prompt list off the URL-scoped task params instead of the
+  // ui_state-scoped current_task_prompts, so a deep link to a task that
+  // doesn't match the sidebar still shows the right prompts.
+  $: task_prompts =
+    project_id && task_id
+      ? $prompts_by_task_composite_id[
+          get_task_composite_id(project_id, task_id)
+        ] ?? null
+      : null
+  $: prompt_load_error = !!(
+    project_id &&
+    task_id &&
+    $prompts_errors_by_task_composite_id[
+      get_task_composite_id(project_id, task_id)
+    ]
+  )
+  $: if (project_id && task_id) {
+    load_task_prompts(project_id, task_id)
+  }
+
+  // Re-fetch rated/repair data whenever project_id or task_id changes so the
+  // generator disabled states stay in sync if the parent swaps tasks.
+  let requirements_loaded_key: string | null = null
+  $: load_data_requirements(project_id, task_id)
+
+  async function load_data_requirements(
+    project_id: string | null,
+    task_id: string | null,
+  ) {
+    if (!project_id || !task_id) {
+      requirements_loaded_key = null
+      data_requirements_checked = false
+      has_rated_data = false
+      has_repair_data = false
+      return
+    }
+    const key = `${project_id}:${task_id}`
+    if (requirements_loaded_key === key) return
+    requirements_loaded_key = key
+    data_requirements_checked = false
+    has_rated_data = false
+    has_repair_data = false
+    try {
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/runs_summaries",
+        {
+          params: {
+            path: { project_id, task_id },
+          },
+        },
+      )
+      // Drop stale responses if the task was swapped while the request was
+      // in flight — avoids overwriting the new task's flags with old data.
+      if (requirements_loaded_key !== key) return
+      if (error) return
+      if (data) {
+        has_rated_data = data.some(
+          (run) =>
+            run.rating &&
+            run.rating.value !== null &&
+            run.rating.value !== undefined,
+        )
+        has_repair_data = data.some(
+          (run) => run.repair_state?.toLowerCase() === "repaired",
+        )
+      }
+    } finally {
+      if (requirements_loaded_key === key) {
+        data_requirements_checked = true
+      }
+    }
+  }
 
   $: options = build_prompt_options(
-    $current_task_prompts,
+    task_prompts,
     exclude_cot,
     custom_prompt_name,
     fine_tune_prompt_id,
+    project_id,
+    task_id,
+    data_requirements_checked,
+    has_rated_data,
+    has_repair_data,
   )
 
   function build_prompt_options(
-    current_task_prompts: PromptResponse | null,
+    task_prompts: PromptResponse | null,
     exclude_cot: boolean,
     custom_prompt_name: string | undefined,
     fine_tune_prompt_id: string | undefined,
+    project_id: string | null,
+    task_id: string | null,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _requirements_checked: boolean,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _has_rated: boolean,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _has_repair: boolean,
   ): OptionGroup[] {
-    if (!current_task_prompts) {
+    if (!task_prompts) {
       return []
     }
 
     const grouped_options: OptionGroup[] = []
 
     const generators: Option[] = []
-    for (const generator of current_task_prompts.generators) {
+    for (const generator of task_prompts.generators) {
       if (generator.chain_of_thought && exclude_cot) {
         continue
       }
+      const disabled_reason = generator_disabled_reason(generator.id)
       generators.push({
         value: generator.id,
         label: generator.name,
-        description: generator.short_description,
+        description: disabled_reason ?? generator.short_description,
+        disabled: !!disabled_reason,
       })
     }
     if (generators.length > 0) {
@@ -75,7 +214,7 @@
     }
 
     const static_prompts: Option[] = []
-    for (const prompt of current_task_prompts.prompts) {
+    for (const prompt of task_prompts.prompts) {
       if (!prompt.id) {
         continue
       }
@@ -84,17 +223,39 @@
       }
       static_prompts.push({
         value: prompt.id,
-        label: getStaticPromptDisplayName(
-          prompt.name,
-          prompt.generator_id,
-          current_task_prompts,
-        ),
+        label: prompt.name,
       })
     }
+    const saved_prompts_action =
+      project_id && task_id
+        ? {
+            action_label: "Create New",
+            action_handler: () => {
+              const params = new URLSearchParams()
+              const from = $page.url.searchParams.get("from")
+              if (from) {
+                params.set("from", from)
+              }
+              const qs = params.toString()
+              goto(
+                `/prompts/${project_id}/${task_id}/prompt_generators${
+                  qs ? `?${qs}` : ""
+                }`,
+              )
+            },
+          }
+        : {}
     if (static_prompts.length > 0) {
       grouped_options.push({
         label: "Saved Prompts",
         options: static_prompts,
+        ...saved_prompts_action,
+      })
+    } else if (project_id && task_id) {
+      grouped_options.push({
+        label: "Saved Prompts",
+        options: [],
+        ...saved_prompts_action,
       })
     }
     return grouped_options
@@ -124,10 +285,15 @@
     }
     // This shouldn't be needed, but it is. Svelte doesn't re-evaluate the options when the fine-tune prompt id changes.
     options = build_prompt_options(
-      $current_task_prompts,
+      task_prompts,
       exclude_cot,
       custom_prompt_name,
       fine_tune_prompt_id,
+      project_id,
+      task_id,
+      data_requirements_checked,
+      has_rated_data,
+      has_repair_data,
     )
   }
 </script>
@@ -135,8 +301,10 @@
 <FormElement
   label="Prompt Method"
   inputType="fancy_select"
-  empty_state_message="Loading prompts..."
-  empty_state_subtitle="Please wait."
+  empty_state_message={prompt_load_error
+    ? "Failed to load prompts"
+    : "Loading prompts..."}
+  empty_state_subtitle={prompt_load_error ? null : "Please wait."}
   {description}
   {info_description}
   bind:value={prompt_method}

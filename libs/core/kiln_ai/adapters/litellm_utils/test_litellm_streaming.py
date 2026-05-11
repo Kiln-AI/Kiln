@@ -137,3 +137,70 @@ class TestStreamingCompletion:
 
         assert received == []
         assert stream.response is None
+
+    async def test_stream_options_include_usage_added_by_default(
+        self, mock_acompletion, mock_chunk_builder
+    ):
+        """Default ``stream_options`` must request usage so the assembled response carries it."""
+        mock_acompletion.return_value = _async_iter([])
+        mock_chunk_builder.return_value = None
+
+        stream = StreamingCompletion(model="test", messages=[])
+        async for _ in stream:
+            pass
+
+        _, call_kwargs = mock_acompletion.call_args
+        assert call_kwargs["stream_options"] == {"include_usage": True}
+
+    async def test_stream_options_include_usage_merged_with_caller_options(
+        self, mock_acompletion, mock_chunk_builder
+    ):
+        """Caller-provided ``stream_options`` keys must survive; ``include_usage`` is forced on."""
+        mock_acompletion.return_value = _async_iter([])
+        mock_chunk_builder.return_value = None
+
+        stream = StreamingCompletion(
+            model="test",
+            messages=[],
+            stream_options={"some_other_flag": True},
+        )
+        async for _ in stream:
+            pass
+
+        _, call_kwargs = mock_acompletion.call_args
+        assert call_kwargs["stream_options"] == {
+            "some_other_flag": True,
+            "include_usage": True,
+        }
+
+    async def test_caller_provided_include_usage_false_is_overridden(
+        self, mock_acompletion, mock_chunk_builder
+    ):
+        """Streaming usage tracking is mandatory; an explicit ``False`` is overridden."""
+        mock_acompletion.return_value = _async_iter([])
+        mock_chunk_builder.return_value = None
+
+        stream = StreamingCompletion(
+            model="test",
+            messages=[],
+            stream_options={"include_usage": False},
+        )
+        async for _ in stream:
+            pass
+
+        _, call_kwargs = mock_acompletion.call_args
+        assert call_kwargs["stream_options"]["include_usage"] is True
+
+    async def test_stream_options_none_treated_as_empty(
+        self, mock_acompletion, mock_chunk_builder
+    ):
+        """Passing ``stream_options=None`` must not crash — treated as empty."""
+        mock_acompletion.return_value = _async_iter([])
+        mock_chunk_builder.return_value = None
+
+        stream = StreamingCompletion(model="test", messages=[], stream_options=None)
+        async for _ in stream:
+            pass
+
+        _, call_kwargs = mock_acompletion.call_args
+        assert call_kwargs["stream_options"] == {"include_usage": True}

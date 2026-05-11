@@ -7,7 +7,7 @@
   import {
     prompt_generator_categories,
     type PromptGeneratorTemplate,
-  } from "./prompt_generators"
+  } from "$lib/prompt_generators"
   import { client } from "$lib/api_client"
   import { onMount } from "svelte"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
@@ -45,7 +45,9 @@
             run.rating.value !== null &&
             run.rating.value !== undefined,
         )
-        has_repair_data = data.some((run) => run.repair_state === "repaired")
+        has_repair_data = data.some(
+          (run) => run.repair_state?.toLowerCase() === "repaired",
+        )
       }
     } catch (e) {
       error = createKilnError(e)

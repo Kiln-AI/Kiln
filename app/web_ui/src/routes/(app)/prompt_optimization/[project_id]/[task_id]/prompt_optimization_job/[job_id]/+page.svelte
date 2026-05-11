@@ -1,7 +1,7 @@
 <script lang="ts">
   import AppPage from "../../../../../app_page.svelte"
   import { page } from "$app/stores"
-  import { onMount, onDestroy } from "svelte"
+  import { onDestroy } from "svelte"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import type { PromptOptimizationJob, Eval, TaskRunConfig } from "$lib/types"
@@ -9,7 +9,11 @@
   import Output from "$lib/ui/output.svelte"
   import PropertyList from "$lib/ui/property_list.svelte"
   import type { UiProperty } from "$lib/ui/property_list"
-  import { get_task_composite_id, model_info } from "$lib/stores"
+  import {
+    get_task_composite_id,
+    load_model_info,
+    model_info,
+  } from "$lib/stores"
   import {
     load_task_run_configs,
     run_configs_by_task_composite_id,
@@ -47,7 +51,12 @@
   function start_polling() {
     stop_polling()
     polling_timer = setInterval(() => {
-      get_prompt_optimization_job(false)
+      get_prompt_optimization_job(
+        project_id,
+        task_id,
+        prompt_optimization_job_id,
+        false,
+      )
     }, 60000)
   }
 
@@ -58,19 +67,23 @@
     }
   }
 
-  onMount(async () => {
-    await Promise.all([
-      load_task_run_configs(project_id, task_id),
-      load_evals(),
-    ])
-    await get_prompt_optimization_job()
-  })
+  $: if (project_id && task_id && prompt_optimization_job_id) {
+    load_evals(project_id, task_id)
+    load_task_run_configs(project_id, task_id)
+    load_model_info()
+    get_prompt_optimization_job(project_id, task_id, prompt_optimization_job_id)
+  }
 
   onDestroy(() => {
     stop_polling()
   })
 
-  const get_prompt_optimization_job = async (show_loading = true) => {
+  const get_prompt_optimization_job = async (
+    req_project_id: string,
+    req_task_id: string,
+    req_job_id: string,
+    show_loading = true,
+  ) => {
     try {
       if (show_loading) {
         prompt_optimization_job_loading = true
@@ -84,25 +97,41 @@
           {
             params: {
               path: {
-                project_id,
-                task_id,
-                prompt_optimization_job_id,
+                project_id: req_project_id,
+                task_id: req_task_id,
+                prompt_optimization_job_id: req_job_id,
               },
             },
           },
         )
 
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_job_id !== prompt_optimization_job_id
+      )
+        return
       if (get_error) {
         throw get_error
       }
       prompt_optimization_job = prompt_optimization_job_response
-      build_properties()
     } catch (error) {
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_job_id !== prompt_optimization_job_id
+      )
+        return
       if (show_loading) {
         prompt_optimization_job_error = createKilnError(error)
       }
     } finally {
-      if (show_loading) {
+      if (
+        req_project_id === project_id &&
+        req_task_id === task_id &&
+        req_job_id === prompt_optimization_job_id &&
+        show_loading
+      ) {
         prompt_optimization_job_loading = false
       }
     }
@@ -121,32 +150,23 @@
     prompt_optimization_job?.latest_status === "failed" ||
     prompt_optimization_job?.latest_status === "cancelled"
 
-  $: view_prompt_action_buttons = (() => {
-    const buttons: { label: string; href?: string; handler?: () => void }[] = []
-    if (!is_terminal) {
-      buttons.push({
-        label: "Refresh Status",
-        handler: () => get_prompt_optimization_job(false),
-      })
-    }
-    return buttons
-  })()
-
-  async function load_evals() {
+  async function load_evals(req_project_id: string, req_task_id: string) {
     try {
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/evals",
         {
           params: {
-            path: { project_id, task_id },
+            path: { project_id: req_project_id, task_id: req_task_id },
           },
         },
       )
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       if (error) {
         throw error
       }
       evals = data || []
     } catch {
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       evals = []
     }
   }
@@ -178,10 +198,20 @@
     return s.charAt(0).toUpperCase() + s.slice(1)
   }
 
-  function build_properties() {
+  // Re-derive whenever the job, run configs, evals, or model info store change —
+  // any of them feeding the property list mid-render would otherwise show stale
+  // names ("Unknown", raw IDs) until the next refresh.
+  $: {
+    void prompt_optimization_job
+    void run_configs
+    void evals
+    void $model_info
+    properties = build_properties()
+  }
+
+  function build_properties(): UiProperty[] {
     if (!prompt_optimization_job) {
-      properties = []
-      return
+      return []
     }
 
     const target_run_config_page_link = `/optimize/${project_id}/${task_id}/run_config/${prompt_optimization_job.target_run_config_id}`
@@ -259,14 +289,14 @@
       ].filter((p) => !!p.value),
     )
 
-    properties = base
+    return base
   }
 
   function no_optimized_prompt_status_message(status: string): string {
     if (status === "failed") return "Prompt optimization failed."
     if (status === "cancelled") return "Prompt optimization was cancelled."
     if (status === "pending" || status === "running")
-      return "Prompt optimization in progress. Click 'Refresh Status' to check for updates."
+      return "Prompt optimization in progress."
     return "Failed to find optimized prompt."
   }
 </script>
@@ -293,7 +323,6 @@
         href: `/prompt_optimization/${project_id}/${task_id}`,
       },
     ]}
-    action_buttons={view_prompt_action_buttons}
   >
     {#if prompt_optimization_job_loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
@@ -327,12 +356,26 @@
               <Output raw_output={prompt_optimization_job.optimized_prompt} />
             </div>
           {:else}
-            <div class="mt-4">
-              <div class="text-gray-500 text-xs italic">
+            <div class="mt-4 flex flex-col gap-2">
+              <div class="text-gray-500 text-base italic">
                 {no_optimized_prompt_status_message(
                   prompt_optimization_job.latest_status,
                 )}
               </div>
+              {#if !is_terminal}
+                <button
+                  class="btn btn-sm btn-outline btn-primary w-fit"
+                  on:click={() =>
+                    get_prompt_optimization_job(
+                      project_id,
+                      task_id,
+                      prompt_optimization_job_id,
+                      false,
+                    )}
+                >
+                  ↻ Refresh Status
+                </button>
+              {/if}
             </div>
           {/if}
         </div>

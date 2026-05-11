@@ -148,7 +148,7 @@
 
   <!-- Hide toggle when expanded -->
   {#if max_height && is_expanded && !hide_toggle}
-    <div class="flex justify-center pt-2">
+    <div class="flex justify-center pt-2 pb-2">
       <button on:click={toggle_expansion} class="btn btn-sm btn-outline">
         Collapse
       </button>

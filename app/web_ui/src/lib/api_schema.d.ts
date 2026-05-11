@@ -1590,6 +1590,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Task Data Guide */
+        get: operations["get_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_get"];
+        /** Save Task Data Guide */
+        put: operations["save_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_put"];
+        post?: never;
+        /** Delete Task Data Guide */
+        delete: operations["delete_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Task Data Guide */
+        post: operations["preview_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_refine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refine Task Data Guide */
+        post: operations["refine_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_refine_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/dataset_splits": {
         parameters: {
             query?: never;
@@ -2396,6 +2449,23 @@ export interface paths {
         get: operations["get_skill_content_api_projects__project_id__skills__skill_id__content_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/skills/{skill_id}/open_enclosing_folder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open Skill Enclosing Folder */
+        post: operations["open_skill_enclosing_folder_api_projects__project_id__skills__skill_id__open_enclosing_folder_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3660,6 +3730,9 @@ export interface components {
             refusal?: string | null;
             /** Tool Calls */
             tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
+            /** Latency Ms */
+            latency_ms?: number | null;
+            usage?: components["schemas"]["MessageUsage"] | null;
         };
         /**
          * ChatCompletionAssistantMessageParamWrapper
@@ -3688,6 +3761,9 @@ export interface components {
             refusal?: string | null;
             /** Tool Calls */
             tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
+            /** Latency Ms */
+            latency_ms?: number | null;
+            usage?: components["schemas"]["MessageUsage"] | null;
         };
         /** ChatCompletionContentPartImageParam */
         ChatCompletionContentPartImageParam: {
@@ -4554,6 +4630,11 @@ export interface components {
              */
             guidance?: string | null;
             /**
+             * Data Guide
+             * @description Optional per-run data guide override. Sent in addition to any human guidance.
+             */
+            data_guide?: string | null;
+            /**
              * Existing Topics
              * @description Optional list of existing topics to avoid
              */
@@ -4618,6 +4699,11 @@ export interface components {
              * @description Optional custom guidance for generation
              */
             guidance?: string | null;
+            /**
+             * Data Guide
+             * @description Optional per-run data guide override. Replaces the task's persisted data guide for this run.
+             */
+            data_guide?: string | null;
             /** @description The run config properties to use for input generation */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
         };
@@ -4656,10 +4742,64 @@ export interface components {
              */
             guidance?: string | null;
             /**
+             * Data Guide
+             * @description Optional per-run data guide override. Replaces the task's persisted data guide for this run.
+             */
+            data_guide?: string | null;
+            /**
              * Tags
              * @description Tags to add to the sample
              */
             tags?: string[] | null;
+        };
+        /**
+         * DataGuide
+         * @description Persistent data guide for synthetic data generation, stored as a child
+         *     of a Task.
+         *
+         *     The guide is a single markdown body — typically two top-level sections:
+         *     `# Reference Examples` (user-authored input/output pairs) and
+         *     `# Guidelines & Rules` (structural and semantic constraints, often
+         *     LLM-authored via refine). Either or both may be present; the metaprompter
+         *     treats the whole body as one editable artifact and returns a refined
+         *     version on each refine pass.
+         */
+        DataGuide: {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /**
+             * Guide
+             * @description Markdown body of the data guide. Typically contains a `# Reference Examples` section and a `# Guidelines & Rules` section.
+             * @default
+             */
+            guide: string;
+            /** Model Type */
+            readonly model_type: string;
         };
         /**
          * DataSource
@@ -4994,7 +5134,7 @@ export interface components {
          * @description Enumeration of specific model versions supported by the system.
          * @enum {string}
          */
-        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5" | "qwen_3_embedding_0p6b" | "qwen_3_embedding_4b" | "qwen_3_embedding_8b" | "baai_bge_small_1_5" | "baai_bge_base_1_5" | "baai_bge_large_1_5" | "baai_bge_m3" | "m2_bert_retrieval_32k" | "gte_modernbert_base" | "multilingual_e5_large_instruct" | "multilingual_e5_large" | "e5_base_v2" | "e5_large_v2" | "thenlper_gte_large" | "thenlper_gte_base" | "where_is_ai_uae_large_v1" | "mixedbread_ai_mxbai_embed_large_v1" | "netease_youdao_bce_embedding_base_v1" | "openai_text_embedding_ada_002" | "mistral_embed_text_2312" | "mistral_codestral_embed_2505" | "sentence_transformers_all_minilm_l6_v2" | "sentence_transformers_all_mpnet_base_v2" | "sentence_transformers_multi_qa_mpnet_base_dot_v1" | "sentence_transformers_all_minilm_l12_v2" | "sentence_transformers_paraphrase_minilm_l6_v2";
+        EmbeddingModelName: "openai_text_embedding_3_small" | "openai_text_embedding_3_large" | "gemini_text_embedding_004" | "gemini_embedding_001" | "gemini_embedding_002" | "embedding_gemma_300m" | "nomic_text_embedding_v1_5" | "qwen_3_embedding_0p6b" | "qwen_3_embedding_4b" | "qwen_3_embedding_8b" | "baai_bge_small_1_5" | "baai_bge_base_1_5" | "baai_bge_large_1_5" | "baai_bge_m3" | "m2_bert_retrieval_32k" | "gte_modernbert_base" | "multilingual_e5_large_instruct" | "multilingual_e5_large" | "e5_base_v2" | "e5_large_v2" | "thenlper_gte_large" | "thenlper_gte_base" | "where_is_ai_uae_large_v1" | "mixedbread_ai_mxbai_embed_large_v1" | "netease_youdao_bce_embedding_base_v1" | "openai_text_embedding_ada_002" | "mistral_embed_text_2312" | "mistral_codestral_embed_2505" | "sentence_transformers_all_minilm_l6_v2" | "sentence_transformers_all_mpnet_base_v2" | "sentence_transformers_multi_qa_mpnet_base_dot_v1" | "sentence_transformers_all_minilm_l12_v2" | "sentence_transformers_paraphrase_minilm_l6_v2";
         /** EmbeddingProperties */
         EmbeddingProperties: {
             /** Dimensions */
@@ -6453,6 +6593,69 @@ export interface components {
              */
             has_oauth_token: boolean;
         };
+        /** GuidePreviewInput */
+        GuidePreviewInput: {
+            /**
+             * Guide
+             * @description Markdown body of the data guide being previewed.
+             * @default
+             */
+            guide: string;
+            /** @description The model config to use for preview input generation */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
+            /** @description Optional model config to use for preview output generation. Defaults to the input run config when not provided. */
+            output_run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
+            /**
+             * Num Samples
+             * @description Number of preview samples to generate
+             * @default 5
+             */
+            num_samples: number;
+        };
+        /** GuidePreviewSample */
+        GuidePreviewSample: {
+            /**
+             * Input
+             * @description Generated sample input
+             */
+            input: string;
+            /**
+             * Output
+             * @description Generated sample output
+             */
+            output: string;
+        };
+        /** GuideRefineInput */
+        GuideRefineInput: {
+            /**
+             * Current Guide
+             * @description Markdown body of the current data guide — the metaprompter rewrites it wholesale.
+             * @default
+             */
+            current_guide: string;
+            /**
+             * Feedback
+             * @description User feedback on what's wrong with preview samples
+             */
+            feedback: string;
+            /**
+             * Preview Samples
+             * @description The previewed samples the user is giving feedback on, each rated by the user as realistic (true) or needs work (false)
+             */
+            preview_samples: components["schemas"]["RatedSample"][];
+            /** @description The model config to use for the metaprompter call itself. */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
+            /** @description The user's chosen output-generation run config. Its prompt template is rendered server-side and used as runtime context for the metaprompter, so the rules it produces match what the model actually sees at synthesis time. Falls back to `task.instruction` when not provided — accurate for users on the default simple prompt template, stale for users on prompt-optimization or saved-prompt run configs. */
+            output_run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
+        };
+        /** GuideRefineResponse */
+        GuideRefineResponse: {
+            /**
+             * Refined Guide
+             * @description The refined data guide markdown returned by the metaprompter.
+             */
+            refined_guide: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -7019,6 +7222,52 @@ export interface components {
              * @description Average cost per run in USD.
              */
             mean_cost?: number | null;
+            /**
+             * Mean Total Llm Latency Ms
+             * @description Average total LLM latency per run in milliseconds.
+             */
+            mean_total_llm_latency_ms?: number | null;
+        };
+        /**
+         * MessageUsage
+         * @description Token usage and cost for a single LLM call or a multi-message sum.
+         *
+         *     Carries only the fields that are meaningfully aggregatable across
+         *     messages: token counts and cost. Per-call latency lives on the
+         *     individual message's ``latency_ms`` field; aggregating it across the
+         *     full trace would mix latencies from different points in time, so
+         *     ``MessageUsage`` does NOT carry ``total_llm_latency_ms``.
+         *
+         *     The :class:`Usage` subclass adds ``total_llm_latency_ms`` for the
+         *     in-flight per-run accumulator that tracks how long this run spent
+         *     waiting on LLM calls.
+         */
+        MessageUsage: {
+            /**
+             * Input Tokens
+             * @description The number of input tokens used.
+             */
+            input_tokens?: number | null;
+            /**
+             * Output Tokens
+             * @description The number of output tokens used.
+             */
+            output_tokens?: number | null;
+            /**
+             * Total Tokens
+             * @description The total number of tokens used.
+             */
+            total_tokens?: number | null;
+            /**
+             * Cost
+             * @description The cost in US dollars, saved at runtime (prices can change over time).
+             */
+            cost?: number | null;
+            /**
+             * Cached Tokens
+             * @description Number of tokens served from prompt cache. None if not reported.
+             */
+            cached_tokens?: number | null;
         };
         /** ModelDetails */
         ModelDetails: {
@@ -7400,6 +7649,8 @@ export interface components {
             prompt: string;
             /** Prompt Id */
             prompt_id: string;
+            /** Chain Of Thought Instructions */
+            chain_of_thought_instructions?: string | null;
         };
         /**
          * PromptCreateRequest
@@ -7935,6 +8186,30 @@ export interface components {
             results: components["schemas"]["SearchResult"][];
         };
         /**
+         * RatedSample
+         * @description A preview sample (input/output pair) plus the user's rating, used as
+         *     feedback input to the data-guide refinement metaprompter. Shared between
+         *     the API surface and the prompt builder so callers don't have to flatten
+         *     into positional tuples.
+         */
+        RatedSample: {
+            /**
+             * Input
+             * @description Generated sample input
+             */
+            input: string;
+            /**
+             * Output
+             * @description Generated sample output
+             */
+            output: string;
+            /**
+             * Looks Good
+             * @description User rating: true if the sample looks realistic, false if it needs work
+             */
+            looks_good: boolean;
+        };
+        /**
          * RatingOption
          * @description A rating requirement with display rules.
          */
@@ -8074,6 +8349,16 @@ export interface components {
              * @description Feedback from an evaluator on how to repair the task run.
              */
             evaluator_feedback: string;
+            /**
+             * Model Name
+             * @description Optional override for the model used to generate the repair. When omitted, the model from the original run's source properties is used.
+             */
+            model_name?: string | null;
+            /**
+             * Provider
+             * @description Optional override for the model provider used to generate the repair. Must be set together with model_name.
+             */
+            provider?: string | null;
         };
         /**
          * RequirementRating
@@ -8409,6 +8694,15 @@ export interface components {
              * @description Optional tags
              */
             tags?: string[] | null;
+        };
+        /** SaveTaskDataGuideInput */
+        SaveTaskDataGuideInput: {
+            /**
+             * Guide
+             * @description Markdown body of the data guide.
+             * @default
+             */
+            guide: string;
         };
         /**
          * ScanProjectsRequest
@@ -9348,6 +9642,8 @@ export interface components {
             tags: string[];
             /** @description Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used. */
             usage?: components["schemas"]["Usage"] | null;
+            /** @description Sum of per-message token usage and cost across the entire trace, including any seeded prior trace. None on records created before this field existed. For a fresh (non-seeded) run, the token / cost fields equal those of `usage`. */
+            cumulative_usage?: components["schemas"]["MessageUsage"] | null;
             /**
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
@@ -9425,6 +9721,8 @@ export interface components {
             tags: string[];
             /** @description Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used. */
             usage?: components["schemas"]["Usage"] | null;
+            /** @description Sum of per-message token usage and cost across the entire trace, including any seeded prior trace. None on records created before this field existed. For a fresh (non-seeded) run, the token / cost fields equal those of `usage`. */
+            cumulative_usage?: components["schemas"]["MessageUsage"] | null;
             /**
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
@@ -9933,27 +10231,33 @@ export interface components {
         };
         /**
          * Usage
-         * @description Token usage and cost information for a task run.
+         * @description Token usage, cost, and aggregate LLM latency for a per-run accumulator.
+         *
+         *     Extends :class:`MessageUsage` with ``total_llm_latency_ms``, which is
+         *     only meaningful while a single run is in flight (its model calls run
+         *     sequentially in real time). For per-message records and full-trace
+         *     sums use :class:`MessageUsage` — those values would mix latencies
+         *     from different points in time, so the field doesn't apply.
          */
         Usage: {
             /**
              * Input Tokens
-             * @description The number of input tokens used in the task run.
+             * @description The number of input tokens used.
              */
             input_tokens?: number | null;
             /**
              * Output Tokens
-             * @description The number of output tokens used in the task run.
+             * @description The number of output tokens used.
              */
             output_tokens?: number | null;
             /**
              * Total Tokens
-             * @description The total number of tokens used in the task run.
+             * @description The total number of tokens used.
              */
             total_tokens?: number | null;
             /**
              * Cost
-             * @description The cost of the task run in US dollars, saved at runtime (prices can change over time).
+             * @description The cost in US dollars, saved at runtime (prices can change over time).
              */
             cost?: number | null;
             /**
@@ -9961,6 +10265,11 @@ export interface components {
              * @description Number of tokens served from prompt cache. None if not reported.
              */
             cached_tokens?: number | null;
+            /**
+             * Total Llm Latency Ms
+             * @description Total time spent waiting on LLM API calls in milliseconds. Sum of per-call latencies, excludes tool execution time.
+             */
+            total_llm_latency_ms?: number | null;
         };
         /**
          * UserModelEntry
@@ -13811,6 +14120,188 @@ export interface operations {
             };
         };
     };
+    get_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataGuide"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveTaskDataGuideInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataGuide"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuidePreviewInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuidePreviewSample"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refine_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_refine_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuideRefineInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuideRefineResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     dataset_splits_api_projects__project_id__tasks__task_id__dataset_splits_get: {
         parameters: {
             query?: never;
@@ -15800,6 +16291,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillContentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_skill_enclosing_folder_api_projects__project_id__skills__skill_id__open_enclosing_folder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the skill. */
+                skill_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenFileResponse"];
                 };
             };
             /** @description Validation Error */

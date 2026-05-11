@@ -13,10 +13,26 @@
   type Breadcrumb = {
     label: string
     href: string
+    // Use replaceState instead of pushState. Use this when the breadcrumb
+    // target is effectively where the user came from (e.g. a sub-flow page
+    // pointing at its parent), so clicking the breadcrumb doesn't stack a
+    // new history entry that confuses the browser back button.
+    replace_state?: boolean
   }
   export let breadcrumbs: Breadcrumb[] = []
 
+  function handle_breadcrumb_click(event: MouseEvent, breadcrumb: Breadcrumb) {
+    if (!breadcrumb.replace_state) return
+    // Let the browser handle modifier-key clicks (open in new tab, etc.).
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+    event.preventDefault()
+    goto(breadcrumb.href, { replaceState: true })
+  }
+
   function run_action_button(action_button: ActionButton) {
+    if (action_button.disabled || action_button.loading) {
+      return
+    }
     if (action_button.handler) {
       action_button.handler()
     } else if (action_button.href) {
@@ -56,7 +72,13 @@
   <div class="breadcrumbs text-sm pt-0">
     <ul>
       {#each breadcrumbs as breadcrumb}
-        <li><a href={breadcrumb.href}>{breadcrumb.label}</a></li>
+        <li>
+          <a
+            href={breadcrumb.href}
+            on:click={(e) => handle_breadcrumb_click(e, breadcrumb)}
+            >{breadcrumb.label}</a
+          >
+        </li>
       {/each}
       <!-- Adds the last ">" separator -->
       <li></li>
@@ -89,17 +111,22 @@
           class="btn btn-xs md:btn-md md:whitespace-nowrap {!action_button.icon
             ? 'md:px-6'
             : ''} {action_button.primary ? 'btn-primary' : ''}"
-          disabled={action_button.disabled ?? false}
+          disabled={(action_button.disabled ?? false) ||
+            (action_button.loading ?? false)}
         >
-          {#if action_button.notice}
-            <span class="bg-primary rounded-full w-3 h-3 mr-1" />
-          {/if}
-          {#if action_button.icon}
-            <img
-              alt={action_button.label || ""}
-              src={action_button.icon}
-              class="w-6 h-6"
-            />
+          {#if action_button.loading}
+            <span class="loading loading-spinner loading-sm"></span>
+          {:else}
+            {#if action_button.notice}
+              <span class="bg-primary rounded-full w-3 h-3 mr-1" />
+            {/if}
+            {#if action_button.icon}
+              <img
+                alt={action_button.label || ""}
+                src={action_button.icon}
+                class="w-6 h-6"
+              />
+            {/if}
           {/if}
           {action_button.label || ""}
         </button>

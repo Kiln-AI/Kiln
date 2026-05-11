@@ -4,12 +4,13 @@
   import FormElement from "$lib/utils/form_element.svelte"
   import FormList from "$lib/utils/form_list.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
-  import SchemaSection from "./schema_section.svelte"
   import {
-    current_project,
-    load_current_task,
-    load_rating_options,
-  } from "$lib/stores"
+    filename_string_validator_default,
+    normalize_filename_string,
+  } from "$lib/utils/input_validators"
+  import SchemaSection from "./schema_section.svelte"
+  import { current_project, load_current_task } from "$lib/stores"
+  import { load_rating_options } from "$lib/stores/rating_options_store"
   import { goto } from "$app/navigation"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
   import { ui_state, projects } from "$lib/stores"
@@ -121,6 +122,7 @@
         )
         return
       }
+      task.name = normalize_filename_string(task.name)
       let body: Record<string, unknown> = {
         name: task.name,
         description: task.description,
@@ -194,7 +196,16 @@
       // reload the current task to make sure changes propagate throughout the UI
       // e.g. the rating options
       await load_current_task(get(current_project)?.id)
-      await load_rating_options()
+      if (target_project_id && data.id) {
+        try {
+          await load_rating_options(target_project_id, data.id, true)
+        } catch (refreshError) {
+          console.warn(
+            "Task was saved, but refreshing rating options failed",
+            refreshError,
+          )
+        }
+      }
 
       // Wait for the saved change to propagate to the warn_before_unload
       await tick()
@@ -314,6 +325,7 @@
       description="A description for you and your team, not used by the model."
       bind:value={task.name}
       max_length={120}
+      validator={filename_string_validator_default}
     />
 
     <FormElement
@@ -439,7 +451,7 @@
               Requirements have been replaced by <a
                 href="https://docs.kiln.tech/docs/evals-and-specs"
                 target="_blank"
-                class="link">Specs & Evals</a
+                class="link">Evals</a
               >
               and
               <a
