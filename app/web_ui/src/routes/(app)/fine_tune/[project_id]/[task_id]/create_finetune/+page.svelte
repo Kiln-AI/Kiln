@@ -779,6 +779,8 @@
             info_description="There are tradeoffs to consider when choosing a system prompt for fine-tuning. Read more: [OpenAI Docs](https://platform.openai.com/docs/guides/fine-tuning/#crafting-prompts)."
             exclude_cot={true}
             custom_prompt_name="Custom Fine Tuning Prompt"
+            {project_id}
+            {task_id}
           />
           {#if system_prompt_method === "custom"}
             <div class="p-4 border-l-4 border-gray-300">

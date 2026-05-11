@@ -22,8 +22,8 @@
   export let fine_tune_prompt_id: string | undefined = undefined
   export let description: string | undefined = undefined
   export let info_description: string | undefined = undefined
-  export let project_id: string | null = null
-  export let task_id: string | null = null
+  export let project_id: string | null
+  export let task_id: string | null
 
   let has_rated_data = false
   let has_repair_data = false
