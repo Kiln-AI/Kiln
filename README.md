@@ -129,15 +129,15 @@ Full docs at [docs.kiln.tech](https://docs.kiln.tech). Common starting points:
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup and contribution guidelines.
 
-## License
+## License & Trademarks
 
 Kiln's core Python library and REST server are [MIT-licensed](libs/core/LICENSE.txt). The desktop app is [source-available](app), free to use and — built on the [fair-code](https://faircode.io) model so Kiln stays free for individuals while remaining sustainable.
 
-Datasets are open JSON. You own and control your data.
+Datasets are open JSON. You own and control your datasets.
 
 [Kiln Pro](https://kiln.tech/pricing) is our service which adds the AI Assistant, Auto-Optimize, and the Eval Builder. It's opt-in, and the core Kiln app remains fully functional without it.
 
-**Trademarks:** The Kiln name and logos are trademarks of Chesterfield Laboratories Inc.
+The Kiln name and logos are trademarks of Chesterfield Laboratories Inc.
 
 Copyright 2024 — Chesterfield Laboratories Inc.
 
