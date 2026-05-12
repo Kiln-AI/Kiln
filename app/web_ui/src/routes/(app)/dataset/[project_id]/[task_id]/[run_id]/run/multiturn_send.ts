@@ -103,7 +103,12 @@ export async function send_multiturn(
 
   await on_success(data.id)
   // Only clear input after on_success resolves. If on_success throws, the
-  // caller catches it and the textarea contents are preserved.
-  input_form?.clear_input()
+  // caller catches it and the textarea contents are preserved. on_success
+  // may also have already unmounted the form (e.g. by clearing `run`), in
+  // which case the bound reference points at a destroyed component with no
+  // method on it — guard against that.
+  if (typeof input_form?.clear_input === "function") {
+    input_form.clear_input()
+  }
   return { ok: true, new_run_id: data.id }
 }

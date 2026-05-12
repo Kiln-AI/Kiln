@@ -147,6 +147,30 @@ describe("send_multiturn", () => {
     expect(calls).toEqual(["on_success", "clear_input"])
   })
 
+  it("does not throw when on_success unmounts the form before clear_input runs", async () => {
+    postMock.mockResolvedValue({ data: { id: "new-run-99" }, error: null })
+    const input_form = makeInputForm()
+    // Simulate the real case: on_success sets `run = null` and navigates, which
+    // unmounts the bound RunInputForm. Svelte may leave the bind:this reference
+    // pointing at a stale object whose methods are gone.
+    const on_success = vi.fn(async () => {
+      // @ts-expect-error simulate the unmount: clear_input is no longer a fn
+      input_form.clear_input = undefined
+    })
+
+    const result = await send_multiturn({
+      project_id: "p",
+      task_id: "t",
+      parent_task_run_id: "leaf",
+      run_config_component: asRunConfigController(makeRunConfig()),
+      input_form: asInputFormController(input_form),
+      on_success,
+    })
+
+    expect(result.ok).toBe(true)
+    expect(on_success).toHaveBeenCalledWith("new-run-99")
+  })
+
   it("returns ok:false and does NOT clear input when the API returns an error", async () => {
     postMock.mockResolvedValue({ data: null, error: { message: "boom" } })
     const input_form = makeInputForm("preserved text")
