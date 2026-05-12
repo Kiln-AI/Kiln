@@ -46,7 +46,11 @@
     </svg>
   </SidebarRailItem>
 
-  <SidebarRailItem href="/chat" active={section === Section.Chat} label="Chat">
+  <SidebarRailItem
+    href="/assistant"
+    active={section === Section.Assistant}
+    label="Assistant"
+  >
     <div slot="icon" class="w-full h-full">
       <ChatIcon />
     </div>
@@ -98,7 +102,7 @@
   <SidebarRailItem
     href={`/specs/${$ui_state.current_project_id}/${$ui_state.current_task_id}`}
     active={section === Section.Specs}
-    label="Specs & Evals"
+    label="Evals"
   >
     <div slot="icon" class="w-full h-full">
       <EvalIcon />

@@ -4,8 +4,6 @@ import subprocess
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-
-from app.desktop.git_sync.config import AuthMode
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Callable, TypeVar
@@ -14,6 +12,7 @@ import pygit2
 import pygit2.enums
 
 from app.desktop.git_sync.commit_message import generate_commit_message
+from app.desktop.git_sync.config import AuthMode
 from app.desktop.git_sync.errors import (
     CorruptRepoError,
     RemoteUnreachableError,
@@ -86,7 +85,7 @@ def reset_committer_cache() -> None:
 
 class GitSyncManager:
     _GIT_EXECUTOR_TIMEOUT = 30.0
-    _WRITE_LOCK_TIMEOUT = 30.0
+    _WRITE_LOCK_TIMEOUT = 90.0
 
     def __init__(
         self,

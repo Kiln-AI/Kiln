@@ -69,7 +69,10 @@
     load_available_tools(project_id)
 
     if (!task_id) {
-      tools = tools_selector_settings.mandatory_tools || []
+      // Clone so fancy_select's in-place push (selected_values.push) doesn't
+      // mutate the shared mandatory_tools array and retroactively disable
+      // the option the user just selected.
+      tools = [...(tools_selector_settings.mandatory_tools || [])]
       tools_store_loaded_task_id = null
     } else if (task_id !== tools_store_loaded_task_id) {
       // load selected tools for this task from tools_store

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import Chat from "./chat/chat.svelte"
+  import Chat from "./assistant/chat.svelte"
   import Dialog from "$lib/ui/dialog.svelte"
   import ChatIcon from "$lib/ui/icons/chat_icon.svelte"
   import CloseIcon from "$lib/ui/icons/close_icon.svelte"
@@ -15,7 +15,7 @@
   import { onDestroy, onMount } from "svelte"
   import { Section } from "$lib/ui/section"
   import { browser } from "$app/environment"
-  import ChatCopilotRequired from "$lib/ui/kiln_copilot/chat_copilot_required.svelte"
+  import AssistantProRequired from "$lib/ui/kiln_copilot/assistant_pro_required.svelte"
   import {
     kilnCopilotConnected,
     initCopilotConnectionStore,
@@ -183,10 +183,10 @@
       ]
     : []
 
-  $: isChat = section === Section.Chat
+  $: isAssistant = section === Section.Assistant
 </script>
 
-{#if !isChat}
+{#if !isAssistant}
   <!-- Spacer to reserve width in the flex layout for the fixed sidebar -->
   {#if expanded}
     <div
@@ -221,7 +221,7 @@
         class="rounded-3xl bg-base-100 shadow-md px-4 py-4 border flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden"
       >
         <div class="flex flex-row items-center justify-between mb-4 shrink-0">
-          <div class="text-lg font-medium">Chat</div>
+          <div class="text-lg font-medium">Assistant</div>
           <div class="flex flex-row items-center gap-0.5">
             {#if copilot_chat_ready && sidebarHasMessages}
               <button
@@ -256,7 +256,7 @@
             <button
               class="btn btn-sm btn-circle btn-ghost"
               on:click={toggle}
-              aria-label="Close chat sidebar"
+              aria-label="Close assistant sidebar"
             >
               <span class="size-5 block"><CloseIcon /></span>
             </button>
@@ -268,7 +268,7 @@
               <span class="loading loading-spinner loading-md"></span>
             </div>
           {:else if $kilnCopilotConnected === false}
-            <ChatCopilotRequired compact />
+            <AssistantProRequired compact />
           {:else}
             <Chat
               bind:this={sidebarChat}
@@ -292,7 +292,7 @@
         openDialog()
       }
     }}
-    aria-label="Open chat"
+    aria-label="Open assistant"
   >
     <div class="w-6 h-6">
       <ChatIcon />
@@ -302,7 +302,7 @@
   <!-- Small screen dialog -->
   <Dialog
     bind:this={dialog}
-    title="Chat"
+    title="Assistant"
     on:close={() => (dialogOpen = false)}
     width="wide"
     header_buttons={dialog_header_buttons}
@@ -314,7 +314,7 @@
             <span class="loading loading-spinner loading-lg"></span>
           </div>
         {:else if $kilnCopilotConnected === false}
-          <ChatCopilotRequired compact />
+          <AssistantProRequired compact />
         {:else}
           <Chat bind:this={dialogChat} bind:hasMessages={dialogHasMessages} />
         {/if}

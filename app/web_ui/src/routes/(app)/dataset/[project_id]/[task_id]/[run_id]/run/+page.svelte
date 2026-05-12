@@ -4,22 +4,27 @@
   import Run from "../../../../../run/run.svelte"
   import Output from "$lib/ui/output.svelte"
   import {
-    current_task,
+    get_task_composite_id,
+    load_task,
     model_name,
     model_info,
     load_model_info,
     prompt_name_from_id,
-    current_task_prompts,
     provider_name_from_id,
     load_available_models,
     load_available_tools,
     available_tools,
   } from "$lib/stores"
+  import {
+    prompts_by_task_composite_id,
+    load_task_prompts,
+  } from "$lib/stores/prompts_store"
   import { page } from "$app/stores"
-  import { onMount, getContext } from "svelte"
+  import { getContext } from "svelte"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import type { TaskRun, StructuredOutputMode } from "$lib/types"
+  import type { Task, TaskRun, StructuredOutputMode } from "$lib/types"
+  import { isMcpRunConfig } from "$lib/types"
   import {
     formatDate,
     structuredOutputModeToString,
@@ -44,11 +49,7 @@
   import FormContainer from "$lib/utils/form_container.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
-  import {
-    isKilnAgentRunConfig,
-    isMcpRunConfig,
-    type TaskRunConfig,
-  } from "$lib/types"
+  import { isKilnAgentRunConfig, type TaskRunConfig } from "$lib/types"
   import { tick } from "svelte"
   import { send_multiturn } from "./multiturn_send"
 
@@ -63,7 +64,7 @@
   // @ts-expect-error list_page is not a property of PageState
   $: list_page = ($page.state.list_page || []) as string[]
 
-  // We should remove task_id from the URL, or load it by ID. $current_task is a lie
+  let task: Task | null = null
   let run: TaskRun | null = null
   let loading = true
   let load_error: KilnError | null = null
@@ -349,40 +350,70 @@
     void tools_property_value
     void skills_property_value
     properties_for_list = [
-      ...get_properties(run, $current_task_prompts, $model_info),
+      ...get_properties(
+        run,
+        $prompts_by_task_composite_id[
+          get_task_composite_id(project_id, task_id)
+        ] ?? null,
+        $model_info,
+      ),
       ...(see_all_properties ? get_advanced_properties(run) : []),
     ]
   }
 
-  onMount(async () => {
-    await Promise.all([
-      load_run(),
-      load_model_info(),
-      load_available_models(),
-      load_available_tools(project_id),
-    ])
-  })
+  $: if (project_id && task_id && run_id) {
+    load_run(project_id, task_id, run_id)
+    load_task_for_page(project_id, task_id)
+    load_task_prompts(project_id, task_id)
+    load_available_tools(project_id)
+    load_model_info()
+    load_available_models()
+  }
 
-  async function load_run() {
-    // Snapshot run_id so we can detect if it changes during the await
-    // (e.g. user hits arrow again) and discard this stale response.
-    const requested_run_id = run_id
+  async function load_task_for_page(
+    req_project_id: string,
+    req_task_id: string,
+  ) {
+    const loaded = await load_task(req_project_id, req_task_id)
+    if (req_project_id !== project_id || req_task_id !== task_id) return
+    task = loaded
+  }
+
+  async function load_run(
+    req_project_id: string,
+    req_task_id: string,
+    req_run_id: string,
+  ) {
     try {
       const { data, error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",
         {
           params: {
-            path: { project_id, task_id, run_id: requested_run_id },
+            path: {
+              project_id: req_project_id,
+              task_id: req_task_id,
+              run_id: req_run_id,
+            },
           },
         },
       )
-      if (requested_run_id !== run_id) return
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_run_id !== run_id
+      )
+        return
       if (error) {
         throw error
       }
       run = data
     } catch (error) {
-      if (requested_run_id !== run_id) return
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_run_id !== run_id
+      )
+        return
       if (error instanceof Error && error.message.includes("Load failed")) {
         load_error = new KilnError(
           "Could not load run. It may belong to a project you don't have access to.",
@@ -392,7 +423,11 @@
         load_error = createKilnError(error)
       }
     } finally {
-      if (requested_run_id === run_id) {
+      if (
+        req_project_id === project_id &&
+        req_task_id === task_id &&
+        req_run_id === run_id
+      ) {
         loading = false
       }
     }
@@ -423,24 +458,20 @@
 
   function load_run_by_id(new_run_id: string) {
     load_error = null
-    run_id = new_run_id
     run = null
     loading = true
-    goto(`/dataset/${project_id}/${task_id}/${run_id}/run`, {
+    goto(`/dataset/${project_id}/${task_id}/${new_run_id}/run`, {
       state: { list_page: list_page },
     })
-    load_run()
   }
 
   async function handle_send(new_run_id: string) {
     load_error = null
-    run_id = new_run_id
     run = null
     loading = true
     await goto(`/dataset/${project_id}/${task_id}/${new_run_id}/run`, {
       replaceState: true,
     })
-    await load_run()
   }
 
   // ---- Multiturn composer state ----
@@ -575,12 +606,12 @@
       <div class="badge badge-error badge-lg p-4">Run Deleted</div>
     {:else if load_error}
       <div class="text-error">{load_error.getMessage()}</div>
-    {:else if run && $current_task}
-      {#if $current_task.turn_mode === "multiturn"}
+    {:else if run && task}
+      {#if task.turn_mode === "multiturn"}
         <div data-testid="multiturn-layout">
           <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
             <div class="grow flex flex-col gap-6">
-              <ConversationView trace={run.trace ?? []} task={$current_task} />
+              <ConversationView trace={run.trace ?? []} {task} />
               <div data-testid="multiturn-composer">
                 <FormContainer
                   submit_label="Send"
@@ -615,7 +646,7 @@
                 {#key run.id}
                   <SavedRunConfigurationsDropdown
                     {project_id}
-                    current_task={$current_task}
+                    current_task={task}
                     bind:selected_run_config_id={multiturn_selected_run_config_id}
                     bind:save_config_error={multiturn_save_config_error}
                     bind:set_default_error={multiturn_set_default_error}
@@ -627,7 +658,7 @@
                     prompt_method={multiturn_initial_prompt(run)}
                     bind:this={multiturn_run_config_component}
                     {project_id}
-                    current_task={$current_task}
+                    current_task={task}
                     requires_structured_output={false}
                     bind:selected_run_config_id={multiturn_selected_run_config_id}
                     bind:set_default_error={multiturn_set_default_error}
@@ -659,7 +690,7 @@
               </button>
             </div>
           </div>
-          <Run initial_run={run} task={$current_task} {project_id} />
+          <Run initial_run={run} {task} {project_id} />
         </div>
       {/if}
     {:else}

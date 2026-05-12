@@ -1,3 +1,4 @@
+import copy
 import json
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -17,7 +18,7 @@ from kiln_ai.adapters.model_adapters.litellm_adapter import (
     ModelTurnResult,
 )
 from kiln_ai.adapters.model_adapters.litellm_config import LiteLlmConfig
-from kiln_ai.datamodel import Project, Task, Usage
+from kiln_ai.datamodel import MessageUsage, Project, Task, Usage
 from kiln_ai.datamodel.json_schema import close_object_schemas
 from kiln_ai.datamodel.run_config import (
     KilnAgentRunConfigProperties,
@@ -784,6 +785,45 @@ async def test_build_completion_kwargs(
     # Verify extra body is included
     for key, value in extra_body.items():
         assert kwargs[key] == value
+
+
+@pytest.mark.asyncio
+async def test_build_completion_kwargs_strips_kiln_only_fields(config, mock_task):
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    messages = [
+        {"role": "user", "content": "hi"},
+        {
+            "role": "assistant",
+            "content": "hello",
+            "latency_ms": 123,
+        },
+        {
+            "role": "tool",
+            "content": "{}",
+            "tool_call_id": "c1",
+            "is_error": True,
+            "error_message": "boom",
+            "kiln_task_tool_data": "p:::t:::ta:::r",
+        },
+    ]
+    original = copy.deepcopy(messages)
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+    ):
+        kwargs = await adapter.build_completion_kwargs(mock_provider, messages, None)
+
+    assert kwargs["messages"] == [
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+        {"role": "tool", "content": "{}", "tool_call_id": "c1"},
+    ]
+    assert messages == original
 
 
 @pytest.mark.parametrize(
@@ -2431,6 +2471,198 @@ async def test_process_tool_calls_propagates_error_fields(config, mock_task):
     assert success_msg.get("error_message") is None
 
 
+@pytest.fixture
+def unstructured_task(tmp_path):
+    project_path = tmp_path / "test_project_multiturn" / "project.kiln"
+    project_path.parent.mkdir()
+    project = Project(name="Multiturn Test Project", path=str(project_path))
+    project.save_to_file()
+
+    task = Task(
+        name="Multiturn Task",
+        instruction="Plain conversational assistant.",
+        parent=project,
+    )
+    task.save_to_file()
+    return task
+
+
+@pytest.mark.asyncio
+async def test_invoke_multiturn_preserves_kiln_fields_on_prior_trace(
+    config, unstructured_task
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=unstructured_task)
+
+    prior_trace = [
+        {"role": "user", "content": "what is 2+2"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "add", "arguments": '{"a": 2, "b": 2}'},
+                }
+            ],
+            "latency_ms": 321,
+        },
+        {
+            "role": "tool",
+            "content": "boom",
+            "tool_call_id": "call_1",
+            "is_error": True,
+            "error_message": "boom",
+            "kiln_task_tool_data": "p:::t:::ta:::r",
+        },
+        {
+            "role": "assistant",
+            "content": "Sorry, the tool failed. Try again.",
+            "latency_ms": 654,
+        },
+    ]
+
+    final_response = ModelResponse(
+        model="test-model",
+        choices=[
+            {"message": {"content": "ok, here is the answer", "tool_calls": None}}
+        ],
+    )
+
+    captured_kwargs: dict = {}
+
+    async def mock_acompletion(self, **kwargs):
+        captured_kwargs.update(kwargs)
+        return final_response, final_response.choices[0]
+
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    mock_provider.reasoning_capable = False
+    mock_provider.parser = None
+    mock_provider.formatter = None
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=[]),
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=mock_acompletion,
+        ),
+    ):
+        task_run = await adapter.invoke("try again please", prior_trace=prior_trace)
+
+    sent_messages = captured_kwargs["messages"]
+    for m in sent_messages:
+        if isinstance(m, dict):
+            assert "is_error" not in m
+            assert "error_message" not in m
+            assert "kiln_task_tool_data" not in m
+            assert "latency_ms" not in m
+
+    trace = task_run.trace
+    assert trace is not None
+    prior_assistant = trace[1]
+    prior_tool = trace[2]
+    prior_assistant_2 = trace[3]
+    assert prior_assistant.get("latency_ms") == 321
+    assert prior_tool.get("is_error") is True
+    assert prior_tool.get("error_message") == "boom"
+    assert prior_tool.get("kiln_task_tool_data") == "p:::t:::ta:::r"
+    assert prior_assistant_2.get("latency_ms") == 654
+
+    new_assistant = trace[-1]
+    assert new_assistant["role"] == "assistant"
+    assert new_assistant.get("content") == "ok, here is the answer"
+    assert "latency_ms" in new_assistant
+
+
+@pytest.mark.asyncio
+async def test_invoke_multiturn_resume_preserves_kiln_fields_on_tool_results(
+    config, unstructured_task
+):
+    adapter = LiteLlmAdapter(config=config, kiln_task=unstructured_task)
+
+    prior_trace = [
+        {"role": "user", "content": "what is 2+2"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "add", "arguments": '{"a": 2, "b": 2}'},
+                }
+            ],
+            "latency_ms": 111,
+        },
+    ]
+
+    tool_results = [
+        {
+            "tool_call_id": "call_1",
+            "content": "boom",
+            "is_error": True,
+            "error_message": "boom",
+            "kiln_task_tool_data": "p:::t:::ta:::r",
+        }
+    ]
+
+    final_response = ModelResponse(
+        model="test-model",
+        choices=[{"message": {"content": "Got it.", "tool_calls": None}}],
+    )
+
+    captured_kwargs: dict = {}
+
+    async def mock_acompletion(self, **kwargs):
+        captured_kwargs.update(kwargs)
+        return final_response, final_response.choices[0]
+
+    mock_provider = Mock()
+    mock_provider.temp_top_p_exclusive = False
+    mock_provider.reasoning_capable = False
+    mock_provider.parser = None
+    mock_provider.formatter = None
+
+    with (
+        patch.object(adapter, "model_provider", return_value=mock_provider),
+        patch.object(adapter, "litellm_model_id", return_value="openai/test-model"),
+        patch.object(adapter, "build_extra_body", return_value={}),
+        patch.object(adapter, "response_format_options", return_value={}),
+        patch.object(adapter, "available_tools", return_value=[]),
+        patch.object(
+            LiteLlmAdapter,
+            "acompletion_checking_response",
+            new=mock_acompletion,
+        ),
+    ):
+        task_run = await adapter.invoke(tool_results, prior_trace=prior_trace)
+
+    sent_messages = captured_kwargs["messages"]
+    for m in sent_messages:
+        if isinstance(m, dict):
+            assert "is_error" not in m
+            assert "error_message" not in m
+            assert "kiln_task_tool_data" not in m
+            assert "latency_ms" not in m
+
+    trace = task_run.trace
+    assert trace is not None
+    new_tool_msg = next(
+        m
+        for m in trace
+        if m.get("role") == "tool" and m.get("tool_call_id") == "call_1"
+    )
+    assert new_tool_msg.get("is_error") is True
+    assert new_tool_msg.get("error_message") == "boom"
+    assert new_tool_msg.get("kiln_task_tool_data") == "p:::t:::ta:::r"
+
+
 class TestLatencyTracking:
     """Tests for LLM call latency tracking in _run_model_turn and trace messages."""
 
@@ -2591,3 +2823,339 @@ class TestLatencyTracking:
 
         trace_msg = adapter.litellm_message_to_trace_message(msg)
         assert "latency_ms" not in trace_msg
+
+
+class TestUsageTracking:
+    """Tests for per-LLM-call usage tracking in _run_model_turn / _run / trace."""
+
+    @pytest.fixture
+    def adapter(self, config, mock_task):
+        return LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    @pytest.fixture
+    def provider(self):
+        from kiln_ai.adapters.ml_model_list import KilnModelProvider
+
+        return KilnModelProvider(
+            name=ModelProviderName.openrouter, model_id="test-model"
+        )
+
+    @staticmethod
+    def _make_response(content: str, prompt_tokens: int, completion_tokens: int, cost):
+        from litellm.types.utils import Usage as LiteLlmUsage
+
+        usage = LiteLlmUsage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+            cost=cost,
+        )
+        return ModelResponse(
+            model="test-model",
+            choices=[{"message": {"content": content, "tool_calls": None}}],
+            usage=usage,
+        )
+
+    def test_litellm_message_to_trace_message_attaches_usage(self, adapter):
+        """litellm_message_to_trace_message should attach usage when provided."""
+        from litellm.types.utils import Message as LiteLLMMessage
+
+        msg = LiteLLMMessage(role="assistant", content="Hello")
+        u = Usage(input_tokens=5, output_tokens=7, total_tokens=12, cost=0.25)
+
+        trace_msg = adapter.litellm_message_to_trace_message(msg, usage=u)
+        assert trace_msg["usage"] == u
+        # latency stays untouched
+        assert "latency_ms" not in trace_msg
+
+    def test_litellm_message_to_trace_message_omits_usage_when_none(self, adapter):
+        """litellm_message_to_trace_message should omit usage when not provided."""
+        from litellm.types.utils import Message as LiteLLMMessage
+
+        msg = LiteLLMMessage(role="assistant", content="Hello")
+
+        trace_msg = adapter.litellm_message_to_trace_message(msg)
+        assert "usage" not in trace_msg
+
+    def test_all_messages_to_trace_attaches_per_message_usage(self, adapter):
+        """all_messages_to_trace should attach the right Usage to each LiteLLM message."""
+        from litellm.types.utils import Message as LiteLLMMessage
+
+        msg_a = LiteLLMMessage(role="assistant", content="first")
+        msg_b = LiteLLMMessage(role="assistant", content="second")
+        usage_a = Usage(input_tokens=10, output_tokens=20)
+        usage_b = Usage(input_tokens=30, output_tokens=40)
+
+        trace = adapter.all_messages_to_trace(
+            [msg_a, msg_b],
+            message_latency=None,
+            message_usage={0: usage_a, 1: usage_b},
+        )
+
+        assert trace[0]["usage"] == usage_a
+        assert trace[1]["usage"] == usage_b
+
+    def test_all_messages_to_trace_passes_through_dict_messages_with_usage(
+        self, adapter
+    ):
+        """Non-LiteLLM dict messages must pass through with their existing usage preserved."""
+        from litellm.types.utils import Message as LiteLLMMessage
+
+        # Simulates a seeded prior trace assistant message that already has usage attached.
+        seeded_usage = Usage(input_tokens=100, output_tokens=200, cost=0.5)
+        seeded_dict = {
+            "role": "assistant",
+            "content": "from-prior-run",
+            "usage": seeded_usage,
+        }
+        # New LiteLLM-produced assistant message gets fresh per-message usage.
+        new_msg = LiteLLMMessage(role="assistant", content="new")
+        new_usage = Usage(input_tokens=5, output_tokens=6)
+
+        trace = adapter.all_messages_to_trace(
+            [seeded_dict, new_msg],
+            message_latency=None,
+            # Index 0 (the dict) has no entry — and it shouldn't be needed.
+            message_usage={1: new_usage},
+        )
+
+        assert trace[0] is seeded_dict
+        assert trace[0]["usage"] is seeded_usage
+        assert trace[1]["usage"] == new_usage
+
+    def test_all_messages_to_trace_omits_usage_when_dict_is_none(self, adapter):
+        """No message_usage dict means no usage attached on emitted assistant messages."""
+        from litellm.types.utils import Message as LiteLLMMessage
+
+        msg = LiteLLMMessage(role="assistant", content="Hi")
+        trace = adapter.all_messages_to_trace([msg])
+        assert "usage" not in trace[0]
+
+    @pytest.mark.asyncio
+    async def test_run_model_turn_records_per_message_usage(self, adapter, provider):
+        """_run_model_turn should record per-call Usage in message_usage dict."""
+        response = self._make_response(
+            "ok", prompt_tokens=10, completion_tokens=5, cost=0.1
+        )
+        with patch.object(adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                adapter,
+                "acompletion_checking_response",
+                return_value=(response, response.choices[0]),
+            ):
+                result = await adapter._run_model_turn(
+                    provider, [{"role": "user", "content": "Hi"}], None, False
+                )
+
+        assert result.message_usage is not None
+        last_index = len(result.all_messages) - 1
+        recorded = result.message_usage[last_index]
+        assert recorded.input_tokens == 10
+        assert recorded.output_tokens == 5
+        assert recorded.total_tokens == 15
+        assert recorded.cost == 0.1
+        # Per-message records use MessageUsage (no latency field at all);
+        # total_llm_latency_ms only lives on the Usage accumulator.
+        assert isinstance(recorded, MessageUsage)
+        assert not isinstance(recorded, Usage)
+
+    @pytest.mark.asyncio
+    async def test_run_model_turn_records_distinct_usage_across_tool_calls(
+        self, adapter, provider
+    ):
+        """Each LLM call inside a tool-call loop should record its own per-message Usage."""
+        from litellm.types.utils import Usage as LiteLlmUsage
+
+        # First call: requests a tool. Distinct usage.
+        first_usage = LiteLlmUsage(
+            prompt_tokens=10, completion_tokens=20, total_tokens=30, cost=0.1
+        )
+        tool_call_response = ModelResponse(
+            model="test-model",
+            choices=[
+                {
+                    "message": {
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": "some_tool",
+                                    "arguments": '{"arg": "val"}',
+                                },
+                            }
+                        ],
+                    }
+                }
+            ],
+            usage=first_usage,
+        )
+        # Second call: model returns final content. Different usage.
+        second_usage = LiteLlmUsage(
+            prompt_tokens=11, completion_tokens=22, total_tokens=33, cost=0.2
+        )
+        final_response = ModelResponse(
+            model="test-model",
+            choices=[{"message": {"content": "Final answer"}}],
+            usage=second_usage,
+        )
+
+        with patch.object(adapter, "build_completion_kwargs", return_value={}):
+            with patch.object(
+                adapter,
+                "acompletion_checking_response",
+                side_effect=[
+                    (tool_call_response, tool_call_response.choices[0]),
+                    (final_response, final_response.choices[0]),
+                ],
+            ):
+                with patch.object(
+                    adapter,
+                    "process_tool_calls",
+                    return_value=(
+                        None,
+                        [
+                            {
+                                "role": "tool",
+                                "content": "tool result",
+                                "tool_call_id": "call_1",
+                            }
+                        ],
+                    ),
+                ):
+                    result = await adapter._run_model_turn(
+                        provider, [{"role": "user", "content": "Hi"}], None, False
+                    )
+
+        assert result.message_usage is not None
+        # Two distinct assistant messages → two distinct entries with each call's usage.
+        assistant_indices = [
+            i
+            for i, m in enumerate(result.all_messages)
+            if not isinstance(m, dict)  # LiteLLM Message objects (assistant)
+        ]
+        assert len(assistant_indices) == 2
+        first_idx, second_idx = assistant_indices
+        assert result.message_usage[first_idx].input_tokens == 10
+        assert result.message_usage[first_idx].cost == 0.1
+        assert result.message_usage[second_idx].input_tokens == 11
+        assert result.message_usage[second_idx].cost == 0.2
+        # Running aggregate should sum them.
+        assert result.usage.input_tokens == 21
+        assert result.usage.output_tokens == 42
+        assert result.usage.cost == pytest.approx(0.3)
+
+    @pytest.mark.asyncio
+    async def test_run_attaches_per_message_usage_to_trace(self, mock_task, config):
+        """_run() should plumb per-message Usage through to the trace messages."""
+        adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+        response = self._make_response(
+            '{"test": "ok"}', prompt_tokens=12, completion_tokens=8, cost=0.42
+        )
+
+        mock_config_obj = Mock()
+        mock_config_obj.open_ai_api_key = "mock_api_key"
+        mock_config_obj.user_id = "test_user"
+
+        with (
+            patch.object(
+                LiteLlmAdapter,
+                "acompletion_checking_response",
+                new=AsyncMock(return_value=(response, response.choices[0])),
+            ),
+            patch("kiln_ai.utils.config.Config.shared", return_value=mock_config_obj),
+        ):
+            run_output, total_usage = await adapter._run("Hi")
+
+        assert run_output.trace is not None
+        assistant_messages = [
+            m for m in run_output.trace if m.get("role") == "assistant"
+        ]
+        assert len(assistant_messages) >= 1
+        last_assistant = assistant_messages[-1]
+        attached = last_assistant.get("usage")
+        assert attached is not None
+        assert attached.input_tokens == 12
+        assert attached.output_tokens == 8
+        assert attached.cost == 0.42
+        # Per-message records are MessageUsage — no latency field at all.
+        # The canonical per-call latency lives on the message's `latency_ms`.
+        assert isinstance(attached, MessageUsage)
+        assert not isinstance(attached, Usage)
+
+        # The running aggregate (TaskRun.usage) matches a single-call sum.
+        assert total_usage is not None
+        assert total_usage.input_tokens == 12
+        assert total_usage.output_tokens == 8
+        assert total_usage.cost == 0.42
+
+    @pytest.mark.asyncio
+    async def test_run_with_prior_trace_preserves_seeded_per_message_usage(
+        self, mock_task
+    ):
+        """A seeded prior trace's per-message usage should pass through unchanged into the new trace."""
+        cfg = LiteLlmConfig(
+            base_url="https://api.test.com",
+            run_config_properties=KilnAgentRunConfigProperties(
+                model_name="test-model",
+                model_provider_name="openai_compatible",
+                prompt_id="simple_prompt_builder",
+                structured_output_mode="json_schema",
+            ),
+            default_headers={"X-Test": "test"},
+            additional_body_options={"api_key": "test_key"},
+        )
+
+        seeded_usage = Usage(input_tokens=99, output_tokens=88, cost=0.7)
+        prior_trace = [
+            {"role": "user", "content": "hi"},
+            {
+                "role": "assistant",
+                "content": "hello",
+                "usage": seeded_usage,
+            },
+        ]
+
+        adapter = LiteLlmAdapter(config=cfg, kiln_task=mock_task)
+
+        async def mock_run_model_turn(
+            provider, prior_messages, top_logprobs, skip_response_format
+        ):
+            from litellm.types.utils import Message as LiteLLMMessage
+
+            new_msg = LiteLLMMessage(role="assistant", content="How can I help?")
+            extended = list(prior_messages)
+            extended.append(new_msg)
+            new_index = len(extended) - 1
+            return ModelTurnResult(
+                assistant_message="How can I help?",
+                all_messages=extended,
+                model_response=None,
+                model_choice=None,
+                usage=Usage(input_tokens=3, output_tokens=4, cost=0.05),
+                message_usage={
+                    new_index: Usage(input_tokens=3, output_tokens=4, cost=0.05)
+                },
+            )
+
+        adapter._run_model_turn = mock_run_model_turn
+
+        run_output, _ = await adapter._run("follow-up", prior_trace=prior_trace)
+
+        assert run_output.trace is not None
+        # The seeded assistant message keeps its original usage. Equality (not
+        # identity) — _run() deepcopies initial_messages, which is correct
+        # behaviour: the new TaskRun's trace should not share mutable state
+        # with the prior_trace argument.
+        seeded_msg = run_output.trace[1]
+        assert seeded_msg.get("usage") == seeded_usage
+        # The newly-produced assistant message has its own usage.
+        new_assistant = run_output.trace[-1]
+        assert new_assistant["role"] == "assistant"
+        new_usage = new_assistant.get("usage")
+        assert new_usage is not None
+        assert new_usage.input_tokens == 3
+        assert new_usage.output_tokens == 4
+        assert new_usage.cost == 0.05

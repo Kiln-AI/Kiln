@@ -7,14 +7,10 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
-from litellm.types.utils import (
-    ChatCompletionMessageToolCall,
-    Choices,
-    ModelResponse,
-)
+from litellm.types.utils import ChatCompletionMessageToolCall, Choices, ModelResponse
 
 from kiln_ai.adapters.chat import ChatCompletionMessageIncludingLiteLLM
-from kiln_ai.adapters.chat.chat_formatter import ChatFormatter, ToolResponseMessage
+from kiln_ai.adapters.chat.chat_formatter import ChatFormatter, chat_message_to_dict
 from kiln_ai.adapters.litellm_utils.litellm_streaming import StreamingCompletion
 from kiln_ai.adapters.ml_model_list import KilnModelProvider
 from kiln_ai.adapters.model_adapters.stream_events import (
@@ -23,7 +19,7 @@ from kiln_ai.adapters.model_adapters.stream_events import (
     ToolCallEventType,
 )
 from kiln_ai.adapters.run_output import RunOutput
-from kiln_ai.datamodel import Usage
+from kiln_ai.datamodel import MessageUsage, Usage
 
 if TYPE_CHECKING:
     from kiln_ai.adapters.model_adapters.litellm_adapter import LiteLlmAdapter
@@ -67,7 +63,12 @@ class AdapterStream:
         self._top_logprobs = top_logprobs
         self._result: AdapterStreamResult | None = None
         self._iterated = False
+        # Per-LLM-call latency / usage, keyed by index in the messages list.
+        # Mirrors the non-streaming adapter — we don't own the LiteLLM
+        # message objects, so we accumulate side-channel state and attach
+        # it during ``all_messages_to_trace`` at finalization.
         self._message_latency: dict[int, int] = {}
+        self._message_usage: dict[int, MessageUsage] = {}
 
     @property
     def result(self) -> AdapterStreamResult:
@@ -103,10 +104,7 @@ class AdapterStream:
             for message in turn.messages:
                 if message.content is None:
                     raise ValueError("Empty message content isn't allowed")
-                msg_dict: dict = {"role": message.role, "content": message.content}
-                if isinstance(message, ToolResponseMessage):
-                    msg_dict["tool_call_id"] = message.tool_call_id
-                self._messages.append(msg_dict)  # type: ignore[arg-type]
+                self._messages.append(chat_message_to_dict(message))  # type: ignore[arg-type]
 
             skip_response_format = not turn.final_call
             turn_top_logprobs = self._top_logprobs if turn.final_call else None
@@ -141,7 +139,7 @@ class AdapterStream:
             raise RuntimeError(f"assistant message is not a string: {prior_output}")
 
         trace = self._adapter.all_messages_to_trace(
-            self._messages, self._message_latency
+            self._messages, self._message_latency, self._message_usage
         )
         self._result = AdapterStreamResult(
             run_output=RunOutput(
@@ -177,7 +175,8 @@ class AdapterStream:
             call_latency_ms = int((time.monotonic() - start) * 1000)
 
             response, response_choice = _validate_response(stream.response)
-            usage += self._adapter.usage_from_response(response)
+            call_usage = self._adapter.usage_from_response(response)
+            usage += call_usage
             usage.total_llm_latency_ms = (
                 usage.total_llm_latency_ms or 0
             ) + call_latency_ms
@@ -191,6 +190,7 @@ class AdapterStream:
 
             self._messages.append(response_choice.message)
             self._message_latency[len(self._messages) - 1] = call_latency_ms
+            self._message_usage[len(self._messages) - 1] = call_usage
 
             if tool_calls and len(tool_calls) > 0:
                 # Check for return_on_tool_call BEFORE processing

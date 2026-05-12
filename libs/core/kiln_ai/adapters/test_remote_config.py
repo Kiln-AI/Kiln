@@ -1472,9 +1472,18 @@ except Exception as e:
         script_path = tmp_path / "test_v0_19.py"
         script_path.write_text(test_script)
 
+        # v0.19 constructs openai.AsyncOpenAI(api_key=Config.shared().open_ai_api_key or "")
+        # at import time (kiln_ai/adapters/fine_tune/openai_finetune.py), and newer openai
+        # SDKs reject an empty api_key with a "Missing credentials" error. Provide a dummy
+        # key so the import succeeds in environments without OPENAI_API_KEY (e.g. CI).
+        subprocess_env = {**os.environ, "OPENAI_API_KEY": "dummy-for-import"}
+
         # Run the script using uv
         result = subprocess.run(
-            ["uv", "run", str(script_path)], capture_output=True, text=True
+            ["uv", "run", str(script_path)],
+            capture_output=True,
+            text=True,
+            env=subprocess_env,
         )
 
         # Check if the test passed

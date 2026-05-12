@@ -7,7 +7,7 @@
     filename_string_validator_default,
     normalize_filename_string,
   } from "$lib/utils/input_validators"
-  import { load_available_prompts } from "$lib/stores"
+  import { load_task_prompts } from "$lib/stores/prompts_store"
   import { goto } from "$app/navigation"
   import posthog from "posthog-js"
 
@@ -76,7 +76,14 @@
         is_clone: clone_mode,
       })
 
-      await load_available_prompts(true)
+      try {
+        await load_task_prompts(project_id, task_id, true)
+      } catch (refreshError) {
+        console.warn(
+          "Prompt was created, but refreshing the task prompt cache failed",
+          refreshError,
+        )
+      }
 
       complete = true
       if (redirect_from === "optimize") {
