@@ -605,7 +605,7 @@ class BaseAdapter(metaclass=ABCMeta):
         # Pick the best chat strategy for the model given it has a cot prompt.
         reasoning_capable = self.model_provider().reasoning_capable
         if reasoning_capable:
-            # "Thinking" LLM designed to output thinking in a structured format. We'll use it's native format.
+            # "Thinking" LLM designed to output thinking in a structured format. We'll use its native format.
             # A simple message with the COT prompt appended to the message list is sufficient
             return get_chat_formatter(
                 strategy=ChatStrategy.single_turn_r1_thinking,

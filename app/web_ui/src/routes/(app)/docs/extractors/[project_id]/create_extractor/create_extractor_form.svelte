@@ -132,14 +132,14 @@
       <div class="font-medium">Prompt Options</div>
       <div class="text-sm text-gray-500 mt-1">
         Specify the prompt which will be used to extract data from your
-        documents. Each document type has it's own prompt. Leave blank to use
-        the default.
+        documents. Each document type has its own prompt. Leave blank to use the
+        default.
       </div>
     </div>
     <div class="flex flex-col gap-2">
       <FormElement
         label="Document Extraction Prompt"
-        description="A prompt used to extracting documents (e.g. PDFs, HTML, etc.)."
+        description="A prompt used for extracting documents (e.g. PDFs, HTML, etc.)."
         info_description="Typically something like 'Transcribe the document into markdown.' or 'Transcribe the document into plain text.'"
         optional={true}
         inputType="textarea"

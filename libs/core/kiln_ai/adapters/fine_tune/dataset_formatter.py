@@ -82,7 +82,7 @@ def build_training_chat(
         task_run.input,
         thinking_instructions,
     )
-    # First turn already has it's content (user message)
+    # First turn already has its content (user message)
     chat_formatter.next_turn(None)
 
     # Extract the tool calls from the Traces and insert into the internal messages list

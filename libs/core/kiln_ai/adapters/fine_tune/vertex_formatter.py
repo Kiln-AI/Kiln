@@ -25,7 +25,7 @@ def generate_vertex_gemini(
     if not training_chat:
         raise ValueError("Training chat cannot be empty")
 
-    # System message get's it's own entry in top level UI
+    # System message gets its own entry in top level UI
     system_instruction = training_chat[0].content
 
     contents: list[Dict[str, Any]] = []
@@ -35,7 +35,7 @@ def generate_vertex_gemini(
     """        
     Store consecutive tool responses
     OpenAI format expects tool responses to be in separate tool role messages
-    #Vertex expects all tool responses from a single assistant message to be in the same list.
+    # Vertex expects all tool responses from a single assistant message to be in the same list.
 
     OpenAI:
             {

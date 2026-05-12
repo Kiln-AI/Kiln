@@ -104,7 +104,7 @@ class MockAdapter(BaseAdapter):
         return "mock_adapter"
 
 
-async def test_mock_unstructred_response(tmp_path):
+async def test_mock_unstructured_response(tmp_path):
     task = build_structured_output_test_task(tmp_path)
 
     # don't error on valid response
@@ -126,7 +126,7 @@ async def test_mock_unstructred_response(tmp_path):
         ValueError,
         match="This task requires JSON output but the model didn't return valid JSON",
     ):
-        # Not a structed response so should error
+        # Not a structured response so should error
         run = await adapter.invoke("You are a mock, send me the response!")
 
     # Should error, expecting a string, not a dict
