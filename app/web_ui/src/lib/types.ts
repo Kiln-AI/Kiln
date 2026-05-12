@@ -126,12 +126,11 @@ export type AvailableProviderInfo =
 export type TraceMessage =
   | components["schemas"]["ChatCompletionDeveloperMessageParam"]
   | components["schemas"]["ChatCompletionSystemMessageParam"]
-  | components["schemas"]["ChatCompletionUserMessageParam"]
-  | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"]
+  | components["schemas"]["ChatCompletionUserMessageParam-Input"]
+  | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"]
   | components["schemas"]["ChatCompletionToolMessageParamWrapper"]
   | components["schemas"]["ChatCompletionFunctionMessageParam"]
 export type Trace = TraceMessage[]
-export type ErrorWithTrace = components["schemas"]["ErrorWithTrace"]
 export type ToolCallMessageParam =
   components["schemas"]["ChatCompletionMessageFunctionToolCallParam"]
 export type SearchToolApiDescription =
@@ -146,9 +145,9 @@ export type FeedbackSource = components["schemas"]["FeedbackSource"]
 
 // Copilot API types
 export type SyntheticDataGenerationStepConfigApi =
-  components["schemas"]["SyntheticDataGenerationStepConfigApi"]
+  components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"]
 export type SyntheticDataGenerationSessionConfigApi =
-  components["schemas"]["SyntheticDataGenerationSessionConfigApi"]
+  components["schemas"]["SyntheticDataGenerationSessionConfigApi-Input"]
 export type TaskMetadataApi = components["schemas"]["TaskMetadataApi"]
 export type ReviewedExample = components["schemas"]["ReviewedExample"]
 export type SampleApi = components["schemas"]["SampleApi"]
