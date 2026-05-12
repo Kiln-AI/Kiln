@@ -17,6 +17,9 @@ dependencies = [
     "sentry-sdk>=2.0.0",
 ]
 
+[tool.uv]
+exclude-newer = "7 days"
+
 # We don't really want to build a wheel for desktop, it's a pyinstaller project. This is a minimal build to take care of errors.
 [tool.hatch.build.targets.wheel]
 only-include = ["__init__.py"]
