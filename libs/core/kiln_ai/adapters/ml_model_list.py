@@ -2270,43 +2270,43 @@ built_in_models: List[KilnModel] = [
                 available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
                 default_thinking_level="high",
             ),
-            KilnModelProvider(
-                name=ModelProviderName.gemini_api,
-                model_id="gemini-3.1-flash-lite",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                supports_doc_extraction=True,
-                multimodal_capable=True,
-                supports_vision=True,
-                multimodal_mime_types=[
-                    # documents
-                    KilnMimeType.PDF,
-                    KilnMimeType.CSV,
-                    KilnMimeType.TXT,
-                    KilnMimeType.HTML,
-                    KilnMimeType.MD,
-                    # images
-                    KilnMimeType.JPG,
-                    KilnMimeType.PNG,
-                    # audio
-                    KilnMimeType.MP3,
-                    KilnMimeType.WAV,
-                    KilnMimeType.OGG,
-                    # video
-                    KilnMimeType.MP4,
-                    KilnMimeType.MOV,
-                ],
-                gemini_reasoning_enabled=True,
-                available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
-                default_thinking_level="high",
-            ),
-            KilnModelProvider(
-                name=ModelProviderName.vertex,
-                model_id="gemini-3.1-flash-lite",
-                structured_output_mode=StructuredOutputMode.json_schema,
-                gemini_reasoning_enabled=True,
-                available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
-                default_thinking_level="high",
-            ),
+            # KilnModelProvider(
+            #     name=ModelProviderName.gemini_api,
+            #     model_id="gemini-3.1-flash-lite",
+            #     structured_output_mode=StructuredOutputMode.json_schema,
+            #     supports_doc_extraction=True,
+            #     multimodal_capable=True,
+            #     supports_vision=True,
+            #     multimodal_mime_types=[
+            #         # documents
+            #         KilnMimeType.PDF,
+            #         KilnMimeType.CSV,
+            #         KilnMimeType.TXT,
+            #         KilnMimeType.HTML,
+            #         KilnMimeType.MD,
+            #         # images
+            #         KilnMimeType.JPG,
+            #         KilnMimeType.PNG,
+            #         # audio
+            #         KilnMimeType.MP3,
+            #         KilnMimeType.WAV,
+            #         KilnMimeType.OGG,
+            #         # video
+            #         KilnMimeType.MP4,
+            #         KilnMimeType.MOV,
+            #     ],
+            #     gemini_reasoning_enabled=True,
+            #     available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
+            #     default_thinking_level="high",
+            # ),
+            # KilnModelProvider(
+            #     name=ModelProviderName.vertex,
+            #     model_id="gemini-3.1-flash-lite",
+            #     structured_output_mode=StructuredOutputMode.json_schema,
+            #     gemini_reasoning_enabled=True,
+            #     available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
+            #     default_thinking_level="high",
+            # ),
         ],
     ),
     # Gemini 3.1 Flash Lite Preview
