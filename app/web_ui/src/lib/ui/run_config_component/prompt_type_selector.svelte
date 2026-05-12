@@ -1,6 +1,11 @@
 <script lang="ts">
   import FormElement from "$lib/utils/form_element.svelte"
-  import { current_task_prompts } from "$lib/stores"
+  import { get_task_composite_id } from "$lib/stores"
+  import {
+    prompts_by_task_composite_id,
+    prompts_errors_by_task_composite_id,
+    load_task_prompts,
+  } from "$lib/stores/prompts_store"
   import type { PromptResponse } from "$lib/types"
   import Warning from "$lib/ui/warning.svelte"
   import type { OptionGroup, Option } from "$lib/ui/fancy_select_types"
@@ -17,8 +22,8 @@
   export let fine_tune_prompt_id: string | undefined = undefined
   export let description: string | undefined = undefined
   export let info_description: string | undefined = undefined
-  export let project_id: string | null = null
-  export let task_id: string | null = null
+  export let project_id: string | null
+  export let task_id: string | null
 
   let has_rated_data = false
   let has_repair_data = false
@@ -59,6 +64,26 @@
       return "Requires at least one rated response in your dataset."
     }
     return null
+  }
+
+  // Drive the prompt list off the URL-scoped task params instead of the
+  // ui_state-scoped current_task_prompts, so a deep link to a task that
+  // doesn't match the sidebar still shows the right prompts.
+  $: task_prompts =
+    project_id && task_id
+      ? $prompts_by_task_composite_id[
+          get_task_composite_id(project_id, task_id)
+        ] ?? null
+      : null
+  $: prompt_load_error = !!(
+    project_id &&
+    task_id &&
+    $prompts_errors_by_task_composite_id[
+      get_task_composite_id(project_id, task_id)
+    ]
+  )
+  $: if (project_id && task_id) {
+    load_task_prompts(project_id, task_id)
   }
 
   // Re-fetch rated/repair data whenever project_id or task_id changes so the
@@ -115,7 +140,7 @@
   }
 
   $: options = build_prompt_options(
-    $current_task_prompts,
+    task_prompts,
     exclude_cot,
     custom_prompt_name,
     fine_tune_prompt_id,
@@ -127,7 +152,7 @@
   )
 
   function build_prompt_options(
-    current_task_prompts: PromptResponse | null,
+    task_prompts: PromptResponse | null,
     exclude_cot: boolean,
     custom_prompt_name: string | undefined,
     fine_tune_prompt_id: string | undefined,
@@ -140,14 +165,14 @@
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _has_repair: boolean,
   ): OptionGroup[] {
-    if (!current_task_prompts) {
+    if (!task_prompts) {
       return []
     }
 
     const grouped_options: OptionGroup[] = []
 
     const generators: Option[] = []
-    for (const generator of current_task_prompts.generators) {
+    for (const generator of task_prompts.generators) {
       if (generator.chain_of_thought && exclude_cot) {
         continue
       }
@@ -189,7 +214,7 @@
     }
 
     const static_prompts: Option[] = []
-    for (const prompt of current_task_prompts.prompts) {
+    for (const prompt of task_prompts.prompts) {
       if (!prompt.id) {
         continue
       }
@@ -260,7 +285,7 @@
     }
     // This shouldn't be needed, but it is. Svelte doesn't re-evaluate the options when the fine-tune prompt id changes.
     options = build_prompt_options(
-      $current_task_prompts,
+      task_prompts,
       exclude_cot,
       custom_prompt_name,
       fine_tune_prompt_id,
@@ -276,8 +301,10 @@
 <FormElement
   label="Prompt Method"
   inputType="fancy_select"
-  empty_state_message="Loading prompts..."
-  empty_state_subtitle="Please wait."
+  empty_state_message={prompt_load_error
+    ? "Failed to load prompts"
+    : "Loading prompts..."}
+  empty_state_subtitle={prompt_load_error ? null : "Please wait."}
   {description}
   {info_description}
   bind:value={prompt_method}
@@ -287,6 +314,6 @@
 
 {#if is_fine_tune_model && prompt_method != fine_tune_prompt_id}
   <Warning
-    warning_message="We strongly recommend using prompt the model was trained on when running a fine-tuned model."
+    warning_message="We strongly recommend using the prompt the model was trained on when running a fine-tuned model."
   />
 {/if}

@@ -7,6 +7,19 @@
   import MultiIntro from "$lib/ui/multi_intro.svelte"
   import { onMount } from "svelte"
   import { goto } from "$app/navigation"
+  import { page } from "$app/stores"
+
+  // This component renders on BOTH /generate/[ids]/ (cards) and /synth (when
+  // the synth flow shows the eval/finetune Intro). When the user clicks one
+  // of the gotos here while already on the same target route, push-to-history
+  // would stack a duplicate entry for the same logical page — making back
+  // press once just toggle search params instead of leaving. Use replaceState
+  // when staying on the same route so back behaves naturally.
+  function nav(target_path: string, query: string) {
+    const url = `${target_path}?${query}`
+    const same_route = $page.url.pathname === target_path
+    goto(url, { replaceState: same_route })
+  }
   import EvalIcon from "$lib/ui/icons/eval_icon.svelte"
   import FinetuneIcon from "$lib/ui/icons/finetune_icon.svelte"
   import { encode_splits_for_url } from "$lib/utils/splits_util"
@@ -94,7 +107,7 @@
   function select_spec(spec: Spec) {
     const evaluator = spec.eval_id ? evals_by_id[spec.eval_id] : null
     if (!evaluator) {
-      alert("This spec doesn't have an associated eval yet.")
+      alert("This eval is not ready yet. Please configure its judge first.")
       return
     }
     const eval_set_filter_id = evaluator.eval_set_filter_id
@@ -115,7 +128,7 @@
       }
     } else {
       alert(
-        "We can't generate synthetic data for this eval as it's eval sets are not defined by tag filters. Select an eval which uses tags to define eval sets.",
+        "We can't generate synthetic data for this eval as its eval sets are not defined by tag filters. Select an eval which uses tags to define eval sets.",
       )
       return
     }
@@ -139,9 +152,9 @@
 
     // For reference answer evals, redirect to QnA page instead of synth page
     if (template_id === "rag") {
-      goto(`/generate/${project_id}/${task_id}/qna?${params.toString()}`)
+      nav(`/generate/${project_id}/${task_id}/qna`, params.toString())
     } else {
-      goto(`/generate/${project_id}/${task_id}/synth?${params.toString()}`)
+      nav(`/generate/${project_id}/${task_id}/synth`, params.toString())
     }
     specs_dialog?.close()
   }
@@ -194,7 +207,7 @@
   }
 
   async function show_fine_tuning_dialog() {
-    // Special case: if loading or there is an error, show the dialog as it can handle these states. Usually it would alread be loaded by now since it's called onMount.
+    // Special case: if loading or there is an error, show the dialog as it can handle these states. Usually it would already be loaded by now since it's called onMount.
     if (finetune_dataset_info_loading || finetune_dataset_info_error) {
       fine_tuning_dialog?.show()
       return
@@ -222,7 +235,7 @@
     // .set will automatically URL encode
     params.set("splits", encode_splits_for_url(splits))
 
-    goto(`/generate/${project_id}/${task_id}/synth?${params.toString()}`)
+    nav(`/generate/${project_id}/${task_id}/synth`, params.toString())
     fine_tuning_dialog?.close()
   }
 
@@ -335,7 +348,7 @@
     </div>
   {:else if specs_error || evals_error}
     <div class="font-light">
-      There was an error loading the specs. Please try again.
+      There was an error loading the evals. Please try again.
     </div>
     <div class="font-light text-error">
       {specs_error?.message ?? evals_error?.message ?? "Unknown error"}
@@ -346,7 +359,7 @@
         href={`/specs/${project_id}/${task_id}/select_template`}
         class="btn btn-wide btn-outline mx-auto my-4"
       >
-        Create a New Spec
+        Create a New Eval
       </a>
     </div>
     <div class="flex items-center mt-4">
@@ -354,7 +367,7 @@
       <div class="px-4 text-sm font-light text-base-content/60">OR</div>
       <div class="flex-1 border-t border-base-300"></div>
     </div>
-    <div class="font-medium text-center my-6">Select an Existing Spec</div>
+    <div class="font-medium text-center my-6">Select an Existing Eval</div>
     <div class="flex flex-col gap-3">
       {#each specs as spec}
         <button
@@ -370,8 +383,8 @@
   {:else}
     <div class="font-light">
       <p class="mt-2 mb-6 text-sm">
-        Create a spec with an eval to get started. This helps us understand what
-        specific scenarios to generate data for.
+        Create an eval to get started. This helps us understand what specific
+        scenarios to generate data for.
       </p>
     </div>
     <div class="flex items-center mt-4">
@@ -379,7 +392,7 @@
         href={`/specs/${project_id}/${task_id}/select_template`}
         class="btn btn-wide btn-primary mx-auto my-4"
       >
-        Create a New Spec
+        Create a New Eval
       </a>
     </div>
   {/if}

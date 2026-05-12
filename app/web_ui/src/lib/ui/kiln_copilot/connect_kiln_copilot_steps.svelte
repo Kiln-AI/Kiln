@@ -45,7 +45,7 @@
       await kinde.register()
     } catch (e) {
       console.error("openSignup error", e)
-      errorMessage = "Failed to open Kiln Copilot signup"
+      errorMessage = "Failed to open Kiln Pro signup"
     }
   }
 
@@ -96,7 +96,7 @@
       tokenExchangeFailed = false
     } catch (e) {
       console.error("createApiKeyFromToken error", e)
-      errorMessage = "Failed to connect to Kiln Copilot. Please try again."
+      errorMessage = "Failed to connect to Kiln Pro. Please try again."
       return
     } finally {
       connecting = false
@@ -139,9 +139,7 @@
   <div class="h-12 w-12 mx-auto mb-4">
     <img src="/images/animated_logo.svg" alt="Kiln logo" />
   </div>
-  <h1 class="text-xl font-medium flex-none text-center">
-    Connect Kiln Copilot
-  </h1>
+  <h1 class="text-xl font-medium flex-none text-center">Connect Kiln Pro</h1>
   <p class="text-center font-light mx-8 mb-8">Sign in or create an account.</p>
   <div class="flex justify-center">
     <button

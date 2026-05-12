@@ -33,6 +33,13 @@ export class SynthDataGuidanceDataModel {
   public topic_guidance: Writable<string | null> = writable(null)
   public input_guidance: Writable<string | null> = writable(null)
   public output_guidance: Writable<string | null> = writable(null)
+  // The task's saved data guide text. Loaded once on init; not edited from
+  // the synth flow.
+  public data_guide: Writable<string> = writable("")
+  // Whether to include the saved data guide in generation requests. Shared
+  // across every SynthDataGuide mount (synth page, modal, node) so toggling
+  // in one place applies everywhere.
+  public use_data_guide: Writable<boolean> = writable(false)
   public select_options: Writable<OptionGroup[]> = writable([])
   public loading_error: Writable<KilnError | null> = writable(null)
 
@@ -61,6 +68,7 @@ export class SynthDataGuidanceDataModel {
     gen_type: "training" | "eval",
     task: Task,
     splits: Record<string, number>,
+    data_guide: string = "",
   ): Promise<void> {
     this.eval_id = eval_id
     this.project_id = project_id
@@ -68,6 +76,8 @@ export class SynthDataGuidanceDataModel {
     this.gen_type = gen_type
     this.task = task
     this.splits.set(splits)
+    this.data_guide.set(data_guide)
+    this.use_data_guide.set(!!data_guide)
 
     // Set the selected template if it exists in static. The other eval templates are set as part of the load_eval flow.
     if (template_id && static_templates.find((t) => t.id == template_id)) {
@@ -272,16 +282,21 @@ export class SynthDataGuidanceDataModel {
       return "None"
     }
 
+    const label = this.template_label(selected_template)
+    return label ? label + " Template" : "None"
+  }
+
+  public template_label(selected_template: string): string | null {
     const selection_options = get(this.select_options)
     for (const group of selection_options) {
       const selected_option = group.options.find(
         (option) => option.value == selected_template,
       )
       if (selected_option) {
-        return selected_option.label + " Template"
+        return selected_option.label
       }
     }
-    return "None"
+    return null
   }
 
   private requirements_eval_template(
@@ -694,7 +709,7 @@ When generating model inputs, generate inputs that are likely to cause the model
 
 IMPORTANT FOR TOP-LEVEL TOPICS: When generating top-level topics (no parent topic path), aim for a 50/50 balance between:
 - Topics that relate to the "appropriate tool use" guidelines (in-domain queries where the tool should be used)
-- Topics that relate to scenarios where the tool should not be called. It is important that a breadth of scenarios are built. Optionally user's may help you here by providing some "inappropriate tool use" guidelines 
+- Topics that relate to scenarios where the tool should not be called. It is important that a breadth of scenarios are built. Optionally users may help you here by providing some "inappropriate tool use" guidelines 
 
 IMPORTANT FOR SUBTOPICS: When generating subtopics (with a parent topic path), generate subtopics that are naturally relevant to the parent topic.
 

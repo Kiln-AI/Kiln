@@ -22,6 +22,7 @@ from kiln_ai.datamodel import (
     strict_mode,
 )
 from kiln_ai.datamodel.basemodel import generate_model_id
+from kiln_ai.datamodel.data_guide import DataGuide
 from kiln_ai.datamodel.datamodel_enums import (
     FeedbackSource,
     FineTuneStatusType,
@@ -51,10 +52,11 @@ from kiln_ai.datamodel.task_output import (
     TaskOutput,
     TaskOutputRating,
 )
-from kiln_ai.datamodel.task_run import TaskRun, Usage
+from kiln_ai.datamodel.task_run import MessageUsage, TaskRun, Usage
 
 __all__ = [
     "BasePrompt",
+    "DataGuide",
     "DataSource",
     "DataSourceProperty",
     "DataSourceType",
@@ -65,6 +67,7 @@ __all__ = [
     "FeedbackSource",
     "FineTuneStatusType",
     "Finetune",
+    "MessageUsage",
     "Priority",
     "Project",
     "Prompt",

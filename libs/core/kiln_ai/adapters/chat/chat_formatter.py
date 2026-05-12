@@ -44,6 +44,9 @@ class ToolResponseMessage:
     role: Literal["tool"]
     content: str
     tool_call_id: str
+    is_error: Optional[bool] = None
+    error_message: Optional[str] = None
+    kiln_task_tool_data: Optional[str] = None
 
 
 ChatMessage = Union[
@@ -51,6 +54,24 @@ ChatMessage = Union[
     ToolCallMessage,
     ToolResponseMessage,
 ]
+
+
+def chat_message_to_dict(message: ChatMessage) -> dict:
+    """Convert a ChatMessage dataclass to an OpenAI-shaped message dict, including
+    Kiln-specific fields (``is_error``, ``error_message``, ``kiln_task_tool_data``)
+    when present on tool responses."""
+    msg_dict: dict = {"role": message.role, "content": message.content}
+    if isinstance(message, ToolCallMessage):
+        msg_dict["tool_calls"] = message.tool_calls
+    elif isinstance(message, ToolResponseMessage):
+        msg_dict["tool_call_id"] = message.tool_call_id
+        if message.is_error is not None:
+            msg_dict["is_error"] = message.is_error
+        if message.error_message is not None:
+            msg_dict["error_message"] = message.error_message
+        if message.kiln_task_tool_data is not None:
+            msg_dict["kiln_task_tool_data"] = message.kiln_task_tool_data
+    return msg_dict
 
 
 @dataclass
@@ -193,7 +214,7 @@ class TwoMessageCotFormatter(ChatFormatter):
             # User message combines the input and the thinking instructions
             formatted_user_message = format_user_message(self.user_input)
 
-            # If the input contains conversation_history, it's a full_trace evaluation description and formatted_user_message contains more that a single turn of user_input and shouldn't be wrapped in <user_input> tags to avoid confusing the judge models.
+            # If the input contains conversation_history, it's a full_trace evaluation description and formatted_user_message contains more than a single turn of user_input and shouldn't be wrapped in <user_input> tags to avoid confusing the judge models.
             if "<conversation_history>" in formatted_user_message:
                 user_message = (
                     f"{formatted_user_message}\n\n{self.thinking_instructions}"
@@ -303,6 +324,9 @@ class MultiturnFormatter(ChatFormatter):
                         role="tool",
                         content=str(item.get("content", "")),
                         tool_call_id=item["tool_call_id"],
+                        is_error=item.get("is_error"),
+                        error_message=item.get("error_message"),
+                        kiln_task_tool_data=item.get("kiln_task_tool_data"),
                     )
                     for item in raw_items
                 ]

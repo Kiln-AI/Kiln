@@ -46,6 +46,7 @@ export type EvalConfigType = components["schemas"]["EvalConfigType"]
 export type EvalDataType = components["schemas"]["EvalDataType"]
 export type EvalConfig = components["schemas"]["EvalConfig"]
 export type TaskRunConfig = components["schemas"]["TaskRunConfig"]
+export type DataGuide = components["schemas"]["DataGuide"]
 export type KilnAgentRunConfigProperties =
   components["schemas"]["KilnAgentRunConfigProperties"]
 export type McpRunConfigProperties =
@@ -125,8 +126,8 @@ export type AvailableProviderInfo =
 export type TraceMessage =
   | components["schemas"]["ChatCompletionDeveloperMessageParam"]
   | components["schemas"]["ChatCompletionSystemMessageParam"]
-  | components["schemas"]["ChatCompletionUserMessageParam-Input"]
-  | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"]
+  | components["schemas"]["ChatCompletionUserMessageParam"]
+  | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"]
   | components["schemas"]["ChatCompletionToolMessageParamWrapper"]
   | components["schemas"]["ChatCompletionFunctionMessageParam"]
 export type Trace = TraceMessage[]
@@ -145,9 +146,9 @@ export type FeedbackSource = components["schemas"]["FeedbackSource"]
 
 // Copilot API types
 export type SyntheticDataGenerationStepConfigApi =
-  components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"]
+  components["schemas"]["SyntheticDataGenerationStepConfigApi"]
 export type SyntheticDataGenerationSessionConfigApi =
-  components["schemas"]["SyntheticDataGenerationSessionConfigApi-Input"]
+  components["schemas"]["SyntheticDataGenerationSessionConfigApi"]
 export type TaskMetadataApi = components["schemas"]["TaskMetadataApi"]
 export type ReviewedExample = components["schemas"]["ReviewedExample"]
 export type SampleApi = components["schemas"]["SampleApi"]

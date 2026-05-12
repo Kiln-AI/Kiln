@@ -3,7 +3,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from kiln_ai.adapters.model_adapters.base_adapter import BaseAdapter, RunOutput
-from kiln_ai.datamodel import DataSource, DataSourceType, Project, Task, Usage
+from kiln_ai.datamodel import (
+    DataSource,
+    DataSourceType,
+    MessageUsage,
+    Project,
+    Task,
+    Usage,
+)
 from kiln_ai.datamodel.datamodel_enums import InputType
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
 from kiln_ai.utils.config import Config
@@ -555,3 +562,118 @@ async def test_invoke_with_parent_task_run_saves_under_task_with_link(
     by_id = {r.id: r for r in task_runs}
     assert by_id[new_run.id].output.output == "More details!"
     assert by_id[new_run.id].parent_task_run_id == prior_run.id
+
+
+def test_generate_run_sets_cumulative_usage_from_trace(test_task, adapter):
+    """generate_run sums per-message usage across the trace into cumulative_usage."""
+    trace = [
+        {"role": "user", "content": "hi"},
+        {
+            "role": "assistant",
+            "content": "hello",
+            "usage": MessageUsage(input_tokens=10, output_tokens=20, cost=0.1),
+        },
+        {"role": "user", "content": "more"},
+        {
+            "role": "assistant",
+            "content": "ok",
+            "usage": MessageUsage(input_tokens=5, output_tokens=15, cost=0.2),
+        },
+    ]
+
+    task_run = adapter.generate_run(
+        input="hi",
+        input_source=None,
+        run_output=RunOutput(output="ok", intermediate_outputs=None, trace=trace),
+        usage=Usage(input_tokens=15, output_tokens=35, cost=0.3),
+        trace=trace,
+    )
+
+    assert task_run.cumulative_usage is not None
+    assert task_run.cumulative_usage.input_tokens == 15
+    assert task_run.cumulative_usage.output_tokens == 35
+    assert task_run.cumulative_usage.cost == pytest.approx(0.3)
+
+
+def test_generate_run_sets_empty_cumulative_usage_when_trace_is_none(
+    test_task, adapter
+):
+    """No trace → cumulative_usage is an empty MessageUsage (all-None fields), not None."""
+    task_run = adapter.generate_run(
+        input="hi",
+        input_source=None,
+        run_output=RunOutput(output="ok", intermediate_outputs=None),
+    )
+
+    assert task_run.cumulative_usage == MessageUsage()
+
+
+def test_generate_run_fresh_run_cumulative_equals_usage(test_task, adapter):
+    """For a fresh run (trace contains only this run's messages), cumulative_usage's
+    aggregatable fields equal those of usage. cumulative_usage is a MessageUsage
+    (no latency); usage is a Usage."""
+    fresh_usage = Usage(input_tokens=12, output_tokens=8, cost=0.42)
+    fresh_message_usage = MessageUsage(input_tokens=12, output_tokens=8, cost=0.42)
+    trace = [
+        {"role": "user", "content": "hi"},
+        {
+            "role": "assistant",
+            "content": "hello",
+            "usage": fresh_message_usage,
+        },
+    ]
+
+    task_run = adapter.generate_run(
+        input="hi",
+        input_source=None,
+        run_output=RunOutput(output="hello", intermediate_outputs=None, trace=trace),
+        usage=fresh_usage,
+        trace=trace,
+    )
+
+    assert task_run.usage == fresh_usage
+    assert task_run.cumulative_usage == fresh_message_usage
+
+
+def test_generate_run_seeded_run_cumulative_includes_prior_trace_usage(
+    test_task, adapter
+):
+    """Seeded run: cumulative_usage = this run's usage + prior trace's per-message usage."""
+    seeded_usage = Usage(input_tokens=100, output_tokens=200, cost=0.5)
+    new_usage = Usage(input_tokens=10, output_tokens=20, cost=0.05)
+
+    full_trace = [
+        {"role": "user", "content": "hi"},
+        # Seeded prior turn (already had its own usage from a previous run).
+        {
+            "role": "assistant",
+            "content": "hello",
+            "usage": seeded_usage,
+        },
+        {"role": "user", "content": "follow-up"},
+        # New turn produced by this run.
+        {
+            "role": "assistant",
+            "content": "ack",
+            "usage": new_usage,
+        },
+    ]
+
+    # `usage` excludes the seeded portion (it's the new-turn-only running total).
+    task_run = adapter.generate_run(
+        input="follow-up",
+        input_source=None,
+        run_output=RunOutput(output="ack", intermediate_outputs=None, trace=full_trace),
+        usage=new_usage,
+        trace=full_trace,
+    )
+
+    assert task_run.usage == new_usage
+    # cumulative_usage spans the whole trace.
+    assert task_run.cumulative_usage is not None
+    assert task_run.cumulative_usage.input_tokens == 110
+    assert task_run.cumulative_usage.output_tokens == 220
+    assert task_run.cumulative_usage.cost == pytest.approx(0.55)
+    # And it strictly exceeds usage on every populated field.
+    assert task_run.cumulative_usage.input_tokens > (task_run.usage.input_tokens or 0)
+    assert (task_run.cumulative_usage.cost or 0) > (task_run.usage.cost or 0)

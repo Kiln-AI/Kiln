@@ -13,9 +13,16 @@
   export let tight: boolean = false
   export let trusted: boolean = false
   export let outline: boolean = false
+  export let text_size: "xs" | "sm" | "base" | "lg" = "sm"
   import MarkdownBlock from "./markdown_block.svelte"
   // Default to error if no color is provided
   $: color = warning_color || "error"
+  $: text_size_class = {
+    xs: "text-xs",
+    sm: "text-sm",
+    base: "text-base",
+    lg: "text-lg",
+  }[text_size]
 
   function html_warning_message() {
     let message = warning_message
@@ -54,7 +61,7 @@
 
 {#if warning_message}
   <div
-    class="text-sm text-gray-500 flex flex-row items-center {outline
+    class="{text_size_class} text-gray-500 flex flex-row items-center {outline
       ? `border-2 ${get_color('border')} rounded-lg px-4 py-2 mb-6`
       : tight
         ? ''

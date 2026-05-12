@@ -106,7 +106,7 @@ class MockAdapter(BaseAdapter):
         return "mock_adapter"
 
 
-async def test_mock_unstructred_response(tmp_path):
+async def test_mock_unstructured_response(tmp_path):
     task = build_structured_output_test_task(tmp_path)
 
     # don't error on valid response
@@ -124,12 +124,10 @@ async def test_mock_unstructred_response(tmp_path):
         answer = await adapter.invoke("You are a mock, send me the response!")
 
     adapter = MockAdapter(task, response="string instead of dict")
-    # Post-processing parse/validation failures are wrapped in KilnRunError;
-    # the underlying ValueError surfaces via `.original`.
     from kiln_ai.adapters.errors import KilnRunError
 
     with pytest.raises(KilnRunError) as ei:
-        # Not a structed response so should error
+        # Not a structured response so should error
         run = await adapter.invoke("You are a mock, send me the response!")
     assert isinstance(ei.value.original, ValueError)
     assert (

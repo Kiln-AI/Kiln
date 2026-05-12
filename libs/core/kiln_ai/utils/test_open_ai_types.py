@@ -12,9 +12,12 @@ from openai.types.chat import (
     ChatCompletionToolMessageParam as OpenAIChatCompletionToolMessageParam,
 )
 
+from kiln_ai.datamodel.usage import MessageUsage
 from kiln_ai.utils.open_ai_types import (
+    KILN_ONLY_MESSAGE_FIELDS,
     ChatCompletionAssistantMessageParamWrapper,
     ChatCompletionToolMessageParamWrapper,
+    sanitize_messages_for_provider,
     trace_has_pending_client_tool_calls,
 )
 from kiln_ai.utils.open_ai_types import (
@@ -44,6 +47,10 @@ def test_assistant_message_param_properties_match():
     # latency_ms is a Kiln-added property for LLM call timing. Confirm it's there and remove it.
     assert "latency_ms" in kiln_properties, "Kiln should have latency_ms"
     kiln_properties.remove("latency_ms")
+
+    # usage is a Kiln-added property for per-LLM-call token usage and cost.
+    assert "usage" in kiln_properties, "Kiln should have usage"
+    kiln_properties.remove("usage")
 
     assert openai_properties == kiln_properties, (
         f"Property names don't match. "
@@ -209,6 +216,125 @@ def test_tool_message_wrapper_can_be_instantiated():
     }
 
     assert sample_with_none_kiln_data.get("kiln_task_tool_data") is None
+
+
+def test_kiln_only_message_fields_set():
+    assert KILN_ONLY_MESSAGE_FIELDS == frozenset(
+        {"latency_ms", "is_error", "error_message", "kiln_task_tool_data", "usage"}
+    )
+
+
+def test_sanitize_messages_strips_kiln_only_fields():
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "hi"},
+        {
+            "role": "assistant",
+            "content": "hello",
+            "latency_ms": 200,
+            "usage": MessageUsage(input_tokens=10, output_tokens=5, cost=0.001),
+        },
+        {
+            "role": "tool",
+            "content": "{}",
+            "tool_call_id": "c1",
+            "is_error": True,
+            "error_message": "boom",
+            "kiln_task_tool_data": "p:::t:::ta:::r",
+        },
+    ]
+
+    sanitized = sanitize_messages_for_provider(messages)
+
+    assert sanitized == [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "hello"},
+        {"role": "tool", "content": "{}", "tool_call_id": "c1"},
+    ]
+
+
+def test_sanitize_messages_strips_usage_from_assistant():
+    messages = [
+        {
+            "role": "assistant",
+            "content": "hi",
+            "usage": MessageUsage(input_tokens=42, output_tokens=7, cost=0.005),
+        }
+    ]
+
+    sanitized = sanitize_messages_for_provider(messages)
+
+    assert sanitized == [{"role": "assistant", "content": "hi"}]
+    assert "usage" not in sanitized[0]
+
+
+def test_assistant_wrapper_accepts_usage_field():
+    usage = MessageUsage(input_tokens=10, output_tokens=20, total_tokens=30, cost=0.01)
+    message: ChatCompletionAssistantMessageParamWrapper = {
+        "role": "assistant",
+        "content": "ok",
+        "latency_ms": 123,
+        "usage": usage,
+    }
+
+    assert message["role"] == "assistant"
+    assert message.get("latency_ms") == 123
+    assert message.get("usage") is usage
+
+
+def test_sanitize_messages_does_not_mutate_input():
+    original = [
+        {
+            "role": "tool",
+            "content": "{}",
+            "tool_call_id": "c1",
+            "is_error": True,
+            "error_message": "boom",
+        }
+    ]
+    snapshot = [dict(m) for m in original]
+
+    sanitize_messages_for_provider(original)
+
+    assert original == snapshot
+
+
+def test_sanitize_messages_passes_non_dicts_through_unchanged():
+    class Sentinel:
+        pass
+
+    sentinel = Sentinel()
+    messages = [
+        sentinel,
+        {"role": "user", "content": "hi", "latency_ms": 5},
+    ]
+
+    sanitized = sanitize_messages_for_provider(messages)
+
+    assert sanitized[0] is sentinel
+    assert sanitized[1] == {"role": "user", "content": "hi"}
+
+
+def test_sanitize_messages_preserves_other_extension_fields():
+    messages = [
+        {
+            "role": "assistant",
+            "content": "hi",
+            "reasoning_content": "thinking...",
+            "latency_ms": 50,
+        }
+    ]
+
+    sanitized = sanitize_messages_for_provider(messages)
+
+    assert sanitized == [
+        {
+            "role": "assistant",
+            "content": "hi",
+            "reasoning_content": "thinking...",
+        }
+    ]
 
 
 def test_trace_has_pending_client_tool_calls_empty_trace():

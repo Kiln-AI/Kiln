@@ -2,7 +2,8 @@
   "method": "post",
   "path": "/api/projects/{project_id}/kiln_task_tool",
   "agent_policy": {
-    "permission": "deny",
-    "requires_approval": false
+    "permission": "allow",
+    "requires_approval": true,
+    "approval_description": "Register a Kiln task as a tool (also called a sub-agent), making it callable by other agents and run configs."
   }
 }

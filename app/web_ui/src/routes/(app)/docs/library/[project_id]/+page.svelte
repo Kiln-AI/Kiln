@@ -3,7 +3,6 @@
   import { client } from "$lib/api_client"
   import type { KilnDocument } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { onMount } from "svelte"
   import { load_model_info, ui_state } from "$lib/stores"
   import { page } from "$app/stores"
   import { goto, replaceState } from "$app/navigation"
@@ -77,33 +76,34 @@
     { key: "created_at", label: "Created At" },
   ]
 
-  onMount(async () => {
-    get_documents()
-  })
+  $: if (project_id) {
+    error = null
+    documents = null
+    get_documents(project_id)
+  }
 
-  async function get_documents() {
+  async function get_documents(req_project_id: string) {
     try {
       load_model_info()
       loading = true
-      if (!project_id) {
-        throw new Error("Project ID not set.")
-      }
       const { data: documents_response, error: get_error } = await client.GET(
         "/api/projects/{project_id}/documents",
         {
           params: {
             path: {
-              project_id,
+              project_id: req_project_id,
             },
           },
         },
       )
+      if (req_project_id !== project_id) return
       if (get_error) {
         throw get_error
       }
       documents = documents_response
       sortDocuments()
     } catch (e) {
+      if (req_project_id !== project_id) return
       if (e instanceof Error && e.message.includes("Load failed")) {
         error = new KilnError(
           "Could not load dataset. It may belong to a project you don't have access to.",
@@ -113,7 +113,9 @@
         error = createKilnError(e)
       }
     } finally {
-      loading = false
+      if (req_project_id === project_id) {
+        loading = false
+      }
     }
   }
 
@@ -392,7 +394,7 @@
       // Reload UI, even on failure, as partial delete is possible
       selected_documents = new Set()
       select_mode = false
-      await get_documents()
+      await get_documents(project_id)
     }
   }
 
@@ -406,7 +408,7 @@
   }
 
   async function add_selected_tags(): Promise<boolean> {
-    // Don't accidentially remove tags
+    // Don't accidentally remove tags
     remove_tags = new Set()
     return await edit_tags()
   }
@@ -437,7 +439,7 @@
   }
 
   async function remove_selected_tags(): Promise<boolean> {
-    // Don't accidentially add tags
+    // Don't accidentally add tags
     add_tags = []
     return await edit_tags()
   }
@@ -474,7 +476,7 @@
       selected_documents = new Set()
       add_tags = []
       select_mode = false
-      await get_documents()
+      await get_documents(project_id)
     }
   }
 </script>
@@ -802,6 +804,6 @@
 <UploadFileDialog
   bind:this={upload_file_dialog}
   onUploadCompleted={() => {
-    get_documents()
+    get_documents(project_id)
   }}
 />

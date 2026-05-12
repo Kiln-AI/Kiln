@@ -1,6 +1,6 @@
 [project]
 name = "kiln-ai"
-version = "0.27.0"
+version = "1.0.0"
 requires-python = ">=3.10"
 readme = "README.md"
 description = 'Kiln AI'
@@ -67,6 +67,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.metadata]
 requires-python = ">=3.10"
+
+[tool.uv]
+exclude-newer = "7 days"
 
 [tool.uv.sources]
 together = { git = "https://github.com/scosman/together-python" }

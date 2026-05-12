@@ -2,7 +2,7 @@
   import PropertyList from "$lib/ui/property_list.svelte"
   import AppPage from "../../../../app_page.svelte"
   import { page } from "$app/stores"
-  import { onMount, tick } from "svelte"
+  import { tick } from "svelte"
   import { createKilnError, type KilnError } from "$lib/utils/error_handlers"
   import EditablePriorityField from "../editable_priority_field.svelte"
   import EditableStatusField from "../editable_status_field.svelte"
@@ -53,8 +53,8 @@
   $: task_id = $page.params.task_id!
   $: spec_id = $page.params.spec_id!
   $: agentInfo.set({
-    name: "Spec Detail",
-    description: `Spec detail for spec ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Spec name: ${spec?.name ?? "[loading]"}. Shows spec requirements, evals, and test cases.`,
+    name: "Eval Detail",
+    description: `Eval detail for eval ID ${spec_id} in project ID ${project_id}, task ID ${task_id}. Eval name: ${spec?.name ?? "[loading]"}. Shows eval requirements, evaluation configs, and test cases.`,
   })
 
   let spec: Spec | null = null
@@ -197,24 +197,68 @@
   $: has_default_eval_config = evaluator && evaluator.current_config_id
   $: should_show_compare_table = has_eval && has_default_eval_config
 
-  onMount(async () => {
+  $: if (project_id && task_id && spec_id) {
+    load_all(project_id, task_id, spec_id)
+  }
+
+  async function load_all(
+    req_project_id: string,
+    req_task_id: string,
+    req_spec_id: string,
+  ) {
     await tick()
     load_model_info()
-    await load_spec()
+    await load_spec(req_project_id, req_task_id, req_spec_id)
+    if (
+      req_project_id !== project_id ||
+      req_task_id !== task_id ||
+      req_spec_id !== spec_id
+    )
+      return
     if (spec?.eval_id) {
+      const eval_id = spec.eval_id
       await Promise.all([
-        load_eval_data(),
-        load_task_data(),
-        load_run_configs_data(),
-        get_eval_progress(),
+        load_eval_data(req_project_id, req_task_id, eval_id),
+        load_task_data(req_project_id, req_task_id),
+        load_run_configs_data(req_project_id, req_task_id),
+        get_eval_progress(req_project_id, req_task_id, eval_id),
       ])
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_spec_id !== spec_id
+      )
+        return
       if (evaluator?.current_config_id) {
-        await load_score_summary()
+        await load_score_summary(
+          req_project_id,
+          req_task_id,
+          eval_id,
+          evaluator.current_config_id,
+        )
       }
+    } else if (
+      req_project_id === project_id &&
+      req_task_id === task_id &&
+      req_spec_id === spec_id
+    ) {
+      // Spec exists but has no eval_id yet — clear eval-scoped loading flags
+      // so the page doesn't sit on the global spinner forever.
+      eval_progress_loading = false
+      eval_loading = false
+      task_loading = false
+      run_configs_loading = false
+      eval_progress = null
+      evaluator = null
+      score_summary = null
     }
-  })
+  }
 
-  async function load_spec() {
+  async function load_spec(
+    req_project_id: string,
+    req_task_id: string,
+    req_spec_id: string,
+  ) {
     try {
       spec_loading = true
       spec_error = null
@@ -222,24 +266,49 @@
         "/api/projects/{project_id}/tasks/{task_id}/specs/{spec_id}",
         {
           params: {
-            path: { project_id, task_id, spec_id },
+            path: {
+              project_id: req_project_id,
+              task_id: req_task_id,
+              spec_id: req_spec_id,
+            },
           },
         },
       )
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_spec_id !== spec_id
+      )
+        return
       if (error) {
         throw error
       }
       spec = data
       current_tags = spec.tags || []
     } catch (error) {
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_spec_id !== spec_id
+      )
+        return
       spec_error = createKilnError(error)
     } finally {
-      spec_loading = false
+      if (
+        req_project_id === project_id &&
+        req_task_id === task_id &&
+        req_spec_id === spec_id
+      ) {
+        spec_loading = false
+      }
     }
   }
 
-  async function load_eval_data() {
-    if (!spec?.eval_id) return
+  async function load_eval_data(
+    req_project_id: string,
+    req_task_id: string,
+    req_eval_id: string,
+  ) {
     try {
       eval_loading = true
       eval_error = null
@@ -248,50 +317,69 @@
         {
           params: {
             path: {
-              project_id,
-              task_id,
-              eval_id: spec.eval_id,
+              project_id: req_project_id,
+              task_id: req_task_id,
+              eval_id: req_eval_id,
             },
           },
         },
       )
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       if (error) {
         throw error
       }
       evaluator = data
     } catch (error) {
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       eval_error = createKilnError(error)
     } finally {
-      eval_loading = false
+      if (req_project_id === project_id && req_task_id === task_id) {
+        eval_loading = false
+      }
     }
   }
 
-  async function load_task_data() {
+  async function load_task_data(req_project_id: string, req_task_id: string) {
     try {
       task_loading = true
       task_error = null
-      task = await load_task(project_id, task_id)
+      const loaded_task = await load_task(req_project_id, req_task_id)
+      if (req_project_id !== project_id || req_task_id !== task_id) return
+      task = loaded_task
     } catch (error) {
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       task_error = createKilnError(error)
     } finally {
-      task_loading = false
+      if (req_project_id === project_id && req_task_id === task_id) {
+        task_loading = false
+      }
     }
   }
 
-  async function load_run_configs_data() {
+  async function load_run_configs_data(
+    req_project_id: string,
+    req_task_id: string,
+  ) {
     try {
       run_configs_loading = true
       run_configs_error = null
-      await load_task_run_configs(project_id, task_id)
+      await load_task_run_configs(req_project_id, req_task_id)
     } catch (error) {
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       run_configs_error = createKilnError(error)
     } finally {
-      run_configs_loading = false
+      if (req_project_id === project_id && req_task_id === task_id) {
+        run_configs_loading = false
+      }
     }
   }
 
-  async function load_score_summary() {
-    if (!spec?.eval_id || !evaluator?.current_config_id) return
+  async function load_score_summary(
+    req_project_id: string,
+    req_task_id: string,
+    req_eval_id: string,
+    req_eval_config_id: string,
+  ) {
     try {
       score_summary_error = null
       const { data, error } = await client.GET(
@@ -299,19 +387,21 @@
         {
           params: {
             path: {
-              project_id,
-              task_id,
-              eval_id: spec.eval_id,
-              eval_config_id: evaluator.current_config_id,
+              project_id: req_project_id,
+              task_id: req_task_id,
+              eval_id: req_eval_id,
+              eval_config_id: req_eval_config_id,
             },
           },
         },
       )
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       if (error) {
         throw error
       }
       score_summary = data
     } catch (error) {
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       score_summary_error = createKilnError(error)
     }
   }
@@ -386,8 +476,11 @@
     }
   }
 
-  async function get_eval_progress() {
-    if (!spec?.eval_id) return
+  async function get_eval_progress(
+    req_project_id: string,
+    req_task_id: string,
+    req_eval_id: string,
+  ) {
     try {
       eval_progress_loading = true
       eval_progress = null
@@ -396,34 +489,38 @@
         {
           params: {
             path: {
-              project_id,
-              task_id,
-              eval_id: spec.eval_id,
+              project_id: req_project_id,
+              task_id: req_task_id,
+              eval_id: req_eval_id,
             },
           },
         },
       )
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       if (error) {
         throw error
       }
       eval_progress = data
     } catch (error) {
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       eval_progress_error = createKilnError(error)
     } finally {
-      eval_progress_loading = false
+      if (req_project_id === project_id && req_task_id === task_id) {
+        eval_progress_loading = false
+      }
     }
   }
 </script>
 
 <div class="max-w-[1400px]">
   <AppPage
-    title={`Spec: ${spec?.name ? `${spec.name}` : ""}`}
-    subtitle="Use evals to measure how well your task meets this specification."
+    title={`Eval: ${spec?.name ? `${spec.name}` : ""}`}
+    subtitle="Automatically measures how well your task performs."
     sub_subtitle="Read the Docs"
     sub_subtitle_link="https://docs.kiln.tech/docs/evals-and-specs"
     breadcrumbs={[
       {
-        label: "Specs & Evals",
+        label: "Evals",
         href: `/specs/${project_id}/${task_id}`,
       },
     ]}
@@ -455,7 +552,7 @@
       </div>
     {:else if !spec}
       <div class="text-error text-sm">
-        Failed to load spec, please refresh the page and try again.
+        Failed to load eval, please refresh the page and try again.
       </div>
     {:else}
       <div class="grid grid-cols-1 lg:grid-cols-[1fr,auto] gap-12">
@@ -622,7 +719,14 @@
               create_new_run_config_dialog?.show()
             }}
             on_eval_complete={async () => {
-              await load_score_summary()
+              if (spec?.eval_id && evaluator?.current_config_id) {
+                await load_score_summary(
+                  project_id,
+                  task_id,
+                  spec.eval_id,
+                  evaluator.current_config_id,
+                )
+              }
             }}
           />
         </div>
@@ -633,7 +737,7 @@
 
 <EditDialog
   bind:this={edit_dialog}
-  name="Spec"
+  name="Eval"
   patch_url={`/api/projects/${project_id}/tasks/${task_id}/specs/${spec_id}`}
   delete_url={`/api/projects/${project_id}/tasks/${task_id}/specs/${spec_id}`}
   after_delete={() => {
@@ -641,8 +745,8 @@
   }}
   fields={[
     {
-      label: "Spec Name",
-      description: "A name to identify this spec.",
+      label: "Eval Name",
+      description: "A name to identify this eval.",
       api_name: "name",
       value: spec?.name || "",
       input_type: "input",

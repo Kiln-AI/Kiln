@@ -4,7 +4,6 @@
   import Warning from "$lib/ui/warning.svelte"
   import { client } from "$lib/api_client"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { onMount } from "svelte"
   import { page } from "$app/stores"
   import { goto } from "$app/navigation"
   import { formatDate } from "$lib/utils/formatters"
@@ -24,27 +23,32 @@
   let loading = true
   let error: KilnError | null = null
 
-  onMount(async () => {
-    await fetch_skills()
-  })
+  $: if (project_id) {
+    fetch_skills(project_id)
+  }
 
-  async function fetch_skills() {
+  async function fetch_skills(req_project_id: string) {
     try {
+      loading = true
       error = null
       const { data, error: fetch_error } = await client.GET(
         "/api/projects/{project_id}/skills",
         {
-          params: { path: { project_id } },
+          params: { path: { project_id: req_project_id } },
         },
       )
+      if (req_project_id !== project_id) return
       if (fetch_error) {
         throw fetch_error
       }
       skills = data
     } catch (err) {
+      if (req_project_id !== project_id) return
       error = createKilnError(err)
     } finally {
-      loading = false
+      if (req_project_id === project_id) {
+        loading = false
+      }
     }
   }
 

@@ -4,6 +4,8 @@ import pytest
 
 from kiln_ai.adapters.adapter_registry import adapter_for_task
 from kiln_ai.adapters.data_gen.data_gen_prompts import (
+    RatedSample,
+    generate_guidance_refinement_prompt,
     generate_qna_generation_prompt,
     generate_sample_generation_prompt,
     generate_topic_tree_prompt,
@@ -641,6 +643,184 @@ def test_generate_sample_generation_prompt_with_none_guidance():
     )
     assert "## Specific Guidance" not in prompt
     assert "The guidance is:" not in prompt
+
+
+def test_generate_sample_generation_prompt_with_guide_text():
+    """Test generate_sample_generation_prompt includes guide text in guidance"""
+    prompt = generate_sample_generation_prompt(
+        gen_type="training",
+        guidance="Generate inputs about geography questions",
+    )
+
+    assert "### Custom Guidance" in prompt
+    assert "Generate inputs about geography questions" in prompt
+
+
+# --- generate_guidance_refinement_prompt ---
+
+
+def test_generate_guidance_refinement_prompt_minimal():
+    """Includes the required sections — task instruction, current guide,
+    rated samples, and feedback — when only the required args are passed."""
+    prompt = generate_guidance_refinement_prompt(
+        task_instruction="Translate to French",
+        current_guide=(
+            "# Reference Examples\n\n"
+            "## Example 1\n```input\nhi\n```\n```output\nbonjour\n```\n\n"
+            "# Guidelines & Rules\n\n"
+            "<output_semantic>\n\n## Native\nOnly real French words.\n\n</output_semantic>"
+        ),
+        preview_samples=[
+            RatedSample(input="hello", output="bonjour", looks_good=True),
+            RatedSample(input="frog", output="ranagrenouille", looks_good=False),
+        ],
+        feedback="The second one isn't a real word.",
+    )
+
+    assert "<task_instruction>\nTranslate to French\n</task_instruction>" in prompt
+    assert "<current_guide>" in prompt
+    assert "## Example 1" in prompt
+    assert "<output_semantic>" in prompt
+    # Required samples section, with their ratings rendered as the rating attr
+    assert '<sample_1 rating="Realistic">' in prompt
+    assert '<sample_2 rating="Needs Work">' in prompt
+    assert "<input>hello</input>" in prompt
+    assert "<output>bonjour</output>" in prompt
+    assert "<input>frog</input>" in prompt
+    assert "<output>ranagrenouille</output>" in prompt
+    assert "<feedback>\nThe second one isn't a real word.\n</feedback>" in prompt
+
+
+def test_generate_guidance_refinement_prompt_skips_optional_sections_when_none():
+    """The task description and JSON schema sections are optional — they
+    shouldn't appear in the output when their args are None or blank."""
+    prompt = generate_guidance_refinement_prompt(
+        task_instruction="X",
+        current_guide="some guide body",
+        preview_samples=[],
+        feedback="Z",
+        task_description=None,
+        task_input_json_schema=None,
+        task_output_json_schema=None,
+    )
+    assert "<task_description>" not in prompt
+    assert "<task_input_json_schema>" not in prompt
+    assert "<task_output_json_schema>" not in prompt
+
+    # Blank strings are also treated as "not provided" — same outcome.
+    prompt_blank = generate_guidance_refinement_prompt(
+        task_instruction="X",
+        current_guide="some guide body",
+        preview_samples=[],
+        feedback="Z",
+        task_description="   ",
+        task_input_json_schema="\n",
+        task_output_json_schema="",
+    )
+    assert "<task_description>" not in prompt_blank
+    assert "<task_input_json_schema>" not in prompt_blank
+    assert "<task_output_json_schema>" not in prompt_blank
+
+
+def test_generate_guidance_refinement_prompt_includes_optional_sections_when_provided():
+    prompt = generate_guidance_refinement_prompt(
+        task_instruction="X",
+        current_guide="some guide body",
+        preview_samples=[],
+        feedback="Z",
+        task_description="A short task description.",
+        task_input_json_schema='{"type":"object"}',
+        task_output_json_schema='{"type":"string"}',
+    )
+    assert (
+        "<task_description>\nA short task description.\n</task_description>" in prompt
+    )
+    assert (
+        '<task_input_json_schema>\n{"type":"object"}\n</task_input_json_schema>'
+        in prompt
+    )
+    assert (
+        '<task_output_json_schema>\n{"type":"string"}\n</task_output_json_schema>'
+        in prompt
+    )
+
+
+def test_generate_guidance_refinement_prompt_taxonomy_is_four_cells():
+    """The metaprompter must instruct the LLM to use only the four valid
+    group tags. Output-side semantic groups (`<output_semantic>`,
+    `<both_semantic>`) were culled to prevent the Guide from encoding output
+    policy that drifts from — and overrides — the task's system prompt.
+
+    Old guides may still contain those tags in `current_guide`; this test
+    asserts the metaprompter's *instructions* (not the input echo) drop them.
+    """
+    prompt = generate_guidance_refinement_prompt(
+        task_instruction="Translate to French",
+        # Empty guide so the input echo doesn't leak `<output_semantic>` into
+        # the prompt — we only want to assert the template doesn't reference
+        # it in its own instructions.
+        current_guide="",
+        preview_samples=[],
+        feedback="",
+    )
+
+    # The four valid groups must be referenced.
+    assert "`<input_structural>`" in prompt
+    assert "`<input_semantic>`" in prompt
+    assert "`<output_structural>`" in prompt
+    assert "`<both_structural>`" in prompt
+
+    # The "four valid groups" framing must be present; the old "six" framing must be gone.
+    assert "four valid groups" in prompt
+    assert "six valid groups" not in prompt
+    assert "six XML-tagged groups" not in prompt
+
+    # Scope statement must be present so the LLM understands why output
+    # semantics aren't being asked for.
+    assert "Scope: data shape, not output policy" in prompt
+    assert "out of scope" in prompt
+
+
+def test_generate_guidance_refinement_prompt_explicitly_forbids_policy_mining():
+    """The metaprompter must explicitly forbid mining output-policy rules
+    from the task instruction (closed-set decision rules, when-to-output-X
+    rules, correctness criteria). Prior versions instructed the LLM to lift
+    these into `<output_semantic>` rules, which caused the Guide to silently
+    override the system prompt's policy."""
+    prompt = generate_guidance_refinement_prompt(
+        task_instruction="X",
+        current_guide="",
+        preview_samples=[],
+        feedback="",
+    )
+
+    assert "Do NOT mine the following from the task definition" in prompt
+    assert "When to output X vs Y" in prompt
+    assert "classification" in prompt.lower()
+    # Old policy-mining example must be gone.
+    assert "that's an `<output_semantic>` rule waiting to be written" not in prompt
+
+
+def test_generate_guidance_refinement_prompt_renders_all_samples_in_order():
+    """Sample blocks should be numbered 1..N in the order received and each
+    one should reflect the user's rating."""
+    samples = [
+        RatedSample(input="a", output="b", looks_good=True),
+        RatedSample(input="c", output="d", looks_good=False),
+        RatedSample(input="e", output="f", looks_good=True),
+    ]
+    prompt = generate_guidance_refinement_prompt(
+        task_instruction="X",
+        current_guide="some guide body",
+        preview_samples=samples,
+        feedback="Z",
+    )
+    for i, sample in enumerate(samples, 1):
+        rating = "Realistic" if sample.looks_good else "Needs Work"
+        assert f'<sample_{i} rating="{rating}">' in prompt
+        assert f"<input>{sample.input}</input>" in prompt
+        assert f"<output>{sample.output}</output>" in prompt
+        assert f"</sample_{i}>" in prompt
 
 
 def test_generate_qna_generation_prompt_without_guidance():

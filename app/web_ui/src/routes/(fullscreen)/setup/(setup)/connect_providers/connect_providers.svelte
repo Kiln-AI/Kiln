@@ -47,9 +47,9 @@
       ],
     },
     {
-      name: "Kiln Copilot",
+      name: "Kiln Pro",
       id: "kiln_copilot",
-      description: "Our Copilot to optimize your evals and AI performance.",
+      description: "Optimize your evals and AI performance with Kiln Pro.",
       featured: !highlight_finetune,
       hide_in_onboarding: true,
     },
@@ -199,7 +199,7 @@
         "Get the access key ID and secret access key for the new user. Paste them below and click 'Connect'",
       ],
       api_key_warning:
-        "Bedrock is quite difficult to setup.\nFor beginners we suggest other providers, like OpenRouter, as they easier to setup and have more models.",
+        "Bedrock is quite difficult to setup.\nFor beginners we suggest other providers, like OpenRouter, as they are easier to set up and have more models.",
       api_key_fields: ["Access Key", "Secret Key"],
     },
     {
@@ -450,8 +450,8 @@
     if (provider.id === "kiln_copilot") {
       const isSettings = window.location.pathname.includes("/settings/")
       const route = isSettings
-        ? "/settings/providers/kiln_copilot"
-        : "/setup/connect_providers/kiln_copilot"
+        ? "/settings/providers/kiln_pro"
+        : "/setup/connect_providers/kiln_pro"
       goto(route)
       return
     }
@@ -776,7 +776,7 @@
   onMount(async () => {
     await check_existing_providers()
 
-    // Check Ollama every load, as it can be closed. More epmemerial (and local/cheap/fast)
+    // Check Ollama every load, as it can be closed. More ephemeral (and local/cheap/fast)
     connect_ollama(false).then(() => {
       // Clear the error as the user didn't initiate this run
       status["ollama"].error = null

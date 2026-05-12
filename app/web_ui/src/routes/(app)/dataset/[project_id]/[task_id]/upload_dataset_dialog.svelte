@@ -35,7 +35,7 @@
         params: {
           path: { project_id, task_id },
         },
-        // Unknown as mutlipart files uploads aren't supported by the openapi-typescript library
+        // Unknown as multipart file uploads aren't supported by the openapi-typescript library
         // see: https://github.com/openapi-ts/openapi-typescript/issues/1214
         body: formData as unknown as { file: string },
       },

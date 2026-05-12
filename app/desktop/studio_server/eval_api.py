@@ -5,6 +5,7 @@ from typing import Annotated, Any, Dict, List, Set, Tuple
 from fastapi import FastAPI, HTTPException, Path, Query, Request
 from fastapi.responses import StreamingResponse
 from kiln_ai.adapters.eval.eval_runner import EvalRunner
+from kiln_server.cancellable_streaming_response import CancellableStreamingResponse
 from kiln_ai.adapters.fine_tune.finetune_run_config_id import (
     finetune_from_finetune_run_config_id,
     finetune_run_config_id,
@@ -138,7 +139,7 @@ async def run_eval_runner_with_status(eval_runner: EvalRunner) -> StreamingRespo
         # Send the final complete message the app expects, and uses to stop listening
         yield "data: complete\n\n"
 
-    return StreamingResponse(
+    return CancellableStreamingResponse(
         content=event_generator(),
         media_type="text/event-stream",
     )
@@ -923,7 +924,7 @@ def connect_evals_api(app: FastAPI):
         # Load the list of run configs to use. Two options:
         run_configs: list[TaskRunConfig] = []
         if all_run_configs:
-            # special case, we cannot directly lod task.run_configs(), we need to also get all finetune run configs which lives inside the finetune model
+            # special case, we cannot directly load task.run_configs(), we need to also get all finetune run configs which live inside the finetune model
             run_configs = get_all_run_configs(project_id, task_id)
         else:
             if len(run_config_ids) == 0:

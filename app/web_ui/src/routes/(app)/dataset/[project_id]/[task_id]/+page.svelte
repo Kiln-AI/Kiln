@@ -1,10 +1,9 @@
 <script lang="ts">
   import AppPage from "../../../app_page.svelte"
-  import EmptyInto from "./empty_into.svelte"
+  import EmptyIntro from "./empty_intro.svelte"
   import { client } from "$lib/api_client"
   import type { RunSummary } from "$lib/types"
   import { KilnError, createKilnError } from "$lib/utils/error_handlers"
-  import { onMount } from "svelte"
   import { model_info, load_model_info, model_name } from "$lib/stores"
   import { goto } from "$app/navigation"
   import { page } from "$app/stores"
@@ -77,34 +76,39 @@
     { key: "tags", label: "Tags" },
   ]
 
-  onMount(async () => {
-    get_runs()
-  })
+  $: if (project_id && task_id) {
+    runs = null
+    filtered_runs = null
+    error = null
+    select_mode = false
+    selected_runs = new Set()
+    last_selected_id = null
+    get_runs(project_id, task_id)
+  }
 
-  async function get_runs() {
+  async function get_runs(req_project_id: string, req_task_id: string) {
     try {
       load_model_info()
       loading = true
-      if (!project_id || !task_id) {
-        throw new Error("Project or task ID not set.")
-      }
       const { data: runs_response, error: get_error } = await client.GET(
         "/api/projects/{project_id}/tasks/{task_id}/runs_summaries",
         {
           params: {
             path: {
-              project_id,
-              task_id,
+              project_id: req_project_id,
+              task_id: req_task_id,
             },
           },
         },
       )
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       if (get_error) {
         throw get_error
       }
       runs = runs_response
       sortRuns()
     } catch (e) {
+      if (req_project_id !== project_id || req_task_id !== task_id) return
       if (e instanceof Error && e.message.includes("Load failed")) {
         error = new KilnError(
           "Could not load dataset. It may belong to a project you don't have access to.",
@@ -114,7 +118,9 @@
         error = createKilnError(e)
       }
     } finally {
-      loading = false
+      if (req_project_id === project_id && req_task_id === task_id) {
+        loading = false
+      }
     }
   }
 
@@ -425,7 +431,7 @@
       // Reload UI, even on failure, as partial delete is possible
       selected_runs = new Set()
       select_mode = false
-      await get_runs()
+      await get_runs(project_id, task_id)
     }
   }
 
@@ -439,7 +445,7 @@
   }
 
   async function add_selected_tags(): Promise<boolean> {
-    // Don't accidentially remove tags
+    // Don't accidentally remove tags
     remove_tags = new Set()
     return await edit_tags()
   }
@@ -470,7 +476,7 @@
   }
 
   async function remove_selected_tags(): Promise<boolean> {
-    // Don't accidentially add tags
+    // Don't accidentally add tags
     add_tags = []
     return await edit_tags()
   }
@@ -502,7 +508,7 @@
       selected_runs = new Set()
       add_tags = []
       select_mode = false
-      await get_runs()
+      await get_runs(project_id, task_id)
     }
   }
 </script>
@@ -527,7 +533,7 @@
     </div>
   {:else if runs && runs.length == 0}
     <div class="flex flex-col items-center justify-center min-h-[75vh]">
-      <EmptyInto {project_id} {task_id} />
+      <EmptyIntro {project_id} {task_id} />
     </div>
   {:else if runs}
     <div class="mb-4">
@@ -651,7 +657,7 @@
                   {run.rating && run.rating.value
                     ? run.rating.type === "five_star"
                       ? "★".repeat(run.rating.value)
-                      : run.rating.value + "(custom score)"
+                      : run.rating.value + " (custom score)"
                     : "Unrated"}
                 </td>
                 <td>{run.repair_state}</td>

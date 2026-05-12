@@ -1590,6 +1590,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Task Data Guide */
+        get: operations["get_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_get"];
+        /** Save Task Data Guide */
+        put: operations["save_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_put"];
+        post?: never;
+        /** Delete Task Data Guide */
+        delete: operations["delete_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Task Data Guide */
+        post: operations["preview_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{project_id}/tasks/{task_id}/data_gen_guide_refine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refine Task Data Guide */
+        post: operations["refine_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_refine_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/dataset_splits": {
         parameters: {
             query?: never;
@@ -3441,7 +3494,11 @@ export interface components {
             /** Inappropriate Tool Use Examples */
             inappropriate_tool_use_examples: string;
         };
-        /** Audio */
+        /**
+         * Audio
+         * @description Data about a previous audio response from the model.
+         *     [Learn more](https://platform.openai.com/docs/guides/audio).
+         */
         Audio: {
             /** Id */
             id: string;
@@ -3526,7 +3583,6 @@ export interface components {
         Body_bulk_upload_api_projects__project_id__tasks__task_id__runs_bulk_upload_post: {
             /**
              * File
-             * Format: binary
              * @description The CSV file containing run data to import.
              */
             file: string;
@@ -3659,7 +3715,7 @@ export interface components {
          *
          *     Second change: Add reasoning_content to the message. A LiteLLM property for reasoning data.
          */
-        "ChatCompletionAssistantMessageParamWrapper-Input": {
+        ChatCompletionAssistantMessageParamWrapper: {
             /**
              * Role
              * @constant
@@ -3679,38 +3735,12 @@ export interface components {
             tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
             /** Latency Ms */
             latency_ms?: number | null;
+            usage?: components["schemas"]["MessageUsage"] | null;
         };
         /**
-         * ChatCompletionAssistantMessageParamWrapper
-         * @description Almost exact copy of ChatCompletionAssistantMessageParam, but two changes.
-         *
-         *     First change: List[T] instead of Iterable[T] for tool_calls. Addresses pydantic issue.
-         *     https://github.com/pydantic/pydantic/issues/9541
-         *
-         *     Second change: Add reasoning_content to the message. A LiteLLM property for reasoning data.
+         * ChatCompletionContentPartImageParam
+         * @description Learn about [image inputs](https://platform.openai.com/docs/guides/vision).
          */
-        "ChatCompletionAssistantMessageParamWrapper-Output": {
-            /**
-             * Role
-             * @constant
-             */
-            role: "assistant";
-            audio?: components["schemas"]["Audio"] | null;
-            /** Content */
-            content?: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartRefusalParam"])[] | null;
-            /** Reasoning Content */
-            reasoning_content?: string | null;
-            function_call?: components["schemas"]["FunctionCall"] | null;
-            /** Name */
-            name?: string;
-            /** Refusal */
-            refusal?: string | null;
-            /** Tool Calls */
-            tool_calls?: components["schemas"]["ChatCompletionMessageFunctionToolCallParam"][];
-            /** Latency Ms */
-            latency_ms?: number | null;
-        };
-        /** ChatCompletionContentPartImageParam */
         ChatCompletionContentPartImageParam: {
             image_url: components["schemas"]["ImageURL"];
             /**
@@ -3719,7 +3749,10 @@ export interface components {
              */
             type: "image_url";
         };
-        /** ChatCompletionContentPartInputAudioParam */
+        /**
+         * ChatCompletionContentPartInputAudioParam
+         * @description Learn about [audio inputs](https://platform.openai.com/docs/guides/audio).
+         */
         ChatCompletionContentPartInputAudioParam: {
             input_audio: components["schemas"]["InputAudio"];
             /**
@@ -3738,7 +3771,10 @@ export interface components {
              */
             type: "refusal";
         };
-        /** ChatCompletionContentPartTextParam */
+        /**
+         * ChatCompletionContentPartTextParam
+         * @description Learn about [text inputs](https://platform.openai.com/docs/guides/text-generation).
+         */
         ChatCompletionContentPartTextParam: {
             /** Text */
             text: string;
@@ -3748,7 +3784,12 @@ export interface components {
              */
             type: "text";
         };
-        /** ChatCompletionDeveloperMessageParam */
+        /**
+         * ChatCompletionDeveloperMessageParam
+         * @description Developer-provided instructions that the model should follow, regardless of
+         *     messages sent by the user. With o1 models and newer, `developer` messages
+         *     replace the previous `system` messages.
+         */
         ChatCompletionDeveloperMessageParam: {
             /** Content */
             content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
@@ -3772,7 +3813,10 @@ export interface components {
              */
             role: "function";
         };
-        /** ChatCompletionMessageFunctionToolCallParam */
+        /**
+         * ChatCompletionMessageFunctionToolCallParam
+         * @description A call to a function tool created by the model.
+         */
         ChatCompletionMessageFunctionToolCallParam: {
             /** Id */
             id: string;
@@ -3783,7 +3827,12 @@ export interface components {
              */
             type: "function";
         };
-        /** ChatCompletionSystemMessageParam */
+        /**
+         * ChatCompletionSystemMessageParam
+         * @description Developer-provided instructions that the model should follow, regardless of
+         *     messages sent by the user. With o1 models and newer, use `developer` messages
+         *     for this purpose instead.
+         */
         ChatCompletionSystemMessageParam: {
             /** Content */
             content: string | components["schemas"]["ChatCompletionContentPartTextParam"][];
@@ -3813,20 +3862,12 @@ export interface components {
             /** Error Message */
             error_message?: string | null;
         };
-        /** ChatCompletionUserMessageParam */
-        "ChatCompletionUserMessageParam-Input": {
-            /** Content */
-            content: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartImageParam"] | components["schemas"]["ChatCompletionContentPartInputAudioParam"] | components["schemas"]["File"])[];
-            /**
-             * Role
-             * @constant
-             */
-            role: "user";
-            /** Name */
-            name?: string;
-        };
-        /** ChatCompletionUserMessageParam */
-        "ChatCompletionUserMessageParam-Output": {
+        /**
+         * ChatCompletionUserMessageParam
+         * @description Messages sent by an end user, containing prompts or additional context
+         *     information.
+         */
+        ChatCompletionUserMessageParam: {
             /** Content */
             content: string | (components["schemas"]["ChatCompletionContentPartTextParam"] | components["schemas"]["ChatCompletionContentPartImageParam"] | components["schemas"]["ChatCompletionContentPartInputAudioParam"] | components["schemas"]["File"])[];
             /**
@@ -3983,8 +4024,8 @@ export interface components {
         ClarifySpecApiOutput: {
             /** Examples For Feedback */
             examples_for_feedback: components["schemas"]["SubsampleBatchOutputItemApi"][];
-            judge_result: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
-            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Output"];
+            judge_result: components["schemas"]["SyntheticDataGenerationStepConfigApi"];
+            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi"];
         };
         /**
          * CloneRequest
@@ -4434,8 +4475,8 @@ export interface components {
             evaluate_full_trace: boolean;
             /** Reviewed Examples */
             reviewed_examples?: components["schemas"]["ReviewedExample"][];
-            judge_info: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
-            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Input"];
+            judge_info: components["schemas"]["SyntheticDataGenerationStepConfigApi"];
+            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi"];
             /**
              * Task Description
              * @default
@@ -4575,6 +4616,11 @@ export interface components {
              */
             guidance?: string | null;
             /**
+             * Data Guide
+             * @description Optional per-run data guide override. Sent in addition to any human guidance.
+             */
+            data_guide?: string | null;
+            /**
              * Existing Topics
              * @description Optional list of existing topics to avoid
              */
@@ -4639,6 +4685,11 @@ export interface components {
              * @description Optional custom guidance for generation
              */
             guidance?: string | null;
+            /**
+             * Data Guide
+             * @description Optional per-run data guide override. Replaces the task's persisted data guide for this run.
+             */
+            data_guide?: string | null;
             /** @description The run config properties to use for input generation */
             run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
         };
@@ -4677,35 +4728,64 @@ export interface components {
              */
             guidance?: string | null;
             /**
+             * Data Guide
+             * @description Optional per-run data guide override. Replaces the task's persisted data guide for this run.
+             */
+            data_guide?: string | null;
+            /**
              * Tags
              * @description Tags to add to the sample
              */
             tags?: string[] | null;
         };
         /**
-         * DataSource
-         * @description Represents the origin of data, either human, synthetic, file import, or tool call, with associated properties.
+         * DataGuide
+         * @description Persistent data guide for synthetic data generation, stored as a child
+         *     of a Task.
          *
-         *     Properties vary based on the source type - for synthetic/tool_call sources this includes
-         *     model information, for human sources this includes creator information, for file imports
-         *     this includes file information.
+         *     The guide is a single markdown body — typically two top-level sections:
+         *     `# Reference Examples` (user-authored input/output pairs) and
+         *     `# Guidelines & Rules` (structural and semantic constraints, often
+         *     LLM-authored via refine). Either or both may be present; the metaprompter
+         *     treats the whole body as one editable artifact and returns a refined
+         *     version on each refine pass.
          */
-        "DataSource-Input": {
-            /** @description The type of data source. */
-            type: components["schemas"]["DataSourceType"];
+        DataGuide: {
             /**
-             * Properties
-             * @description Properties describing the data source. For synthetic things like model. For human: the human's name. For file_import: file information.
-             * @default {}
+             * V
+             * @description Schema version for migration support.
+             * @default 1
              */
-            properties: {
-                [key: string]: string | number;
-            };
+            v: number;
             /**
-             * Run Config
-             * @description The run config used to generate the data, if generated by a running a model in Kiln (only true for type=synthetic).
+             * Id
+             * @description Unique identifier for this record.
              */
-            run_config?: (components["schemas"]["KilnAgentRunConfigProperties"] | components["schemas"]["McpRunConfigProperties"]) | null;
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /**
+             * Guide
+             * @description Markdown body of the data guide. Typically contains a `# Reference Examples` section and a `# Guidelines & Rules` section.
+             * @default
+             */
+            guide: string;
+            /** Model Type */
+            readonly model_type: string;
         };
         /**
          * DataSource
@@ -4715,7 +4795,7 @@ export interface components {
          *     model information, for human sources this includes creator information, for file imports
          *     this includes file information.
          */
-        "DataSource-Output": {
+        DataSource: {
             /** @description The type of data source. */
             type: components["schemas"]["DataSourceType"];
             /**
@@ -5084,7 +5164,7 @@ export interface components {
             /** Error Type */
             error_type: string;
             /** Trace */
-            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Output"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Output"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
         };
         /**
          * Eval
@@ -6019,7 +6099,10 @@ export interface components {
              */
             output: string;
         };
-        /** File */
+        /**
+         * File
+         * @description Learn about [file inputs](https://platform.openai.com/docs/guides/text) for text generation.
+         */
         File: {
             file: components["schemas"]["FileFile"];
             /**
@@ -6393,14 +6476,22 @@ export interface components {
             /** Improper Formatting Examples */
             improper_formatting_examples?: string;
         };
-        /** Function */
+        /**
+         * Function
+         * @description The function that the model called.
+         */
         Function: {
             /** Arguments */
             arguments: string;
             /** Name */
             name: string;
         };
-        /** FunctionCall */
+        /**
+         * FunctionCall
+         * @description Deprecated and replaced by `tool_calls`.
+         *
+         *     The name and arguments of a function that should be called, as generated by the model.
+         */
         FunctionCall: {
             /** Arguments */
             arguments: string;
@@ -6419,7 +6510,7 @@ export interface components {
             num_samples_per_topic: number;
             /** Num Topics */
             num_topics: number;
-            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi-Input"];
+            sdg_session_config: components["schemas"]["SyntheticDataGenerationSessionConfigApi"];
         };
         /**
          * GenerateBatchApiOutput
@@ -6489,6 +6580,69 @@ export interface components {
              * @default false
              */
             has_oauth_token: boolean;
+        };
+        /** GuidePreviewInput */
+        GuidePreviewInput: {
+            /**
+             * Guide
+             * @description Markdown body of the data guide being previewed.
+             * @default
+             */
+            guide: string;
+            /** @description The model config to use for preview input generation */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
+            /** @description Optional model config to use for preview output generation. Defaults to the input run config when not provided. */
+            output_run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
+            /**
+             * Num Samples
+             * @description Number of preview samples to generate
+             * @default 5
+             */
+            num_samples: number;
+        };
+        /** GuidePreviewSample */
+        GuidePreviewSample: {
+            /**
+             * Input
+             * @description Generated sample input
+             */
+            input: string;
+            /**
+             * Output
+             * @description Generated sample output
+             */
+            output: string;
+        };
+        /** GuideRefineInput */
+        GuideRefineInput: {
+            /**
+             * Current Guide
+             * @description Markdown body of the current data guide — the metaprompter rewrites it wholesale.
+             * @default
+             */
+            current_guide: string;
+            /**
+             * Feedback
+             * @description User feedback on what's wrong with preview samples
+             */
+            feedback: string;
+            /**
+             * Preview Samples
+             * @description The previewed samples the user is giving feedback on, each rated by the user as realistic (true) or needs work (false)
+             */
+            preview_samples: components["schemas"]["RatedSample"][];
+            /** @description The model config to use for the metaprompter call itself. */
+            run_config_properties: components["schemas"]["KilnAgentRunConfigProperties"];
+            /** @description The user's chosen output-generation run config. Its prompt template is rendered server-side and used as runtime context for the metaprompter, so the rules it produces match what the model actually sees at synthesis time. Falls back to `task.instruction` when not provided — accurate for users on the default simple prompt template, stale for users on prompt-optimization or saved-prompt run configs. */
+            output_run_config_properties?: components["schemas"]["KilnAgentRunConfigProperties"] | null;
+        };
+        /** GuideRefineResponse */
+        GuideRefineResponse: {
+            /**
+             * Refined Guide
+             * @description The refined data guide markdown returned by the metaprompter.
+             */
+            refined_guide: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -6619,7 +6773,7 @@ export interface components {
          *         created_at (datetime): Timestamp when the model was created
          *         created_by (str): User ID of the creator
          */
-        KilnBaseModel: {
+        "KilnBaseModel-Input": {
             /**
              * V
              * @description Schema version for migration support.
@@ -6647,6 +6801,48 @@ export interface components {
              * @description User ID of the creator.
              */
             created_by?: string;
+        };
+        /**
+         * KilnBaseModel
+         * @description Base model for all Kiln data models with common functionality for persistence and versioning.
+         *
+         *     Attributes:
+         *         v (int): Schema version number for migration support
+         *         id (str): Unique identifier for the model instance
+         *         path (Path): File system path where the model is stored
+         *         created_at (datetime): Timestamp when the model was created
+         *         created_by (str): User ID of the creator
+         */
+        "KilnBaseModel-Output": {
+            /**
+             * V
+             * @description Schema version for migration support.
+             * @default 1
+             */
+            v: number;
+            /**
+             * Id
+             * @description Unique identifier for this record.
+             */
+            id?: string | null;
+            /**
+             * Path
+             * @description File system path where the record is stored.
+             */
+            path?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description Timestamp when the model was created. Timezone-aware; stores the writer's local offset.
+             */
+            created_at?: string;
+            /**
+             * Created By
+             * @description User ID of the creator.
+             */
+            created_by?: string;
+            /** Model Type */
+            readonly model_type: string;
         };
         /** KilnFileResponse */
         KilnFileResponse: {
@@ -7061,6 +7257,47 @@ export interface components {
              * @description Average total LLM latency per run in milliseconds.
              */
             mean_total_llm_latency_ms?: number | null;
+        };
+        /**
+         * MessageUsage
+         * @description Token usage and cost for a single LLM call or a multi-message sum.
+         *
+         *     Carries only the fields that are meaningfully aggregatable across
+         *     messages: token counts and cost. Per-call latency lives on the
+         *     individual message's ``latency_ms`` field; aggregating it across the
+         *     full trace would mix latencies from different points in time, so
+         *     ``MessageUsage`` does NOT carry ``total_llm_latency_ms``.
+         *
+         *     The :class:`Usage` subclass adds ``total_llm_latency_ms`` for the
+         *     in-flight per-run accumulator that tracks how long this run spent
+         *     waiting on LLM calls.
+         */
+        MessageUsage: {
+            /**
+             * Input Tokens
+             * @description The number of input tokens used.
+             */
+            input_tokens?: number | null;
+            /**
+             * Output Tokens
+             * @description The number of output tokens used.
+             */
+            output_tokens?: number | null;
+            /**
+             * Total Tokens
+             * @description The total number of tokens used.
+             */
+            total_tokens?: number | null;
+            /**
+             * Cost
+             * @description The cost in US dollars, saved at runtime (prices can change over time).
+             */
+            cost?: number | null;
+            /**
+             * Cached Tokens
+             * @description Number of tokens served from prompt cache. None if not reported.
+             */
+            cached_tokens?: number | null;
         };
         /** ModelDetails */
         ModelDetails: {
@@ -7979,6 +8216,30 @@ export interface components {
             results: components["schemas"]["SearchResult"][];
         };
         /**
+         * RatedSample
+         * @description A preview sample (input/output pair) plus the user's rating, used as
+         *     feedback input to the data-guide refinement metaprompter. Shared between
+         *     the API surface and the prompt builder so callers don't have to flatten
+         *     into positional tuples.
+         */
+        RatedSample: {
+            /**
+             * Input
+             * @description Generated sample input
+             */
+            input: string;
+            /**
+             * Output
+             * @description Generated sample output
+             */
+            output: string;
+            /**
+             * Looks Good
+             * @description User rating: true if the sample looks realistic, false if it needs work
+             */
+            looks_good: boolean;
+        };
+        /**
          * RatingOption
          * @description A rating requirement with display rules.
          */
@@ -8464,6 +8725,15 @@ export interface components {
              */
             tags?: string[] | null;
         };
+        /** SaveTaskDataGuideInput */
+        SaveTaskDataGuideInput: {
+            /**
+             * Guide
+             * @description Markdown body of the data guide.
+             * @default
+             */
+            guide: string;
+        };
         /**
          * ScanProjectsRequest
          * @description Request to scan a cloned repo for Kiln project files.
@@ -8900,19 +9170,10 @@ export interface components {
          * SyntheticDataGenerationSessionConfigApi
          * @description Configuration for a synthetic data generation session
          */
-        "SyntheticDataGenerationSessionConfigApi-Input": {
-            topic_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
-            input_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
-            output_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Input"];
-        };
-        /**
-         * SyntheticDataGenerationSessionConfigApi
-         * @description Configuration for a synthetic data generation session
-         */
-        "SyntheticDataGenerationSessionConfigApi-Output": {
-            topic_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
-            input_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
-            output_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi-Output"];
+        SyntheticDataGenerationSessionConfigApi: {
+            topic_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi"];
+            input_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi"];
+            output_generation_config: components["schemas"]["SyntheticDataGenerationStepConfigApi"];
         };
         /**
          * SyntheticDataGenerationStepConfig
@@ -8939,16 +9200,7 @@ export interface components {
          * SyntheticDataGenerationStepConfigApi
          * @description Configuration for a synthetic data generation step.
          */
-        "SyntheticDataGenerationStepConfigApi-Input": {
-            task_metadata: components["schemas"]["TaskMetadataApi"];
-            /** Prompt */
-            prompt: string;
-        };
-        /**
-         * SyntheticDataGenerationStepConfigApi
-         * @description Configuration for a synthetic data generation step.
-         */
-        "SyntheticDataGenerationStepConfigApi-Output": {
+        SyntheticDataGenerationStepConfigApi: {
             task_metadata: components["schemas"]["TaskMetadataApi"];
             /** Prompt */
             prompt: string;
@@ -9119,7 +9371,7 @@ export interface components {
              */
             output: string;
             /** @description The source of the output: human or synthetic. */
-            source?: components["schemas"]["DataSource-Input"] | null;
+            source?: components["schemas"]["DataSource"] | null;
             /** @description The rating of the output */
             rating?: components["schemas"]["TaskOutputRating-Input"] | null;
         };
@@ -9164,7 +9416,7 @@ export interface components {
              */
             output: string;
             /** @description The source of the output: human or synthetic. */
-            source?: components["schemas"]["DataSource-Output"] | null;
+            source?: components["schemas"]["DataSource"] | null;
             /** @description The rating of the output */
             rating?: components["schemas"]["TaskOutputRating-Output"] | null;
             /** Model Type */
@@ -9370,14 +9622,14 @@ export interface components {
              * @description User ID of the creator.
              */
             created_by?: string;
-            parent?: components["schemas"]["KilnBaseModel"] | null;
+            parent?: components["schemas"]["KilnBaseModel-Input"] | null;
             /**
              * Input
              * @description The inputs to the task. JSON formatted for structured input, plaintext for unstructured input.
              */
             input: string;
             /** @description The source of the input: human or synthetic. */
-            input_source?: components["schemas"]["DataSource-Input"] | null;
+            input_source?: components["schemas"]["DataSource"] | null;
             /** @description The output of the task run. */
             output: components["schemas"]["TaskOutput-Input"];
             /**
@@ -9402,11 +9654,13 @@ export interface components {
             tags: string[];
             /** @description Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used. */
             usage?: components["schemas"]["Usage"] | null;
+            /** @description Sum of per-message token usage and cost across the entire trace, including any seeded prior trace. None on records created before this field existed. For a fresh (non-seeded) run, the token / cost fields equal those of `usage`. */
+            cumulative_usage?: components["schemas"]["MessageUsage"] | null;
             /**
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
-            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Input"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Input"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
             /**
              * Parent Task Run Id
              * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
@@ -9454,7 +9708,7 @@ export interface components {
              */
             input: string;
             /** @description The source of the input: human or synthetic. */
-            input_source?: components["schemas"]["DataSource-Output"] | null;
+            input_source?: components["schemas"]["DataSource"] | null;
             /** @description The output of the task run. */
             output: components["schemas"]["TaskOutput-Output"];
             /**
@@ -9479,11 +9733,13 @@ export interface components {
             tags: string[];
             /** @description Usage information for the task run. This includes the number of input tokens, output tokens, and total tokens used. */
             usage?: components["schemas"]["Usage"] | null;
+            /** @description Sum of per-message token usage and cost across the entire trace, including any seeded prior trace. None on records created before this field existed. For a fresh (non-seeded) run, the token / cost fields equal those of `usage`. */
+            cumulative_usage?: components["schemas"]["MessageUsage"] | null;
             /**
              * Trace
              * @description The trace of the task run in OpenAI format. This is the list of messages that were sent to/from the model.
              */
-            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam-Output"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper-Output"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
+            trace?: (components["schemas"]["ChatCompletionDeveloperMessageParam"] | components["schemas"]["ChatCompletionSystemMessageParam"] | components["schemas"]["ChatCompletionUserMessageParam"] | components["schemas"]["ChatCompletionAssistantMessageParamWrapper"] | components["schemas"]["ChatCompletionToolMessageParamWrapper"] | components["schemas"]["ChatCompletionFunctionMessageParam"])[] | null;
             /**
              * Parent Task Run Id
              * @description The ID of the parent task run. This is the ID of the task run that contains this task run.
@@ -9987,27 +10243,33 @@ export interface components {
         };
         /**
          * Usage
-         * @description Token usage and cost information for a task run.
+         * @description Token usage, cost, and aggregate LLM latency for a per-run accumulator.
+         *
+         *     Extends :class:`MessageUsage` with ``total_llm_latency_ms``, which is
+         *     only meaningful while a single run is in flight (its model calls run
+         *     sequentially in real time). For per-message records and full-trace
+         *     sums use :class:`MessageUsage` — those values would mix latencies
+         *     from different points in time, so the field doesn't apply.
          */
         Usage: {
             /**
              * Input Tokens
-             * @description The number of input tokens used in the task run.
+             * @description The number of input tokens used.
              */
             input_tokens?: number | null;
             /**
              * Output Tokens
-             * @description The number of output tokens used in the task run.
+             * @description The number of output tokens used.
              */
             output_tokens?: number | null;
             /**
              * Total Tokens
-             * @description The total number of tokens used in the task run.
+             * @description The total number of tokens used.
              */
             total_tokens?: number | null;
             /**
              * Cost
-             * @description The cost of the task run in US dollars, saved at runtime (prices can change over time).
+             * @description The cost in US dollars, saved at runtime (prices can change over time).
              */
             cost?: number | null;
             /**
@@ -10067,6 +10329,10 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
         /**
          * VectorStoreConfig
@@ -13866,6 +14132,188 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataGuide"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveTaskDataGuideInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataGuide"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuidePreviewInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuidePreviewSample"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refine_data_gen_guide_api_projects__project_id__tasks__task_id__data_gen_guide_refine_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GuideRefineInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuideRefineResponse"];
                 };
             };
             /** @description Validation Error */

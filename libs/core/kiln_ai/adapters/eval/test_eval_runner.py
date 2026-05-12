@@ -136,15 +136,15 @@ async def test_async_eval_runner_status_updates(mock_eval_runner, concurrency):
     mock_eval_runner.run_job = AsyncMock(return_value=True)
 
     # Expect the status updates in order, and 1 for each job
-    expected_compelted_count = 0
+    expected_completed_count = 0
     async for progress in mock_eval_runner.run(concurrency=concurrency):
-        assert progress.complete == expected_compelted_count
-        expected_compelted_count += 1
+        assert progress.complete == expected_completed_count
+        expected_completed_count += 1
         assert progress.errors == 0
         assert progress.total == job_count
 
     # Verify last status update was complete
-    assert expected_compelted_count == job_count + 1
+    assert expected_completed_count == job_count + 1
 
     # Verify run_job was called for each job
     assert mock_eval_runner.run_job.call_count == job_count

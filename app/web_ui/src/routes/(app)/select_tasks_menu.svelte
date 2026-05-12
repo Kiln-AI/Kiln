@@ -104,7 +104,7 @@
       }
     })
 
-    goto(`/`, { replaceState: true })
+    goto(`/`)
     dispatch("dismiss")
   }
 </script>

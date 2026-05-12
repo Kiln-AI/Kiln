@@ -187,7 +187,8 @@ class DataGenSampleTask(Task, parent_of={}):
         guidance: str | None,
     ):
         instruction = generate_sample_generation_prompt(
-            gen_type=gen_type, guidance=guidance
+            gen_type=gen_type,
+            guidance=guidance,
         )
 
         super().__init__(
