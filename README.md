@@ -41,30 +41,30 @@
 
 ## What is Kiln?
 
-Kiln is a workbench for the full AI development loop: evals, optimization, prompts, RAG, fine-tuning, synthetic data, agents, and tools — all working together. The desktop app lets your whole team contribute (PMs, subject-experts, and QA can rate outputs and add data without writing code). The MIT-licensed Python library ships the same tasks to production. Runs locally — bring your own API keys, or go fully offline with Ollama.
+Kiln is a workbench for the full AI development loop: evals, optimization, prompts, RAG, fine-tuning, synthetic data, agents, and tools - all working together. The desktop app lets your whole team contribute (PMs, subject-experts, and QA can rate outputs and add data without writing code). The MIT-licensed Python library ships the same tasks to production. Runs locally - bring your own API keys, or go fully offline with Ollama.
 
 ## Highlights
 
 ### Iterate, optimize, and collaborate
 
-- 🖥️ [**Intuitive app**](https://kiln.tech/download) — Easy-to-use apps for Mac, Windows, and Linux. One-click install.
-- 📊 [**Eval Builder**](https://docs.kiln.tech/docs/evaluations) — Auto-generate evals (judge + synthetic eval dataset), and align to your preference in ~10 minutes.
-- 🚀 [**Auto-Optimize**](https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer) — Automatically find the best way to run your AI task, optimizing prompt, model selection, tools, skills, subagents, parameters, and more.
-- 💬 [**AI Assistant**](https://docs.kiln.tech) — Your AI data-science partner. Kiln Assistant proposes improvements, optimizes prompts, runs experiments, creates evals, and more.
-- 🤝 [**Git-native collaboration**](https://docs.kiln.tech/docs/collaboration) — The app syncs to Git automatically — even for teammates who don't know what Git is.
+- 🖥️ [**Intuitive app**](https://kiln.tech/download) - Easy-to-use apps for Mac, Windows, and Linux. One-click install.
+- 📊 [**Eval Builder**](https://docs.kiln.tech/docs/evaluations) - Auto-generate evals (judge + synthetic eval dataset), and align to your preference in ~10 minutes.
+- 🚀 [**Auto-Optimize**](https://docs.kiln.tech/docs/prompts/automatic-prompt-optimizer) - Automatically find the best way to run your AI task, optimizing prompt, model selection, tools, skills, subagents, parameters, and more.
+- 💬 [**AI Assistant**](https://docs.kiln.tech) - Your AI data-science partner. Kiln Assistant proposes improvements, optimizes prompts, runs experiments, creates evals, and more.
+- 🤝 [**Git-native collaboration**](https://docs.kiln.tech/docs/collaboration) - The app syncs to Git automatically — even for teammates who don't know what Git is.
 
 ### Build & ship agents
 
-- 🔍 [**RAG**](https://docs.kiln.tech/docs/documents-and-search-rag) — Drag-and-drop docs (PDF, image, video, audio) to create a RAG. Auto-generated RAG evals from your own documents.
-- 🤖 [**Subagents**](https://docs.kiln.tech/docs/agents) — Compose multi-agent hierarchies — each runs in its own focused context window.
-- 🪄 [**Synthetic Data Generation**](https://docs.kiln.tech/docs/synthetic-data-generation) — Generate data for evals or fine-tuning in minutes.
-- 🎛️ [**Fine-Tuning**](https://docs.kiln.tech/docs/fine-tuning-guide) — Zero-code fine-tuning across 60+ models (Qwen, Llama, GPT, Gemini, …) on Fireworks, Together, OpenAI, and Vertex. Serverless deployment included.
-- 🐍 [**Open Python library**](https://docs.kiln.tech/developers/python-library-quickstart) — Agents built in the app can be deployed to production. MIT open-source.
-- 🧰 [**…and more**](https://docs.kiln.tech) — Tools & MCP, Skills, structured outputs, reasoning models, model library (190+ tested).
+- 🔍 [**RAG**](https://docs.kiln.tech/docs/documents-and-search-rag) - Drag-and-drop docs (PDF, image, video, audio) to create a RAG. Auto-generated RAG evals from your own documents.
+- 🤖 [**Subagents**](https://docs.kiln.tech/docs/agents) - Compose multi-agent hierarchies. Each runs in its own focused context window.
+- 🪄 [**Synthetic Data Generation**](https://docs.kiln.tech/docs/synthetic-data-generation) - Generate data for evals or fine-tuning in minutes.
+- 🎛️ [**Fine-Tuning**](https://docs.kiln.tech/docs/fine-tuning-guide) - Zero-code fine-tuning across 60+ models (Qwen, Llama, GPT, Gemini, …) on Fireworks, Together, OpenAI, and Vertex. Serverless deployment included.
+- 🐍 [**Open Python library**](https://docs.kiln.tech/developers/python-library-quickstart) - Agents built in the app can be deployed to production. MIT open-source.
+- 🧰 [**…and more**](https://docs.kiln.tech) - Tools & MCP, Skills, structured outputs, reasoning models, model library (190+ tested).
 
 ## App Quickstart
 
-Get started in minutes — one-click install.
+Get started in minutes - one-click install.
 
 Download Kiln Desktop for macOS, Windows, or Linux, then follow the [5-minute quickstart](https://docs.kiln.tech/getting-started/quickstart) to run your first task.
 
