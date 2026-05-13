@@ -97,7 +97,9 @@ class MockAdapter(BaseAdapter):
         )
         self.response = response
 
-    async def _run(self, input: str, **kwargs) -> tuple[RunOutput, Usage | None]:
+    async def _run(
+        self, input: str, trace_ref, **kwargs
+    ) -> tuple[RunOutput, Usage | None]:
         return RunOutput(output=self.response, intermediate_outputs=None), None
 
     def adapter_name(self) -> str:
@@ -122,12 +124,16 @@ async def test_mock_unstructured_response(tmp_path):
         answer = await adapter.invoke("You are a mock, send me the response!")
 
     adapter = MockAdapter(task, response="string instead of dict")
-    with pytest.raises(
-        ValueError,
-        match="This task requires JSON output but the model didn't return valid JSON",
-    ):
+    from kiln_ai.adapters.errors import KilnRunError
+
+    with pytest.raises(KilnRunError) as ei:
         # Not a structured response so should error
         run = await adapter.invoke("You are a mock, send me the response!")
+    assert isinstance(ei.value.original, ValueError)
+    assert (
+        "This task requires JSON output but the model didn't return valid JSON"
+        in str(ei.value.original)
+    )
 
     # Should error, expecting a string, not a dict
     project = datamodel.Project(name="test", path=tmp_path / "test.kiln")
@@ -140,8 +146,10 @@ async def test_mock_unstructured_response(tmp_path):
         "You are an assistant which performs math tasks provided in plain text."
     )
     adapter = MockAdapter(task, response={"dict": "value"})
-    with pytest.raises(RuntimeError):
+    # Wrapped: the underlying RuntimeError surfaces via KilnRunError.original.
+    with pytest.raises(KilnRunError) as ei2:
         answer = await adapter.invoke("You are a mock, send me the response!")
+    assert isinstance(ei2.value.original, RuntimeError)
 
 
 def check_supports_structured_output(model_name: str, provider_name: str):
