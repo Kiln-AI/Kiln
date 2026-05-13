@@ -536,8 +536,11 @@ class LiteLlmAdapter(BaseAdapter):
         else:
             thinking_level = provider.default_thinking_level
 
-        # Set the reasoning_effort
-        if thinking_level is not None:
+        # Skip if provider doesn't support thinking levels (stale configs may still have one set)
+        if (
+            thinking_level is not None
+            and provider.available_thinking_levels is not None
+        ):
             # Anthropic models in OpenRouter uses reasoning object. See https://openrouter.ai/docs/use-cases/reasoning-tokens
             if (
                 provider.name == ModelProviderName.openrouter
