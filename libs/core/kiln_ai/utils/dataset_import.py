@@ -1,6 +1,7 @@
 import csv
 import logging
 import random
+import sys
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -11,6 +12,29 @@ from pydantic import BaseModel, Field, ValidationError
 from kiln_ai.datamodel import DataSource, DataSourceType, Task, TaskOutput, TaskRun
 
 logger = logging.getLogger(__name__)
+
+
+def _raise_csv_field_size_limit() -> None:
+    """Raise Python's csv module per-field byte limit to the platform max.
+
+    Python defaults to 131,072 bytes per CSV field. Legitimate imports can
+    exceed that when a row contains a long prompt, response, or chat
+    transcript, surfacing as ``_csv.Error: field larger than field limit``
+    mid-import. We raise the cap to the largest value the platform accepts
+    so user imports aren't rejected for size alone. ``csv.field_size_limit``
+    takes a C long, which is narrower than ``sys.maxsize`` on some platforms
+    (notably 64-bit Windows), so we step down on OverflowError until it fits.
+    """
+    max_int = sys.maxsize
+    while True:
+        try:
+            csv.field_size_limit(max_int)
+            return
+        except OverflowError:
+            max_int = max_int // 10
+
+
+_raise_csv_field_size_limit()
 
 
 class DatasetImportFormat(str, Enum):
