@@ -1,4 +1,3 @@
-import logging
 from pathlib import Path
 
 import pytest
@@ -11,8 +10,6 @@ from kiln_ai.adapters.model_adapters.test_paid_utils import (
     skip_if_missing_provider_keys,
 )
 from kiln_ai.datamodel.run_config import KilnAgentRunConfigProperties
-
-logger = logging.getLogger(__name__)
 
 
 def build_thinking_level_test_task(tmp_path: Path) -> datamodel.Task:
@@ -109,18 +106,15 @@ async def test_thinking_level_reasoning_content(
         "Four people-A, B, C, and D-each have a different favorite color (red, blue, green, yellow) and a different pet (cat, dog, fish, bird). Use the clues to determine each person's color and pet.\n\n1) A does not like red or blue.\n2) The bird's owner likes yellow.\n3) B likes green.\n4) The dog is owned by the person who likes blue.\n5) C does not own the fish.\n6) D likes red.\n\nQuestion: Who owns the fish, and what color do they like? Answer with just: \"<person>, <color>\"."
     )
     reasoning_content = reasoning_content_from_run(run)
-    if reasoning_content:
-        logger.info(
-            "reasoning_content present: provider=%s model=%s level=%s length=%d",
-            provider_name,
-            model_name,
-            thinking_level,
-            len(reasoning_content),
+    if thinking_level == "none":
+        assert reasoning_content is None, (
+            f"Expected no reasoning content for thinking_level='none', "
+            f"but got {len(reasoning_content)} chars "
+            f"(provider={provider_name}, model={model_name})"
         )
     else:
-        logger.info(
-            "reasoning_content missing: provider=%s model=%s level=%s",
-            provider_name,
-            model_name,
-            thinking_level,
+        assert reasoning_content is not None, (
+            f"Expected reasoning content for thinking_level='{thinking_level}', "
+            f"but got None "
+            f"(provider={provider_name}, model={model_name})"
         )
