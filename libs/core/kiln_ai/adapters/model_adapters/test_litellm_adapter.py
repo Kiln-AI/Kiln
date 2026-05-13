@@ -11,7 +11,12 @@ from litellm.types.utils import (
     ModelResponse,
 )
 
-from kiln_ai.adapters.ml_model_list import ModelProviderName, StructuredOutputMode
+from kiln_ai.adapters.ml_model_list import (
+    ModelName,
+    ModelProviderName,
+    StructuredOutputMode,
+    built_in_models_from_provider,
+)
 from kiln_ai.adapters.model_adapters.base_adapter import AdapterConfig
 from kiln_ai.adapters.model_adapters.litellm_adapter import (
     LiteLlmAdapter,
@@ -602,6 +607,26 @@ def test_build_extra_body_thinking_level_explicit_none(config, mock_task):
     extra_body = adapter.build_extra_body(mock_provider)
 
     assert "reasoning_effort" not in extra_body
+
+
+def test_build_extra_body_thinking_level_skipped_when_provider_has_no_levels(
+    config, mock_task
+):
+    """Stale run configs may reference a thinking_level for a provider that no longer
+    supports it (e.g. Gemma 4 on gemini_api). The adapter should not send reasoning_effort."""
+    config.run_config_properties.thinking_level = "high"
+    adapter = LiteLlmAdapter(config=config, kiln_task=mock_task)
+
+    provider = built_in_models_from_provider(
+        ModelProviderName.gemini_api, ModelName.gemma_4_31b
+    )
+    assert provider is not None
+    assert provider.available_thinking_levels is None
+
+    extra_body = adapter.build_extra_body(provider)
+
+    assert "reasoning_effort" not in extra_body
+    assert "reasoning" not in extra_body
 
 
 def test_build_extra_body_openrouter_default_provider_order(config, mock_task):
