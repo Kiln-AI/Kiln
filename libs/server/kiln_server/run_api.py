@@ -5,6 +5,7 @@ import os
 import tempfile
 from asyncio import Lock
 from datetime import datetime
+from pathlib import Path as PathLibPath
 from typing import Annotated, Any, Dict
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, Path, UploadFile
@@ -35,6 +36,51 @@ logger = logging.getLogger(__name__)
 
 # Lock to prevent overwriting via concurrent updates. We use a load/update/write pattern that is not atomic.
 update_run_lock = Lock()
+
+# Defensive cap on parent-chain depth. Real multiturn conversations are tiny
+# compared to this; the guard exists to terminate on disk corruption or cycles.
+_MAX_ANCESTOR_DEPTH = 1000
+
+
+def _walk_ancestors(
+    leaf: TaskRun, task_path: PathLibPath | None
+) -> tuple[list[TaskRun], bool]:
+    """
+    Walk parent_task_run_id from `leaf` upward, returning (chain_root_to_leaf, chain_broken).
+
+    chain_broken is True if any parent failed to load, a cycle was detected, or
+    the depth guard tripped. On break, the returned list is the intact suffix
+    from `leaf` back to (but not including) the missing/cyclic node, reversed
+    to root-to-leaf order.
+    """
+    chain: list[TaskRun] = [leaf]
+    visited: set[str] = set()
+    if leaf.id is not None:
+        visited.add(str(leaf.id))
+    current = leaf
+    for _ in range(_MAX_ANCESTOR_DEPTH):
+        if current.parent_task_run_id is None:
+            chain.reverse()
+            return chain, False
+        if current.parent_task_run_id in visited:
+            chain.reverse()
+            return chain, True
+        parent = TaskRun.from_id_and_parent_path(current.parent_task_run_id, task_path)
+        if parent is None:
+            chain.reverse()
+            return chain, True
+        chain.append(parent)
+        if parent.id is not None:
+            visited.add(str(parent.id))
+        current = parent
+    chain.reverse()
+    return chain, True
+
+
+def _count_user_messages(trace: list[Any] | None) -> int:
+    if not trace:
+        return 0
+    return sum(1 for m in trace if isinstance(m, dict) and m.get("role") == "user")
 
 
 def deep_update(
@@ -82,6 +128,40 @@ class RunTaskRequest(BaseModel):
 
     # Allows use of the model_name field (usually pydantic will reserve model_*)
     model_config = ConfigDict(protected_namespaces=())
+
+
+class TaskRunAncestor(BaseModel):
+    """A single entry in a multiturn run's parent chain."""
+
+    run_id: str = Field(
+        description="The TaskRun id at this turn position in the chain."
+    )
+    turn_index: int = Field(
+        description=(
+            "1-based turn index in the leaf's conversation (turn 1 = root, "
+            "turn N = leaf). Derived from the leaf trace's user-message count."
+        )
+    )
+
+
+class TaskRunAncestorsResponse(BaseModel):
+    """Ordered ancestor chain for a multiturn TaskRun."""
+
+    ancestors: list[TaskRunAncestor] = Field(
+        description=(
+            "Ordered root-to-leaf, includes the requested run itself as the "
+            "final entry. If chain_broken is true, the list contains only the "
+            "intact suffix from the leaf back to (and excluding) the break "
+            "point."
+        )
+    )
+    chain_broken: bool = Field(
+        description=(
+            "True if while walking parents we encountered a parent_task_run_id "
+            "that could not be loaded, a cycle, the depth guard, or the chain "
+            "length exceeded the leaf trace's user-message count."
+        )
+    )
 
 
 class RunSummary(BaseModel):
@@ -233,6 +313,56 @@ def connect_run_api(app: FastAPI):
         ],
     ) -> TaskRun:
         return run_from_id(project_id, task_id, run_id)
+
+    @app.get(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/ancestors",
+        summary="Get Run Ancestors",
+        tags=["Runs"],
+        openapi_extra=ALLOW_AGENT,
+    )
+    async def get_run_ancestors(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        run_id: Annotated[
+            str, Path(description="The unique identifier of the leaf task run.")
+        ],
+    ) -> TaskRunAncestorsResponse:
+        task = task_from_id(project_id, task_id)
+        if task.turn_mode != TurnMode.multiturn:
+            raise HTTPException(
+                status_code=400,
+                detail="Ancestors are only available for multiturn tasks.",
+            )
+        leaf = TaskRun.from_id_and_parent_path(run_id, task.path)
+        if leaf is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Run not found: {run_id}",
+            )
+        chain, chain_broken = _walk_ancestors(leaf, task.path)
+        turn_count = _count_user_messages(leaf.trace)
+        # Degenerate leaf trace (no user messages at all): we can't position any
+        # run on a turn, so surface as broken-chain with an empty list.
+        if turn_count == 0:
+            return TaskRunAncestorsResponse(ancestors=[], chain_broken=True)
+        # Pathological: more resolved ancestors than the leaf trace can support.
+        # Treat as broken and keep only the suffix that fits.
+        if len(chain) > turn_count:
+            chain = chain[-turn_count:]
+            chain_broken = True
+        ancestors = [
+            TaskRunAncestor(
+                run_id=str(r.id),
+                turn_index=turn_count - (len(chain) - 1 - i),
+            )
+            for i, r in enumerate(chain)
+        ]
+        return TaskRunAncestorsResponse(ancestors=ancestors, chain_broken=chain_broken)
 
     @app.delete(
         "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}",

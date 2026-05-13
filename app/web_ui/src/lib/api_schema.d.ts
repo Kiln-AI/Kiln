@@ -271,6 +271,23 @@ export interface paths {
         patch: operations["update_run_api_projects__project_id__tasks__task_id__runs__run_id__patch"];
         trace?: never;
     };
+    "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/ancestors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run Ancestors */
+        get: operations["get_run_ancestors_api_projects__project_id__tasks__task_id__runs__run_id__ancestors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects/{project_id}/tasks/{task_id}/runs": {
         parameters: {
             query?: never;
@@ -9747,6 +9764,38 @@ export interface components {
             readonly model_type: string;
         };
         /**
+         * TaskRunAncestor
+         * @description A single entry in a multiturn run's parent chain.
+         */
+        TaskRunAncestor: {
+            /**
+             * Run Id
+             * @description The TaskRun id at this turn position in the chain.
+             */
+            run_id: string;
+            /**
+             * Turn Index
+             * @description 1-based turn index in the leaf's conversation (turn 1 = root, turn N = leaf). Derived from the leaf trace's user-message count.
+             */
+            turn_index: number;
+        };
+        /**
+         * TaskRunAncestorsResponse
+         * @description Ordered ancestor chain for a multiturn TaskRun.
+         */
+        TaskRunAncestorsResponse: {
+            /**
+             * Ancestors
+             * @description Ordered root-to-leaf, includes the requested run itself as the final entry. If chain_broken is true, the list contains only the intact suffix from the leaf back to (and excluding) the break point.
+             */
+            ancestors: components["schemas"]["TaskRunAncestor"][];
+            /**
+             * Chain Broken
+             * @description True if while walking parents we encountered a parent_task_run_id that could not be loaded, a cycle, the depth guard, or the chain length exceeded the leaf trace's user-message count.
+             */
+            chain_broken: boolean;
+        };
+        /**
          * TaskRunConfig
          * @description A Kiln model for persisting a run config in a Kiln Project, nested under a task.
          *
@@ -11279,6 +11328,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskRun-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_ancestors_api_projects__project_id__tasks__task_id__runs__run_id__ancestors_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The unique identifier of the project. */
+                project_id: string;
+                /** @description The unique identifier of the task within the project. */
+                task_id: string;
+                /** @description The unique identifier of the leaf task run. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskRunAncestorsResponse"];
                 };
             };
             /** @description Validation Error */

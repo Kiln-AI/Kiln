@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -19,6 +20,7 @@ from kiln_ai.datamodel import (
     TaskOutputRatingType,
     TaskRun,
 )
+from kiln_ai.datamodel.model_cache import ModelCache
 from kiln_ai.datamodel.tool_id import KilnBuiltInToolId
 from kiln_ai.utils.config import Config
 
@@ -2096,3 +2098,255 @@ async def test_get_runs_summaries_single_turn_returns_all_runs(client, task_run_
     assert response.status_code == 200
     result = response.json()
     assert {r["id"] for r in result} == {first_run.id, second_run.id, third_run.id}
+
+
+def _user_turn(text: str) -> dict:
+    return {"role": "user", "content": text}
+
+
+def _assistant_turn(text: str) -> dict:
+    return {"role": "assistant", "content": text}
+
+
+def _build_three_turn_chain(task):
+    """Build root -> mid -> leaf with consistent traces (1, 2, 3 user messages)."""
+    root = _make_task_run(
+        task,
+        input_text="turn 1",
+        output_text="reply 1",
+        trace=[_user_turn("turn 1"), _assistant_turn("reply 1")],
+    )
+    mid = _make_task_run(
+        task,
+        input_text="turn 2",
+        output_text="reply 2",
+        parent_task_run_id=root.id,
+        trace=[
+            _user_turn("turn 1"),
+            _assistant_turn("reply 1"),
+            _user_turn("turn 2"),
+            _assistant_turn("reply 2"),
+        ],
+    )
+    leaf = _make_task_run(
+        task,
+        input_text="turn 3",
+        output_text="reply 3",
+        parent_task_run_id=mid.id,
+        trace=[
+            _user_turn("turn 1"),
+            _assistant_turn("reply 1"),
+            _user_turn("turn 2"),
+            _assistant_turn("reply 2"),
+            _user_turn("turn 3"),
+            _assistant_turn("reply 3"),
+        ],
+    )
+    return root, mid, leaf
+
+
+@pytest.mark.asyncio
+async def test_get_ancestors_single_turn_task_returns_400(client, task_run_setup):
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    run = task_run_setup["task_run"]
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/{run.id}/ancestors"
+        )
+
+    assert response.status_code == 400
+    assert (
+        response.json()["message"]
+        == "Ancestors are only available for multiturn tasks."
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_ancestors_run_not_found_returns_404(
+    client, multiturn_task_run_setup
+):
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/missing_run/ancestors"
+        )
+
+    assert response.status_code == 404
+    assert response.json()["message"] == "Run not found: missing_run"
+
+
+@pytest.mark.asyncio
+async def test_get_ancestors_single_turn_chain_returns_self_only(
+    client, multiturn_task_run_setup
+):
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+    parent_run = multiturn_task_run_setup["parent_run"]
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/{parent_run.id}/ancestors"
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["chain_broken"] is False
+    assert body["ancestors"] == [{"run_id": parent_run.id, "turn_index": 1}]
+
+
+@pytest.mark.asyncio
+async def test_get_ancestors_three_turn_chain_returns_full_chain_root_to_leaf(
+    client, multiturn_task_run_setup
+):
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+    # The fixture's parent_run is unrelated to the chain we build here.
+    root, mid, leaf = _build_three_turn_chain(task)
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/{leaf.id}/ancestors"
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["chain_broken"] is False
+    assert body["ancestors"] == [
+        {"run_id": root.id, "turn_index": 1},
+        {"run_id": mid.id, "turn_index": 2},
+        {"run_id": leaf.id, "turn_index": 3},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_ancestors_missing_parent_mid_chain_sets_chain_broken(
+    client, multiturn_task_run_setup
+):
+    """If a parent run file is deleted from disk, the walk stops there.
+
+    The endpoint returns the intact suffix (leaf only) with chain_broken=true.
+    """
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+    _root, mid, leaf = _build_three_turn_chain(task)
+
+    # Delete the mid run's directory from disk. Also evict the cache so the
+    # loader actually re-reads the filesystem.
+    assert mid.path is not None
+    shutil.rmtree(Path(mid.path).parent)
+    ModelCache.shared().clear()
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/{leaf.id}/ancestors"
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["chain_broken"] is True
+    # Only the leaf remains reachable; turn_index reflects its position in the
+    # leaf trace (3 user messages → leaf is turn 3).
+    assert body["ancestors"] == [{"run_id": leaf.id, "turn_index": 3}]
+
+
+@pytest.mark.asyncio
+async def test_get_ancestors_cycle_in_chain_is_handled(
+    client, multiturn_task_run_setup
+):
+    """Two runs whose parent_task_run_id point at each other terminate cleanly."""
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+
+    # Build a normal pair, then mutate the root's parent_task_run_id to point at
+    # the leaf to create a cycle.
+    root = _make_task_run(
+        task,
+        input_text="a",
+        output_text="A",
+        trace=[_user_turn("a"), _assistant_turn("A")],
+    )
+    leaf = _make_task_run(
+        task,
+        input_text="b",
+        output_text="B",
+        parent_task_run_id=root.id,
+        trace=[
+            _user_turn("a"),
+            _assistant_turn("A"),
+            _user_turn("b"),
+            _assistant_turn("B"),
+        ],
+    )
+    root.parent_task_run_id = leaf.id
+    root.save_to_file()
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/{leaf.id}/ancestors"
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["chain_broken"] is True
+    # The walk visits leaf, then root (parent of leaf), then finds root's
+    # parent (leaf) already visited → stops, returning both with broken=true.
+    assert [a["run_id"] for a in body["ancestors"]] == [root.id, leaf.id]
+
+
+@pytest.mark.asyncio
+async def test_get_ancestors_chain_longer_than_trace_user_messages_is_broken(
+    client, multiturn_task_run_setup
+):
+    """Pathological: 3-run chain whose leaf trace has only 1 user message.
+
+    Endpoint trims to the suffix (leaf only) and reports chain_broken=true.
+    """
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+
+    root = _make_task_run(
+        task,
+        input_text="a",
+        output_text="A",
+        trace=[_user_turn("a"), _assistant_turn("A")],
+    )
+    mid = _make_task_run(
+        task,
+        input_text="b",
+        output_text="B",
+        parent_task_run_id=root.id,
+        trace=[
+            _user_turn("a"),
+            _assistant_turn("A"),
+            _user_turn("b"),
+            _assistant_turn("B"),
+        ],
+    )
+    leaf = _make_task_run(
+        task,
+        input_text="c",
+        output_text="C",
+        parent_task_run_id=mid.id,
+        trace=[_user_turn("c"), _assistant_turn("C")],
+    )
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/{leaf.id}/ancestors"
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["chain_broken"] is True
+    assert body["ancestors"] == [{"run_id": leaf.id, "turn_index": 1}]
