@@ -4540,6 +4540,7 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="high",
+                openrouter_reasoning_object=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
@@ -4570,6 +4571,7 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="high",
+                openrouter_reasoning_object=True,
             ),
         ],
     ),
