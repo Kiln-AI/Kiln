@@ -1,12 +1,20 @@
 <script lang="ts">
   import type { Trace, TraceMessage, ToolCallMessageParam } from "$lib/types"
   import Output from "$lib/ui/output.svelte"
+  import ChatMarkdown from "$lib/ui/chat/chat_markdown.svelte"
   import ArrowRightUpIcon from "../icons/arrow_right_up_icon.svelte"
   import ToolCall from "./tool_call.svelte"
   import ToolMessagesDialog from "./tool_messages_dialog.svelte"
 
   export let trace: Trace
   export let project_id: string | undefined = undefined
+  // When true, render non-tool content via Markdown instead of raw Output.
+  // Tool results still render via Output since they're typically JSON.
+  export let markdown_content: boolean = false
+
+  function should_render_markdown(message: TraceMessage): boolean {
+    return markdown_content && message.role !== "tool"
+  }
 
   // Track collapsed state for each message (true = expanded, false = collapsed)
   let messageExpanded: boolean[] = trace.map(() => false)
@@ -252,7 +260,11 @@
                   <div class="text-xs text-gray-500 font-bold mb-1">
                     Reasoning
                   </div>
-                  <Output raw_output={reasoning_content} no_padding={true} />
+                  {#if should_render_markdown(message)}
+                    <ChatMarkdown text={reasoning_content} />
+                  {:else}
+                    <Output raw_output={reasoning_content} no_padding={true} />
+                  {/if}
                 </div>
               {/if}
 
@@ -317,7 +329,11 @@
                       Content
                     </div>
                   {/if}
-                  <Output raw_output={content} no_padding={true} />
+                  {#if should_render_markdown(message)}
+                    <ChatMarkdown text={content} />
+                  {:else}
+                    <Output raw_output={content} no_padding={true} />
+                  {/if}
                 </div>
               {/if}
             </div>

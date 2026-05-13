@@ -44,7 +44,7 @@
     split_tool_and_skill_ids,
   } from "$lib/stores/tools_store"
   import { agentInfo } from "$lib/agent"
-  import ConversationView from "$lib/ui/conversation/conversation_view.svelte"
+  import TraceComponent from "$lib/ui/trace/trace.svelte"
   import RunInputForm from "../../../../../run/run_input_form.svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
@@ -611,7 +611,11 @@
         <div data-testid="multiturn-layout">
           <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
             <div class="grow flex flex-col gap-6">
-              <ConversationView trace={run.trace ?? []} {task} />
+              <TraceComponent
+                trace={run.trace ?? []}
+                {project_id}
+                markdown_content={true}
+              />
               <div data-testid="multiturn-composer">
                 <FormContainer
                   submit_label="Send"
