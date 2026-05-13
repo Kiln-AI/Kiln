@@ -1,6 +1,8 @@
 <p align="center">
     <a href="https://kiln.tech">
         <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/faae475e-7ace-443b-91f3-0e3701f0c90d">
+            <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/4ca9b69f-1c90-43a4-8d2e-13de4eb2ee9c">
             <img width="205" alt="Kiln AI Logo" src="https://github.com/user-attachments/assets/4ca9b69f-1c90-43a4-8d2e-13de4eb2ee9c">
         </picture>
     </a>
