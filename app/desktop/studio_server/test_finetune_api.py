@@ -39,7 +39,7 @@ from kiln_ai.datamodel import (
     TaskOutputRatingType,
     TaskRun,
 )
-from kiln_ai.datamodel.datamodel_enums import ChatStrategy
+from kiln_ai.datamodel.datamodel_enums import ChatStrategy, TurnMode
 from kiln_ai.datamodel.dataset_filters import DatasetFilterId
 from kiln_ai.datamodel.dataset_split import (
     AllSplitDefinition,
@@ -732,6 +732,34 @@ async def test_create_finetune(
         validation_split_name="validation",
         data_strategy=data_strategy,
         run_config=None,
+    )
+
+
+def test_create_finetune_multiturn_task_rejected(client, test_task, monkeypatch):
+    test_task.turn_mode = TurnMode.multiturn
+    monkeypatch.setattr(
+        "app.desktop.studio_server.finetune_api.task_from_id",
+        Mock(return_value=test_task),
+    )
+
+    request_data = {
+        "dataset_id": "split1",
+        "train_split_name": "train",
+        "parameters": {},
+        "provider": "openai",
+        "base_model_id": "base_model_1",
+        "custom_system_message": "Test system message",
+        "data_strategy": "final_only",
+    }
+
+    response = client.post(
+        "/api/projects/project1/tasks/task1/finetunes", json=request_data
+    )
+
+    assert response.status_code == 400
+    assert (
+        response.json()["message"]
+        == "Fine-tuning is not supported for multiturn tasks."
     )
 
 

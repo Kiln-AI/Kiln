@@ -10,7 +10,10 @@
   import Warning from "$lib/ui/warning.svelte"
   import Completed from "$lib/ui/completed.svelte"
   import PromptTypeSelector from "$lib/ui/run_config_component/prompt_type_selector.svelte"
-  import { fine_tune_target_model as model_provider } from "$lib/stores"
+  import {
+    fine_tune_target_model as model_provider,
+    load_task,
+  } from "$lib/stores"
   import {
     available_tuning_models,
     available_models_error,
@@ -28,6 +31,7 @@
     FineTuneParameter,
     KilnAgentRunConfigProperties,
     ModelProviderName,
+    Task,
   } from "$lib/types"
   import { isKilnAgentRunConfig } from "$lib/types"
   import SelectFinetuneDataset from "./select_finetune_dataset.svelte"
@@ -54,6 +58,9 @@
     name: "Create Fine-Tune",
     description: `Create a new fine-tuning job for project ID ${project_id}, task ID ${task_id}. Configure model, data strategy, and training parameters.`,
   })
+
+  let task: Task | null = null
+  $: is_multiturn = task?.turn_mode === "multiturn"
 
   let run_config_component: RunConfigComponent | null = null
 
@@ -237,6 +244,9 @@
 
   onMount(async () => {
     get_available_models()
+    load_task(project_id, task_id).then((loaded) => {
+      task = loaded
+    })
 
     // Initialize IndexedDB-backed store for state persistence
     const state_key = `create_finetune_state_${project_id}_${task_id}`
@@ -717,6 +727,14 @@
     {#if $available_models_loading}
       <div class="w-full min-h-[50vh] flex justify-center items-center">
         <div class="loading loading-spinner loading-lg"></div>
+      </div>
+    {:else if is_multiturn}
+      <div class="flex flex-col items-center justify-center min-h-[60vh]">
+        <Warning
+          warning_message="Fine-tuning is not supported for multiturn tasks."
+          warning_color="warning"
+          warning_icon="info"
+        />
       </div>
     {:else if created_finetune}
       <Completed

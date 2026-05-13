@@ -33,7 +33,11 @@ from kiln_ai.datamodel import (
     FineTuneStatusType,
     Task,
 )
-from kiln_ai.datamodel.datamodel_enums import THINKING_DATA_STRATEGIES, ChatStrategy
+from kiln_ai.datamodel.datamodel_enums import (
+    THINKING_DATA_STRATEGIES,
+    ChatStrategy,
+    TurnMode,
+)
 from kiln_ai.datamodel.dataset_filters import (
     DatasetFilterId,
     HighRatingDatasetFilter,
@@ -587,6 +591,11 @@ def connect_fine_tune_api(app: FastAPI):
         request: CreateFinetuneRequest,
     ) -> Finetune:
         task = task_from_id(project_id, task_id)
+        if task.turn_mode == TurnMode.multiturn:
+            raise HTTPException(
+                status_code=400,
+                detail="Fine-tuning is not supported for multiturn tasks.",
+            )
         if request.provider not in finetune_registry:
             raise HTTPException(
                 status_code=400,
