@@ -186,7 +186,7 @@ def test_import_csv_plain_text(base_task: Task, tmp_path):
 def test_import_csv_field_exceeds_python_default_limit(base_task: Task, tmp_path):
     """Rows with a single field larger than Python's default csv field size
     limit (131,072 bytes) must still import successfully. We raise the limit
-    to the platform max in dataset_import; this regression test guards that."""
+    in import_csv; this regression test guards that."""
 
     # ~200 KB single field, well over the 131,072-byte default.
     big_input = "x" * 200_000
