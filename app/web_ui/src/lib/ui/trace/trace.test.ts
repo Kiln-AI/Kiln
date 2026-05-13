@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, afterEach } from "vitest"
+import { describe, it, expect, afterEach, vi } from "vitest"
 import { render, cleanup, fireEvent } from "@testing-library/svelte"
 import Trace from "./trace.svelte"
 import type { Trace as TraceType, TraceMessage } from "$lib/types"
@@ -154,5 +154,130 @@ describe("Trace component", () => {
     const { container } = render(Trace, { props: { trace: [] as TraceType } })
     const collapses = container.querySelectorAll(".collapse")
     expect(collapses.length).toBe(0)
+  })
+})
+
+describe("Trace component — fork affordance", () => {
+  function fork_button(container: HTMLElement) {
+    return container.querySelectorAll<HTMLButtonElement>(
+      'button[aria-label="Fork from this turn"]',
+    )
+  }
+
+  it("does NOT render a fork button when the user block is collapsed", () => {
+    const trace: TraceType = [
+      systemMsg("s"),
+      userMsg("u1"),
+      assistantMsg("a1"),
+      userMsg("u2"),
+      assistantMsg("a2"),
+    ]
+    const forkable_run_ids = [null, null, null, "run-2", null]
+    const { container } = render(Trace, {
+      props: { trace, forkable_run_ids, on_fork: vi.fn() },
+    })
+    // The fork button now lives inside the expanded content, so it must not
+    // render while the user block is collapsed.
+    expect(fork_button(container).length).toBe(0)
+  })
+
+  it("renders a fork button inside the expanded user block where forkable_run_ids[i] is set", async () => {
+    const trace: TraceType = [
+      systemMsg("s"),
+      userMsg("u1"),
+      assistantMsg("a1"),
+      userMsg("u2"),
+      assistantMsg("a2"),
+    ]
+    const forkable_run_ids = [null, null, null, "run-2", null]
+    const { container } = render(Trace, {
+      props: { trace, forkable_run_ids, on_fork: vi.fn() },
+    })
+    // Expand the forkable user block (index 3).
+    const checkboxes = container.querySelectorAll<HTMLInputElement>(
+      "input[type=checkbox]",
+    )
+    await fireEvent.click(checkboxes[3])
+    const buttons = fork_button(container)
+    expect(buttons.length).toBe(1)
+  })
+
+  it("does NOT render a fork button on non-user blocks even if forkable_run_ids[i] is set", async () => {
+    const trace: TraceType = [systemMsg("s"), userMsg("u1"), assistantMsg("a1")]
+    // Set entries on all blocks; only the user one should produce a button.
+    const forkable_run_ids = ["run-sys", "run-user", "run-asst"]
+    const { container } = render(Trace, {
+      props: { trace, forkable_run_ids, on_fork: vi.fn() },
+    })
+    await expandAll(container)
+    const buttons = fork_button(container)
+    expect(buttons.length).toBe(1)
+  })
+
+  it("does NOT render any fork button when on_fork is not provided", async () => {
+    const trace: TraceType = [userMsg("u1")]
+    const forkable_run_ids = ["run-1"]
+    const { container } = render(Trace, {
+      props: { trace, forkable_run_ids },
+    })
+    await expandAll(container)
+    expect(fork_button(container).length).toBe(0)
+  })
+
+  it("does NOT render a fork button when forkable_run_ids[i] is null", async () => {
+    const trace: TraceType = [userMsg("u1")]
+    const forkable_run_ids = [null]
+    const { container } = render(Trace, {
+      props: { trace, forkable_run_ids, on_fork: vi.fn() },
+    })
+    await expandAll(container)
+    expect(fork_button(container).length).toBe(0)
+  })
+
+  it("invokes on_fork with the mapped run id and trace index, and does not toggle the collapse", async () => {
+    const trace: TraceType = [
+      systemMsg("s"),
+      userMsg("u1"),
+      assistantMsg("a1"),
+      userMsg("u2"),
+    ]
+    const forkable_run_ids = [null, null, null, "run-leaf"]
+    const on_fork = vi.fn()
+    const { container } = render(Trace, {
+      props: { trace, forkable_run_ids, on_fork },
+    })
+    // The fork button is inside the expanded block — expand the target user
+    // block (index 3) first.
+    const checkboxes = container.querySelectorAll<HTMLInputElement>(
+      "input[type=checkbox]",
+    )
+    const target_checkbox = checkboxes[3]
+    await fireEvent.click(target_checkbox)
+    expect(target_checkbox.checked).toBe(true)
+    const button = fork_button(container)[0]
+    expect(button).toBeDefined()
+    await fireEvent.click(button)
+    expect(on_fork).toHaveBeenCalledTimes(1)
+    expect(on_fork).toHaveBeenCalledWith("run-leaf", 3)
+    // The button lives inside .collapse-content (not the click-toggle
+    // target), so clicking it must not toggle the collapse back to
+    // collapsed.
+    expect(target_checkbox.checked).toBe(true)
+  })
+
+  it("hides messages at or after truncate_at_trace_index", () => {
+    const trace: TraceType = [
+      systemMsg("s"),
+      userMsg("u1"),
+      assistantMsg("a1"),
+      userMsg("u2"),
+      assistantMsg("a2"),
+    ]
+    const { container } = render(Trace, {
+      props: { trace, truncate_at_trace_index: 3 },
+    })
+    // Only indices 0..2 should render -> 3 collapses.
+    const collapses = container.querySelectorAll(".collapse")
+    expect(collapses.length).toBe(3)
   })
 })

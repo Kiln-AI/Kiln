@@ -134,6 +134,9 @@ export type TraceMessage =
 export type Trace = TraceMessage[]
 export type ToolCallMessageParam =
   components["schemas"]["ChatCompletionMessageFunctionToolCallParam"]
+export type TaskRunAncestor = components["schemas"]["TaskRunAncestor"]
+export type TaskRunAncestorsResponse =
+  components["schemas"]["TaskRunAncestorsResponse"]
 export type SearchToolApiDescription =
   components["schemas"]["SearchToolApiDescription"]
 export type Skill = components["schemas"]["SkillResponse"]

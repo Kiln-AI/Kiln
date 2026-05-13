@@ -124,6 +124,7 @@ Unchanged. Forking turn 1 is not a flow we support; users start a new conversati
 Detailed in the UI design step. Functional requirements:
 
 - The fork affordance must be discoverable but unobtrusive (it shouldn't dominate the user block).
+- The fork affordance lives inside the **expanded** user block (below the message content), not in the collapsed header. The header is a click-to-expand target; putting an interactive button there competes with the expand click. Users discover the fork affordance by expanding a user turn — the same gesture they use to inspect the turn before forking.
 - The truncated state must clearly communicate "this is a fork in progress" — not look like a normal continuation.
 - The original user text must be visible in the composer (prefilled, editable, clearable).
 - Send/Cancel must be unambiguous.

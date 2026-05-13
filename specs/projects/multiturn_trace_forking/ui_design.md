@@ -20,7 +20,9 @@ This project introduces a fork affordance on user blocks and an inline composer 
 
 ### Placement
 
-A fork button is rendered **inside each eligible user block's header**, immediately to the left of the expand arrow. This keeps it on the same row as the role label and preview, doesn't expand the visual footprint of the block, and is consistent regardless of whether the block is expanded or collapsed.
+A fork button is rendered **inside the expanded body of each eligible user block** (the DaisyUI `.collapse-content`), positioned at the bottom-right of the expanded content — adjacent to the existing copy-to-clipboard-style affordances we use elsewhere. The user must expand a turn to see (and click) its fork button; the collapsed header remains a pure click-to-expand target.
+
+The original design placed the fork button in the collapsed header (next to the expand arrow). UI signoff round 2 surfaced a click-target conflict: the header is itself the expand toggle, so a button there competes with the collapse click and forces awkward propagation hacks. Moving the button into the expanded body resolves the conflict and matches the user's gesture flow — they almost always want to see what they're forking before they fork, which means expanding the turn anyway.
 
 Eligibility rules (from the functional spec):
 
@@ -31,11 +33,12 @@ Eligibility rules (from the functional spec):
 
 ### Visual
 
-- A small ghost icon button with a branch-style icon, no text label by default.
+- A small square icon button with a branch-style icon, no text label by default.
+- Right-aligned within a row at the bottom of the expanded user block's content.
 - Tooltip on hover: `"Fork from here"`.
-- Stops propagation on click so the click doesn't toggle the collapse.
-- Size: matches existing tiny header controls (`btn btn-ghost btn-xs` pattern, or equivalent inline icon).
-- Color: muted by default; primary color on hover. Doesn't dominate the block.
+- Accessible label: `aria-label="Fork from this turn"`.
+- Size: matches the small icon-button pattern (`btn btn-sm btn-square`, ~h-8/w-8). Muted (gray-400) by default; darkens on hover.
+- Hidden when the block is collapsed (it lives inside `.collapse-content`, which Svelte does not render until the block is expanded).
 
 ### Icon choice
 
@@ -159,6 +162,6 @@ The TraceComponent is the right place for the fork button because it's the compo
 
 ## Open Questions
 
-1. **Icon + label.** I chose a fork/branch icon, no text label, tooltip "Fork from here." Alternatives: "Retry from here" with a refresh icon; an explicit text button reading "Fork". My pick keeps the row uncluttered for long conversations, but if you want better discoverability at the cost of a wider header, we can show a short text label.
+1. **Icon + label.** I chose a fork/branch icon, no text label, tooltip "Fork from here." Alternatives: "Retry from here" with a refresh icon; an explicit text button reading "Fork". My pick keeps the row uncluttered for long conversations, but if you want better discoverability at the cost of a wider footer, we can show a short text label.
 
-2. **Hover-reveal vs. always visible.** I chose always visible (so users can discover it without hovering). For dense pages this could feel busy. If you prefer hover-reveal, say so.
+2. **Expanded-only visibility.** The fork button is only visible when the user block is expanded (see Placement). For first-time users this means the affordance is one click less obvious than an always-visible header button. We accepted this trade-off because the header is itself a click-to-expand target, and putting an interactive button there created a click-target conflict during signoff round 2. If discoverability becomes a complaint, an alternative would be a tiny hover-revealed icon outside the collapse container (e.g. floating to the right of the block) — not in v1.

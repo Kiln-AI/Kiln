@@ -23,7 +23,12 @@
   import { getContext } from "svelte"
   import { client } from "$lib/api_client"
   import { createKilnError, KilnError } from "$lib/utils/error_handlers"
-  import type { Task, TaskRun, StructuredOutputMode } from "$lib/types"
+  import type {
+    Task,
+    TaskRun,
+    StructuredOutputMode,
+    TaskRunAncestor,
+  } from "$lib/types"
   import { isMcpRunConfig } from "$lib/types"
   import {
     formatDate,
@@ -45,13 +50,17 @@
   } from "$lib/stores/tools_store"
   import { agentInfo } from "$lib/agent"
   import TraceComponent from "$lib/ui/trace/trace.svelte"
-  import RunInputForm from "../../../../../run/run_input_form.svelte"
-  import FormContainer from "$lib/utils/form_container.svelte"
+  import MultiturnComposer from "$lib/ui/conversation/multiturn_composer.svelte"
   import RunConfigComponent from "$lib/ui/run_config_component/run_config_component.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import { isKilnAgentRunConfig, type TaskRunConfig } from "$lib/types"
-  import { tick } from "svelte"
-  import { send_multiturn } from "./multiturn_send"
+  import Warning from "$lib/ui/warning.svelte"
+  import RunSidebar from "$lib/ui/run_sidebar.svelte"
+  import {
+    compute_forkable_run_ids,
+    fork_target_from_user_block,
+    type ForkTarget,
+  } from "./fork_helpers"
 
   $: run_id = $page.params.run_id!
   $: task_id = $page.params.task_id!
@@ -475,10 +484,7 @@
   }
 
   // ---- Multiturn composer state ----
-  let multiturn_input_form: RunInputForm
   let multiturn_run_config_component: RunConfigComponent
-  let multiturn_submitting = false
-  let multiturn_run_error: KilnError | null = null
   let multiturn_save_config_error: KilnError | null = null
   let multiturn_set_default_error: KilnError | null = null
   let multiturn_selected_run_config_id: string | null = null
@@ -499,36 +505,121 @@
     return "simple_prompt_builder"
   }
 
-  async function on_multiturn_submit() {
-    multiturn_run_error = null
-    multiturn_submitting = true
-    try {
-      const result = await send_multiturn({
-        project_id,
-        task_id,
-        parent_task_run_id: run?.id,
-        run_config_component: multiturn_run_config_component,
-        input_form: multiturn_input_form,
-        on_success: handle_send,
-      })
-      if (!result.ok) {
-        multiturn_run_error = createKilnError(result.error)
-      }
-    } catch (e) {
-      // on_success threw (e.g. goto/load_run failed). Input is intentionally
-      // not cleared in that case so the user does not lose their typed text.
-      multiturn_run_error = createKilnError(e)
-    } finally {
-      multiturn_submitting = false
-      await tick()
-    }
-  }
-
   async function handle_save_new_multiturn_run_config(): Promise<TaskRunConfig> {
     if (!multiturn_run_config_component) {
       throw new Error("Run configuration component is not loaded")
     }
     return await multiturn_run_config_component.save_new_run_config()
+  }
+
+  // ---- Ancestors / fork state ----
+  let ancestors: TaskRunAncestor[] = []
+  let ancestors_chain_broken = false
+  let ancestors_load_failed = false
+  let ancestors_loaded_for_run_id: string | null = null
+  let fork_target: ForkTarget | null = null
+
+  // Reset fork + ancestor state whenever the run id changes so we don't
+  // surface stale data (banners, suffix-aligned mappings) from the previous
+  // run before the new fetch resolves.
+  $: if (run_id) {
+    fork_target = null
+    ancestors = []
+    ancestors_chain_broken = false
+    ancestors_load_failed = false
+  }
+
+  $: if (
+    task &&
+    run &&
+    task.turn_mode === "multiturn" &&
+    ancestors_loaded_for_run_id !== run_id
+  ) {
+    load_ancestors(project_id, task_id, run_id)
+  }
+
+  async function load_ancestors(
+    req_project_id: string,
+    req_task_id: string,
+    req_run_id: string,
+  ) {
+    ancestors_loaded_for_run_id = req_run_id
+    try {
+      const { data, error } = await client.GET(
+        "/api/projects/{project_id}/tasks/{task_id}/runs/{run_id}/ancestors",
+        {
+          params: {
+            path: {
+              project_id: req_project_id,
+              task_id: req_task_id,
+              run_id: req_run_id,
+            },
+          },
+        },
+      )
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_run_id !== run_id
+      )
+        return
+      if (error) {
+        throw error
+      }
+      ancestors = data?.ancestors ?? []
+      ancestors_chain_broken = !!data?.chain_broken
+      ancestors_load_failed = false
+    } catch (_) {
+      if (
+        req_project_id !== project_id ||
+        req_task_id !== task_id ||
+        req_run_id !== run_id
+      )
+        return
+      ancestors = []
+      ancestors_chain_broken = false
+      ancestors_load_failed = true
+    }
+  }
+
+  $: forkable_run_ids = compute_forkable_run_ids(run?.trace ?? [], ancestors)
+
+  // Bound to the fork-mode MultiturnComposer so we can consult is_dirty()
+  // / request_swap() when the user clicks fork on a different turn while
+  // a composer is already open.
+  let fork_composer: MultiturnComposer | null = null
+
+  function on_fork(clicked_run_id: string, trace_index: number) {
+    const target = fork_target_from_user_block(
+      clicked_run_id,
+      trace_index,
+      run?.trace ?? [],
+      ancestors,
+    )
+    if (!target) return
+    const apply = () => {
+      fork_target = target
+    }
+    // No active fork composer (or it's not the same turn we're already on):
+    // if one is open, route through it so it can prompt on dirty edits.
+    if (fork_target && fork_composer) {
+      if (fork_target.trace_index === target.trace_index) {
+        // Clicking fork on the already-active turn is a no-op.
+        return
+      }
+      fork_composer.request_swap(apply)
+      return
+    }
+    apply()
+  }
+
+  function cancel_fork() {
+    fork_target = null
+  }
+
+  async function handle_fork_success(new_run_id: string) {
+    fork_target = null
+    await handle_send(new_run_id)
   }
 
   let buttons: ActionButton[] = []
@@ -607,32 +698,62 @@
     {:else if load_error}
       <div class="text-error">{load_error.getMessage()}</div>
     {:else if run && task}
-      {#if task.turn_mode === "multiturn"}
+      {#if task.turn_mode === "multiturn" && task.id}
+        {@const multiturn_task_id = task.id}
         <div data-testid="multiturn-layout">
           <div class="flex flex-col xl:flex-row gap-8 xl:gap-16">
             <div class="grow flex flex-col gap-6">
+              {#if ancestors_chain_broken}
+                <div role="alert" data-testid="fork-chain-broken-banner">
+                  <Warning
+                    warning_color="warning"
+                    warning_icon="exclaim"
+                    warning_message="Some earlier turns can't be forked because their run data is missing. Forking is still available for later turns."
+                    outline={true}
+                  />
+                </div>
+              {/if}
+              {#if ancestors_load_failed}
+                <div role="alert" data-testid="fork-load-failed-banner">
+                  <Warning
+                    warning_color="warning"
+                    warning_icon="exclaim"
+                    warning_message="Couldn't load conversation history. Forking is unavailable."
+                    outline={true}
+                  />
+                </div>
+              {/if}
               <TraceComponent
                 trace={run.trace ?? []}
                 {project_id}
                 markdown_content={true}
+                {forkable_run_ids}
+                truncate_at_trace_index={fork_target?.trace_index ?? null}
+                {on_fork}
               />
-              <div data-testid="multiturn-composer">
-                <FormContainer
-                  submit_label="Send"
-                  on:submit={on_multiturn_submit}
-                  bind:error={multiturn_run_error}
-                  bind:submitting={multiturn_submitting}
-                  primary={true}
-                  keyboard_submit={true}
-                >
-                  <div data-testid="multiturn-composer-input">
-                    <RunInputForm
-                      bind:this={multiturn_input_form}
-                      input_schema={null}
-                    />
-                  </div>
-                </FormContainer>
-              </div>
+              {#if fork_target}
+                <MultiturnComposer
+                  bind:this={fork_composer}
+                  mode="fork"
+                  {project_id}
+                  task_id={multiturn_task_id}
+                  parent_task_run_id={fork_target.parent_run_id}
+                  run_config_component={multiturn_run_config_component}
+                  prefill_text={fork_target.prefill}
+                  forked_turn_index={fork_target.turn_index}
+                  on_success={handle_fork_success}
+                  on_cancel={cancel_fork}
+                />
+              {:else}
+                <MultiturnComposer
+                  mode="append"
+                  {project_id}
+                  task_id={multiturn_task_id}
+                  parent_task_run_id={run.id ?? null}
+                  run_config_component={multiturn_run_config_component}
+                  on_success={handle_send}
+                />
+              {/if}
             </div>
             <div class="w-72 2xl:w-96 flex-none flex flex-col">
               <PropertyList
@@ -645,6 +766,14 @@
               >
                 {see_all_properties ? "See Less" : "See All"}
               </button>
+              <div class="mt-8">
+                <RunSidebar
+                  {project_id}
+                  {task}
+                  {run}
+                  on_run_updated={(updated) => (run = updated)}
+                />
+              </div>
               <div class="text-xl font-bold mt-8 mb-4">Options</div>
               <div class="flex flex-col gap-4">
                 {#key run.id}
