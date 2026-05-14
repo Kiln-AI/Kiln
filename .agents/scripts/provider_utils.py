@@ -187,25 +187,40 @@ def fetch_vertex(project_id: str) -> set[str]:
     Kiln Vertex entries may use a 'meta/' prefix for LiteLLM routing — callers should
     strip this before comparing.
     """
-    token = subprocess.check_output(
-        ["gcloud", "auth", "print-access-token"], text=True
-    ).strip()
+    try:
+        token = subprocess.check_output(
+            ["gcloud", "auth", "print-access-token"], text=True
+        ).strip()
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        raise RuntimeError(f"gcloud auth failed: {e}") from e
 
     ids: set[str] = set()
     errors: list[str] = []
     for publisher in ("google", "anthropic", "meta"):
-        url = f"https://us-central1-aiplatform.googleapis.com/v1beta1/publishers/{publisher}/models"
-        req = Request(url)
-        req.add_header("Authorization", f"Bearer {token}")
-        req.add_header("x-goog-user-project", project_id)
-        req.add_header("User-Agent", "kiln-model-check/1.0")
-        try:
-            with urlopen(req, timeout=15) as resp:
-                data = json.loads(resp.read())
-                for m in data.get("publisherModels", []):
-                    ids.add(m["name"].split("/")[-1])
-        except (HTTPError, URLError, OSError, KeyError, ValueError) as e:
-            errors.append(f"{publisher}: {e}")
+        next_page_token: str | None = None
+        while True:
+            url = (
+                "https://us-central1-aiplatform.googleapis.com/"
+                f"v1beta1/publishers/{publisher}/models?listAllVersions=true"
+            )
+            if next_page_token:
+                url += f"&pageToken={next_page_token}"
+
+            req = Request(url)
+            req.add_header("Authorization", f"Bearer {token}")
+            req.add_header("x-goog-user-project", project_id)
+            req.add_header("User-Agent", "kiln-model-check/1.0")
+            try:
+                with urlopen(req, timeout=15) as resp:
+                    data = json.loads(resp.read())
+                    for m in data.get("publisherModels", []):
+                        ids.add(m["name"].split("/")[-1])
+                    next_page_token = data.get("nextPageToken")
+                    if not next_page_token:
+                        break
+            except (HTTPError, URLError, OSError, KeyError, ValueError) as e:
+                errors.append(f"{publisher}: {e}")
+                break
     if not ids and errors:
         raise RuntimeError(f"All Vertex publishers failed: {'; '.join(errors)}")
     return ids

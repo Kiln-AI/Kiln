@@ -18,7 +18,6 @@ Requires:
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -45,60 +44,35 @@ sys.path.insert(0, str(REPO_ROOT / "libs" / "core"))
 from kiln_ai.adapters.fine_tune.fireworks_finetune import (  # noqa: E402  # type: ignore[import-not-found]
     FIREWORKS_SUPPORTED_FINETUNE_MODELS,
 )
-
-MODEL_LIST_PATH = (
-    REPO_ROOT / "libs" / "core" / "kiln_ai" / "adapters" / "ml_model_list.py"
+from kiln_ai.adapters.ml_model_list import (  # noqa: E402  # type: ignore[import-not-found]
+    built_in_models,
 )
 
 FIREWORKS_MODEL_PREFIX = "accounts/fireworks/models/"
 
 
 # ---------------------------------------------------------------------------
-# Extract static provider_finetune_id entries from ml_model_list.py
+# Extract static provider_finetune_id entries from the model list
 # ---------------------------------------------------------------------------
 
 
 def extract_static_finetune_ids() -> list[dict]:
-    """Parse ml_model_list.py to find all provider_finetune_id entries.
+    """Extract all provider_finetune_id entries from built_in_models.
 
     Returns list of {model_name, provider, finetune_id} dicts.
     """
-    source = MODEL_LIST_PATH.read_text()
     entries: list[dict] = []
 
-    model_pattern = re.compile(
-        r"KilnModel\s*\((.*?)\n    \)",
-        re.DOTALL,
-    )
-    name_pattern = re.compile(r'friendly_name\s*=\s*"([^"]+)"')
-    provider_block_pattern = re.compile(
-        r"KilnModelProvider\s*\((.*?)\)",
-        re.DOTALL,
-    )
-    provider_name_pattern = re.compile(r"name\s*=\s*ModelProviderName\.(\w+)")
-    finetune_id_pattern = re.compile(r'provider_finetune_id\s*=\s*"([^"]+)"')
-
-    for model_match in model_pattern.finditer(source):
-        model_block = model_match.group(1)
-        name_match = name_pattern.search(model_block)
-        model_name = name_match.group(1) if name_match else "Unknown"
-
-        for provider_match in provider_block_pattern.finditer(model_block):
-            provider_block = provider_match.group(1)
-            finetune_match = finetune_id_pattern.search(provider_block)
-            if not finetune_match:
-                continue
-
-            pname_match = provider_name_pattern.search(provider_block)
-            provider = pname_match.group(1) if pname_match else "unknown"
-
-            entries.append(
-                {
-                    "model_name": model_name,
-                    "provider": provider,
-                    "finetune_id": finetune_match.group(1),
-                }
-            )
+    for model in built_in_models:
+        for provider in model.providers:
+            if provider.provider_finetune_id:
+                entries.append(
+                    {
+                        "model_name": model.friendly_name,
+                        "provider": provider.name.value,
+                        "finetune_id": provider.provider_finetune_id,
+                    }
+                )
 
     return entries
 
@@ -137,8 +111,8 @@ def check_vertex_finetune(finetune_ids: list[str]) -> dict:
 
     try:
         available = fetch_vertex_with_aliases(project_id)
-    except (RuntimeError, FileNotFoundError, Exception) as e:
-        return {"skipped": True, "reason": f"Vertex API error: {e}"}
+    except (RuntimeError, FileNotFoundError) as e:
+        return {"skipped": True, "reason": f"Vertex API error: {type(e).__name__}"}
 
     found = [fid for fid in finetune_ids if fid in available]
     missing = [fid for fid in finetune_ids if fid not in available]
@@ -178,15 +152,19 @@ def check_static() -> dict:
             log(f"    ⏭️  No checker for {provider}")
             continue
 
-        result = checker(finetune_ids)
+        try:
+            result = checker(finetune_ids)
+        except Exception as e:
+            result = {"skipped": True, "reason": f"{type(e).__name__}"}
         result["entries"] = entry_map[provider]
         results[provider] = result
 
         if result.get("skipped"):
             log(f"    ⏭️  Skipped: {result['reason']}")
         elif result.get("missing"):
-            log(f"    ❌ {len(result['missing'])}/{len(finetune_ids)} missing")
-            for m in result["missing"]:
+            missing = result["missing"]
+            log(f"    ❌ {len(missing)}/{len(finetune_ids)} missing")  # type: ignore[arg-type]
+            for m in missing:  # type: ignore[union-attr]
                 log(f"       - {m}")
         else:
             log(f"    ✅ {len(finetune_ids)}/{len(finetune_ids)} found")
@@ -223,8 +201,8 @@ def check_fireworks() -> dict:
 
     try:
         tunable = fetch_fireworks_tunable(api_key)
-    except Exception as e:
-        return {"type": "fireworks", "skipped": True, "reason": str(e)}
+    except (RuntimeError, ValueError, OSError) as e:
+        return {"type": "fireworks", "skipped": True, "reason": type(e).__name__}
 
     log(f"  Fireworks API reports {len(tunable)} supervised-tunable models")
 

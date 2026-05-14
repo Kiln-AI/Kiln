@@ -45,7 +45,7 @@ The API endpoint that serves the fine-tune dropdown is `GET /api/finetune_provid
 Run the check script from the repo root:
 
 ```bash
-python3 .agents/skills/kiln-check-finetune-deprecation/scripts/check_finetune.py static > /tmp/kiln_finetune_static.json
+uv run python3 .agents/skills/kiln-check-finetune-deprecation/scripts/check_finetune.py static > /tmp/kiln_finetune_static.json
 ```
 
 This extracts all `provider_finetune_id` entries from `ml_model_list.py` and checks each provider's API to see if the model is still available for fine-tuning:
@@ -63,7 +63,7 @@ This extracts all `provider_finetune_id` entries from `ml_model_list.py` and che
 Fireworks fine-tunable models are fetched dynamically from their API, not stored in `ml_model_list.py`. The script checks the API's `supervisedLoraTunable` and `supervisedFullParameterTunable` fields (not the old `tunable` field, which is stale) and cross-references against our allowlist.
 
 ```bash
-python3 .agents/skills/kiln-check-finetune-deprecation/scripts/check_finetune.py fireworks > /tmp/kiln_finetune_fireworks.json
+uv run python3 .agents/skills/kiln-check-finetune-deprecation/scripts/check_finetune.py fireworks > /tmp/kiln_finetune_fireworks.json
 ```
 
 This script:
