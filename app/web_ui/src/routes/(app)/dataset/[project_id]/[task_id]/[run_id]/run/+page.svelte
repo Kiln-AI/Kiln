@@ -78,6 +78,7 @@
   let loading = true
   let load_error: KilnError | null = null
   let see_all_properties = false
+  let multiturn_show_raw_data = false
   let tools_property_value: string | string[] = "Loading..."
   let tool_links: (string | null)[] | undefined
   let skills_property_value: string | string[] = "None"
@@ -483,6 +484,21 @@
     })
   }
 
+  function multiturn_toggle_raw_data() {
+    multiturn_show_raw_data = !multiturn_show_raw_data
+    if (multiturn_show_raw_data) {
+      setTimeout(() => {
+        const rawDataElement = document.getElementById("multiturn_raw_data")
+        if (rawDataElement) {
+          rawDataElement.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          })
+        }
+      }, 100)
+    }
+  }
+
   // ---- Multiturn composer state ----
   let multiturn_run_config_component: RunConfigComponent
   let multiturn_save_config_error: KilnError | null = null
@@ -754,6 +770,26 @@
                   on_success={handle_send}
                 />
               {/if}
+              <div>
+                <div class="mt-2">
+                  <button
+                    class="text-xs link"
+                    on:click={multiturn_toggle_raw_data}
+                    >{multiturn_show_raw_data ? "Hide" : "Show"} Raw Data</button
+                  >
+                </div>
+                <div class={multiturn_show_raw_data ? "" : "hidden"}>
+                  <h1
+                    class="text-xl font-bold mt-2 mb-2"
+                    id="multiturn_raw_data"
+                  >
+                    Raw Data
+                  </h1>
+                  <div class="text-sm">
+                    <Output raw_output={JSON.stringify(run, null, 2)} />
+                  </div>
+                </div>
+              </div>
             </div>
             <div class="w-72 2xl:w-96 flex-none flex flex-col">
               <PropertyList

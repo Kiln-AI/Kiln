@@ -4,8 +4,11 @@
   import ChatMarkdown from "$lib/ui/chat/chat_markdown.svelte"
   import ArrowRightUpIcon from "../icons/arrow_right_up_icon.svelte"
   import ForkIcon from "../icons/fork_icon.svelte"
+  import InfoCircleIcon from "../icons/info_circle_icon.svelte"
   import ToolCall from "./tool_call.svelte"
   import ToolMessagesDialog from "./tool_messages_dialog.svelte"
+  import Float from "$lib/ui/float.svelte"
+  import { formatLatency } from "$lib/utils/formatters"
 
   export let trace: Trace
   export let project_id: string | undefined = undefined
@@ -32,6 +35,9 @@
 
   // Track collapsed state for each message (true = expanded, false = collapsed)
   let messageExpanded: boolean[] = trace.map(() => false)
+  // Track which message's usage info tooltip is currently visible. Only one
+  // tooltip can be visible at a time. -1 means no tooltip is visible.
+  let usageTooltipVisibleIndex: number = -1
 
   function getRoleDisplayName(role: string): string {
     return (
@@ -212,6 +218,57 @@
   }
 
   let tool_messages_dialog: ToolMessagesDialog | null = null
+
+  function message_usage(message: TraceMessage) {
+    if ("usage" in message && message.usage) {
+      return message.usage
+    }
+    return null
+  }
+
+  function message_latency_ms(message: TraceMessage): number | null {
+    if (
+      "latency_ms" in message &&
+      typeof message.latency_ms === "number" &&
+      message.latency_ms > 0
+    ) {
+      return message.latency_ms
+    }
+    return null
+  }
+
+  function has_usage_info(message: TraceMessage): boolean {
+    return (
+      message_usage(message) !== null || message_latency_ms(message) !== null
+    )
+  }
+
+  function usage_tooltip(message: TraceMessage): string {
+    const usage = message_usage(message)
+    const latency_ms = message_latency_ms(message)
+    const lines: string[] = []
+    if (usage) {
+      if (typeof usage.input_tokens === "number") {
+        lines.push(`Input tokens: ${usage.input_tokens}`)
+      }
+      if (typeof usage.output_tokens === "number") {
+        lines.push(`Output tokens: ${usage.output_tokens}`)
+      }
+      if (typeof usage.total_tokens === "number") {
+        lines.push(`Total tokens: ${usage.total_tokens}`)
+      }
+      if (typeof usage.cached_tokens === "number") {
+        lines.push(`Cached tokens: ${usage.cached_tokens}`)
+      }
+      if (typeof usage.cost === "number") {
+        lines.push(`Cost: $${usage.cost.toFixed(6)}`)
+      }
+    }
+    if (latency_ms !== null) {
+      lines.push(`Latency: ${formatLatency(latency_ms)}`)
+    }
+    return lines.join("\n")
+  }
 </script>
 
 <div class="flex flex-col gap-3 w-full">
@@ -357,17 +414,63 @@
                     {/if}
                   </div>
                 {/if}
-                {#if message.role === "user" && fork_run_id && on_fork}
-                  <div class="flex justify-end">
-                    <button
-                      type="button"
-                      class="btn btn-sm btn-square h-8 w-8 shadow-none text-gray-400 hover:text-gray-900"
-                      aria-label="Fork from this turn"
-                      title="Fork from here"
-                      on:click={() => on_fork?.(fork_run_id, index)}
-                    >
-                      <span class="w-5 h-5 block"><ForkIcon /></span>
-                    </button>
+                {#if (message.role === "user" && fork_run_id && on_fork) || has_usage_info(message)}
+                  {@const show_fork = !!(
+                    message.role === "user" &&
+                    fork_run_id &&
+                    on_fork
+                  )}
+                  {@const show_info = has_usage_info(message)}
+                  <div class="flex justify-end gap-1">
+                    {#if show_info}
+                      <!-- svelte-ignore a11y-no-static-element-interactions -->
+                      <div
+                        class="relative inline-block"
+                        on:mouseenter={() => (usageTooltipVisibleIndex = index)}
+                        on:mouseleave={() => {
+                          if (usageTooltipVisibleIndex === index)
+                            usageTooltipVisibleIndex = -1
+                        }}
+                      >
+                        <button
+                          type="button"
+                          class="btn btn-sm btn-square h-8 w-8 shadow-none text-gray-400 hover:text-gray-900"
+                          aria-label="Message usage info"
+                          on:focus={() => (usageTooltipVisibleIndex = index)}
+                          on:blur={() => {
+                            if (usageTooltipVisibleIndex === index)
+                              usageTooltipVisibleIndex = -1
+                          }}
+                        >
+                          <span class="w-5 h-5 block"><InfoCircleIcon /></span>
+                        </button>
+                        {#if usageTooltipVisibleIndex === index}
+                          <Float
+                            placement="left"
+                            strategy="fixed"
+                            offset_px={6}
+                            role="tooltip"
+                          >
+                            <div
+                              class="px-3 py-2 text-xs text-base-content bg-stone-200 rounded-md shadow-lg whitespace-pre-line max-w-xs"
+                            >
+                              {usage_tooltip(message)}
+                            </div>
+                          </Float>
+                        {/if}
+                      </div>
+                    {/if}
+                    {#if show_fork}
+                      <button
+                        type="button"
+                        class="btn btn-sm btn-square h-8 w-8 shadow-none text-gray-400 hover:text-gray-900"
+                        aria-label="Fork from this turn"
+                        title="Fork from here"
+                        on:click={() => on_fork?.(fork_run_id, index)}
+                      >
+                        <span class="w-5 h-5 block"><ForkIcon /></span>
+                      </button>
+                    {/if}
                   </div>
                 {/if}
               </div>

@@ -161,15 +161,19 @@
   {#if mode === "fork"}
     <div
       data-testid="multiturn-fork-context-strip"
-      class="flex flex-row items-center gap-2 bg-base-200 rounded-lg px-4 py-2 text-sm"
+      class="flex flex-col gap-1 bg-base-200 rounded-lg px-4 py-2 text-sm"
     >
-      <span class="w-4 h-4 text-gray-500"><ForkIcon /></span>
-      <span class="font-medium">
-        Forking turn {forked_turn_index}
-      </span>
-      <span class="text-gray-500 ml-auto"
-        >Original message preserved on parent.</span
-      >
+      <div class="flex flex-row items-center gap-2">
+        <span class="w-4 h-4 text-gray-500"><ForkIcon /></span>
+        <span class="font-medium">
+          Forking turn {forked_turn_index}
+        </span>
+      </div>
+      <p class="text-gray-500">
+        Editing this message will create a new conversation branch. The original
+        conversation it branched off from will be preserved unchanged in your
+        dataset.
+      </p>
     </div>
   {/if}
   <!-- We render two near-identical FormContainer branches because Svelte 4
