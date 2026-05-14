@@ -342,25 +342,29 @@
     eval_scores_cache,
   )
 
-  // Filter out user-hidden evals (cost section is never hideable).
-  // hiddenEvalIds is referenced directly in these reactive statements so that
-  // Svelte tracks it as a dependency and re-runs the filter when it changes.
-  $: visibleComparisonFeatures =
-    hiddenEvalIds.length === 0
-      ? comparisonFeatures
-      : comparisonFeatures.filter(
-          (section) =>
-            section.eval_id === "kiln_cost_section" ||
-            !hiddenEvalIds.includes(section.eval_id),
-        )
-  $: visibleChartComparisonFeatures =
-    hiddenEvalIds.length === 0
-      ? chartComparisonFeatures
-      : chartComparisonFeatures.filter(
-          (section) =>
-            section.eval_id === "kiln_cost_section" ||
-            !hiddenEvalIds.includes(section.eval_id),
-        )
+  // Filter out user-hidden evals (cost section is never hideable). hiddenEvalIds is
+  // passed in as a parameter (rather than read via closure) so that Svelte's reactive
+  // `$:` statements track it as a dependency and re-run when it changes.
+  function filterVisibleFeatures<T extends { eval_id: string }>(
+    features: T[],
+    hidden: string[],
+  ): T[] {
+    if (hidden.length === 0) return features
+    return features.filter(
+      (section) =>
+        section.eval_id === "kiln_cost_section" ||
+        !hidden.includes(section.eval_id),
+    )
+  }
+
+  $: visibleComparisonFeatures = filterVisibleFeatures(
+    comparisonFeatures,
+    hiddenEvalIds,
+  )
+  $: visibleChartComparisonFeatures = filterVisibleFeatures(
+    chartComparisonFeatures,
+    hiddenEvalIds,
+  )
 
   // Names of currently-hidden evals (used for the "show hidden" dropdown).
   // Prefer chartComparisonFeatures so we still show names when no models are selected.
