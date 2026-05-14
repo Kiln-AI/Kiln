@@ -98,13 +98,14 @@
     // Initialize selectedModels array with correct length
     selectedModels = new Array(columns).fill(null)
 
-    // Hidden evals can be restored before run configs are loaded - they are just IDs
+    // Hidden evals can be restored before run configs are loaded - they are just IDs.
+    // Defensive: drop the cost section ID in case a hand-edited URL sneaks it in.
     const urlHidden = urlParams.get("hidden_evals")
     if (urlHidden) {
       hiddenEvalIds = urlHidden
         .split(",")
         .map((id) => id.trim())
-        .filter((id) => id.length > 0)
+        .filter((id) => id.length > 0 && id !== "kiln_cost_section")
     }
   }
 
@@ -367,18 +368,15 @@
   )
 
   // Names of currently-hidden evals (used for the "show hidden" dropdown).
-  // Prefer chartComparisonFeatures so we still show names when no models are selected.
+  // chartComparisonFeatures is built from ALL run configs for the task and is a
+  // superset of comparisonFeatures (which only covers selected models), so it
+  // alone is enough to resolve display names.
   $: hiddenEvalsInfo = hiddenEvalIds
+    .filter((id) => id !== "kiln_cost_section")
     .map((evalId) => {
-      const fromChart = chartComparisonFeatures.find(
-        (s) => s.eval_id === evalId,
-      )
-      const fromSelected = comparisonFeatures.find((s) => s.eval_id === evalId)
-      const category =
-        fromChart?.category ?? fromSelected?.category ?? "Unknown eval"
-      return { eval_id: evalId, category }
+      const feature = chartComparisonFeatures.find((s) => s.eval_id === evalId)
+      return { eval_id: evalId, category: feature?.category ?? "Unknown eval" }
     })
-    .filter((info) => info.eval_id !== "kiln_cost_section")
 
   function hideEval(evalId: string) {
     if (evalId === "kiln_cost_section") return
