@@ -300,3 +300,38 @@ def fetch_fireworks_tunable(api_key: str) -> list[dict]:
             )
 
     return tunable
+
+
+def fetch_fireworks_docs_models() -> set[str]:
+    """Scrape Fireworks docs page to get the list of officially supported fine-tune models.
+
+    Parses the "Supported base models" table from the managed fine-tuning docs.
+    Returns bare tail IDs (e.g. "qwen3-8b") matching the format used in
+    FIREWORKS_SUPPORTED_FINETUNE_MODELS.
+
+    Raises RuntimeError if the page can't be fetched or the table can't be parsed.
+    """
+    url = "https://docs.fireworks.ai/fine-tuning/managed-finetuning-intro"
+    req = Request(url)
+    req.add_header("User-Agent", "kiln-model-check/1.0")
+    with urlopen(req, timeout=15) as resp:
+        html = resp.read().decode("utf-8")
+
+    # Find the supported base models table by locating a known model ID
+    # then walking back to the table start
+    marker = html.find("<td><code>")
+    if marker < 0:
+        raise RuntimeError("Could not find model table in Fireworks docs page")
+
+    table_start = html.rfind("<table", 0, marker)
+    table_end = html.find("</table>", marker)
+    if table_start < 0 or table_end < 0:
+        raise RuntimeError("Could not find table boundaries in Fireworks docs page")
+
+    table_html = html[table_start:table_end]
+    model_ids = set(re.findall(r"<td><code>([^<]+)</code></td>", table_html))
+
+    if not model_ids:
+        raise RuntimeError("Parsed zero models from Fireworks docs table")
+
+    return model_ids

@@ -30,6 +30,7 @@ sys.path.insert(
 )
 
 from provider_utils import (  # type: ignore[import-not-found]
+    fetch_fireworks_docs_models,
     fetch_fireworks_tunable,
     fetch_openai_compat,
     fetch_vertex_with_aliases,
@@ -206,6 +207,41 @@ def check_fireworks() -> dict:
 
     log(f"  Fireworks API reports {len(tunable)} supervised-tunable models")
 
+    # Scrape the Fireworks docs page for the ground-truth supported models
+    docs_models: set[str] | None = None
+    try:
+        docs_models = fetch_fireworks_docs_models()
+        log(f"  Fireworks docs list {len(docs_models)} supported models")
+    except (RuntimeError, OSError) as e:
+        log(f"  ⚠️  Could not scrape Fireworks docs: {type(e).__name__}")
+        log("     Falling back to allowlist-only comparison")
+
+    allowlist = FIREWORKS_SUPPORTED_FINETUNE_MODELS
+
+    # If docs scraping succeeded, check for allowlist drift against docs
+    if docs_models is not None:
+        in_docs_not_allowlist = sorted(docs_models - allowlist)
+        in_allowlist_not_docs = sorted(allowlist - docs_models)
+
+        if in_docs_not_allowlist:
+            log(
+                f"  ❌ {len(in_docs_not_allowlist)} models in docs but NOT in our allowlist (need to add):"
+            )
+            for m in in_docs_not_allowlist:
+                log(f"     - {m}")
+        if in_allowlist_not_docs:
+            log(
+                f"  ❌ {len(in_allowlist_not_docs)} models in our allowlist but NOT in docs (need to remove):"
+            )
+            for m in in_allowlist_not_docs:
+                log(f"     - {m}")
+        if not in_docs_not_allowlist and not in_allowlist_not_docs:
+            log(f"  ✅ Allowlist matches docs exactly ({len(allowlist)} models)")
+    else:
+        in_docs_not_allowlist = []
+        in_allowlist_not_docs = []
+
+    # Also compare allowlist against API (secondary signal)
     supported = _fireworks_supported_full_paths()
     tunable_ids = {m["id"] for m in tunable}
 
@@ -213,29 +249,28 @@ def check_fireworks() -> dict:
     in_api_only = sorted(tunable_ids - supported)
     in_supported_only = sorted(supported - tunable_ids)
 
-    log(f"  ✅ {len(in_both)} models in both API and allowlist")
-    if in_api_only:
-        log(
-            f"  ⚠️  {len(in_api_only)} models in API but NOT in allowlist (candidates to add):"
-        )
-        for m in in_api_only:
-            log(f"     - {m}")
+    log(f"  ✅ {len(in_both)} allowlist models found in API")
     if in_supported_only:
         log(
-            f"  ❌ {len(in_supported_only)} models in allowlist but NOT in API (possibly stale):"
+            f"  ❌ {len(in_supported_only)} allowlist models NOT in API (possibly stale):"
         )
         for m in in_supported_only:
             log(f"     - {m}")
 
-    api_only_details = [m for m in tunable if m["id"] in set(in_api_only)]
-
     return {
         "type": "fireworks",
         "total_tunable": len(tunable),
-        "supported_count": len(supported),
-        "in_both": in_both,
-        "in_api_only": api_only_details,
-        "in_supported_only": in_supported_only,
+        "allowlist_count": len(allowlist),
+        "docs_count": len(docs_models) if docs_models else None,
+        "docs_vs_allowlist": {
+            "in_docs_not_allowlist": in_docs_not_allowlist,
+            "in_allowlist_not_docs": in_allowlist_not_docs,
+        },
+        "api_vs_allowlist": {
+            "in_both": in_both,
+            "in_api_only_count": len(in_api_only),
+            "in_allowlist_not_api": in_supported_only,
+        },
     }
 
 
