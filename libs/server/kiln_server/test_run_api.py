@@ -583,7 +583,7 @@ async def test_get_runs_success(client, task_run_setup):
 
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
         mock_task = MagicMock()
-        mock_task.runs.return_value = [task_run]
+        mock_task.filter_runs.return_value = [task_run]
         mock_task_from_id.return_value = mock_task
 
         response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/runs")
@@ -604,7 +604,7 @@ async def test_get_runs_empty(client, task_run_setup):
 
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
         mock_task = MagicMock()
-        mock_task.runs.return_value = []
+        mock_task.filter_runs.return_value = []
         mock_task_from_id.return_value = mock_task
 
         response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/runs")
@@ -754,8 +754,8 @@ async def test_delete_run(client, task_run_setup):
     assert path.is_file()
     assert path.parent.exists()
 
-    with patch("kiln_server.run_api.run_from_id") as mock_run_from_id:
-        mock_run_from_id.return_value = task_run
+    with patch("kiln_server.run_api.task_and_run_from_id") as mock_resolve:
+        mock_resolve.return_value = (task, task_run)
         response = client.delete(
             f"/api/projects/{project.id}/tasks/{task.id}/runs/{task_run.id}"
         )
@@ -880,7 +880,7 @@ async def test_get_runs_summaries_success(client, task_run_setup):
 
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
         mock_task = MagicMock()
-        mock_task.runs.return_value = [task_run]
+        mock_task.filter_runs.return_value = [task_run]
         mock_task_from_id.return_value = mock_task
 
         response = client.get(
@@ -1595,7 +1595,7 @@ async def test_get_tags_success(client, task_run_setup):
 
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
         mock_task = MagicMock()
-        mock_task.runs.return_value = [task_run, second_run]
+        mock_task.filter_runs.return_value = [task_run, second_run]
         mock_task_from_id.return_value = mock_task
 
         response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/tags")
@@ -2350,3 +2350,183 @@ async def test_get_ancestors_chain_longer_than_trace_user_messages_is_broken(
     body = response.json()
     assert body["chain_broken"] is True
     assert body["ancestors"] == [{"run_id": leaf.id, "turn_index": 1}]
+
+
+@pytest.mark.asyncio
+async def test_delete_leaf_cascades_full_three_turn_chain(
+    client, multiturn_task_run_setup
+):
+    """Deleting the leaf of a 3-turn linear chain deletes every run in the chain."""
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+    root, mid, leaf = _build_three_turn_chain(task)
+
+    # Sanity: all three files exist on disk before we delete.
+    assert root.path.exists()
+    assert mid.path.exists()
+    assert leaf.path.exists()
+
+    ModelCache.shared().clear()
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.delete(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/{leaf.id}"
+        )
+
+    assert response.status_code == 200
+    assert not root.path.exists()
+    assert not mid.path.exists()
+    assert not leaf.path.exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_leaf_stops_at_branching_root(client, multiturn_task_run_setup):
+    """A root with two child branches must survive when one branch's leaf is deleted."""
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+
+    root = _make_task_run(
+        task,
+        input_text="turn 1",
+        output_text="reply 1",
+        trace=[_user_turn("turn 1"), _assistant_turn("reply 1")],
+    )
+    branch_a_leaf = _make_task_run(
+        task,
+        input_text="branch a",
+        output_text="reply a",
+        parent_task_run_id=root.id,
+    )
+    branch_b_leaf = _make_task_run(
+        task,
+        input_text="branch b",
+        output_text="reply b",
+        parent_task_run_id=root.id,
+    )
+
+    ModelCache.shared().clear()
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.delete(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/{branch_a_leaf.id}"
+        )
+
+    assert response.status_code == 200
+    # Branch A's leaf is gone; the root and branch B's leaf both survive
+    # because the root still has a live child.
+    assert not branch_a_leaf.path.exists()
+    assert root.path.exists()
+    assert branch_b_leaf.path.exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_interior_run_cascades_only_upward(
+    client, multiturn_task_run_setup
+):
+    """Deleting a mid-chain run cascades to its ancestors but NOT its descendants."""
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+    root, mid, leaf = _build_three_turn_chain(task)
+
+    ModelCache.shared().clear()
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.delete(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/{mid.id}"
+        )
+
+    assert response.status_code == 200
+    # root had only one child (mid), and that child is now in the delete-set,
+    # so root is removed too. The leaf (a descendant) is NOT touched.
+    assert not root.path.exists()
+    assert not mid.path.exists()
+    assert leaf.path.exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_with_cycle_in_parent_chain_stops_cleanly(
+    client, multiturn_task_run_setup
+):
+    """A cycle in parent_task_run_id must not 500 the delete endpoint."""
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+
+    a = _make_task_run(
+        task,
+        input_text="a",
+        output_text="A",
+        trace=[_user_turn("a"), _assistant_turn("A")],
+    )
+    b = _make_task_run(
+        task,
+        input_text="b",
+        output_text="B",
+        parent_task_run_id=a.id,
+    )
+    # Point a.parent_task_run_id at b to create a 2-node cycle.
+    a.parent_task_run_id = b.id
+    a.save_to_file()
+
+    ModelCache.shared().clear()
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.delete(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/{b.id}"
+        )
+
+    # Should not raise. b deleted; a's only remaining child (b) is deleted, so
+    # a also gets deleted. The cycle check prevents revisiting b.
+    assert response.status_code == 200
+    assert not a.path.exists()
+    assert not b.path.exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_with_missing_parent_stops_cascade_cleanly(
+    client, multiturn_task_run_setup
+):
+    """A broken parent reference stops the cascade without 500ing."""
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+    _root, mid, leaf = _build_three_turn_chain(task)
+
+    # Remove mid from disk while the leaf still references it.
+    assert mid.path is not None
+    shutil.rmtree(Path(mid.path).parent)
+    ModelCache.shared().clear()
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.delete(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/{leaf.id}"
+        )
+
+    assert response.status_code == 200
+    # Leaf is gone. Cascade stops at the break — the still-present root is
+    # NOT swept up because we couldn't verify mid (its only child) is dead.
+    assert not leaf.path.exists()
+    assert _root.path.exists()
+
+
+@pytest.mark.asyncio
+async def test_delete_single_turn_run_unchanged(client, task_run_setup):
+    """Single-turn runs have no parent chain — behavior is the same as before."""
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    task_run = task_run_setup["task_run"]
+
+    path = task_run.path
+    assert path.exists()
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.delete(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/{task_run.id}"
+        )
+
+    assert response.status_code == 200
+    assert not path.exists()

@@ -427,7 +427,7 @@
   )
 
   $: is_multiturn = task?.turn_mode === "multiturn"
-  $: usage_title = "Usage"
+  $: usage_title = is_multiturn ? "Usage (last turn)" : "Usage"
 
   // ---- Feedback ----
   let feedbacks: Feedback[] = []

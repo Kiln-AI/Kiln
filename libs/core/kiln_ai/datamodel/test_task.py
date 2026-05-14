@@ -20,7 +20,12 @@ from kiln_ai.datamodel.spec_properties import (
     ToxicityProperties,
 )
 from kiln_ai.datamodel.task import Task, TaskRunConfig
-from kiln_ai.datamodel.task_output import TaskOutput, normalize_rating
+from kiln_ai.datamodel.task_output import (
+    DataSource,
+    DataSourceType,
+    TaskOutput,
+    normalize_rating,
+)
 from kiln_ai.datamodel.task_run import TaskRun
 from kiln_ai.datamodel.test_json_schema import json_joke_schema
 
@@ -807,3 +812,130 @@ def test_task_single_turn_allows_both_schemas():
     assert task.turn_mode == TurnMode.single_turn
     assert task.input_json_schema == json_joke_schema
     assert task.output_json_schema == json_joke_schema
+
+
+def _make_run_for_task(task: Task, parent_task_run_id: str | None = None) -> TaskRun:
+    run = TaskRun(
+        parent=task,
+        parent_task_run_id=parent_task_run_id,
+        input="in",
+        input_source=DataSource(
+            type=DataSourceType.human, properties={"created_by": "Test User"}
+        ),
+        output=TaskOutput(
+            output="out",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "gpt_4o",
+                    "model_provider": "ollama",
+                    "adapter_name": "kiln_langchain_adapter",
+                    "prompt_id": "simple_prompt_builder",
+                },
+            ),
+        ),
+    )
+    run.save_to_file()
+    return run
+
+
+def test_filter_runs_defaults_to_leaves_only_for_multiturn(tmp_path):
+    project_path = tmp_path / "p" / "project.kiln"
+    project_path.parent.mkdir()
+    project = Project(name="P", path=project_path)
+    project.save_to_file()
+
+    task = Task(
+        name="Multi",
+        instruction="Have a conversation",
+        parent=project,
+        turn_mode=TurnMode.multiturn,
+    )
+    task.save_to_file()
+
+    root = _make_run_for_task(task)
+    mid = _make_run_for_task(task, parent_task_run_id=root.id)
+    leaf = _make_run_for_task(task, parent_task_run_id=mid.id)
+
+    leaves = task.filter_runs()
+    assert {r.id for r in leaves} == {leaf.id}
+
+    all_via_filter = task.filter_runs(include_intermediate_runs=True)
+    assert {r.id for r in all_via_filter} == {root.id, mid.id, leaf.id}
+
+
+def test_filter_runs_branching_chain_returns_all_leaves(tmp_path):
+    """A root with two branches yields two leaves; the root is filtered out."""
+    project_path = tmp_path / "p" / "project.kiln"
+    project_path.parent.mkdir()
+    project = Project(name="P", path=project_path)
+    project.save_to_file()
+
+    task = Task(
+        name="Branching",
+        instruction="Have a conversation",
+        parent=project,
+        turn_mode=TurnMode.multiturn,
+    )
+    task.save_to_file()
+
+    root = _make_run_for_task(task)
+    leaf_a = _make_run_for_task(task, parent_task_run_id=root.id)
+    leaf_b = _make_run_for_task(task, parent_task_run_id=root.id)
+
+    leaves = task.filter_runs()
+    assert {r.id for r in leaves} == {leaf_a.id, leaf_b.id}
+
+    all_via_filter = task.filter_runs(include_intermediate_runs=True)
+    assert {r.id for r in all_via_filter} == {root.id, leaf_a.id, leaf_b.id}
+
+
+def test_filter_runs_single_turn_default_returns_all(tmp_path):
+    """No parent chain → all runs are leaves; default and opt-in agree."""
+    project_path = tmp_path / "p" / "project.kiln"
+    project_path.parent.mkdir()
+    project = Project(name="P", path=project_path)
+    project.save_to_file()
+
+    task = Task(name="Single", instruction="Do it", parent=project)
+    task.save_to_file()
+
+    runs = [_make_run_for_task(task) for _ in range(3)]
+
+    assert {r.id for r in task.filter_runs()} == {r.id for r in runs}
+    assert {r.id for r in task.filter_runs(include_intermediate_runs=True)} == {
+        r.id for r in runs
+    }
+
+
+def test_filter_runs_readonly_smoke(tmp_path):
+    """filter_runs(readonly=True) returns the same set as the writable variant."""
+    project_path = tmp_path / "p" / "project.kiln"
+    project_path.parent.mkdir()
+    project = Project(name="P", path=project_path)
+    project.save_to_file()
+
+    task = Task(
+        name="ReadonlySmoke",
+        instruction="Have a conversation",
+        parent=project,
+        turn_mode=TurnMode.multiturn,
+    )
+    task.save_to_file()
+
+    root = _make_run_for_task(task)
+    leaf = _make_run_for_task(task, parent_task_run_id=root.id)
+
+    leaves_writable = task.filter_runs()
+    leaves_readonly = task.filter_runs(readonly=True)
+    assert (
+        {r.id for r in leaves_writable} == {r.id for r in leaves_readonly} == {leaf.id}
+    )
+
+    all_writable = task.filter_runs(include_intermediate_runs=True)
+    all_readonly = task.filter_runs(include_intermediate_runs=True, readonly=True)
+    assert (
+        {r.id for r in all_writable}
+        == {r.id for r in all_readonly}
+        == {root.id, leaf.id}
+    )

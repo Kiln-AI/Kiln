@@ -77,6 +77,59 @@ def _walk_ancestors(
     return chain, True
 
 
+def _collect_cascade_delete_runs(task: Task, target: TaskRun) -> list[TaskRun]:
+    """Compute the full set of TaskRuns to delete when `target` is deleted.
+
+    Walks `parent_task_run_id` upward from `target`. Each ancestor is included
+    iff every one of its children has already been marked for deletion in this
+    cascade (i.e. there's no sibling branch keeping it alive). Stops at the
+    first ancestor with a live sibling child.
+    """
+    if target.parent_task_run_id is None:
+        return [target]
+
+    # Pull every run on disk once so we can do child counts without re-hitting
+    # the loader for each ancestor. We need the full chain view here.
+    all_runs = task.filter_runs(include_intermediate_runs=True, readonly=True)
+    children_by_parent: Dict[str, list[str]] = {}
+    for r in all_runs:
+        if r.parent_task_run_id and r.id is not None:
+            children_by_parent.setdefault(r.parent_task_run_id, []).append(str(r.id))
+
+    to_delete: list[TaskRun] = [target]
+    deleted_ids: set[str] = set()
+    if target.id is not None:
+        deleted_ids.add(str(target.id))
+
+    visited: set[str] = set(deleted_ids)
+    current = target
+    for _ in range(_MAX_ANCESTOR_DEPTH):
+        parent_id = current.parent_task_run_id
+        if parent_id is None:
+            break
+        if parent_id in visited:
+            # Cycle: stop here, but everything queued so far is still valid.
+            break
+        parent = TaskRun.from_id_and_parent_path(parent_id, task.path)
+        if parent is None:
+            # Chain broken: stop the cascade, don't 500.
+            break
+        live_children = [
+            cid
+            for cid in children_by_parent.get(parent_id, [])
+            if cid not in deleted_ids
+        ]
+        if live_children:
+            # A sibling branch survives — keep this parent.
+            break
+        to_delete.append(parent)
+        if parent.id is not None:
+            deleted_ids.add(str(parent.id))
+            visited.add(str(parent.id))
+        current = parent
+    return to_delete
+
+
 def _count_user_messages(trace: list[Any] | None) -> int:
     if not trace:
         return 0
@@ -382,8 +435,13 @@ def connect_run_api(app: FastAPI):
             str, Path(description="The unique identifier of the task run.")
         ],
     ):
-        run = run_from_id(project_id, task_id, run_id)
-        run.delete()
+        task, run = task_and_run_from_id(project_id, task_id, run_id)
+        # For multiturn chains, also delete ancestors whose only remaining child
+        # is in our delete-set. Stop at the first ancestor that still has another
+        # live child (a sibling branch).
+        runs_to_delete = _collect_cascade_delete_runs(task, run)
+        for r in runs_to_delete:
+            r.delete()
 
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/runs",
@@ -401,7 +459,7 @@ def connect_run_api(app: FastAPI):
         ],
     ) -> list[TaskRun]:
         task = task_from_id(project_id, task_id)
-        return list(task.runs(readonly=True))
+        return list(task.filter_runs(readonly=True))
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/runs",
@@ -464,11 +522,9 @@ def connect_run_api(app: FastAPI):
     ) -> list[RunSummary]:
         task = task_from_id(project_id, task_id)
         # Readonly since we are not mutating the runs. Faster as we don't need to copy them.
-        runs = task.runs(readonly=True)
-        parent_ids: set[str] = {
-            r.parent_task_run_id for r in runs if r.parent_task_run_id
-        }
-        return [RunSummary.from_run(run) for run in runs if run.id not in parent_ids]
+        # Summaries only need leaves.
+        runs = task.filter_runs(readonly=True)
+        return [RunSummary.from_run(run) for run in runs]
 
     @app.post(
         "/api/projects/{project_id}/tasks/{task_id}/runs/delete",
@@ -747,7 +803,7 @@ def connect_run_api(app: FastAPI):
         task = task_from_id(project_id, task_id)
         # Not particularly efficient, but tasks are memory cached after first load so re-compute is fairly cheap
         # We also cache the result client side
-        for run in task.runs(readonly=True):
+        for run in task.filter_runs(readonly=True):
             for tag in run.tags:
                 tags_count[tag] = tags_count.get(tag, 0) + 1
         return tags_count

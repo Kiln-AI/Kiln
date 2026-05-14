@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING, Dict, List, Union
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
+from typing_extensions import deprecated
 
 from kiln_ai.datamodel.basemodel import (
     ID_FIELD,
@@ -210,6 +211,11 @@ class Task(
 
     # These wrappers help for typechecking. We should fix this in KilnParentModel
     def runs(self, readonly: bool = False) -> list[TaskRun]:
+        """
+        Prefer filter_runs() for multiturn tasks: it excludes intermediate multiturn turns by default.
+        Use filter_runs(include_intermediate_runs=True) when you need every run file
+        on disk.
+        """
         return super().runs(readonly=readonly)  # type: ignore
 
     def dataset_splits(self, readonly: bool = False) -> list[DatasetSplit]:
@@ -245,6 +251,26 @@ class Task(
         self, readonly: bool = False
     ) -> list[PromptOptimizationJob]:
         return super().prompt_optimization_jobs(readonly=readonly)  # type: ignore
+
+    def filter_runs(
+        self,
+        include_intermediate_runs: bool = False,
+        readonly: bool = False,
+    ) -> list[TaskRun]:
+        """Return TaskRuns for this task with optional leaf-only filtering.
+
+        For multiturn tasks, ``runs()`` returns every run on disk including
+        intermediate (non-leaf) turns. Most consumers (datasets, evals,
+        finetune exports, summary lists, statistics, etc.) want only the
+        leaves; pass ``include_intermediate_runs=True`` to get the full set.
+        """
+        # Call the dynamically generated child loader directly to bypass the
+        # deprecated `runs` wrapper above (avoids self-flagging in IDEs/linters).
+        raw = TaskRun.all_children_of_parent_path(self.path, readonly=readonly)
+        if include_intermediate_runs:
+            return raw
+        parent_ids = {r.parent_task_run_id for r in raw if r.parent_task_run_id}
+        return [r for r in raw if r.id not in parent_ids]
 
     # Workaround to return typed parent without importing Task
     def parent_project(self) -> Union["Project", None]:

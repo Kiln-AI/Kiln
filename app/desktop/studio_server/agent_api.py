@@ -232,7 +232,7 @@ def _dataset_stats(task: Task) -> AgentOverviewDataset:
     by_rating["unrated"] = 0
     total = 0
 
-    for run in task.runs(readonly=True):
+    for run in task.filter_runs(readonly=True):
         total += 1
         for tag in run.tags:
             by_tag[tag] = by_tag.get(tag, 0) + 1

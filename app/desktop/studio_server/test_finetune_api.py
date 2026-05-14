@@ -1816,7 +1816,7 @@ def test_finetune_dataset_info_no_tags(
 ):
     """Test finetune_dataset_info when there are no fine_tune tags"""
     # Remove all runs from the task
-    for run in test_task.runs():
+    for run in test_task.filter_runs(include_intermediate_runs=True):
         run.delete()
 
     response = client.get("/api/projects/project1/tasks/task1/finetune_dataset_info")
