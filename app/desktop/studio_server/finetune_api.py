@@ -842,7 +842,10 @@ async def fetch_fireworks_finetune_models() -> list[FinetuneProviderModel]:
 
     tuneable_models = []
     for model in models:
-        if model.get("tunable", False) and "displayName" in model and "name" in model:
+        is_supervised_tunable = model.get("supervisedLoraTunable", False) or model.get(
+            "supervisedFullParameterTunable", False
+        )
+        if is_supervised_tunable and "displayName" in model and "name" in model:
             id = model["name"]
             id_tail = id.split("/")[-1]
             if id_tail not in FIREWORKS_SUPPORTED_FINETUNE_MODELS:
