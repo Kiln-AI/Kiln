@@ -246,7 +246,10 @@ def fetch_fireworks_individual(api_key: str, model_ids: list[str]) -> set[str]:
 
 
 def fetch_fireworks_tunable(api_key: str) -> list[dict]:
-    """Fetch all models marked tunable from Fireworks API.
+    """Fetch all models that support supervised fine-tuning from Fireworks API.
+
+    Uses the supervisedLoraTunable and supervisedFullParameterTunable fields,
+    which are accurate. The older tunable field is stale and unreliable.
 
     Returns list of dicts with keys: id, display_name, supports_tools.
     """
@@ -269,7 +272,10 @@ def fetch_fireworks_tunable(api_key: str) -> list[dict]:
 
     tunable = []
     for m in models:
-        if m.get("tunable", False):
+        is_supervised_tunable = m.get("supervisedLoraTunable", False) or m.get(
+            "supervisedFullParameterTunable", False
+        )
+        if is_supervised_tunable:
             tunable.append(
                 {
                     "id": m.get("name", ""),

@@ -60,18 +60,20 @@ This extracts all `provider_finetune_id` entries from `ml_model_list.py` and che
 
 ## Phase 2 – Check Fireworks Dynamic Models
 
-Fireworks fine-tunable models are fetched dynamically from their API, not stored in `ml_model_list.py`. The concern here is that the Fireworks API's `tunable=True` flag may be stale — listing models that Fireworks no longer actually supports for fine-tuning.
+Fireworks fine-tunable models are fetched dynamically from their API, not stored in `ml_model_list.py`. The script checks the API's `supervisedLoraTunable` and `supervisedFullParameterTunable` fields (not the old `tunable` field, which is stale) and cross-references against our allowlist.
 
 ```bash
 python3 .agents/skills/kiln-check-finetune-deprecation/scripts/check_finetune.py fireworks > /tmp/kiln_finetune_fireworks.json
 ```
 
 This script:
-1. Fetches all `tunable=True` models from `api.fireworks.ai/v1/accounts/fireworks/models`
-2. Cross-references against `FIREWORKS_SUPPORTED_FINETUNE_MODELS` from `app/desktop/studio_server/finetune_api.py` — the same allowlist that filters the runtime fine-tune dropdown
-3. Reports models that appear in the API as tunable but are NOT in the allowlist
+1. Fetches all models with `supervisedLoraTunable=True` or `supervisedFullParameterTunable=True` from `api.fireworks.ai/v1/accounts/fireworks/models`
+2. Cross-references against `FIREWORKS_SUPPORTED_FINETUNE_MODELS` from `libs/core/kiln_ai/adapters/fine_tune/fireworks_finetune.py` — the same allowlist that filters the runtime fine-tune dropdown
+3. Checks both directions:
+   - **Stale allowlist entries**: models in our allowlist that the API no longer marks as supervised-tunable — these may need to be removed
+   - **Missing from allowlist**: models the API marks as supervised-tunable but aren't in our allowlist — these are candidates to add
 
-The canonical allowlist lives in `finetune_api.py` and is shared between the runtime dropdown filter and this audit skill. There is a single place to update when Fireworks changes their supported models.
+The canonical allowlist lives in `fireworks_finetune.py` and is shared between the runtime dropdown filter and this audit skill. There is a single place to update when Fireworks changes their supported models.
 
 **Output:** JSON to stdout, human summary to stderr.
 
@@ -161,4 +163,4 @@ uv run python3 -m pytest app/desktop/studio_server/test_finetune_api.py -q
 - [ ] User confirmed remediation approach
 - [ ] Code changes made (if any)
 - [ ] Tests pass after changes
-- [ ] FIREWORKS_SUPPORTED_FINETUNE_MODELS in finetune_api.py updated if docs have changed
+- [ ] FIREWORKS_SUPPORTED_FINETUNE_MODELS in fireworks_finetune.py updated if docs have changed

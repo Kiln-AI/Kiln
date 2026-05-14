@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 
 # Add shared scripts directory and repo root to path so we can import from
-# provider_utils.py and app.desktop.studio_server.finetune_api
+# provider_utils.py and kiln_ai.adapters.fine_tune.fireworks_finetune
 # Script is at .agents/skills/<skill>/scripts/<file>.py
 # parent chain: scripts -> <skill> -> skills -> .agents
 sys.path.insert(
@@ -40,9 +40,9 @@ from provider_utils import (  # type: ignore[import-not-found]
 )
 
 REPO_ROOT = find_repo_root()
-sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "libs" / "core"))
 
-from app.desktop.studio_server.finetune_api import (  # noqa: E402  # type: ignore[import-not-found]
+from kiln_ai.adapters.fine_tune.fireworks_finetune import (  # noqa: E402  # type: ignore[import-not-found]
     FIREWORKS_SUPPORTED_FINETUNE_MODELS,
 )
 
@@ -200,7 +200,7 @@ def check_static() -> dict:
 
 
 def _fireworks_supported_full_paths() -> set[str]:
-    """Build full Fireworks model paths from the canonical allowlist in finetune_api.py.
+    """Build full Fireworks model paths from the canonical allowlist in fireworks_finetune.py.
 
     The allowlist uses bare tail IDs (e.g. "qwen3-8b") but the Fireworks API
     returns full paths (e.g. "accounts/fireworks/models/qwen3-8b"). This function
@@ -226,7 +226,7 @@ def check_fireworks() -> dict:
     except Exception as e:
         return {"type": "fireworks", "skipped": True, "reason": str(e)}
 
-    log(f"  Fireworks API reports {len(tunable)} tunable models")
+    log(f"  Fireworks API reports {len(tunable)} supervised-tunable models")
 
     supported = _fireworks_supported_full_paths()
     tunable_ids = {m["id"] for m in tunable}
@@ -238,12 +238,14 @@ def check_fireworks() -> dict:
     log(f"  ✅ {len(in_both)} models in both API and allowlist")
     if in_api_only:
         log(
-            f"  ⚠️  {len(in_api_only)} models in API but NOT in allowlist (possibly stale):"
+            f"  ⚠️  {len(in_api_only)} models in API but NOT in allowlist (candidates to add):"
         )
         for m in in_api_only:
             log(f"     - {m}")
     if in_supported_only:
-        log(f"  ⚠️  {len(in_supported_only)} models in allowlist but NOT in API:")
+        log(
+            f"  ❌ {len(in_supported_only)} models in allowlist but NOT in API (possibly stale):"
+        )
         for m in in_supported_only:
             log(f"     - {m}")
 
