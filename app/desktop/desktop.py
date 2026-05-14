@@ -80,7 +80,7 @@ class DesktopApp:
 
     def on_quit(self):
         """
-        Quit event handler. Will dipatch the shutdown to the most appropriate place (main loop ideally)
+        Quit event handler. Will dispatch the shutdown to the most appropriate place (main loop ideally)
         """
 
         # use tk mainloop if possible

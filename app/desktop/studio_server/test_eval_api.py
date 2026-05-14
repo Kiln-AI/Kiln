@@ -1005,9 +1005,9 @@ async def test_get_eval_config_compare_summary(
 ):
     mock_task_from_id.return_value = mock_task
 
-    # structed data to make it easier to generate test cases.
+    # structured data to make it easier to generate test cases.
     @dataclass
-    class EvalCondigSummaryTestData:
+    class EvalConfigSummaryTestData:
         human_overall_rating: float | None
         score1_overall_rating: float | None
         eval_overall_rating: float
@@ -1016,10 +1016,10 @@ async def test_get_eval_config_compare_summary(
         skip_eval_run: bool = False
         skip_golden_tag: bool = False
 
-    test_data: List[EvalCondigSummaryTestData] = [
+    test_data: List[EvalConfigSummaryTestData] = [
         # Test 1: ec1
-        # Normal run, with some data to check calulations on a sinlgle run
-        EvalCondigSummaryTestData(
+        # Normal run, with some data to check calculations on a single run
+        EvalConfigSummaryTestData(
             human_overall_rating=5.0,
             score1_overall_rating=2.0,
             eval_overall_rating=1.0,
@@ -1027,7 +1027,7 @@ async def test_get_eval_config_compare_summary(
             eval_config_id="ec1",
         ),
         # Should be ignored as it's not in the eval set filter (golden tag). Would mess up the scores of eval_config1 if included
-        EvalCondigSummaryTestData(
+        EvalConfigSummaryTestData(
             human_overall_rating=5.0,
             score1_overall_rating=5.0,
             eval_overall_rating=4.0,
@@ -1036,14 +1036,14 @@ async def test_get_eval_config_compare_summary(
             skip_golden_tag=True,
         ),
         # Test 2: ec2 - Test multiple, and correct averaging
-        EvalCondigSummaryTestData(
+        EvalConfigSummaryTestData(
             human_overall_rating=5.0,
             score1_overall_rating=5.0,
             eval_overall_rating=4.0,
             eval__score1_rating=4.0,
             eval_config_id="ec2",
         ),
-        EvalCondigSummaryTestData(
+        EvalConfigSummaryTestData(
             human_overall_rating=5.0,
             score1_overall_rating=1.0,
             eval_overall_rating=3.0,
@@ -1051,7 +1051,7 @@ async def test_get_eval_config_compare_summary(
             eval_config_id="ec2",
         ),
         # Test 3: Dataset item that has partial human rating
-        EvalCondigSummaryTestData(
+        EvalConfigSummaryTestData(
             human_overall_rating=5.0,
             score1_overall_rating=None,
             eval_overall_rating=3.0,
@@ -1059,7 +1059,7 @@ async def test_get_eval_config_compare_summary(
             eval_config_id="ec3",
         ),
         # Test 4: Dataset item that has no human rating
-        EvalCondigSummaryTestData(
+        EvalConfigSummaryTestData(
             human_overall_rating=None,
             score1_overall_rating=None,
             eval_overall_rating=3.0,
@@ -1067,7 +1067,7 @@ async def test_get_eval_config_compare_summary(
             eval_config_id="ec4",
         ),
         # Test 5: skipping eval run should lower the percent complete
-        EvalCondigSummaryTestData(
+        EvalConfigSummaryTestData(
             human_overall_rating=5.0,
             score1_overall_rating=5.0,
             eval_overall_rating=4.0,

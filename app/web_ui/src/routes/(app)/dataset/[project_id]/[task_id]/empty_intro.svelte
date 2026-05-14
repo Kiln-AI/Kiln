@@ -43,7 +43,7 @@
       </svg>
     </div>
     <div class="font-medium text-lg">Your dataset for this task is empty.</div>
-    <div>Adding data will allow the model to improve at it's task.</div>
+    <div>Adding data will allow the model to improve at its task.</div>
     <div>To get started, generate some synthetic data or add data manually</div>
 
     <a

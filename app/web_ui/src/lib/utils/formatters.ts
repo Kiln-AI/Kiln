@@ -296,7 +296,7 @@ export function toolServerTypeToString(
     case "kiln_task":
       return "Kiln Task"
     default: {
-      // This ensures exhaustive checking - if you add a new case to StructuredOutputMode
+      // This ensures exhaustive checking - if you add a new case to ToolServerType
       // and don't handle it above, TypeScript will error here
       const exhaustiveCheck: never = type
       console.warn(`Unhandled toolType: ${exhaustiveCheck}`)

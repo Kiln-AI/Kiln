@@ -150,6 +150,7 @@ class ModelName(str, Enum):
     gemini_2_5_pro = "gemini_2_5_pro"
     gemini_2_5_flash = "gemini_2_5_flash"
     gemini_2_5_flash_lite = "gemini_2_5_flash_lite"
+    gemini_3_1_flash_lite = "gemini_3_1_flash_lite"
     gemini_3_1_flash_lite_preview = "gemini_3_1_flash_lite_preview"
     gemini_3_1_pro_preview = "gemini_3_1_pro_preview"
     gemini_3_pro_preview = "gemini_3_pro_preview"
@@ -2241,6 +2242,99 @@ built_in_models: List[KilnModel] = [
             ),
         ],
     ),
+    # Gemini 3.1 Flash Lite
+    KilnModel(
+        family=ModelFamily.gemini,
+        name=ModelName.gemini_3_1_flash_lite,
+        friendly_name="Gemini 3.1 Flash Lite",
+        providers=[
+            KilnModelProvider(
+                name=ModelProviderName.openrouter,
+                model_id="google/gemini-3.1-flash-lite",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                suggested_for_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                ],
+                gemini_reasoning_enabled=True,
+                available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
+                default_thinking_level="high",
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.gemini_api,
+                model_id="gemini-3.1-flash-lite",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_evals=True,
+                suggested_for_data_gen=True,
+                supports_doc_extraction=True,
+                suggested_for_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    # documents
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    # images
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    # audio
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    # video
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                gemini_reasoning_enabled=True,
+                available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
+                default_thinking_level="high",
+            ),
+            KilnModelProvider(
+                name=ModelProviderName.vertex,
+                model_id="gemini-3.1-flash-lite",
+                structured_output_mode=StructuredOutputMode.json_schema,
+                suggested_for_data_gen=True,
+                suggested_for_evals=True,
+                supports_doc_extraction=True,
+                suggested_for_doc_extraction=True,
+                multimodal_capable=True,
+                supports_vision=True,
+                multimodal_mime_types=[
+                    KilnMimeType.PDF,
+                    KilnMimeType.CSV,
+                    KilnMimeType.TXT,
+                    KilnMimeType.HTML,
+                    KilnMimeType.MD,
+                    KilnMimeType.JPG,
+                    KilnMimeType.PNG,
+                    KilnMimeType.MP3,
+                    KilnMimeType.WAV,
+                    KilnMimeType.OGG,
+                    KilnMimeType.MP4,
+                    KilnMimeType.MOV,
+                ],
+                gemini_reasoning_enabled=True,
+                available_thinking_levels=GEMINI_3_FLASH_THINKING_LEVELS,
+                default_thinking_level="high",
+            ),
+        ],
+    ),
     # Gemini 3.1 Flash Lite Preview
     KilnModel(
         family=ModelFamily.gemini,
@@ -3728,7 +3822,7 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
-                gemini_reasoning_enabled=True,
+                openrouter_reasoning_object=True,
                 available_thinking_levels=GEMMA_4_THINKING_LEVELS,
                 default_thinking_level="none",
             ),
@@ -3742,9 +3836,6 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
-                gemini_reasoning_enabled=True,
-                available_thinking_levels=GEMMA_4_THINKING_LEVELS,
-                default_thinking_level="none",
                 max_parallel_requests=2,
             ),
         ],
@@ -3770,7 +3861,7 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
-                gemini_reasoning_enabled=True,
+                openrouter_reasoning_object=True,
                 available_thinking_levels=GEMMA_4_THINKING_LEVELS,
                 default_thinking_level="none",
             ),
@@ -3784,9 +3875,6 @@ built_in_models: List[KilnModel] = [
                     KilnMimeType.JPG,
                     KilnMimeType.PNG,
                 ],
-                gemini_reasoning_enabled=True,
-                available_thinking_levels=GEMMA_4_THINKING_LEVELS,
-                default_thinking_level="none",
                 max_parallel_requests=2,
             ),
         ],
@@ -4540,6 +4628,7 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="high",
+                openrouter_reasoning_object=True,
             ),
             KilnModelProvider(
                 name=ModelProviderName.fireworks_ai,
@@ -4570,6 +4659,7 @@ built_in_models: List[KilnModel] = [
                 supports_data_gen=True,
                 available_thinking_levels=DEEPSEEK_V4_OPENROUTER_THINKING_LEVELS,
                 default_thinking_level="high",
+                openrouter_reasoning_object=True,
             ),
         ],
     ),

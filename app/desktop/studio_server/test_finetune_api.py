@@ -498,7 +498,7 @@ class ModelTester(BaseModel):
     dataset_id: DatasetFilterId
 
 
-# Check these stings from UI exist
+# Check these strings from UI exist
 @pytest.mark.parametrize(
     "id,expect_error",
     [

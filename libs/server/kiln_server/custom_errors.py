@@ -5,6 +5,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from kiln_ai.adapters.errors import ErrorWithTrace, KilnRunError
 from pydantic import ValidationError
 
 logger = logging.getLogger(__name__)
@@ -85,6 +86,26 @@ def connect_custom_errors(app: FastAPI):
             status_code=exc.status_code,
             headers={"Access-Control-Allow-Origin": "*"},
             content={"message": exc.detail},
+        )
+
+    @app.exception_handler(KilnRunError)
+    async def kiln_run_error_handler(request: Request, exc: KilnRunError):
+        # Log the ORIGINAL exception's traceback, not the KilnRunError wrapper.
+        # `exc_info=exc.original` ensures the stack trace logged is the one
+        # that actually failed inside the adapter.
+        logger.exception(
+            f"Task run failed on {request.method} {request.url.path}",
+            exc_info=exc.original,
+        )
+        body = ErrorWithTrace(
+            message=str(exc),
+            error_type=exc.error_type,
+            trace=exc.partial_trace,
+        )
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            headers={"Access-Control-Allow-Origin": "*"},
+            content=body.model_dump(mode="json"),
         )
 
     @app.exception_handler(httpx.TimeoutException)

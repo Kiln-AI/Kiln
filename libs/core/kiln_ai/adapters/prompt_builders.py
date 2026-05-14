@@ -142,7 +142,7 @@ class SimplePromptBuilder(BasePromptBuilder):
             base_prompt += (
                 "\n\nYour response should respect the following requirements:\n"
             )
-            # iterate requirements, formatting them in numbereed list like 1) task.instruction\n2)...
+            # iterate requirements, formatting them in numbered list like 1) task.instruction\n2)...
             for i, requirement in enumerate(self.task.requirements):
                 base_prompt += f"{i + 1}) {requirement.instruction}\n"
 
