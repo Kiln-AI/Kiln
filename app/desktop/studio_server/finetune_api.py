@@ -798,6 +798,32 @@ def thinking_instructions_from_request(
     return chain_of_thought_prompt(task)
 
 
+# Only models explicitly listed as supported in Fireworks fine-tuning docs:
+# https://docs.fireworks.ai/fine-tuning/managed-finetuning-intro#supported-base-models
+FIREWORKS_SUPPORTED_FINETUNE_MODELS: set[str] = {
+    "gemma-4-26b-a4b-it",
+    "gemma-4-31b-it",
+    "glm-5p1",
+    "kimi-k2p5",
+    "kimi-k2p6",
+    "llama-v3p3-70b-instruct",
+    "minimax-m2p5",
+    "nemotron-nano-3-30b-a3b",
+    "qwen3-235b-a22b-instruct-2507",
+    "qwen3-30b-a3b",
+    "qwen3-30b-a3b-instruct-2507",
+    "qwen3-32b",
+    "qwen3-4b",
+    "qwen3-8b",
+    "qwen3-vl-8b-instruct",
+    "qwen3p5-27b",
+    "qwen3p5-35b-a3b",
+    "qwen3p5-397b-a17b",
+    "qwen3p5-9b",
+    "qwen3p6-27b",
+}
+
+
 async def fetch_fireworks_finetune_models() -> list[FinetuneProviderModel]:
     api_key = Config.shared().fireworks_api_key
     if not api_key:
@@ -841,9 +867,11 @@ async def fetch_fireworks_finetune_models() -> list[FinetuneProviderModel]:
     for model in models:
         if model.get("tunable", False) and "displayName" in model and "name" in model:
             id = model["name"]
+            id_tail = id.split("/")[-1]
+            if id_tail not in FIREWORKS_SUPPORTED_FINETUNE_MODELS:
+                continue
             # Display name is sometimes empty, so use the name from the API name if needed
             display_name = model["displayName"]
-            id_tail = id.split("/")[-1]
             if display_name.strip() == "":
                 name = id_tail
             else:

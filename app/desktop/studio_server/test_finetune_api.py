@@ -1380,15 +1380,21 @@ async def test_fetch_fireworks_finetune_models_success(mock_config, mock_httpx_c
     first_response.json.return_value = {
         "models": [
             {
-                "name": "accounts/fireworks/models/model1",
-                "displayName": "Model One",
+                "name": "accounts/fireworks/models/qwen3-8b",
+                "displayName": "Qwen3 8B",
                 "tunable": True,
                 "supportsTools": True,
             },
             {
-                "name": "accounts/fireworks/models/model2",
-                "displayName": "Model Two",
-                "tunable": False,  # This should be skipped
+                "name": "accounts/fireworks/models/unsupported-model",
+                "displayName": "Unsupported",
+                "tunable": True,  # tunable but not in allowlist
+                "supportsTools": False,
+            },
+            {
+                "name": "accounts/fireworks/models/llama-v3p3-70b-instruct",
+                "displayName": "Llama 3.3 70B",
+                "tunable": False,  # not tunable, should be skipped
                 "supportsTools": False,
             },
         ],
@@ -1400,14 +1406,14 @@ async def test_fetch_fireworks_finetune_models_success(mock_config, mock_httpx_c
     second_response.json.return_value = {
         "models": [
             {
-                "name": "accounts/fireworks/models/model3",
+                "name": "accounts/fireworks/models/gemma-4-26b-a4b-it",
                 "displayName": "",  # Empty display name
                 "tunable": True,
                 "supportsTools": False,
             },
             {
-                "name": "accounts/fireworks/models/model4",
-                "displayName": "Model Four",
+                "name": "accounts/fireworks/models/qwen3-32b",
+                "displayName": "Qwen3 32B",
                 "tunable": True,
                 "supportsTools": True,
             },
@@ -1441,30 +1447,32 @@ async def test_fetch_fireworks_finetune_models_success(mock_config, mock_httpx_c
         "pageToken": "next-page-token",
     }
 
-    # Check the resulting models - should be 3 tunable models
+    # 3 models: qwen3-8b (supported+tunable), gemma-4-26b-a4b-it (supported+tunable), qwen3-32b (supported+tunable)
+    # Excluded: unsupported-model (not in allowlist), llama-v3p3-70b-instruct (not tunable)
     assert len(result) == 3
 
-    # Check model details
-    assert result[0].name == "Model One (model1)"
-    assert result[0].id == "accounts/fireworks/models/model1"
+    assert result[0].name == "Qwen3 8B (qwen3-8b)"
+    assert result[0].id == "accounts/fireworks/models/qwen3-8b"
     assert result[0].supports_function_calling is True
 
-    # Check that model2 (non-tunable) is not included
-    assert all(model.id != "accounts/fireworks/models/model2" for model in result)
-
-    # Check that empty display name is handled correctly
-    # Should use the last part of the id as the name
-    model3 = next(
-        model for model in result if model.id == "accounts/fireworks/models/model3"
+    # unsupported-model is tunable but not in allowlist
+    assert all(
+        model.id != "accounts/fireworks/models/unsupported-model" for model in result
     )
-    assert model3.name == "model3"
-    assert model3.supports_function_calling is False
 
-    # Check model4 has tool support
-    model4 = next(
-        model for model in result if model.id == "accounts/fireworks/models/model4"
+    # Empty display name falls back to the id tail
+    gemma = next(
+        model
+        for model in result
+        if model.id == "accounts/fireworks/models/gemma-4-26b-a4b-it"
     )
-    assert model4.supports_function_calling is True
+    assert gemma.name == "gemma-4-26b-a4b-it"
+    assert gemma.supports_function_calling is False
+
+    qwen32b = next(
+        model for model in result if model.id == "accounts/fireworks/models/qwen3-32b"
+    )
+    assert qwen32b.supports_function_calling is True
 
 
 @pytest.mark.asyncio
