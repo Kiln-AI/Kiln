@@ -22,7 +22,8 @@ import re
 import sys
 from pathlib import Path
 
-# Add shared scripts directory to path
+# Add shared scripts directory and repo root to path so we can import from
+# provider_utils.py and app.desktop.studio_server.finetune_api
 # Script is at .agents/skills/<skill>/scripts/<file>.py
 # parent chain: scripts -> <skill> -> skills -> .agents
 sys.path.insert(
@@ -38,9 +39,18 @@ from provider_utils import (  # type: ignore[import-not-found]
     log,
 )
 
-MODEL_LIST_PATH = (
-    find_repo_root() / "libs" / "core" / "kiln_ai" / "adapters" / "ml_model_list.py"
+REPO_ROOT = find_repo_root()
+sys.path.insert(0, str(REPO_ROOT))
+
+from app.desktop.studio_server.finetune_api import (  # noqa: E402  # type: ignore[import-not-found]
+    FIREWORKS_SUPPORTED_FINETUNE_MODELS,
 )
+
+MODEL_LIST_PATH = (
+    REPO_ROOT / "libs" / "core" / "kiln_ai" / "adapters" / "ml_model_list.py"
+)
+
+FIREWORKS_MODEL_PREFIX = "accounts/fireworks/models/"
 
 
 # ---------------------------------------------------------------------------
@@ -188,31 +198,18 @@ def check_static() -> dict:
 # Fireworks dynamic model check
 # ---------------------------------------------------------------------------
 
-# Known supported base models from Fireworks docs.
-# Hardcoded because Fireworks' API `tunable` flag is unreliable — it marks ~167
-# models as tunable when only ~15 are actually supported for fine-tuning. The docs
-# page is the real source of truth, but it's HTML (not a structured API), so we
-# maintain this list manually. Update it when Fireworks changes their supported models.
-#
-# Last updated: 2026-05-13
-# Source: https://docs.fireworks.ai/fine-tuning/managed-finetuning-intro#supported-base-models
-FIREWORKS_DOCUMENTED_MODELS = {
-    "accounts/fireworks/models/llama-v3p1-8b-instruct",
-    "accounts/fireworks/models/llama-v3p1-70b-instruct",
-    "accounts/fireworks/models/llama-v3p1-405b-instruct",
-    "accounts/fireworks/models/llama-v3p2-1b-instruct",
-    "accounts/fireworks/models/llama-v3p2-3b-instruct",
-    "accounts/fireworks/models/llama-v3p3-70b-instruct",
-    "accounts/fireworks/models/llama4-scout-instruct-basic",
-    "accounts/fireworks/models/llama4-maverick-instruct-basic",
-    "accounts/fireworks/models/qwen2p5-72b-instruct",
-    "accounts/fireworks/models/qwen2p5-coder-32b-instruct",
-    "accounts/fireworks/models/qwen3-8b",
-    "accounts/fireworks/models/qwen3-32b",
-    "accounts/fireworks/models/deepseek-v3-0324",
-    "accounts/fireworks/models/gemma-2-9b-it",
-    "accounts/fireworks/models/phi-3-vision-128k-instruct",
-}
+
+def _fireworks_supported_full_paths() -> set[str]:
+    """Build full Fireworks model paths from the canonical allowlist in finetune_api.py.
+
+    The allowlist uses bare tail IDs (e.g. "qwen3-8b") but the Fireworks API
+    returns full paths (e.g. "accounts/fireworks/models/qwen3-8b"). This function
+    prepends the prefix so we can cross-reference.
+    """
+    return {
+        f"{FIREWORKS_MODEL_PREFIX}{tail}"
+        for tail in FIREWORKS_SUPPORTED_FINETUNE_MODELS
+    }
 
 
 def check_fireworks() -> dict:
@@ -231,20 +228,23 @@ def check_fireworks() -> dict:
 
     log(f"  Fireworks API reports {len(tunable)} tunable models")
 
+    supported = _fireworks_supported_full_paths()
     tunable_ids = {m["id"] for m in tunable}
 
-    in_docs = sorted(tunable_ids & FIREWORKS_DOCUMENTED_MODELS)
-    in_api_only = sorted(tunable_ids - FIREWORKS_DOCUMENTED_MODELS)
-    in_docs_only = sorted(FIREWORKS_DOCUMENTED_MODELS - tunable_ids)
+    in_both = sorted(tunable_ids & supported)
+    in_api_only = sorted(tunable_ids - supported)
+    in_supported_only = sorted(supported - tunable_ids)
 
-    log(f"  ✅ {len(in_docs)} models in both API and docs")
+    log(f"  ✅ {len(in_both)} models in both API and allowlist")
     if in_api_only:
-        log(f"  ⚠️  {len(in_api_only)} models in API but NOT in docs (possibly stale):")
+        log(
+            f"  ⚠️  {len(in_api_only)} models in API but NOT in allowlist (possibly stale):"
+        )
         for m in in_api_only:
             log(f"     - {m}")
-    if in_docs_only:
-        log(f"  ⚠️  {len(in_docs_only)} models in docs but NOT in API:")
-        for m in in_docs_only:
+    if in_supported_only:
+        log(f"  ⚠️  {len(in_supported_only)} models in allowlist but NOT in API:")
+        for m in in_supported_only:
             log(f"     - {m}")
 
     api_only_details = [m for m in tunable if m["id"] in set(in_api_only)]
@@ -252,10 +252,10 @@ def check_fireworks() -> dict:
     return {
         "type": "fireworks",
         "total_tunable": len(tunable),
-        "documented_count": len(FIREWORKS_DOCUMENTED_MODELS),
-        "in_both": in_docs,
+        "supported_count": len(supported),
+        "in_both": in_both,
         "in_api_only": api_only_details,
-        "in_docs_only": in_docs_only,
+        "in_supported_only": in_supported_only,
     }
 
 

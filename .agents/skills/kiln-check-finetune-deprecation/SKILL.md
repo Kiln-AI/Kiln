@@ -68,10 +68,10 @@ python3 .agents/skills/kiln-check-finetune-deprecation/scripts/check_finetune.py
 
 This script:
 1. Fetches all `tunable=True` models from `api.fireworks.ai/v1/accounts/fireworks/models`
-2. Cross-references against a hardcoded list of known-good models in `FIREWORKS_DOCUMENTED_MODELS` (sourced from https://docs.fireworks.ai/fine-tuning/managed-finetuning-intro#supported-base-models)
-3. Reports models that appear in the API as tunable but are NOT in the known-good list
+2. Cross-references against `FIREWORKS_SUPPORTED_FINETUNE_MODELS` from `app/desktop/studio_server/finetune_api.py` — the same allowlist that filters the runtime fine-tune dropdown
+3. Reports models that appear in the API as tunable but are NOT in the allowlist
 
-The hardcoded list must be manually updated when Fireworks changes their supported base models. Check the docs URL above for the current list.
+The canonical allowlist lives in `finetune_api.py` and is shared between the runtime dropdown filter and this audit skill. There is a single place to update when Fireworks changes their supported models.
 
 **Output:** JSON to stdout, human summary to stderr.
 
@@ -161,4 +161,4 @@ uv run python3 -m pytest app/desktop/studio_server/test_finetune_api.py -q
 - [ ] User confirmed remediation approach
 - [ ] Code changes made (if any)
 - [ ] Tests pass after changes
-- [ ] FIREWORKS_DOCUMENTED_MODELS updated if docs have changed
+- [ ] FIREWORKS_SUPPORTED_FINETUNE_MODELS in finetune_api.py updated if docs have changed
