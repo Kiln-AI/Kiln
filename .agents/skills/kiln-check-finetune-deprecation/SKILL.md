@@ -75,6 +75,8 @@ This script:
 
 The canonical allowlist lives in `fireworks_finetune.py` and is shared between the runtime dropdown filter and this audit skill. There is a single place to update when Fireworks changes their supported models.
 
+**Interpreting results:** The supervised API fields return ~43 models, but our allowlist intentionally filters to ~20 that match Fireworks' documented supported models. Seeing ~23 "models in API but NOT in allowlist" is normal — these are models Fireworks marks as technically tunable but doesn't officially document or support. Only flag these if a model appears in the Fireworks docs but is missing from our allowlist. The important direction is **stale allowlist entries** — models we ship that the API no longer marks as supervised-tunable.
+
 **Output:** JSON to stdout, human summary to stderr.
 
 ---
