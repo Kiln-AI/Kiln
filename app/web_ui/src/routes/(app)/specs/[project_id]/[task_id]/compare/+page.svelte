@@ -40,6 +40,8 @@
   import CreateNewRunConfigDialog from "$lib/ui/run_config_component/create_new_run_config_dialog.svelte"
   import SavedRunConfigurationsDropdown from "$lib/ui/run_config_component/saved_run_configs_dropdown.svelte"
   import RunEval from "$lib/components/run_eval.svelte"
+  import FloatingMenu from "$lib/ui/floating_menu.svelte"
+  import type { FloatingMenuItem } from "$lib/ui/floating_menu_types"
 
   import { agentInfo } from "$lib/agent"
   $: project_id = $page.params.project_id!
@@ -387,6 +389,18 @@
   function showAllHiddenEvals() {
     hiddenEvalIds = []
   }
+
+  $: hiddenEvalsMenuItems = [
+    ...hiddenEvalsInfo.map(
+      (info): FloatingMenuItem => ({
+        label: `Show: ${info.category}`,
+        onclick: () => showEval(info.eval_id),
+      }),
+    ),
+    ...(hiddenEvalsInfo.length > 1
+      ? [{ label: "Show all", onclick: showAllHiddenEvals }]
+      : []),
+  ] as FloatingMenuItem[]
 
   // Reactively fetch eval templates for sections
   $: {
@@ -756,73 +770,17 @@
         <!-- Table action buttons - positioned above table on the right -->
         <div class="flex justify-end gap-2 mb-4">
           {#if hiddenEvalsInfo.length > 0}
-            <div class="dropdown dropdown-end">
-              <!-- svelte-ignore a11y-label-has-associated-control -->
-              <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-              <label tabindex="0" class="btn btn-sm btn-outline gap-2">
-                <svg
-                  class="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
-                  />
-                </svg>
+            <FloatingMenu items={hiddenEvalsMenuItems} width="w-72">
+              <button
+                slot="trigger"
+                type="button"
+                class="btn btn-sm btn-outline"
+              >
                 {hiddenEvalsInfo.length} eval{hiddenEvalsInfo.length === 1
                   ? ""
                   : "s"} hidden
-                <svg
-                  class="w-3 h-3"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-              </label>
-              <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
-              <ul
-                tabindex="0"
-                class="dropdown-content menu menu-sm p-2 shadow bg-base-100 rounded-box w-72 z-10 border border-gray-200"
-              >
-                <li class="menu-title">
-                  <span class="text-xs">Hidden evals</span>
-                </li>
-                {#each hiddenEvalsInfo as info}
-                  <li>
-                    <button
-                      on:click={() => showEval(info.eval_id)}
-                      class="flex items-center justify-between gap-2"
-                    >
-                      <span class="truncate flex-1 text-left">
-                        {info.category}
-                      </span>
-                      <span class="text-xs text-primary">Show</span>
-                    </button>
-                  </li>
-                {/each}
-                {#if hiddenEvalsInfo.length > 1}
-                  <li class="border-t border-gray-200 mt-1 pt-1">
-                    <button
-                      on:click={showAllHiddenEvals}
-                      class="text-primary font-medium"
-                    >
-                      Show all
-                    </button>
-                  </li>
-                {/if}
-              </ul>
-            </div>
+              </button>
+            </FloatingMenu>
           {/if}
           {#if columns < MAX_COLUMNS}
             <button
@@ -955,23 +913,10 @@
                 {#if section.eval_id !== "kiln_cost_section"}
                   <button
                     on:click={() => hideEval(section.eval_id)}
-                    class="text-xs text-gray-500 hover:text-gray-900 flex items-center gap-1 px-2 py-1 rounded hover:bg-gray-200 transition-colors"
-                    title="Hide this eval from the comparison"
+                    class="w-6 h-6 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-200 hover:text-gray-900 transition-colors"
+                    title="Hide this eval"
                   >
-                    <svg
-                      class="w-3.5 h-3.5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
-                      />
-                    </svg>
-                    Hide
+                    ✕
                   </button>
                 {/if}
               </div>
