@@ -53,6 +53,7 @@
   // State management
   let columns = 2 // Start with 2 columns
   let selectedModels: (string | null)[] = [null, null] // Track selected model for each column
+  let hiddenEvalIds: string[] = [] // Eval IDs hidden by the user (kiln_cost_section is never hideable)
 
   // Run configs state
   let loading_run_configs = true
@@ -94,6 +95,15 @@
 
     // Initialize selectedModels array with correct length
     selectedModels = new Array(columns).fill(null)
+
+    // Hidden evals can be restored before run configs are loaded - they are just IDs
+    const urlHidden = urlParams.get("hidden_evals")
+    if (urlHidden) {
+      hiddenEvalIds = urlHidden
+        .split(",")
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0)
+    }
   }
 
   // Restore model selections from URL after data is loaded
@@ -137,13 +147,20 @@
     )
     urlParams.set("models", modelIds.join(","))
 
+    // Update hidden evals (omit param when none are hidden to keep URL clean)
+    if (hiddenEvalIds.length > 0) {
+      urlParams.set("hidden_evals", hiddenEvalIds.join(","))
+    } else {
+      urlParams.delete("hidden_evals")
+    }
+
     // Use replace to avoid creating new history entries
     const newURL = `${$page.url.pathname}?${urlParams.toString()}`
     goto(newURL, { replaceState: true })
   }
 
   // Reactive statements to update URL when state changes
-  $: if (!isInitializing && (columns || selectedModels)) {
+  $: if (!isInitializing && (columns || selectedModels || hiddenEvalIds)) {
     updateURL()
   }
 
@@ -322,6 +339,54 @@
     allRunConfigIds,
     eval_scores_cache,
   )
+
+  // Filter out user-hidden evals (cost section is never hideable).
+  // hiddenEvalIds is referenced directly in these reactive statements so that
+  // Svelte tracks it as a dependency and re-runs the filter when it changes.
+  $: visibleComparisonFeatures =
+    hiddenEvalIds.length === 0
+      ? comparisonFeatures
+      : comparisonFeatures.filter(
+          (section) =>
+            section.eval_id === "kiln_cost_section" ||
+            !hiddenEvalIds.includes(section.eval_id),
+        )
+  $: visibleChartComparisonFeatures =
+    hiddenEvalIds.length === 0
+      ? chartComparisonFeatures
+      : chartComparisonFeatures.filter(
+          (section) =>
+            section.eval_id === "kiln_cost_section" ||
+            !hiddenEvalIds.includes(section.eval_id),
+        )
+
+  // Names of currently-hidden evals (used for the "show hidden" dropdown).
+  // Prefer chartComparisonFeatures so we still show names when no models are selected.
+  $: hiddenEvalsInfo = hiddenEvalIds
+    .map((evalId) => {
+      const fromChart = chartComparisonFeatures.find(
+        (s) => s.eval_id === evalId,
+      )
+      const fromSelected = comparisonFeatures.find((s) => s.eval_id === evalId)
+      const category =
+        fromChart?.category ?? fromSelected?.category ?? "Unknown eval"
+      return { eval_id: evalId, category }
+    })
+    .filter((info) => info.eval_id !== "kiln_cost_section")
+
+  function hideEval(evalId: string) {
+    if (evalId === "kiln_cost_section") return
+    if (hiddenEvalIds.includes(evalId)) return
+    hiddenEvalIds = [...hiddenEvalIds, evalId]
+  }
+
+  function showEval(evalId: string) {
+    hiddenEvalIds = hiddenEvalIds.filter((id) => id !== evalId)
+  }
+
+  function showAllHiddenEvals() {
+    hiddenEvalIds = []
+  }
 
   // Reactively fetch eval templates for sections
   $: {
@@ -688,8 +753,77 @@
           <div class="text-gray-600">Loading evaluation scores...</div>
         </div>
       {:else}
-        <!-- Add Column Button - positioned above table on the right -->
-        <div class="flex justify-end mb-4">
+        <!-- Table action buttons - positioned above table on the right -->
+        <div class="flex justify-end gap-2 mb-4">
+          {#if hiddenEvalsInfo.length > 0}
+            <div class="dropdown dropdown-end">
+              <!-- svelte-ignore a11y-label-has-associated-control -->
+              <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+              <label tabindex="0" class="btn btn-sm btn-outline gap-2">
+                <svg
+                  class="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+                  />
+                </svg>
+                {hiddenEvalsInfo.length} eval{hiddenEvalsInfo.length === 1
+                  ? ""
+                  : "s"} hidden
+                <svg
+                  class="w-3 h-3"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </label>
+              <!-- svelte-ignore a11y-no-noninteractive-tabindex -->
+              <ul
+                tabindex="0"
+                class="dropdown-content menu menu-sm p-2 shadow bg-base-100 rounded-box w-72 z-10 border border-gray-200"
+              >
+                <li class="menu-title">
+                  <span class="text-xs">Hidden evals</span>
+                </li>
+                {#each hiddenEvalsInfo as info}
+                  <li>
+                    <button
+                      on:click={() => showEval(info.eval_id)}
+                      class="flex items-center justify-between gap-2"
+                    >
+                      <span class="truncate flex-1 text-left">
+                        {info.category}
+                      </span>
+                      <span class="text-xs text-primary">Show</span>
+                    </button>
+                  </li>
+                {/each}
+                {#if hiddenEvalsInfo.length > 1}
+                  <li class="border-t border-gray-200 mt-1 pt-1">
+                    <button
+                      on:click={showAllHiddenEvals}
+                      class="text-primary font-medium"
+                    >
+                      Show all
+                    </button>
+                  </li>
+                {/if}
+              </ul>
+            </div>
+          {/if}
           {#if columns < MAX_COLUMNS}
             <button
               on:click={addColumn}
@@ -808,14 +942,38 @@
 
           <!-- Comparison Data - only show if models are selected -->
           {#if validSelectedModels.length > 0}
-            {#each comparisonFeatures as section}
+            {#each visibleComparisonFeatures as section}
               <!-- Section Header -->
-              <div class="bg-gray-50 px-6 py-3 border-b border-gray-200">
+              <div
+                class="bg-gray-50 px-6 py-3 border-b border-gray-200 flex items-center justify-between gap-2"
+              >
                 <h4
                   class="text-sm font-semibold text-gray-900 uppercase tracking-wide"
                 >
                   {section.category}
                 </h4>
+                {#if section.eval_id !== "kiln_cost_section"}
+                  <button
+                    on:click={() => hideEval(section.eval_id)}
+                    class="text-xs text-gray-500 hover:text-gray-900 flex items-center gap-1 px-2 py-1 rounded hover:bg-gray-200 transition-colors"
+                    title="Hide this eval from the comparison"
+                  >
+                    <svg
+                      class="w-3.5 h-3.5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"
+                      />
+                    </svg>
+                    Hide
+                  </button>
+                {/if}
               </div>
 
               {#if section.items.length == 0}
@@ -1032,7 +1190,7 @@
         {#if validSelectedModels.length > 0}
           <div class="mt-16">
             <CompareRadarChart
-              {comparisonFeatures}
+              comparisonFeatures={visibleComparisonFeatures}
               {getModelValueRaw}
               run_configs={current_task_run_configs || []}
               model_info={$model_info}
@@ -1046,7 +1204,7 @@
 
         <div class="mt-16">
           <CompareChart
-            comparisonFeatures={chartComparisonFeatures}
+            comparisonFeatures={visibleChartComparisonFeatures}
             {getModelValueRaw}
             run_configs={current_task_run_configs || []}
             model_info={$model_info}
