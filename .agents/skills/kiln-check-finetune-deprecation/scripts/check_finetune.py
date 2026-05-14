@@ -189,6 +189,11 @@ def check_static() -> dict:
 # ---------------------------------------------------------------------------
 
 # Known supported base models from Fireworks docs.
+# Hardcoded because Fireworks' API `tunable` flag is unreliable — it marks ~167
+# models as tunable when only ~15 are actually supported for fine-tuning. The docs
+# page is the real source of truth, but it's HTML (not a structured API), so we
+# maintain this list manually. Update it when Fireworks changes their supported models.
+#
 # Last updated: 2026-05-13
 # Source: https://docs.fireworks.ai/fine-tuning/managed-finetuning-intro#supported-base-models
 FIREWORKS_DOCUMENTED_MODELS = {
