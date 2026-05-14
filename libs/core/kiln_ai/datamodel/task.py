@@ -1,7 +1,6 @@
 from typing import TYPE_CHECKING, Dict, List, Union
 
 from pydantic import BaseModel, Field, ValidationInfo, model_validator
-from typing_extensions import deprecated
 
 from kiln_ai.datamodel.basemodel import (
     ID_FIELD,
