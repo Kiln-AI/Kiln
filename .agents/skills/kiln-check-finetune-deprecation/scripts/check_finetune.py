@@ -32,7 +32,6 @@ sys.path.insert(
 from provider_utils import (  # type: ignore[import-not-found]
     fetch_fireworks_docs_models,
     fetch_fireworks_tunable,
-    fetch_openai_compat,
     fetch_together_docs_models,
     fetch_vertex_with_aliases,
     find_repo_root,
@@ -82,17 +81,6 @@ def extract_static_finetune_ids() -> list[dict]:
 # ---------------------------------------------------------------------------
 # Check static providers
 # ---------------------------------------------------------------------------
-
-
-def check_openai_finetune(finetune_ids: list[str]) -> dict:
-    api_key = get_api_key("OPENAI_API_KEY")
-    if not api_key:
-        return {"skipped": True, "reason": "OPENAI_API_KEY not set"}
-
-    available = fetch_openai_compat("https://api.openai.com/v1/models", api_key)
-    found = [fid for fid in finetune_ids if fid in available]
-    missing = [fid for fid in finetune_ids if fid not in available]
-    return {"found": found, "missing": missing, "available_count": len(available)}
 
 
 def check_together_finetune(finetune_ids: list[str]) -> dict:
@@ -145,7 +133,6 @@ def check_static() -> dict:
 
     results: dict[str, dict] = {}
     checkers = {
-        "openai": check_openai_finetune,
         "together_ai": check_together_finetune,
         "vertex": check_vertex_finetune,
     }

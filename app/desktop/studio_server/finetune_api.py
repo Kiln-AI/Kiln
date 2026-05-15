@@ -329,6 +329,8 @@ def connect_fine_tune_api(app: FastAPI):
                     FineTuneStatusType.failed,
                 ]:
                     provider_name = ModelProviderName[finetune.provider]
+                    if provider_name not in finetune_registry:
+                        continue
                     # fetching status updates the datamodel
                     ft_adapter = finetune_registry[provider_name](finetune)
                     await ft_adapter.status()
@@ -355,10 +357,11 @@ def connect_fine_tune_api(app: FastAPI):
     ) -> FinetuneWithStatus:
         finetune = finetune_from_id(project_id, task_id, finetune_id)
         if finetune.provider not in finetune_registry:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Fine tune provider '{finetune.provider}' not found",
+            status = FineTuneStatus(
+                status=FineTuneStatusType.unknown,
+                message=f"Provider '{finetune.provider}' is no longer supported for fine-tuning. Status cannot be refreshed.",
             )
+            return FinetuneWithStatus(finetune=finetune, status=status)
         finetune_adapter = finetune_registry[finetune.provider]  # type: ignore[invalid-argument-type]
         status = await finetune_adapter(finetune).status()
         return FinetuneWithStatus(finetune=finetune, status=status)
