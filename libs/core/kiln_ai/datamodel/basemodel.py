@@ -738,7 +738,7 @@ class ParentOfRelationship(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
-    model: type
+    model: Type[KilnParentedModel]
     filesystem_name: str
 
 
@@ -762,7 +762,6 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
         cls,
         python_name: str,
         child_class: Type[KilnParentedModel],
-        filesystem_name: str,
     ):
         def child_method(self, readonly: bool = False) -> list[child_class]:  # type: ignore[invalid-type-form]
             return child_class.all_children_of_parent_path(self.path, readonly=readonly)
@@ -801,12 +800,12 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
             child_class: Type[KilnParentedModel]
             filesystem_name: str
             if isinstance(value, ParentOfRelationship):
-                child_class = value.model  # type: ignore[assignment]
+                child_class = value.model
                 filesystem_name = value.filesystem_name
             else:
                 child_class = value
                 filesystem_name = python_name
-            cls._create_child_method(python_name, child_class, filesystem_name)
+            cls._create_child_method(python_name, child_class)
             cls._create_parent_methods(child_class, filesystem_name)
 
     @classmethod
