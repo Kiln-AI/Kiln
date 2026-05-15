@@ -129,7 +129,7 @@
       {task_id}
       label="Prompt"
       saved_prompts_only={true}
-      description="Saved prompt to send to Kiln Pro when generating synthetic data. Leave empty to use the task instruction."
+      description="Prompt sent to Kiln Pro when generating synthetic data. Pick a saved prompt to mirror production, or 'Task Instruction' for the default."
     />
     <TaskSampleSelector
       {project_id}
