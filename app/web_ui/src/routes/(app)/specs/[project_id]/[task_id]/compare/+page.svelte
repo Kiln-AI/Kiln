@@ -396,9 +396,8 @@
     hiddenEvalIds = []
   }
 
-  // Item styling (all-caps, right-aligned, divider before "Show all hidden")
-  // is handled by the scoped style block at the bottom of this component.
   $: hiddenEvalsMenuItems = [
+    { label: "Show Eval", header: true },
     ...hiddenEvalsInfo.map(
       (info): FloatingMenuItem => ({
         label: info.category,
@@ -406,7 +405,7 @@
       }),
     ),
     ...(hiddenEvalsInfo.length > 1
-      ? [{ label: "Show all hidden", onclick: showAllHiddenEvals }]
+      ? [{ label: "Show All", onclick: showAllHiddenEvals }]
       : []),
   ] as FloatingMenuItem[]
 
@@ -1197,25 +1196,38 @@
 />
 
 <style>
-  /* Style FloatingMenu items to match the all-caps eval section headers below.
-     Uses :global() because the menu list lives inside FloatingMenu's slot. */
   .hidden-evals-dropdown :global(ul.menu li > button),
   .hidden-evals-dropdown :global(ul.menu li > a) {
     font-size: 0.875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.025em;
+    font-weight: 500;
     color: rgb(17 24 39);
-    text-align: right;
-    justify-content: end;
-    justify-items: end;
   }
 
-  /* Divider between the eval list and the "Show all hidden" footer item.
-     :not(:only-child) keeps this off when there's only one hidden eval. */
-  .hidden-evals-dropdown :global(ul.menu li:not(:only-child):last-child) {
-    border-top: 1px solid rgb(229 231 235);
-    margin-top: 0.25rem;
-    padding-top: 0.25rem;
+  /* Render a gray "+" prefix on eval rows only. Excludes the header
+     (first-child) and the "Restore All" footer (last-child at position 4+). */
+  .hidden-evals-dropdown
+    :global(
+      ul.menu
+        li:not(:first-child):not(:last-child:nth-child(n + 4))
+        > button::before
+    ) {
+    content: "+";
+    color: rgb(107 114 128);
+    margin-right: 0.375rem;
+    font-weight: 400;
+  }
+
+  /* "Restore All" footer styling — gray-500. */
+  .hidden-evals-dropdown
+    :global(ul.menu li:last-child:nth-child(n + 4) > button) {
+    color: rgb(107 114 128);
+  }
+
+  /* Divider before the "Show all hidden" footer. nth-child(n+4) ensures we
+     only render it when the list has header + 2+ evals + show-all footer. */
+  .hidden-evals-dropdown :global(ul.menu li:last-child:nth-child(n + 4)) {
+    border-top: 1px solid rgb(209 213 219);
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
   }
 </style>
