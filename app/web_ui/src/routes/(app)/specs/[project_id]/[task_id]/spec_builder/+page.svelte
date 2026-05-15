@@ -32,7 +32,12 @@
     load_task,
     available_models,
     load_available_models,
+    get_task_composite_id,
   } from "$lib/stores"
+  import {
+    prompts_by_task_composite_id,
+    load_task_prompts,
+  } from "$lib/stores/prompts_store"
   import CreateSpecForm from "./create_spec_form.svelte"
   import ReviewExamples from "./review_examples.svelte"
   import RefineSpec from "./refine_spec.svelte"
@@ -104,7 +109,13 @@
   let task_prompt_with_example: string = ""
   let is_prompt_building: boolean = false
 
-  // Update the prompt when task_sample_example or task changes
+  // Source of the prompt sent to copilot SDG. Defaults to the task's basic
+  // builder (current behavior — task.instruction + optional example). User can
+  // pick a saved prompt or run-config-linked prompt instead so SDG runs against
+  // their actual production prompt.
+  let selected_prompt_method: string = "simple_prompt_builder"
+
+  // Update the prompt when task_sample_example, task, or selected_prompt_method changes.
   async function update_task_prompt_with_example() {
     if (!task) {
       task_prompt_with_example = ""
@@ -112,6 +123,23 @@
     }
     is_prompt_building = true
     try {
+      // Saved-prompt or run-config-linked picks resolve directly from the prompts
+      // store — both expose `prompt` text on the same shape.
+      if (
+        selected_prompt_method.startsWith("id::") ||
+        selected_prompt_method.startsWith("task_run_config::")
+      ) {
+        const composite_key = get_task_composite_id(project_id, task_id)
+        const prompts_response = $prompts_by_task_composite_id[composite_key]
+        const found = prompts_response?.prompts?.find(
+          (p) => p.id === selected_prompt_method,
+        )
+        if (found?.prompt) {
+          task_prompt_with_example = found.prompt
+          return
+        }
+        // Fall through to default if the prompt isn't loaded yet or got deleted.
+      }
       const examples = task_sample_example ? [task_sample_example] : []
       task_prompt_with_example = await build_prompt_with_task_sample(
         project_id,
@@ -126,8 +154,14 @@
     }
   }
 
-  // Reactively update when example or task changes
-  $: void (task_sample_example, task, update_task_prompt_with_example())
+  // Reactively update when example, task, prompt selection, or the prompts
+  // store changes (the latter so a still-loading saved prompt resolves once
+  // the store populates).
+  $: void (task_sample_example,
+  task,
+  selected_prompt_method,
+  $prompts_by_task_composite_id,
+  update_task_prompt_with_example())
 
   // Question state
   let question_set: QuestionSet | null = null
@@ -225,6 +259,15 @@
         project_id,
         task,
       )
+
+      // Load prompts for the task so the SDG prompt picker has its options
+      // ready (and so that resolving a saved prompt doesn't race the dropdown).
+      // Best-effort — picker falls back to defaults if this errors.
+      try {
+        await load_task_prompts(project_id, task_id)
+      } catch (e) {
+        console.warn("Failed to load task prompts for SDG picker:", e)
+      }
 
       // Get spec type from URL params
       const spec_type_param = $page.url.searchParams.get("type")
@@ -895,6 +938,7 @@
         {task_id}
         bind:task_sample_example
         bind:has_unsaved_manual_entry
+        bind:selected_prompt_method
         on:create_with_copilot={handle_create_with_copilot}
         on:create_without_copilot={handle_create_spec_without_copilot}
       />

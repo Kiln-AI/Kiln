@@ -9,6 +9,7 @@
   import TaskSampleSelector from "$lib/utils/task_sample_selector.svelte"
   import type { TaskSampleExample } from "$lib/utils/task_sample_example"
   import type { Priority } from "$lib/types"
+  import PromptTypeSelector from "$lib/ui/run_config_component/prompt_type_selector.svelte"
 
   export let name: string
   export let property_values: Record<string, string | null>
@@ -27,6 +28,7 @@
   export let task_id: string
   export let task_sample_example: TaskSampleExample | null = null
   export let has_unsaved_manual_entry: boolean = false
+  export let selected_prompt_method: string = "simple_prompt_builder"
 
   let form_container: FormContainer
 
@@ -112,6 +114,12 @@
   {/each}
 
   {#if copilot_allowed}
+    <PromptTypeSelector
+      bind:prompt_method={selected_prompt_method}
+      {project_id}
+      {task_id}
+      description="Prompt sent to Kiln Pro for generating synthetic data. Pick a saved prompt to mirror your production prompt; otherwise the task instruction is used."
+    />
     <TaskSampleSelector
       {project_id}
       {task_id}
