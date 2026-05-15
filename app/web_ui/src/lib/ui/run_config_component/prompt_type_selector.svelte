@@ -176,7 +176,28 @@
 
     const grouped_options: OptionGroup[] = []
 
-    if (!saved_prompts_only) {
+    if (saved_prompts_only) {
+      // Special case: still expose `simple_prompt_builder` so users can
+      // explicitly choose "use the task instruction." Without this, the
+      // saved-prompts-only picker has no way to pick the default behavior,
+      // which is the wrong UX when the user has no saved prompts yet.
+      const basic = task_prompts.generators.find(
+        (g) => g.id === "simple_prompt_builder",
+      )
+      if (basic) {
+        grouped_options.push({
+          label: "Default",
+          options: [
+            {
+              value: basic.id,
+              label: "Task Instruction",
+              description:
+                "Send the task's instruction (and any required fields) as the prompt.",
+            },
+          ],
+        })
+      }
+    } else {
       const generators: Option[] = []
       for (const generator of task_prompts.generators) {
         if (generator.chain_of_thought && exclude_cot) {

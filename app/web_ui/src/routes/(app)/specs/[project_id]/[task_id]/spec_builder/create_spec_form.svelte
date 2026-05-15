@@ -63,6 +63,11 @@
     warn_before_unload &&
     has_form_changes(property_values, initial_property_values)
 
+  // The SDG prompt picker is required when copilot is the chosen path —
+  // SDG with no prompt picked is undefined behavior. The non-copilot path
+  // doesn't use the picker so no constraint there.
+  $: prompt_required_unmet = copilot_allowed && selected_prompt_method === ""
+
   function handle_submit() {
     if (copilot_allowed) {
       dispatch("create_with_copilot")
@@ -84,6 +89,7 @@
   on:submit={handle_submit}
   bind:error
   bind:submitting
+  submit_disabled={prompt_required_unmet}
   compact_button={true}
   warn_before_unload={computed_warn_before_unload}
 >
