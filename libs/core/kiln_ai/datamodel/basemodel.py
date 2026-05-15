@@ -858,7 +858,24 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
             for suberror in e.errors():
                 validation_errors.append(suberror)
 
+        # Map on-disk folder names back to their Python attribute name for any
+        # ParentOfRelationship entries, so we can detect mistaken use of the
+        # filesystem name as a data key and fail loudly instead of silently
+        # dropping the nested payload.
+        filesystem_name_to_python_name: Dict[str, str] = {
+            value.filesystem_name: python_name
+            for python_name, value in cls._parent_of.items()
+            if isinstance(value, ParentOfRelationship)
+        }
+
         for key, value_list in data.items():
+            if key not in cls._parent_of and key in filesystem_name_to_python_name:
+                python_name = filesystem_name_to_python_name[key]
+                raise ValueError(
+                    f"Nested payload key '{key}' matches the on-disk folder name "
+                    f"of relationship '{python_name}'. Use the Python attribute "
+                    f"name '{python_name}' instead."
+                )
             if key in cls._parent_of:
                 parent_type_or_rel = cls._parent_of[key]
                 if isinstance(parent_type_or_rel, ParentOfRelationship):

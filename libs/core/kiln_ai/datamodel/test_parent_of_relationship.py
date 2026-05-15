@@ -112,3 +112,32 @@ def test_parent_of_relationship_is_frozen():
     rel = ParentOfRelationship(model=_TestChildRel, filesystem_name="kids")
     with pytest.raises(Exception):
         rel.filesystem_name = "other"  # type: ignore[misc]
+
+
+def test_validate_nested_rejects_filesystem_name_used_as_payload_key(tmp_path: Path):
+    """Passing the on-disk folder name as a nested payload key must fail loudly.
+
+    Previously this would silently drop the nested payload (since the key
+    wasn't in ``_parent_of``), making it easy to miss when migrating callers.
+    """
+    parent_path = tmp_path / "fail_loud" / "test_parent_relationship.kiln"
+    parent_path.parent.mkdir(parents=True, exist_ok=True)
+
+    bad_payload = {
+        "name": "rel_parent_bad",
+        "path": str(parent_path),
+        # "kids" is the filesystem_name; callers must use "_kids" (the python
+        # attr name) for nested payloads.
+        "kids": [{"name": "kid_via_wrong_key"}],
+    }
+
+    with pytest.raises(ValueError, match=r"Use the Python attribute name '_kids'"):
+        _TestParentRelationship.validate_and_save_with_subrelations(bad_payload)
+
+    # And the correct Python attribute name still works.
+    good_payload = {
+        "name": "rel_parent_good",
+        "path": str(parent_path),
+        "_kids": [{"name": "kid_via_correct_key"}],
+    }
+    _TestParentRelationship.validate_and_save_with_subrelations(good_payload)
