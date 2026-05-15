@@ -1193,7 +1193,7 @@ async def test_get_finetune(client, mock_task_from_id_disk_backed):
     assert status["status"] == "unknown"
     assert (
         status["message"]
-        == "Provider 'openai' is no longer supported for fine-tuning. Status cannot be refreshed."
+        == "Provider 'openai' is not available for fine-tuning. Status cannot be refreshed."
     )
 
     mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")

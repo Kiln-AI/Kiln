@@ -359,7 +359,7 @@ def connect_fine_tune_api(app: FastAPI):
         if finetune.provider not in finetune_registry:
             status = FineTuneStatus(
                 status=FineTuneStatusType.unknown,
-                message=f"Provider '{finetune.provider}' is no longer supported for fine-tuning. Status cannot be refreshed.",
+                message=f"Provider '{finetune.provider}' is not available for fine-tuning. Status cannot be refreshed.",
             )
             return FinetuneWithStatus(finetune=finetune, status=status)
         finetune_adapter = finetune_registry[finetune.provider]  # type: ignore[invalid-argument-type]
