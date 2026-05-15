@@ -109,11 +109,12 @@
   let task_prompt_with_example: string = ""
   let is_prompt_building: boolean = false
 
-  // Source of the prompt sent to copilot SDG. Defaults to the task's basic
-  // builder (current behavior — task.instruction + optional example). User can
-  // pick a saved prompt or run-config-linked prompt instead so SDG runs against
-  // their actual production prompt.
-  let selected_prompt_method: string = "simple_prompt_builder"
+  // PromptId of the saved prompt to send to copilot SDG. Empty by default —
+  // the resolver below falls back to the task's instruction + optional example
+  // (current behavior). When the user picks a saved or run-config-linked
+  // prompt, SDG runs against that prompt instead so the synthetic data
+  // reflects production behavior.
+  let selected_prompt_method: string = ""
 
   // Update the prompt when task_sample_example, task, or selected_prompt_method changes.
   async function update_task_prompt_with_example() {

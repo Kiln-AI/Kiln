@@ -25,6 +25,11 @@
   export let project_id: string | null
   export let task_id: string | null
   export let label: string = "Prompt Method"
+  // When true, hide every option group except saved prompts. Used by callers
+  // (e.g. the eval-builder SDG picker) where only frozen, named prompts make
+  // sense — generators, custom drafts, and fine-tune prompts shouldn't be
+  // selectable because they don't represent a stable production prompt.
+  export let saved_prompts_only: boolean = false
 
   let has_rated_data = false
   let has_repair_data = false
@@ -150,6 +155,7 @@
     data_requirements_checked,
     has_rated_data,
     has_repair_data,
+    saved_prompts_only,
   )
 
   function build_prompt_options(
@@ -159,12 +165,10 @@
     fine_tune_prompt_id: string | undefined,
     project_id: string | null,
     task_id: string | null,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _requirements_checked: boolean,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _has_rated: boolean,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _has_repair: boolean,
+    saved_prompts_only: boolean,
   ): OptionGroup[] {
     if (!task_prompts) {
       return []
@@ -172,46 +176,48 @@
 
     const grouped_options: OptionGroup[] = []
 
-    const generators: Option[] = []
-    for (const generator of task_prompts.generators) {
-      if (generator.chain_of_thought && exclude_cot) {
-        continue
+    if (!saved_prompts_only) {
+      const generators: Option[] = []
+      for (const generator of task_prompts.generators) {
+        if (generator.chain_of_thought && exclude_cot) {
+          continue
+        }
+        const disabled_reason = generator_disabled_reason(generator.id)
+        generators.push({
+          value: generator.id,
+          label: generator.name,
+          description: disabled_reason ?? generator.short_description,
+          disabled: !!disabled_reason,
+        })
       }
-      const disabled_reason = generator_disabled_reason(generator.id)
-      generators.push({
-        value: generator.id,
-        label: generator.name,
-        description: disabled_reason ?? generator.short_description,
-        disabled: !!disabled_reason,
-      })
-    }
-    if (generators.length > 0) {
-      grouped_options.push({
-        label: "Prompt Generators",
-        options: generators,
-      })
-    }
+      if (generators.length > 0) {
+        grouped_options.push({
+          label: "Prompt Generators",
+          options: generators,
+        })
+      }
 
-    if (fine_tune_prompt_id) {
-      grouped_options.push({
-        label: "Fine-Tune Prompt",
-        options: [
-          {
-            value: fine_tune_prompt_id,
-            label: "Fine-Tune Prompt",
-            description: "The exact prompt used to fine-tune this model.",
-            badge: "Recommended",
-            badge_color: "primary",
-          },
-        ],
-      })
-    }
+      if (fine_tune_prompt_id) {
+        grouped_options.push({
+          label: "Fine-Tune Prompt",
+          options: [
+            {
+              value: fine_tune_prompt_id,
+              label: "Fine-Tune Prompt",
+              description: "The exact prompt used to fine-tune this model.",
+              badge: "Recommended",
+              badge_color: "primary",
+            },
+          ],
+        })
+      }
 
-    if (custom_prompt_name) {
-      grouped_options.push({
-        label: "Custom Prompt",
-        options: [{ value: "custom", label: custom_prompt_name }],
-      })
+      if (custom_prompt_name) {
+        grouped_options.push({
+          label: "Custom Prompt",
+          options: [{ value: "custom", label: custom_prompt_name }],
+        })
+      }
     }
 
     const static_prompts: Option[] = []
@@ -295,6 +301,7 @@
       data_requirements_checked,
       has_rated_data,
       has_repair_data,
+      saved_prompts_only,
     )
   }
 </script>

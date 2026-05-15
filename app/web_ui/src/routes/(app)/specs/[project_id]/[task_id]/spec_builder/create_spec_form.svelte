@@ -28,7 +28,10 @@
   export let task_id: string
   export let task_sample_example: TaskSampleExample | null = null
   export let has_unsaved_manual_entry: boolean = false
-  export let selected_prompt_method: string = "simple_prompt_builder"
+  // Empty string = "no saved prompt picked", which resolves to the existing
+  // task-instruction default in the parent. When the user picks one, this
+  // becomes its PromptId (e.g. id::abc or task_run_config::p::t::rc).
+  export let selected_prompt_method: string = ""
 
   let form_container: FormContainer
 
@@ -119,7 +122,8 @@
       {project_id}
       {task_id}
       label="Prompt"
-      description="Prompt sent to Kiln Pro for generating synthetic data. Pick a saved prompt to mirror your production prompt; otherwise the task instruction is used."
+      saved_prompts_only={true}
+      description="Saved prompt to send to Kiln Pro when generating synthetic data. Leave empty to use the task instruction."
     />
     <TaskSampleSelector
       {project_id}
