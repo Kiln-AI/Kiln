@@ -33,6 +33,7 @@ from provider_utils import (  # type: ignore[import-not-found]
     fetch_fireworks_docs_models,
     fetch_fireworks_tunable,
     fetch_openai_compat,
+    fetch_together_docs_models,
     fetch_vertex_with_aliases,
     find_repo_root,
     get_api_key,
@@ -95,14 +96,22 @@ def check_openai_finetune(finetune_ids: list[str]) -> dict:
 
 
 def check_together_finetune(finetune_ids: list[str]) -> dict:
-    api_key = get_api_key("TOGETHER_API_KEY")
-    if not api_key:
-        return {"skipped": True, "reason": "TOGETHER_API_KEY not set"}
+    """Check Together fine-tune IDs against the Together docs page.
 
-    available = fetch_openai_compat("https://api.together.xyz/v1/models", api_key)
-    found = [fid for fid in finetune_ids if fid in available]
-    missing = [fid for fid in finetune_ids if fid not in available]
-    return {"found": found, "missing": missing, "available_count": len(available)}
+    The /v1/models API only lists inference models, not fine-tuning Reference
+    models. The docs page is the source of truth for fine-tuning support.
+    """
+    try:
+        docs_models = fetch_together_docs_models()
+    except (RuntimeError, OSError) as e:
+        return {
+            "skipped": True,
+            "reason": f"Could not scrape Together docs: {type(e).__name__}",
+        }
+
+    found = [fid for fid in finetune_ids if fid in docs_models]
+    missing = [fid for fid in finetune_ids if fid not in docs_models]
+    return {"found": found, "missing": missing, "available_count": len(docs_models)}
 
 
 def check_vertex_finetune(finetune_ids: list[str]) -> dict:

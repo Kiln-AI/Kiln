@@ -335,3 +335,26 @@ def fetch_fireworks_docs_models() -> set[str]:
         raise RuntimeError("Parsed zero models from Fireworks docs table")
 
     return model_ids
+
+
+def fetch_together_docs_models() -> set[str]:
+    """Scrape Together AI docs page to get the list of supported fine-tune models.
+
+    Parses the fine-tuning models page for model IDs in org/model format
+    (e.g. "meta-llama/Meta-Llama-3.1-8B-Instruct-Reference").
+
+    Raises RuntimeError if the page can't be fetched or no models are found.
+    """
+    url = "https://docs.together.ai/docs/fine-tuning-models"
+    req = Request(url)
+    req.add_header("User-Agent", "kiln-model-check/1.0")
+    with urlopen(req, timeout=15) as resp:
+        html = resp.read().decode("utf-8")
+
+    # Model IDs appear as >org/model-name< in table cells
+    model_ids = set(re.findall(r">([A-Za-z][\w\-]+/[\w\.\-]+)<", html))
+
+    if not model_ids:
+        raise RuntimeError("Parsed zero models from Together docs page")
+
+    return model_ids
