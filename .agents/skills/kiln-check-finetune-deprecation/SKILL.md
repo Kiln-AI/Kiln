@@ -33,7 +33,7 @@ Audit the fine-tunable models listed in Kiln to find base models that are no lon
 
 Kiln has two types of fine-tunable model entries:
 
-1. **Static entries** — Models in `libs/core/kiln_ai/adapters/ml_model_list.py` with `provider_finetune_id` set. Currently used by OpenAI, Together AI, and Vertex AI.
+1. **Static entries** — Models in `libs/core/kiln_ai/adapters/ml_model_list.py` with `provider_finetune_id` set. Currently used by Together AI and Vertex AI.
 2. **Dynamic entries (Fireworks)** — Fetched at runtime from `api.fireworks.ai/v1/accounts/fireworks/models` filtering by `tunable=True`. This list is managed by Fireworks and may include stale/unsupported models.
 
 The API endpoint that serves the fine-tune dropdown is `GET /api/finetune_providers` in `app/desktop/studio_server/finetune_api.py`.
@@ -48,11 +48,10 @@ Run the check script from the repo root:
 uv run python3 .agents/skills/kiln-check-finetune-deprecation/scripts/check_finetune.py static > /tmp/kiln_finetune_static.json
 ```
 
-This extracts all `provider_finetune_id` entries from `ml_model_list.py` and checks each provider's API to see if the model is still available for fine-tuning:
+This extracts all `provider_finetune_id` entries from `ml_model_list.py` and checks each provider's docs/API to see if the model is still available for fine-tuning:
 
-- **OpenAI:** Checks `GET https://api.openai.com/v1/models` — fine-tunable models are those with ID matching the `provider_finetune_id`. OpenAI date-stamps fine-tunable model IDs (e.g. `gpt-4o-2024-08-06`), so if the dated version is removed, it's no longer fine-tunable.
-- **Together AI:** Checks `GET https://api.together.xyz/v1/models` and filters for models with `"type": "chat"` that match the `provider_finetune_id`. Together uses full HuggingFace-style IDs (e.g. `meta-llama/Meta-Llama-3.1-8B-Instruct-Reference`).
-- **Vertex AI:** Checks the Vertex AI tuning documentation / API. Vertex fine-tuning uses specific versioned model IDs (e.g. `gemini-2.0-flash-001`).
+- **Together AI:** Scrapes the Together AI docs page for the list of supported fine-tune models. Together uses full HuggingFace-style IDs (e.g. `meta-llama/Meta-Llama-3.1-8B-Instruct-Reference`).
+- **Vertex AI:** Checks the Vertex AI publisher models API. Vertex fine-tuning uses specific versioned model IDs (e.g. `gemini-2.0-flash-001`).
 
 **Output:** JSON to stdout with per-provider results, human summary to stderr.
 
@@ -159,7 +158,7 @@ uv run python3 -m pytest app/desktop/studio_server/test_finetune_api.py -q
 
 - [ ] Env vars sourced from `.env`
 - [ ] Vertex auth confirmed (`gcloud auth print-access-token` works, or skip Vertex)
-- [ ] Static fine-tune IDs checked against provider APIs (OpenAI, Together, Vertex)
+- [ ] Static fine-tune IDs checked against provider APIs (Together, Vertex)
 - [ ] Fireworks dynamic models cross-referenced against known-good list
 - [ ] Findings reported to user with clear table
 - [ ] User confirmed remediation approach
