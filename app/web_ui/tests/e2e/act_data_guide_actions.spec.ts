@@ -1,7 +1,7 @@
 import { test, expect } from "./fixtures"
 
 const SEED_GUIDE =
-  "# Reference Examples\n\n## Example 1\n```input\nHello\n```\n\n```output\nHi there\n```\n\n# Guidelines & Rules\n\nBe concise and friendly."
+  "# Reference Inputs\n\n## Example 1\n```input\nHello\n```\n\n# Input Guidelines & Rules\n\nBe concise and friendly."
 
 async function seedDataGuide(
   apiRequest: import("@playwright/test").APIRequestContext,
@@ -21,31 +21,26 @@ async function seedDataGuide(
 
 /* @act
 ## Goals
-The /synth page's "Set Up Data Guide" Intro card opens an Add-Example dialog;
-submitting the dialog seeds the user's example onto the pending_data_guide_example
-store and navigates to /data_guide_setup, where the setup form pre-fills with
-that example. This locks in the cross-page handoff between the synth flow and
-the data guide builder.
+On a fresh task, the /synth page intro is the single entry point for creating
+an input data guide. Without a Kiln Pro key it shows one CTA: "Set Up Input
+Data Guide" → /data_guide_setup. Clicking it lands on the manual setup form.
 
 ## Fixtures
 - registeredUser
 - seededProjectWithTask
 
 ## Hints
-- /synth?reason=fine_tune triggers is_setup=true. With a fresh task the
-  "Create a Data Guide" Intro renders before the SDG wizard.
-- The Intro's primary CTA is "Set Up Data Guide" — opens AddExampleDialog.
-- Dialog FormElements have id="example_input" and id="example_output".
-- After clicking the dialog's "Add" button, the page navigates to
-  /data_guide_setup. The example renders as a row in the setup form's
-  example table.
+- /synth?reason=fine_tune triggers is_setup=true. With a fresh task and no
+  saved guide, the "Create an Input Data Guide" Intro renders before the SDG
+  wizard.
+- Without a configured Kiln Pro key the primary CTA is "Set Up Input Data
+  Guide" (manual). With one, it's "Set Up with Kiln Pro" + secondary "Set Up
+  Manually".
 
 ## Assertions
-- After dialog submit, URL is /data_guide_setup.
-- The submitted input string is visible in the setup form (the row in the
-  examples table).
+- The "Set Up Input Data Guide" CTA navigates to /data_guide_setup.
 */
-test("/synth Add-Example dialog seeds the setup form", async ({
+test("/synth intro routes to manual setup", async ({
   page,
   registeredUser,
   seededProjectWithTask,
@@ -53,21 +48,13 @@ test("/synth Add-Example dialog seeds the setup form", async ({
   void registeredUser
   const { project, task } = seededProjectWithTask
 
-  const exampleInput = `act-input-${Date.now()}`
-  const exampleOutput = `act-output-${Date.now()}`
-
   await page.goto(`/generate/${project.id}/${task.id}/synth?reason=fine_tune`)
 
-  await page.getByRole("button", { name: "Set Up Data Guide" }).click()
-
-  await page.locator("#example_input").fill(exampleInput)
-  await page.locator("#example_output").fill(exampleOutput)
-  await page.getByRole("button", { name: "Add", exact: true }).click()
+  await page.getByRole("button", { name: "Set Up Input Data Guide" }).click()
 
   await expect(page).toHaveURL(
     `/generate/${project.id}/${task.id}/data_guide_setup`,
   )
-  await expect(page.getByText(exampleInput).first()).toBeVisible()
 })
 
 /* @act
@@ -112,7 +99,7 @@ test("edit dialog Save Without Verifying does a direct PUT", async ({
 
   await page.getByRole("button", { name: "Edit", exact: true }).click()
 
-  const editedGuide = `# Reference Examples\n\n## Example 1\n\`\`\`input\nedited-${Date.now()}\n\`\`\`\n\n\`\`\`output\nedited-out\n\`\`\``
+  const editedGuide = `# Reference Inputs\n\n## Example 1\n\`\`\`input\nedited-${Date.now()}\n\`\`\``
   await page.locator("#edit_guide_text").fill(editedGuide)
 
   await page.getByRole("button", { name: "Save Without Verifying" }).click()
@@ -176,7 +163,5 @@ test("delete data guide from saved-guide page", async ({
   await expect(page).toHaveURL(`/generate/${project.id}/${task.id}/synth`)
 
   await page.goto(`/generate/${project.id}/${task.id}/data_guide`)
-  await expect(page).toHaveURL(
-    `/generate/${project.id}/${task.id}/data_guide_setup`,
-  )
+  await expect(page).toHaveURL(`/generate/${project.id}/${task.id}/synth`)
 })

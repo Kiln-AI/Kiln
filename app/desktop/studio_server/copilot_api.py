@@ -30,7 +30,11 @@ from app.desktop.studio_server.api_client.kiln_ai_server_client.models import (
 from app.desktop.studio_server.api_client.kiln_server_client import (
     get_authenticated_client,
 )
+from app.desktop.studio_server.data_gen_api import generate_input_preview_samples
 from app.desktop.studio_server.api_models.copilot_models import (
+    AnalyzeInputDataGuideApiInput,
+    AnalyzeInputDataGuideApiOutput,
+    AnalyzeInputDataGuidePreviewSampleApi,
     ClarifySpecApiInput,
     ClarifySpecApiOutput,
     GenerateBatchApiInput,
@@ -267,6 +271,88 @@ def connect_copilot_api(app: FastAPI):
         raise HTTPException(
             status_code=500,
             detail="Unknown error.",
+        )
+
+    @app.post(
+        "/api/projects/{project_id}/tasks/{task_id}/copilot/analyze_input_data_guide",
+        tags=["Copilot"],
+        openapi_extra=agent_policy_require_approval(
+            "Analyze input examples with Copilot to draft a data guide?"
+        ),
+    )
+    async def analyze_input_data_guide(
+        project_id: Annotated[
+            str, Path(description="The unique identifier of the project.")
+        ],
+        task_id: Annotated[
+            str,
+            Path(description="The unique identifier of the task within the project."),
+        ],
+        input: AnalyzeInputDataGuideApiInput,
+    ) -> AnalyzeInputDataGuideApiOutput:
+        """Analyze a heterogeneous list of input examples (manual entries,
+        existing task runs, uploaded text documents) with the Kiln Copilot to
+        produce a draft input data guide and a small set of preview inputs the
+        user can review.
+
+        Two-step internally: (1) call kiln_server's
+        `/v1/copilot/analyze_input_data_guide` to get the draft guide markdown,
+        then (2) reuse the local input-preview helper with that draft to
+        generate `num_preview_samples` preview inputs. Both go back to the
+        client in one response so the UI can drop straight into the existing
+        review/refine flow.
+        """
+        api_key = get_copilot_api_key()
+        client = get_authenticated_client(api_key)
+
+        analyze_payload = {
+            "task_prompt": input.target_task_info.task_prompt,
+            "task_description": input.task_description,
+            "task_input_schema": input.target_task_info.task_input_schema or None,
+            "input_examples": input.input_examples,
+        }
+
+        # Call kiln_server directly via the underlying httpx client. The
+        # generated `kiln_ai_server_client` doesn't include this endpoint
+        # yet — when it's regenerated post-deploy, swap to the typed client
+        # method (analyze_input_data_guide_v1_copilot_analyze_input_data_guide_post).
+        async with client.get_async_httpx_client() as http:
+            response = await http.post(
+                "/v1/copilot/analyze_input_data_guide",
+                json=analyze_payload,
+            )
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"Failed to analyze input data guide: {response.text}",
+            )
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Invalid response from copilot service: {exc}",
+            )
+        draft_guide = payload.get("draft_guide", "")
+        if not isinstance(draft_guide, str) or not draft_guide.strip():
+            raise HTTPException(
+                status_code=500,
+                detail="Copilot returned an empty draft guide.",
+            )
+
+        preview = await generate_input_preview_samples(
+            project_id=project_id,
+            task_id=task_id,
+            guide=draft_guide,
+            run_config_properties=input.run_config_properties,
+            num_samples=input.num_preview_samples,
+        )
+
+        return AnalyzeInputDataGuideApiOutput(
+            draft_guide=draft_guide,
+            preview_samples=[
+                AnalyzeInputDataGuidePreviewSampleApi(input=s.input) for s in preview
+            ],
         )
 
     @app.post(

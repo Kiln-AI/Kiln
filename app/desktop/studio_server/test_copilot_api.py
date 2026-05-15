@@ -445,3 +445,151 @@ class TestCreateSpecWithCopilot:
         specs = task.specs()
         assert len(specs) == 1
         assert specs[0].eval_id == evals[0].id
+
+
+class TestAnalyzeInputDataGuide:
+    """Tests for the input data guide copilot proxy endpoint.
+
+    The endpoint internally:
+    1. POSTs to kiln_server's /v1/copilot/analyze_input_data_guide via the
+       authenticated client's underlying httpx.AsyncClient → expects
+       `{"draft_guide": str}` back
+    2. Calls the local `generate_input_preview_samples` helper to produce
+       preview inputs from that draft
+    3. Returns both fields together
+    """
+
+    URL = "/api/projects/proj_x/tasks/task_y/copilot/analyze_input_data_guide"
+
+    @staticmethod
+    def _payload() -> dict:
+        return {
+            "target_task_info": {
+                "task_prompt": "Translate to French.",
+                "task_input_schema": "",
+                "task_output_schema": "",
+            },
+            "task_description": "A simple translation task.",
+            "input_examples": ["hello", "frog"],
+            "num_preview_samples": 2,
+            "run_config_properties": {
+                "type": "kiln_agent",
+                "model_name": "gpt-4",
+                "model_provider_name": "openai",
+                "prompt_id": "simple_prompt_builder",
+                "structured_output_mode": "default",
+            },
+        }
+
+    def test_no_api_key(self, client):
+        with patch(
+            "app.desktop.studio_server.utils.copilot_utils.Config.shared"
+        ) as mock_config_shared:
+            mock_config_shared.return_value.kiln_copilot_api_key = None
+            response = client.post(self.URL, json=self._payload())
+            assert response.status_code == 401
+            assert "API key not configured" in response.json()["message"]
+
+    def test_success(self, client, mock_api_key):
+
+        # Mock the underlying httpx call to return a draft guide.
+        async def _aenter(self):
+            return self
+
+        async def _aexit(self, *a, **kw):
+            return False
+
+        mock_post_response = MagicMock()
+        mock_post_response.status_code = 200
+        mock_post_response.json.return_value = {
+            "draft_guide": "# Reference Inputs\n\n## Example 1\n```input\nhello\n```\n"
+        }
+        mock_http = MagicMock()
+        mock_http.post = AsyncMock(return_value=mock_post_response)
+        mock_http.__aenter__ = AsyncMock(side_effect=lambda: mock_http)
+        mock_http.__aexit__ = AsyncMock(return_value=False)
+
+        mock_authclient = MagicMock()
+        mock_authclient.get_async_httpx_client.return_value = mock_http
+
+        # Mock the local preview helper so we don't need a real task on disk.
+        from app.desktop.studio_server.data_gen_api import GuidePreviewSample
+
+        async def fake_preview(**kwargs):
+            return [
+                GuidePreviewSample(input="generated 1"),
+                GuidePreviewSample(input="generated 2"),
+            ]
+
+        with (
+            patch(
+                "app.desktop.studio_server.copilot_api.get_authenticated_client",
+                return_value=mock_authclient,
+            ),
+            patch(
+                "app.desktop.studio_server.copilot_api.generate_input_preview_samples",
+                new=fake_preview,
+            ),
+        ):
+            response = client.post(self.URL, json=self._payload())
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["draft_guide"].startswith("# Reference Inputs")
+        assert body["preview_samples"] == [
+            {"input": "generated 1"},
+            {"input": "generated 2"},
+        ]
+        # Verify the upstream call hit the v1 endpoint with our payload shape.
+        post_kwargs = mock_http.post.await_args.kwargs
+        assert mock_http.post.await_args.args == (
+            "/v1/copilot/analyze_input_data_guide",
+        )
+        assert post_kwargs["json"]["task_prompt"] == "Translate to French."
+        assert post_kwargs["json"]["input_examples"] == ["hello", "frog"]
+        # The wrapper does NOT pass task_output_schema — output is out of scope.
+        assert "task_output_schema" not in post_kwargs["json"]
+
+    def test_upstream_error_propagates(self, client, mock_api_key):
+        mock_post_response = MagicMock()
+        mock_post_response.status_code = 502
+        mock_post_response.text = "upstream down"
+
+        mock_http = MagicMock()
+        mock_http.post = AsyncMock(return_value=mock_post_response)
+        mock_http.__aenter__ = AsyncMock(side_effect=lambda: mock_http)
+        mock_http.__aexit__ = AsyncMock(return_value=False)
+
+        mock_authclient = MagicMock()
+        mock_authclient.get_async_httpx_client.return_value = mock_http
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.get_authenticated_client",
+            return_value=mock_authclient,
+        ):
+            response = client.post(self.URL, json=self._payload())
+
+        assert response.status_code == 502
+        assert "upstream down" in response.json()["message"]
+
+    def test_empty_draft_returns_500(self, client, mock_api_key):
+        mock_post_response = MagicMock()
+        mock_post_response.status_code = 200
+        mock_post_response.json.return_value = {"draft_guide": "   "}
+
+        mock_http = MagicMock()
+        mock_http.post = AsyncMock(return_value=mock_post_response)
+        mock_http.__aenter__ = AsyncMock(side_effect=lambda: mock_http)
+        mock_http.__aexit__ = AsyncMock(return_value=False)
+
+        mock_authclient = MagicMock()
+        mock_authclient.get_async_httpx_client.return_value = mock_http
+
+        with patch(
+            "app.desktop.studio_server.copilot_api.get_authenticated_client",
+            return_value=mock_authclient,
+        ):
+            response = client.post(self.URL, json=self._payload())
+
+        assert response.status_code == 500
+        assert "empty" in response.json()["message"].lower()

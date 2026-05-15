@@ -868,7 +868,7 @@ def test_combine_guidance_with_data_guide_only(test_task):
 
     out = _combine_guidance(reloaded, None, "inputs")
     assert out is not None
-    assert "# Task Data Guide" in out
+    assert "# Task Input Data Guide" in out
     assert "GUIDE_BODY" in out
     assert "mirror their structure and value patterns" in out
 
@@ -885,7 +885,7 @@ def test_combine_guidance_data_guide_and_session(test_task):
     reloaded = Task.from_id_and_parent_path(test_task.id, test_task.parent.path)
     assert reloaded is not None
 
-    out = _combine_guidance(reloaded, "EXTRA_SESSION_GUIDANCE", "outputs")
+    out = _combine_guidance(reloaded, "EXTRA_SESSION_GUIDANCE", "inputs")
     assert out is not None
     assert "GUIDE_BODY" in out
     assert "EXTRA_SESSION_GUIDANCE" in out
@@ -930,6 +930,107 @@ def test_combine_guidance_override_wins_over_persisted(test_task):
     assert "PERSISTED_GUIDE" not in out
 
 
+def test_combine_guidance_stage_hints_keys_are_input_only():
+    """The stage hint dict must only have keys for the input-side stages —
+    `topics` and `inputs`. The output stage no longer receives the Input Data
+    Guide."""
+    from app.desktop.studio_server.data_gen_api import _DATA_GUIDE_STAGE_HINTS
+
+    assert set(_DATA_GUIDE_STAGE_HINTS.keys()) == {"topics", "inputs"}
+
+
+def test_generate_sample_does_not_inject_data_guide(
+    mock_task_from_id,
+    mock_project_from_id,
+    test_task,
+    client,
+):
+    """The output-generation `/generate_sample` endpoint must NOT see the
+    Input Data Guide in its prompt, even when one is persisted on the task.
+    Output behavior is owned by the task's system prompt + output schema."""
+    from kiln_ai.datamodel.data_guide import DataGuide
+    from kiln_ai.datamodel.datamodel_enums import StructuredOutputMode
+    from kiln_ai.datamodel.prompt_id import PromptGenerators
+    from kiln_ai.datamodel.task_run import TaskRun
+    from kiln_ai.datamodel import DataSource, DataSourceType
+    from kiln_ai.datamodel.task_output import TaskOutput
+
+    saved = DataGuide(parent=test_task, guide="DO_NOT_LEAK_TO_OUTPUT_STAGE")
+    saved.save_to_file()
+
+    captured: dict = {}
+
+    def capturing_wrap(instruction: str, guidance: str) -> str:
+        captured["wrapped_with"] = guidance
+        return instruction
+
+    fake_run = TaskRun(
+        input="hi",
+        input_source=DataSource(
+            type=DataSourceType.synthetic,
+            properties={
+                "model_name": "x",
+                "model_provider": "y",
+                "adapter_name": "kiln_data_gen",
+            },
+        ),
+        output=TaskOutput(
+            output="ok",
+            source=DataSource(
+                type=DataSourceType.synthetic,
+                properties={
+                    "model_name": "x",
+                    "model_provider": "y",
+                    "adapter_name": "kiln_data_gen",
+                },
+            ),
+        ),
+    )
+
+    with (
+        patch(
+            "app.desktop.studio_server.data_gen_api.adapter_for_task"
+        ) as mock_adapter_for_task,
+        patch(
+            "app.desktop.studio_server.data_gen_api.load_skills_for_task",
+            return_value=[],
+        ),
+        patch(
+            "app.desktop.studio_server.data_gen_api.wrap_task_with_guidance",
+            side_effect=capturing_wrap,
+        ),
+    ):
+        mock_adapter = AsyncMock()
+        mock_adapter.invoke = AsyncMock(return_value=fake_run)
+        mock_adapter_for_task.return_value = mock_adapter
+
+        response = client.post(
+            "/api/projects/test_project/tasks/test_task/generate_sample",
+            json={
+                "input": "hi",
+                "topic_path": ["greetings"],
+                "input_model_name": "gpt-4",
+                "input_provider": "openai",
+                "guidance": None,
+                "run_config_properties": {
+                    "type": "kiln_agent",
+                    "model_name": "gpt-4",
+                    "model_provider_name": ModelProviderName.openai.value,
+                    "prompt_id": PromptGenerators.SIMPLE.value,
+                    "structured_output_mode": StructuredOutputMode.default.value,
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    # Either the wrap was never called (no guidance at all) or, if it was
+    # called for the topic-path tail, the guidance string must NOT contain the
+    # data guide body.
+    wrapped = captured.get("wrapped_with", "")
+    assert "DO_NOT_LEAK_TO_OUTPUT_STAGE" not in wrapped
+    assert "Task Input Data Guide" not in wrapped
+
+
 # --- /data_gen_guide_preview endpoint ---
 
 
@@ -939,9 +1040,9 @@ def test_preview_data_gen_guide_success(
     test_task,
     client,
 ):
-    """Happy path: the input adapter returns a JSON sample list, the output
-    adapter returns one output per sample, and we get a flat list of
-    GuidePreviewSample objects back."""
+    """Happy path: the input adapter returns a JSON sample list and we get a
+    flat list of GuidePreviewSample objects back. Output generation is no
+    longer part of the preview — the Input Data Guide is input-only."""
     import json
 
     sample_input_run = MagicMock()
@@ -950,14 +1051,7 @@ def test_preview_data_gen_guide_success(
         {"generated_samples": ["input one", "input two"]}
     )
 
-    output_run_a = MagicMock()
-    output_run_a.output = MagicMock()
-    output_run_a.output.output = "output one"
-    output_run_b = MagicMock()
-    output_run_b.output = MagicMock()
-    output_run_b.output.output = "output two"
-
-    invoke_mock = AsyncMock(side_effect=[sample_input_run, output_run_a, output_run_b])
+    invoke_mock = AsyncMock(return_value=sample_input_run)
 
     with patch(
         "app.desktop.studio_server.data_gen_api.adapter_for_task"
@@ -973,7 +1067,7 @@ def test_preview_data_gen_guide_success(
             response = client.post(
                 "/api/projects/test_project/tasks/test_task/data_gen_guide_preview",
                 json={
-                    "guide": "# Reference Examples\n\nSome examples\n\n# Guidelines & Rules\n\nSome rules",
+                    "guide": "# Reference Inputs\n\nSome examples\n\n# Input Guidelines & Rules\n\nSome rules",
                     "run_config_properties": {
                         "type": "kiln_agent",
                         "model_name": "gpt-4",
@@ -988,9 +1082,11 @@ def test_preview_data_gen_guide_success(
     assert response.status_code == 200
     body = response.json()
     assert body == [
-        {"input": "input one", "output": "output one"},
-        {"input": "input two", "output": "output two"},
+        {"input": "input one"},
+        {"input": "input two"},
     ]
+    # Only one adapter invocation: the input-generation pass. No output pass.
+    assert invoke_mock.call_count == 1
 
 
 def test_preview_data_gen_guide_empty_output_returns_500(
@@ -1100,15 +1196,15 @@ def test_refine_data_gen_guide_success(
             "/api/projects/test_project/tasks/test_task/data_gen_guide_refine",
             json={
                 "current_guide": (
-                    "# Reference Examples\n\n"
-                    "## Example 1\n```input\nx\n```\n\n```output\ny\n```\n\n"
-                    "# Guidelines & Rules\n\n"
-                    "<output_semantic>\n\n## Old\nOld rule.\n\n</output_semantic>"
+                    "# Reference Inputs\n\n"
+                    "## Example 1\n```input\nx\n```\n\n"
+                    "# Input Guidelines & Rules\n\n"
+                    "<input_semantic>\n\n## Old\nOld rule.\n\n</input_semantic>"
                 ),
-                "feedback": "Please make outputs shorter",
+                "feedback": "Please make inputs more concise",
                 "preview_samples": [
-                    {"input": "i1", "output": "o1", "looks_good": True},
-                    {"input": "i2", "output": "o2", "looks_good": False},
+                    {"input": "i1", "looks_good": True},
+                    {"input": "i2", "looks_good": False},
                 ],
                 "run_config_properties": {
                     "type": "kiln_agent",

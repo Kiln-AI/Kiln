@@ -1,7 +1,7 @@
 <script lang="ts">
-  // Refine flow: previewing + iterating on a saved data guide. Reached from
-  // /data_guide via a handoff store carrying the chosen run configs and the
-  // (possibly edited) guide text. The saved-guide read-only view lives at
+  // Refine flow: previewing + iterating on a saved input data guide. Reached
+  // from /data_guide via a handoff store carrying the chosen run configs and
+  // the (possibly edited) guide text. The saved-guide read-only view lives at
   // /data_guide; this page only handles the active refine loop.
   import AppPage from "../../../../../app_page.svelte"
   import { client } from "$lib/api_client"
@@ -37,10 +37,9 @@
 
   let guide: string = ""
 
-  type PreviewSample = { input: string; output: string }
+  type PreviewSample = { input: string }
   type ReviewedSample = {
     input: string
-    output: string
     looks_good: boolean | undefined
   }
   let preview_samples: PreviewSample[] = []
@@ -49,11 +48,10 @@
   let general_feedback: string = ""
 
   let captured_input_run_config: KilnAgentRunConfigProperties | null = null
-  let captured_output_run_config: KilnAgentRunConfigProperties | null = null
   // Snapshot of the guide as actually-saved-on-server at handoff time. Drives
   // the GuidePreview submit button label/behavior: when the working `guide`
   // matches this, there's nothing to persist — the button becomes a plain
-  // "Back to Data Guide" navigation rather than a save.
+  // "Back to Input Data Guide" navigation rather than a save.
   let saved_guide_snapshot: string = ""
   $: requires_save = guide !== saved_guide_snapshot
 
@@ -70,7 +68,7 @@
   $: task_id = $page.params.task_id!
   $: agentInfo.set({
     name: "Refine Data Guide",
-    description: `Refine the saved task data guide for project ${project_id}, task ${task_id}.`,
+    description: `Refine the saved task input data guide for project ${project_id}, task ${task_id}.`,
   })
 
   onMount(async () => {
@@ -88,7 +86,6 @@
     guide = handoff.guide
     saved_guide_snapshot = handoff.saved_guide
     captured_input_run_config = handoff.input_run_config
-    captured_output_run_config = handoff.output_run_config
 
     await run_initial_preview()
   })
@@ -99,7 +96,7 @@
     current_state = "generating"
 
     try {
-      if (!captured_input_run_config || !captured_output_run_config) {
+      if (!captured_input_run_config) {
         throw new KilnError("No model configuration available", null)
       }
 
@@ -110,19 +107,17 @@
           body: {
             guide,
             run_config_properties: captured_input_run_config,
-            output_run_config_properties: captured_output_run_config,
             num_samples: 5,
           },
         },
       )
 
       if (api_error) throw api_error
-      if (!data) throw new KilnError("No preview samples returned", null)
+      if (!data) throw new KilnError("No preview inputs returned", null)
 
       preview_samples = data as PreviewSample[]
       reviewed_samples = preview_samples.map((s) => ({
         input: s.input,
-        output: s.output,
         looks_good: undefined,
       }))
       general_feedback = ""
@@ -142,7 +137,7 @@
   async function handle_refine(
     event: CustomEvent<{
       feedback: string
-      rated_samples: { input: string; output: string; looks_good: boolean }[]
+      rated_samples: { input: string; looks_good: boolean }[]
     }>,
   ) {
     error = null
@@ -155,7 +150,7 @@
     current_state = has_negative_feedback ? "refining" : "regenerating"
 
     try {
-      if (!captured_input_run_config || !captured_output_run_config) {
+      if (!captured_input_run_config) {
         throw new KilnError("No model configuration available", null)
       }
 
@@ -169,7 +164,6 @@
               feedback: event.detail.feedback,
               preview_samples: event.detail.rated_samples,
               run_config_properties: captured_input_run_config,
-              output_run_config_properties: captured_output_run_config,
             },
           },
         )
@@ -187,20 +181,17 @@
           body: {
             guide,
             run_config_properties: captured_input_run_config,
-            output_run_config_properties: captured_output_run_config,
             num_samples: 5,
           },
         },
       )
 
       if (preview_error) throw preview_error
-      if (!preview_data)
-        throw new KilnError("No preview samples returned", null)
+      if (!preview_data) throw new KilnError("No preview inputs returned", null)
 
       preview_samples = preview_data as PreviewSample[]
       reviewed_samples = preview_samples.map((s) => ({
         input: s.input,
-        output: s.output,
         looks_good: undefined,
       }))
       general_feedback = ""
@@ -283,8 +274,8 @@
 
     {#if current_state === "loading" || current_state === "generating"}
       <AnalyzingAnimation
-        title="Generating Examples"
-        description="Generating synthetic data to test your data guide."
+        title="Generating Inputs"
+        description="Generating synthetic inputs to test your data guide."
       />
     {:else if current_state === "preview"}
       <GuidePreview
@@ -303,12 +294,12 @@
     {:else if current_state === "refining"}
       <RefiningAnimation
         title="Refining Data Guide"
-        description="Kiln is refining your data guide with the feedback you provided and generating fresh examples to review. Hold tight!"
+        description="Kiln is refining your data guide with the feedback you provided and generating fresh inputs to review. Hold tight!"
       />
     {:else if current_state === "regenerating"}
       <AnalyzingAnimation
-        title="Regenerating Examples"
-        description="Regenerating examples to review with your edited data guide. Hold tight!"
+        title="Regenerating Inputs"
+        description="Regenerating inputs to review with your edited data guide. Hold tight!"
       />
     {:else if current_state === "load_error"}
       <div

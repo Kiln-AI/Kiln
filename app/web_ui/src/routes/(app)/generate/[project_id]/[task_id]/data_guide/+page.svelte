@@ -52,7 +52,7 @@
   $: task_id = $page.params.task_id!
   $: agentInfo.set({
     name: "Data Guide",
-    description: `View and refine the saved task data guide for project ${project_id}, task ${task_id}.`,
+    description: `View and refine the saved task input data guide for project ${project_id}, task ${task_id}.`,
   })
 
   // Distinguish "load failed" from "no guide saved". Without this, a 5xx
@@ -84,9 +84,10 @@
       return
     }
 
-    // No saved guide content → send them to the setup flow.
+    // No saved guide content → send them to the synth page intro, which is
+    // the single entry point for creating a new guide (manual or Kiln Pro).
     if (!guide.trim()) {
-      goto(`/generate/${project_id}/${task_id}/data_guide_setup`)
+      goto(`/generate/${project_id}/${task_id}/synth`)
       return
     }
 
@@ -113,14 +114,12 @@
     event: CustomEvent<{
       guide: string
       input_run_config: KilnAgentRunConfigProperties
-      output_run_config: KilnAgentRunConfigProperties
     }>,
   ) {
     pending_data_guide_refine_handoff.set({
       guide: event.detail.guide,
       saved_guide: guide,
       input_run_config: event.detail.input_run_config,
-      output_run_config: event.detail.output_run_config,
     })
     goto(`/generate/${project_id}/${task_id}/data_guide/refine`)
   }

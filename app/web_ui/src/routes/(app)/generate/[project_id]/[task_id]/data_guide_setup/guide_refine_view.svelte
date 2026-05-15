@@ -1,7 +1,7 @@
 <script lang="ts">
-  // Shown when the user already has a saved data guide and revisits this page.
-  // Skips the build-from-examples setup form and goes straight to "preview the
-  // existing guide → refine via the metaprompter loop".
+  // Shown when the user already has a saved input data guide and revisits
+  // this page. Skips the build-from-examples setup form and goes straight to
+  // "preview the existing guide → refine via the metaprompter loop".
   import { createEventDispatcher } from "svelte"
   import FormContainer from "$lib/utils/form_container.svelte"
   import FormElement from "$lib/utils/form_element.svelte"
@@ -51,7 +51,6 @@
     generate_preview: {
       guide: string
       input_run_config: KilnAgentRunConfigProperties
-      output_run_config: KilnAgentRunConfigProperties
     }
     save: { guide: string }
   }>()
@@ -97,7 +96,6 @@
     | {
         guide: string
         input_run_config: KilnAgentRunConfigProperties
-        output_run_config: KilnAgentRunConfigProperties
       }
     | { error: KilnError } {
     if (!guide_value.trim()) {
@@ -110,23 +108,18 @@
     }
     const input_run_config: RunConfigProperties | null =
       run_options_tiles?.get_input_run_config() ?? null
-    const output_run_config: RunConfigProperties | null =
-      run_options_tiles?.get_output_run_config() ?? null
-    if (!input_run_config || !output_run_config) {
+    if (!input_run_config) {
       return {
         error: new KilnError(
-          "Please select a model for input and output generation.",
+          "Please select a model for input generation.",
           null,
         ),
       }
     }
-    if (
-      !isKilnAgentRunConfig(input_run_config) ||
-      !isKilnAgentRunConfig(output_run_config)
-    ) {
+    if (!isKilnAgentRunConfig(input_run_config)) {
       return {
         error: new KilnError(
-          "Task Data Guide requires a kiln_agent run config.",
+          "Data Guide requires a kiln_agent run config.",
           null,
         ),
       }
@@ -134,7 +127,6 @@
     return {
       guide: guide_value,
       input_run_config,
-      output_run_config,
     }
   }
 
@@ -246,7 +238,7 @@
           {/if}
         </button>
         <InfoTooltip
-          tooltip_text="Run your guide against fresh samples to verify quality. Refine the guide further if any examples need work."
+          tooltip_text="Run your guide against fresh inputs to verify quality. Refine the guide further if any inputs need work."
           position="top"
         />
       </div>

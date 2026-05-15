@@ -1,7 +1,6 @@
 <script lang="ts" context="module">
   export type GuideSample = {
     input: string
-    output: string
     task_run_id?: string
   }
 </script>
@@ -22,9 +21,6 @@
 
   export let project_id: string
   export let task_id: string
-  // Optional — forwarded to the output run config dialog so it can mirror the
-  // SDG output flow (prompt + tools/skills at top level, requires_structured_output
-  // keyed off task.output_json_schema). Falls back to safe defaults if absent.
   export let task: Task | null = null
 
   // page_error is exported so the parent can surface async errors (e.g. a
@@ -36,24 +32,19 @@
   // Unified examples list (manual + existing + saved golden)
   export let guide_examples: GuideSample[] = []
 
-  // Build the full data guide markdown from the user's examples — only the
-  // `# Reference Examples` section. Rules are intentionally not collected
+  // Build the full input data guide markdown from the user's examples — only
+  // the `# Reference Inputs` section. Rules are intentionally not collected
   // from the user here — the metaprompter generates them from refine
   // feedback on the first refine pass.
   function build_guide_md(): string {
-    const valid_examples = guide_examples.filter(
-      (e) => e.input.trim() || e.output.trim(),
-    )
+    const valid_examples = guide_examples.filter((e) => e.input.trim())
     if (valid_examples.length === 0) {
       return ""
     }
     const examples_body = valid_examples
-      .map(
-        (e, i) =>
-          `## Example ${i + 1}\n\`\`\`input\n${e.input}\n\`\`\`\n\n\`\`\`output\n${e.output}\n\`\`\``,
-      )
+      .map((e, i) => `## Example ${i + 1}\n\`\`\`input\n${e.input}\n\`\`\``)
       .join("\n\n")
-    return `# Reference Examples\n\n${examples_body}`
+    return `# Reference Inputs\n\n${examples_body}`
   }
 
   // --- Example management ---
@@ -100,28 +91,22 @@
     // keeps spinning after a synchronous validation failure.
     page_error = null
     try {
-      const valid_examples = guide_examples.filter(
-        (e) => e.input.trim() || e.output.trim(),
-      )
+      const valid_examples = guide_examples.filter((e) => e.input.trim())
       if (valid_examples.length === 0) {
         page_error = new KilnError("At least one example is required.")
         return
       }
       const input_run_config = run_options_tiles?.get_input_run_config()
-      const output_run_config = run_options_tiles?.get_output_run_config()
-      if (!input_run_config || !output_run_config) {
+      if (!input_run_config) {
         page_error = new KilnError(
-          "Please select a model for input and output generation.",
+          "Please select a model for input generation.",
           null,
         )
         return
       }
-      if (
-        !isKilnAgentRunConfig(input_run_config) ||
-        !isKilnAgentRunConfig(output_run_config)
-      ) {
+      if (!isKilnAgentRunConfig(input_run_config)) {
         page_error = new KilnError(
-          "Task Data Guide requires a kiln_agent run config.",
+          "Data Guide requires a kiln_agent run config.",
           null,
         )
         return
@@ -129,7 +114,6 @@
       dispatch("generate_preview", {
         guide: build_guide_md(),
         input_run_config,
-        output_run_config,
       })
     } finally {
       page_submitting = false
@@ -141,7 +125,6 @@
     generate_preview: {
       guide: string
       input_run_config: KilnAgentRunConfigProperties
-      output_run_config: KilnAgentRunConfigProperties
     }
   }>()
 
@@ -157,13 +140,13 @@
   compact_button={true}
   warn_before_unload={has_examples}
 >
-  <!-- Example Data Section -->
+  <!-- Example Inputs Section -->
   <div class="flex flex-col gap-2">
     <div class="flex items-center justify-between">
       <div>
-        <div class="font-medium">Example Data</div>
+        <div class="font-medium">Example Inputs</div>
         <div class="text-sm text-gray-500">
-          Example task data to guide synthetic data generation.
+          Example inputs to guide synthetic input generation.
         </div>
       </div>
       <button
@@ -181,14 +164,12 @@
           <thead>
             <tr>
               <th>Input</th>
-              <th>Output</th>
               <th style="width: 50px"></th>
             </tr>
           </thead>
           <tbody>
             {#each guide_examples as example, i}
               {@const input_content = formatExpandedContent(example.input)}
-              {@const output_content = formatExpandedContent(example.output)}
               <tr>
                 <td class="py-2">
                   <ClampedText
@@ -198,16 +179,6 @@
                       : null}
                     on:see_all={() =>
                       see_all_dialog.show("Input", example.input)}
-                  />
-                </td>
-                <td class="py-2">
-                  <ClampedText
-                    content={output_content.isJson ? "" : output_content.value}
-                    html_content={output_content.isJson
-                      ? output_content.value
-                      : null}
-                    on:see_all={() =>
-                      see_all_dialog.show("Output", example.output)}
                   />
                 </td>
                 <td class="py-2 p-0">
@@ -232,7 +203,7 @@
       <div
         class="rounded-lg border border-dashed border-gray-300 p-8 text-center text-sm text-gray-400"
       >
-        No examples
+        No example inputs
       </div>
     {/if}
   </div>
