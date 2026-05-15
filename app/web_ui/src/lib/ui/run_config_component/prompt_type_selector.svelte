@@ -24,6 +24,7 @@
   export let info_description: string | undefined = undefined
   export let project_id: string | null
   export let task_id: string | null
+  export let label: string = "Prompt Method"
 
   let has_rated_data = false
   let has_repair_data = false
@@ -299,7 +300,7 @@
 </script>
 
 <FormElement
-  label="Prompt Method"
+  {label}
   inputType="fancy_select"
   empty_state_message={prompt_load_error
     ? "Failed to load prompts"

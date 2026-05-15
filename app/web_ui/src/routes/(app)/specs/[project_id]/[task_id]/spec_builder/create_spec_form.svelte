@@ -118,6 +118,7 @@
       bind:prompt_method={selected_prompt_method}
       {project_id}
       {task_id}
+      label="Prompt"
       description="Prompt sent to Kiln Pro for generating synthetic data. Pick a saved prompt to mirror your production prompt; otherwise the task instruction is used."
     />
     <TaskSampleSelector
