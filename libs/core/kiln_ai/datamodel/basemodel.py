@@ -723,6 +723,25 @@ class KilnParentedModel(KilnBaseModel, metaclass=ABCMeta):
         return children
 
 
+class ParentOfRelationship(BaseModel):
+    """Specifies a parent-child relationship for KilnParentModel.
+
+    Use this form in ``parent_of`` when the Python attribute name should differ
+    from the on-disk folder name - for example, when a subclass wants to
+    override the auto-generated relationship method with custom filtering
+    logic, the relationship can be registered under a private name like
+    ``"_runs"`` while preserving the public ``runs/`` folder layout on disk.
+
+    For the common case where both names match, pass the child class directly
+    (``parent_of={"foo": FooModel}``).
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
+
+    model: type
+    filesystem_name: str
+
+
 # Parent create methods for all child relationships
 # You must pass in parent_of in the subclass definition, defining the child relationships
 class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
@@ -732,23 +751,29 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
     Child relationships must be defined using the parent_of parameter in the class definition.
 
     Args:
-        parent_of (Dict[str, Type[KilnParentedModel]]): Mapping of relationship names to child model types
+        parent_of (Dict[str, Type[KilnParentedModel] | ParentOfRelationship]): Mapping of Python
+            attribute names to either child model classes (where the key is also used as the
+            on-disk folder name) or to ``ParentOfRelationship`` values that decouple the Python
+            attribute name from the on-disk folder name.
     """
 
     @classmethod
     def _create_child_method(
-        cls, relationship_name: str, child_class: Type[KilnParentedModel]
+        cls,
+        python_name: str,
+        child_class: Type[KilnParentedModel],
+        filesystem_name: str,
     ):
         def child_method(self, readonly: bool = False) -> list[child_class]:  # type: ignore[invalid-type-form]
             return child_class.all_children_of_parent_path(self.path, readonly=readonly)
 
-        child_method.__name__ = relationship_name
+        child_method.__name__ = python_name
         child_method.__annotations__ = {"return": List[child_class]}  # type: ignore[invalid-type-form]
-        setattr(cls, relationship_name, child_method)
+        setattr(cls, python_name, child_method)
 
     @classmethod
     def _create_parent_methods(
-        cls, targetCls: Type[KilnParentedModel], relationship_name: str
+        cls, targetCls: Type[KilnParentedModel], filesystem_name: str
     ):
         def parent_class_method() -> Type[KilnParentModel]:
             return cls
@@ -758,19 +783,31 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
         setattr(targetCls, "parent_type", parent_class_method)
 
         def relationship_name_method() -> str:
-            return relationship_name
+            return filesystem_name
 
         relationship_name_method.__name__ = "relationship_name"
         relationship_name_method.__annotations__ = {"return": str}
         setattr(targetCls, "relationship_name", relationship_name_method)
 
     @classmethod
-    def __init_subclass__(cls, parent_of: Dict[str, Type[KilnParentedModel]], **kwargs):
+    def __init_subclass__(
+        cls,
+        parent_of: Dict[str, "Type[KilnParentedModel] | ParentOfRelationship"],
+        **kwargs,
+    ):
         super().__init_subclass__(**kwargs)
         cls._parent_of = parent_of
-        for relationship_name, child_class in parent_of.items():
-            cls._create_child_method(relationship_name, child_class)
-            cls._create_parent_methods(child_class, relationship_name)
+        for python_name, value in parent_of.items():
+            child_class: Type[KilnParentedModel]
+            filesystem_name: str
+            if isinstance(value, ParentOfRelationship):
+                child_class = value.model  # type: ignore[assignment]
+                filesystem_name = value.filesystem_name
+            else:
+                child_class = value
+                filesystem_name = python_name
+            cls._create_child_method(python_name, child_class, filesystem_name)
+            cls._create_parent_methods(child_class, filesystem_name)
 
     @classmethod
     def validate_and_save_with_subrelations(
@@ -824,7 +861,11 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
 
         for key, value_list in data.items():
             if key in cls._parent_of:
-                parent_type = cls._parent_of[key]
+                parent_type_or_rel = cls._parent_of[key]
+                if isinstance(parent_type_or_rel, ParentOfRelationship):
+                    parent_type = parent_type_or_rel.model
+                else:
+                    parent_type = parent_type_or_rel
                 if not isinstance(value_list, list):
                     raise ValueError(
                         f"Expected a list for {key}, but got {type(value_list)}"
