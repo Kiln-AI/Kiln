@@ -3221,6 +3221,7 @@ built_in_models: List[KilnModel] = [
                 model_id="meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
                 supports_data_gen=False,
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
+                provider_finetune_id="meta-llama/Meta-Llama-3.1-8B-Instruct-Reference",
                 # Constrained decode? They make function calling work when no one else does!
             ),
             KilnModelProvider(
@@ -3278,6 +3279,7 @@ built_in_models: List[KilnModel] = [
                 model_id="meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
                 supports_data_gen=False,
                 structured_output_mode=StructuredOutputMode.function_calling_weak,
+                provider_finetune_id="meta-llama/Meta-Llama-3.1-70B-Instruct-Reference",
             ),
         ],
     ),
