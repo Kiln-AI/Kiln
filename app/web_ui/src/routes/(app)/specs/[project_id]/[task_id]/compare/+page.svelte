@@ -99,13 +99,17 @@
     selectedModels = new Array(columns).fill(null)
 
     // Hidden evals can be restored before run configs are loaded - they are just IDs.
-    // Defensive: drop the cost section ID in case a hand-edited URL sneaks it in.
+    // Defensive: drop the cost section ID + dedupe in case a hand-edited URL is messy.
     const urlHidden = urlParams.get("hidden_evals")
     if (urlHidden) {
-      hiddenEvalIds = urlHidden
-        .split(",")
-        .map((id) => id.trim())
-        .filter((id) => id.length > 0 && id !== "kiln_cost_section")
+      hiddenEvalIds = [
+        ...new Set(
+          urlHidden
+            .split(",")
+            .map((id) => id.trim())
+            .filter((id) => id.length > 0 && id !== "kiln_cost_section"),
+        ),
+      ]
     }
   }
 
@@ -392,15 +396,17 @@
     hiddenEvalIds = []
   }
 
+  // Item styling (all-caps, right-aligned, divider before "Show all hidden")
+  // is handled by the scoped style block at the bottom of this component.
   $: hiddenEvalsMenuItems = [
     ...hiddenEvalsInfo.map(
       (info): FloatingMenuItem => ({
-        label: `Show: ${info.category}`,
+        label: info.category,
         onclick: () => showEval(info.eval_id),
       }),
     ),
     ...(hiddenEvalsInfo.length > 1
-      ? [{ label: "Show all", onclick: showAllHiddenEvals }]
+      ? [{ label: "Show all hidden", onclick: showAllHiddenEvals }]
       : []),
   ] as FloatingMenuItem[]
 
@@ -772,17 +778,17 @@
         <!-- Table action buttons - positioned above table on the right -->
         <div class="flex justify-end gap-2 mb-4">
           {#if hiddenEvalsInfo.length > 0}
-            <FloatingMenu items={hiddenEvalsMenuItems} width="w-72">
-              <button
-                slot="trigger"
-                type="button"
-                class="btn btn-sm btn-outline"
-              >
-                {hiddenEvalsInfo.length} eval{hiddenEvalsInfo.length === 1
-                  ? ""
-                  : "s"} hidden
-              </button>
-            </FloatingMenu>
+            <div class="hidden-evals-dropdown">
+              <FloatingMenu items={hiddenEvalsMenuItems} width="w-72">
+                <button
+                  slot="trigger"
+                  type="button"
+                  class="btn btn-sm btn-outline"
+                >
+                  Hidden Evals ({hiddenEvalsInfo.length})
+                </button>
+              </FloatingMenu>
+            </div>
           {/if}
           {#if columns < MAX_COLUMNS}
             <button
@@ -1189,3 +1195,27 @@
     }
   }}
 />
+
+<style>
+  /* Style FloatingMenu items to match the all-caps eval section headers below.
+     Uses :global() because the menu list lives inside FloatingMenu's slot. */
+  .hidden-evals-dropdown :global(ul.menu li > button),
+  .hidden-evals-dropdown :global(ul.menu li > a) {
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+    color: rgb(17 24 39);
+    text-align: right;
+    justify-content: end;
+    justify-items: end;
+  }
+
+  /* Divider between the eval list and the "Show all hidden" footer item.
+     :not(:only-child) keeps this off when there's only one hidden eval. */
+  .hidden-evals-dropdown :global(ul.menu li:not(:only-child):last-child) {
+    border-top: 1px solid rgb(229 231 235);
+    margin-top: 0.25rem;
+    padding-top: 0.25rem;
+  }
+</style>
