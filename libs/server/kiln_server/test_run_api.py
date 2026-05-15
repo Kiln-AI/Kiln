@@ -902,6 +902,60 @@ async def test_get_runs_summaries_success(client, task_run_setup):
 
 
 @pytest.mark.asyncio
+async def test_get_runs_summaries_returns_only_leaf_runs(client, task_run_setup):
+    """The endpoint must hide intermediate (non-leaf) runs in multiturn chains.
+
+    Setup: starting from the fixture's lone task_run (no parent), build a
+    linear chain task_run -> mid -> leaf and a sibling branch task_run -> sib.
+    Expected: only `leaf` and `sib` come back; task_run and mid are filtered
+    out because they are parents of other runs.
+    """
+    project = task_run_setup["project"]
+    task = task_run_setup["task"]
+    root = task_run_setup["task_run"]
+
+    def _make_child(parent_run: TaskRun) -> TaskRun:
+        run = TaskRun(
+            parent=task,
+            parent_task_run_id=parent_run.id,
+            input="continuation",
+            input_source=DataSource(
+                type=DataSourceType.human, properties={"created_by": "Test User"}
+            ),
+            output=TaskOutput(
+                output="continuation output",
+                source=DataSource(
+                    type=DataSourceType.synthetic,
+                    properties={
+                        "model_name": "gpt_4o",
+                        "model_provider": "ollama",
+                        "adapter_name": "kiln_langchain_adapter",
+                        "prompt_id": "simple_prompt_builder",
+                    },
+                ),
+            ),
+        )
+        run.save_to_file()
+        return run
+
+    mid = _make_child(root)
+    leaf = _make_child(mid)
+    sib = _make_child(root)
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.get(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs_summaries"
+        )
+
+    assert response.status_code == 200
+    returned_ids = {entry["id"] for entry in response.json()}
+    assert returned_ids == {leaf.id, sib.id}
+    assert root.id not in returned_ids, "root must be filtered (has children)"
+    assert mid.id not in returned_ids, "mid must be filtered (has children)"
+
+
+@pytest.mark.asyncio
 async def test_get_runs_summaries_task_not_found(client):
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
         mock_task_from_id.side_effect = HTTPException(
