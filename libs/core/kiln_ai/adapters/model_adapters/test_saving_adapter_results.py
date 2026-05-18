@@ -466,8 +466,7 @@ def test_generate_run_with_parent_task_run_sets_parent_task_run_id(test_task, ad
     new_run.save_to_file()
 
     reloaded_task = Task.load_from_file(test_task.path)
-    # Include the prior_run (now an intermediate parent) for inspection.
-    task_runs = reloaded_task.filter_runs(include_intermediate_runs=True)
+    task_runs = reloaded_task.runs(include_intermediate_runs=True)
     assert len(task_runs) == 2
     by_id = {r.id: r for r in task_runs}
     assert by_id[prior_run.id].parent_task_run_id is None
@@ -567,8 +566,7 @@ async def test_invoke_with_parent_task_run_saves_under_task_with_link(
     assert new_run.parent_task_run_id == prior_run.id
 
     reloaded_task = Task.load_from_file(test_task.path)
-    # Include the prior_run (now an intermediate parent) for inspection.
-    task_runs = reloaded_task.filter_runs(include_intermediate_runs=True)
+    task_runs = reloaded_task.runs(include_intermediate_runs=True)
     assert len(task_runs) == 2
     by_id = {r.id: r for r in task_runs}
     assert by_id[new_run.id].output.output == "More details!"

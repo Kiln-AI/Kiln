@@ -384,7 +384,7 @@ class DatasetFormatter:
         # Generate formatted output with UTF-8 encoding
         with open(output_path, "w", encoding="utf-8") as f:
             for run_id in self.dataset.split_contents[split_name]:
-                task_run = runs_by_id[run_id]
+                task_run = runs_by_id.get(run_id)
                 if task_run is None:
                     raise ValueError(
                         f"Task run {run_id} not found. This is required by this dataset."

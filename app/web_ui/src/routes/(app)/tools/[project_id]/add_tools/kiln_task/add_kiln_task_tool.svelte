@@ -139,7 +139,8 @@
       }
       tasks = tasks_data
     } catch (error) {
-      tasks_loading_error = "Tasks failed to load: " + error
+      tasks_loading_error =
+        "Tasks failed to load: " + createKilnError(error).getMessage()
       tasks = []
     }
   }
