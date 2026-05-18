@@ -791,22 +791,60 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
     @classmethod
     def __init_subclass__(
         cls,
-        parent_of: Dict[str, "Type[KilnParentedModel] | ParentOfRelationship"],
+        parent_of: Dict[str, Type[KilnParentedModel] | ParentOfRelationship],
         **kwargs,
     ):
         super().__init_subclass__(**kwargs)
         cls._parent_of = parent_of
+
+        # Reject duplicate child-class registration. `_create_parent_methods`
+        # writes `relationship_name` / `parent_type` onto the child class
+        # itself, so two entries pointing at the same child would silently
+        # overwrite each other - and every on-disk lookup that goes through
+        # `cls.relationship_name()` would target whichever filesystem name was
+        # registered last. That is a corruption-class bug; fail loudly here.
+        seen_child_classes: Dict[Type[KilnParentedModel], str] = {}
+        # Reject filesystem-name collisions. Two relationships writing to the
+        # same on-disk folder would interleave their files and load each
+        # other's children. Same corruption class.
+        seen_filesystem_names: Dict[str, str] = {}
+        filesystem_name_to_python_name: Dict[str, str] = {}
         for python_name, value in parent_of.items():
             child_class: Type[KilnParentedModel]
             filesystem_name: str
             if isinstance(value, ParentOfRelationship):
                 child_class = value.model
                 filesystem_name = value.filesystem_name
+                filesystem_name_to_python_name[filesystem_name] = python_name
             else:
                 child_class = value
                 filesystem_name = python_name
+
+            if child_class in seen_child_classes:
+                raise ValueError(
+                    f"parent_of for {cls.__name__} registers child class "
+                    f"{child_class.__name__} twice (under '{seen_child_classes[child_class]}' "
+                    f"and '{python_name}'). A child class can only appear once - it "
+                    f"holds a single `relationship_name()` / `parent_type()` pair."
+                )
+            seen_child_classes[child_class] = python_name
+
+            if filesystem_name in seen_filesystem_names:
+                raise ValueError(
+                    f"parent_of for {cls.__name__} registers filesystem folder "
+                    f"'{filesystem_name}' twice (under '{seen_filesystem_names[filesystem_name]}' "
+                    f"and '{python_name}'). Each on-disk folder must belong to "
+                    f"exactly one relationship."
+                )
+            seen_filesystem_names[filesystem_name] = python_name
+
             cls._create_child_method(python_name, child_class)
             cls._create_parent_methods(child_class, filesystem_name)
+
+        # Cache the reverse-lookup used by the misuse safeguard in
+        # `_validate_nested`; this is a pure function of `_parent_of` and
+        # never changes after class definition.
+        cls._filesystem_name_to_python_name = filesystem_name_to_python_name
 
     @classmethod
     def validate_and_save_with_subrelations(
@@ -845,6 +883,19 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
         # Collect all validation errors so we can report them all at once
         validation_errors = []
 
+        # Reject misuse of a relationship's on-disk folder name as a payload
+        # key before any side-effects. ``_parent_of`` is set at class-definition
+        # time, so this check depends only on ``data`` and ``cls`` - running it
+        # before ``save_to_file`` guarantees no half-saved parent on misuse.
+        for key in data:
+            if key not in cls._parent_of and key in cls._filesystem_name_to_python_name:
+                python_name = cls._filesystem_name_to_python_name[key]
+                raise ValueError(
+                    f"Nested payload key '{key}' matches the on-disk folder name "
+                    f"of relationship '{python_name}'. Use the Python attribute "
+                    f"name '{python_name}' instead."
+                )
+
         try:
             instance = cls.model_validate(data)
             if path is not None:
@@ -858,24 +909,7 @@ class KilnParentModel(KilnBaseModel, metaclass=ABCMeta):
             for suberror in e.errors():
                 validation_errors.append(suberror)
 
-        # Map on-disk folder names back to their Python attribute name for any
-        # ParentOfRelationship entries, so we can detect mistaken use of the
-        # filesystem name as a data key and fail loudly instead of silently
-        # dropping the nested payload.
-        filesystem_name_to_python_name: Dict[str, str] = {
-            value.filesystem_name: python_name
-            for python_name, value in cls._parent_of.items()
-            if isinstance(value, ParentOfRelationship)
-        }
-
         for key, value_list in data.items():
-            if key not in cls._parent_of and key in filesystem_name_to_python_name:
-                python_name = filesystem_name_to_python_name[key]
-                raise ValueError(
-                    f"Nested payload key '{key}' matches the on-disk folder name "
-                    f"of relationship '{python_name}'. Use the Python attribute "
-                    f"name '{python_name}' instead."
-                )
             if key in cls._parent_of:
                 parent_type_or_rel = cls._parent_of[key]
                 if isinstance(parent_type_or_rel, ParentOfRelationship):

@@ -198,13 +198,18 @@ class Task(
         For multiturn tasks, child TaskRuns reference their parent via
         ``parent_task_run_id``. By default we return only the leaves of those
         chains - the runs that aren't a parent of any other run - because that
-        is the right view for the vast majority of consumers (datasets, evals,
-        finetune exports, summary lists, statistics, exports, tags, etc.).
+        is the right view for the vast majority of consumers iterating runs
+        in-process (dataset/eval/finetune sample iteration, summary lists,
+        statistics, tag counts, etc.).
 
         Pass ``include_intermediate_runs=True`` to get every run regardless of
         position in the chain. That is only correct for code that needs the
         complete on-disk set (e.g. walking ancestors, diagnostics). For
         single-turn tasks the two modes are equivalent.
+
+        Note: this filter only affects in-process iteration. Filesystem-level
+        operations that copy the ``runs/`` directory (e.g. project export)
+        copy every run regardless of leaf-ness.
         """
         raw = self._runs(readonly=readonly)  # type: ignore[attr-defined]
         if include_intermediate_runs:

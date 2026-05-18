@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from kiln_ai.datamodel.basemodel import (
     FilenameString,
@@ -110,7 +111,7 @@ def test_relationship_form_child_path_uses_filesystem_name(
 
 def test_parent_of_relationship_is_frozen():
     rel = ParentOfRelationship(model=_TestChildRel, filesystem_name="kids")
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError, match="frozen"):
         rel.filesystem_name = "other"  # type: ignore[misc]
 
 
@@ -120,12 +121,12 @@ def test_validate_nested_rejects_filesystem_name_used_as_payload_key(tmp_path: P
     Previously this would silently drop the nested payload (since the key
     wasn't in ``_parent_of``), making it easy to miss when migrating callers.
     """
-    parent_path = tmp_path / "fail_loud" / "test_parent_relationship.kiln"
-    parent_path.parent.mkdir(parents=True, exist_ok=True)
+    bad_parent_path = tmp_path / "fail_loud" / "test_parent_relationship.kiln"
+    bad_parent_path.parent.mkdir(parents=True, exist_ok=True)
 
     bad_payload = {
         "name": "rel_parent_bad",
-        "path": str(parent_path),
+        "path": str(bad_parent_path),
         # "kids" is the filesystem_name; callers must use "_kids" (the python
         # attr name) for nested payloads.
         "kids": [{"name": "kid_via_wrong_key"}],
@@ -134,10 +135,71 @@ def test_validate_nested_rejects_filesystem_name_used_as_payload_key(tmp_path: P
     with pytest.raises(ValueError, match=r"Use the Python attribute name '_kids'"):
         _TestParentRelationship.validate_and_save_with_subrelations(bad_payload)
 
-    # And the correct Python attribute name still works.
-    good_payload = {
+    # Misuse must not leave any half-saved artifacts on disk.
+    assert not bad_parent_path.exists()
+    assert not (bad_parent_path.parent / "kids").exists()
+    assert not (bad_parent_path.parent / "_kids").exists()
+
+
+def test_validate_nested_with_correct_key_persists_under_filesystem_folder(
+    tmp_path: Path,
+):
+    """A wrapper-form nested payload under the python_name key must persist
+    the child under the filesystem_name folder."""
+    parent_path = tmp_path / "happy_path" / "test_parent_relationship.kiln"
+    parent_path.parent.mkdir(parents=True, exist_ok=True)
+
+    payload = {
         "name": "rel_parent_good",
         "path": str(parent_path),
         "_kids": [{"name": "kid_via_correct_key"}],
     }
-    _TestParentRelationship.validate_and_save_with_subrelations(good_payload)
+    _TestParentRelationship.validate_and_save_with_subrelations(payload)
+
+    # The parent .kiln must exist, and the child must live under "kids/" -
+    # not "_kids/" (the python attr name must not leak onto disk).
+    assert parent_path.exists()
+    assert (parent_path.parent / "kids").is_dir()
+    assert not (parent_path.parent / "_kids").exists()
+
+    loaded_parent = _TestParentRelationship.load_from_file(parent_path)
+    kids = loaded_parent._kids()  # type: ignore[attr-defined]
+    assert len(kids) == 1
+    assert kids[0].name == "kid_via_correct_key"
+
+
+def test_init_subclass_rejects_duplicate_child_class():
+    """Registering the same child class twice in parent_of is a foot-gun:
+    `_create_parent_methods` writes onto the child, so the second entry would
+    silently overwrite the first. Class-definition time should reject it."""
+    with pytest.raises(ValueError, match="twice"):
+
+        class _BadParentDuplicateChild(
+            KilnParentModel,
+            parent_of={
+                "first": _TestChildRel,
+                "second": _TestChildRel,
+            },
+        ):
+            name: FilenameString
+
+
+def test_init_subclass_rejects_duplicate_filesystem_name():
+    """Two relationships writing to the same on-disk folder would interleave
+    files. Reject at class-definition time."""
+
+    class _AnotherChild(KilnParentedModel):
+        name: FilenameString
+
+    with pytest.raises(ValueError, match="filesystem folder 'shared'"):
+
+        class _BadParentDuplicateFolder(
+            KilnParentModel,
+            parent_of={
+                "shared": _TestChildRel,
+                "_shared": ParentOfRelationship(
+                    model=_AnotherChild, filesystem_name="shared"
+                ),
+            },
+        ):
+            name: FilenameString
