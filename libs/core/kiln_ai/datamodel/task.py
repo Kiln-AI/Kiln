@@ -9,6 +9,7 @@ from kiln_ai.datamodel.basemodel import (
     FilenameStringShort,
     KilnParentedModel,
     KilnParentModel,
+    ParentOfRelationship,
 )
 from kiln_ai.datamodel.data_guide import DataGuide
 from kiln_ai.datamodel.datamodel_enums import (
@@ -127,7 +128,7 @@ class Task(
     KilnParentedModel,
     KilnParentModel,
     parent_of={
-        "runs": TaskRun,
+        "_runs": ParentOfRelationship(model=TaskRun, filesystem_name="runs"),
         "dataset_splits": DatasetSplit,
         "finetunes": Finetune,
         "prompt_optimization_jobs": PromptOptimizationJob,
@@ -187,10 +188,36 @@ class Task(
         # Allow arrays, not just objects
         return schema_from_json_str(self.input_json_schema, require_object=False)
 
-    # These wrappers help for typechecking. We should fix this in KilnParentModel
-    def runs(self, readonly: bool = False) -> list[TaskRun]:
-        return super().runs(readonly=readonly)  # type: ignore
+    def runs(
+        self,
+        readonly: bool = False,
+        include_intermediate_runs: bool = False,
+    ) -> list[TaskRun]:
+        """Return TaskRuns for this task with leaf-only filtering by default.
 
+        For multiturn tasks, child TaskRuns reference their parent via
+        ``parent_task_run_id``. By default we return only the leaves of those
+        chains - the runs that aren't a parent of any other run - because that
+        is the right view for the vast majority of consumers iterating runs
+        in-process (dataset/eval/finetune sample iteration, summary lists,
+        statistics, tag counts, etc.).
+
+        Pass ``include_intermediate_runs=True`` to get every run regardless of
+        position in the chain. That is only correct for code that needs the
+        complete on-disk set (e.g. walking ancestors, diagnostics). For
+        single-turn tasks the two modes are equivalent.
+
+        Note: this filter only affects in-process iteration. Filesystem-level
+        operations that copy the ``runs/`` directory (e.g. project export)
+        copy every run regardless of leaf-ness.
+        """
+        raw = self._runs(readonly=readonly)  # type: ignore[attr-defined]
+        if include_intermediate_runs:
+            return raw
+        parent_ids = {r.parent_task_run_id for r in raw if r.parent_task_run_id}
+        return [r for r in raw if r.id not in parent_ids]
+
+    # These wrappers help for typechecking. We should fix this in KilnParentModel
     def dataset_splits(self, readonly: bool = False) -> list[DatasetSplit]:
         return super().dataset_splits(readonly=readonly)  # type: ignore
 
