@@ -939,3 +939,166 @@ def test_filter_runs_readonly_smoke(tmp_path):
         == {r.id for r in all_readonly}
         == {root.id, leaf.id}
     )
+
+
+def _make_task_for_runs_tests(tmp_path) -> Task:
+    task = Task(
+        name="Test Task",
+        instruction="Test instruction",
+        path=tmp_path / "task.kiln",
+    )
+    task.save_to_file()
+    return task
+
+
+def test_task_runs_defaults_to_leaves_only_for_multiturn_chain(tmp_path):
+    task = _make_task_for_runs_tests(tmp_path)
+    output = TaskOutput(output="out")
+
+    run1 = TaskRun(input="in1", output=output, parent=task)
+    run1.save_to_file()
+    run2 = TaskRun(
+        input="in2",
+        output=output,
+        parent=task,
+        parent_task_run_id=run1.id,
+    )
+    run2.save_to_file()
+    run3 = TaskRun(
+        input="in3",
+        output=output,
+        parent=task,
+        parent_task_run_id=run2.id,
+    )
+    run3.save_to_file()
+
+    loaded_task = Task.load_from_file(task.path)
+    leaves = loaded_task.runs()
+    assert len(leaves) == 1
+    assert leaves[0].id == run3.id
+
+
+def test_task_runs_with_include_intermediate_runs_returns_all(tmp_path):
+    task = _make_task_for_runs_tests(tmp_path)
+    output = TaskOutput(output="out")
+
+    run1 = TaskRun(input="in1", output=output, parent=task)
+    run1.save_to_file()
+    run2 = TaskRun(
+        input="in2",
+        output=output,
+        parent=task,
+        parent_task_run_id=run1.id,
+    )
+    run2.save_to_file()
+    run3 = TaskRun(
+        input="in3",
+        output=output,
+        parent=task,
+        parent_task_run_id=run2.id,
+    )
+    run3.save_to_file()
+
+    loaded_task = Task.load_from_file(task.path)
+    all_runs = loaded_task.runs(include_intermediate_runs=True)
+    assert {r.id for r in all_runs} == {run1.id, run2.id, run3.id}
+
+
+def test_task_runs_branching_chain_returns_multiple_leaves(tmp_path):
+    task = _make_task_for_runs_tests(tmp_path)
+    output = TaskOutput(output="out")
+
+    root = TaskRun(input="root", output=output, parent=task)
+    root.save_to_file()
+    leaf_a = TaskRun(
+        input="a",
+        output=output,
+        parent=task,
+        parent_task_run_id=root.id,
+    )
+    leaf_a.save_to_file()
+    leaf_b = TaskRun(
+        input="b",
+        output=output,
+        parent=task,
+        parent_task_run_id=root.id,
+    )
+    leaf_b.save_to_file()
+
+    loaded_task = Task.load_from_file(task.path)
+    leaves = loaded_task.runs()
+    leaf_ids = {r.id for r in leaves}
+    assert leaf_ids == {leaf_a.id, leaf_b.id}
+    assert root.id not in leaf_ids
+
+
+def test_task_runs_readonly_smoke(tmp_path):
+    task = _make_task_for_runs_tests(tmp_path)
+    output = TaskOutput(output="out")
+
+    run1 = TaskRun(input="in1", output=output, parent=task)
+    run1.save_to_file()
+    run2 = TaskRun(
+        input="in2",
+        output=output,
+        parent=task,
+        parent_task_run_id=run1.id,
+    )
+    run2.save_to_file()
+
+    loaded_task = Task.load_from_file(task.path)
+    leaves = loaded_task.runs(readonly=True)
+    assert len(leaves) == 1
+    assert leaves[0].id == run2.id
+    assert leaves[0]._readonly is True
+
+    all_runs = loaded_task.runs(readonly=True, include_intermediate_runs=True)
+    assert {r.id for r in all_runs} == {run1.id, run2.id}
+    assert all(r._readonly for r in all_runs)
+
+
+def test_task_runs_single_turn_modes_equivalent(tmp_path):
+    task = _make_task_for_runs_tests(tmp_path)
+    output = TaskOutput(output="out")
+
+    r1 = TaskRun(input="in1", output=output, parent=task)
+    r1.save_to_file()
+    r2 = TaskRun(input="in2", output=output, parent=task)
+    r2.save_to_file()
+    r3 = TaskRun(input="in3", output=output, parent=task)
+    r3.save_to_file()
+
+    loaded_task = Task.load_from_file(task.path)
+    leaves = loaded_task.runs()
+    all_runs = loaded_task.runs(include_intermediate_runs=True)
+    assert {r.id for r in leaves} == {r.id for r in all_runs}
+    assert {r.id for r in leaves} == {r1.id, r2.id, r3.id}
+
+
+def test_task_runs_persist_under_runs_folder_not_underscore_runs(tmp_path):
+    task = _make_task_for_runs_tests(tmp_path)
+    output = TaskOutput(output="out")
+
+    run = TaskRun(input="in", output=output, parent=task)
+    run.save_to_file()
+
+    runs_folder = tmp_path / "runs"
+    underscore_runs_folder = tmp_path / "_runs"
+    assert runs_folder.is_dir(), (
+        "TaskRun files must live under 'runs/' on disk (filesystem_name)"
+    )
+    assert not underscore_runs_folder.exists(), (
+        "TaskRun files must NOT live under '_runs/' (the Python attribute name)"
+    )
+    assert run.path is not None
+    assert run.path.parent.parent == runs_folder
+    assert run.path.exists()
+
+    # Loading via the auto-generated _runs accessor and the wrapped runs()
+    # method must both find the file on disk.
+    loaded_task = Task.load_from_file(task.path)
+    via_underscore = loaded_task._runs()  # type: ignore[attr-defined]
+    via_wrapped = loaded_task.runs()
+    assert {r.id for r in via_underscore} == {run.id}
+    assert {r.id for r in via_wrapped} == {run.id}
+    assert TaskRun.relationship_name() == "runs"

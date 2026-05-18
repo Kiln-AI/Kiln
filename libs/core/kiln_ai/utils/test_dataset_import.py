@@ -185,6 +185,47 @@ def test_import_csv_plain_text(base_task: Task, tmp_path):
         compare_tags(run.tags, match["tags"])
 
 
+def test_import_csv_field_exceeds_python_default_limit(base_task: Task, tmp_path):
+    """Rows with a single field larger than Python's default csv field size
+    limit (131,072 bytes) must still import successfully. We raise the limit
+    in import_csv; this regression test guards that."""
+
+    # ~200 KB single field, well over the 131,072-byte default.
+    big_input = "x" * 200_000
+    assert len(big_input) > 131_072
+
+    row_data = [
+        {
+            "input": big_input,
+            "output": "ok",
+            "tags": "big",
+        },
+        {
+            "input": "small input",
+            "output": "small output",
+            "tags": "",
+        },
+    ]
+
+    file_path = dicts_to_file_as_csv(row_data, "big.csv", tmp_path)
+
+    importer = DatasetFileImporter(
+        base_task,
+        ImportConfig(
+            dataset_type=DatasetImportFormat.CSV,
+            dataset_path=file_path,
+            dataset_name="big.csv",
+        ),
+    )
+
+    importer.create_runs_from_file()
+
+    runs = base_task.runs()
+    assert len(runs) == 2
+    big_run = next(run for run in runs if run.input == big_input)
+    assert len(big_run.input) == len(big_input)
+
+
 def test_import_csv_default_tags(base_task: Task, tmp_path):
     row_data = [
         {

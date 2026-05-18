@@ -455,6 +455,12 @@ def connect_run_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/runs",
         summary="List Runs",
+        description=(
+            "For multiturn tasks, only leaf TaskRuns (those that are not the "
+            "parent of another run via parent_task_run_id) are returned. "
+            "Intermediate runs in a chain are filtered out. For single-turn "
+            "tasks this is equivalent to listing every run."
+        ),
         tags=["Runs"],
         openapi_extra=ALLOW_AGENT,
     )
@@ -517,6 +523,10 @@ def connect_run_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/runs_summaries",
         summary="List Run Summaries",
+        description=(
+            "For multiturn tasks, only leaf TaskRuns (those that are not the "
+            "parent of another run via parent_task_run_id) are summarized."
+        ),
         tags=["Runs"],
         openapi_extra=ALLOW_AGENT,
     )
@@ -803,6 +813,10 @@ def connect_run_api(app: FastAPI):
     @app.get(
         "/api/projects/{project_id}/tasks/{task_id}/tags",
         summary="List Run Tags",
+        description=(
+            "Counts only include tags from leaf TaskRuns. For multiturn tasks, "
+            "tags attached to intermediate runs in a chain are not included."
+        ),
         tags=["Runs"],
         openapi_extra=ALLOW_AGENT,
     )

@@ -5,6 +5,7 @@
   import { goto } from "$app/navigation"
   import { client } from "$lib/api_client"
   import { createEventDispatcher } from "svelte"
+  import { createKilnError } from "$lib/utils/error_handlers"
 
   const dispatch = createEventDispatcher()
 
@@ -82,7 +83,8 @@
       if (request_id !== load_request_counter) {
         return
       }
-      tasks_loading_error = "Tasks failed to load: " + error
+      tasks_loading_error =
+        "Tasks failed to load: " + createKilnError(error).getMessage()
       selected_project_tasks = []
       last_loaded_project_id = null
     } finally {

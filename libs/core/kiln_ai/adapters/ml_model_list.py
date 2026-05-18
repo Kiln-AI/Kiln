@@ -1195,7 +1195,6 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="gpt-4.1",
-                provider_finetune_id="gpt-4.1-2025-04-14",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
                 suggested_for_data_gen=True,
@@ -1250,7 +1249,6 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="gpt-4.1-mini",
-                provider_finetune_id="gpt-4.1-mini-2025-04-14",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
                 supports_doc_extraction=True,
@@ -1305,7 +1303,6 @@ built_in_models: List[KilnModel] = [
                 model_id="gpt-4.1-nano",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
-                provider_finetune_id="gpt-4.1-nano-2025-04-14",
                 supports_doc_extraction=True,
                 supports_vision=True,
                 multimodal_capable=True,
@@ -1356,7 +1353,6 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="gpt-4o",
-                provider_finetune_id="gpt-4o-2024-08-06",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
                 supports_vision=True,
@@ -1404,7 +1400,6 @@ built_in_models: List[KilnModel] = [
             KilnModelProvider(
                 name=ModelProviderName.openai,
                 model_id="gpt-4o-mini",
-                provider_finetune_id="gpt-4o-mini-2024-07-18",
                 structured_output_mode=StructuredOutputMode.json_schema,
                 supports_logprobs=True,
                 supports_vision=True,
