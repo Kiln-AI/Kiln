@@ -378,7 +378,7 @@ class DatasetFormatter:
         # Resolve every run on disk so a split that references an intermediate
         # turn (e.g. created before the leaf-only default landed) still
         # resolves. New splits only contain leaves anyway.
-        runs = self.task.filter_runs(include_intermediate_runs=True)
+        runs = self.task.runs(include_intermediate_runs=True)
         runs_by_id = {run.id: run for run in runs}
 
         # Generate formatted output with UTF-8 encoding

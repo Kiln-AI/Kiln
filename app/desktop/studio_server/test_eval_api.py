@@ -1567,7 +1567,7 @@ def test_runs_in_filter():
     run2 = Mock(spec=TaskRun, id="run2")
     run3 = Mock(spec=TaskRun, id="run3")
 
-    mock_task.filter_runs.return_value = [run1, run2, run3]
+    mock_task.runs.return_value = [run1, run2, run3]
 
     # Mock the dataset filter
     mock_filter = Mock()

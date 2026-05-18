@@ -143,7 +143,7 @@ class DatasetSplit(KilnParentedModel):
         filter: DatasetFilter,
     ) -> dict[str, list[str]]:
         # Datasets must not include intermediate multiturn turns — only leaves.
-        runs = list(task.filter_runs())
+        runs = list(task.runs())
         valid_ids = []
         for task_run in runs:
             if filter(task_run):
@@ -187,7 +187,7 @@ class DatasetSplit(KilnParentedModel):
 
         # Look at every run on disk: a split file may reference intermediate
         # turns and we don't want to falsely report those as "missing".
-        runs = parent.filter_runs(include_intermediate_runs=True, readonly=True)
+        runs = parent.runs(include_intermediate_runs=True, readonly=True)
         all_ids = set(run.id for run in runs)
         all_ids_in_splits = set()
         for ids in self.split_contents.values():
@@ -213,9 +213,7 @@ class DatasetSplit(KilnParentedModel):
 
         # Find all runs by their IDs. We look across every run on disk so a
         # historic split that references an intermediate turn still resolves.
-        for task_run in parent.filter_runs(
-            include_intermediate_runs=True, readonly=True
-        ):
+        for task_run in parent.runs(include_intermediate_runs=True, readonly=True):
             if task_run.id in all_run_ids:
                 runs.append(task_run)
 

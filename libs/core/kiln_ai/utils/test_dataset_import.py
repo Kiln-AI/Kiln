@@ -83,7 +83,7 @@ def task_with_structured_input(base_task: Task):
 
 @pytest.fixture
 def task_with_intermediate_outputs(base_task: Task):
-    for run in base_task.filter_runs(include_intermediate_runs=True):
+    for run in base_task.runs(include_intermediate_runs=True):
         run.intermediate_outputs = {"reasoning": "thinking output"}
     base_task.thinking_instruction = "thinking instructions"
     return base_task
@@ -168,9 +168,9 @@ def test_import_csv_plain_text(base_task: Task, tmp_path):
         # Verify add_tag_splits was called
         mock_add_tag_splits.assert_called_once()
 
-    assert len(base_task.filter_runs(include_intermediate_runs=True)) == 4
+    assert len(base_task.runs(include_intermediate_runs=True)) == 4
 
-    for run in base_task.filter_runs(include_intermediate_runs=True):
+    for run in base_task.runs(include_intermediate_runs=True):
         # identify the row data with same input as the run
         match = next(
             (row for row in row_data if row["input"] == run.input),
@@ -251,11 +251,11 @@ def test_import_csv_default_tags(base_task: Task, tmp_path):
 
     importer.create_runs_from_file()
 
-    assert len(base_task.filter_runs(include_intermediate_runs=True)) == 2
+    assert len(base_task.runs(include_intermediate_runs=True)) == 2
 
     default_tags = 2
 
-    for run in base_task.filter_runs(include_intermediate_runs=True):
+    for run in base_task.runs(include_intermediate_runs=True):
         # identify the row data with same input as the run
         match = next(
             (row for row in row_data if row["input"] == run.input),
@@ -326,7 +326,7 @@ def test_import_csv_utf8_encoding(base_task: Task, tmp_path):
 
     importer.create_runs_from_file()
 
-    runs = base_task.filter_runs(include_intermediate_runs=True)
+    runs = base_task.runs(include_intermediate_runs=True)
     assert len(runs) == 1
     run = runs[0]
     assert run.input == "Español entrada 你好👋"
@@ -365,12 +365,9 @@ def test_import_csv_structured_output(task_with_structured_output: Task, tmp_pat
 
     importer.create_runs_from_file()
 
-    assert (
-        len(task_with_structured_output.filter_runs(include_intermediate_runs=True))
-        == 3
-    )
+    assert len(task_with_structured_output.runs(include_intermediate_runs=True)) == 3
 
-    for run in task_with_structured_output.filter_runs(include_intermediate_runs=True):
+    for run in task_with_structured_output.runs(include_intermediate_runs=True):
         # identify the row data with same input as the run
         match = next(
             (row for row in row_data if row["input"] == run.input),
@@ -505,14 +502,9 @@ def test_import_csv_intermediate_outputs_reasoning(
 
     importer.create_runs_from_file()
 
-    assert (
-        len(task_with_intermediate_outputs.filter_runs(include_intermediate_runs=True))
-        == 3
-    )
+    assert len(task_with_intermediate_outputs.runs(include_intermediate_runs=True)) == 3
 
-    for run in task_with_intermediate_outputs.filter_runs(
-        include_intermediate_runs=True
-    ):
+    for run in task_with_intermediate_outputs.runs(include_intermediate_runs=True):
         # identify the row data with same input as the run
         match = next(
             (row for row in row_data if row["input"] == run.input),
@@ -562,14 +554,9 @@ def test_import_csv_intermediate_outputs_cot(
 
     importer.create_runs_from_file()
 
-    assert (
-        len(task_with_intermediate_outputs.filter_runs(include_intermediate_runs=True))
-        == 3
-    )
+    assert len(task_with_intermediate_outputs.runs(include_intermediate_runs=True)) == 3
 
-    for run in task_with_intermediate_outputs.filter_runs(
-        include_intermediate_runs=True
-    ):
+    for run in task_with_intermediate_outputs.runs(include_intermediate_runs=True):
         # identify the row data with same input as the run
         match = next(
             (row for row in row_data if row["input"] == run.input),
@@ -609,14 +596,9 @@ def test_import_csv_intermediate_outputs_reasoning_and_cot(
 
     importer.create_runs_from_file()
 
-    assert (
-        len(task_with_intermediate_outputs.filter_runs(include_intermediate_runs=True))
-        == 1
-    )
+    assert len(task_with_intermediate_outputs.runs(include_intermediate_runs=True)) == 1
 
-    for run in task_with_intermediate_outputs.filter_runs(
-        include_intermediate_runs=True
-    ):
+    for run in task_with_intermediate_outputs.runs(include_intermediate_runs=True):
         # identify the row data with same input as the run
         match = next(
             (row for row in row_data if row["input"] == run.input),
