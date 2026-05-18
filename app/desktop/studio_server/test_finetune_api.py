@@ -259,7 +259,7 @@ def create_finetune(
     finetune = Finetune(
         id=finetune_id,
         name=name,
-        provider="openai",
+        provider="together_ai",
         base_model_id="model1",
         dataset_split_id=split_id,
         system_message="System prompt",
@@ -322,7 +322,7 @@ def mock_built_in_models():
                     supports_function_calling=True,
                 ),
                 KilnModelProvider(
-                    name="openai",
+                    name="together_ai",
                     provider_finetune_id="ft_model1_p2",
                     supports_function_calling=True,
                 ),
@@ -339,7 +339,7 @@ def mock_built_in_models():
                     supports_function_calling=False,
                 ),
                 KilnModelProvider(
-                    name="openai",
+                    name="together_ai",
                     provider_finetune_id=None,  # This one should be skipped
                 ),
             ],
@@ -415,9 +415,9 @@ async def test_get_finetune_providers(
         assert provider1["models"][1]["id"] == "ft_model2"
         assert provider1["models"][1]["supports_function_calling"] is False
 
-        # Check provider2 (openai)
-        provider2 = next(p for p in providers if p["id"] == "openai")
-        assert provider2["name"] == "Provider openai"
+        # Check provider2 (together_ai)
+        provider2 = next(p for p in providers if p["id"] == "together_ai")
+        assert provider2["name"] == "Provider together_ai"
         assert provider2["enabled"] is False
         assert len(provider2["models"]) == 1
         assert provider2["models"][0]["name"] == "Model 1"
@@ -1190,10 +1190,10 @@ async def test_get_finetune(client, mock_task_from_id_disk_backed):
     assert finetune["system_message"] == "System prompt 1"
 
     status = response.json()["status"]
-    assert status["status"] == "pending"
+    assert status["status"] == "unknown"
     assert (
         status["message"]
-        == "This fine-tune has not been started or has not been assigned a provider ID."
+        == "Provider 'openai' is not available for fine-tuning. Status cannot be refreshed."
     )
 
     mock_task_from_id_disk_backed.assert_called_once_with("project1", "task1")
@@ -1547,7 +1547,6 @@ def mock_available_models():
                 KilnModelProvider(
                     name=ModelProviderName.openai,
                     model_id="gpt-4.1",
-                    provider_finetune_id="gpt-4.1-2025-04-14",
                 ),
                 KilnModelProvider(
                     name=ModelProviderName.openrouter,
@@ -1556,6 +1555,11 @@ def mock_available_models():
                 KilnModelProvider(
                     name=ModelProviderName.azure_openai,
                     model_id="gpt-4.1",
+                ),
+                KilnModelProvider(
+                    name=ModelProviderName.together_ai,
+                    model_id="gpt-4.1-together",
+                    provider_finetune_id="gpt-4.1-2025-04-14",
                 ),
             ],
         ),
@@ -1567,7 +1571,6 @@ def mock_available_models():
                 KilnModelProvider(
                     name=ModelProviderName.openai,
                     model_id="gpt-4.1-mini",
-                    provider_finetune_id="gpt-4.1-mini-2025-04-14",
                 ),
                 KilnModelProvider(
                     name=ModelProviderName.openrouter,
@@ -1576,6 +1579,11 @@ def mock_available_models():
                 KilnModelProvider(
                     name=ModelProviderName.azure_openai,
                     model_id="gpt-4.1-mini",
+                ),
+                KilnModelProvider(
+                    name=ModelProviderName.together_ai,
+                    model_id="gpt-4.1-mini-together",
+                    provider_finetune_id="gpt-4.1-mini-2025-04-14",
                 ),
             ],
         ),
@@ -1602,7 +1610,7 @@ def mock_available_models():
         (
             # does not have a parser, so should be defaults
             "gpt-4.1-2025-04-14",
-            "openai",
+            "together_ai",
             [
                 ChatStrategy.single_turn,
                 ChatStrategy.two_message_cot,
@@ -1611,7 +1619,7 @@ def mock_available_models():
         (
             # does not have a parser, so should be defaults
             "gpt-4.1-mini-2025-04-14",
-            "openai",
+            "together_ai",
             [
                 ChatStrategy.single_turn,
                 ChatStrategy.two_message_cot,

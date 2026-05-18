@@ -328,7 +328,12 @@ def connect_fine_tune_api(app: FastAPI):
                     FineTuneStatusType.completed,
                     FineTuneStatusType.failed,
                 ]:
-                    provider_name = ModelProviderName[finetune.provider]
+                    try:
+                        provider_name = ModelProviderName[finetune.provider]
+                    except (KeyError, ValueError):
+                        continue
+                    if provider_name not in finetune_registry:
+                        continue
                     # fetching status updates the datamodel
                     ft_adapter = finetune_registry[provider_name](finetune)
                     await ft_adapter.status()
@@ -354,12 +359,21 @@ def connect_fine_tune_api(app: FastAPI):
         ],
     ) -> FinetuneWithStatus:
         finetune = finetune_from_id(project_id, task_id, finetune_id)
-        if finetune.provider not in finetune_registry:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Fine tune provider '{finetune.provider}' not found",
+        try:
+            provider_name = ModelProviderName[finetune.provider]
+        except (KeyError, ValueError):
+            status = FineTuneStatus(
+                status=FineTuneStatusType.unknown,
+                message=f"Provider '{finetune.provider}' is not available for fine-tuning. Status cannot be refreshed.",
             )
-        finetune_adapter = finetune_registry[finetune.provider]  # type: ignore[invalid-argument-type]
+            return FinetuneWithStatus(finetune=finetune, status=status)
+        if provider_name not in finetune_registry:
+            status = FineTuneStatus(
+                status=FineTuneStatusType.unknown,
+                message=f"Provider '{finetune.provider}' is not available for fine-tuning. Status cannot be refreshed.",
+            )
+            return FinetuneWithStatus(finetune=finetune, status=status)
+        finetune_adapter = finetune_registry[provider_name]
         status = await finetune_adapter(finetune).status()
         return FinetuneWithStatus(finetune=finetune, status=status)
 

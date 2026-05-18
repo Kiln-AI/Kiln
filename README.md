@@ -60,7 +60,7 @@ Kiln is a workbench for the full AI development loop: evals, optimization, promp
 - 🔍 [**RAG**](https://docs.kiln.tech/docs/documents-and-search-rag) - Drag-and-drop docs (PDF, image, video, audio) to create a RAG. Auto-generated RAG evals from your own documents.
 - 🤖 [**Subagents**](https://docs.kiln.tech/docs/agents) - Compose multi-agent hierarchies. Each runs in its own focused context window.
 - 🪄 [**Synthetic Data Generation**](https://docs.kiln.tech/docs/synthetic-data-generation) - Generate data for evals or fine-tuning in minutes.
-- 🎛️ [**Fine-Tuning**](https://docs.kiln.tech/docs/fine-tuning-guide) - Zero-code fine-tuning across 60+ models (Qwen, Llama, GPT, Gemini, …) on Fireworks, Together, OpenAI, and Vertex. Serverless deployment included.
+- 🎛️ [**Fine-Tuning**](https://docs.kiln.tech/docs/fine-tuning-guide) - Zero-code fine-tuning across 60+ models (Qwen, Llama, GPT, Gemini, …) on Fireworks, Together, and Vertex. Serverless deployment included.
 - 🐍 [**Open Python library**](https://docs.kiln.tech/developers/python-library-quickstart) - Agents built in the app can be deployed to production. MIT open-source.
 - 🧰 [**…and more**](https://docs.kiln.tech) - Tools & MCP, Skills, structured outputs, reasoning models, model library (190+ tested).
 
