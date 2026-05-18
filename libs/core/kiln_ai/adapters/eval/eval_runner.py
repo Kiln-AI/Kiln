@@ -126,7 +126,7 @@ class EvalRunner:
                 eval_config=eval_config,
                 type="eval_config_eval",
             )
-            for task_run in self.task.filter_runs(readonly=True)
+            for task_run in self.task.runs(readonly=True)
             if filter(task_run)
             for eval_config in self.eval_configs
             if task_run.id not in already_run[eval_config.id]
@@ -166,7 +166,7 @@ class EvalRunner:
                 type="task_run_eval",
                 eval_config=eval_config,
             )
-            for task_run in self.task.filter_runs(readonly=True)
+            for task_run in self.task.runs(readonly=True)
             if filter(task_run)
             for eval_config in self.eval_configs
             for run_config in self.run_configs or []

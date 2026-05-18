@@ -227,7 +227,7 @@ def compute_finetune_tag_info(
     # None means no filter; [] means explicitly match runs with no tools/skills.
     required_tools_set = None if tool_filter is None else set(tool_filter)
 
-    for sample in task.filter_runs(readonly=True):
+    for sample in task.runs(readonly=True):
         # filter by tools if provided
         if required_tools_set is not None:
             if sample.output is None:

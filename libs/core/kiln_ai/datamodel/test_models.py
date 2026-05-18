@@ -929,7 +929,7 @@ def test_find_nested_task_run_by_parent_task_run_id(task: Task):
     loaded_task = Task.load_from_file(task.path)
     found = next(
         r
-        for r in loaded_task.filter_runs(include_intermediate_runs=True)
+        for r in loaded_task.runs(include_intermediate_runs=True)
         if r.id == target_id and r.parent_task_run_id == parent_run.id
     )
     assert found is not None
@@ -946,9 +946,7 @@ def test_find_root_task_run_by_id_given_task(task: Task):
     assert task.path is not None
     loaded_task = Task.load_from_file(task.path)
     found = next(
-        r
-        for r in loaded_task.filter_runs(include_intermediate_runs=True)
-        if r.id == target_id
+        r for r in loaded_task.runs(include_intermediate_runs=True) if r.id == target_id
     )
     assert found is not None
     assert found.id == target_id

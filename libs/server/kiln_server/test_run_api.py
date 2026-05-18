@@ -586,7 +586,7 @@ async def test_get_runs_success(client, task_run_setup):
 
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
         mock_task = MagicMock()
-        mock_task.filter_runs.return_value = [task_run]
+        mock_task.runs.return_value = [task_run]
         mock_task_from_id.return_value = mock_task
 
         response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/runs")
@@ -607,7 +607,7 @@ async def test_get_runs_empty(client, task_run_setup):
 
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
         mock_task = MagicMock()
-        mock_task.filter_runs.return_value = []
+        mock_task.runs.return_value = []
         mock_task_from_id.return_value = mock_task
 
         response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/runs")
@@ -883,7 +883,7 @@ async def test_get_runs_summaries_success(client, task_run_setup):
 
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
         mock_task = MagicMock()
-        mock_task.filter_runs.return_value = [task_run]
+        mock_task.runs.return_value = [task_run]
         mock_task_from_id.return_value = mock_task
 
         response = client.get(
@@ -1738,7 +1738,7 @@ async def test_get_tags_success(client, task_run_setup):
 
     with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
         mock_task = MagicMock()
-        mock_task.filter_runs.return_value = [task_run, second_run]
+        mock_task.runs.return_value = [task_run, second_run]
         mock_task_from_id.return_value = mock_task
 
         response = client.get(f"/api/projects/{project.id}/tasks/{task.id}/tags")

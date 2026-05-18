@@ -410,7 +410,7 @@ def dataset_ids_in_filter(
 ) -> Set[ID_TYPE]:
     # Fetch all the dataset items IDs in a filter
     filter = dataset_filter_from_id(filter_id)
-    return {run.id for run in task.filter_runs(readonly=readonly) if filter(run)}
+    return {run.id for run in task.runs(readonly=readonly) if filter(run)}
 
 
 def runs_in_filter(
@@ -418,7 +418,7 @@ def runs_in_filter(
 ) -> list[TaskRun]:
     # Fetch all the dataset items IDs in a filter
     filter = dataset_filter_from_id(filter_id)
-    return [run for run in task.filter_runs(readonly=readonly) if filter(run)]
+    return [run for run in task.runs(readonly=readonly) if filter(run)]
 
 
 def build_score_key_to_task_requirement_id(task: Task) -> Dict[str, ID_TYPE]:
@@ -1269,9 +1269,7 @@ def connect_evals_api(app: FastAPI):
             )
 
         filter = dataset_filter_from_id(eval.eval_configs_filter_id)
-        expected_dataset_items = {
-            run.id: run for run in task.filter_runs() if filter(run)
-        }
+        expected_dataset_items = {run.id: run for run in task.runs() if filter(run)}
         expected_dataset_ids = set(expected_dataset_items.keys())
         if len(expected_dataset_ids) == 0:
             return EvalConfigCompareSummary(
