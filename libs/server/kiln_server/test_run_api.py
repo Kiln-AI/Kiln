@@ -1,3 +1,6 @@
+import csv
+import io
+import json
 import logging
 import os
 import shutil
@@ -2530,3 +2533,120 @@ async def test_delete_single_turn_run_unchanged(client, task_run_setup):
 
     assert response.status_code == 200
     assert not path.exists()
+
+
+# --------------------------- Bulk upload tests ---------------------------
+
+
+def _build_csv_bytes(rows: list[dict[str, str]]) -> bytes:
+    """Serialize a list of dict rows to CSV bytes with the given header order.
+
+    Used by both single-turn and multiturn upload tests.
+    """
+
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=list(rows[0].keys()))
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(row)
+    return buffer.getvalue().encode("utf-8")
+
+
+@pytest.mark.asyncio
+async def test_bulk_upload_multiturn_success(client, multiturn_task_run_setup):
+    """Uploading a multiturn CSV materializes one chain per row and reports both counts."""
+
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+
+    csv_bytes = _build_csv_bytes(
+        [
+            {
+                "trace": json.dumps(
+                    [
+                        {"role": "user", "content": "Hi"},
+                        {"role": "assistant", "content": "Hello"},
+                        {"role": "user", "content": "What's 2+2?"},
+                        {"role": "assistant", "content": "4"},
+                    ]
+                ),
+                "tags": "",
+            },
+            {
+                "trace": json.dumps(
+                    [
+                        {"role": "user", "content": "Hi again"},
+                        {"role": "assistant", "content": "Hey!"},
+                    ]
+                ),
+                "tags": "",
+            },
+        ]
+    )
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/bulk_upload",
+            files={"file": ("convs.csv", csv_bytes, "text/csv")},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["filename"] == "convs.csv"
+    # 2 conversations: 2 turns + 1 turn = 3 runs total
+    assert body["imported_count"] == 3
+    assert body["imported_conversation_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_bulk_upload_multiturn_invalid_trace_returns_422(
+    client, multiturn_task_run_setup
+):
+    """A row with invalid JSON in `trace` surfaces as a 422 with a row-tagged detail."""
+
+    project = multiturn_task_run_setup["project"]
+    task = multiturn_task_run_setup["task"]
+
+    csv_bytes = _build_csv_bytes(
+        [
+            {"trace": "not json", "tags": ""},
+        ]
+    )
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/bulk_upload",
+            files={"file": ("bad.csv", csv_bytes, "text/csv")},
+        )
+
+    assert response.status_code == 422
+    detail = response.json()["message"]
+    assert "row 2" in detail
+    assert "trace is not valid JSON" in detail
+
+
+@pytest.mark.asyncio
+async def test_bulk_upload_single_turn_response_has_null_conversation_count(
+    client, task_run_setup
+):
+    """Existing single-turn upload still works and reports null conversation_count."""
+
+    task = task_run_setup["task"]
+    project = task_run_setup["project"]
+
+    csv_bytes = _build_csv_bytes([{"input": "hi", "output": "hello", "tags": ""}])
+
+    with patch("kiln_server.run_api.task_from_id") as mock_task_from_id:
+        mock_task_from_id.return_value = task
+        response = client.post(
+            f"/api/projects/{project.id}/tasks/{task.id}/runs/bulk_upload",
+            files={"file": ("single.csv", csv_bytes, "text/csv")},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["imported_count"] == 1
+    assert body["imported_conversation_count"] is None

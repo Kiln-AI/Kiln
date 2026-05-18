@@ -3719,6 +3719,11 @@ export interface components {
              * @description The number of task runs imported.
              */
             imported_count: number;
+            /**
+             * Imported Conversation Count
+             * @description The number of conversations imported. None for single-turn uploads; set for multiturn uploads (where one row = one conversation that materializes as multiple TaskRuns linked via parent_task_run_id).
+             */
+            imported_conversation_count?: number | null;
         };
         /**
          * ChatCompletionAssistantMessageParamWrapper
