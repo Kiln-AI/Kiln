@@ -114,6 +114,11 @@ class KilnEmbeddingModelProvider(BaseModel):
         description="Whether the model supports setting a custom output dimension. If true, the user can set the output dimension in the UI.",
     )
 
+    supports_instructions: bool = Field(
+        default=False,
+        description="Whether the model supports custom instructions for embedding generation. If true, the user can provide custom instructions in the UI.",
+    )
+
     suggested_for_chunk_embedding: bool = Field(
         default=False,
         description="Whether the model is particularly good for chunk embedding.",
@@ -327,6 +332,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 # because litellm rejects the param:
                 # https://github.com/BerriAI/litellm/issues/11940
                 supports_custom_dimensions=False,
+                supports_instructions=True,
                 ollama_model_aliases=[
                     # 8b is default
                     "qwen3-embedding",
@@ -339,6 +345,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 max_input_tokens=32_000,
                 # the model itself does support custom dimensions, but not working
                 supports_custom_dimensions=False,
+                supports_instructions=True,
             ),
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.siliconflow_cn,
@@ -349,6 +356,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 # because litellm rejects the param:
                 # https://github.com/BerriAI/litellm/issues/11940
                 supports_custom_dimensions=False,
+                supports_instructions=True,
             ),
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.openrouter,
@@ -357,6 +365,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 max_input_tokens=32_000,
                 # litellm rejecting - but model itself supports it
                 supports_custom_dimensions=False,
+                supports_instructions=True,
             ),
         ],
     ),
@@ -375,6 +384,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 # because litellm rejects the param:
                 # https://github.com/BerriAI/litellm/issues/11940
                 supports_custom_dimensions=False,
+                supports_instructions=True,
             ),
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.siliconflow_cn,
@@ -385,6 +395,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 # because litellm rejects the param:
                 # https://github.com/BerriAI/litellm/issues/11940
                 supports_custom_dimensions=False,
+                supports_instructions=True,
             ),
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.openrouter,
@@ -393,6 +404,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 max_input_tokens=32_000,
                 # litellm rejecting - but model itself supports it
                 supports_custom_dimensions=False,
+                supports_instructions=True,
             ),
         ],
     ),
@@ -411,6 +423,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 # because litellm rejects the param:
                 # https://github.com/BerriAI/litellm/issues/11940
                 supports_custom_dimensions=False,
+                supports_instructions=True,
             ),
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.siliconflow_cn,
@@ -421,6 +434,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 # because litellm rejects the param:
                 # https://github.com/BerriAI/litellm/issues/11940
                 supports_custom_dimensions=False,
+                supports_instructions=True,
             ),
             KilnEmbeddingModelProvider(
                 name=ModelProviderName.openrouter,
@@ -429,6 +443,7 @@ built_in_embedding_models: List[KilnEmbeddingModel] = [
                 max_input_tokens=32_000,
                 # litellm rejecting - but model itself supports it
                 supports_custom_dimensions=False,
+                supports_instructions=True,
             ),
         ],
     ),
